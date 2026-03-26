@@ -1,7 +1,7 @@
 {
   "name": "scalesafe",
   "version": "1.0.0",
-  "description": "ScaleSafe — Chargeback defense SaaS for high-ticket coaching businesses. GHL Marketplace app.",
+  "description": "ScaleSafe — Evidence-powered chargeback defense for high-ticket service businesses. GHL Marketplace app.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && npm run build-ui && mkdir -p ./dist/ui && cp -r ./src/ui/dist ./dist/ui/dist",
@@ -24,6 +24,7 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "pdfkit": "^0.18.0",
+    "pg": "^8.20.0",
     "pino": "^8.16.0",
     "pino-pretty": "^10.2.3",
     "qs": "^6.11.2",
