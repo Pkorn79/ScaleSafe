@@ -1,0 +1,13 @@
+{
+  "form_id": "SYS2-07",
+  "location_id": "274dtgl30b7x2HG8hn69",
+  "contact_id": "ghl_contact_test_001",
+  "contact_name": "Jane Smith",
+  "contact_email": "jane.smith@example.com",
+  "session_date": "2026-03-24",
+  "session_type": "one_on_one",
+  "duration": 60,
+  "topics": "Goal setting, Q1 planning",
+  "notes": "Great session. Client is making progress on revenue targets.",
+  "coach_name": "Philip Korniotes"
+}
