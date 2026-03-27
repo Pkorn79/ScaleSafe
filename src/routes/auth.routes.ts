@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { exchangeCodeForTokens } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { merchantService } from '../services/merchant.service';
 import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -52,8 +53,11 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       logger.info({ locationId, companyId }, 'New merchant provisioned');
     }
 
-    // TODO Phase 1: Register custom workflow triggers for this location
-    // TODO Phase 1: Push GHL Snapshot (pipeline, fields, forms, workflows)
+    // Run provisioning async — don't block the OAuth response
+    // GHL expects a fast callback response; provisioning runs in background
+    merchantService.provisionMerchant(locationId).catch((err) => {
+      logger.error({ err, locationId }, 'Background provisioning failed');
+    });
 
     res.json({ success: true, message: 'ScaleSafe installed successfully', locationId });
   } catch (err) {
