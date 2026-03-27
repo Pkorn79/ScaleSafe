@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { merchantService } from '../services/merchant.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
@@ -58,6 +59,27 @@ export const merchantController = {
 
       const merchant = await merchantRepository.update(locationId, updates as any);
       res.json({ status: 'ok', locationId: merchant.location_id });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/merchants/provision — manually trigger provisioning */
+  async provision(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const merchant = await merchantRepository.getByLocationId(locationId);
+
+      // Allow re-provisioning if pending or failed
+      if (merchant.snapshot_status === 'installed') {
+        return res.json({ status: 'already_installed', locationId });
+      }
+
+      // Reset status for retry
+      await merchantRepository.updateSnapshotStatus(locationId, 'pending');
+
+      merchantService.provisionMerchant(locationId).catch(() => {});
+      res.json({ status: 'provisioning_started', locationId });
     } catch (err) { next(err); }
   },
 };

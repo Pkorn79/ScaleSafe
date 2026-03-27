@@ -15,8 +15,21 @@ interface CreateOfferInput {
   pifPrice?: number;
   pifDiscountEnabled?: boolean;
   refundWindowText?: string;
+  tcUrl?: string;
   clauses?: Array<{ title: string; text: string }>;
   milestones?: Array<{ name: string; delivers: string; clientDoes: string }>;
+}
+
+/**
+ * Extract an ID from a GHL API response, handling various response shapes.
+ * GHL may return: { id }, { _id }, { product: { id } }, { data: { id } }, etc.
+ */
+function extractId(data: any, objectKey?: string): string {
+  if (!data) return '';
+  if (objectKey && data[objectKey]) {
+    return data[objectKey]._id || data[objectKey].id || '';
+  }
+  return data._id || data.id || '';
 }
 
 export const offerService = {
@@ -31,13 +44,21 @@ export const offerService = {
       productType: 'DIGITAL',
       description: input.programDescription || '',
     });
-    const ghlProductId = productRes.data.product?.id || productRes.data.id;
+    const ghlProductId = extractId(productRes.data, 'product');
+    logger.info({ locationId, ghlProductId, responseKeys: Object.keys(productRes.data) }, 'GHL Product created');
+
+    if (!ghlProductId) {
+      throw new Error(`GHL Product creation returned no ID. Response: ${JSON.stringify(productRes.data).slice(0, 200)}`);
+    }
 
     // 2. Create GHL Prices on the product
     const priceIds: Record<string, string> = {};
 
-    if (input.paymentType === 'one_time' || input.pifPrice) {
-      const amount = input.pifPrice || input.price || 0;
+    // PIF price: create if payment type is one_time, OR if installments with a PIF discount
+    if (input.paymentType === 'one_time' || (input.pifDiscountEnabled && input.pifPrice)) {
+      const amount = input.paymentType === 'one_time'
+        ? (input.price || 0)
+        : (input.pifPrice || input.price || 0);
       const priceRes = await api.post(`/products/${ghlProductId}/price`, {
         name: `${input.offerName} - Pay in Full`,
         type: 'one_time',
@@ -45,9 +66,11 @@ export const offerService = {
         amount: Math.round(amount * 100), // cents
         locationId,
       });
-      priceIds.one_time = priceRes.data.price?.id || priceRes.data.id;
+      priceIds.one_time = extractId(priceRes.data, 'price');
+      logger.info({ locationId, priceId: priceIds.one_time, amount }, 'GHL PIF price created');
     }
 
+    // Recurring price: create for installment plans
     if (input.paymentType === 'installments' && input.installmentAmount && input.numPayments) {
       const intervalMap: Record<string, string> = {
         weekly: 'week', bi_weekly: 'week', monthly: 'month',
@@ -69,7 +92,8 @@ export const offerService = {
           totalCycles: input.numPayments,
         },
       });
-      priceIds.recurring = priceRes.data.price?.id || priceRes.data.id;
+      priceIds.recurring = extractId(priceRes.data, 'price');
+      logger.info({ locationId, priceId: priceIds.recurring }, 'GHL recurring price created');
     }
 
     // 3. Build Supabase record with clause + milestone slots
@@ -88,6 +112,7 @@ export const offerService = {
       pif_price: input.pifPrice,
       pif_discount_enabled: input.pifDiscountEnabled || false,
       refund_window_text: input.refundWindowText,
+      tc_url: input.tcUrl || null,
     };
 
     // Map clause slots (up to 11)
@@ -140,6 +165,7 @@ export const offerService = {
     if (updates.pifPrice !== undefined) dbUpdates.pif_price = updates.pifPrice;
     if (updates.pifDiscountEnabled !== undefined) dbUpdates.pif_discount_enabled = updates.pifDiscountEnabled;
     if (updates.refundWindowText !== undefined) dbUpdates.refund_window_text = updates.refundWindowText;
+    if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl;
 
     if (updates.clauses) {
       updates.clauses.forEach((c, i) => {

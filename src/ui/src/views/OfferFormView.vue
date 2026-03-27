@@ -28,6 +28,9 @@
         </select>
       </div>
 
+      <!-- Pricing -->
+      <h3 class="mt-4 mb-4">Pricing</h3>
+
       <div class="grid grid-2">
         <div class="form-group">
           <label class="form-label">Total Price *</label>
@@ -42,22 +45,42 @@
         </div>
       </div>
 
-      <div v-if="form.paymentType === 'installments'" class="grid grid-3">
-        <div class="form-group">
-          <label class="form-label">Installment Amount</label>
-          <input class="form-input" type="number" step="0.01" v-model.number="form.installmentAmount" />
+      <div v-if="form.paymentType === 'installments'">
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label class="form-label">Installment Amount *</label>
+            <input class="form-input" type="number" step="0.01" v-model.number="form.installmentAmount" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Frequency</label>
+            <select class="form-select" v-model="form.installmentFrequency">
+              <option value="weekly">Weekly</option>
+              <option value="bi_weekly">Bi-Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label"># of Payments *</label>
+            <input class="form-input" type="number" v-model.number="form.numPayments" />
+          </div>
         </div>
+
+        <!-- PIF Discount option for installment plans -->
         <div class="form-group">
-          <label class="form-label">Frequency</label>
-          <select class="form-select" v-model="form.installmentFrequency">
-            <option value="weekly">Weekly</option>
-            <option value="bi_weekly">Bi-Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="form.pifDiscountEnabled" />
+            Offer a pay-in-full discount (clients can choose to pay upfront at a lower price)
+          </label>
         </div>
-        <div class="form-group">
-          <label class="form-label"># of Payments</label>
-          <input class="form-input" type="number" v-model.number="form.numPayments" />
+        <div v-if="form.pifDiscountEnabled" class="form-group">
+          <label class="form-label">Pay-in-Full Discount Price</label>
+          <input class="form-input" type="number" step="0.01" v-model.number="form.pifPrice"
+            :placeholder="`e.g., ${Math.round((form.price || 0) * 0.9)}`"
+            style="max-width: 250px" />
+          <p class="text-sm text-muted mt-2" v-if="form.price && form.pifPrice">
+            Saves client ${{ (form.price - form.pifPrice).toFixed(2) }}
+            ({{ Math.round((1 - form.pifPrice / form.price) * 100) }}% off)
+          </p>
         </div>
       </div>
 
@@ -66,8 +89,47 @@
         <textarea class="form-textarea" v-model="form.refundWindowText" placeholder="e.g., 30-day money-back guarantee..."></textarea>
       </div>
 
+      <!-- Terms & Conditions -->
+      <h3 class="mt-4 mb-4">Terms & Conditions</h3>
+
+      <div class="form-group">
+        <label class="form-label">Custom T&C Document URL</label>
+        <input class="form-input" v-model="form.tcUrl" type="url" placeholder="https://yourdomain.com/terms" />
+        <p class="text-sm text-muted mt-2">
+          If you have your own Terms & Conditions document, paste the URL here.
+          Otherwise, use the clause builder below to create terms within ScaleSafe.
+        </p>
+      </div>
+
+      <div v-if="!form.tcUrl">
+        <h4 class="mb-4">T&C Clause Builder</h4>
+        <p class="text-sm text-muted mb-4">
+          Add up to 11 custom clauses. These will be compiled into a clickwrap agreement
+          shown to clients during enrollment.
+        </p>
+        <div v-for="(c, i) in form.clauses" :key="i" class="clause-row mb-4">
+          <div class="flex-between mb-4">
+            <span class="text-sm" style="font-weight: 500">Clause {{ i + 1 }}</span>
+            <button v-if="c.title || c.text" type="button" class="btn btn-sm btn-secondary" @click="clearClause(i)">
+              Clear
+            </button>
+          </div>
+          <div class="form-group">
+            <input class="form-input" v-model="c.title" :placeholder="`Clause ${i + 1} title (e.g., 'Cancellation Policy')`" />
+          </div>
+          <div class="form-group">
+            <textarea class="form-textarea" v-model="c.text" style="min-height:50px"
+              :placeholder="`Clause text...`"></textarea>
+          </div>
+        </div>
+      </div>
+
       <!-- Milestones -->
       <h3 class="mt-4 mb-4">Milestones</h3>
+      <p class="text-sm text-muted mb-4">
+        Define up to 8 program milestones. Clients will sign off on each milestone as they progress.
+        Only fill in the milestones that apply to this offer.
+      </p>
       <div v-for="(m, i) in form.milestones" :key="i" class="grid grid-3 mb-4" style="align-items:end">
         <div class="form-group">
           <label class="form-label">Milestone {{ i + 1 }} Name</label>
@@ -80,19 +142,6 @@
         <div class="form-group">
           <label class="form-label">Client Does</label>
           <input class="form-input" v-model="m.clientDoes" />
-        </div>
-      </div>
-
-      <!-- T&C Clauses -->
-      <h3 class="mt-4 mb-4">Terms & Conditions Clauses</h3>
-      <div v-for="(c, i) in form.clauses" :key="i" class="mb-4">
-        <div class="form-group">
-          <label class="form-label">Clause {{ i + 1 }} Title</label>
-          <input class="form-input" v-model="c.title" :placeholder="`Clause ${i + 1}`" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Clause {{ i + 1 }} Text</label>
-          <textarea class="form-textarea" v-model="c.text" style="min-height:50px"></textarea>
         </div>
       </div>
 
@@ -127,10 +176,18 @@ const form = ref({
   installmentAmount: 0,
   installmentFrequency: 'monthly',
   numPayments: 0,
+  pifPrice: 0,
+  pifDiscountEnabled: false,
   refundWindowText: '',
+  tcUrl: '',
   milestones: Array.from({ length: 8 }, () => ({ name: '', delivers: '', clientDoes: '' })),
-  clauses: Array.from({ length: 5 }, () => ({ title: '', text: '' })),
+  clauses: Array.from({ length: 11 }, () => ({ title: '', text: '' })),
 });
+
+function clearClause(index: number) {
+  form.value.clauses[index].title = '';
+  form.value.clauses[index].text = '';
+}
 
 onMounted(async () => {
   if (isEdit.value) {
@@ -144,7 +201,10 @@ onMounted(async () => {
       form.value.installmentAmount = offer.installment_amount || 0;
       form.value.installmentFrequency = offer.installment_frequency || 'monthly';
       form.value.numPayments = offer.num_payments || 0;
+      form.value.pifPrice = offer.pif_price || 0;
+      form.value.pifDiscountEnabled = offer.pif_discount_enabled || false;
       form.value.refundWindowText = offer.refund_window_text || '';
+      form.value.tcUrl = offer.tc_url || '';
 
       for (let i = 0; i < 8; i++) {
         form.value.milestones[i].name = offer[`m${i + 1}_name`] || '';
@@ -152,7 +212,7 @@ onMounted(async () => {
         form.value.milestones[i].clientDoes = offer[`m${i + 1}_client_does`] || '';
       }
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 11; i++) {
         form.value.clauses[i].title = offer[`clause_slot_${i + 1}_title`] || '';
         form.value.clauses[i].text = offer[`clause_slot_${i + 1}_text`] || '';
       }
@@ -167,6 +227,11 @@ async function save() {
     clauses: form.value.clauses.filter(c => c.title),
   };
 
+  // Don't send pifPrice if discount is disabled
+  if (!payload.pifDiscountEnabled) {
+    payload.pifPrice = 0;
+  }
+
   try {
     if (isEdit.value) {
       await api.put(`/api/offers/${route.params.id}`, payload);
@@ -177,3 +242,25 @@ async function save() {
   } catch {}
 }
 </script>
+
+<style scoped>
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #3b82f6;
+}
+
+.clause-row {
+  border-left: 3px solid #e5e7eb;
+  padding-left: 16px;
+}
+</style>

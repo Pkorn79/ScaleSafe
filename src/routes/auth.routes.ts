@@ -89,6 +89,14 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       throw new AuthenticationError(`Merchant not found for location ${locationId}`);
     }
 
+    // Auto-provision if snapshot never ran (e.g., merchant installed before provisioning code existed)
+    if (merchant.snapshot_status === 'pending') {
+      logger.info({ locationId }, 'Snapshot pending — triggering provisioning on SSO login');
+      merchantService.provisionMerchant(locationId).catch((err) => {
+        logger.error({ err, locationId }, 'Background provisioning from SSO failed');
+      });
+    }
+
     logger.info({ locationId, userId: userData.userId, email: userData.email }, 'SSO session established');
 
     res.json({
@@ -98,6 +106,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       email: userData.email || '',
       role: userData.role || 'user',
       userName: userData.userName || '',
+      snapshotStatus: merchant.snapshot_status,
     });
   } catch (err) {
     next(err);
