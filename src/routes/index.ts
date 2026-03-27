@@ -28,6 +28,9 @@ router.use('/api/defense', apiLimiter, defenseRoutes);
 router.use('/api/dashboard', apiLimiter, dashboardRoutes);
 router.use('/api/admin', apiLimiter, adminRoutes);
 
+// Public enrollment page (client-facing, no SSO)
+router.use('/enrollment', enrollmentRoutes);
+
 // Webhook routes (higher rate limit)
 router.use('/webhooks', webhookLimiter, webhookRoutes);
 

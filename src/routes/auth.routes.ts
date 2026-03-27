@@ -89,9 +89,14 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       throw new AuthenticationError(`Merchant not found for location ${locationId}`);
     }
 
-    // Auto-provision if snapshot never ran (e.g., merchant installed before provisioning code existed)
-    if (merchant.snapshot_status === 'pending') {
-      logger.info({ locationId }, 'Snapshot pending — triggering provisioning on SSO login');
+    // Auto-provision if snapshot never completed
+    logger.info({ locationId, snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
+    if (merchant.snapshot_status !== 'installed') {
+      logger.info({ locationId, snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed — triggering provisioning');
+      // Reset to pending so provisionMerchant can run cleanly
+      if (merchant.snapshot_status === 'failed') {
+        await merchantRepository.updateSnapshotStatus(locationId, 'pending');
+      }
       merchantService.provisionMerchant(locationId).catch((err) => {
         logger.error({ err, locationId }, 'Background provisioning from SSO failed');
       });

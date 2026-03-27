@@ -21,7 +21,9 @@ export function createApp(): express.Application {
   // Serve Vue 3 frontend (built assets)
   const uiPath = path.join(__dirname, 'ui', 'dist');
   app.use(express.static(uiPath));
-  app.get(/^\/(?!api|auth|health|webhooks).*/, (_req, res) => {
+  // SPA catch-all: serve index.html for all routes EXCEPT API, auth, health,
+  // webhooks, and enrollment (enrollment is public/client-facing, not SPA)
+  app.get(/^\/(?!api|auth|health|webhooks|enrollment).*/, (_req, res) => {
     res.sendFile(path.join(uiPath, 'index.html'));
   });
 
