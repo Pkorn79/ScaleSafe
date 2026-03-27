@@ -12,11 +12,18 @@ interface TokenPair {
   expiresAt: Date;
 }
 
+interface TokenResponse extends TokenPair {
+  locationId: string;
+  companyId: string;
+  userId: string;
+  scopes: string[];
+}
+
 /**
  * Exchange an OAuth authorization code for access + refresh tokens.
  * Called once during merchant install.
  */
-export async function exchangeCodeForTokens(code: string): Promise<TokenPair> {
+export async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
     client_secret: config.ghl.clientSecret,
@@ -30,6 +37,10 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenPair> {
     accessToken: res.data.access_token,
     refreshToken: res.data.refresh_token,
     expiresAt: new Date(Date.now() + res.data.expires_in * 1000),
+    locationId: res.data.locationId,
+    companyId: res.data.companyId || '',
+    userId: res.data.userId || '',
+    scopes: res.data.scope ? res.data.scope.split(' ') : [],
   };
 }
 

@@ -240,7 +240,7 @@ export const evidenceService = {
     score: number;
     breakdown: Record<string, { points: number; max: number; detail: string }>;
   }> {
-    const counts = await evidenceRepository.getCounts(locationId, contactId);
+    const counts = await evidenceRepository.getCounts(locationId, contactId) || {};
     const lastDate = await evidenceRepository.getLastEvidenceDate(locationId, contactId);
 
     const breakdown: Record<string, { points: number; max: number; detail: string }> = {};

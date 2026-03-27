@@ -17,16 +17,43 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     logger.info('OAuth callback received, exchanging code for tokens');
 
-    const tokens = await exchangeCodeForTokens(code);
+    const tokenResponse = await exchangeCodeForTokens(code);
+    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes } = tokenResponse;
 
-    // GHL includes locationId in the callback — extract from the decoded token or query
-    // For marketplace apps, the location info comes in the token response
-    // We'll store the merchant once we have the location context
-    // TODO: Extract locationId from token response and call merchant provisioning
+    if (!locationId) {
+      throw new ValidationError('GHL token response missing locationId — cannot provision merchant');
+    }
 
-    logger.info('OAuth token exchange successful');
+    // Check if merchant already exists (re-install scenario)
+    const existing = await merchantRepository.findByLocationId(locationId);
 
-    res.json({ success: true, message: 'ScaleSafe installed successfully' });
+    if (existing) {
+      // Re-install: update tokens, reactivate if uninstalled
+      await merchantRepository.update(locationId, {
+        ghl_access_token: accessToken,
+        ghl_refresh_token: refreshToken,
+        ghl_token_expires_at: expiresAt.toISOString(),
+        ghl_scopes: scopes.join(' '),
+        status: 'active',
+      } as any);
+      logger.info({ locationId }, 'Existing merchant re-authenticated');
+    } else {
+      // New install: create merchant record
+      await merchantRepository.create({
+        location_id: locationId,
+        company_id: companyId,
+        ghl_access_token: accessToken,
+        ghl_refresh_token: refreshToken,
+        ghl_token_expires_at: expiresAt.toISOString(),
+        ghl_scopes: scopes.join(' '),
+      });
+      logger.info({ locationId, companyId }, 'New merchant provisioned');
+    }
+
+    // TODO Phase 1: Register custom workflow triggers for this location
+    // TODO Phase 1: Push GHL Snapshot (pipeline, fields, forms, workflows)
+
+    res.json({ success: true, message: 'ScaleSafe installed successfully', locationId });
   } catch (err) {
     next(err);
   }
