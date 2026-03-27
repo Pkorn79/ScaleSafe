@@ -10,7 +10,7 @@ const router = Router();
  * GET /auth/callback
  * GHL OAuth callback — exchanges authorization code for tokens and provisions the merchant.
  */
-router.get('/auth/callback', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const code = req.query.code as string;
     if (!code) throw new ValidationError('Missing authorization code');
