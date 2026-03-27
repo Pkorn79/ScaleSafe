@@ -10,9 +10,13 @@ import { logger } from '../utils/logger';
  * Used on routes that render inside the GHL iframe.
  */
 export function ssoAuth(req: Request, _res: Response, next: NextFunction): void {
-  const ssoKey = (req.query.ssoKey || req.headers['x-sso-key']) as string | undefined;
+  // GHL sends the SSO token as "sso_key" (snake_case) in the Custom Page URL
+  const ssoKey = (
+    req.query.sso_key || req.query.ssoKey || req.headers['x-sso-key']
+  ) as string | undefined;
 
   if (!ssoKey) {
+    logger.debug({ query: Object.keys(req.query), headers: Object.keys(req.headers) }, 'SSO key not found in request');
     return next(new AuthenticationError('Missing SSO key'));
   }
 

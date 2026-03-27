@@ -2,11 +2,19 @@ import { ref } from 'vue';
 
 /**
  * Get the SSO key from the URL query string.
- * GHL passes this when loading the app in an iframe.
+ * GHL passes this as "sso_key" when loading the app in an iframe.
+ * We persist it in sessionStorage so it survives in-app navigation.
  */
 function getSsoKey(): string {
   const params = new URLSearchParams(window.location.search);
-  return params.get('ssoKey') || '';
+  const fromUrl = params.get('sso_key') || params.get('ssoKey') || '';
+
+  if (fromUrl) {
+    sessionStorage.setItem('ss_sso_key', fromUrl);
+    return fromUrl;
+  }
+
+  return sessionStorage.getItem('ss_sso_key') || '';
 }
 
 const ssoKey = getSsoKey();
