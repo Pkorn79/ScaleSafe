@@ -446,8 +446,7 @@ When you start in `/plan` mode, here's the recommended approach:
 **GHL Connection ID (Make.com — legacy):** 4679047
 
 **Accept.blue test webhook signatures:**
-- Webhook 1566: izlQXv0Hg1EbSZef5fPrvDANPdjyHQ0u
-- Webhook 1620: 1NeUdlrmySBvNNPvYvGhtNEC6Oabkfh9
+[REMOVED — secrets should not be in repo]
 
 **GHL App credentials:** Will need to be created in the GHL Developer Portal for the marketplace app (CLIENT_ID, CLIENT_SECRET, SSO_KEY)
 

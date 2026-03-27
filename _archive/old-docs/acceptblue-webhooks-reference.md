@@ -9,8 +9,8 @@ Saved: 2026-03-16
 4. Note the secret token for signature verification
 
 ## EXISTING SCALESAFE WEBHOOKS
-- Webhook 1566 → S7 Post-Payment Handler | Signature: izlQXv0Hg1EbSZef5fPrvDANPdjyHQ0u
-- Webhook 1620 → S10 Installment Logger | Signature: 1NeUdlrmySBvNNPvYvGhtNEC6Oabkfh9
+- Webhook 1566 → S7 Post-Payment Handler | Signature: [REMOVED]
+- Webhook 1620 → S10 Installment Logger | Signature: [REMOVED]
 
 ## SIGNATURE VERIFICATION
 - Header: X-Signature

@@ -237,16 +237,7 @@ Full Drive Registry: Doc 1KfS2whl\_IhixL22OT0IGtatYzsJVv3IUa0nVQzwDrFU
 CREDENTIALS (QUICK REF)  
 \================================================================
 
-GHL Company: kYqQRVFPk2CGCMCIFWU8  
-GHL Location (PMG): 274dtgl30b7x2HG8hn69  
-GHL App Client: 69a9e83d6ee4e35bd4a5f32a-mmdxk9c2  
-GHL PIT: pit-df594c5b-67cd-40c7-b833-d7d64f44da45  
-GHL Connection (CuratedConnector): 4679047  
-Make.com Team: 352208 | Org: 878210  
-accept.blue API Key: mq36KlykP57UZtLYlJur38MNcmC1nfRJ  
-accept.blue Token Key: pk\_xXZxeTovbVT4X1CaH0yRhtRIgf5hV  
-AB Webhook 1566 → S7 | Signature: izlQXv0Hg1EbSZef5fPrvDANPdjyHQ0u  
-AB Webhook 1620 → S10 | Signature: 1NeUdlrmySBvNNPvYvGhtNEC6Oabkfh9  
+[CREDENTIALS REMOVED — stored in .env and Railway, not in repo]  
 Anthropic API Key credential: Make.com Key ID 85742  
 Slack VA Channel: \#wholepay-ghl-build (C0AK3T7D82H)
 
