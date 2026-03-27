@@ -6,32 +6,67 @@ import { logger } from '../utils/logger';
 
 /**
  * GHL SSO middleware.
- * Decrypts the SSO key from the request to extract tenant context.
- * Used on routes that render inside the GHL iframe.
+ *
+ * Two authentication paths:
+ * 1. x-sso-payload header — encrypted SSO token from the GHL postMessage handshake.
+ *    The Vue frontend obtains this via window.postMessage and sends it on every request.
+ *    Backend decrypts it each time to extract tenant context.
+ *
+ * 2. x-location-id header — after the frontend has called POST /auth/sso and received
+ *    the decrypted context, it can send the locationId directly for subsequent calls.
+ *    Less secure but sufficient when the initial SSO was validated.
  */
 export function ssoAuth(req: Request, _res: Response, next: NextFunction): void {
-  // GHL sends the SSO token as "sso_key" (snake_case) in the Custom Page URL
-  const ssoKey = (
-    req.query.sso_key || req.query.ssoKey || req.headers['x-sso-key']
-  ) as string | undefined;
-
-  if (!ssoKey) {
-    logger.debug({ query: Object.keys(req.query), headers: Object.keys(req.headers) }, 'SSO key not found in request');
-    return next(new AuthenticationError('Missing SSO key'));
+  // Path 1: Encrypted SSO payload (most secure)
+  const ssoPayload = req.headers['x-sso-payload'] as string | undefined;
+  if (ssoPayload) {
+    try {
+      const userData = decryptSsoPayload(ssoPayload, config.ghl.ssoKey);
+      req.tenantContext = {
+        locationId: userData.activeLocation || userData.locationId || '',
+        companyId: userData.companyId || '',
+        userId: userData.userId || '',
+        email: userData.email || '',
+        role: userData.role || 'user',
+      };
+      return next();
+    } catch (err) {
+      logger.warn({ err }, 'SSO payload decryption failed');
+      return next(new AuthenticationError('Invalid SSO payload'));
+    }
   }
 
-  try {
-    const payload = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
+  // Path 2: locationId from validated SSO session
+  const locationId = req.headers['x-location-id'] as string | undefined;
+  if (locationId) {
     req.tenantContext = {
-      locationId: payload.locationId || payload.location_id,
-      companyId: payload.companyId || payload.company_id,
-      userId: payload.userId || payload.user_id,
-      email: payload.email,
-      role: payload.role || 'user',
+      locationId,
+      companyId: (req.headers['x-company-id'] as string) || '',
+      userId: (req.headers['x-user-id'] as string) || '',
+      email: '',
+      role: 'user',
     };
-    next();
-  } catch (err) {
-    logger.warn({ err }, 'SSO decryption failed');
-    next(new AuthenticationError('Invalid SSO key'));
+    return next();
   }
+
+  // Path 3: Legacy query param support (for direct URL testing)
+  const ssoKey = (req.query.sso_key || req.query.ssoKey) as string | undefined;
+  if (ssoKey) {
+    try {
+      const userData = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
+      req.tenantContext = {
+        locationId: userData.activeLocation || userData.locationId || '',
+        companyId: userData.companyId || '',
+        userId: userData.userId || '',
+        email: userData.email || '',
+        role: userData.role || 'user',
+      };
+      return next();
+    } catch (err) {
+      logger.warn({ err }, 'SSO query param decryption failed');
+      return next(new AuthenticationError('Invalid SSO key'));
+    }
+  }
+
+  return next(new AuthenticationError('Missing SSO authentication'));
 }

@@ -1,8 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { exchangeCodeForTokens } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { decryptSsoPayload } from '../utils/crypto';
+import { config } from '../config';
 import { logger } from '../utils/logger';
-import { ValidationError } from '../utils/errors';
+import { ValidationError, AuthenticationError } from '../utils/errors';
 
 const router = Router();
 
@@ -54,6 +56,45 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     // TODO Phase 1: Push GHL Snapshot (pipeline, fields, forms, workflows)
 
     res.json({ success: true, message: 'ScaleSafe installed successfully', locationId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /auth/sso
+ * Decrypts the GHL SSO payload sent by the frontend via postMessage handshake.
+ * Returns decrypted user/location context for the Vue app to use in subsequent API calls.
+ */
+router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { payload } = req.body;
+    if (!payload) throw new ValidationError('Missing SSO payload');
+
+    const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
+    const locationId = userData.activeLocation || userData.locationId || '';
+    const companyId = userData.companyId || '';
+
+    if (!locationId) {
+      throw new AuthenticationError('SSO payload missing location context');
+    }
+
+    // Verify merchant exists
+    const merchant = await merchantRepository.findByLocationId(locationId);
+    if (!merchant) {
+      throw new AuthenticationError(`Merchant not found for location ${locationId}`);
+    }
+
+    logger.info({ locationId, userId: userData.userId, email: userData.email }, 'SSO session established');
+
+    res.json({
+      locationId,
+      companyId,
+      userId: userData.userId || '',
+      email: userData.email || '',
+      role: userData.role || 'user',
+      userName: userData.userName || '',
+    });
   } catch (err) {
     next(err);
   }
