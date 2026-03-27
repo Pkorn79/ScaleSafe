@@ -1,5 +1,46 @@
+<script setup lang="ts">
+import { ssoSession } from './composables/useApi';
+</script>
+
 <template>
-  <div class="app">
+  <!-- Loading state while SSO handshake completes -->
+  <div v-if="!ssoSession.ready" class="sso-loading">
+    <div class="sso-loading-inner">
+      <div class="sso-spinner"></div>
+      <p>Connecting to GoHighLevel...</p>
+    </div>
+  </div>
+
+  <!-- SSO failed — friendly error page -->
+  <div v-else-if="ssoSession.error || !ssoSession.locationId" class="sso-error">
+    <div class="sso-error-card">
+      <div class="sso-error-icon">!</div>
+      <h1>Unable to Connect</h1>
+      <p class="sso-error-detail">
+        ScaleSafe couldn't verify your account with GoHighLevel.
+        This usually means the app needs to be reinstalled.
+      </p>
+      <div class="sso-error-steps">
+        <p><strong>To fix this:</strong></p>
+        <ol>
+          <li>Go to <strong>Settings &gt; Integrations</strong> in your GHL account</li>
+          <li>Find ScaleSafe and click <strong>Uninstall</strong></li>
+          <li>Reinstall ScaleSafe from the Marketplace</li>
+        </ol>
+      </div>
+      <p class="sso-error-support">
+        Still having trouble? Contact support at
+        <a href="mailto:support@scalesafe.app">support@scalesafe.app</a>
+      </p>
+      <details class="sso-error-debug">
+        <summary>Technical details</summary>
+        <code>{{ ssoSession.error || 'No location context received' }}</code>
+      </details>
+    </div>
+  </div>
+
+  <!-- Normal app -->
+  <div v-else class="app">
     <nav class="sidebar">
       <div class="logo">ScaleSafe</div>
       <router-link to="/" class="nav-item" :class="{ active: $route.name === 'dashboard' }">
@@ -237,4 +278,133 @@ body {
 .mb-4 { margin-bottom: 16px; }
 .text-sm { font-size: 13px; }
 .text-muted { color: #6b7280; }
+
+/* SSO Loading */
+.sso-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f5f6fa;
+}
+
+.sso-loading-inner {
+  text-align: center;
+  color: #6b7280;
+  font-size: 15px;
+}
+
+.sso-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* SSO Error */
+.sso-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f5f6fa;
+  padding: 24px;
+}
+
+.sso-error-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  text-align: center;
+}
+
+.sso-error-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 24px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.sso-error-card h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #1a1a2e;
+}
+
+.sso-error-detail {
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.sso-error-steps {
+  text-align: left;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.sso-error-steps p { margin-bottom: 8px; }
+
+.sso-error-steps ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.sso-error-steps li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.sso-error-support {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.sso-error-support a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.sso-error-debug {
+  text-align: left;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.sso-error-debug summary {
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.sso-error-debug code {
+  display: block;
+  background: #f3f4f6;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  word-break: break-all;
+  color: #6b7280;
+}
 </style>
