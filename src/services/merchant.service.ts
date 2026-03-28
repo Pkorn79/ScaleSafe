@@ -105,10 +105,10 @@ export const merchantService = {
    * Idempotent: checks existing fields first, only creates missing ones.
    */
   async createCustomFields(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
-    // Fetch existing contact custom fields via v2 endpoint
+    // Fetch existing contact custom fields — locationId in path
     let existingKeys = new Set<string>();
     try {
-      const res = await api.get('/custom-fields/object-key/contact', { params: { locationId } });
+      const res = await api.get(`/locations/${locationId}/customFields`);
       const fields = res.data.customFields || res.data || [];
       existingKeys = new Set(fields.map((f: any) => f.fieldKey || f.field_key || ''));
     } catch (err) {
@@ -130,13 +130,9 @@ export const merchantService = {
       const batch = toCreate.slice(i, i + 5);
       await Promise.all(batch.map(async (field) => {
         try {
-          await api.post('/custom-fields/', {
+          await api.post(`/locations/${locationId}/customFields`, {
             name: field.name,
             dataType: field.dataType,
-            fieldKey: field.fieldKey,
-            objectKey: 'contact',
-            locationId,
-            showInForms: false,
           });
         } catch (err: any) {
           // Field might already exist — non-fatal

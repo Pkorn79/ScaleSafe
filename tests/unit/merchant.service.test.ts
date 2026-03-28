@@ -102,10 +102,9 @@ describe('Custom Fields Creation', () => {
     await merchantService.createCustomFields(api, 'loc_1');
 
     // 2 missing SS fields + 45 offer fields = 47
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/custom-fields/');
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customFields');
     expect(createCalls.length).toBe(47);
-    // Verify v2 body format includes objectKey
-    expect(createCalls[0][1]).toMatchObject({ objectKey: 'contact', showInForms: false });
+    expect(createCalls[0][1]).toMatchObject({ dataType: expect.any(String) });
   });
 
   test('skips all if every field exists', async () => {
@@ -133,7 +132,7 @@ describe('Custom Fields Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomFields(api, 'loc_1');
 
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/custom-fields/');
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customFields');
     expect(createCalls.length).toBe(0);
   });
 });
