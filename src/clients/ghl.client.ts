@@ -115,7 +115,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     (response) => response,
     async (err) => {
       const original = err.config as AxiosRequestConfig & { _retried?: boolean };
-      if (err.response?.status === 401 && !original._retried) {
+      if ((err.response?.status === 401 || err.response?.status === 403) && !original._retried) {
         original._retried = true;
         logger.info({ locationId }, 'GHL token expired, refreshing');
         const tokens = await refreshAccessToken(locationId, merchant.ghl_refresh_token);

@@ -2,27 +2,10 @@ import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import {
-  SS_CONTACT_FIELDS,
-  OFFER_CONTACT_FIELDS,
-  OFFER_CLAUSE_FIELDS,
-  OFFER_MILESTONE_FIELDS,
-  CUSTOM_TRIGGERS,
   GHL_CUSTOM_VALUES,
 } from '../constants/ghl-fields';
 
-// Pipeline stage definitions per the GHL Automation Companion
-const PIPELINE_STAGES = [
-  'Enrolled',
-  'Milestone 1',
-  'Milestone 2',
-  'Milestone 3',
-  'Milestone 4',
-  'Milestone 5',
-  'Milestone 6',
-  'Completed',
-];
-
-// Custom field definitions to create via API
+// The 5 SS- contact fields the app manages (v2.1)
 const SS_FIELDS_TO_CREATE = [
   { name: 'SS Enrollment Status',  fieldKey: 'ss_enrollment_status',  dataType: 'TEXT' },
   { name: 'SS Evidence Score',     fieldKey: 'ss_evidence_score',     dataType: 'NUMERICAL' },
@@ -31,6 +14,7 @@ const SS_FIELDS_TO_CREATE = [
   { name: 'SS Defense Status',     fieldKey: 'ss_defense_status',     dataType: 'TEXT' },
 ];
 
+// Offer-prefix contact fields — written once at enrollment
 const OFFER_FIELDS_TO_CREATE = [
   { name: 'Offer Business Name',        fieldKey: 'offer_business_name',        dataType: 'TEXT' },
   { name: 'Offer Name',                 fieldKey: 'offer_name',                 dataType: 'TEXT' },
@@ -53,9 +37,9 @@ const OFFER_FIELDS_TO_CREATE = [
 
 export const merchantService = {
   /**
-   * Full provisioning flow after OAuth — creates all GHL components.
-   * Runs asynchronously after the OAuth callback returns.
-   * Tracks status in snapshot_status / snapshot_attempts / snapshot_error.
+   * Full provisioning flow after OAuth — creates GHL components that CAN
+   * be created via API. Pipeline and custom triggers are NOT available via
+   * the GHL API — they come from the Snapshot or Marketplace app config.
    */
   async provisionMerchant(locationId: string): Promise<void> {
     logger.info({ locationId }, 'Starting merchant provisioning');
@@ -64,24 +48,20 @@ export const merchantService = {
     try {
       const api = await ghlApi(locationId);
 
-      // Run independent steps in parallel where possible
+      // Run independent API-creatable steps in parallel
       const [pipelineId] = await Promise.all([
-        this.createPipeline(api, locationId),
+        this.findPipeline(api, locationId),
         this.createCustomFields(api, locationId),
         this.createCustomValues(api, locationId),
       ]);
 
-      // Triggers depend on having the API ready (no dependency on above, but sequential for clarity)
-      const triggerIds = await this.registerCustomTriggers(api, locationId);
-
-      // Store pipeline ID in config and trigger IDs
+      // Store pipeline ID in config (if found from Snapshot)
       const merchant = await merchantRepository.getByLocationId(locationId);
-      const updatedConfig = { ...merchant.config, pipelineId };
+      const updatedConfig = { ...merchant.config, pipelineId: pipelineId || null };
       await merchantRepository.update(locationId, { config: updatedConfig } as any);
-      await merchantRepository.updateTriggerIds(locationId, triggerIds);
 
       await merchantRepository.updateSnapshotStatus(locationId, 'installed');
-      logger.info({ locationId, pipelineId, triggerCount: Object.keys(triggerIds).length }, 'Merchant provisioning complete');
+      logger.info({ locationId, pipelineId }, 'Merchant provisioning complete');
     } catch (err: any) {
       logger.error({ err, locationId }, 'Merchant provisioning failed');
       await merchantRepository.updateSnapshotStatus(locationId, 'failed', err.message);
@@ -89,7 +69,7 @@ export const merchantService = {
       // Check if we should retry (max 3 attempts)
       const merchant = await merchantRepository.getByLocationId(locationId);
       if (merchant.snapshot_attempts < 3) {
-        const delay = Math.pow(2, merchant.snapshot_attempts) * 5000; // 5s, 10s, 20s
+        const delay = Math.pow(2, merchant.snapshot_attempts) * 5000;
         logger.info({ locationId, attempt: merchant.snapshot_attempts, retryIn: delay }, 'Scheduling provisioning retry');
         setTimeout(() => this.provisionMerchant(locationId), delay);
       } else {
@@ -99,48 +79,36 @@ export const merchantService = {
   },
 
   /**
-   * Create the Client Milestones pipeline with 8 stages.
-   * Returns the pipeline ID.
+   * Look up the Client Milestones pipeline (created by Snapshot, not API).
+   * Returns pipeline ID if found, null if not yet installed.
    */
-  async createPipeline(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<string> {
-    // Check if pipeline already exists
+  async findPipeline(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<string | null> {
     try {
-      const listRes = await api.get('/opportunities/pipelines', { params: { locationId } });
-      const pipelines = listRes.data.pipelines || listRes.data || [];
+      const res = await api.get('/opportunities/pipelines', { params: { locationId } });
+      const pipelines = res.data.pipelines || res.data || [];
       const existing = pipelines.find((p: any) => p.name === 'Client Milestones');
       if (existing) {
-        logger.info({ locationId, pipelineId: existing.id }, 'Client Milestones pipeline already exists');
+        logger.info({ locationId, pipelineId: existing.id }, 'Client Milestones pipeline found');
         return existing.id;
       }
+      logger.warn({ locationId }, 'Client Milestones pipeline not found — Snapshot may not have installed yet');
+      return null;
     } catch (err) {
-      logger.warn({ err, locationId }, 'Could not list existing pipelines, creating new one');
+      logger.warn({ err, locationId }, 'Could not list pipelines');
+      return null;
     }
-
-    const stages = PIPELINE_STAGES.map((name, i) => ({
-      name,
-      position: i,
-    }));
-
-    const res = await api.post('/opportunities/pipelines', {
-      name: 'Client Milestones',
-      locationId,
-      stages,
-    });
-
-    const pipelineId = res.data.pipeline?.id || res.data.id;
-    logger.info({ locationId, pipelineId }, 'Client Milestones pipeline created');
-    return pipelineId;
   },
 
   /**
    * Create the 5 SS- contact fields and ~45 Offer-prefix fields.
+   * Uses GHL v2 Custom Fields API: POST /custom-fields/
    * Idempotent: checks existing fields first, only creates missing ones.
    */
   async createCustomFields(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
-    // Fetch existing custom fields
+    // Fetch existing contact custom fields via v2 endpoint
     let existingKeys = new Set<string>();
     try {
-      const res = await api.get('/locations/custom-fields', { params: { locationId } });
+      const res = await api.get('/custom-fields/object-key/contact', { params: { locationId } });
       const fields = res.data.customFields || res.data || [];
       existingKeys = new Set(fields.map((f: any) => f.fieldKey || f.field_key || ''));
     } catch (err) {
@@ -162,14 +130,18 @@ export const merchantService = {
       const batch = toCreate.slice(i, i + 5);
       await Promise.all(batch.map(async (field) => {
         try {
-          await api.post('/locations/custom-fields', {
+          await api.post('/custom-fields/', {
             name: field.name,
             dataType: field.dataType,
+            fieldKey: field.fieldKey,
+            objectKey: 'contact',
             locationId,
+            showInForms: false,
           });
         } catch (err: any) {
-          // Field might already exist with a different key format — non-fatal
-          if (err.status === 422 || err.status === 409) {
+          // Field might already exist — non-fatal
+          const status = err.ghlStatus || err.status;
+          if (status === 422 || status === 409) {
             logger.debug({ field: field.name, locationId }, 'Custom field already exists (conflict)');
           } else {
             throw err;
@@ -183,13 +155,13 @@ export const merchantService = {
 
   /**
    * Set the 3 SS-- custom values for the location.
-   * These are location-level settings that GHL workflows reference.
+   * Uses GHL v2 Custom Values API: /locations/{locationId}/customValues
    */
   async createCustomValues(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
-    // Fetch existing custom values
+    // Fetch existing custom values — locationId in path, not query
     let existingValues: Record<string, string> = {};
     try {
-      const res = await api.get('/locations/customValues', { params: { locationId } });
+      const res = await api.get(`/locations/${locationId}/customValues`);
       const values = res.data.customValues || res.data || [];
       for (const v of values) {
         existingValues[v.name || v.fieldKey] = v.id;
@@ -207,68 +179,24 @@ export const merchantService = {
     for (const cv of valuesToSet) {
       try {
         if (existingValues[cv.name]) {
-          // Already exists — skip (merchant will set value later)
           logger.debug({ locationId, name: cv.name }, 'Custom value already exists');
         } else {
-          await api.post('/locations/customValues', {
+          // locationId in path, not body
+          await api.post(`/locations/${locationId}/customValues`, {
             name: cv.name,
             value: cv.value,
-            locationId,
           });
           logger.info({ locationId, name: cv.name }, 'Custom value created');
         }
       } catch (err: any) {
-        if (err.status === 422 || err.status === 409) {
+        const status = err.ghlStatus || err.status;
+        if (status === 422 || status === 409) {
           logger.debug({ locationId, name: cv.name }, 'Custom value already exists (conflict)');
         } else {
           throw err;
         }
       }
     }
-  },
-
-  /**
-   * Register the 5 custom workflow triggers for this location.
-   * Returns a map of trigger name → trigger ID.
-   */
-  async registerCustomTriggers(
-    api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never,
-    locationId: string,
-  ): Promise<Record<string, string>> {
-    const triggerIds: Record<string, string> = {};
-
-    for (const [key, triggerName] of Object.entries(CUSTOM_TRIGGERS)) {
-      try {
-        const res = await api.post('/custom-workflow-triggers', {
-          name: triggerName,
-          locationId,
-        });
-        const triggerId = res.data.trigger?.id || res.data.id || '';
-        triggerIds[key] = triggerId;
-        logger.info({ locationId, triggerName, triggerId }, 'Custom trigger registered');
-      } catch (err: any) {
-        // Trigger may already exist — try to find it
-        if (err.status === 422 || err.status === 409) {
-          logger.info({ locationId, triggerName }, 'Custom trigger already exists');
-          try {
-            const listRes = await api.get('/custom-workflow-triggers', { params: { locationId } });
-            const triggers = listRes.data.triggers || listRes.data || [];
-            const existing = triggers.find((t: any) => t.name === triggerName);
-            if (existing) {
-              triggerIds[key] = existing.id;
-            }
-          } catch {
-            // Non-fatal — we just won't have the trigger ID cached
-            logger.warn({ locationId, triggerName }, 'Could not look up existing trigger ID');
-          }
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    logger.info({ locationId, count: Object.keys(triggerIds).length }, 'Custom triggers registered');
-    return triggerIds;
   },
 
   /**

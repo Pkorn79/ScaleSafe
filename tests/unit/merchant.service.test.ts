@@ -1,7 +1,11 @@
 /**
  * Merchant provisioning service tests.
- * Tests pipeline creation, custom field creation, custom value creation,
- * custom trigger registration, and the full provisioning orchestrator.
+ * Tests pipeline lookup, custom field creation, custom value creation,
+ * and the full provisioning orchestrator.
+ *
+ * Note: Pipeline creation and custom trigger registration do NOT exist
+ * in the GHL API. Pipeline comes from Snapshot; triggers are configured
+ * in the GHL Marketplace app settings.
  */
 
 // --- Mocks ---
@@ -21,7 +25,6 @@ const mockFindByLocationId = jest.fn();
 const mockGetByLocationId = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
-const mockUpdateTriggerIds = jest.fn();
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -29,7 +32,6 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
     getByLocationId: mockGetByLocationId,
     update: mockUpdate,
     updateSnapshotStatus: mockUpdateSnapshotStatus,
-    updateTriggerIds: mockUpdateTriggerIds,
   },
 }));
 
@@ -41,7 +43,6 @@ import { merchantService } from '../../src/services/merchant.service';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default merchant record
   mockGetByLocationId.mockResolvedValue({
     location_id: 'loc_1',
     config: {},
@@ -50,50 +51,42 @@ beforeEach(() => {
   });
   mockUpdate.mockResolvedValue({ location_id: 'loc_1', config: {} });
   mockUpdateSnapshotStatus.mockResolvedValue(undefined);
-  mockUpdateTriggerIds.mockResolvedValue(undefined);
 });
 
-describe('Pipeline Creation', () => {
-  test('creates pipeline with 8 stages when none exists', async () => {
-    // No existing pipelines
-    mockGet.mockResolvedValueOnce({ data: { pipelines: [] } });
-    // Pipeline creation response
-    mockPost.mockResolvedValueOnce({ data: { id: 'pipe_new' } });
-
-    const api = { post: mockPost, get: mockGet, put: mockPut } as any;
-    const pipelineId = await merchantService.createPipeline(api, 'loc_1');
-
-    expect(pipelineId).toBe('pipe_new');
-    expect(mockPost).toHaveBeenCalledWith('/opportunities/pipelines', expect.objectContaining({
-      name: 'Client Milestones',
-      locationId: 'loc_1',
-      stages: expect.arrayContaining([
-        expect.objectContaining({ name: 'Enrolled', position: 0 }),
-        expect.objectContaining({ name: 'Completed', position: 7 }),
-      ]),
-    }));
-    // 8 stages
-    const call = mockPost.mock.calls[0];
-    expect(call[1].stages).toHaveLength(8);
-  });
-
-  test('reuses existing pipeline if Client Milestones already exists', async () => {
+describe('Pipeline Lookup', () => {
+  test('finds existing Client Milestones pipeline', async () => {
     mockGet.mockResolvedValueOnce({
       data: { pipelines: [{ id: 'pipe_existing', name: 'Client Milestones' }] },
     });
 
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
-    const pipelineId = await merchantService.createPipeline(api, 'loc_1');
+    const pipelineId = await merchantService.findPipeline(api, 'loc_1');
 
     expect(pipelineId).toBe('pipe_existing');
-    // Should NOT have called post to create a new pipeline
-    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  test('returns null if pipeline not found (Snapshot not installed)', async () => {
+    mockGet.mockResolvedValueOnce({ data: { pipelines: [] } });
+
+    const api = { post: mockPost, get: mockGet, put: mockPut } as any;
+    const pipelineId = await merchantService.findPipeline(api, 'loc_1');
+
+    expect(pipelineId).toBeNull();
+  });
+
+  test('returns null on API error (non-fatal)', async () => {
+    mockGet.mockRejectedValueOnce(new Error('GHL API down'));
+
+    const api = { post: mockPost, get: mockGet, put: mockPut } as any;
+    const pipelineId = await merchantService.findPipeline(api, 'loc_1');
+
+    expect(pipelineId).toBeNull();
   });
 });
 
 describe('Custom Fields Creation', () => {
-  test('creates only missing fields', async () => {
-    // Existing fields — simulate 3 of the 5 SS fields already exist
+  test('creates only missing fields via v2 endpoint', async () => {
+    // Existing fields — 3 of 5 SS fields exist
     mockGet.mockResolvedValueOnce({
       data: {
         customFields: [
@@ -108,14 +101,14 @@ describe('Custom Fields Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomFields(api, 'loc_1');
 
-    // Should have created fields for the 2 missing SS fields + all 45 offer fields = 47
-    // (5 SS total - 3 existing = 2) + (7 base + 22 clause + 16 milestone = 45) = 47
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/custom-fields');
+    // 2 missing SS fields + 45 offer fields = 47
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/custom-fields/');
     expect(createCalls.length).toBe(47);
+    // Verify v2 body format includes objectKey
+    expect(createCalls[0][1]).toMatchObject({ objectKey: 'contact', showInForms: false });
   });
 
   test('skips all if every field exists', async () => {
-    // All SS fields + all offer fields exist
     const allKeys = [
       'contact.ss_enrollment_status', 'contact.ss_evidence_score',
       'contact.ss_last_evidence_date', 'contact.ss_chargeback_status',
@@ -140,25 +133,24 @@ describe('Custom Fields Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomFields(api, 'loc_1');
 
-    // No create calls
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/custom-fields');
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/custom-fields/');
     expect(createCalls.length).toBe(0);
   });
 });
 
 describe('Custom Values Creation', () => {
-  test('creates 3 custom values when none exist', async () => {
+  test('creates 3 custom values via v2 endpoint (locationId in path)', async () => {
     mockGet.mockResolvedValueOnce({ data: { customValues: [] } });
     mockPost.mockResolvedValue({ data: { id: 'cv_new' } });
 
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomValues(api, 'loc_1');
 
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/customValues');
+    // Verify locationId in path, not body
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customValues');
     expect(createCalls.length).toBe(3);
     expect(createCalls[0][1].name).toBe('SS--Business-Name');
-    expect(createCalls[1][1].name).toBe('SS--Support-Email');
-    expect(createCalls[2][1].name).toBe('SS--TC-URL');
+    expect(createCalls[0][1]).not.toHaveProperty('locationId');
   });
 
   test('skips existing custom values', async () => {
@@ -175,65 +167,15 @@ describe('Custom Values Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomValues(api, 'loc_1');
 
-    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/customValues');
+    const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customValues');
     expect(createCalls.length).toBe(0);
-  });
-});
-
-describe('Custom Triggers Registration', () => {
-  test('registers all 5 triggers and returns IDs', async () => {
-    let callCount = 0;
-    mockPost.mockImplementation(async () => {
-      callCount++;
-      return { data: { id: `trigger_${callCount}` } };
-    });
-
-    const api = { post: mockPost, get: mockGet, put: mockPut } as any;
-    const triggerIds = await merchantService.registerCustomTriggers(api, 'loc_1');
-
-    expect(Object.keys(triggerIds)).toHaveLength(5);
-    expect(triggerIds.CHARGEBACK_DETECTED).toBeDefined();
-    expect(triggerIds.DEFENSE_READY).toBeDefined();
-    expect(triggerIds.EVIDENCE_MILESTONE).toBeDefined();
-    expect(triggerIds.CLIENT_AT_RISK).toBeDefined();
-    expect(triggerIds.PAYMENT_FAILED).toBeDefined();
-
-    // Verify trigger names in the POST calls
-    const triggerCalls = mockPost.mock.calls.filter(c => c[0] === '/custom-workflow-triggers');
-    const names = triggerCalls.map(c => c[1].name);
-    expect(names).toContain('Chargeback Detected');
-    expect(names).toContain('Defense Ready');
-    expect(names).toContain('Evidence Milestone');
-    expect(names).toContain('Client At Risk');
-    expect(names).toContain('Payment Failed');
-  });
-
-  test('handles existing triggers gracefully (422)', async () => {
-    // First trigger succeeds, second gets 422 (already exists)
-    mockPost
-      .mockResolvedValueOnce({ data: { id: 'trigger_1' } })
-      .mockRejectedValueOnce({ status: 422, message: 'Already exists' })
-      .mockResolvedValueOnce({ data: { id: 'trigger_3' } })
-      .mockResolvedValueOnce({ data: { id: 'trigger_4' } })
-      .mockResolvedValueOnce({ data: { id: 'trigger_5' } });
-
-    // When looking up existing triggers after 422
-    mockGet.mockResolvedValueOnce({
-      data: { triggers: [{ id: 'trigger_existing', name: 'Defense Ready' }] },
-    });
-
-    const api = { post: mockPost, get: mockGet, put: mockPut } as any;
-    const triggerIds = await merchantService.registerCustomTriggers(api, 'loc_1');
-
-    expect(triggerIds.CHARGEBACK_DETECTED).toBe('trigger_1');
-    expect(triggerIds.DEFENSE_READY).toBe('trigger_existing');
   });
 });
 
 describe('Full Provisioning', () => {
   test('provisionMerchant orchestrates all steps and marks installed', async () => {
-    // Pipeline list — none exist
-    mockGet.mockResolvedValueOnce({ data: { pipelines: [] } });
+    // Pipeline list — found
+    mockGet.mockResolvedValueOnce({ data: { pipelines: [{ id: 'pipe_1', name: 'Client Milestones' }] } });
     // Custom fields — none exist
     mockGet.mockResolvedValueOnce({ data: { customFields: [] } });
     // Custom values — none exist
@@ -244,41 +186,28 @@ describe('Full Provisioning', () => {
 
     await merchantService.provisionMerchant('loc_1');
 
-    // Should have set status to 'installing' then 'installed'
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installing');
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installed');
 
-    // Should have stored trigger IDs
-    expect(mockUpdateTriggerIds).toHaveBeenCalledWith('loc_1', expect.objectContaining({
-      CHARGEBACK_DETECTED: expect.any(String),
-      PAYMENT_FAILED: expect.any(String),
-    }));
-
     // Should have stored pipeline ID in config
     expect(mockUpdate).toHaveBeenCalledWith('loc_1', expect.objectContaining({
-      config: expect.objectContaining({ pipelineId: expect.any(String) }),
+      config: expect.objectContaining({ pipelineId: 'pipe_1' }),
     }));
   });
 
-  test('provisionMerchant marks failed on error', async () => {
+  test('provisionMerchant marks failed on error and schedules retry', async () => {
     jest.useFakeTimers();
 
-    // Make pipeline creation fail
-    mockGet.mockRejectedValueOnce(new Error('GHL API down'));
-    // Pipeline post also fails
-    mockPost.mockRejectedValueOnce(new Error('GHL API down'));
-
-    // Custom fields — succeeds
-    mockGet.mockResolvedValueOnce({ data: { customFields: [] } });
-    // Custom values — succeeds
-    mockGet.mockResolvedValueOnce({ data: { customValues: [] } });
+    // All GETs fail
+    mockGet.mockRejectedValue(new Error('GHL API down'));
+    // All POSTs fail
+    mockPost.mockRejectedValue(new Error('GHL API down'));
 
     await merchantService.provisionMerchant('loc_1');
 
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installing');
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'failed', expect.any(String));
 
-    // Clear the retry timer to prevent Jest from hanging
     jest.clearAllTimers();
     jest.useRealTimers();
   });
