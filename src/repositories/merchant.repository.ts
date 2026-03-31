@@ -43,6 +43,18 @@ export const merchantRepository = {
     return merchant;
   },
 
+  async findByCompanyId(companyId: string): Promise<MerchantRecord | null> {
+    const { data, error } = await getSupabase()
+      .from('merchants')
+      .select('*')
+      .eq('company_id', companyId)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
   async create(data: {
     location_id: string;
     company_id?: string;

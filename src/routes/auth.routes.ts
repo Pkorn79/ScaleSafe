@@ -77,6 +77,10 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
  * POST /auth/sso
  * Decrypts the GHL SSO payload sent by the frontend via postMessage handshake.
  * Returns decrypted user/location context for the Vue app to use in subsequent API calls.
+ *
+ * GHL may send locationId under different field names depending on whether the user
+ * is accessing from a sub-account or agency level. When only companyId is present,
+ * we look up the merchant by company_id instead.
  */
 router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -84,41 +88,63 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     if (!payload) throw new ValidationError('Missing SSO payload');
 
     const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
-    const locationId = userData.activeLocation || userData.locationId || '';
-    const companyId = userData.companyId || '';
 
-    if (!locationId) {
-      throw new AuthenticationError('SSO payload missing location context');
+    // Log the full SSO payload keys and location-related fields for debugging
+    logger.info({
+      ssoPayloadKeys: Object.keys(userData),
+      activeLocation: userData.activeLocation,
+      locationId: userData.locationId,
+      location_id: userData.location_id,
+      companyId: userData.companyId,
+      company_id: userData.company_id,
+      userId: userData.userId,
+      role: userData.role,
+      type: userData.type,
+      userType: userData.userType,
+    }, 'SSO payload received');
+
+    // Try all known field names for location ID
+    const locationId = userData.activeLocation || userData.locationId || userData.location_id || '';
+    const companyId = userData.companyId || userData.company_id || '';
+
+    // Find merchant — try locationId first, fall back to companyId lookup
+    let merchant = locationId ? await merchantRepository.findByLocationId(locationId) : null;
+
+    if (!merchant && companyId) {
+      logger.info({ companyId }, 'No merchant found by locationId, trying companyId lookup');
+      merchant = await merchantRepository.findByCompanyId(companyId);
     }
 
-    // Verify merchant exists
-    const merchant = await merchantRepository.findByLocationId(locationId);
     if (!merchant) {
-      throw new AuthenticationError(`Merchant not found for location ${locationId}`);
+      logger.error({ locationId, companyId, ssoKeys: Object.keys(userData) }, 'SSO: no merchant found');
+      throw new AuthenticationError(
+        `Merchant not found — locationId=${locationId || 'none'}, companyId=${companyId || 'none'}`
+      );
     }
+
+    const resolvedLocationId = merchant.location_id;
 
     // Auto-provision if snapshot never completed
-    logger.info({ locationId, snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
+    logger.info({ locationId: resolvedLocationId, snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
     if (merchant.snapshot_status !== 'installed') {
-      logger.info({ locationId, snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed — triggering provisioning');
-      // Reset to pending so provisionMerchant can run cleanly
+      logger.info({ locationId: resolvedLocationId, snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed — triggering provisioning');
       if (merchant.snapshot_status === 'failed') {
-        await merchantRepository.updateSnapshotStatus(locationId, 'pending');
+        await merchantRepository.updateSnapshotStatus(resolvedLocationId, 'pending');
       }
-      merchantService.provisionMerchant(locationId).catch((err) => {
-        logger.error({ err, locationId }, 'Background provisioning from SSO failed');
+      merchantService.provisionMerchant(resolvedLocationId).catch((err) => {
+        logger.error({ err, locationId: resolvedLocationId }, 'Background provisioning from SSO failed');
       });
     }
 
-    logger.info({ locationId, userId: userData.userId, email: userData.email }, 'SSO session established');
+    logger.info({ locationId: resolvedLocationId, userId: userData.userId, email: userData.email }, 'SSO session established');
 
     res.json({
-      locationId,
+      locationId: resolvedLocationId,
       companyId,
-      userId: userData.userId || '',
+      userId: userData.userId || userData.user_id || '',
       email: userData.email || '',
       role: userData.role || 'user',
-      userName: userData.userName || '',
+      userName: userData.userName || userData.name || '',
       snapshotStatus: merchant.snapshot_status,
     });
   } catch (err) {

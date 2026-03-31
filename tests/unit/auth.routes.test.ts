@@ -1,7 +1,7 @@
 /**
- * OAuth callback (/auth/callback) tests.
- * Covers fresh install, reinstall, missing locationId, and
- * snake_case vs camelCase field name handling.
+ * Auth routes tests — OAuth callback + SSO handshake.
+ * Covers fresh install, reinstall, missing locationId,
+ * and SSO with location vs company-level context.
  */
 
 const mockExchangeCodeForTokens = jest.fn();
@@ -11,14 +11,18 @@ jest.mock('../../src/clients/ghl.client', () => ({
 }));
 
 const mockFindByLocationId = jest.fn();
+const mockFindByCompanyId = jest.fn();
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
+const mockUpdateSnapshotStatus = jest.fn();
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     findByLocationId: mockFindByLocationId,
+    findByCompanyId: mockFindByCompanyId,
     create: mockCreate,
     update: mockUpdate,
+    updateSnapshotStatus: mockUpdateSnapshotStatus,
   },
 }));
 
@@ -28,8 +32,10 @@ jest.mock('../../src/services/merchant.service', () => ({
   },
 }));
 
+const mockDecryptSsoPayload = jest.fn();
+
 jest.mock('../../src/utils/crypto', () => ({
-  decryptSsoPayload: jest.fn(),
+  decryptSsoPayload: mockDecryptSsoPayload,
 }));
 
 jest.mock('../../src/config', () => ({
@@ -62,6 +68,13 @@ const BASE_TOKEN_RESPONSE = {
   scopes: ['contacts.readonly', 'locations.readonly'],
 };
 
+const MERCHANT_RECORD = {
+  location_id: 'loc-abc',
+  company_id: 'comp-xyz',
+  snapshot_status: 'installed',
+  status: 'active',
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -75,7 +88,7 @@ describe('GET /auth/callback', () => {
 
   it('provisions a new merchant on fresh install', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
-    mockFindByLocationId.mockResolvedValue(null); // no existing merchant
+    mockFindByLocationId.mockResolvedValue(null);
     mockCreate.mockResolvedValue({});
 
     const res = await request(app).get('/auth/callback?code=test-code');
@@ -119,5 +132,86 @@ describe('GET /auth/callback', () => {
     expect(res.body.message).toMatch(/missing locationId/);
     expect(res.body.debug).toBeDefined();
     expect(res.body.debug.hadLocationId).toBe(false);
+  });
+});
+
+describe('POST /auth/sso', () => {
+  it('returns 400 when payload is missing', async () => {
+    const res = await request(app).post('/auth/sso').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Missing SSO payload/);
+  });
+
+  it('establishes session when SSO has activeLocation', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      activeLocation: 'loc-abc',
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+      email: 'philip@test.com',
+      role: 'admin',
+    });
+    mockFindByLocationId.mockResolvedValue(MERCHANT_RECORD);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-abc');
+    expect(res.body.email).toBe('philip@test.com');
+    expect(mockFindByLocationId).toHaveBeenCalledWith('loc-abc');
+  });
+
+  it('establishes session when SSO has locationId (camelCase)', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc',
+      userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue(MERCHANT_RECORD);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-abc');
+  });
+
+  it('establishes session when SSO has location_id (snake_case)', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      location_id: 'loc-snake',
+      userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, location_id: 'loc-snake' });
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-snake');
+  });
+
+  it('falls back to companyId lookup when no locationId in SSO', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+      email: 'philip@test.com',
+    });
+    mockFindByLocationId.mockResolvedValue(null); // won't be called with empty string
+    mockFindByCompanyId.mockResolvedValue(MERCHANT_RECORD);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-abc'); // resolved from merchant record
+    expect(mockFindByCompanyId).toHaveBeenCalledWith('comp-xyz');
+  });
+
+  it('returns 401 when no merchant found by locationId or companyId', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      companyId: 'comp-unknown',
+      userId: 'user-1',
+    });
+    mockFindByCompanyId.mockResolvedValue(null);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/Merchant not found/);
   });
 });
