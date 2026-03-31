@@ -24,7 +24,11 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes } = tokenResponse;
 
     if (!locationId) {
-      throw new ValidationError('GHL token response missing locationId — cannot provision merchant');
+      logger.error({ tokenResponse: { locationId, companyId, scopes } }, 'GHL token response missing locationId');
+      throw new ValidationError(
+        'GHL token response missing locationId — cannot provision merchant. ' +
+        `companyId=${companyId || 'none'}, scopes=${scopes.join(',') || 'none'}`
+      );
     }
 
     // Check if merchant already exists (re-install scenario)

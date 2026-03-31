@@ -29,18 +29,38 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     client_secret: config.ghl.clientSecret,
     grant_type: 'authorization_code',
     code,
+    user_type: 'Location',
   }).toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 
+  const data = res.data;
+
+  // Log full response for debugging (redact tokens in production)
+  logger.info({
+    tokenResponseKeys: Object.keys(data),
+    locationId: data.locationId,
+    location_id: data.location_id,
+    companyId: data.companyId,
+    userId: data.userId,
+    userType: data.userType,
+    scope: data.scope,
+  }, 'GHL token exchange response');
+
+  // GHL uses camelCase (locationId) but has historically been inconsistent —
+  // check both variants plus nested paths
+  const locationId = data.locationId || data.location_id || '';
+  const companyId = data.companyId || data.company_id || '';
+  const userId = data.userId || data.user_id || '';
+
   return {
-    accessToken: res.data.access_token,
-    refreshToken: res.data.refresh_token,
-    expiresAt: new Date(Date.now() + res.data.expires_in * 1000),
-    locationId: res.data.locationId,
-    companyId: res.data.companyId || '',
-    userId: res.data.userId || '',
-    scopes: res.data.scope ? res.data.scope.split(' ') : [],
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: new Date(Date.now() + data.expires_in * 1000),
+    locationId,
+    companyId,
+    userId,
+    scopes: data.scope ? data.scope.split(' ') : [],
   };
 }
 
