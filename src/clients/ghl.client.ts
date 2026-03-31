@@ -22,6 +22,9 @@ interface TokenResponse extends TokenPair {
 /**
  * Exchange an OAuth authorization code for access + refresh tokens.
  * Called once during merchant install.
+ *
+ * GHL agency-level apps return companyId but NOT locationId in the token response.
+ * When locationId is missing, we call /oauth/installedLocations to resolve it.
  */
 export async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
@@ -47,14 +50,20 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     scope: data.scope,
   }, 'GHL token exchange response');
 
-  // GHL uses camelCase (locationId) but has historically been inconsistent —
-  // check both variants plus nested paths
-  const locationId = data.locationId || data.location_id || '';
+  // GHL uses camelCase (locationId) but has historically been inconsistent
+  let locationId = data.locationId || data.location_id || '';
   const companyId = data.companyId || data.company_id || '';
   const userId = data.userId || data.user_id || '';
+  const accessToken = data.access_token;
+
+  // Agency-level installs return companyId but no locationId.
+  // Resolve locationId by querying installed locations.
+  if (!locationId && companyId && accessToken) {
+    locationId = await resolveLocationFromCompany(accessToken, companyId);
+  }
 
   return {
-    accessToken: data.access_token,
+    accessToken,
     refreshToken: data.refresh_token,
     expiresAt: new Date(Date.now() + data.expires_in * 1000),
     locationId,
@@ -62,6 +71,42 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     userId,
     scopes: data.scope ? data.scope.split(' ') : [],
   };
+}
+
+/**
+ * When GHL returns a company-level token without locationId, call
+ * GET /oauth/installedLocations to find the location(s) where the app is installed.
+ */
+async function resolveLocationFromCompany(accessToken: string, companyId: string): Promise<string> {
+  try {
+    logger.info({ companyId }, 'No locationId in token response — resolving via installedLocations');
+
+    const res = await axios.get('https://services.leadconnectorhq.com/oauth/installedLocations', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Version: '2021-07-28',
+        Accept: 'application/json',
+      },
+      params: { companyId },
+    });
+
+    const locations = res.data.locations || res.data.installedLocations || [];
+    logger.info({ companyId, locationCount: locations.length, locations: locations.map((l: any) => l._id || l.id || l.locationId) }, 'Installed locations resolved');
+
+    if (locations.length === 0) {
+      logger.error({ companyId }, 'No installed locations found for company');
+      return '';
+    }
+
+    // Use the first installed location — for single sub-account installs this is the target
+    const loc = locations[0];
+    const resolvedId = loc._id || loc.id || loc.locationId || '';
+    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name }, 'Resolved locationId from installedLocations');
+    return resolvedId;
+  } catch (err: any) {
+    logger.error({ err: err.message, companyId, status: err.response?.status, body: err.response?.data }, 'Failed to resolve locationId from installedLocations');
+    return '';
+  }
 }
 
 /**
