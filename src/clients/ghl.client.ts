@@ -85,8 +85,8 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
 }
 
 /**
- * When GHL returns a company-level token without locationId, call
- * GET /oauth/installedLocations to find the location(s) where the app is installed.
+ * When GHL returns a company-level token without locationId, use the company
+ * token to search for locations under the company via GET /locations/search.
  * Returns both the resolved locationId and full debug info for diagnostics.
  */
 async function resolveLocationFromCompany(
@@ -96,15 +96,15 @@ async function resolveLocationFromCompany(
   const debug: Record<string, unknown> = { called: true, companyId };
 
   try {
-    logger.info({ companyId }, 'No locationId in token response — resolving via installedLocations');
+    logger.info({ companyId }, 'No locationId in token response — resolving via locations/search');
 
-    const res = await axios.get('https://services.leadconnectorhq.com/oauth/installedLocations', {
+    const res = await axios.get(`${config.ghl.apiDomain}/locations/search`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Version: '2021-07-28',
         Accept: 'application/json',
       },
-      params: { companyId, appId: config.ghl.clientId },
+      params: { companyId },
     });
 
     // Capture the FULL response for debugging
@@ -112,29 +112,29 @@ async function resolveLocationFromCompany(
     debug.responseKeys = Object.keys(res.data || {});
     debug.fullResponseBody = res.data;
 
-    const locations = res.data.locations || res.data.installedLocations || [];
+    const locations = res.data.locations || [];
     debug.locationCount = locations.length;
-    debug.rawLocations = locations;
+    debug.rawLocations = locations.map((l: any) => ({ id: l.id || l._id, name: l.name }));
 
-    logger.info({ companyId, locationCount: locations.length, rawLocations: locations }, 'Installed locations response');
+    logger.info({ companyId, locationCount: locations.length, locations: debug.rawLocations }, 'Locations search response');
 
     if (locations.length === 0) {
-      logger.error({ companyId, fullBody: res.data }, 'No installed locations found for company');
+      logger.error({ companyId }, 'No locations found for company');
       return { locationId: '', debug };
     }
 
-    // Use the first installed location — for single sub-account installs this is the target
+    // Use the first location — for single sub-account installs this is the target
     const loc = locations[0];
-    const resolvedId = loc._id || loc.id || loc.locationId || '';
+    const resolvedId = loc.id || loc._id || loc.locationId || '';
     debug.resolvedLocationId = resolvedId;
     debug.firstLocationKeys = Object.keys(loc);
-    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name, locationKeys: Object.keys(loc) }, 'Resolved locationId from installedLocations');
+    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name }, 'Resolved locationId from locations/search');
     return { locationId: resolvedId, debug };
   } catch (err: any) {
     debug.error = err.message;
     debug.errorStatus = err.response?.status;
     debug.errorBody = err.response?.data;
-    logger.error({ err: err.message, companyId, status: err.response?.status, body: err.response?.data }, 'Failed to resolve locationId from installedLocations');
+    logger.error({ err: err.message, companyId, status: err.response?.status, body: err.response?.data }, 'Failed to resolve locationId from locations/search');
     return { locationId: '', debug };
   }
 }

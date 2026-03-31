@@ -98,9 +98,9 @@ describe('exchangeCodeForTokens', () => {
     expect(result.companyId).toBe('comp-agency');
     expect(result._debug?.installedLocationsResponse).toBeDefined();
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      'https://services.leadconnectorhq.com/oauth/installedLocations',
+      'https://services.leadconnectorhq.com/locations/search',
       expect.objectContaining({
-        params: { companyId: 'comp-agency', appId: 'test-client-id' },
+        params: { companyId: 'comp-agency' },
       }),
     );
   });
