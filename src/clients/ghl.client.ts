@@ -104,7 +104,7 @@ async function resolveLocationFromCompany(
         Version: '2021-07-28',
         Accept: 'application/json',
       },
-      params: { companyId },
+      params: { companyId, appId: config.ghl.clientId },
     });
 
     // Capture the FULL response for debugging
