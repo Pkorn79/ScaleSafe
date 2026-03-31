@@ -105,10 +105,11 @@ describe('GET /auth/callback', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when GHL response has no locationId', async () => {
+  it('returns 400 with debug info when GHL response has no locationId', async () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
+      _debug: { tokenResponseKeys: ['access_token'], hadLocationId: false, hadCompanyId: true },
     });
 
     const res = await request(app).get('/auth/callback?code=bad-code');
@@ -116,5 +117,7 @@ describe('GET /auth/callback', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('VALIDATION_ERROR');
     expect(res.body.message).toMatch(/missing locationId/);
+    expect(res.body.debug).toBeDefined();
+    expect(res.body.debug.hadLocationId).toBe(false);
   });
 });

@@ -74,7 +74,6 @@ describe('exchangeCodeForTokens', () => {
   });
 
   it('resolves locationId via installedLocations when token has companyId but no locationId', async () => {
-    // Token exchange returns companyId but no locationId (agency-level install)
     mockedAxios.post.mockResolvedValue({
       data: {
         access_token: 'at-agency',
@@ -85,8 +84,8 @@ describe('exchangeCodeForTokens', () => {
       },
     });
 
-    // installedLocations returns the sub-account
     mockedAxios.get.mockResolvedValue({
+      status: 200,
       data: {
         locations: [
           { _id: 'loc-resolved', name: 'PMG Sub-Account' },
@@ -97,6 +96,7 @@ describe('exchangeCodeForTokens', () => {
     const result = await exchangeCodeForTokens('code-agency');
     expect(result.locationId).toBe('loc-resolved');
     expect(result.companyId).toBe('comp-agency');
+    expect(result._debug?.installedLocationsResponse).toBeDefined();
     expect(mockedAxios.get).toHaveBeenCalledWith(
       'https://services.leadconnectorhq.com/oauth/installedLocations',
       expect.objectContaining({
@@ -117,11 +117,13 @@ describe('exchangeCodeForTokens', () => {
     });
 
     mockedAxios.get.mockResolvedValue({
+      status: 200,
       data: { locations: [] },
     });
 
     const result = await exchangeCodeForTokens('code-empty');
     expect(result.locationId).toBe('');
+    expect(result._debug?.installedLocationsResponse).toMatchObject({ locationCount: 0 });
   });
 
   it('returns empty locationId when installedLocations API call fails', async () => {
@@ -140,6 +142,7 @@ describe('exchangeCodeForTokens', () => {
     const result = await exchangeCodeForTokens('code-fail');
     expect(result.locationId).toBe('');
     expect(result.companyId).toBe('comp-fail');
+    expect(result._debug?.installedLocationsResponse).toMatchObject({ error: 'Network error' });
   });
 
   it('sends user_type=Location in the token request', async () => {

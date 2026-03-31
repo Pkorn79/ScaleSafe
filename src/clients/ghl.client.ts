@@ -17,6 +17,7 @@ interface TokenResponse extends TokenPair {
   companyId: string;
   userId: string;
   scopes: string[];
+  _debug?: Record<string, unknown>;
 }
 
 /**
@@ -56,10 +57,19 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   const userId = data.userId || data.user_id || '';
   const accessToken = data.access_token;
 
+  // Collect debug info to surface in error responses
+  const debug: Record<string, unknown> = {
+    tokenResponseKeys: Object.keys(data),
+    hadLocationId: !!(data.locationId || data.location_id),
+    hadCompanyId: !!companyId,
+  };
+
   // Agency-level installs return companyId but no locationId.
   // Resolve locationId by querying installed locations.
   if (!locationId && companyId && accessToken) {
-    locationId = await resolveLocationFromCompany(accessToken, companyId);
+    const resolved = await resolveLocationFromCompany(accessToken, companyId);
+    locationId = resolved.locationId;
+    debug.installedLocationsResponse = resolved.debug;
   }
 
   return {
@@ -70,14 +80,21 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     companyId,
     userId,
     scopes: data.scope ? data.scope.split(' ') : [],
+    _debug: debug,
   };
 }
 
 /**
  * When GHL returns a company-level token without locationId, call
  * GET /oauth/installedLocations to find the location(s) where the app is installed.
+ * Returns both the resolved locationId and full debug info for diagnostics.
  */
-async function resolveLocationFromCompany(accessToken: string, companyId: string): Promise<string> {
+async function resolveLocationFromCompany(
+  accessToken: string,
+  companyId: string,
+): Promise<{ locationId: string; debug: Record<string, unknown> }> {
+  const debug: Record<string, unknown> = { called: true, companyId };
+
   try {
     logger.info({ companyId }, 'No locationId in token response — resolving via installedLocations');
 
@@ -90,22 +107,35 @@ async function resolveLocationFromCompany(accessToken: string, companyId: string
       params: { companyId },
     });
 
+    // Capture the FULL response for debugging
+    debug.httpStatus = res.status;
+    debug.responseKeys = Object.keys(res.data || {});
+    debug.fullResponseBody = res.data;
+
     const locations = res.data.locations || res.data.installedLocations || [];
-    logger.info({ companyId, locationCount: locations.length, locations: locations.map((l: any) => l._id || l.id || l.locationId) }, 'Installed locations resolved');
+    debug.locationCount = locations.length;
+    debug.rawLocations = locations;
+
+    logger.info({ companyId, locationCount: locations.length, rawLocations: locations }, 'Installed locations response');
 
     if (locations.length === 0) {
-      logger.error({ companyId }, 'No installed locations found for company');
-      return '';
+      logger.error({ companyId, fullBody: res.data }, 'No installed locations found for company');
+      return { locationId: '', debug };
     }
 
     // Use the first installed location — for single sub-account installs this is the target
     const loc = locations[0];
     const resolvedId = loc._id || loc.id || loc.locationId || '';
-    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name }, 'Resolved locationId from installedLocations');
-    return resolvedId;
+    debug.resolvedLocationId = resolvedId;
+    debug.firstLocationKeys = Object.keys(loc);
+    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name, locationKeys: Object.keys(loc) }, 'Resolved locationId from installedLocations');
+    return { locationId: resolvedId, debug };
   } catch (err: any) {
+    debug.error = err.message;
+    debug.errorStatus = err.response?.status;
+    debug.errorBody = err.response?.data;
     logger.error({ err: err.message, companyId, status: err.response?.status, body: err.response?.data }, 'Failed to resolve locationId from installedLocations');
-    return '';
+    return { locationId: '', debug };
   }
 }
 

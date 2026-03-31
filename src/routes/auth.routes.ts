@@ -21,14 +21,18 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     logger.info('OAuth callback received, exchanging code for tokens');
 
     const tokenResponse = await exchangeCodeForTokens(code);
-    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes } = tokenResponse;
+    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes, _debug } = tokenResponse;
 
     if (!locationId) {
-      logger.error({ tokenResponse: { locationId, companyId, scopes } }, 'GHL token response missing locationId');
-      throw new ValidationError(
-        'GHL token response missing locationId — cannot provision merchant. ' +
-        `companyId=${companyId || 'none'}, scopes=${scopes.join(',') || 'none'}`
-      );
+      logger.error({ debug: _debug, companyId }, 'GHL token response missing locationId');
+      // Return debug info directly in response so we can diagnose without logs
+      res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'GHL token response missing locationId — cannot provision merchant',
+        companyId: companyId || 'none',
+        debug: _debug,
+      });
+      return;
     }
 
     // Check if merchant already exists (re-install scenario)
