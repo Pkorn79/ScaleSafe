@@ -19,6 +19,11 @@ export interface OfferRecord {
   pif_discount_enabled: boolean;
   compiled_tc_html: string | null;
   refund_window_text: string | null;
+  refund_policy_type: string | null;
+  refund_policy_days: number | null;
+  program_duration_value: number | null;
+  program_duration_unit: string | null;
+  tc_clause_overrides: Record<string, boolean>;
   redirect_slug: string | null;
   price_display: string | null;
   active: boolean;

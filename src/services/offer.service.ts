@@ -1,6 +1,7 @@
 import { ghlApi } from '../clients/ghl.client';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
+import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 
 interface CreateOfferInput {
   locationId: string;
@@ -14,16 +15,27 @@ interface CreateOfferInput {
   numPayments?: number;
   pifPrice?: number;
   pifDiscountEnabled?: boolean;
+  programDurationValue?: number;
+  programDurationUnit?: 'weeks' | 'months';
+  refundPolicyType?: 'no_refunds' | 'full_refund' | 'prorated' | 'custom';
+  refundPolicyDays?: number;
   refundWindowText?: string;
-  tcUrl?: string;
-  clauses?: Array<{ title: string; text: string }>;
+  tcClauseOverrides?: Record<string, boolean>;
+  customClause1Title?: string;
+  customClause1Text?: string;
+  customClause2Title?: string;
+  customClause2Text?: string;
   milestones?: Array<{ name: string; delivers: string; clientDoes: string }>;
+  // Merchant config passed from controller for T&C compilation
+  merchantTcClauseToggles?: Record<string, boolean>;
+  merchantCustomClause1Title?: string;
+  merchantCustomClause1Text?: string;
+  merchantCustomClause2Title?: string;
+  merchantCustomClause2Text?: string;
+  merchantTcHasOwn?: boolean;
+  merchantTcDocumentUrl?: string;
 }
 
-/**
- * Extract an ID from a GHL API response, handling various response shapes.
- * GHL may return: { id }, { _id }, { product: { id } }, { data: { id } }, etc.
- */
 function extractId(data: any, objectKey?: string): string {
   if (!data) return '';
   if (objectKey && data[objectKey]) {
@@ -32,9 +44,89 @@ function extractId(data: any, objectKey?: string): string {
   return data._id || data.id || '';
 }
 
+/**
+ * Auto-calculate installment amount from price and numPayments.
+ * Returns the input installmentAmount if price or numPayments not available.
+ */
+function calcInstallmentAmount(price?: number, numPayments?: number, fallback?: number): number | undefined {
+  if (price && numPayments && numPayments > 0) {
+    return Math.round((price / numPayments) * 100) / 100;
+  }
+  return fallback;
+}
+
+/**
+ * Compile the final T&C HTML for a specific offer.
+ * Merges merchant-level T&C defaults with per-offer overrides.
+ */
+function compileOfferTcHtml(input: CreateOfferInput): string {
+  // If merchant has own T&C document, just link to it
+  if (input.merchantTcHasOwn && input.merchantTcDocumentUrl) {
+    return `<p>Terms & Conditions: <a href="${escapeHtml(input.merchantTcDocumentUrl)}" target="_blank">${escapeHtml(input.merchantTcDocumentUrl)}</a></p>`;
+  }
+
+  const merchantToggles = input.merchantTcClauseToggles || {};
+  const offerOverrides = input.tcClauseOverrides || {};
+
+  // Merge: offer overrides take precedence over merchant defaults
+  const finalToggles: Record<string, boolean> = { ...merchantToggles, ...offerOverrides };
+
+  const clauses: string[] = [];
+
+  for (const clause of STANDARD_CLAUSES) {
+    if (finalToggles[clause.key]) {
+      clauses.push(`<li>${escapeHtml(clause.text)}</li>`);
+    }
+  }
+
+  // Custom clauses: per-offer overrides > merchant defaults
+  const cc1Title = input.customClause1Title || input.merchantCustomClause1Title || '';
+  const cc1Text = input.customClause1Text || input.merchantCustomClause1Text || '';
+  const cc2Title = input.customClause2Title || input.merchantCustomClause2Title || '';
+  const cc2Text = input.customClause2Text || input.merchantCustomClause2Text || '';
+
+  if (cc1Title && cc1Text) {
+    clauses.push(`<li><strong>${escapeHtml(cc1Title)}:</strong> ${escapeHtml(cc1Text)}</li>`);
+  }
+  if (cc2Title && cc2Text) {
+    clauses.push(`<li><strong>${escapeHtml(cc2Title)}:</strong> ${escapeHtml(cc2Text)}</li>`);
+  }
+
+  if (clauses.length === 0) return '';
+
+  return `<p><strong>Terms & Conditions</strong></p>\n<p>By proceeding, you acknowledge and agree to the following:</p>\n<ol>\n${clauses.join('\n')}\n</ol>`;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Build refund_window_text from the structured refund policy fields.
+ */
+function buildRefundText(type?: string, days?: number, customText?: string): string {
+  switch (type) {
+    case 'no_refunds': return 'No refunds.';
+    case 'full_refund': return `Full refund within ${days || 0} days of purchase.`;
+    case 'prorated': return 'Prorated refund based on services delivered.';
+    case 'custom': return customText || '';
+    default: return customText || '';
+  }
+}
+
 export const offerService = {
   async create(input: CreateOfferInput): Promise<OfferRecord> {
     const { locationId } = input;
+
+    // Auto-calculate installment amount
+    if (input.paymentType === 'installments') {
+      input.installmentAmount = calcInstallmentAmount(input.price, input.numPayments, input.installmentAmount);
+    }
 
     // 1. Create GHL Product
     const api = await ghlApi(locationId);
@@ -54,7 +146,6 @@ export const offerService = {
     // 2. Create GHL Prices on the product
     const priceIds: Record<string, string> = {};
 
-    // PIF price: create if payment type is one_time, OR if installments with a PIF discount
     if (input.paymentType === 'one_time' || (input.pifDiscountEnabled && input.pifPrice)) {
       const amount = input.paymentType === 'one_time'
         ? (input.price || 0)
@@ -63,14 +154,13 @@ export const offerService = {
         name: `${input.offerName} - Pay in Full`,
         type: 'one_time',
         currency: 'USD',
-        amount: Math.round(amount * 100), // cents
+        amount: Math.round(amount * 100),
         locationId,
       });
       priceIds.one_time = extractId(priceRes.data, 'price');
       logger.info({ locationId, priceId: priceIds.one_time, amount }, 'GHL PIF price created');
     }
 
-    // Recurring price: create for installment plans
     if (input.paymentType === 'installments' && input.installmentAmount && input.numPayments) {
       const intervalMap: Record<string, string> = {
         weekly: 'week', bi_weekly: 'week', monthly: 'month',
@@ -96,7 +186,13 @@ export const offerService = {
       logger.info({ locationId, priceId: priceIds.recurring }, 'GHL recurring price created');
     }
 
-    // 3. Build Supabase record with clause + milestone slots
+    // 3. Compile T&C HTML for this offer
+    const compiledTcHtml = compileOfferTcHtml(input);
+
+    // 4. Build refund text
+    const refundText = buildRefundText(input.refundPolicyType, input.refundPolicyDays, input.refundWindowText);
+
+    // 5. Build Supabase record
     const record: Record<string, unknown> = {
       location_id: locationId,
       ghl_product_id: ghlProductId,
@@ -111,19 +207,34 @@ export const offerService = {
       num_payments: input.numPayments,
       pif_price: input.pifPrice,
       pif_discount_enabled: input.pifDiscountEnabled || false,
-      refund_window_text: input.refundWindowText,
-      tc_url: input.tcUrl || null,
+      program_duration_value: input.programDurationValue || null,
+      program_duration_unit: input.programDurationUnit || null,
+      refund_policy_type: input.refundPolicyType || null,
+      refund_policy_days: input.refundPolicyDays || null,
+      refund_window_text: refundText,
+      tc_clause_overrides: input.tcClauseOverrides || {},
+      compiled_tc_html: compiledTcHtml,
     };
 
-    // Map clause slots (up to 11)
-    if (input.clauses) {
-      input.clauses.forEach((c, i) => {
-        if (i < 11) {
-          record[`clause_slot_${i + 1}_title`] = c.title;
-          record[`clause_slot_${i + 1}_text`] = c.text;
-        }
-      });
+    // Map clause slots (populate from final compiled clauses for CO sync)
+    const merchantToggles = input.merchantTcClauseToggles || {};
+    const offerOverrides = input.tcClauseOverrides || {};
+    const finalToggles = { ...merchantToggles, ...offerOverrides };
+    let slotIndex = 0;
+    for (const clause of STANDARD_CLAUSES) {
+      if (finalToggles[clause.key] && slotIndex < 9) {
+        record[`clause_slot_${slotIndex + 1}_title`] = clause.label.replace(' (recommended)', '');
+        record[`clause_slot_${slotIndex + 1}_text`] = clause.text;
+        slotIndex++;
+      }
     }
+    // Custom clauses in slots 10-11
+    const cc1Title = input.customClause1Title || input.merchantCustomClause1Title || '';
+    const cc1Text = input.customClause1Text || input.merchantCustomClause1Text || '';
+    const cc2Title = input.customClause2Title || input.merchantCustomClause2Title || '';
+    const cc2Text = input.customClause2Text || input.merchantCustomClause2Text || '';
+    if (cc1Title) { record.clause_slot_10_title = cc1Title; record.clause_slot_10_text = cc1Text; }
+    if (cc2Title) { record.clause_slot_11_title = cc2Title; record.clause_slot_11_text = cc2Text; }
 
     // Map milestones (up to 8)
     if (input.milestones) {
@@ -136,10 +247,10 @@ export const offerService = {
       });
     }
 
-    // 4. Save to Supabase
+    // 6. Save to Supabase
     const offer = await offerRepository.create(record as any);
 
-    // 5. Sync to GHL Custom Object (best-effort)
+    // 7. Sync to GHL Custom Object (best-effort)
     try {
       await this.syncToGHLCustomObject(locationId, offer);
     } catch (err) {
@@ -154,26 +265,48 @@ export const offerService = {
     const existing = await offerRepository.getById(offerId);
     const dbUpdates: Record<string, unknown> = {};
 
+    // Auto-calculate installment amount on update
+    const effectivePrice = updates.price ?? existing.price;
+    const effectiveNumPayments = updates.numPayments ?? existing.num_payments;
+    const effectivePaymentType = updates.paymentType ?? existing.payment_type;
+
+    if (effectivePaymentType === 'installments') {
+      const calcAmount = calcInstallmentAmount(
+        effectivePrice as number,
+        effectiveNumPayments as number,
+      );
+      if (calcAmount) dbUpdates.installment_amount = calcAmount;
+    }
+
     if (updates.offerName !== undefined) dbUpdates.offer_name = updates.offerName;
     if (updates.programDescription !== undefined) dbUpdates.program_description = updates.programDescription;
     if (updates.deliveryMethod !== undefined) dbUpdates.delivery_method = updates.deliveryMethod;
     if (updates.price !== undefined) dbUpdates.price = updates.price;
     if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType;
-    if (updates.installmentAmount !== undefined) dbUpdates.installment_amount = updates.installmentAmount;
     if (updates.installmentFrequency !== undefined) dbUpdates.installment_frequency = updates.installmentFrequency;
     if (updates.numPayments !== undefined) dbUpdates.num_payments = updates.numPayments;
     if (updates.pifPrice !== undefined) dbUpdates.pif_price = updates.pifPrice;
     if (updates.pifDiscountEnabled !== undefined) dbUpdates.pif_discount_enabled = updates.pifDiscountEnabled;
-    if (updates.refundWindowText !== undefined) dbUpdates.refund_window_text = updates.refundWindowText;
-    if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl;
+    if (updates.programDurationValue !== undefined) dbUpdates.program_duration_value = updates.programDurationValue;
+    if (updates.programDurationUnit !== undefined) dbUpdates.program_duration_unit = updates.programDurationUnit;
+    if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = updates.refundPolicyType;
+    if (updates.refundPolicyDays !== undefined) dbUpdates.refund_policy_days = updates.refundPolicyDays;
+    if (updates.tcClauseOverrides !== undefined) dbUpdates.tc_clause_overrides = updates.tcClauseOverrides;
 
-    if (updates.clauses) {
-      updates.clauses.forEach((c, i) => {
-        if (i < 11) {
-          dbUpdates[`clause_slot_${i + 1}_title`] = c.title;
-          dbUpdates[`clause_slot_${i + 1}_text`] = c.text;
-        }
-      });
+    // Build refund text from structured fields
+    if (updates.refundPolicyType !== undefined) {
+      dbUpdates.refund_window_text = buildRefundText(
+        updates.refundPolicyType,
+        updates.refundPolicyDays ?? existing.refund_policy_days ?? undefined,
+        updates.refundWindowText,
+      );
+    } else if (updates.refundWindowText !== undefined) {
+      dbUpdates.refund_window_text = updates.refundWindowText;
+    }
+
+    // Recompile T&C HTML if clause overrides changed
+    if (updates.tcClauseOverrides !== undefined || updates.customClause1Title !== undefined || updates.customClause2Title !== undefined) {
+      dbUpdates.compiled_tc_html = compileOfferTcHtml({ ...updates, locationId: existing.location_id } as any);
     }
 
     if (updates.milestones) {
@@ -188,7 +321,6 @@ export const offerService = {
 
     const offer = await offerRepository.update(offerId, dbUpdates as any);
 
-    // Sync to GHL Custom Object (best-effort)
     try {
       await this.syncToGHLCustomObject(existing.location_id, offer);
     } catch (err) {
@@ -210,9 +342,6 @@ export const offerService = {
     return offerRepository.delete(offerId);
   },
 
-  /**
-   * Sync offer data to GHL Custom Object for CRM visibility.
-   */
   async syncToGHLCustomObject(locationId: string, offer: OfferRecord): Promise<void> {
     const api = await ghlApi(locationId);
     const fields: Record<string, unknown> = {
@@ -224,10 +353,11 @@ export const offerService = {
       pif_price: offer.pif_price,
       program_description: offer.program_description,
       delivery_method: offer.delivery_method,
+      compiled_tc_html: offer.compiled_tc_html,
+      refund_window_text: offer.refund_window_text,
       active: offer.active ? 'Yes' : 'No',
     };
 
-    // Add clause slots
     for (let i = 1; i <= 11; i++) {
       const title = (offer as any)[`clause_slot_${i}_title`];
       const text = (offer as any)[`clause_slot_${i}_text`];
@@ -235,7 +365,6 @@ export const offerService = {
       if (text) fields[`clause_slot_${i}_text`] = text;
     }
 
-    // Add milestones
     for (let i = 1; i <= 8; i++) {
       const name = (offer as any)[`m${i}_name`];
       const delivers = (offer as any)[`m${i}_delivers`];
@@ -254,10 +383,9 @@ export const offerService = {
     }
   },
 
-  /**
-   * Generate the enrollment funnel link for an offer.
-   */
   generateEnrollmentLink(offerId: string, baseUrl: string): string {
     return `${baseUrl}/enrollment?offerId=${offerId}`;
   },
 };
+
+export { compileOfferTcHtml, calcInstallmentAmount, buildRefundText };
