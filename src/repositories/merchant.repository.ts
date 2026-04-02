@@ -109,7 +109,11 @@ export const merchantRepository = {
 
   async updateSnapshotStatus(locationId: string, status: string, errorMsg?: string): Promise<void> {
     const updates: Record<string, unknown> = { snapshot_status: status };
-    if (status === 'failed' && errorMsg) updates.snapshot_error = errorMsg;
+    if (status === 'failed' || status === 'partial') {
+      updates.snapshot_error = errorMsg || null;
+    } else if (status === 'installed') {
+      updates.snapshot_error = null;
+    }
     if (status === 'installing') {
       // Increment attempt count
       const merchant = await this.getByLocationId(locationId);
