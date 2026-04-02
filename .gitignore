@@ -19,3 +19,6 @@ logs
 
 # Template reference files (kept for reference during build)
 *.template
+
+# Supabase CLI temp files (contains database URIs)
+supabase/.temp/
