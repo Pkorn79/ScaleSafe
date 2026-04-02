@@ -1,0 +1,93 @@
+# ScaleSafe — Project Rules
+
+## Project Identity
+
+ScaleSafe is a GHL Marketplace app that helps coaches and service providers defend against chargebacks by collecting evidence throughout the client lifecycle.
+
+- **Backend:** Express + TypeScript (Node 18)
+- **Frontend:** Vue 3 + Vite (SPA served from `/ui`)
+- **Database:** Supabase (PostgreSQL)
+- **Deployment:** Railway (auto-deploys from GitHub `main`)
+- **Auth:** GHL OAuth2 (install) + SSO postMessage handshake (iframe)
+
+## Architecture Constraints
+
+1. **All GHL custom value IDs** live in `src/constants/ghl-custom-value-ids.ts`. Never hardcode IDs elsewhere.
+2. **All GHL field/value name mappings** live in `src/constants/ghl-fields.ts`. This imports from the IDs file.
+3. **Standard T&C clauses** are defined in `src/constants/standard-clauses.ts`.
+4. **GHL API calls** go through `src/clients/ghl.client.ts`. Never call GHL directly from controllers or services.
+5. **Every database query filters by `location_id`** — multi-tenant from day one.
+6. **Services never send communications** — they fire GHL custom workflow triggers; GHL workflows handle comms.
+7. **ScaleSafe observes payments, never processes them** — GHL Products/Prices + native order form handle payment processing.
+8. **The 5 SS contact fields** the app manages are in `SS_CONTACT_FIELDS` in `ghl-fields.ts`. Do not add more without explicit approval.
+9. **Offers Custom Object** key is `custom_objects.offers`. Schema is in `docs/ghl-offers-custom-object-schema.md`.
+
+## Never Do
+
+- **Never invent GHL field IDs or custom value IDs.** Always verify against `src/constants/ghl-custom-value-ids.ts` or use Make.com tools to read live state.
+- **Never commit `.env` files, credentials, or database connection strings.** Check for secrets before staging.
+- **Never modify the Supabase schema without a migration file** in `supabase/migrations/`.
+- **Never assume GHL uses camelCase.** GHL mixes snake_case and camelCase inconsistently (e.g., `sso_key` not `ssoKey`, `location_id` not `locationId` in some contexts). Always verify against working code or API docs.
+- **Never add features, refactoring, or "improvements" beyond what was requested.**
+- **Never touch:** OAuth flow, webhook handlers, evidence/defense services, or Make.com code unless explicitly asked.
+
+## Docs Trust Warning
+
+Documents in `/docs` may contain inaccuracies introduced by an external AI session. **Before implementing anything based on a `/docs` file:**
+
+1. Verify GHL field names, IDs, and schemas against the constants files in `src/constants/`
+2. If the claim is about live GHL state (what fields exist, what values are set), verify using Make.com MCP tools (`read_all_custom_values`, `list_ghl_custom_fields`, `get_co_schema_v_2_fresh`)
+3. The constants files and live GHL data are the **source of truth**, not the docs
+
+## File Conventions
+
+```
+src/
+  clients/         — External API clients (ghl.client.ts, supabase.client.ts)
+  config.ts        — Environment config
+  constants/       — GHL field IDs, custom value IDs, standard clauses, trigger keys
+  controllers/     — Express route handlers (*.controller.ts)
+  middleware/       — SSO auth, tenant context
+  repositories/    — Supabase data access (*.repository.ts)
+  routes/           — Express routers (*.routes.ts)
+  services/         — Business logic (*.service.ts)
+  types/            — TypeScript type definitions
+  ui/               — Vue 3 frontend (separate package.json)
+  utils/            — Logger, errors, helpers
+```
+
+## Changelog Rule
+
+Every commit must have a corresponding entry in `CHANGELOG.md`. Update the changelog before committing. Use Keep a Changelog format (Added/Changed/Fixed/Security).
+
+## Post-Deploy Verification
+
+After any change touching provisioning, offers, or config sync, run these Make.com MCP tools to verify GHL state:
+
+1. `read_all_custom_values` — check business info, module toggles, T&C config
+2. `list_ghl_custom_fields` — verify SS fields exist with correct IDs
+3. `list_offer_records` — verify offers have correct data
+4. `get_co_schema_v_2_fresh` — verify Custom Object schema hasn't drifted
+
+Report any mismatches before moving on.
+
+## Key Reference Docs
+
+- `docs/FULL_ARCHITECTURE_MAP.md` — Every table, endpoint, service across all 10 phases
+- `docs/SCALESAFE_APP_BLUEPRINT_v2.1.md` — Complete product spec
+- `docs/MASTER_BUILD_SEQUENCE.md` — 10-phase roadmap
+- `docs/GHL_AUTOMATION_COMPANION.md` — All 18 triggers with payloads
+- `docs/ghl-custom-values-reference.md` — Custom value IDs and names
+- `docs/ghl-offers-custom-object-schema.md` — Offers Custom Object schema
+
+## Build & Test
+
+```bash
+npm run build          # TypeScript compile + Vite UI build
+npx tsc --noEmit       # Type check only (fast)
+npx jest               # Run all tests (124+ tests)
+npx jest --testPathPattern=unit    # Unit tests only
+npx jest --testPathPattern=integration  # Integration tests only
+```
+
+Note: `npm run build` has a known Windows issue with `mkdir -p` in the copy step. TypeScript and Vite both succeed; the final `cp` fails on Windows. This is cosmetic — the actual build artifacts are created.

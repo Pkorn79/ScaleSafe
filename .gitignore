@@ -22,3 +22,6 @@ logs
 
 # Supabase CLI temp files (contains database URIs)
 supabase/.temp/
+
+# Claude Code local settings (may contain permission patterns with credentials)
+.claude/settings.local.json
