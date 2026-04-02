@@ -24,8 +24,8 @@ interface TokenResponse extends TokenPair {
  * Exchange an OAuth authorization code for access + refresh tokens.
  * Called once during merchant install.
  *
- * GHL agency-level apps return companyId but NOT locationId in the token response.
- * When locationId is missing, we call /oauth/installedLocations to resolve it.
+ * GHL agency-level apps return a Company-scoped token.
+ * We store it, then exchange it for a Location-scoped token in ghlApi().
  */
 export async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
@@ -140,11 +140,11 @@ async function resolveLocationFromCompany(
 }
 
 /**
- * Refresh an expired access token using the stored refresh token.
- * Updates tokens in the merchants table.
+ * Refresh an expired Company-level access token.
+ * Updates the company tokens in the merchants table.
  */
-export async function refreshAccessToken(locationId: string, currentRefreshToken: string): Promise<TokenPair> {
-  logger.info({ locationId }, 'Refreshing GHL access token');
+async function refreshCompanyToken(locationId: string, currentRefreshToken: string): Promise<TokenPair> {
+  logger.info({ locationId }, 'Refreshing GHL company access token');
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
     client_secret: config.ghl.clientSecret,
@@ -157,10 +157,9 @@ export async function refreshAccessToken(locationId: string, currentRefreshToken
   logger.info({
     locationId,
     userType: res.data.userType,
-    tokenType: res.data.token_type,
     locationIdReturned: res.data.locationId,
     companyIdReturned: res.data.companyId,
-  }, 'GHL token refresh response');
+  }, 'GHL company token refresh response');
 
   const tokens: TokenPair = {
     accessToken: res.data.access_token,
@@ -168,7 +167,7 @@ export async function refreshAccessToken(locationId: string, currentRefreshToken
     expiresAt: new Date(Date.now() + res.data.expires_in * 1000),
   };
 
-  // Persist new tokens
+  // Persist new company tokens
   const { error } = await getSupabase()
     .from('merchants')
     .update({
@@ -179,7 +178,76 @@ export async function refreshAccessToken(locationId: string, currentRefreshToken
     .eq('location_id', locationId);
 
   if (error) {
-    logger.error({ locationId, error }, 'Failed to persist refreshed tokens');
+    logger.error({ locationId, error }, 'Failed to persist refreshed company tokens');
+  }
+
+  return tokens;
+}
+
+/**
+ * Exchange a Company-scoped access token for a Location-scoped access token.
+ * This is required for Agency-level installs to access location-level endpoints
+ * (custom fields, custom values, contacts, etc.).
+ *
+ * POST /oauth/locationToken
+ * Body: { companyId, locationId }
+ * Auth: Bearer <company_access_token>
+ */
+async function getLocationToken(
+  companyAccessToken: string,
+  companyId: string,
+  locationId: string,
+): Promise<TokenPair> {
+  logger.info({ companyId, locationId }, 'Exchanging company token for location token');
+
+  const res = await axios.post(
+    `${config.ghl.apiDomain}/oauth/locationToken`,
+    { companyId, locationId },
+    {
+      headers: {
+        Authorization: `Bearer ${companyAccessToken}`,
+        Version: '2021-07-28',
+        Accept: 'application/json',
+      },
+    },
+  );
+
+  const data = res.data;
+  logger.info({
+    locationId,
+    companyId,
+    userType: data.userType,
+    responseKeys: Object.keys(data),
+  }, 'Location token obtained');
+
+  const tokens: TokenPair = {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || '',
+    expiresAt: new Date(Date.now() + (data.expires_in || 86400) * 1000),
+  };
+
+  // Store location token in config JSONB
+  try {
+    const { data: current } = await getSupabase()
+      .from('merchants')
+      .select('config')
+      .eq('location_id', locationId)
+      .single();
+
+    const existingConfig = ((current?.config || {}) as Record<string, unknown>);
+    await getSupabase()
+      .from('merchants')
+      .update({
+        config: {
+          ...existingConfig,
+          location_access_token: tokens.accessToken,
+          location_refresh_token: tokens.refreshToken,
+          location_token_expires_at: tokens.expiresAt.toISOString(),
+        },
+      })
+      .eq('location_id', locationId);
+  } catch (err) {
+    logger.error({ locationId, err }, 'Failed to persist location token');
   }
 
   return tokens;
@@ -187,14 +255,20 @@ export async function refreshAccessToken(locationId: string, currentRefreshToken
 
 /**
  * Create an Axios instance scoped to a merchant's GHL location.
- * Automatically refreshes the token on 401 and retries the request once.
+ *
+ * For Agency-level installs (Company-scoped tokens), this:
+ * 1. Reads the stored Company token
+ * 2. Checks for a cached Location token in config
+ * 3. If no Location token or expired, exchanges Company token for Location token
+ * 4. Uses the Location token for all API calls
+ * 5. On 401, refreshes Company token, gets new Location token, retries
  */
 export async function ghlApi(locationId: string): Promise<AxiosInstance> {
   const supabase = getSupabase();
 
   const { data: merchant, error } = await supabase
     .from('merchants')
-    .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at')
+    .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config')
     .eq('location_id', locationId)
     .single();
 
@@ -202,7 +276,50 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     throw new GHLApiError(`Merchant not found: ${locationId}`);
   }
 
-  let accessToken = merchant.ghl_access_token;
+  const companyId = (merchant as any).company_id || '';
+  const cfg = (merchant.config || {}) as Record<string, unknown>;
+
+  // Determine if we need a location token exchange
+  let accessToken: string;
+  const locationTokenExpiry = cfg.location_token_expires_at
+    ? new Date(cfg.location_token_expires_at as string)
+    : null;
+  const locationTokenValid = locationTokenExpiry && locationTokenExpiry > new Date();
+
+  if (locationTokenValid && cfg.location_access_token) {
+    // Use cached location token
+    accessToken = cfg.location_access_token as string;
+  } else if (companyId) {
+    // Need to get a location token from company token
+    let companyAccessToken = merchant.ghl_access_token;
+
+    // Check if company token is expired and refresh if needed
+    const companyExpiry = merchant.ghl_token_expires_at
+      ? new Date(merchant.ghl_token_expires_at)
+      : null;
+    if (companyExpiry && companyExpiry <= new Date()) {
+      try {
+        const refreshed = await refreshCompanyToken(locationId, merchant.ghl_refresh_token);
+        companyAccessToken = refreshed.accessToken;
+      } catch (err: any) {
+        logger.error({ err: err.message, locationId }, 'Failed to refresh company token');
+        throw new GHLApiError(`Company token refresh failed: ${err.message}`);
+      }
+    }
+
+    // Exchange company token for location token
+    try {
+      const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
+      accessToken = locationTokens.accessToken;
+    } catch (err: any) {
+      logger.error({ err: err.message, locationId, companyId }, 'Failed to get location token');
+      // Fall back to company token — some endpoints may work
+      accessToken = companyAccessToken;
+    }
+  } else {
+    // No companyId — use the stored token directly (Location-level install)
+    accessToken = merchant.ghl_access_token;
+  }
 
   const instance = axios.create({
     baseURL: config.ghl.apiDomain,
@@ -214,18 +331,33 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     timeout: 30000,
   });
 
-  // Intercept 401 → refresh token → retry once
+  // Intercept 401 → refresh company token → get new location token → retry once
   instance.interceptors.response.use(
     (response) => response,
     async (err) => {
       const original = err.config as AxiosRequestConfig & { _retried?: boolean };
       if ((err.response?.status === 401 || err.response?.status === 403) && !original._retried) {
         original._retried = true;
-        logger.info({ locationId }, 'GHL token expired, refreshing');
-        const tokens = await refreshAccessToken(locationId, merchant.ghl_refresh_token);
-        accessToken = tokens.accessToken;
-        original.headers = { ...original.headers, Authorization: `Bearer ${tokens.accessToken}` };
-        return instance.request(original);
+        logger.info({ locationId }, 'GHL token rejected, refreshing');
+
+        try {
+          // Refresh company token
+          const refreshed = await refreshCompanyToken(locationId, merchant.ghl_refresh_token);
+
+          if (companyId) {
+            // Get fresh location token
+            const locationTokens = await getLocationToken(refreshed.accessToken, companyId, locationId);
+            accessToken = locationTokens.accessToken;
+          } else {
+            accessToken = refreshed.accessToken;
+          }
+
+          original.headers = { ...original.headers, Authorization: `Bearer ${accessToken}` };
+          return instance.request(original);
+        } catch (refreshErr: any) {
+          logger.error({ err: refreshErr.message, locationId }, 'Token refresh+exchange failed');
+          throw new GHLApiError(`Token refresh failed: ${refreshErr.message}`);
+        }
       }
       const status = err.response?.status;
       const msg = err.response?.data?.message || err.message;
@@ -235,3 +367,6 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
   return instance;
 }
+
+// Keep the old export name for backward compatibility
+export const refreshAccessToken = refreshCompanyToken;
