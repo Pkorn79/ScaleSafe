@@ -144,14 +144,24 @@ async function resolveLocationFromCompany(
  * Updates tokens in the merchants table.
  */
 export async function refreshAccessToken(locationId: string, currentRefreshToken: string): Promise<TokenPair> {
+  logger.info({ locationId }, 'Refreshing GHL access token');
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
     client_secret: config.ghl.clientSecret,
     grant_type: 'refresh_token',
     refresh_token: currentRefreshToken,
+    user_type: 'Location',
   }).toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
+
+  logger.info({
+    locationId,
+    userType: res.data.userType,
+    tokenType: res.data.token_type,
+    locationIdReturned: res.data.locationId,
+    companyIdReturned: res.data.companyId,
+  }, 'GHL token refresh response');
 
   const tokens: TokenPair = {
     accessToken: res.data.access_token,
