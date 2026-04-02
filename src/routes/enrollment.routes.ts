@@ -39,6 +39,11 @@ function enrollmentPage(offer: any): string {
     if (name) milestones.push(name);
   }
 
+  const hasDuration = offer.program_duration_value && offer.program_duration_unit;
+  const durationText = hasDuration
+    ? `${offer.program_duration_value} ${offer.program_duration_unit.charAt(0).toUpperCase() + offer.program_duration_unit.slice(1)}`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,7 +65,17 @@ function enrollmentPage(offer: any): string {
     .milestone-list li { padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; display: flex; align-items: center; gap: 8px; }
     .milestone-list li:last-child { border-bottom: none; }
     .milestone-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; }
-    .delivery { display: inline-block; background: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-bottom: 24px; }
+    .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+    .delivery { display: inline-block; background: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .duration { display: inline-block; background: #f3e8ff; color: #7c3aed; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .refund-section { background: #f9fafb; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .refund-section .section-title { margin-bottom: 6px; }
+    .refund-text { font-size: 13px; color: #4b5563; line-height: 1.5; }
+    .tc-section { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 24px; font-size: 13px; color: #4b5563; line-height: 1.6; }
+    .tc-section p { margin-bottom: 8px; }
+    .tc-section ol { padding-left: 20px; margin: 8px 0; }
+    .tc-section li { margin-bottom: 6px; }
+    .tc-section a { color: #3b82f6; }
     .cta { display: block; width: 100%; padding: 14px; background: #3b82f6; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; }
     .cta:hover { background: #2563eb; }
     .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #9ca3af; }
@@ -71,7 +86,12 @@ function enrollmentPage(offer: any): string {
     <div class="card">
       <h1>${escapeHtml(offer.offer_name)}</h1>
       ${offer.program_description ? `<p class="description">${escapeHtml(offer.program_description)}</p>` : ''}
-      ${offer.delivery_method ? `<span class="delivery">${escapeHtml(offer.delivery_method)}</span>` : ''}
+      ${(offer.delivery_method || hasDuration) ? `
+        <div class="badge-row">
+          ${offer.delivery_method ? `<span class="delivery">${escapeHtml(offer.delivery_method)}</span>` : ''}
+          ${hasDuration ? `<span class="duration">${escapeHtml(durationText)}</span>` : ''}
+        </div>
+      ` : ''}
       <div class="price">${price}</div>
       <p class="payment-type">${formatPaymentType(offer)}</p>
       ${milestones.length > 0 ? `
@@ -79,6 +99,17 @@ function enrollmentPage(offer: any): string {
         <ul class="milestone-list">
           ${milestones.map(m => `<li><span class="milestone-dot"></span>${escapeHtml(m)}</li>`).join('')}
         </ul>
+      ` : ''}
+      ${offer.refund_window_text ? `
+        <div class="refund-section">
+          <p class="section-title">Refund Policy</p>
+          <p class="refund-text">${escapeHtml(offer.refund_window_text)}</p>
+        </div>
+      ` : ''}
+      ${offer.compiled_tc_html ? `
+        <div class="tc-section">
+          ${offer.compiled_tc_html}
+        </div>
       ` : ''}
       <p class="footer">Enrollment form coming soon. Contact your service provider to get started.</p>
     </div>

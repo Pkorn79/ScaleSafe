@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
+import path from 'path';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
+import { getSupabase } from '../clients/supabase.client';
+import { config } from '../config';
 
 export const merchantController = {
   /** GET /api/merchants/config — get full merchant configuration */
@@ -59,6 +62,46 @@ export const merchantController = {
 
       merchantService.provisionMerchant(locationId).catch(() => {});
       res.json({ status: 'provisioning_started', locationId });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/merchants/logo — upload merchant logo to Supabase Storage */
+  async uploadLogo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const file = (req as any).file;
+      if (!file) throw new ValidationError('No file uploaded');
+
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+      if (!allowedTypes.includes(file.mimetype)) {
+        throw new ValidationError('File must be PNG, JPEG, WebP, or SVG');
+      }
+
+      const ext = path.extname(file.originalname).toLowerCase() || '.png';
+      const storagePath = `logos/${locationId}/logo${ext}`;
+
+      const supabase = getSupabase();
+      const { error: uploadError } = await supabase.storage
+        .from('scalesafe-files')
+        .upload(storagePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('scalesafe-files')
+        .getPublicUrl(storagePath);
+
+      const logoUrl = urlData.publicUrl;
+
+      // Save to merchant record
+      await merchantService.updateFullConfig(locationId, { logoUrl });
+
+      res.json({ logoUrl });
     } catch (err) { next(err); }
   },
 };

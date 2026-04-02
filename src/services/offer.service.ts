@@ -48,21 +48,25 @@ function calcInstallmentAmount(price?: number, numPayments?: number, fallback?: 
  * Takes the 11 clause slots and builds an ordered list of active clauses.
  */
 function compileTcHtml(clauses: Array<{ title: string; text: string }>, tcUrl?: string): string {
-  // If merchant provides their own T&C URL, link to it
+  const sections: string[] = [];
+
+  // If merchant has their own T&C, include the link
   if (tcUrl) {
-    return `<p>Terms & Conditions: <a href="${escapeHtml(tcUrl)}" target="_blank">${escapeHtml(tcUrl)}</a></p>`;
+    sections.push(`<p>Full Terms & Conditions: <a href="${escapeHtml(tcUrl)}" target="_blank">${escapeHtml(tcUrl)}</a></p>`);
   }
 
+  // Always include active clickwrap clauses
   const items: string[] = [];
   for (const c of clauses) {
     if (c.title && c.text) {
       items.push(`<li>${escapeHtml(c.text)}</li>`);
     }
   }
+  if (items.length > 0) {
+    sections.push(`<p><strong>By proceeding, you acknowledge and agree to the following:</strong></p>\n<ol>\n${items.join('\n')}\n</ol>`);
+  }
 
-  if (items.length === 0) return '';
-
-  return `<p><strong>Terms & Conditions</strong></p>\n<p>By proceeding, you acknowledge and agree to the following:</p>\n<ol>\n${items.join('\n')}\n</ol>`;
+  return sections.join('\n');
 }
 
 function escapeHtml(str: string): string {

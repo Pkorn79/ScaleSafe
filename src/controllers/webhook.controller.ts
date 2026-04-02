@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
+import { enrollmentRepository } from '../repositories/enrollment.repository';
+import { paymentEventRepository } from '../repositories/paymentEvent.repository';
+import { offerRepository } from '../repositories/offer.repository';
+import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { evidenceService } from '../services/evidence.service';
-import { enrollmentService } from '../services/enrollment.service';
-import { paymentService } from '../services/payment.service';
 import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
@@ -11,80 +13,73 @@ import { EVIDENCE_TYPES } from '../constants/evidence-types';
 export const webhookController = {
   /**
    * POST /webhooks/ghl/payment
-   * GHL payment webhooks: order created, subscription charged, payment failed, refund.
-   * ScaleSafe OBSERVES only — never processes payments.
+   * GHL payment webhooks: OrderCompleted, SubscriptionPaymentSuccess,
+   * SubscriptionPaymentFailed, OrderRefunded.
+   * Always returns 200 to avoid GHL retries.
    */
-  async ghlPayment(req: Request, res: Response, next: NextFunction) {
+  async ghlPayment(req: Request, res: Response, _next: NextFunction) {
     try {
-      const { type, locationId, contactId, offerId, data } = req.body;
-      if (!type || !locationId || !contactId) {
-        throw new ValidationError('type, locationId, contactId required');
-      }
+      const body = req.body;
+      const type = body.type;
+      const locationId = body.locationId;
+      const contactId = body.contactId;
 
-      // Idempotency check
-      const eventId = data?.orderId || data?.transactionId || `${type}_${contactId}_${Date.now()}`;
-      if (await idempotencyRepository.isDuplicate(eventId, 'ghl_payment', locationId)) {
-        res.json({ status: 'duplicate', eventId });
+      if (!type || !locationId) {
+        logger.warn({ body: JSON.stringify(body).slice(0, 500) }, 'Payment webhook missing type or locationId');
+        res.json({ status: 'ok', skipped: true });
         return;
       }
 
+      // Log raw payload for debugging
+      logger.info({ type, locationId, contactId }, 'GHL payment webhook received');
+
+      // Idempotency: check by transactionId or orderId
+      const transactionId = body.transactionId || body.orderId || '';
+      if (transactionId) {
+        const existing = await paymentEventRepository.findByTransactionId('ghl', transactionId);
+        if (existing) {
+          logger.info({ transactionId, type }, 'Duplicate payment webhook, skipping');
+          res.json({ status: 'duplicate', transactionId });
+          return;
+        }
+      }
+
       switch (type) {
+        case 'OrderCompleted':
         case 'order.completed':
         case 'OrderCreate':
-          // Enrollment payment — complete the enrollment flow
-          await enrollmentService.handlePaymentWebhook({
-            locationId,
-            contactId,
-            offerId: offerId || data?.offerId || '',
-            ghlOrderId: data?.orderId || '',
-            ghlTransactionId: data?.transactionId || '',
-            paymentAmount: data?.amount || 0,
-            paymentMethod: data?.paymentMethod || 'card',
-          });
+          await handleOrderCompleted(body);
           break;
 
+        case 'SubscriptionPaymentSuccess':
         case 'subscription.charged':
         case 'InvoicePaymentReceived':
-          await paymentService.logSuccessfulPayment(locationId, contactId, data || {});
+          await handleSubscriptionPayment(body);
           break;
 
+        case 'SubscriptionPaymentFailed':
         case 'payment.failed':
         case 'InvoicePaymentFailed':
-          await paymentService.logFailedPayment(locationId, contactId, data || {});
-          // Fire Payment Failed trigger
-          notificationService.firePaymentFailed(locationId, contactId, {
-            amount: data?.amount || 0,
-            failureReason: data?.declineReason || data?.failureReason || 'unknown',
-            attemptCount: data?.attemptCount || 1,
-          });
+          await handlePaymentFailed(body);
           break;
 
+        case 'OrderRefunded':
         case 'refund.processed':
         case 'RefundCreated':
-          await paymentService.logRefund(locationId, contactId, data || {});
-          break;
-
-        case 'subscription.paused':
-        case 'subscription.resumed':
-        case 'subscription.cancelled':
-          await paymentService.logSubscriptionChange(locationId, contactId, type, data || {});
+          await handleRefund(body);
           break;
 
         default:
-          // Try the generic payment handler for unknown types
-          await evidenceService.logEvidence(
-            EVIDENCE_TYPES.CUSTOM_EVENT,
-            locationId, contactId, 'ghl_payment',
-            {
-              event_type: type,
-              event_timestamp: new Date().toISOString(),
-              metadata: data,
-            },
-          );
+          logger.info({ type, locationId }, 'Unhandled GHL payment event type');
+          break;
       }
 
-      res.json({ status: 'ok', eventId });
-    } catch (err) { next(err); }
+      res.json({ status: 'ok', type });
+    } catch (err) {
+      // Always return 200 to GHL
+      logger.error({ err }, 'Error processing GHL payment webhook');
+      res.json({ status: 'ok', error: 'internal' });
+    }
   },
 
   /**
@@ -115,7 +110,6 @@ export const webhookController = {
   /**
    * POST /webhooks/external
    * External platform webhooks (Calendly, Zoom, Kajabi, Teachable, Skool, etc.).
-   * Payload format defined in docs/external-integration-guide.md.
    */
   async external(req: Request, res: Response, next: NextFunction) {
     try {
@@ -162,3 +156,255 @@ export const webhookController = {
     } catch (err) { next(err); }
   },
 };
+
+// --- Internal handler functions ---
+
+async function handleOrderCompleted(body: Record<string, unknown>): Promise<void> {
+  const locationId = body.locationId as string;
+  const contactId = body.contactId as string;
+  const amount = (body.amount as number) || 0;
+  const transactionId = (body.transactionId || body.orderId || '') as string;
+  const items = (body.items as any[]) || [];
+  const metadata = (body.metadata as Record<string, unknown>) || {};
+  const subscription = body.subscription as Record<string, unknown> | undefined;
+
+  if (!contactId) {
+    logger.warn({ locationId, body: JSON.stringify(body).slice(0, 300) }, 'OrderCompleted missing contactId');
+    // Still log payment event with no enrollment
+    await paymentEventRepository.create({
+      location_id: locationId,
+      contact_id: '',
+      event_type: 'payment_success',
+      processor: 'ghl',
+      processor_transaction_id: transactionId,
+      amount,
+      raw_webhook_payload: body,
+    });
+    return;
+  }
+
+  // Try to match enrollment
+  // Primary: consent_token from metadata
+  const consentToken = (metadata.consent_token || metadata.consentToken || '') as string;
+  let enrollment = consentToken
+    ? await enrollmentRepository.findByConsentToken(consentToken)
+    : null;
+
+  // Fallback: match by contactId + product → offer mapping
+  if (!enrollment && items.length > 0) {
+    for (const item of items) {
+      const productId = item.productId || item.product_id;
+      if (productId) {
+        // Look up offer by GHL product ID
+        const offer = await findOfferByProductId(locationId, productId);
+        if (offer) {
+          enrollment = await enrollmentRepository.findByContactAndOffer(
+            contactId, offer.id, locationId,
+          );
+          if (enrollment) break;
+        }
+      }
+    }
+  }
+
+  if (!enrollment) {
+    // No matching enrollment — log payment event without enrollment link
+    logger.info(
+      { locationId, contactId, transactionId },
+      'OrderCompleted: no matching enrollment found (may be non-ScaleSafe purchase)',
+    );
+    await paymentEventRepository.create({
+      location_id: locationId,
+      contact_id: contactId,
+      event_type: 'payment_success',
+      processor: 'ghl',
+      processor_transaction_id: transactionId,
+      amount,
+      raw_webhook_payload: body,
+    });
+    return;
+  }
+
+  // Determine payment type and total
+  const paymentType = subscription ? 'installment' : 'pif';
+  const paymentsTotal = subscription
+    ? (subscription.totalCycles as number) || null
+    : null;
+
+  // Complete enrollment
+  await phase2EnrollmentService.completeEnrollment({
+    enrollmentId: enrollment.id,
+    locationId,
+    contactId,
+    paymentAmount: amount,
+    paymentType,
+    transactionId,
+    paymentsTotal,
+  });
+
+  logger.info(
+    { enrollmentId: enrollment.id, contactId, locationId, transactionId },
+    'OrderCompleted processed — enrollment completed',
+  );
+}
+
+async function handleSubscriptionPayment(body: Record<string, unknown>): Promise<void> {
+  const locationId = body.locationId as string;
+  const contactId = body.contactId as string;
+  const amount = (body.amount as number) || 0;
+  const transactionId = (body.transactionId || '') as string;
+  const subscriptionId = (body.subscriptionId || (body.subscription as any)?.id || '') as string;
+
+  if (!contactId) {
+    logger.warn({ locationId }, 'SubscriptionPayment missing contactId');
+    return;
+  }
+
+  // Find enrollment by contact + offer (from product in webhook)
+  const items = (body.items as any[]) || [];
+  let enrollment = null;
+  for (const item of items) {
+    const productId = item.productId || item.product_id;
+    if (productId) {
+      const offer = await findOfferByProductId(locationId, productId);
+      if (offer) {
+        enrollment = await enrollmentRepository.findByContactAndOffer(contactId, offer.id, locationId);
+        if (!enrollment) {
+          // Also check enrolled status (not just consent_captured)
+          const { data } = await (await import('../clients/supabase.client')).getSupabase()
+            .from('enrollments')
+            .select('*')
+            .eq('contact_id', contactId)
+            .eq('offer_id', offer.id)
+            .eq('location_id', locationId)
+            .in('status', ['enrolled', 'active'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          enrollment = data;
+        }
+        if (enrollment) break;
+      }
+    }
+  }
+
+  // Broader fallback: find any active enrollment for this contact at this location
+  if (!enrollment) {
+    const { data } = await (await import('../clients/supabase.client')).getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('contact_id', contactId)
+      .eq('location_id', locationId)
+      .in('status', ['enrolled', 'active'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    enrollment = data;
+  }
+
+  if (!enrollment) {
+    logger.info({ locationId, contactId }, 'SubscriptionPayment: no enrollment found');
+    await paymentEventRepository.create({
+      location_id: locationId,
+      contact_id: contactId,
+      event_type: 'payment_success',
+      processor: 'ghl',
+      processor_transaction_id: transactionId,
+      amount,
+      raw_webhook_payload: body,
+    });
+    return;
+  }
+
+  await phase2EnrollmentService.handleRecurringPayment({
+    locationId,
+    contactId,
+    enrollmentId: enrollment.id,
+    amount,
+    transactionId,
+    paymentNumber: enrollment.payments_made + 1,
+    paymentsRemaining: enrollment.payments_total
+      ? enrollment.payments_total - enrollment.payments_made - 1
+      : undefined,
+    rawPayload: body,
+  });
+}
+
+async function handlePaymentFailed(body: Record<string, unknown>): Promise<void> {
+  const locationId = body.locationId as string;
+  const contactId = body.contactId as string;
+  const amount = (body.amount as number) || 0;
+  const transactionId = (body.transactionId || '') as string;
+  const failureReason = (body.declineReason || body.failureReason || body.reason || 'unknown') as string;
+  const attemptCount = (body.attemptCount as number) || 1;
+
+  if (!contactId) {
+    logger.warn({ locationId }, 'PaymentFailed missing contactId');
+    return;
+  }
+
+  // Find enrollment
+  const { data: enrollment } = await (await import('../clients/supabase.client')).getSupabase()
+    .from('enrollments')
+    .select('*')
+    .eq('contact_id', contactId)
+    .eq('location_id', locationId)
+    .in('status', ['enrolled', 'active', 'at_risk'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  await phase2EnrollmentService.handleFailedPayment({
+    locationId,
+    contactId,
+    enrollmentId: enrollment?.id || null,
+    amount,
+    transactionId,
+    failureReason,
+    attemptCount,
+    rawPayload: body,
+  });
+}
+
+async function handleRefund(body: Record<string, unknown>): Promise<void> {
+  const locationId = body.locationId as string;
+  const contactId = body.contactId as string;
+  const amount = (body.amount || body.refundAmount || 0) as number;
+  const transactionId = (body.transactionId || body.originalTransactionId || '') as string;
+  const reason = (body.reason || '') as string;
+
+  if (!contactId) {
+    logger.warn({ locationId }, 'Refund missing contactId');
+    return;
+  }
+
+  // Find enrollment
+  const { data: enrollment } = await (await import('../clients/supabase.client')).getSupabase()
+    .from('enrollments')
+    .select('*')
+    .eq('contact_id', contactId)
+    .eq('location_id', locationId)
+    .in('status', ['enrolled', 'active', 'at_risk'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  await phase2EnrollmentService.handleRefund({
+    locationId,
+    contactId,
+    enrollmentId: enrollment?.id || null,
+    amount,
+    transactionId,
+    reason,
+    rawPayload: body,
+  });
+}
+
+async function findOfferByProductId(locationId: string, productId: string) {
+  try {
+    const offers = await offerRepository.listByLocation(locationId);
+    return offers.find((o) => o.ghl_product_id === productId) || null;
+  } catch {
+    return null;
+  }
+}

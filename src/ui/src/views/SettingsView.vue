@@ -41,8 +41,18 @@
             <input class="form-input" v-model="config.businessWebsite" placeholder="yourbusiness.com" />
           </div>
           <div class="form-group">
-            <label class="form-label">Merchant Logo URL</label>
-            <input class="form-input" v-model="config.logoUrl" placeholder="https://yourdomain.com/logo.png" />
+            <label class="form-label">Merchant Logo</label>
+            <div class="logo-upload-area">
+              <img v-if="config.logoUrl" :src="config.logoUrl" alt="Logo preview" class="logo-preview" />
+              <div class="logo-actions">
+                <input type="file" ref="logoFileInput" accept="image/png,image/jpeg,image/webp,image/svg+xml" @change="handleLogoUpload" style="display:none" />
+                <button type="button" class="btn btn-secondary btn-sm" @click="($refs.logoFileInput as HTMLInputElement).click()" :disabled="logoUploading">
+                  {{ logoUploading ? 'Uploading...' : (config.logoUrl ? 'Change Logo' : 'Upload Logo') }}
+                </button>
+                <button v-if="!showLogoUrlInput" type="button" class="btn-link text-sm" @click="showLogoUrlInput = true">or paste URL</button>
+              </div>
+              <input v-if="showLogoUrlInput" class="form-input mt-2" v-model="config.logoUrl" placeholder="https://yourdomain.com/logo.png" style="font-size:12px" />
+            </div>
           </div>
         </div>
         <div class="grid grid-3">
@@ -82,7 +92,11 @@
         <div class="text-sm text-muted mt-2">
           Location ID: {{ config.locationId }}
           &nbsp;&middot;&nbsp;Status: <span class="badge badge-green">{{ config.status }}</span>
-          &nbsp;&middot;&nbsp;Snapshot: <span class="badge" :class="config.snapshotStatus === 'installed' ? 'badge-green' : 'badge-yellow'">{{ config.snapshotStatus }}</span>
+          &nbsp;&middot;&nbsp;Snapshot: <span class="badge" :class="config.snapshotStatus === 'installed' ? 'badge-green' : config.snapshotStatus === 'failed' ? 'badge-red' : 'badge-yellow'">{{ config.snapshotStatus }}</span>
+          <span v-if="config.snapshotError" class="text-sm text-danger" style="margin-left:8px">{{ config.snapshotError }}</span>
+          <button v-if="config.snapshotStatus !== 'installed'" class="btn btn-sm btn-secondary" style="margin-left:8px" @click="retryProvision" :disabled="provisionRetrying">
+            {{ provisionRetrying ? 'Retrying...' : 'Retry Setup' }}
+          </button>
         </div>
       </div>
 
@@ -170,6 +184,10 @@ const saving = ref(false);
 const saved = ref(false);
 const running = ref<string | false>(false);
 const adminResult = ref('');
+const provisionRetrying = ref(false);
+const logoUploading = ref(false);
+const showLogoUrlInput = ref(false);
+const logoFileInput = ref<HTMLInputElement | null>(null);
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -185,8 +203,67 @@ onMounted(async () => {
     if (config.value.config?.disengagement_thresholds) {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
+    // Auto-retry provisioning if failed or pending
+    if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending')) {
+      retryProvision();
+    }
   } catch {}
 });
+
+async function handleLogoUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  logoUploading.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    const headers: Record<string, string> = {};
+    const ssoPayload = sessionStorage.getItem('ss_sso_payload');
+    if (ssoPayload) {
+      headers['x-sso-payload'] = ssoPayload;
+    } else {
+      const locId = sessionStorage.getItem('ss_location_id');
+      if (locId) headers['x-location-id'] = locId;
+      const compId = sessionStorage.getItem('ss_company_id');
+      if (compId) headers['x-company-id'] = compId;
+      const userId = sessionStorage.getItem('ss_user_id');
+      if (userId) headers['x-user-id'] = userId;
+    }
+
+    const resp = await fetch('/api/merchants/logo', {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!resp.ok) throw new Error('Upload failed');
+    const data = await resp.json();
+    if (config.value) config.value.logoUrl = data.logoUrl;
+  } catch (err) {
+    error.value = 'Logo upload failed. Please try again.';
+  }
+  logoUploading.value = false;
+  if (input) input.value = '';
+}
+
+async function retryProvision() {
+  provisionRetrying.value = true;
+  try {
+    await api.post<any>('/api/merchants/provision');
+    // Wait a moment then refresh config to get updated status
+    setTimeout(async () => {
+      try {
+        config.value = await api.get<any>('/api/merchants/config');
+      } catch {}
+      provisionRetrying.value = false;
+    }, 3000);
+  } catch {
+    provisionRetrying.value = false;
+  }
+}
 
 async function saveSettings() {
   saving.value = true;
@@ -335,5 +412,53 @@ async function cleanupKeys() {
 
 .toggle-thumb.active {
   left: 26px;
+}
+
+.text-danger {
+  color: #dc2626;
+}
+
+.badge-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.logo-upload-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.logo-preview {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.logo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.btn-link:hover {
+  color: #374151;
 }
 </style>

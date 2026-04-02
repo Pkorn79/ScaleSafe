@@ -13,6 +13,7 @@ export interface MerchantFullConfig {
   onboardingComplete: boolean;
   status: string;
   snapshotStatus: string;
+  snapshotError: string;
 
   businessName: string;
   dbaName: string;
@@ -185,6 +186,7 @@ export const merchantService = {
 
     logger.info({ locationId, total: allFields.length, creating: toCreate.length }, 'Creating custom fields');
 
+    let failures = 0;
     for (let i = 0; i < toCreate.length; i += 5) {
       const batch = toCreate.slice(i, i + 5);
       await Promise.all(batch.map(async (field) => {
@@ -198,13 +200,18 @@ export const merchantService = {
           if (status === 422 || status === 409) {
             logger.debug({ field: field.name, locationId }, 'Custom field already exists (conflict)');
           } else {
-            throw err;
+            failures++;
+            logger.warn({ err, field: field.name, locationId }, 'Failed to create custom field (non-fatal)');
           }
         }
       }));
     }
 
-    logger.info({ locationId, created: toCreate.length }, 'Custom fields created');
+    if (failures > Math.floor(toCreate.length / 2)) {
+      throw new Error(`Too many custom field failures (${failures}/${toCreate.length}) — likely a systemic issue`);
+    }
+
+    logger.info({ locationId, created: toCreate.length, failures }, 'Custom fields created');
   },
 
   async createCustomValues(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
@@ -225,6 +232,7 @@ export const merchantService = {
       { name: GHL_CUSTOM_VALUES.TC_URL,        value: '' },
     ];
 
+    let failures = 0;
     for (const cv of valuesToSet) {
       try {
         if (existingValues[cv.name]) {
@@ -241,9 +249,14 @@ export const merchantService = {
         if (status === 422 || status === 409) {
           logger.debug({ locationId, name: cv.name }, 'Custom value already exists (conflict)');
         } else {
-          throw err;
+          failures++;
+          logger.warn({ err, locationId, name: cv.name }, 'Failed to create custom value (non-fatal)');
         }
       }
+    }
+
+    if (failures > Math.floor(valuesToSet.length / 2)) {
+      throw new Error(`Too many custom value failures (${failures}/${valuesToSet.length}) — likely a systemic issue`);
     }
   },
 
@@ -300,6 +313,7 @@ export const merchantService = {
       onboardingComplete: merchant.onboarding_complete,
       status: merchant.status,
       snapshotStatus: merchant.snapshot_status,
+      snapshotError: (merchant as any).snapshot_error || '',
 
       businessName: merchant.business_name || gv(CV.CV_BUSINESS_NAME) || '',
       dbaName: merchant.dba_name || gv(CV.CV_DBA_BRAND_NAME) || '',
@@ -428,10 +442,14 @@ export const merchantService = {
     customClause2Title: string;
     customClause2Text: string;
   }): string {
+    const sections: string[] = [];
+
+    // If merchant has their own T&C, include the link
     if (opts.tcHasOwn && opts.tcDocumentUrl) {
-      return `<p>Terms & Conditions: <a href="${escapeHtml(opts.tcDocumentUrl)}" target="_blank">${escapeHtml(opts.tcDocumentUrl)}</a></p>`;
+      sections.push(`<p>Full Terms & Conditions: <a href="${escapeHtml(opts.tcDocumentUrl)}" target="_blank">${escapeHtml(opts.tcDocumentUrl)}</a></p>`);
     }
 
+    // Always include active clickwrap clauses
     const clauses: string[] = [];
 
     for (const clause of STANDARD_CLAUSES) {
@@ -447,9 +465,11 @@ export const merchantService = {
       clauses.push(`<li><strong>${escapeHtml(opts.customClause2Title)}:</strong> ${escapeHtml(opts.customClause2Text)}</li>`);
     }
 
-    if (clauses.length === 0) return '';
+    if (clauses.length > 0) {
+      sections.push(`<p><strong>By proceeding, you acknowledge and agree to the following:</strong></p>\n<ol>\n${clauses.join('\n')}\n</ol>`);
+    }
 
-    return `<p><strong>Terms & Conditions</strong></p>\n<p>By proceeding, you acknowledge and agree to the following:</p>\n<ol>\n${clauses.join('\n')}\n</ol>`;
+    return sections.join('\n');
   },
 
   // ─── GHL Custom Value Helpers ──────────────────────────────────────

@@ -116,19 +116,55 @@ Custom Values store location-level configuration that GHL workflows and forms ca
 
 ---
 
-## 2. Custom Workflow Triggers (Registered by App on Install)
+## 2. Custom Workflow Triggers (18 Total — ALL REGISTERED AND APPROVED)
 
-The app registers these triggers with GHL when a merchant installs. GHL workflows can then listen for these triggers and take action (send notifications, update records, etc.).
+All 18 triggers were registered in the GHL Marketplace developer portal on 2026-03-30 and approved. All keys use `ss_` prefix EXCEPT `enrollment_complete` (submitted before prefix convention). The app fires these triggers; GHL workflows listen for them.
 
-| Trigger Name | Fired When | Data Payload | Expected GHL Workflow Response |
-|-------------|-----------|-------------|-------------------------------|
-| Chargeback Detected | App receives chargeback alert from processor webhook | contact_id, amount, reason_code, dispute_date | Notify merchant (email + SMS), add tag, update pipeline |
-| Defense Ready | Defense packet has been compiled and is ready for download | contact_id, packet_url, deadline, evidence_count | Notify merchant with download link and deadline |
-| Evidence Milestone | Significant evidence event (e.g., 10th session, all milestones complete) | contact_id, milestone_type, evidence_count, score | Optional: notify merchant of strong defense position |
-| Client At Risk | Disengagement scoring flags a client as at-risk | contact_id, risk_score, risk_factors, days_inactive | Notify merchant, suggest re-engagement actions |
-| Payment Failed | Payment attempt failed (detected via GHL webhook) | contact_id, amount, failure_reason, attempt_count | Notify merchant, optionally notify client, start dunning workflow |
+**ENROLLMENT (2):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Enrollment Complete | `enrollment_complete` | Client completes payment | contact_id, offer_id, offer_name, amount, payment_type, bump_1_accepted, bump_2_accepted |
+| Cancellation Requested | `ss_cancellation_requested` | Client requests cancellation | contact_id, offer_id, reason, refund_eligibility, enrollment_date |
 
-**Who builds the response workflows?** The app registers the triggers. The Snapshot includes default notification workflows for each trigger. Merchants can customize these workflows in GHL after install (change email templates, add SMS, adjust timing, etc.).
+**SESSION & DELIVERY (4):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Session Logged | `ss_session_logged` | Session recorded | contact_id, session_date, duration, topics, no_show_flag |
+| Session No-Show | `ss_session_noshow` | Client misses session | contact_id, scheduled_date, follow_up_action |
+| Module Completed | `ss_module_completed` | Client completes module | contact_id, module_name, progress_pct, completion_date |
+| Program Completed | `ss_program_completed` | All milestones + payments done | contact_id, offer_id, offer_name, total_sessions, total_milestones, enrollment_date, completion_date |
+
+**MILESTONE (2):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Milestone Reached | `ss_milestone_reached` | Client reaches milestone | contact_id, milestone_number, milestone_name, offer_id |
+| Milestone Signed Off | `ss_milestone_signedoff` | Client confirms milestone | contact_id, milestone_number, milestone_name, signature_timestamp, ip_address |
+
+**PAYMENT (3):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Payment Received | `ss_payment_received` | Successful payment | contact_id, amount, transaction_id, payments_remaining, running_total |
+| Payment Failed | `ss_payment_failed` | Payment attempt fails | contact_id, amount, failure_reason, attempt_count, next_retry_date |
+| Refund Processed | `ss_refund_processed` | Refund issued | contact_id, amount, refund_type, reason |
+
+**RISK & DEFENSE (5):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Client At Risk | `ss_client_at_risk` | Disengagement detected | contact_id, risk_score, risk_factors, days_inactive, last_activity_date |
+| Client Re-Engaged | `ss_client_reengaged` | At-risk client returns | contact_id, reengagement_type, previous_risk_score |
+| Chargeback Detected | `ss_chargeback_detected` | Dispute filed | contact_id, amount, reason_code, dispute_date |
+| Defense Ready | `ss_defense_ready` | Defense packet compiled | contact_id, packet_url, evidence_count, readiness_score |
+| Evidence Milestone | `ss_evidence_milestone` | Evidence threshold hit | contact_id, milestone_type, evidence_count, readiness_score |
+
+**CHARGEBACK RATIO MONITORING (2):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Chargeback Ratio Warning | `ss_chargeback_ratio_warning` | Ratio hits 0.5% | location_id, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, trend |
+| Chargeback Ratio Critical | `ss_chargeback_ratio_critical` | Ratio hits 0.75% | location_id, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, days_until_program_risk |
+
+**Subscription URL (all triggers):** `https://scalesafe-production.up.railway.app/webhooks/ghl/triggers`
+
+**Who builds the response workflows?** The Snapshot includes default notification workflows for each trigger (22 total — see GHL_SNAPSHOT_PLAN.md Section 4A). Merchants can customize these workflows in GHL after install.
 
 ---
 

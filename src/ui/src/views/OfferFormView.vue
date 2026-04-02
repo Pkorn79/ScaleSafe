@@ -146,10 +146,10 @@
         <input class="form-input" type="url" v-model="form.tcUrl" placeholder="https://yourdomain.com/terms" />
       </div>
 
-      <div v-if="!form.tcHasOwn">
+      <div>
         <p class="text-sm text-muted mb-4">
-          Toggle the standard clauses you want included in this offer's enrollment agreement.
-          Clauses marked "Recommended" are suggested for chargeback protection.
+          Toggle the clickwrap acknowledgments clients must agree to during enrollment.
+          These are shown in addition to any linked terms document. Clauses marked "Recommended" are suggested for chargeback protection.
         </p>
 
         <div v-for="(clause, idx) in standardClauses" :key="clause.key" class="clause-toggle mb-4">
