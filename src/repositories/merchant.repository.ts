@@ -17,6 +17,12 @@ export interface MerchantRecord {
   module_pulse: boolean;
   module_payments: boolean;
   module_course: boolean;
+  dba_name: string | null;
+  descriptor: string | null;
+  logo_url: string | null;
+  industry: string | null;
+  onboarding_complete: boolean;
+  tc_clause_toggles: Record<string, boolean>;
   snapshot_status: string;
   snapshot_attempts: number;
   trigger_ids: Record<string, string>;

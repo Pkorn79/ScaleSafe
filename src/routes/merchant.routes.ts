@@ -9,6 +9,7 @@ router.use(ssoAuth, requireTenant);
 
 router.get('/config', merchantController.getConfig);
 router.put('/config', merchantController.updateConfig);
+router.get('/onboarding-status', merchantController.getOnboardingStatus);
 router.post('/provision', merchantController.provision);
 
 export default router;
