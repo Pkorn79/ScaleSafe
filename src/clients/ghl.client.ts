@@ -150,7 +150,6 @@ export async function refreshAccessToken(locationId: string, currentRefreshToken
     client_secret: config.ghl.clientSecret,
     grant_type: 'refresh_token',
     refresh_token: currentRefreshToken,
-    user_type: 'Location',
   }).toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });

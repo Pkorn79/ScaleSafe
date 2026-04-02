@@ -197,7 +197,14 @@ export const merchantService = {
     logger.info({ locationId, total: allFields.length, creating: toCreate.length }, 'Creating custom fields');
 
     let failures = 0;
+    let authFailures = 0;
     for (let i = 0; i < toCreate.length; i += 5) {
+      // If we hit auth failures on the first batch, stop early — no point retrying 50 times
+      if (authFailures >= 5) {
+        logger.warn({ locationId, authFailures }, 'Stopping custom field creation — auth/scope issue detected. Fields may already exist from Snapshot.');
+        break;
+      }
+
       const batch = toCreate.slice(i, i + 5);
       await Promise.all(batch.map(async (field) => {
         try {
@@ -209,6 +216,11 @@ export const merchantService = {
           const status = err.ghlStatus || err.status;
           if (status === 422 || status === 409) {
             logger.debug({ field: field.name, locationId }, 'Custom field already exists (conflict)');
+          } else if (status === 401 || status === 403 || (err.message && err.message.includes('authClass'))) {
+            authFailures++;
+            if (authFailures === 1) {
+              logger.warn({ locationId, status, message: err.message?.slice(0, 200) }, 'Custom field auth/scope failure — token may be Company-scoped. Custom fields should be created by Snapshot instead.');
+            }
           } else {
             failures++;
             logger.warn({ err, field: field.name, locationId }, 'Failed to create custom field (non-fatal)');
@@ -217,11 +229,17 @@ export const merchantService = {
       }));
     }
 
+    // Auth failures are NOT fatal — fields may exist from Snapshot or can be created manually
+    if (authFailures > 0) {
+      logger.info({ locationId, authFailures, toCreate: toCreate.length }, 'Skipped custom field creation due to auth/scope — fields should be present from GHL Snapshot');
+      return; // Don't throw — this is expected for Company-scoped tokens
+    }
+
     if (failures > Math.floor(toCreate.length / 2)) {
       throw new Error(`Too many custom field failures (${failures}/${toCreate.length}) — likely a systemic issue`);
     }
 
-    logger.info({ locationId, created: toCreate.length, failures }, 'Custom fields created');
+    logger.info({ locationId, created: toCreate.length - failures, failures }, 'Custom fields created');
   },
 
   /**
