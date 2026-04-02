@@ -215,28 +215,28 @@ export const merchantService = {
   },
 
   async createCustomValues(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
-    let existingValues: Record<string, string> = {};
+    let existingIds = new Set<string>();
     try {
       const res = await api.get(`/locations/${locationId}/customValues`);
       const values = res.data.customValues || res.data || [];
       for (const v of values) {
-        existingValues[v.name || v.fieldKey] = v.id;
+        if (v.id) existingIds.add(v.id);
       }
     } catch (err) {
       logger.warn({ err, locationId }, 'Could not fetch existing custom values');
     }
 
     const valuesToSet = [
-      { name: GHL_CUSTOM_VALUES.BUSINESS_NAME, value: '' },
-      { name: GHL_CUSTOM_VALUES.SUPPORT_EMAIL, value: '' },
-      { name: GHL_CUSTOM_VALUES.TC_URL,        value: '' },
+      { name: GHL_CUSTOM_VALUES.BUSINESS_NAME.name, id: GHL_CUSTOM_VALUES.BUSINESS_NAME.id, value: '' },
+      { name: GHL_CUSTOM_VALUES.SUPPORT_EMAIL.name, id: GHL_CUSTOM_VALUES.SUPPORT_EMAIL.id, value: '' },
+      { name: GHL_CUSTOM_VALUES.TC_URL.name,        id: GHL_CUSTOM_VALUES.TC_URL.id,        value: '' },
     ];
 
     let failures = 0;
     for (const cv of valuesToSet) {
       try {
-        if (existingValues[cv.name]) {
-          logger.debug({ locationId, name: cv.name }, 'Custom value already exists');
+        if (existingIds.has(cv.id)) {
+          logger.debug({ locationId, name: cv.name, id: cv.id }, 'Custom value already exists (by ID)');
         } else {
           await api.post(`/locations/${locationId}/customValues`, {
             name: cv.name,

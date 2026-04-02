@@ -49,11 +49,15 @@ export const CUSTOM_TRIGGERS = {
 
 /**
  * GHL Custom Values set during onboarding.
+ * Each entry has a name (for creation) and a known ID (for existence checks).
+ * IDs come from ghl-custom-value-ids.ts — verified live from the API.
  */
+import { CV_BUSINESS_NAME, CV_SUPPORT_EMAIL, CV_TC_DOCUMENT_URL } from './ghl-custom-value-ids';
+
 export const GHL_CUSTOM_VALUES = {
-  BUSINESS_NAME: 'SS--Business-Name',
-  SUPPORT_EMAIL: 'SS--Support-Email',
-  TC_URL:        'SS--TC-URL',
+  BUSINESS_NAME: { name: 'Business Legal Name',    id: CV_BUSINESS_NAME },
+  SUPPORT_EMAIL: { name: 'Merchant Support Email',  id: CV_SUPPORT_EMAIL },
+  TC_URL:        { name: 'TC Document URL',          id: CV_TC_DOCUMENT_URL },
 } as const;
 
 /**
