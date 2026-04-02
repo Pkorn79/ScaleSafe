@@ -1,9 +1,8 @@
 import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository, MerchantRecord } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
-import { GHL_CUSTOM_VALUES } from '../constants/ghl-fields';
+import { CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
-import * as CV from '../constants/ghl-custom-value-ids';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -132,8 +131,19 @@ export const merchantService = {
       const updatedConfig = { ...merchant.config, pipelineId: pipelineId || null };
       await merchantRepository.update(locationId, { config: updatedConfig } as any);
 
-      await merchantRepository.updateSnapshotStatus(locationId, 'installed');
-      logger.info({ locationId, pipelineId }, 'Merchant provisioning complete');
+      // Check if all custom values were captured
+      const cvIds = merchant.custom_value_ids || {};
+      const expectedCount = CUSTOM_VALUE_REGISTRY.length;
+      const actualCount = Object.keys(cvIds).length;
+
+      if (actualCount < expectedCount) {
+        await merchantRepository.updateSnapshotStatus(locationId, 'partial',
+          `${actualCount}/${expectedCount} custom values provisioned. Missing: ${CUSTOM_VALUE_REGISTRY.filter(e => !cvIds[e.key]).map(e => e.key).join(', ')}`);
+        logger.warn({ locationId, actualCount, expectedCount }, 'Provisioning partial — some custom values missing');
+      } else {
+        await merchantRepository.updateSnapshotStatus(locationId, 'installed');
+        logger.info({ locationId, pipelineId }, 'Merchant provisioning complete');
+      }
     } catch (err: any) {
       logger.error({ err, locationId }, 'Merchant provisioning failed');
       await merchantRepository.updateSnapshotStatus(locationId, 'failed', err.message);
@@ -214,49 +224,97 @@ export const merchantService = {
     logger.info({ locationId, created: toCreate.length, failures }, 'Custom fields created');
   },
 
+  /**
+   * Discover or create all 23 ScaleSafe custom values for a location.
+   * Matches existing values by fieldKey pattern (not name — names vary between locations).
+   * Stores the per-merchant ID map in merchants.custom_value_ids.
+   * Partial success is saved — only failed values need retry.
+   */
   async createCustomValues(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
-    let existingIds = new Set<string>();
+    // 1. Fetch existing custom values and build fieldKey → {id, value} lookup
+    const fieldKeyLookup: Record<string, { id: string; value: string }> = {};
     try {
       const res = await api.get(`/locations/${locationId}/customValues`);
       const values = res.data.customValues || res.data || [];
       for (const v of values) {
-        if (v.id) existingIds.add(v.id);
+        // fieldKey format: "{{ custom_values.merchant_business_name }}"
+        // Extract the pattern between "custom_values." and " }}"
+        const match = (v.fieldKey || '').match(/custom_values\.(\w+)/);
+        if (match && v.id) {
+          fieldKeyLookup[match[1]] = { id: v.id, value: v.value || '' };
+        }
       }
     } catch (err) {
       logger.warn({ err, locationId }, 'Could not fetch existing custom values');
     }
 
-    const valuesToSet = [
-      { name: GHL_CUSTOM_VALUES.BUSINESS_NAME.name, id: GHL_CUSTOM_VALUES.BUSINESS_NAME.id, value: '' },
-      { name: GHL_CUSTOM_VALUES.SUPPORT_EMAIL.name, id: GHL_CUSTOM_VALUES.SUPPORT_EMAIL.id, value: '' },
-      { name: GHL_CUSTOM_VALUES.TC_URL.name,        id: GHL_CUSTOM_VALUES.TC_URL.id,        value: '' },
-    ];
+    // 2. Load any previously stored IDs (for retry of partial failures)
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const storedIds: Record<string, string> = { ...(merchant.custom_value_ids || {}) };
 
+    // 3. For each registry entry: discover existing or create new
+    let found = 0;
+    let created = 0;
     let failures = 0;
-    for (const cv of valuesToSet) {
+    const failedKeys: string[] = [];
+
+    for (const entry of CUSTOM_VALUE_REGISTRY) {
+      // Skip if we already have this ID stored from a previous run
+      if (storedIds[entry.key]) {
+        found++;
+        continue;
+      }
+
+      // Check if value exists by fieldKey pattern
+      const existing = fieldKeyLookup[entry.fieldKeyMatch];
+      if (existing) {
+        storedIds[entry.key] = existing.id;
+        found++;
+        logger.debug({ locationId, key: entry.key, id: existing.id }, 'Custom value discovered by fieldKey');
+        continue;
+      }
+
+      // Value doesn't exist — create it
       try {
-        if (existingIds.has(cv.id)) {
-          logger.debug({ locationId, name: cv.name, id: cv.id }, 'Custom value already exists (by ID)');
+        const res = await api.post(`/locations/${locationId}/customValues`, {
+          name: entry.defaultName,
+          value: '',
+        });
+        const newId = res.data?.customValue?.id || res.data?.id || '';
+        if (newId) {
+          storedIds[entry.key] = newId;
+          created++;
+          logger.info({ locationId, key: entry.key, name: entry.defaultName, id: newId }, 'Custom value created');
         } else {
-          await api.post(`/locations/${locationId}/customValues`, {
-            name: cv.name,
-            value: cv.value,
-          });
-          logger.info({ locationId, name: cv.name }, 'Custom value created');
+          failures++;
+          failedKeys.push(entry.key);
+          logger.warn({ locationId, key: entry.key, response: JSON.stringify(res.data).slice(0, 200) }, 'Custom value created but no ID returned');
         }
       } catch (err: any) {
         const status = err.ghlStatus || err.status;
         if (status === 422 || status === 409) {
-          logger.debug({ locationId, name: cv.name }, 'Custom value already exists (conflict)');
+          // Already exists but we couldn't match by fieldKey — try to find it by re-fetching
+          logger.warn({ locationId, key: entry.key, name: entry.defaultName }, 'Custom value conflict — may exist under different fieldKey');
+          failures++;
+          failedKeys.push(entry.key);
         } else {
           failures++;
-          logger.warn({ err, locationId, name: cv.name }, 'Failed to create custom value (non-fatal)');
+          failedKeys.push(entry.key);
+          logger.warn({ err, locationId, key: entry.key }, 'Failed to create custom value');
         }
       }
     }
 
-    if (failures > Math.floor(valuesToSet.length / 2)) {
-      throw new Error(`Too many custom value failures (${failures}/${valuesToSet.length}) — likely a systemic issue`);
+    // 4. Save discovered IDs to Supabase (even if partial)
+    await merchantRepository.update(locationId, { custom_value_ids: storedIds } as any);
+
+    const total = CUSTOM_VALUE_REGISTRY.length;
+    const succeeded = Object.keys(storedIds).length;
+    logger.info({ locationId, total, found, created, failures, succeeded, failedKeys }, 'Custom values provisioning complete');
+
+    // 5. If more than half failed, throw (systemic issue like auth failure)
+    if (failures > Math.floor(total / 2)) {
+      throw new Error(`Too many custom value failures (${failures}/${total}) — likely a systemic issue. Failed: ${failedKeys.join(', ')}`);
     }
   },
 
@@ -288,6 +346,7 @@ export const merchantService = {
    */
   async getFullConfig(locationId: string): Promise<MerchantFullConfig> {
     const merchant = await merchantRepository.getByLocationId(locationId);
+    const cvIds = merchant.custom_value_ids || {};
 
     // Fetch GHL custom values to get current state (best-effort)
     let ghlValues: Record<string, string> = {};
@@ -297,7 +356,12 @@ export const merchantService = {
       logger.warn({ err, locationId }, 'Could not fetch GHL custom values — using Supabase only');
     }
 
-    const gv = (id: string) => ghlValues[id] || '';
+    // Helper: get GHL value by canonical key using stored per-merchant ID
+    const gv = (key: string) => {
+      const id = cvIds[key];
+      return id ? (ghlValues[id] || '') : '';
+    };
+
     const cfg = merchant.config || {};
     const clauseToggles = (merchant as any).tc_clause_toggles || {};
 
@@ -315,25 +379,25 @@ export const merchantService = {
       snapshotStatus: merchant.snapshot_status,
       snapshotError: (merchant as any).snapshot_error || '',
 
-      businessName: merchant.business_name || gv(CV.CV_BUSINESS_NAME) || '',
-      dbaName: merchant.dba_name || gv(CV.CV_DBA_BRAND_NAME) || '',
-      supportEmail: merchant.support_email || gv(CV.CV_SUPPORT_EMAIL) || '',
-      descriptor: merchant.descriptor || gv(CV.CV_DESCRIPTOR) || '',
-      businessWebsite: gv(CV.CV_BUSINESS_WEBSITE) || (cfg as any).business_website || '',
-      businessCity: gv(CV.CV_BUSINESS_CITY) || (cfg as any).business_city || '',
-      businessState: gv(CV.CV_BUSINESS_STATE) || (cfg as any).business_state || '',
-      industryNiche: merchant.industry || gv(CV.CV_INDUSTRY_NICHE) || '',
-      primaryServiceType: gv(CV.CV_PRIMARY_SERVICE_TYPE) || (cfg as any).primary_service_type || '',
-      logoUrl: merchant.logo_url || gv(CV.CV_LOGO_URL) || '',
-      shortDescription: gv(CV.CV_SHORT_DESCRIPTION) || (cfg as any).short_description || '',
+      businessName: merchant.business_name || gv('BUSINESS_NAME') || '',
+      dbaName: merchant.dba_name || gv('DBA_BRAND_NAME') || '',
+      supportEmail: merchant.support_email || gv('SUPPORT_EMAIL') || '',
+      descriptor: merchant.descriptor || gv('DESCRIPTOR') || '',
+      businessWebsite: gv('BUSINESS_WEBSITE') || (cfg as any).business_website || '',
+      businessCity: gv('BUSINESS_CITY') || (cfg as any).business_city || '',
+      businessState: gv('BUSINESS_STATE') || (cfg as any).business_state || '',
+      industryNiche: merchant.industry || gv('INDUSTRY_NICHE') || '',
+      primaryServiceType: gv('PRIMARY_SERVICE_TYPE') || (cfg as any).primary_service_type || '',
+      logoUrl: merchant.logo_url || gv('LOGO_URL') || '',
+      shortDescription: gv('SHORT_DESCRIPTION') || (cfg as any).short_description || '',
 
-      tcHasOwn: gv(CV.CV_TC_HAS_OWN) === 'true' || (cfg as any).tc_has_own === true,
-      tcDocumentUrl: gv(CV.CV_TC_DOCUMENT_URL) || (cfg as any).tc_document_url || '',
+      tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,
+      tcDocumentUrl: gv('TC_DOCUMENT_URL') || (cfg as any).tc_document_url || '',
       standardClauses: standardClauses as Record<StandardClauseKey, boolean>,
-      customClause1Title: gv(CV.CV_CUSTOM_CLAUSE_1_TITLE) || (cfg as any).custom_clause_1_title || '',
-      customClause1Text: gv(CV.CV_CUSTOM_CLAUSE_1_TEXT) || (cfg as any).custom_clause_1_text || '',
-      customClause2Title: gv(CV.CV_CUSTOM_CLAUSE_2_TITLE) || (cfg as any).custom_clause_2_title || '',
-      customClause2Text: gv(CV.CV_CUSTOM_CLAUSE_2_TEXT) || (cfg as any).custom_clause_2_text || '',
+      customClause1Title: gv('CUSTOM_CLAUSE_1_TITLE') || (cfg as any).custom_clause_1_title || '',
+      customClause1Text: gv('CUSTOM_CLAUSE_1_TEXT') || (cfg as any).custom_clause_1_text || '',
+      customClause2Title: gv('CUSTOM_CLAUSE_2_TITLE') || (cfg as any).custom_clause_2_title || '',
+      customClause2Text: gv('CUSTOM_CLAUSE_2_TEXT') || (cfg as any).custom_clause_2_text || '',
 
       modules: {
         sessions: merchant.module_sessions,
@@ -489,63 +553,75 @@ export const merchantService = {
   },
 
   /**
-   * Sync config to GHL custom values using exact hardcoded IDs.
+   * Sync config to GHL custom values using per-merchant stored IDs.
    * Uses PUT /locations/{locationId}/customValues/{id} for each value.
    */
   async syncConfigToGHL(locationId: string, updates: MerchantConfigUpdate, compiledHtml: string): Promise<void> {
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const cvIds = merchant.custom_value_ids || {};
     const api = await ghlApi(locationId);
 
-    // Build list of {id, value} pairs to write
-    const toSync: Array<{ id: string; value: string }> = [];
+    // Helper: queue a sync if the merchant has the ID for this key
+    const toSync: Array<{ key: string; id: string; value: string }> = [];
+    const push = (key: string, value: string) => {
+      const id = cvIds[key];
+      if (id) {
+        toSync.push({ key, id, value });
+      } else {
+        logger.debug({ locationId, key }, 'Skipping GHL sync — no stored ID for this key');
+      }
+    };
 
     // Business info
-    if (updates.businessName !== undefined)      toSync.push({ id: CV.CV_BUSINESS_NAME, value: updates.businessName });
-    if (updates.dbaName !== undefined)            toSync.push({ id: CV.CV_DBA_BRAND_NAME, value: updates.dbaName });
-    if (updates.supportEmail !== undefined)       toSync.push({ id: CV.CV_SUPPORT_EMAIL, value: updates.supportEmail });
-    if (updates.descriptor !== undefined)         toSync.push({ id: CV.CV_DESCRIPTOR, value: updates.descriptor });
-    if (updates.businessWebsite !== undefined)    toSync.push({ id: CV.CV_BUSINESS_WEBSITE, value: updates.businessWebsite });
-    if (updates.businessCity !== undefined)        toSync.push({ id: CV.CV_BUSINESS_CITY, value: updates.businessCity });
-    if (updates.businessState !== undefined)       toSync.push({ id: CV.CV_BUSINESS_STATE, value: updates.businessState });
-    if (updates.industryNiche !== undefined)       toSync.push({ id: CV.CV_INDUSTRY_NICHE, value: updates.industryNiche });
-    if (updates.primaryServiceType !== undefined)  toSync.push({ id: CV.CV_PRIMARY_SERVICE_TYPE, value: updates.primaryServiceType });
-    if (updates.logoUrl !== undefined)             toSync.push({ id: CV.CV_LOGO_URL, value: updates.logoUrl });
-    if (updates.shortDescription !== undefined)    toSync.push({ id: CV.CV_SHORT_DESCRIPTION, value: updates.shortDescription });
+    if (updates.businessName !== undefined)       push('BUSINESS_NAME', updates.businessName);
+    if (updates.dbaName !== undefined)             push('DBA_BRAND_NAME', updates.dbaName);
+    if (updates.supportEmail !== undefined)        push('SUPPORT_EMAIL', updates.supportEmail);
+    if (updates.descriptor !== undefined)          push('DESCRIPTOR', updates.descriptor);
+    if (updates.businessWebsite !== undefined)     push('BUSINESS_WEBSITE', updates.businessWebsite);
+    if (updates.businessCity !== undefined)         push('BUSINESS_CITY', updates.businessCity);
+    if (updates.businessState !== undefined)        push('BUSINESS_STATE', updates.businessState);
+    if (updates.industryNiche !== undefined)        push('INDUSTRY_NICHE', updates.industryNiche);
+    if (updates.primaryServiceType !== undefined)   push('PRIMARY_SERVICE_TYPE', updates.primaryServiceType);
+    if (updates.logoUrl !== undefined)              push('LOGO_URL', updates.logoUrl);
+    if (updates.shortDescription !== undefined)     push('SHORT_DESCRIPTION', updates.shortDescription);
 
     // T&C config
-    if (updates.tcHasOwn !== undefined)            toSync.push({ id: CV.CV_TC_HAS_OWN, value: String(updates.tcHasOwn) });
-    if (updates.tcDocumentUrl !== undefined)        toSync.push({ id: CV.CV_TC_DOCUMENT_URL, value: updates.tcDocumentUrl });
-    if (updates.customClause1Title !== undefined)   toSync.push({ id: CV.CV_CUSTOM_CLAUSE_1_TITLE, value: updates.customClause1Title });
-    if (updates.customClause1Text !== undefined)    toSync.push({ id: CV.CV_CUSTOM_CLAUSE_1_TEXT, value: updates.customClause1Text });
-    if (updates.customClause2Title !== undefined)   toSync.push({ id: CV.CV_CUSTOM_CLAUSE_2_TITLE, value: updates.customClause2Title });
-    if (updates.customClause2Text !== undefined)    toSync.push({ id: CV.CV_CUSTOM_CLAUSE_2_TEXT, value: updates.customClause2Text });
+    if (updates.tcHasOwn !== undefined)             push('TC_HAS_OWN', String(updates.tcHasOwn));
+    if (updates.tcDocumentUrl !== undefined)         push('TC_DOCUMENT_URL', updates.tcDocumentUrl);
+    if (updates.customClause1Title !== undefined)    push('CUSTOM_CLAUSE_1_TITLE', updates.customClause1Title);
+    if (updates.customClause1Text !== undefined)     push('CUSTOM_CLAUSE_1_TEXT', updates.customClause1Text);
+    if (updates.customClause2Title !== undefined)    push('CUSTOM_CLAUSE_2_TITLE', updates.customClause2Title);
+    if (updates.customClause2Text !== undefined)     push('CUSTOM_CLAUSE_2_TEXT', updates.customClause2Text);
 
     // Always sync compiled T&C HTML
-    toSync.push({ id: CV.CV_COMPILED_TERMS_HTML, value: compiledHtml });
+    push('COMPILED_TERMS_HTML', compiledHtml);
 
     // Evidence module toggles
     if (updates.modules) {
-      if (updates.modules.sessions !== undefined)   toSync.push({ id: CV.CV_MODULE_SESSIONS, value: updates.modules.sessions ? 'Enabled' : 'Disabled' });
-      if (updates.modules.milestones !== undefined)  toSync.push({ id: CV.CV_MODULE_MILESTONES, value: updates.modules.milestones ? 'Enabled' : 'Disabled' });
-      if (updates.modules.pulse !== undefined)       toSync.push({ id: CV.CV_MODULE_PULSE, value: updates.modules.pulse ? 'Enabled' : 'Disabled' });
-      if (updates.modules.payments !== undefined)    toSync.push({ id: CV.CV_MODULE_PAYMENTS, value: updates.modules.payments ? 'Enabled' : 'Disabled' });
-      if (updates.modules.course !== undefined)      toSync.push({ id: CV.CV_MODULE_COURSE, value: updates.modules.course ? 'Enabled' : 'Disabled' });
+      if (updates.modules.sessions !== undefined)    push('MODULE_SESSIONS', updates.modules.sessions ? 'Enabled' : 'Disabled');
+      if (updates.modules.milestones !== undefined)   push('MODULE_MILESTONES', updates.modules.milestones ? 'Enabled' : 'Disabled');
+      if (updates.modules.pulse !== undefined)        push('MODULE_PULSE', updates.modules.pulse ? 'Enabled' : 'Disabled');
+      if (updates.modules.payments !== undefined)     push('MODULE_PAYMENTS', updates.modules.payments ? 'Enabled' : 'Disabled');
+      if (updates.modules.course !== undefined)       push('MODULE_COURSE', updates.modules.course ? 'Enabled' : 'Disabled');
     }
 
     // Write in batches of 5 to avoid GHL rate limits
     let synced = 0;
+    let skipped = 0;
     for (let i = 0; i < toSync.length; i += 5) {
       const batch = toSync.slice(i, i + 5);
-      await Promise.all(batch.map(async ({ id, value }) => {
+      await Promise.all(batch.map(async ({ key, id, value }) => {
         try {
           await api.put(`/locations/${locationId}/customValues/${id}`, { value });
           synced++;
         } catch (err) {
-          logger.warn({ err, locationId, customValueId: id }, 'Failed to update GHL custom value');
+          skipped++;
+          logger.warn({ err, locationId, key, customValueId: id }, 'Failed to update GHL custom value');
         }
       }));
     }
 
-    logger.info({ locationId, synced, total: toSync.length }, 'GHL custom values synced');
+    logger.info({ locationId, synced, skipped, total: toSync.length }, 'GHL custom values synced');
   },
 };
 

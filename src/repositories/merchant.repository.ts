@@ -23,6 +23,7 @@ export interface MerchantRecord {
   industry: string | null;
   onboarding_complete: boolean;
   tc_clause_toggles: Record<string, boolean>;
+  custom_value_ids: Record<string, string>;
   snapshot_status: string;
   snapshot_attempts: number;
   trigger_ids: Record<string, string>;

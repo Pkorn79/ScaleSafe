@@ -48,17 +48,48 @@ export const CUSTOM_TRIGGERS = {
 } as const;
 
 /**
- * GHL Custom Values set during onboarding.
- * Each entry has a name (for creation) and a known ID (for existence checks).
- * IDs come from ghl-custom-value-ids.ts — verified live from the API.
+ * Canonical custom value registry — maps each ScaleSafe custom value to its
+ * fieldKey pattern (the part GHL auto-generates, consistent across locations
+ * regardless of display name).
+ *
+ * fieldKeyMatch values verified against live GHL API data (2026-04-02).
+ * During provisioning, values are matched by fieldKey pattern, NOT by name.
+ * Each merchant's discovered IDs are stored in merchants.custom_value_ids.
  */
-import { CV_BUSINESS_NAME, CV_SUPPORT_EMAIL, CV_TC_DOCUMENT_URL } from './ghl-custom-value-ids';
+export interface CustomValueDef {
+  key: string;
+  defaultName: string;
+  fieldKeyMatch: string;
+}
 
-export const GHL_CUSTOM_VALUES = {
-  BUSINESS_NAME: { name: 'Business Legal Name',    id: CV_BUSINESS_NAME },
-  SUPPORT_EMAIL: { name: 'Merchant Support Email',  id: CV_SUPPORT_EMAIL },
-  TC_URL:        { name: 'TC Document URL',          id: CV_TC_DOCUMENT_URL },
-} as const;
+export const CUSTOM_VALUE_REGISTRY: readonly CustomValueDef[] = [
+  // Business Info (11)
+  { key: 'BUSINESS_NAME',        defaultName: 'Business Legal Name',        fieldKeyMatch: 'merchant_business_name' },
+  { key: 'DBA_BRAND_NAME',       defaultName: 'DBA / Brand Name',           fieldKeyMatch: 'dba__brand_name' },
+  { key: 'SUPPORT_EMAIL',        defaultName: 'Merchant Support Email',     fieldKeyMatch: 'merchant_support_email' },
+  { key: 'DESCRIPTOR',           defaultName: 'Merchant Descriptor',        fieldKeyMatch: 'merchant_descriptor' },
+  { key: 'BUSINESS_WEBSITE',     defaultName: 'Business Website',           fieldKeyMatch: 'business_website' },
+  { key: 'BUSINESS_CITY',        defaultName: 'Business City',              fieldKeyMatch: 'business_city' },
+  { key: 'BUSINESS_STATE',       defaultName: 'Business State',             fieldKeyMatch: 'business_state' },
+  { key: 'INDUSTRY_NICHE',       defaultName: 'Industry / Niche',           fieldKeyMatch: 'industry__niche' },
+  { key: 'PRIMARY_SERVICE_TYPE', defaultName: 'Primary Service Type',       fieldKeyMatch: 'primary_service_type' },
+  { key: 'LOGO_URL',             defaultName: 'SS Merchant Logo URL',       fieldKeyMatch: 'ss_merchant_logo_url' },
+  { key: 'SHORT_DESCRIPTION',    defaultName: 'Short Business Description', fieldKeyMatch: 'short_business_description' },
+  // T&C Config (7)
+  { key: 'TC_HAS_OWN',            defaultName: 'TC Has Own',                fieldKeyMatch: 'tc_has_own' },
+  { key: 'TC_DOCUMENT_URL',       defaultName: 'TC Document URL',           fieldKeyMatch: 'tc_document_url' },
+  { key: 'COMPILED_TERMS_HTML',   defaultName: 'Compiled Terms HTML',       fieldKeyMatch: 'compiled_terms_html' },
+  { key: 'CUSTOM_CLAUSE_1_TITLE', defaultName: 'Custom Clause 1 Title',    fieldKeyMatch: 'custom_clause_1_title' },
+  { key: 'CUSTOM_CLAUSE_1_TEXT',  defaultName: 'Custom Clause 1 Text',     fieldKeyMatch: 'custom_clause_1_text' },
+  { key: 'CUSTOM_CLAUSE_2_TITLE', defaultName: 'Custom Clause 2 Title',    fieldKeyMatch: 'custom_clause_2_title' },
+  { key: 'CUSTOM_CLAUSE_2_TEXT',  defaultName: 'Custom Clause 2 Text',     fieldKeyMatch: 'custom_clause_2_text' },
+  // Evidence Module Toggles (5)
+  { key: 'MODULE_SESSIONS',   defaultName: 'Module Session Tracking',   fieldKeyMatch: 'module_session_tracking' },
+  { key: 'MODULE_MILESTONES', defaultName: 'Module Milestone Tracking', fieldKeyMatch: 'module_milestone_tracking' },
+  { key: 'MODULE_PULSE',      defaultName: 'Module Pulse Check',        fieldKeyMatch: 'module_pulse_check' },
+  { key: 'MODULE_PAYMENTS',   defaultName: 'Module Payment Tracking',   fieldKeyMatch: 'module_payment_tracking' },
+  { key: 'MODULE_COURSE',     defaultName: 'Module Course Progress',    fieldKeyMatch: 'module_course_progress' },
+] as const;
 
 /**
  * Offers Custom Object key prefix for GHL API calls.

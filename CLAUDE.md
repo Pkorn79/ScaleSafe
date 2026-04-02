@@ -10,9 +10,13 @@ ScaleSafe is a GHL Marketplace app that helps coaches and service providers defe
 - **Deployment:** Railway (auto-deploys from GitHub `main`)
 - **Auth:** GHL OAuth2 (install) + SSO postMessage handshake (iframe)
 
+## Build Philosophy
+
+**Always build for scale.** Every feature must work for merchant #1 and merchant #1000. Never shortcut because "there's only one merchant right now." If a scaling issue is identified, fix it properly — build the registry, the per-merchant storage, the graceful partial failure. This is a marketplace app, not a single-tenant prototype.
+
 ## Architecture Constraints
 
-1. **All GHL custom value IDs** live in `src/constants/ghl-custom-value-ids.ts`. Never hardcode IDs elsewhere.
+1. **GHL custom value IDs are per-merchant.** Each merchant's discovered IDs are stored in `merchants.custom_value_ids` JSONB column. The canonical registry is `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`. The file `src/constants/ghl-custom-value-ids.ts` contains PMG-specific IDs for reference only — never import from it in production code.
 2. **All GHL field/value name mappings** live in `src/constants/ghl-fields.ts`. This imports from the IDs file.
 3. **Standard T&C clauses** are defined in `src/constants/standard-clauses.ts`.
 4. **GHL API calls** go through `src/clients/ghl.client.ts`. Never call GHL directly from controllers or services.

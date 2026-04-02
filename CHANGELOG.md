@@ -7,15 +7,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-02
 
+### Added
+- `CUSTOM_VALUE_REGISTRY` — 23-value canonical registry with fieldKey patterns for cross-location matching
+- Per-merchant `custom_value_ids` JSONB column — each location stores its own GHL custom value IDs
+- Partial provisioning status — if some values fail, progress is saved and only failures are retried
+- `CLAUDE.md` project rules file with architecture constraints, docs trust warning, post-deploy verification
+- `CHANGELOG.md` backfilled from all git history
+- Logo file upload to Supabase Storage with preview thumbnail (4463ec7)
+- `POST /api/merchants/logo` endpoint with multer multipart handling (4463ec7)
+
+### Changed
+- `createCustomValues()` now discovers existing values by fieldKey pattern (not name), creates missing ones, and stores all IDs per-merchant in Supabase — scales to N merchants
+- `syncConfigToGHL()` uses per-merchant stored IDs instead of hardcoded PMG-specific IDs
+- `getFullConfig()` reads GHL values using per-merchant stored IDs
+- Provisioning sets `partial` status when some custom values succeed but others fail
+
 ### Fixed
 - T&C logic now additive: URL + clickwrap clauses show together, not either/or (4463ec7)
 - Enrollment preview page shows program duration, refund policy, and compiled T&C (4463ec7)
 - Provisioning recovery: snapshot error shown in UI, retry button, auto-retry on page load (4463ec7)
-- Custom value provisioning checks by known ID instead of name — works for fresh installs and v1 migrations (db0c140)
-
-### Added
-- Logo file upload to Supabase Storage with preview thumbnail (4463ec7)
-- `POST /api/merchants/logo` endpoint with multer multipart handling (4463ec7)
+- Custom value provisioning no longer fails on name mismatches between locations
 
 ### Security
 - Removed leaked database URI (`supabase/.temp/pooler-url`) from repo, added to `.gitignore` (348833d)

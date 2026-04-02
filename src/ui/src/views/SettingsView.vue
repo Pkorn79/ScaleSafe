@@ -204,7 +204,7 @@ onMounted(async () => {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
     // Auto-retry provisioning if failed or pending
-    if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending')) {
+    if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending' || config.value.snapshotStatus === 'partial')) {
       retryProvision();
     }
   } catch {}
