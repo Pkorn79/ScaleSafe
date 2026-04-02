@@ -1,7 +1,6 @@
 import { ghlApi } from '../clients/ghl.client';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
-import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 
 interface CreateOfferInput {
   locationId: string;
@@ -20,20 +19,10 @@ interface CreateOfferInput {
   refundPolicyType?: 'no_refunds' | 'full_refund' | 'prorated' | 'custom';
   refundPolicyDays?: number;
   refundWindowText?: string;
-  tcClauseOverrides?: Record<string, boolean>;
-  customClause1Title?: string;
-  customClause1Text?: string;
-  customClause2Title?: string;
-  customClause2Text?: string;
+  tcUrl?: string;
+  // 11 clause slots: slots 1-9 = standard clauses, 10-11 = custom clauses
+  clauses?: Array<{ title: string; text: string }>;
   milestones?: Array<{ name: string; delivers: string; clientDoes: string }>;
-  // Merchant config passed from controller for T&C compilation
-  merchantTcClauseToggles?: Record<string, boolean>;
-  merchantCustomClause1Title?: string;
-  merchantCustomClause1Text?: string;
-  merchantCustomClause2Title?: string;
-  merchantCustomClause2Text?: string;
-  merchantTcHasOwn?: boolean;
-  merchantTcDocumentUrl?: string;
 }
 
 function extractId(data: any, objectKey?: string): string {
@@ -46,7 +35,6 @@ function extractId(data: any, objectKey?: string): string {
 
 /**
  * Auto-calculate installment amount from price and numPayments.
- * Returns the input installmentAmount if price or numPayments not available.
  */
 function calcInstallmentAmount(price?: number, numPayments?: number, fallback?: number): number | undefined {
   if (price && numPayments && numPayments > 0) {
@@ -56,45 +44,25 @@ function calcInstallmentAmount(price?: number, numPayments?: number, fallback?: 
 }
 
 /**
- * Compile the final T&C HTML for a specific offer.
- * Merges merchant-level T&C defaults with per-offer overrides.
+ * Compile T&C HTML from the clause slots on the offer.
+ * Takes the 11 clause slots and builds an ordered list of active clauses.
  */
-function compileOfferTcHtml(input: CreateOfferInput): string {
-  // If merchant has own T&C document, just link to it
-  if (input.merchantTcHasOwn && input.merchantTcDocumentUrl) {
-    return `<p>Terms & Conditions: <a href="${escapeHtml(input.merchantTcDocumentUrl)}" target="_blank">${escapeHtml(input.merchantTcDocumentUrl)}</a></p>`;
+function compileTcHtml(clauses: Array<{ title: string; text: string }>, tcUrl?: string): string {
+  // If merchant provides their own T&C URL, link to it
+  if (tcUrl) {
+    return `<p>Terms & Conditions: <a href="${escapeHtml(tcUrl)}" target="_blank">${escapeHtml(tcUrl)}</a></p>`;
   }
 
-  const merchantToggles = input.merchantTcClauseToggles || {};
-  const offerOverrides = input.tcClauseOverrides || {};
-
-  // Merge: offer overrides take precedence over merchant defaults
-  const finalToggles: Record<string, boolean> = { ...merchantToggles, ...offerOverrides };
-
-  const clauses: string[] = [];
-
-  for (const clause of STANDARD_CLAUSES) {
-    if (finalToggles[clause.key]) {
-      clauses.push(`<li>${escapeHtml(clause.text)}</li>`);
+  const items: string[] = [];
+  for (const c of clauses) {
+    if (c.title && c.text) {
+      items.push(`<li>${escapeHtml(c.text)}</li>`);
     }
   }
 
-  // Custom clauses: per-offer overrides > merchant defaults
-  const cc1Title = input.customClause1Title || input.merchantCustomClause1Title || '';
-  const cc1Text = input.customClause1Text || input.merchantCustomClause1Text || '';
-  const cc2Title = input.customClause2Title || input.merchantCustomClause2Title || '';
-  const cc2Text = input.customClause2Text || input.merchantCustomClause2Text || '';
+  if (items.length === 0) return '';
 
-  if (cc1Title && cc1Text) {
-    clauses.push(`<li><strong>${escapeHtml(cc1Title)}:</strong> ${escapeHtml(cc1Text)}</li>`);
-  }
-  if (cc2Title && cc2Text) {
-    clauses.push(`<li><strong>${escapeHtml(cc2Title)}:</strong> ${escapeHtml(cc2Text)}</li>`);
-  }
-
-  if (clauses.length === 0) return '';
-
-  return `<p><strong>Terms & Conditions</strong></p>\n<p>By proceeding, you acknowledge and agree to the following:</p>\n<ol>\n${clauses.join('\n')}\n</ol>`;
+  return `<p><strong>Terms & Conditions</strong></p>\n<p>By proceeding, you acknowledge and agree to the following:</p>\n<ol>\n${items.join('\n')}\n</ol>`;
 }
 
 function escapeHtml(str: string): string {
@@ -143,7 +111,7 @@ export const offerService = {
       throw new Error(`GHL Product creation returned no ID. Response: ${JSON.stringify(productRes.data).slice(0, 200)}`);
     }
 
-    // 2. Create GHL Prices on the product
+    // 2. Create GHL Prices
     const priceIds: Record<string, string> = {};
 
     if (input.paymentType === 'one_time' || (input.pifDiscountEnabled && input.pifPrice)) {
@@ -158,16 +126,11 @@ export const offerService = {
         locationId,
       });
       priceIds.one_time = extractId(priceRes.data, 'price');
-      logger.info({ locationId, priceId: priceIds.one_time, amount }, 'GHL PIF price created');
     }
 
     if (input.paymentType === 'installments' && input.installmentAmount && input.numPayments) {
-      const intervalMap: Record<string, string> = {
-        weekly: 'week', bi_weekly: 'week', monthly: 'month',
-      };
-      const intervalCountMap: Record<string, number> = {
-        weekly: 1, bi_weekly: 2, monthly: 1,
-      };
+      const intervalMap: Record<string, string> = { weekly: 'week', bi_weekly: 'week', monthly: 'month' };
+      const intervalCountMap: Record<string, number> = { weekly: 1, bi_weekly: 2, monthly: 1 };
       const freq = input.installmentFrequency || 'monthly';
 
       const priceRes = await api.post(`/products/${ghlProductId}/price`, {
@@ -183,11 +146,11 @@ export const offerService = {
         },
       });
       priceIds.recurring = extractId(priceRes.data, 'price');
-      logger.info({ locationId, priceId: priceIds.recurring }, 'GHL recurring price created');
     }
 
-    // 3. Compile T&C HTML for this offer
-    const compiledTcHtml = compileOfferTcHtml(input);
+    // 3. Compile T&C HTML
+    const clauses = input.clauses || [];
+    const compiledHtml = compileTcHtml(clauses, input.tcUrl);
 
     // 4. Build refund text
     const refundText = buildRefundText(input.refundPolicyType, input.refundPolicyDays, input.refundWindowText);
@@ -212,29 +175,19 @@ export const offerService = {
       refund_policy_type: input.refundPolicyType || null,
       refund_policy_days: input.refundPolicyDays || null,
       refund_window_text: refundText,
-      tc_clause_overrides: input.tcClauseOverrides || {},
-      compiled_tc_html: compiledTcHtml,
+      tc_url: input.tcUrl || null,
+      compiled_tc_html: compiledHtml,
     };
 
-    // Map clause slots (populate from final compiled clauses for CO sync)
-    const merchantToggles = input.merchantTcClauseToggles || {};
-    const offerOverrides = input.tcClauseOverrides || {};
-    const finalToggles = { ...merchantToggles, ...offerOverrides };
-    let slotIndex = 0;
-    for (const clause of STANDARD_CLAUSES) {
-      if (finalToggles[clause.key] && slotIndex < 9) {
-        record[`clause_slot_${slotIndex + 1}_title`] = clause.label.replace(' (recommended)', '');
-        record[`clause_slot_${slotIndex + 1}_text`] = clause.text;
-        slotIndex++;
-      }
+    // Map clause slots 1-11 directly
+    if (clauses.length > 0) {
+      clauses.forEach((c, i) => {
+        if (i < 11) {
+          record[`clause_slot_${i + 1}_title`] = c.title || null;
+          record[`clause_slot_${i + 1}_text`] = c.text || null;
+        }
+      });
     }
-    // Custom clauses in slots 10-11
-    const cc1Title = input.customClause1Title || input.merchantCustomClause1Title || '';
-    const cc1Text = input.customClause1Text || input.merchantCustomClause1Text || '';
-    const cc2Title = input.customClause2Title || input.merchantCustomClause2Title || '';
-    const cc2Text = input.customClause2Text || input.merchantCustomClause2Text || '';
-    if (cc1Title) { record.clause_slot_10_title = cc1Title; record.clause_slot_10_text = cc1Text; }
-    if (cc2Title) { record.clause_slot_11_title = cc2Title; record.clause_slot_11_text = cc2Text; }
 
     // Map milestones (up to 8)
     if (input.milestones) {
@@ -265,16 +218,13 @@ export const offerService = {
     const existing = await offerRepository.getById(offerId);
     const dbUpdates: Record<string, unknown> = {};
 
-    // Auto-calculate installment amount on update
+    // Auto-calculate installment amount
     const effectivePrice = updates.price ?? existing.price;
     const effectiveNumPayments = updates.numPayments ?? existing.num_payments;
     const effectivePaymentType = updates.paymentType ?? existing.payment_type;
 
     if (effectivePaymentType === 'installments') {
-      const calcAmount = calcInstallmentAmount(
-        effectivePrice as number,
-        effectiveNumPayments as number,
-      );
+      const calcAmount = calcInstallmentAmount(effectivePrice as number, effectiveNumPayments as number);
       if (calcAmount) dbUpdates.installment_amount = calcAmount;
     }
 
@@ -291,9 +241,9 @@ export const offerService = {
     if (updates.programDurationUnit !== undefined) dbUpdates.program_duration_unit = updates.programDurationUnit;
     if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = updates.refundPolicyType;
     if (updates.refundPolicyDays !== undefined) dbUpdates.refund_policy_days = updates.refundPolicyDays;
-    if (updates.tcClauseOverrides !== undefined) dbUpdates.tc_clause_overrides = updates.tcClauseOverrides;
+    if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl || null;
 
-    // Build refund text from structured fields
+    // Refund text
     if (updates.refundPolicyType !== undefined) {
       dbUpdates.refund_window_text = buildRefundText(
         updates.refundPolicyType,
@@ -304,9 +254,17 @@ export const offerService = {
       dbUpdates.refund_window_text = updates.refundWindowText;
     }
 
-    // Recompile T&C HTML if clause overrides changed
-    if (updates.tcClauseOverrides !== undefined || updates.customClause1Title !== undefined || updates.customClause2Title !== undefined) {
-      dbUpdates.compiled_tc_html = compileOfferTcHtml({ ...updates, locationId: existing.location_id } as any);
+    // Clause slots + compiled HTML
+    if (updates.clauses) {
+      const compiledHtml = compileTcHtml(updates.clauses, updates.tcUrl ?? (existing as any).tc_url);
+      dbUpdates.compiled_tc_html = compiledHtml;
+
+      updates.clauses.forEach((c, i) => {
+        if (i < 11) {
+          dbUpdates[`clause_slot_${i + 1}_title`] = c.title || null;
+          dbUpdates[`clause_slot_${i + 1}_text`] = c.text || null;
+        }
+      });
     }
 
     if (updates.milestones) {
@@ -388,4 +346,4 @@ export const offerService = {
   },
 };
 
-export { compileOfferTcHtml, calcInstallmentAmount, buildRefundText };
+export { compileTcHtml, calcInstallmentAmount, buildRefundText };

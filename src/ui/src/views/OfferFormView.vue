@@ -75,8 +75,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Installment Amount</label>
-            <input class="form-input" type="number" step="0.01" :value="calculatedInstallment" readonly
-              class="readonly-field" />
+            <input class="form-input readonly-field" type="text" :value="calculatedInstallment ? '$' + calculatedInstallment : '—'" readonly />
             <p class="text-sm text-muted mt-2" v-if="calculatedInstallment">
               Auto-calculated: ${{ form.price }} / {{ form.numPayments }} payments
             </p>
@@ -135,22 +134,30 @@
       <!-- Terms & Conditions -->
       <h3 class="mt-4 mb-4">Terms & Conditions</h3>
 
-      <div v-if="merchantConfig?.tcHasOwn" class="text-sm text-muted mb-4">
-        Your merchant account uses a custom T&C document: <a :href="merchantConfig.tcDocumentUrl" target="_blank">{{ merchantConfig.tcDocumentUrl }}</a>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="form.tcHasOwn" />
+          I have my own Terms & Conditions document
+        </label>
       </div>
 
-      <div v-else>
+      <div v-if="form.tcHasOwn" class="form-group">
+        <label class="form-label">T&C Document URL</label>
+        <input class="form-input" type="url" v-model="form.tcUrl" placeholder="https://yourdomain.com/terms" />
+      </div>
+
+      <div v-if="!form.tcHasOwn">
         <p class="text-sm text-muted mb-4">
-          Standard clauses from your merchant config are shown below. Toggle additional clauses on or off for this specific offer.
+          Toggle the standard clauses you want included in this offer's enrollment agreement.
+          Clauses marked "Recommended" are suggested for chargeback protection.
         </p>
 
-        <div v-for="clause in standardClauses" :key="clause.key" class="clause-toggle mb-4">
+        <div v-for="(clause, idx) in standardClauses" :key="clause.key" class="clause-toggle mb-4">
           <label class="checkbox-label">
-            <input type="checkbox" :checked="isClauseEnabled(clause.key)" @change="toggleClause(clause.key)" />
+            <input type="checkbox" v-model="form.clauseToggles[idx]" />
             <span>
               {{ clause.label }}
               <span v-if="clause.recommended" class="badge badge-blue" style="font-size:10px;margin-left:4px">Recommended</span>
-              <span v-if="isMerchantDefault(clause.key)" class="badge badge-green" style="font-size:10px;margin-left:4px">Merchant Default</span>
             </span>
           </label>
           <p class="text-sm text-muted" style="margin-left:24px;margin-top:4px">{{ clause.text }}</p>
@@ -158,30 +165,28 @@
 
         <h4 class="mt-4 mb-4" style="font-size:14px;font-weight:600">Custom Clauses</h4>
         <p class="text-sm text-muted mb-4">
-          Override or add to your merchant-level custom clauses for this offer.
+          Add up to 2 custom clauses with your own title and text.
         </p>
         <div class="clause-row mb-4">
           <div class="form-group">
             <label class="form-label">Custom Clause 1 Title</label>
-            <input class="form-input" v-model="form.customClause1Title"
-              :placeholder="merchantConfig?.customClause1Title || 'Custom clause title'" />
+            <input class="form-input" v-model="form.customClause1Title" placeholder="e.g., Non-Disclosure Agreement" />
           </div>
           <div class="form-group">
             <label class="form-label">Custom Clause 1 Text</label>
             <textarea class="form-textarea" v-model="form.customClause1Text" style="min-height:50px"
-              :placeholder="merchantConfig?.customClause1Text || 'Clause text...'"></textarea>
+              placeholder="Clause text..."></textarea>
           </div>
         </div>
         <div class="clause-row">
           <div class="form-group">
             <label class="form-label">Custom Clause 2 Title</label>
-            <input class="form-input" v-model="form.customClause2Title"
-              :placeholder="merchantConfig?.customClause2Title || 'Custom clause title'" />
+            <input class="form-input" v-model="form.customClause2Title" placeholder="e.g., Intellectual Property" />
           </div>
           <div class="form-group">
             <label class="form-label">Custom Clause 2 Text</label>
             <textarea class="form-textarea" v-model="form.customClause2Text" style="min-height:50px"
-              :placeholder="merchantConfig?.customClause2Text || 'Clause text...'"></textarea>
+              placeholder="Clause text..."></textarea>
           </div>
         </div>
       </div>
@@ -228,7 +233,6 @@ const { loading, error } = api;
 
 const isEdit = computed(() => !!route.params.id);
 
-const merchantConfig = ref<any>(null);
 const merchantConfigLoading = ref(true);
 const onboardingComplete = ref(false);
 
@@ -259,7 +263,10 @@ const form = ref({
   refundPolicyType: '' as string,
   refundPolicyDays: 30,
   refundWindowText: '',
-  tcClauseOverrides: {} as Record<string, boolean>,
+  tcHasOwn: false,
+  tcUrl: '',
+  // Boolean array for 9 standard clauses (index matches standardClauses array)
+  clauseToggles: [true, true, false, false, false, false, false, false, false] as boolean[],
   customClause1Title: '',
   customClause1Text: '',
   customClause2Title: '',
@@ -274,27 +281,11 @@ const calculatedInstallment = computed(() => {
   return '';
 });
 
-function isMerchantDefault(key: string): boolean {
-  return merchantConfig.value?.standardClauses?.[key] === true;
-}
-
-function isClauseEnabled(key: string): boolean {
-  if (form.value.tcClauseOverrides[key] !== undefined) {
-    return form.value.tcClauseOverrides[key];
-  }
-  return merchantConfig.value?.standardClauses?.[key] === true;
-}
-
-function toggleClause(key: string) {
-  const current = isClauseEnabled(key);
-  form.value.tcClauseOverrides[key] = !current;
-}
-
 onMounted(async () => {
-  // Load merchant config first (for onboarding gate + T&C defaults)
+  // Check onboarding status
   try {
-    merchantConfig.value = await api.get<any>('/api/merchants/config');
-    onboardingComplete.value = merchantConfig.value?.onboardingComplete === true;
+    const mc = await api.get<any>('/api/merchants/config');
+    onboardingComplete.value = mc?.onboardingComplete === true;
   } catch {
     onboardingComplete.value = false;
   }
@@ -318,7 +309,14 @@ onMounted(async () => {
       form.value.refundPolicyType = offer.refund_policy_type || '';
       form.value.refundPolicyDays = offer.refund_policy_days || 30;
       form.value.refundWindowText = offer.refund_window_text || '';
-      form.value.tcClauseOverrides = offer.tc_clause_overrides || {};
+      form.value.tcHasOwn = !!(offer.tc_url);
+      form.value.tcUrl = offer.tc_url || '';
+
+      // Rebuild clause toggles from stored clause_slot data
+      for (let i = 0; i < 9; i++) {
+        form.value.clauseToggles[i] = !!(offer[`clause_slot_${i + 1}_title`]);
+      }
+
       form.value.customClause1Title = offer.clause_slot_10_title || '';
       form.value.customClause1Text = offer.clause_slot_10_text || '';
       form.value.customClause2Title = offer.clause_slot_11_title || '';
@@ -334,25 +332,38 @@ onMounted(async () => {
 });
 
 async function save() {
-  const mc = merchantConfig.value || {};
+  // Build clause arrays from toggles
+  const clauses: Array<{ title: string; text: string }> = [];
+  for (let i = 0; i < 9; i++) {
+    if (form.value.clauseToggles[i]) {
+      clauses.push({ title: standardClauses[i].label, text: standardClauses[i].text });
+    } else {
+      clauses.push({ title: '', text: '' });
+    }
+  }
+  // Slots 10-11: custom clauses
+  clauses.push({ title: form.value.customClause1Title, text: form.value.customClause1Text });
+  clauses.push({ title: form.value.customClause2Title, text: form.value.customClause2Text });
 
   const payload: any = {
-    ...form.value,
-    installmentAmount: calculatedInstallment.value ? parseFloat(calculatedInstallment.value) : 0,
+    offerName: form.value.offerName,
+    programDescription: form.value.programDescription,
+    deliveryMethod: form.value.deliveryMethod,
+    price: form.value.price,
+    paymentType: form.value.paymentType,
+    installmentFrequency: form.value.installmentFrequency,
+    numPayments: form.value.numPayments,
+    pifPrice: form.value.pifDiscountEnabled ? form.value.pifPrice : 0,
+    pifDiscountEnabled: form.value.pifDiscountEnabled,
+    programDurationValue: form.value.programDurationValue,
+    programDurationUnit: form.value.programDurationUnit,
+    refundPolicyType: form.value.refundPolicyType,
+    refundPolicyDays: form.value.refundPolicyDays,
+    refundWindowText: form.value.refundWindowText,
+    tcUrl: form.value.tcHasOwn ? form.value.tcUrl : '',
+    clauses,
     milestones: form.value.milestones.filter(m => m.name),
-    // Pass merchant T&C context for server-side compilation
-    merchantTcClauseToggles: mc.standardClauses || {},
-    merchantCustomClause1Title: mc.customClause1Title || '',
-    merchantCustomClause1Text: mc.customClause1Text || '',
-    merchantCustomClause2Title: mc.customClause2Title || '',
-    merchantCustomClause2Text: mc.customClause2Text || '',
-    merchantTcHasOwn: mc.tcHasOwn || false,
-    merchantTcDocumentUrl: mc.tcDocumentUrl || '',
   };
-
-  if (!payload.pifDiscountEnabled) {
-    payload.pifPrice = 0;
-  }
 
   try {
     if (isEdit.value) {
@@ -408,8 +419,8 @@ async function save() {
 }
 
 .readonly-field {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: #f3f4f6 !important;
+  color: #6b7280 !important;
   cursor: not-allowed;
 }
 </style>

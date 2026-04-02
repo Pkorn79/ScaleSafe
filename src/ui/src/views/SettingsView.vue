@@ -86,79 +86,6 @@
         </div>
       </div>
 
-      <!-- Terms & Conditions Preferences -->
-      <div class="card mb-4">
-        <h3 class="section-title">Terms & Conditions</h3>
-        <p class="text-sm text-muted mb-4">
-          Configure your default T&C preferences. These apply to all offers unless overridden at the offer level.
-        </p>
-
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="config.tcHasOwn" />
-            I have my own Terms & Conditions document
-          </label>
-        </div>
-
-        <div v-if="config.tcHasOwn" class="form-group">
-          <label class="form-label">T&C Document URL</label>
-          <input class="form-input" type="url" v-model="config.tcDocumentUrl"
-            placeholder="https://yourdomain.com/terms" />
-        </div>
-
-        <div v-if="!config.tcHasOwn">
-          <h4 class="mb-4" style="font-size:14px;font-weight:600">ScaleSafe Clause Builder</h4>
-          <p class="text-sm text-muted mb-4">
-            Toggle ON the standard clauses you want included in your enrollment agreements.
-            Clauses marked "Recommended" are enabled by default.
-          </p>
-
-          <div v-for="clause in standardClauses" :key="clause.key" class="clause-toggle mb-4">
-            <div class="flex-between">
-              <div style="flex:1;padding-right:16px">
-                <label class="checkbox-label">
-                  <input type="checkbox" v-model="config.standardClauses[clause.key]" />
-                  <span>
-                    {{ clause.label }}
-                    <span v-if="clause.recommended" class="badge badge-blue" style="font-size:10px;margin-left:6px">Recommended</span>
-                  </span>
-                </label>
-                <p class="text-sm text-muted mt-2" style="margin-left:24px">{{ clause.text }}</p>
-              </div>
-            </div>
-          </div>
-
-          <h4 class="mt-4 mb-4" style="font-size:14px;font-weight:600">Custom Clauses</h4>
-          <p class="text-sm text-muted mb-4">
-            Add up to 2 custom clauses with your own title and text.
-          </p>
-
-          <div class="clause-row mb-4">
-            <div class="form-group">
-              <label class="form-label">Custom Clause 1 Title</label>
-              <input class="form-input" v-model="config.customClause1Title" placeholder="e.g., Non-Disclosure Agreement" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Custom Clause 1 Text</label>
-              <textarea class="form-textarea" v-model="config.customClause1Text" style="min-height:60px"
-                placeholder="Clause text..."></textarea>
-            </div>
-          </div>
-
-          <div class="clause-row">
-            <div class="form-group">
-              <label class="form-label">Custom Clause 2 Title</label>
-              <input class="form-input" v-model="config.customClause2Title" placeholder="e.g., Intellectual Property" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Custom Clause 2 Text</label>
-              <textarea class="form-textarea" v-model="config.customClause2Text" style="min-height:60px"
-                placeholder="Clause text..."></textarea>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Evidence Module Toggles -->
       <div class="card mb-4">
         <h3 class="section-title">Evidence Modules</h3>
@@ -252,63 +179,6 @@ const moduleLabels: Record<string, string> = {
   course: 'Course/Module Tracking',
 };
 
-const standardClauses = [
-  {
-    key: 'include_purchase_summary',
-    label: 'Purchase Summary',
-    text: 'I confirm that I am purchasing the program described for the total amount and payment terms shown above.',
-    recommended: true,
-  },
-  {
-    key: 'include_cardholder_authorization',
-    label: 'Cardholder Authorization',
-    text: 'I confirm that I am the authorized user of the payment method provided and I approve this transaction for the amount shown.',
-    recommended: true,
-  },
-  {
-    key: 'include_program_scope',
-    label: 'Program Scope',
-    text: 'I confirm that I have reviewed the program description and understand what is included in this purchase.',
-    recommended: false,
-  },
-  {
-    key: 'include_refund_cancellation',
-    label: 'Refund & Cancellation',
-    text: 'I have reviewed and agree to the refund and cancellation policy as described. I understand the conditions and deadlines for requesting a refund.',
-    recommended: false,
-  },
-  {
-    key: 'include_digital_access',
-    label: 'Digital Access',
-    text: 'I understand that I will receive immediate access to digital materials, program content, and/or coaching services upon enrollment.',
-    recommended: false,
-  },
-  {
-    key: 'include_participation_responsibility',
-    label: 'Participation Responsibility',
-    text: 'I understand that access to coaching sessions, materials, or support may require my participation. Failure to attend or utilize the resources provided does not mean the service was not delivered.',
-    recommended: false,
-  },
-  {
-    key: 'include_no_guaranteed_results',
-    label: 'No Guaranteed Results',
-    text: 'I understand that this program provides education, strategy, and support. Results vary and are not guaranteed.',
-    recommended: false,
-  },
-  {
-    key: 'include_installment_billing',
-    label: 'Installment Billing',
-    text: 'I authorize the scheduled payments outlined above and understand that this payment plan represents the total program price divided into installments.',
-    recommended: false,
-  },
-  {
-    key: 'include_feedback_checkin',
-    label: 'Feedback & Check-In',
-    text: 'I understand that I will receive immediate access to digital materials, program content, and/or coaching services upon enrollment.',
-    recommended: false,
-  },
-];
-
 onMounted(async () => {
   try {
     config.value = await api.get<any>('/api/merchants/config');
@@ -334,13 +204,6 @@ async function saveSettings() {
       primaryServiceType: config.value.primaryServiceType,
       logoUrl: config.value.logoUrl,
       shortDescription: config.value.shortDescription,
-      tcHasOwn: config.value.tcHasOwn,
-      tcDocumentUrl: config.value.tcDocumentUrl,
-      standardClauses: config.value.standardClauses,
-      customClause1Title: config.value.customClause1Title,
-      customClause1Text: config.value.customClause1Text,
-      customClause2Title: config.value.customClause2Title,
-      customClause2Text: config.value.customClause2Text,
       modules: config.value.modules,
       config: { disengagement_thresholds: thresholds.value },
     });

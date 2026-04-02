@@ -22,7 +22,7 @@ jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { compileOfferTcHtml, calcInstallmentAmount, buildRefundText } from '../../src/services/offer.service';
+import { compileTcHtml, calcInstallmentAmount, buildRefundText } from '../../src/services/offer.service';
 
 describe('calcInstallmentAmount', () => {
   it('calculates price / numPayments rounded to 2 decimals', () => {
@@ -38,83 +38,62 @@ describe('calcInstallmentAmount', () => {
   });
 });
 
-describe('compileOfferTcHtml', () => {
-  it('returns link HTML when merchant has own T&C', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-      merchantTcHasOwn: true,
-      merchantTcDocumentUrl: 'https://example.com/terms',
-    });
+describe('compileTcHtml', () => {
+  it('returns link HTML when tcUrl is provided', () => {
+    const html = compileTcHtml([], 'https://example.com/terms');
 
     expect(html).toContain('https://example.com/terms');
     expect(html).toContain('<a href=');
   });
 
-  it('merges merchant defaults with per-offer overrides', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-      merchantTcClauseToggles: {
-        purchase_summary: true,
-        program_scope: false,
-      },
-      tcClauseOverrides: {
-        program_scope: true,  // override: turn ON
-        purchase_summary: false, // override: turn OFF
-      },
-    });
+  it('compiles active clauses into ordered list', () => {
+    const html = compileTcHtml([
+      { title: 'Purchase Summary', text: 'I confirm that I am purchasing the program...' },
+      { title: '', text: '' }, // empty = toggled off
+      { title: 'Program Scope', text: 'I confirm that I have reviewed...' },
+    ]);
 
-    // purchase_summary OFF via override
-    expect(html).not.toContain('purchasing the program');
-    // program_scope ON via override
-    expect(html).toContain('reviewed the program description');
+    expect(html).toContain('<ol>');
+    expect(html).toContain('I confirm that I am purchasing');
+    expect(html).toContain('I confirm that I have reviewed');
   });
 
-  it('uses merchant custom clauses when no per-offer override', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-      merchantCustomClause1Title: 'NDA',
-      merchantCustomClause1Text: 'Keep it secret.',
-    });
+  it('skips clauses with empty title/text', () => {
+    const html = compileTcHtml([
+      { title: 'Active', text: 'Active clause text' },
+      { title: '', text: '' },
+      { title: '', text: '' },
+    ]);
 
-    expect(html).toContain('<strong>NDA:</strong>');
-    expect(html).toContain('Keep it secret.');
+    expect(html).toContain('Active clause text');
+    expect((html.match(/<li>/g) || []).length).toBe(1);
   });
 
-  it('per-offer custom clauses override merchant defaults', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-      merchantCustomClause1Title: 'NDA',
-      merchantCustomClause1Text: 'Merchant version.',
-      customClause1Title: 'Liability',
-      customClause1Text: 'Offer-specific version.',
-    });
-
-    expect(html).toContain('Liability');
-    expect(html).toContain('Offer-specific version.');
-    expect(html).not.toContain('NDA');
-  });
-
-  it('returns empty string when nothing enabled', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-    });
+  it('returns empty string when no active clauses', () => {
+    const html = compileTcHtml([
+      { title: '', text: '' },
+      { title: '', text: '' },
+    ]);
     expect(html).toBe('');
   });
 
-  it('escapes HTML to prevent XSS', () => {
-    const html = compileOfferTcHtml({
-      locationId: 'loc-1',
-      offerName: 'Test',
-      customClause1Title: '<script>bad</script>',
-      customClause1Text: 'text',
-    });
+  it('escapes HTML in clause text to prevent XSS', () => {
+    const html = compileTcHtml([
+      { title: 'Test', text: 'text with <b>html</b> and <script>alert("xss")</script>' },
+    ]);
     expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('&lt;b&gt;');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('handles 11 clause slots (9 standard + 2 custom)', () => {
+    const clauses = Array.from({ length: 11 }, (_, i) => ({
+      title: `Clause ${i + 1}`,
+      text: `Text for clause ${i + 1}`,
+    }));
+    const html = compileTcHtml(clauses);
+    expect((html.match(/<li>/g) || []).length).toBe(11);
   });
 });
 
