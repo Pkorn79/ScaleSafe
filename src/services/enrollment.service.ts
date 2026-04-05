@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { sha256 } from '../utils/crypto';
 import { ValidationError } from '../utils/errors';
 import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS, OFFER_CLAUSE_FIELDS, OFFER_MILESTONE_FIELDS } from '../constants/ghl-fields';
+import crypto from 'crypto';
 
 interface PrepEnrollmentInput {
   locationId: string;
@@ -31,6 +32,35 @@ interface CaptureConsentInput {
   tcHtml: string;
 }
 
+// ─── Funnel widget inputs ──────────────────────────────────────
+
+interface DeviceCaptureInput {
+  offerId: string;
+  email: string;
+  ipAddress: string;
+  userAgent: string;
+  deviceFingerprint: string;
+  screenResolution: string;
+  timezone: string;
+  browserLanguage: string;
+}
+
+interface FunnelConsentInput {
+  offerId: string;
+  email: string;
+  consentTimestamp: string;
+  ipAddress: string;
+  userAgent: string;
+  deviceFingerprint: string;
+  screenResolution: string;
+  timezone: string;
+  browserLanguage: string;
+  tcVersionHash: string;
+  digitalSignature: string;
+  clausesAccepted: string[];
+  scrollDepth: number;
+}
+
 interface PaymentWebhookInput {
   locationId: string;
   contactId: string;
@@ -42,6 +72,215 @@ interface PaymentWebhookInput {
 }
 
 export const enrollmentService = {
+  // ─── Funnel Widget Endpoints ───────────────────────────────────
+
+  /**
+   * Page 1 Widget: Capture device/browser evidence for an enrollment.
+   * Creates or updates an enrollments record with device_evidence JSONB.
+   */
+  async captureDevice(input: DeviceCaptureInput) {
+    const supabase = getSupabase();
+
+    // Verify offer exists and is active
+    const offer = await offerRepository.findById(input.offerId);
+    if (!offer || !offer.active) {
+      throw new ValidationError('Offer not found or inactive');
+    }
+
+    const deviceEvidence = {
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      deviceFingerprint: input.deviceFingerprint,
+      screenResolution: input.screenResolution,
+      timezone: input.timezone,
+      browserLanguage: input.browserLanguage,
+      capturedAt: new Date().toISOString(),
+    };
+
+    // Check for existing record by email + offerId
+    const { data: existing } = await supabase
+      .from('enrollments')
+      .select('id')
+      .eq('email', input.email)
+      .eq('offer_id', input.offerId)
+      .eq('status', 'device_captured')
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing record
+      const { error } = await supabase
+        .from('enrollments')
+        .update({ device_evidence: deviceEvidence })
+        .eq('id', existing.id);
+      if (error) throw error;
+
+      logger.info({ enrollmentId: existing.id, offerId: input.offerId }, 'Device evidence updated');
+      return { success: true, enrollmentId: existing.id };
+    }
+
+    // Create new record
+    const { data: created, error } = await supabase
+      .from('enrollments')
+      .insert({
+        location_id: offer.location_id,
+        offer_id: input.offerId,
+        email: input.email,
+        status: 'device_captured',
+        device_evidence: deviceEvidence,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    logger.info({ enrollmentId: created.id, offerId: input.offerId }, 'Device evidence captured');
+    return { success: true, enrollmentId: created.id };
+  },
+
+  /**
+   * Public offer endpoint: Return enrollment-relevant offer details.
+   * No internal IDs exposed.
+   */
+  async getPublicOffer(offerId: string) {
+    const offer = await offerRepository.findById(offerId);
+    if (!offer || !offer.active) {
+      return null;
+    }
+
+    // Get merchant info
+    const merchant = await merchantRepository.findByLocationId(offer.location_id);
+
+    // Build milestones array (skip nulls)
+    const milestones = [];
+    for (let i = 1; i <= 8; i++) {
+      const name = (offer as any)[`m${i}_name`];
+      if (name) {
+        milestones.push({
+          name,
+          delivers: (offer as any)[`m${i}_delivers`] || '',
+          clientDoes: (offer as any)[`m${i}_client_does`] || '',
+        });
+      }
+    }
+
+    // Build clauses array (skip nulls)
+    const clauses = [];
+    for (let i = 1; i <= 11; i++) {
+      const title = (offer as any)[`clause_slot_${i}_title`];
+      if (title) {
+        clauses.push({
+          id: `clause_${i}`,
+          title,
+          text: (offer as any)[`clause_slot_${i}_text`] || '',
+        });
+      }
+    }
+
+    return {
+      offerId: offer.id,
+      programName: offer.offer_name,
+      programDescription: offer.program_description || '',
+      price: offer.price,
+      paymentType: offer.payment_type,
+      installmentAmount: offer.installment_amount,
+      installmentFrequency: offer.installment_frequency,
+      installmentCount: offer.num_payments,
+      pifPrice: offer.pif_price,
+      pifDiscountEnabled: offer.pif_discount_enabled,
+      deliveryMethod: offer.delivery_method || '',
+      refundWindowText: offer.refund_window_text || '',
+      milestones,
+      compiledTcHtml: offer.compiled_tc_html || '',
+      clauses,
+      merchantName: merchant?.business_name || '',
+      merchantSupportEmail: merchant?.support_email || '',
+    };
+  },
+
+  /**
+   * Page 3 Widget: Capture T&C consent with full forensics.
+   * Generates a consent_token that links consent to payment on Page 4.
+   */
+  async captureFunnelConsent(input: FunnelConsentInput) {
+    const supabase = getSupabase();
+
+    // Verify offer exists
+    const offer = await offerRepository.findById(input.offerId);
+    if (!offer || !offer.active) {
+      throw new ValidationError('Offer not found or inactive');
+    }
+
+    const consentToken = crypto.randomUUID();
+    const consentDevice = {
+      userAgent: input.userAgent,
+      deviceFingerprint: input.deviceFingerprint,
+      screenResolution: input.screenResolution,
+      timezone: input.timezone,
+      browserLanguage: input.browserLanguage,
+    };
+
+    // Find existing enrollment (created by device-capture on Page 1)
+    const { data: existing } = await supabase
+      .from('enrollments')
+      .select('id')
+      .eq('email', input.email)
+      .eq('offer_id', input.offerId)
+      .in('status', ['device_captured', 'pending'])
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing record
+      const { error } = await supabase
+        .from('enrollments')
+        .update({
+          status: 'consent_captured',
+          consent_token: consentToken,
+          consent_captured_at: input.consentTimestamp,
+          consent_ip: input.ipAddress,
+          consent_device: JSON.stringify(consentDevice),
+          tc_version_hash: input.tcVersionHash,
+          digital_signature: input.digitalSignature,
+          clauses_accepted: input.clausesAccepted,
+          scroll_depth: input.scrollDepth,
+        })
+        .eq('id', existing.id);
+
+      if (error) throw error;
+
+      logger.info({ enrollmentId: existing.id, offerId: input.offerId }, 'Funnel consent captured (updated)');
+      return { success: true, consentToken, enrollmentId: existing.id };
+    }
+
+    // No prior device capture — create new record
+    const { data: created, error } = await supabase
+      .from('enrollments')
+      .insert({
+        location_id: offer.location_id,
+        offer_id: input.offerId,
+        email: input.email,
+        status: 'consent_captured',
+        consent_token: consentToken,
+        consent_captured_at: input.consentTimestamp,
+        consent_ip: input.ipAddress,
+        consent_device: JSON.stringify(consentDevice),
+        tc_version_hash: input.tcVersionHash,
+        digital_signature: input.digitalSignature,
+        clauses_accepted: input.clausesAccepted,
+        scroll_depth: input.scrollDepth,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    logger.info({ enrollmentId: created.id, offerId: input.offerId }, 'Funnel consent captured (new)');
+    return { success: true, consentToken, enrollmentId: created.id };
+  },
+
+  // ─── Original Enrollment Methods ──────────────────────────────
+
   /**
    * Page 1: Create or update GHL contact, capture device info.
    */

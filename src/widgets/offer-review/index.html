@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offer Review</title>
+  <style>
+    :root {
+      --ss-primary: #2563eb;
+      --ss-text: #1f2937;
+      --ss-muted: #6b7280;
+      --ss-bg: #ffffff;
+      --ss-border: #e5e7eb;
+      --ss-accent-bg: #f0f9ff;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--ss-bg);
+      color: var(--ss-text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .ss-container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    .ss-loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--ss-muted);
+    }
+
+    .ss-spinner {
+      display: inline-block;
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--ss-border);
+      border-top-color: var(--ss-primary);
+      border-radius: 50%;
+      animation: ss-spin 0.8s linear infinite;
+    }
+
+    @keyframes ss-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .ss-loading-text {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .ss-error {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--ss-muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .ss-description {
+      text-align: center;
+      color: var(--ss-muted);
+      font-size: 15px;
+      margin-bottom: 28px;
+    }
+
+    .ss-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0 16px;
+      color: var(--ss-muted);
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .ss-divider::before,
+    .ss-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--ss-border);
+    }
+
+    .ss-delivery {
+      font-size: 15px;
+      color: var(--ss-text);
+    }
+
+    .ss-price-box {
+      background: var(--ss-accent-bg);
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      margin: 8px 0;
+    }
+
+    .ss-price-main {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--ss-primary);
+    }
+
+    .ss-price-save {
+      font-size: 14px;
+      color: #16a34a;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .ss-price-or {
+      color: var(--ss-muted);
+      font-size: 13px;
+      margin: 8px 0;
+    }
+
+    .ss-price-installment {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--ss-text);
+    }
+
+    .ss-milestones {
+      list-style: none;
+    }
+
+    .ss-milestone {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--ss-border);
+    }
+
+    .ss-milestone:last-child {
+      border-bottom: none;
+    }
+
+    .ss-milestone-name {
+      font-weight: 600;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ss-milestone-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--ss-primary);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .ss-milestone-detail {
+      margin-left: 32px;
+      font-size: 13px;
+      color: var(--ss-muted);
+      margin-top: 4px;
+    }
+
+    .ss-refund {
+      background: #f9fafb;
+      border: 1px solid var(--ss-border);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 14px;
+      color: var(--ss-text);
+      line-height: 1.5;
+    }
+
+    .ss-contact {
+      text-align: center;
+      font-size: 14px;
+      color: var(--ss-muted);
+      margin-top: 24px;
+    }
+
+    .ss-contact a {
+      color: var(--ss-primary);
+      text-decoration: none;
+    }
+
+    .ss-contact a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="ss-container" id="ss-root">
+    <div class="ss-loading">
+      <div class="ss-spinner"></div>
+      <div class="ss-loading-text">Loading offer details...</div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  var API_BASE = window.location.origin;
+  var params = new URLSearchParams(window.location.search);
+  var offerId = params.get('offerId');
+  var root = document.getElementById('ss-root');
+
+  if (!offerId) {
+    root.innerHTML = '<div class="ss-error">Offer information not available. Please contact the provider.</div>';
+    return;
+  }
+
+  function esc(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  function formatCurrency(cents) {
+    if (cents == null) return '';
+    var dollars = Number(cents);
+    return '$' + dollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(offer) {
+      var html = '';
+
+      // Program name + description
+      html += '<h1>' + esc(offer.programName) + '</h1>';
+      if (offer.programDescription) {
+        html += '<p class="ss-description">' + esc(offer.programDescription) + '</p>';
+      }
+
+      // Delivery method
+      if (offer.deliveryMethod) {
+        html += '<div class="ss-divider">What\'s Included</div>';
+        html += '<p class="ss-delivery">' + esc(offer.deliveryMethod) + '</p>';
+      }
+
+      // Pricing
+      html += '<div class="ss-divider">Your Investment</div>';
+      html += '<div class="ss-price-box">';
+
+      if (offer.pifDiscountEnabled && offer.pifPrice != null) {
+        html += '<div class="ss-price-main">' + formatCurrency(offer.pifPrice) + '</div>';
+        if (offer.price != null && offer.price > offer.pifPrice) {
+          var savings = Number(offer.price) - Number(offer.pifPrice);
+          html += '<div class="ss-price-save">Save ' + formatCurrency(savings) + ' when you pay in full!</div>';
+        }
+
+        if (offer.installmentAmount != null && offer.installmentCount) {
+          html += '<div class="ss-price-or">&mdash; or &mdash;</div>';
+          html += '<div class="ss-price-installment">' + offer.installmentCount + ' ' + (offer.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(offer.installmentAmount) + '</div>';
+        }
+      } else if (offer.paymentType === 'installment' || offer.paymentType === 'installments') {
+        if (offer.installmentAmount != null && offer.installmentCount) {
+          html += '<div class="ss-price-main">' + formatCurrency(offer.installmentAmount) + '<span style="font-size:16px;font-weight:400;color:var(--ss-muted)">/' + (offer.installmentFrequency || 'month') + '</span></div>';
+          html += '<div class="ss-price-installment" style="margin-top:4px">' + offer.installmentCount + ' payments of ' + formatCurrency(offer.installmentAmount) + '</div>';
+        }
+      } else {
+        html += '<div class="ss-price-main">' + formatCurrency(offer.price) + '</div>';
+      }
+
+      html += '</div>';
+
+      // Milestones
+      if (offer.milestones && offer.milestones.length > 0) {
+        html += '<div class="ss-divider">Program Milestones</div>';
+        html += '<ul class="ss-milestones">';
+        offer.milestones.forEach(function(m, i) {
+          html += '<li class="ss-milestone">';
+          html += '<div class="ss-milestone-name"><span class="ss-milestone-num">' + (i + 1) + '</span>' + esc(m.name) + '</div>';
+          if (m.delivers) {
+            html += '<div class="ss-milestone-detail">What you\'ll receive: ' + esc(m.delivers) + '</div>';
+          }
+          if (m.clientDoes) {
+            html += '<div class="ss-milestone-detail">What you\'ll do: ' + esc(m.clientDoes) + '</div>';
+          }
+          html += '</li>';
+        });
+        html += '</ul>';
+      }
+
+      // Refund policy
+      if (offer.refundWindowText) {
+        html += '<div class="ss-divider">Refund Policy</div>';
+        html += '<div class="ss-refund">' + esc(offer.refundWindowText) + '</div>';
+      }
+
+      // Contact
+      if (offer.merchantName) {
+        html += '<div class="ss-contact">';
+        html += 'Questions? Contact ' + esc(offer.merchantName);
+        if (offer.merchantSupportEmail) {
+          html += '<br><a href="mailto:' + esc(offer.merchantSupportEmail) + '">' + esc(offer.merchantSupportEmail) + '</a>';
+        }
+        html += '</div>';
+      }
+
+      root.innerHTML = html;
+    })
+    .catch(function(err) {
+      console.log('[ScaleSafe] Offer load error:', err.message);
+      root.innerHTML = '<div class="ss-error">Unable to load offer details. Please refresh the page or contact the provider.</div>';
+    });
+})();
+</script>
+</body>
+</html>

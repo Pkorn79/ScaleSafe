@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScaleSafe Device Capture</title>
+  <style>
+    /* Invisible widget — no visible UI */
+    body { margin: 0; padding: 0; overflow: hidden; height: 0; }
+  </style>
+</head>
+<body>
+<script>
+(function() {
+  'use strict';
+
+  var API_BASE = document.currentScript
+    ? document.currentScript.getAttribute('data-api-base')
+    : null;
+  if (!API_BASE) {
+    API_BASE = window.location.origin;
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var offerId = params.get('offerId');
+
+  if (!offerId) {
+    console.log('[ScaleSafe] No offerId in URL, device capture skipped');
+    return;
+  }
+
+  async function sha256(text) {
+    var encoder = new TextEncoder();
+    var data = encoder.encode(text);
+    var hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    var hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  async function collectAndSend() {
+    try {
+      // Collect device info
+      var userAgent = navigator.userAgent;
+      var screenResolution = screen.width + 'x' + screen.height;
+      var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      var browserLanguage = navigator.language;
+
+      // Get IP via ipify
+      var ipAddress = '';
+      try {
+        var ipRes = await fetch('https://api.ipify.org?format=json');
+        var ipData = await ipRes.json();
+        ipAddress = ipData.ip || '';
+      } catch (e) {
+        console.log('[ScaleSafe] IP fetch failed, continuing without IP');
+      }
+
+      // Generate device fingerprint
+      var fpSource = userAgent + '|' + screenResolution + '|' + timezone + '|' + browserLanguage;
+      var deviceFingerprint = await sha256(fpSource);
+
+      // Get email from URL params or parent message
+      var email = params.get('email') || '';
+
+      // If no email, wait for postMessage from parent with email
+      if (!email) {
+        console.log('[ScaleSafe] No email in URL, listening for postMessage or sending without email');
+      }
+
+      var payload = {
+        offerId: offerId,
+        email: email,
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+        deviceFingerprint: deviceFingerprint,
+        screenResolution: screenResolution,
+        timezone: timezone,
+        browserLanguage: browserLanguage
+      };
+
+      // Only send if we have an email
+      if (payload.email) {
+        await sendDeviceCapture(payload);
+      } else {
+        // Store payload, wait for email via postMessage
+        window.__ssDevicePayload = payload;
+      }
+    } catch (err) {
+      console.log('[ScaleSafe] Device capture error:', err.message);
+    }
+  }
+
+  async function sendDeviceCapture(payload) {
+    try {
+      var res = await fetch(API_BASE + '/api/enrollment/device-capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        var data = await res.json();
+        console.log('[ScaleSafe] Device captured:', data.enrollmentId);
+      } else {
+        console.log('[ScaleSafe] Device capture HTTP', res.status);
+      }
+    } catch (err) {
+      console.log('[ScaleSafe] Device capture send error:', err.message);
+    }
+  }
+
+  // Listen for email from parent page via postMessage
+  window.addEventListener('message', function(event) {
+    try {
+      var msg = event.data;
+      if (msg && msg.type === 'ssSetEmail' && msg.email && window.__ssDevicePayload) {
+        window.__ssDevicePayload.email = msg.email;
+        sendDeviceCapture(window.__ssDevicePayload);
+        window.__ssDevicePayload = null;
+      }
+    } catch (e) {
+      // Silent
+    }
+  });
+
+  // Collect after short delay (allows page to settle)
+  setTimeout(collectAndSend, 1500);
+})();
+</script>
+</body>
+</html>

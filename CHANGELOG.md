@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-05
+
+### Added — Phase I: Enrollment Funnel Web Widgets + API
+- `POST /api/enrollment/device-capture` — public endpoint for Page 1 device/browser evidence capture
+- `GET /api/enrollment/offer/:offerId/public` — public endpoint returning enrollment-relevant offer details (no internal IDs)
+- `POST /api/enrollment/consent` — updated to generate `consent_token` (UUID v4) with full forensics: T&C version hash, digital signature, clause acceptance, scroll depth, device info
+- Device capture widget (`/widgets/device-capture/`) — invisible iframe widget, collects IP/userAgent/fingerprint/screen/timezone
+- Offer review widget (`/widgets/offer-review/`) — displays program name, pricing, milestones, refund policy, merchant contact
+- Consent capture widget (`/widgets/consent-capture/`) — scrollable T&C, per-clause checkboxes, electronic signature, scroll depth tracking, consent_token handoff to Page 4
+- `enrollmentPublicLimiter` — 100 req/min per IP for public enrollment widget endpoints
+- Migration `030_enrollment_funnel_columns` — adds `email`, `device_evidence`, `digital_signature`, `clauses_accepted`, `scroll_depth` to enrollments table
+- 14 unit tests for enrollment funnel (service + controller)
+
+### Changed
+- `payment_without_consent` structured warning log added to checkout controller when payment succeeds without consent_token
+- Build script copies `src/widgets/` to `dist/widgets/` for production serving
+- Widget static files served at `/widgets/` with CORS enabled for GHL iframe embedding
+
+---
+
 ## 2026-04-03
 
 ### Added — Phase H: Integration Testing + Hardening

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms &amp; Conditions</title>
+  <style>
+    :root {
+      --ss-primary: #2563eb;
+      --ss-primary-hover: #1d4ed8;
+      --ss-text: #1f2937;
+      --ss-muted: #6b7280;
+      --ss-bg: #ffffff;
+      --ss-border: #e5e7eb;
+      --ss-accent-bg: #f0f9ff;
+      --ss-error: #dc2626;
+      --ss-disabled-bg: #d1d5db;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--ss-bg);
+      color: var(--ss-text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .ss-container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    /* Loading */
+    .ss-loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--ss-muted);
+    }
+
+    .ss-spinner {
+      display: inline-block;
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--ss-border);
+      border-top-color: var(--ss-primary);
+      border-radius: 50%;
+      animation: ss-spin 0.8s linear infinite;
+    }
+
+    @keyframes ss-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .ss-loading-text {
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .ss-error-msg {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--ss-muted);
+      font-size: 15px;
+    }
+
+    /* Header */
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .ss-subtitle {
+      color: var(--ss-muted);
+      font-size: 15px;
+      margin-bottom: 20px;
+    }
+
+    /* T&C scrollable container */
+    .ss-tc-container {
+      border: 1px solid var(--ss-border);
+      border-radius: 8px;
+      background: #f9fafb;
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 20px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #374151;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .ss-tc-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .ss-tc-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+
+    .ss-tc-container::-webkit-scrollbar-thumb {
+      background: #c4c4c4;
+      border-radius: 4px;
+    }
+
+    .ss-tc-container p { margin-bottom: 10px; }
+    .ss-tc-container ol, .ss-tc-container ul { padding-left: 20px; margin: 8px 0; }
+    .ss-tc-container li { margin-bottom: 6px; }
+    .ss-tc-container h2, .ss-tc-container h3, .ss-tc-container h4 { margin: 16px 0 8px; }
+
+    /* Clause checkboxes */
+    .ss-clauses {
+      margin-bottom: 24px;
+    }
+
+    .ss-clause {
+      display: flex;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--ss-border);
+    }
+
+    .ss-clause:last-child {
+      border-bottom: none;
+    }
+
+    .ss-clause input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      margin-top: 2px;
+      flex-shrink: 0;
+      cursor: pointer;
+      accent-color: var(--ss-primary);
+    }
+
+    .ss-clause-content {
+      flex: 1;
+    }
+
+    .ss-clause-title {
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .ss-clause-text {
+      font-size: 13px;
+      color: var(--ss-muted);
+      margin-top: 2px;
+    }
+
+    /* Signature */
+    .ss-sig-section {
+      margin-bottom: 24px;
+    }
+
+    .ss-sig-label {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--ss-muted);
+      margin-bottom: 8px;
+    }
+
+    .ss-sig-notice {
+      font-size: 13px;
+      color: var(--ss-muted);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .ss-sig-input {
+      width: 100%;
+      padding: 12px 0;
+      border: none;
+      border-bottom: 2px solid var(--ss-text);
+      background: transparent;
+      font-size: 20px;
+      font-style: italic;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: var(--ss-text);
+      outline: none;
+    }
+
+    .ss-sig-input::placeholder {
+      font-size: 16px;
+      font-style: italic;
+      color: #9ca3af;
+    }
+
+    .ss-sig-input:focus {
+      border-bottom-color: var(--ss-primary);
+    }
+
+    /* Submit */
+    .ss-submit-area {
+      position: relative;
+    }
+
+    .ss-form-error {
+      color: var(--ss-error);
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    .ss-submit-btn {
+      display: block;
+      width: 100%;
+      height: 48px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, opacity 0.2s;
+    }
+
+    .ss-submit-btn:disabled {
+      background: var(--ss-disabled-bg);
+      color: #fff;
+      cursor: not-allowed;
+    }
+
+    .ss-submit-btn:not(:disabled) {
+      background: var(--ss-primary);
+      color: #fff;
+    }
+
+    .ss-submit-btn:not(:disabled):hover {
+      background: var(--ss-primary-hover);
+    }
+
+    .ss-submit-hint {
+      text-align: center;
+      font-size: 12px;
+      color: var(--ss-muted);
+      margin-top: 8px;
+    }
+
+    .ss-footer {
+      text-align: center;
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="ss-container" id="ss-root">
+    <div class="ss-loading">
+      <div class="ss-spinner"></div>
+      <div class="ss-loading-text">Loading terms...</div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  var API_BASE = window.location.origin;
+  var params = new URLSearchParams(window.location.search);
+  var offerId = params.get('offerId');
+  var emailParam = params.get('email') || '';
+  var root = document.getElementById('ss-root');
+
+  if (!offerId) {
+    root.innerHTML = '<div class="ss-error-msg">Terms not available. Please contact the provider.</div>';
+    return;
+  }
+
+  // ─── Utilities ──────────────────────────────────────────────
+
+  function esc(str) {
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  async function sha256(text) {
+    var encoder = new TextEncoder();
+    var data = encoder.encode(text);
+    var hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    var hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  // ─── Collect device info ────────────────────────────────────
+
+  var deviceInfo = {
+    userAgent: navigator.userAgent,
+    screenResolution: screen.width + 'x' + screen.height,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    browserLanguage: navigator.language,
+    ipAddress: '',
+    deviceFingerprint: ''
+  };
+
+  // Fetch IP in background
+  fetch('https://api.ipify.org?format=json')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { deviceInfo.ipAddress = d.ip || ''; })
+    .catch(function() { /* silent */ });
+
+  // Generate fingerprint
+  sha256(deviceInfo.userAgent + '|' + deviceInfo.screenResolution + '|' + deviceInfo.timezone + '|' + deviceInfo.browserLanguage)
+    .then(function(fp) { deviceInfo.deviceFingerprint = fp; })
+    .catch(function() { /* silent */ });
+
+  // ─── Load offer and render ──────────────────────────────────
+
+  var offerData = null;
+  var maxScrollDepth = 0;
+
+  fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(offer) {
+      offerData = offer;
+      renderForm(offer);
+    })
+    .catch(function(err) {
+      console.log('[ScaleSafe] Failed to load terms:', err.message);
+      root.innerHTML = '<div class="ss-error-msg">Unable to load terms. Please refresh the page or contact the provider.</div>';
+    });
+
+  function renderForm(offer) {
+    var html = '';
+
+    html += '<h1>Terms &amp; Conditions</h1>';
+    html += '<p class="ss-subtitle">Please review and accept the following terms before proceeding.</p>';
+
+    // T&C scrollable container
+    html += '<div class="ss-tc-container" id="ss-tc-scroll">';
+    html += offer.compiledTcHtml || '<p>No terms available.</p>';
+    html += '</div>';
+
+    // Clause checkboxes
+    if (offer.clauses && offer.clauses.length > 0) {
+      html += '<div class="ss-clauses">';
+      offer.clauses.forEach(function(clause) {
+        html += '<div class="ss-clause">';
+        html += '<input type="checkbox" id="cb-' + esc(clause.id) + '" data-clause-id="' + esc(clause.id) + '" class="ss-clause-cb">';
+        html += '<div class="ss-clause-content">';
+        html += '<label class="ss-clause-title" for="cb-' + esc(clause.id) + '">I acknowledge: ' + esc(clause.title) + '</label>';
+        if (clause.text) {
+          html += '<div class="ss-clause-text">' + esc(clause.text) + '</div>';
+        }
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    // Signature
+    html += '<div class="ss-sig-section">';
+    html += '<div class="ss-sig-label">Electronic Signature</div>';
+    html += '<p class="ss-sig-notice">By typing your name below, you are providing your electronic signature and agreeing to all terms above.</p>';
+    html += '<input type="text" id="ss-signature" class="ss-sig-input" placeholder="Type your full legal name" autocomplete="name">';
+    html += '</div>';
+
+    // Email (hidden if already in URL, visible if not)
+    if (!emailParam) {
+      html += '<div style="margin-bottom:20px">';
+      html += '<label style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--ss-muted);display:block;margin-bottom:6px">Your Email</label>';
+      html += '<input type="email" id="ss-email" style="width:100%;padding:10px 12px;border:1px solid var(--ss-border);border-radius:6px;font-size:15px;outline:none;" placeholder="your@email.com" autocomplete="email">';
+      html += '</div>';
+    }
+
+    // Submit
+    html += '<div class="ss-submit-area">';
+    html += '<div class="ss-form-error" id="ss-error"></div>';
+    html += '<button type="button" id="ss-submit" class="ss-submit-btn" disabled>I Agree to These Terms</button>';
+    html += '<div class="ss-submit-hint" id="ss-hint">Please check all boxes and sign above</div>';
+    html += '</div>';
+
+    html += '<div class="ss-footer">Your consent will be recorded with a timestamp and your IP address.</div>';
+
+    root.innerHTML = html;
+    bindEvents(offer);
+  }
+
+  function bindEvents(offer) {
+    var checkboxes = document.querySelectorAll('.ss-clause-cb');
+    var sigInput = document.getElementById('ss-signature');
+    var submitBtn = document.getElementById('ss-submit');
+    var hintEl = document.getElementById('ss-hint');
+    var errorEl = document.getElementById('ss-error');
+    var emailInput = document.getElementById('ss-email');
+    var tcScroll = document.getElementById('ss-tc-scroll');
+
+    // Scroll depth tracking
+    if (tcScroll) {
+      tcScroll.addEventListener('scroll', function() {
+        var scrollHeight = tcScroll.scrollHeight - tcScroll.clientHeight;
+        if (scrollHeight > 0) {
+          var depth = Math.round((tcScroll.scrollTop / scrollHeight) * 100);
+          if (depth > maxScrollDepth) maxScrollDepth = depth;
+        } else {
+          maxScrollDepth = 100; // Content fits without scrolling
+        }
+      });
+
+      // If content fits without scroll, mark as 100%
+      if (tcScroll.scrollHeight <= tcScroll.clientHeight) {
+        maxScrollDepth = 100;
+      }
+    }
+
+    function updateSubmitState() {
+      var allChecked = true;
+      checkboxes.forEach(function(cb) {
+        if (!cb.checked) allChecked = false;
+      });
+
+      var hasSig = sigInput.value.trim().length > 0;
+      var hasEmail = emailParam || (emailInput && emailInput.value.trim().includes('@'));
+
+      var canSubmit = allChecked && hasSig && hasEmail;
+      // If no clauses, only need signature + email
+      if (checkboxes.length === 0) canSubmit = hasSig && hasEmail;
+
+      submitBtn.disabled = !canSubmit;
+      hintEl.style.display = canSubmit ? 'none' : 'block';
+    }
+
+    checkboxes.forEach(function(cb) {
+      cb.addEventListener('change', updateSubmitState);
+    });
+    sigInput.addEventListener('input', updateSubmitState);
+    if (emailInput) emailInput.addEventListener('input', updateSubmitState);
+
+    // Initial state check
+    updateSubmitState();
+
+    // Submit handler
+    submitBtn.addEventListener('click', async function() {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Processing...';
+      errorEl.style.display = 'none';
+
+      try {
+        var email = emailParam || (emailInput ? emailInput.value.trim() : '');
+
+        // Compute T&C version hash
+        var tcVersionHash = '';
+        if (offer.compiledTcHtml) {
+          tcVersionHash = await sha256(offer.compiledTcHtml);
+        }
+
+        // Collect accepted clause IDs
+        var clausesAccepted = [];
+        checkboxes.forEach(function(cb) {
+          if (cb.checked) {
+            clausesAccepted.push(cb.getAttribute('data-clause-id'));
+          }
+        });
+
+        var payload = {
+          offerId: offerId,
+          email: email,
+          consentTimestamp: new Date().toISOString(),
+          ipAddress: deviceInfo.ipAddress,
+          userAgent: deviceInfo.userAgent,
+          deviceFingerprint: deviceInfo.deviceFingerprint,
+          screenResolution: deviceInfo.screenResolution,
+          timezone: deviceInfo.timezone,
+          browserLanguage: deviceInfo.browserLanguage,
+          tcVersionHash: tcVersionHash,
+          digitalSignature: sigInput.value.trim(),
+          clausesAccepted: clausesAccepted,
+          scrollDepth: maxScrollDepth
+        };
+
+        var res = await fetch(API_BASE + '/api/enrollment/consent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          var errData = await res.json().catch(function() { return {}; });
+          throw new Error(errData.error || 'Server error');
+        }
+
+        var data = await res.json();
+
+        // Store consent token for Page 4 checkout
+        if (data.consentToken) {
+          try {
+            sessionStorage.setItem('ss_consent_token', data.consentToken);
+          } catch (e) { /* silent */ }
+        }
+
+        // Advance to next funnel page
+        try {
+          window.parent.postMessage({ type: 'customWidgetGoToNextStep' }, '*');
+        } catch (e) { /* silent */ }
+        try {
+          window.dispatchEvent(new Event('customWidgetGoToNextStep'));
+        } catch (e) { /* silent */ }
+
+        // Visual confirmation
+        submitBtn.textContent = 'Consent Recorded';
+        submitBtn.style.background = '#16a34a';
+
+      } catch (err) {
+        console.log('[ScaleSafe] Consent submit error:', err.message);
+        errorEl.textContent = 'Something went wrong. Please try again.';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'I Agree to These Terms';
+        updateSubmitState();
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>

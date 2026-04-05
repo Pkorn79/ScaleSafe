@@ -49,3 +49,6 @@ export const webhookLimiter = createLimiter(500, 15 * 60 * 1000);
 
 /** Checkout endpoints: 10 payment attempts per minute per IP */
 export const checkoutLimiter = createLimiter(10, 1 * 60 * 1000);
+
+/** Public enrollment widget endpoints: 100 requests per minute per IP */
+export const enrollmentPublicLimiter = createLimiter(100, 1 * 60 * 1000);

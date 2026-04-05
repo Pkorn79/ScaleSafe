@@ -1,21 +1,29 @@
 import { Router, Request, Response } from 'express';
 import { enrollmentController } from '../controllers/enrollment.controller';
+import { enrollmentPublicLimiter } from '../middleware/rateLimiter';
 import { offerService } from '../services/offer.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-// ─── Public API Endpoints (called from GHL funnel widgets) ──────────
-// All these are public — no SSO auth. CORS is handled in app.ts.
+// ─── Funnel Widget Endpoints (public, CORS handled in app.ts) ───────
 
-// Page 1: Create/update GHL contact
+// Page 1 widget: Capture device/browser evidence
+router.post('/device-capture', enrollmentPublicLimiter, enrollmentController.deviceCapture);
+
+// Page 2 widget: Public offer details (no internal IDs)
+router.get('/offer/:offerId/public', enrollmentPublicLimiter, enrollmentController.getPublicOffer);
+
+// Page 3 widget: Consent capture with forensics + consent_token generation
+router.post('/consent', enrollmentPublicLimiter, enrollmentController.funnelConsent);
+
+// ─── Original API Endpoints ─────────────────────────────────────────
+
+// Page 1: Create/update GHL contact (SSO-gated)
 router.post('/prep', enrollmentController.prep);
 
-// Page 2: Fetch offer details for widget display
+// Page 2: Fetch offer details (SSO-gated)
 router.get('/offer/:id', enrollmentController.getOffer);
-
-// Page 3: Capture consent with full forensics
-router.post('/consent', enrollmentController.captureConsent);
 
 // ─── Public Enrollment Preview Page ─────────────────────────────────
 

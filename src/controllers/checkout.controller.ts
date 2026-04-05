@@ -203,6 +203,17 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       browser_info: browserInfo || null,
     });
 
+    // Flag payment without consent (do NOT block — just warn)
+    if (result.success && !consentToken && offerId) {
+      logger.warn({
+        event: 'payment_without_consent',
+        merchantId: merchant.merchantId,
+        locationId: merchant.locationId,
+        contactId: contactId || '',
+        offerId,
+      }, 'Payment completed without consent token');
+    }
+
     // Structured payment event log
     logger.info({
       event: 'payment_processed',
