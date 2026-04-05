@@ -40,16 +40,24 @@ jest.mock('../../src/clients/supabase.client', () => ({
 }));
 
 import { merchantService } from '../../src/services/merchant.service';
+import { CUSTOM_VALUE_REGISTRY } from '../../src/constants/ghl-fields';
+
+let merchantState: any;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockGetByLocationId.mockResolvedValue({
+  merchantState = {
     location_id: 'loc_1',
     config: {},
     snapshot_attempts: 0,
     trigger_ids: {},
+    custom_value_ids: {},
+  };
+  mockGetByLocationId.mockImplementation(async () => merchantState);
+  mockUpdate.mockImplementation(async (_locationId: string, updates: any) => {
+    merchantState = { ...merchantState, ...updates };
+    return merchantState;
   });
-  mockUpdate.mockResolvedValue({ location_id: 'loc_1', config: {} });
   mockUpdateSnapshotStatus.mockResolvedValue(undefined);
 });
 
@@ -138,7 +146,7 @@ describe('Custom Fields Creation', () => {
 });
 
 describe('Custom Values Creation', () => {
-  test('creates 3 custom values via v2 endpoint (locationId in path)', async () => {
+  test('creates all missing custom values via v2 endpoint (locationId in path)', async () => {
     mockGet.mockResolvedValueOnce({ data: { customValues: [] } });
     mockPost.mockResolvedValue({ data: { id: 'cv_new' } });
 
@@ -147,20 +155,19 @@ describe('Custom Values Creation', () => {
 
     // Verify locationId in path, not body
     const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customValues');
-    expect(createCalls.length).toBe(3);
-    expect(createCalls[0][1].name).toBe('SS--Business-Name');
+    expect(createCalls.length).toBe(CUSTOM_VALUE_REGISTRY.length);
+    expect(createCalls[0][1].name).toBe(CUSTOM_VALUE_REGISTRY[0].defaultName);
     expect(createCalls[0][1]).not.toHaveProperty('locationId');
   });
 
   test('skips existing custom values', async () => {
+    const existingValues = CUSTOM_VALUE_REGISTRY.map((entry, idx) => ({
+      id: `cv_${idx + 1}`,
+      fieldKey: `{{ custom_values.${entry.fieldKeyMatch} }}`,
+      value: '',
+    }));
     mockGet.mockResolvedValueOnce({
-      data: {
-        customValues: [
-          { name: 'SS--Business-Name', id: 'cv_1' },
-          { name: 'SS--Support-Email', id: 'cv_2' },
-          { name: 'SS--TC-URL', id: 'cv_3' },
-        ],
-      },
+      data: { customValues: existingValues },
     });
 
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
@@ -177,7 +184,7 @@ describe('Full Provisioning', () => {
     mockGet.mockResolvedValueOnce({ data: { pipelines: [{ id: 'pipe_1', name: 'Client Milestones' }] } });
     // Custom fields — none exist
     mockGet.mockResolvedValueOnce({ data: { customFields: [] } });
-    // Custom values — none exist
+    // Custom values — none exist (will be created and IDs stored)
     mockGet.mockResolvedValueOnce({ data: { customValues: [] } });
 
     // All POST calls succeed
