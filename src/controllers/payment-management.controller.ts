@@ -18,13 +18,21 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     const supabase = getSupabase();
     const loweredSearch = search.toLowerCase();
 
-    // Load recent payment_customer_map rows for this tenant.
+    const shouldEnrichFromGhl = loweredSearch.length >= 3;
+
+    // Load payment-customer mappings for this tenant.
     let query = supabase
       .from('payment_customer_map')
       .select('contact_id, program_name, customer_id, created_at')
       .eq('location_id', locationId)
-      .order('created_at', { ascending: false })
-      .limit(200);
+      .order('created_at', { ascending: false });
+
+    if (search) {
+      const escaped = search.replace(/,/g, '');
+      query = query.or(`program_name.ilike.%${escaped}%,contact_id.ilike.%${escaped}%,customer_id.ilike.%${escaped}%`);
+    }
+
+    query = query.limit(shouldEnrichFromGhl ? 60 : 25);
 
     const { data: maps, error } = await query;
     if (error) throw error;
@@ -36,26 +44,28 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       return;
     }
 
-    // Enrich contact IDs with live GHL contact profile (name/email), so users can search by either.
-    const api = await ghlApi(locationId);
     const contactProfiles: Record<string, { name: string; email: string }> = {};
-    await Promise.all(contactIds.map(async (cid) => {
-      try {
-        const response = await api.get(`/contacts/${cid}`);
-        const contact = response.data?.contact || response.data || {};
-        const first = String(contact.firstName || '').trim();
-        const last = String(contact.lastName || '').trim();
-        const fullName = `${first} ${last}`.trim();
+    if (shouldEnrichFromGhl) {
+      // Enrich with live GHL profile to support name/email matches.
+      const api = await ghlApi(locationId);
+      await Promise.all(contactIds.map(async (cid) => {
+        try {
+          const response = await api.get(`/contacts/${cid}`);
+          const contact = response.data?.contact || response.data || {};
+          const first = String(contact.firstName || '').trim();
+          const last = String(contact.lastName || '').trim();
+          const fullName = `${first} ${last}`.trim();
 
-        contactProfiles[cid] = {
-          name: fullName || String(contact.name || ''),
-          email: String(contact.email || '').trim(),
-        };
-      } catch {
-        // Continue gracefully if one contact lookup fails.
-        contactProfiles[cid] = { name: '', email: '' };
-      }
-    }));
+          contactProfiles[cid] = {
+            name: fullName || String(contact.name || ''),
+            email: String(contact.email || '').trim(),
+          };
+        } catch {
+          // Continue gracefully if one contact lookup fails.
+          contactProfiles[cid] = { name: '', email: '' };
+        }
+      }));
+    }
 
     // Aggregate payment totals per contact
     const { data: events } = await supabase
