@@ -23,6 +23,11 @@ interface CreateOfferInput {
   // 11 clause slots: slots 1-9 = standard clauses, 10-11 = custom clauses
   clauses?: Array<{ title: string; text: string }>;
   milestones?: Array<{ name: string; delivers: string; clientDoes: string }>;
+  // Light checkout mode (Phase J)
+  checkoutMode?: 'full_enrollment' | 'quick_checkout';
+  quickCheckoutConsentText?: string;
+  quickCheckoutShowDescription?: boolean;
+  quickCheckoutShowRefundPolicy?: boolean;
 }
 
 function extractId(data: any, objectKey?: string): string {
@@ -181,6 +186,10 @@ export const offerService = {
       refund_window_text: refundText,
       tc_url: input.tcUrl || null,
       compiled_tc_html: compiledHtml,
+      checkout_mode: input.checkoutMode || 'full_enrollment',
+      quick_checkout_consent_text: input.quickCheckoutConsentText || null,
+      quick_checkout_show_description: input.quickCheckoutShowDescription ?? true,
+      quick_checkout_show_refund_policy: input.quickCheckoutShowRefundPolicy ?? true,
     };
 
     // Map clause slots 1-11 directly
@@ -246,6 +255,10 @@ export const offerService = {
     if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = updates.refundPolicyType;
     if (updates.refundPolicyDays !== undefined) dbUpdates.refund_policy_days = updates.refundPolicyDays;
     if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl || null;
+    if (updates.checkoutMode !== undefined) dbUpdates.checkout_mode = updates.checkoutMode;
+    if (updates.quickCheckoutConsentText !== undefined) dbUpdates.quick_checkout_consent_text = updates.quickCheckoutConsentText || null;
+    if (updates.quickCheckoutShowDescription !== undefined) dbUpdates.quick_checkout_show_description = updates.quickCheckoutShowDescription;
+    if (updates.quickCheckoutShowRefundPolicy !== undefined) dbUpdates.quick_checkout_show_refund_policy = updates.quickCheckoutShowRefundPolicy;
 
     // Refund text
     if (updates.refundPolicyType !== undefined) {
@@ -318,6 +331,7 @@ export const offerService = {
       compiled_tc_html: offer.compiled_tc_html,
       refund_window_text: offer.refund_window_text,
       active: offer.active ? 'Yes' : 'No',
+      checkout_mode: (offer as any).checkout_mode || 'full_enrollment',
     };
 
     for (let i = 1; i <= 11; i++) {
@@ -345,8 +359,43 @@ export const offerService = {
     }
   },
 
-  generateEnrollmentLink(offerId: string, baseUrl: string): string {
+  generateEnrollmentLink(offerId: string, baseUrl: string, checkoutMode?: string): string {
+    if (checkoutMode === 'quick_checkout') {
+      return `${baseUrl}/quick-checkout?offerId=${offerId}`;
+    }
     return `${baseUrl}/enrollment?offerId=${offerId}`;
+  },
+
+  async cloneOffer(offerId: string, locationId: string): Promise<OfferRecord> {
+    const source = await offerRepository.getById(offerId);
+
+    // Verify ownership
+    if (source.location_id !== locationId) {
+      throw new Error('Offer not found');
+    }
+
+    // Copy all fields except IDs and metadata
+    const clone: Record<string, unknown> = {};
+    const skipKeys = new Set([
+      'id', 'ghl_product_id', 'ghl_price_ids', 'ghl_custom_object_id',
+      'created_at', 'updated_at', 'redirect_slug',
+    ]);
+
+    for (const [key, value] of Object.entries(source)) {
+      if (!skipKeys.has(key)) {
+        clone[key] = value;
+      }
+    }
+
+    clone.offer_name = `${source.offer_name} (Copy)`;
+    clone.ghl_product_id = null;
+    clone.ghl_price_ids = {};
+    clone.ghl_custom_object_id = null;
+    clone.active = false;
+
+    const newOffer = await offerRepository.create(clone as any);
+    logger.info({ sourceId: offerId, cloneId: newOffer.id, locationId }, 'Offer cloned');
+    return newOffer;
   },
 };
 

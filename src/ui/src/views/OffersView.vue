@@ -40,12 +40,14 @@
               <span class="badge" :class="offer.active ? 'badge-green' : 'badge-gray'">
                 {{ offer.active ? 'Active' : 'Inactive' }}
               </span>
+              <span v-if="offer.checkout_mode === 'quick_checkout'" class="badge badge-blue" style="margin-left:4px">Quick</span>
             </td>
             <td>
               <button class="btn btn-sm btn-secondary" @click="copyLink(offer.id)">Copy Link</button>
             </td>
-            <td>
+            <td style="white-space:nowrap">
               <router-link :to="`/offers/${offer.id}/edit`" class="btn btn-sm btn-secondary">Edit</router-link>
+              <button class="btn btn-sm btn-secondary" style="margin-left:4px" @click="cloneOffer(offer)">Clone</button>
             </td>
           </tr>
         </tbody>
@@ -60,9 +62,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 
 const api = useApi();
+const routerNav = useRouter();
 const { loading, error } = api;
 const offers = ref<any[]>([]);
 const copied = ref(false);
@@ -79,6 +83,16 @@ async function copyLink(offerId: string) {
     await navigator.clipboard.writeText(link);
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 2000);
+  } catch {}
+}
+
+async function cloneOffer(offer: any) {
+  if (!confirm(`Clone '${offer.offer_name}'? This will create an inactive copy you can edit.`)) return;
+  try {
+    const result = await api.post<any>(`/api/offers/${offer.id}/clone`, {});
+    if (result?.offer?.id) {
+      routerNav.push(`/offers/${result.offer.id}/edit`);
+    }
   } catch {}
 }
 </script>

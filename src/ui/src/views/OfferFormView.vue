@@ -131,6 +131,51 @@
         <textarea class="form-textarea" v-model="form.refundWindowText" placeholder="Describe your refund policy..."></textarea>
       </div>
 
+      <!-- Checkout Experience (Phase J) -->
+      <h3 class="mt-4 mb-4">Checkout Experience</h3>
+      <p class="text-sm text-muted mb-4">How should clients purchase this offer?</p>
+
+      <div class="checkout-mode-group mb-4">
+        <label class="radio-card" :class="{ active: form.checkoutMode === 'full_enrollment' }">
+          <input type="radio" v-model="form.checkoutMode" value="full_enrollment" />
+          <div>
+            <strong>Full Enrollment</strong>
+            <span class="badge badge-blue" style="font-size:10px;margin-left:6px">Recommended for $1K+</span>
+            <p class="text-sm text-muted" style="margin-top:4px">4-page funnel with complete evidence capture: client info, offer review, detailed consent, then payment.</p>
+          </div>
+        </label>
+        <label class="radio-card" :class="{ active: form.checkoutMode === 'quick_checkout' }">
+          <input type="radio" v-model="form.checkoutMode" value="quick_checkout" />
+          <div>
+            <strong>Quick Checkout</strong>
+            <span class="badge badge-gray" style="font-size:10px;margin-left:6px">For lower-ticket items</span>
+            <p class="text-sm text-muted" style="margin-top:4px">Streamlined payment page with inline consent. Faster but captures less evidence for dispute defense.</p>
+          </div>
+        </label>
+      </div>
+
+      <div v-if="form.checkoutMode === 'quick_checkout'" class="quick-checkout-options mb-4">
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="form.quickCheckoutShowDescription" />
+            Show program description on checkout page
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="form.quickCheckoutShowRefundPolicy" />
+            Show refund policy on checkout page
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Consent Text</label>
+          <textarea class="form-textarea" v-model="form.quickCheckoutConsentText"
+            placeholder="I agree to the terms and conditions and authorize this charge."
+            style="min-height:60px"></textarea>
+          <p class="text-sm text-muted mt-2">This text appears next to a checkbox the client must check before paying.</p>
+        </div>
+      </div>
+
       <!-- Terms & Conditions -->
       <h3 class="mt-4 mb-4">Terms & Conditions</h3>
 
@@ -308,6 +353,10 @@ const form = ref({
   milestones: Array.from({ length: 8 }, () => ({ name: '', delivers: '', clientDoes: '' })),
   processorOverride: '' as string,
   nmiProcessorId: '' as string,
+  checkoutMode: 'full_enrollment' as string,
+  quickCheckoutConsentText: '',
+  quickCheckoutShowDescription: true,
+  quickCheckoutShowRefundPolicy: true,
 });
 
 const calculatedInstallment = computed(() => {
@@ -379,6 +428,10 @@ onMounted(async () => {
 
       form.value.processorOverride = offer.processor_override || '';
       form.value.nmiProcessorId = offer.nmi_processor_id || '';
+      form.value.checkoutMode = offer.checkout_mode || 'full_enrollment';
+      form.value.quickCheckoutConsentText = offer.quick_checkout_consent_text || '';
+      form.value.quickCheckoutShowDescription = offer.quick_checkout_show_description ?? true;
+      form.value.quickCheckoutShowRefundPolicy = offer.quick_checkout_show_refund_policy ?? true;
     } catch {}
   }
 });
@@ -417,6 +470,10 @@ async function save() {
     milestones: form.value.milestones.filter(m => m.name),
     processorOverride: form.value.processorOverride || null,
     nmiProcessorId: form.value.nmiProcessorId || null,
+    checkoutMode: form.value.checkoutMode,
+    quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
+    quickCheckoutShowDescription: form.value.quickCheckoutShowDescription,
+    quickCheckoutShowRefundPolicy: form.value.quickCheckoutShowRefundPolicy,
   };
 
   try {
@@ -476,5 +533,45 @@ async function save() {
   background: #f3f4f6 !important;
   color: #6b7280 !important;
   cursor: not-allowed;
+}
+
+.checkout-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.radio-card:hover {
+  border-color: #93c5fd;
+}
+
+.radio-card.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.radio-card input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #3b82f6;
+  flex-shrink: 0;
+}
+
+.quick-checkout-options {
+  border-left: 3px solid #3b82f6;
+  padding-left: 16px;
+  margin-left: 8px;
 }
 </style>

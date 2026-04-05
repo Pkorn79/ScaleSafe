@@ -45,7 +45,7 @@ export function createApp(): express.Application {
   app.use(express.static(uiPath));
   // SPA catch-all: serve index.html for all routes EXCEPT API, auth, health,
   // webhooks, enrollment, checkout, and widgets
-  app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout|widgets).*/, (_req, res) => {
+  app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout|quick-checkout|widgets).*/, (_req, res) => {
     res.sendFile(path.join(uiPath, 'index.html'));
   });
 

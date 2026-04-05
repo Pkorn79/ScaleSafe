@@ -52,8 +52,22 @@ export const offerController = {
     try {
       const offer = await offerService.getById(req.params.id);
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const link = offerService.generateEnrollmentLink(offer.id, baseUrl);
+      const link = offerService.generateEnrollmentLink(offer.id, baseUrl, (offer as any).checkout_mode);
       res.json({ link });
+    } catch (err) { next(err); }
+  },
+
+  async clone(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const offer = await offerService.cloneOffer(req.params.id, locationId);
+      res.status(201).json({
+        success: true,
+        offer,
+        message: 'Offer cloned. Edit the copy and activate when ready.',
+      });
     } catch (err) { next(err); }
   },
 };

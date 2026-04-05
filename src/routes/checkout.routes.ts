@@ -9,12 +9,20 @@ router.get('/api/checkout/config', getCheckoutConfig);
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/save-card', saveCard);
 
+const checkoutCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com";
+
 // Serve the checkout page (loaded by GHL in an iframe)
 router.get('/checkout', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html');
-  res.setHeader('Content-Security-Policy',
-    "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com");
+  res.setHeader('Content-Security-Policy', checkoutCsp);
   res.send(checkoutHtml());
+});
+
+// Quick checkout page (compact single-page checkout for lower-ticket items)
+router.get('/quick-checkout', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Security-Policy', checkoutCsp);
+  res.send(quickCheckoutHtml());
 });
 
 function checkoutHtml(): string {
@@ -456,6 +464,310 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   function formatCents(cents) { return '$' + (cents / 100).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); }
   function showError(msg) { var e = el('error-msg'); e.textContent = msg; e.style.display = 'block'; }
   function hideError() { el('error-msg').style.display = 'none'; }
+  function setLoading(on) {
+    el('pay-btn').disabled = on;
+    el('pay-btn').classList.toggle('hidden', on);
+    el('spinner').style.display = on ? 'block' : 'none';
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+function quickCheckoutHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick Checkout — ScaleSafe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;color:#1a1a2e;padding:16px}
+.container{max-width:480px;margin:0 auto}
+.merchant-name{font-size:14px;color:#6b7280;text-align:center;margin-bottom:16px}
+.offer-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-bottom:20px}
+.offer-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.offer-name{font-size:18px;font-weight:600}
+.offer-price{font-size:24px;font-weight:700;color:#3b82f6}
+.offer-desc{font-size:14px;color:#6b7280;line-height:1.5;margin-bottom:8px}
+.offer-refund{font-size:13px;color:#6b7280;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-top:8px}
+.divider{height:1px;background:#e5e7eb;margin:20px 0}
+.section-title{font-size:14px;font-weight:600;color:#374151;margin-bottom:12px}
+.field-wrapper{border:1px solid #d1d5db;border-radius:8px;padding:12px;margin-bottom:10px;min-height:44px;background:#fff;transition:border-color .15s}
+.field-wrapper:focus-within{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.field-row{display:flex;gap:10px}
+.field-row .field-wrapper{flex:1}
+#card-element{min-height:20px}
+.consent-row{display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:14px;color:#374151;line-height:1.5}
+.consent-row input{width:20px;height:20px;margin-top:2px;flex-shrink:0;accent-color:#3b82f6}
+.pay-btn{display:block;width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background .15s}
+.pay-btn:hover{background:#2563eb}
+.pay-btn:disabled{background:#93c5fd;cursor:not-allowed}
+.error-msg{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px;display:none}
+.success-msg{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:8px;padding:16px;text-align:center;font-size:16px;font-weight:500;display:none}
+.spinner{display:none;text-align:center;padding:20px}
+.spinner::after{content:'';display:inline-block;width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.footer{text-align:center;margin-top:16px;font-size:12px;color:#9ca3af}
+.hidden{display:none!important}
+.loading{text-align:center;padding:40px;color:#6b7280}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="merchant-name" id="merchant-name"></div>
+
+  <div id="loading" class="loading">Loading...</div>
+
+  <div id="offer-section" class="hidden">
+    <div class="offer-card">
+      <div class="offer-header">
+        <div class="offer-name" id="offer-name"></div>
+        <div class="offer-price" id="offer-price"></div>
+      </div>
+      <div class="offer-desc hidden" id="offer-desc"></div>
+      <div class="offer-refund hidden" id="offer-refund"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section-title">Payment Information</div>
+    <div id="nmi-fields" class="hidden">
+      <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Card Number</label>
+      <div class="field-wrapper"><div id="ccnumber"></div></div>
+      <div class="field-row">
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Exp Date</label>
+          <div class="field-wrapper"><div id="ccexp"></div></div>
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">CVV</label>
+          <div class="field-wrapper"><div id="cvv"></div></div>
+        </div>
+      </div>
+    </div>
+    <div id="stripe-fields" class="hidden">
+      <div class="field-wrapper"><div id="card-element"></div></div>
+    </div>
+
+    <div class="consent-row">
+      <input type="checkbox" id="consent-cb">
+      <label for="consent-cb" id="consent-text">I agree to the terms and conditions and authorize this charge.</label>
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+    <div class="success-msg" id="success-msg">Payment successful!</div>
+    <div class="spinner" id="spinner"></div>
+    <button class="pay-btn" id="pay-btn" disabled>Pay</button>
+
+    <div class="footer">Secure payment powered by ScaleSafe</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var API_BASE = window.location.origin;
+  var params = new URLSearchParams(window.location.search);
+  var offerId = params.get('offerId');
+  var publishableKey = params.get('publishableKey') || '';
+
+  var offerData = null;
+  var processorType = '';
+  var collectJs = null;
+  var stripe = null;
+  var stripeElements = null;
+  var cardElement = null;
+  var paymentToken = null;
+
+  function el(id) { return document.getElementById(id); }
+
+  // Listen for GHL postMessage (paymentsUrl protocol)
+  window.addEventListener('message', function(e) {
+    try {
+      var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (d.action === 'payment_initiate_props') {
+        if (d.publishableKey) publishableKey = d.publishableKey;
+        if (d.offerId) offerId = d.offerId;
+        init();
+      }
+    } catch(ex) {}
+  });
+
+  if (offerId) init();
+
+  async function init() {
+    try {
+      // Load offer details
+      var res = await fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public');
+      if (!res.ok) throw new Error('Offer not found');
+      offerData = await res.json();
+
+      // Load processor config
+      if (publishableKey) {
+        var cfgRes = await fetch(API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(publishableKey));
+        if (cfgRes.ok) {
+          var cfg = await cfgRes.json();
+          processorType = cfg.processorType;
+          el('merchant-name').textContent = cfg.merchantName || offerData.merchantName || '';
+
+          if (processorType === 'nmi' && cfg.nmiTokenizationKey) {
+            await loadNmi(cfg.nmiTokenizationKey);
+          } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
+            await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
+          }
+        }
+      }
+
+      renderOffer();
+    } catch(err) {
+      el('loading').textContent = 'Unable to load checkout. Please try again.';
+    }
+  }
+
+  function renderOffer() {
+    el('loading').classList.add('hidden');
+    el('offer-section').classList.remove('hidden');
+
+    el('offer-name').textContent = offerData.programName;
+    el('offer-price').textContent = formatCurrency(offerData.price);
+    el('merchant-name').textContent = el('merchant-name').textContent || offerData.merchantName || '';
+
+    if (offerData.programDescription) {
+      el('offer-desc').textContent = offerData.programDescription;
+      el('offer-desc').classList.remove('hidden');
+    }
+    if (offerData.refundWindowText) {
+      el('offer-refund').textContent = offerData.refundWindowText;
+      el('offer-refund').classList.remove('hidden');
+    }
+
+    el('pay-btn').textContent = 'Pay ' + formatCurrency(offerData.price);
+    updatePayBtn();
+  }
+
+  function formatCurrency(val) {
+    if (val == null) return '';
+    return '$' + Number(val).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // Consent checkbox
+  el('consent-cb').addEventListener('change', updatePayBtn);
+  function updatePayBtn() {
+    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe');
+    el('pay-btn').disabled = !ready;
+  }
+
+  // NMI Collect.js
+  function loadNmi(tokenKey) {
+    return new Promise(function(resolve) {
+      var s = document.createElement('script');
+      s.src = 'https://secure.nmi.com/token/Collect.js';
+      s.setAttribute('data-tokenization-key', tokenKey);
+      s.setAttribute('data-variant', 'inline');
+      s.onload = function() {
+        el('nmi-fields').classList.remove('hidden');
+        if (window.CollectJS) {
+          window.CollectJS.configure({
+            fields: {
+              ccnumber: {selector:'#ccnumber',placeholder:'Card Number'},
+              ccexp: {selector:'#ccexp',placeholder:'MM/YY'},
+              cvv: {selector:'#cvv',placeholder:'CVV'}
+            },
+            callback: function(r) {
+              paymentToken = r.token;
+              updatePayBtn();
+            }
+          });
+        }
+        resolve();
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Stripe Elements
+  function loadStripe(pubKey, accountId) {
+    return new Promise(function(resolve) {
+      var s = document.createElement('script');
+      s.src = 'https://js.stripe.com/v3/';
+      s.onload = function() {
+        el('stripe-fields').classList.remove('hidden');
+        stripe = window.Stripe(pubKey, {stripeAccount: accountId});
+        stripeElements = stripe.elements();
+        cardElement = stripeElements.create('card');
+        cardElement.mount('#card-element');
+        resolve();
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Payment submission
+  el('pay-btn').addEventListener('click', async function() {
+    if (!offerData) return;
+    setLoading(true);
+    el('error-msg').style.display = 'none';
+
+    try {
+      var token = paymentToken;
+      var amount = Math.round(offerData.price * 100);
+      var consentToken = '';
+      try { consentToken = sessionStorage.getItem('ss_consent_token') || ''; } catch(e){}
+
+      // For Stripe, create PaymentMethod first
+      if (processorType === 'stripe' && cardElement) {
+        var result = await stripe.createPaymentMethod({type:'card', card: cardElement});
+        if (result.error) throw new Error(result.error.message);
+        token = result.paymentMethod.id;
+      }
+
+      // NMI: trigger tokenization if not yet done
+      if (processorType === 'nmi' && !token && window.CollectJS) {
+        window.CollectJS.startPaymentRequest();
+        await new Promise(function(r) { setTimeout(r, 2000); });
+        token = paymentToken;
+        if (!token) throw new Error('Card tokenization failed');
+      }
+
+      var res = await fetch(API_BASE + '/api/checkout/process-payment', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          publishableKey: publishableKey,
+          paymentToken: token,
+          amount: amount,
+          currency: 'usd',
+          offerId: offerId,
+          consentToken: consentToken,
+          deviceFingerprint: navigator.userAgent,
+          browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
+        })
+      });
+
+      var data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Payment failed');
+
+      // Success
+      el('pay-btn').classList.add('hidden');
+      el('success-msg').style.display = 'block';
+
+      // Notify parent (GHL iframe protocol)
+      try {
+        window.parent.postMessage(JSON.stringify({
+          action: 'custom_element_success_response',
+          chargeId: data.chargeId,
+          transactionId: data.chargeId
+        }), '*');
+      } catch(e){}
+    } catch(err) {
+      el('error-msg').textContent = err.message || 'Payment failed. Please try again.';
+      el('error-msg').style.display = 'block';
+    }
+    setLoading(false);
+  });
+
   function setLoading(on) {
     el('pay-btn').disabled = on;
     el('pay-btn').classList.toggle('hidden', on);

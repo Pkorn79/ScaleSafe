@@ -14,5 +14,6 @@ router.get('/:id', offerController.getById);
 router.put('/:id', offerController.update);
 router.delete('/:id', offerController.delete);
 router.get('/:id/enrollment-link', offerController.getEnrollmentLink);
+router.post('/:id/clone', offerController.clone);
 
 export default router;

@@ -52,6 +52,9 @@ import { ssoSession } from './composables/useApi';
       <router-link to="/clients" class="nav-item" :class="{ active: $route.path.startsWith('/clients') }">
         Clients
       </router-link>
+      <router-link to="/payments" class="nav-item" :class="{ active: $route.path.startsWith('/payments') }">
+        Payments
+      </router-link>
       <router-link to="/defense" class="nav-item" :class="{ active: $route.path === '/defense' }">
         Defense
       </router-link>

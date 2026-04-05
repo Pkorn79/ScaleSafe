@@ -12,6 +12,8 @@ const routes = [
   { path: '/defense/disputes', name: 'dispute-management', component: () => import('./views/DisputeManagement.vue') },
   { path: '/defense/prevention', name: 'prevention-checklist', component: () => import('./views/PreventionChecklist.vue') },
   { path: '/defense/:id', name: 'defense-detail', component: () => import('./views/DefenseDetailView.vue') },
+  { path: '/payments', name: 'payment-search', component: () => import('./views/PaymentSearch.vue') },
+  { path: '/payments/:contactId', name: 'payment-management', component: () => import('./views/PaymentManagement.vue'), props: true },
   { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
   { path: '/settings/payments', name: 'settings-payments', component: () => import('./views/SettingsPayments.vue') },
 ];

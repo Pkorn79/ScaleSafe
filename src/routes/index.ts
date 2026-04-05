@@ -18,6 +18,7 @@ import evidenceUploadRoutes from './evidence-upload.routes';
 import disputeRoutes from './dispute.routes';
 import efwRoutes from './efw.routes';
 import stripeDefenseRoutes from './stripe-defense.routes';
+import paymentManagementRoutes from './payment-management.routes';
 
 const router = Router();
 
@@ -44,10 +45,15 @@ router.use('/enrollment', enrollmentRoutes);
 
 // Payment provider queryUrl (GHL → ScaleSafe)
 router.use('/api/payments', paymentProviderRoutes);
+// Payment customer search + management (SSO-gated)
+router.use('/api/payments', apiLimiter, paymentManagementRoutes);
 
 // Checkout page + API (public, rate limited)
 router.use('/api/checkout', checkoutLimiter);
 router.use(checkoutRoutes);
+
+// Payment management (SSO-gated)
+router.use('/api/payments/manage', apiLimiter, paymentManagementRoutes);
 
 // Dispute + EFW management (SSO-gated)
 router.use('/api/disputes', apiLimiter, disputeRoutes);

@@ -7,6 +7,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-05
 
+### Added — Phase J: Product Enhancements
+- **Light Checkout Mode**: `checkout_mode` toggle on offers — `full_enrollment` (4-page funnel) or `quick_checkout` (compact single page with inline consent)
+- Quick Checkout page (`GET /quick-checkout`) — standalone/GHL iframe with offer summary, NMI/Stripe payment, consent checkbox, postMessage protocol
+- Offer form "Checkout Experience" section with radio cards, consent text customization, show/hide toggles
+- **Clone Offer**: `POST /api/offers/:id/clone` — duplicates offer with "(Copy)" suffix, null GHL IDs, inactive status
+- Clone button in Offers list with confirm dialog, auto-navigates to edit the copy
+- **Payment Management UI**: customer search (`/payments`) + payment detail view (`/payments/:contactId`)
+- Payment management controller: `GET customers`, `GET customer/:id`, `GET customer/:id/methods`, `POST charge`, `POST refund`
+- One-time charge modal (stored card), refund modal (full/partial with amount validation)
+- "Payments" nav item in sidebar
+- Migration `031_light_checkout_mode` — adds `checkout_mode`, `quick_checkout_consent_text`, `quick_checkout_show_description`, `quick_checkout_show_refund_policy` to offers_mirror
+- 13 unit tests (checkout mode, clone offer, payment management)
+
 ### Added — Phase I: Enrollment Funnel Web Widgets + API
 - `POST /api/enrollment/device-capture` — public endpoint for Page 1 device/browser evidence capture
 - `GET /api/enrollment/offer/:offerId/public` — public endpoint returning enrollment-relevant offer details (no internal IDs)

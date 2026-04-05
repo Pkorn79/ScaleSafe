@@ -76,9 +76,47 @@
         <h2 style="margin-bottom:16px">Compile Defense Packet</h2>
         <div v-if="compileError" class="error-msg">{{ compileError }}</div>
 
-        <div class="form-group">
-          <label class="form-label">Contact ID *</label>
-          <input class="form-input" v-model="compileForm.contactId" required />
+        <div class="form-group" style="position:relative">
+          <label class="form-label">Customer *</label>
+          <input
+            class="form-input"
+            v-model="customerSearch"
+            placeholder="Search by name or email..."
+            @focus="openCustomerDropdown"
+            @input="onCustomerSearchInput"
+            required
+          />
+          <div v-if="showCustomerDropdown" class="customer-dropdown">
+            <div v-if="customerSearchLoading" class="customer-option text-sm text-muted">
+              Searching...
+            </div>
+            <button
+              v-for="customer in customerResults"
+              :key="customer.contactId"
+              type="button"
+              class="customer-option"
+              @mousedown.prevent="selectCustomer(customer)"
+            >
+              <div class="text-sm">
+                <strong>{{ customer.name || customer.email || customer.contactId }}</strong>
+              </div>
+              <div class="text-sm text-muted">
+                {{ customer.email || 'No email on file' }} · {{ customer.contactId }}
+              </div>
+            </button>
+            <div
+              v-if="!customerSearchLoading && customerSearch.trim().length >= 3 && customerResults.length === 0"
+              class="customer-option text-sm text-muted"
+            >
+              No matching customers
+            </div>
+            <div
+              v-if="!customerSearchLoading && customerSearch.trim().length < 3"
+              class="customer-option text-sm text-muted"
+            >
+              Type at least 3 characters
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Reason Code *</label>
@@ -105,14 +143,11 @@
             <input class="form-input" v-model="compileForm.caseNumber" />
           </div>
         </div>
-        <div class="grid grid-2">
-          <div class="form-group">
-            <label class="form-label">Dispute Date *</label>
-            <input class="form-input" type="date" v-model="compileForm.disputeDate" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Deadline *</label>
-            <input class="form-input" type="date" v-model="compileForm.deadline" />
+        <div class="form-group">
+          <label class="form-label">Dispute Date *</label>
+          <input class="form-input" type="date" v-model="compileForm.disputeDate" />
+          <div v-if="compileForm.deadline" class="text-sm text-muted mt-2">
+            Response deadline: {{ formatDate(compileForm.deadline) }}
           </div>
         </div>
 
@@ -128,7 +163,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 
@@ -141,6 +176,11 @@ const summary = ref<any>(null);
 const showCompile = ref(false);
 const compiling = ref(false);
 const compileError = ref<string | null>(null);
+const customerSearch = ref('');
+const customerResults = ref<Array<{ contactId: string; name?: string; email?: string }>>([]);
+const customerSearchLoading = ref(false);
+const showCustomerDropdown = ref(false);
+let customerSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const compileForm = ref({
   contactId: '',
@@ -149,6 +189,16 @@ const compileForm = ref({
   disputeDate: '',
   deadline: '',
   caseNumber: '',
+});
+
+watch(() => compileForm.value.disputeDate, (disputeDate) => {
+  if (!disputeDate) {
+    compileForm.value.deadline = '';
+    return;
+  }
+  const deadline = new Date(disputeDate);
+  deadline.setDate(deadline.getDate() + 21);
+  compileForm.value.deadline = deadline.toISOString().slice(0, 10);
 });
 
 function formatDate(d: string): string {
@@ -168,6 +218,12 @@ async function compile() {
   compiling.value = true;
   compileError.value = null;
   try {
+    if (!compileForm.value.contactId) {
+      throw new Error('Please select a customer');
+    }
+    if (!compileForm.value.deadline) {
+      throw new Error('Please select a dispute date');
+    }
     const result = await api.post<any>('/api/defense/compile', compileForm.value);
     showCompile.value = false;
     routerNav.push(`/defense/${result.defenseId}`);
@@ -178,6 +234,45 @@ async function compile() {
   }
 }
 
+function openCustomerDropdown() {
+  showCustomerDropdown.value = true;
+}
+
+function onCustomerSearchInput() {
+  compileForm.value.contactId = '';
+  if (customerSearchTimer) {
+    clearTimeout(customerSearchTimer);
+  }
+
+  const query = customerSearch.value.trim();
+  if (query.length < 3) {
+    customerResults.value = [];
+    showCustomerDropdown.value = true;
+    return;
+  }
+
+  customerSearchTimer = setTimeout(async () => {
+    customerSearchLoading.value = true;
+    try {
+      const data = await api.get<{ customers: Array<{ contactId: string; name?: string; email?: string }> }>(
+        `/api/payments/customers?search=${encodeURIComponent(query)}`,
+      );
+      customerResults.value = data.customers || [];
+      showCustomerDropdown.value = true;
+    } catch {
+      customerResults.value = [];
+    } finally {
+      customerSearchLoading.value = false;
+    }
+  }, 250);
+}
+
+function selectCustomer(customer: { contactId: string; name?: string; email?: string }) {
+  compileForm.value.contactId = customer.contactId;
+  customerSearch.value = customer.name || customer.email || customer.contactId;
+  showCustomerDropdown.value = false;
+}
+
 onMounted(async () => {
   try {
     const data = await api.get<any>('/api/dashboard/defense-history');
@@ -186,3 +281,40 @@ onMounted(async () => {
   } catch {}
 });
 </script>
+
+<style scoped>
+.customer-dropdown {
+  position: absolute;
+  z-index: 10;
+  width: 100%;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.customer-option {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 0;
+  background: #fff;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+button.customer-option {
+  cursor: pointer;
+}
+
+button.customer-option:hover {
+  background: #f9fafb;
+}
+
+.customer-option:last-child {
+  border-bottom: 0;
+}
+</style>
