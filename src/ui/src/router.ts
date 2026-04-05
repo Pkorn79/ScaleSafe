@@ -8,8 +8,12 @@ const routes = [
   { path: '/clients', name: 'clients', component: () => import('./views/ClientsView.vue') },
   { path: '/clients/:contactId', name: 'client-detail', component: () => import('./views/ClientDetailView.vue') },
   { path: '/defense', name: 'defense', component: () => import('./views/DefenseView.vue') },
+  { path: '/defense/dashboard', name: 'defense-dashboard', component: () => import('./views/DefenseDashboard.vue') },
+  { path: '/defense/disputes', name: 'dispute-management', component: () => import('./views/DisputeManagement.vue') },
+  { path: '/defense/prevention', name: 'prevention-checklist', component: () => import('./views/PreventionChecklist.vue') },
   { path: '/defense/:id', name: 'defense-detail', component: () => import('./views/DefenseDetailView.vue') },
   { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
+  { path: '/settings/payments', name: 'settings-payments', component: () => import('./views/SettingsPayments.vue') },
 ];
 
 export const router = createRouter({

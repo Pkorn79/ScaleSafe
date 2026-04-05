@@ -1,0 +1,470 @@
+import { Router, Request, Response } from 'express';
+import { getCheckoutConfig, processPayment, saveCard } from '../controllers/checkout.controller';
+import { config } from '../config';
+
+const router = Router();
+
+// API endpoints for checkout processing
+router.get('/api/checkout/config', getCheckoutConfig);
+router.post('/api/checkout/process-payment', processPayment);
+router.post('/api/checkout/save-card', saveCard);
+
+// Serve the checkout page (loaded by GHL in an iframe)
+router.get('/checkout', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Security-Policy',
+    "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com");
+  res.send(checkoutHtml());
+});
+
+function checkoutHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Checkout — ScaleSafe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;color:#1a1a2e;padding:16px}
+.container{max-width:440px;margin:0 auto}
+.merchant-name{font-size:14px;color:#6b7280;text-align:center;margin-bottom:16px}
+.product-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;text-align:center}
+.product-name{font-size:16px;font-weight:600;margin-bottom:4px}
+.product-amount{font-size:28px;font-weight:700;color:#3b82f6}
+.toggle-group{display:flex;gap:8px;margin-bottom:16px}
+.toggle-btn{flex:1;padding:12px;border:2px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;text-align:center;transition:all .15s}
+.toggle-btn.active{border-color:#3b82f6;background:#eff6ff}
+.toggle-btn .label{font-size:13px;color:#6b7280;margin-bottom:2px}
+.toggle-btn .amount{font-size:16px;font-weight:600;color:#1a1a2e}
+.card-form{margin-bottom:16px}
+.card-form label{display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px}
+.field-wrapper{border:1px solid #d1d5db;border-radius:8px;padding:12px;margin-bottom:10px;min-height:44px;background:#fff;transition:border-color .15s}
+.field-wrapper:focus-within{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.field-row{display:flex;gap:10px}
+.field-row .field-wrapper{flex:1}
+#card-element{min-height:20px}
+.save-card-row{display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:14px;color:#374151}
+.save-card-row input{width:18px;height:18px}
+.pay-btn{display:block;width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background .15s}
+.pay-btn:hover{background:#2563eb}
+.pay-btn:disabled{background:#93c5fd;cursor:not-allowed}
+.error-msg{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px;display:none}
+.spinner{display:none;text-align:center;padding:20px}
+.spinner::after{content:'';display:inline-block;width:28px;height:28px;border:3px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.footer{text-align:center;margin-top:16px;font-size:12px;color:#9ca3af}
+.hidden{display:none!important}
+.setup-title{font-size:18px;font-weight:600;text-align:center;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="merchant-name" id="merchant-name"></div>
+
+  <div id="product-section" class="hidden">
+    <div class="product-card">
+      <div class="product-name" id="product-name"></div>
+      <div class="product-amount" id="product-amount"></div>
+    </div>
+    <div class="toggle-group hidden" id="toggle-group">
+      <div class="toggle-btn active" id="toggle-pif" onclick="selectPricing('pif')">
+        <div class="label">Pay in Full</div>
+        <div class="amount" id="pif-amount"></div>
+      </div>
+      <div class="toggle-btn" id="toggle-installments" onclick="selectPricing('installments')">
+        <div class="label">Installments</div>
+        <div class="amount" id="installments-amount"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="setup-section" class="hidden">
+    <div class="setup-title">Save a Card</div>
+  </div>
+
+  <div id="error-msg" class="error-msg"></div>
+
+  <div class="card-form" id="card-form">
+    <label>Card Number</label>
+    <div class="field-wrapper" id="cc-number-wrapper">
+      <div id="cc-number"></div>
+      <div id="card-element"></div>
+    </div>
+    <div class="field-row" id="exp-cvv-row">
+      <div class="field-wrapper"><div id="cc-exp"></div></div>
+      <div class="field-wrapper"><div id="cc-cvv"></div></div>
+    </div>
+  </div>
+
+  <label class="save-card-row" id="save-card-row">
+    <input type="checkbox" id="save-card-checkbox">
+    Save card for future use
+  </label>
+
+  <button class="pay-btn" id="pay-btn" onclick="submitPayment()">Pay</button>
+  <div class="spinner" id="spinner"></div>
+
+  <div class="footer">Secured by ScaleSafe</div>
+</div>
+
+<script>
+(function() {
+  // ─── State ──────────────────────────────────────────────
+  var state = {
+    mode: null, // 'payment' or 'setup'
+    publishableKey: '',
+    processorType: '',
+    amount: 0,
+    currency: 'usd',
+    contactId: '',
+    contactName: '',
+    contactEmail: '',
+    orderId: '',
+    transactionId: '',
+    subscriptionId: '',
+    locationId: '',
+    productDetails: null,
+    pifPrice: null,
+    installmentPrice: null,
+    selectedPricing: 'pif',
+    nmiTokenizationKey: '',
+    stripeAccountId: '',
+    stripePublishableKey: '',
+    stripe: null,
+    cardElement: null,
+    nmiToken: null,
+    processing: false,
+  };
+
+  var API_BASE = '';
+
+  // ─── PostMessage: send ready signal ─────────────────────
+  window.parent.postMessage({
+    type: 'custom_provider_ready',
+    loaded: true,
+    addCardOnFileSupported: true
+  }, '*');
+
+  // ─── PostMessage: listen for GHL events ─────────────────
+  window.addEventListener('message', function(event) {
+    var d = event.data;
+    if (!d || !d.type) return;
+    if (d.type === 'payment_initiate_props') initPayment(d);
+    else if (d.type === 'setup_initiate_props') initSetup(d);
+  });
+
+  // ─── Initialize payment flow ────────────────────────────
+  function initPayment(data) {
+    state.mode = 'payment';
+    state.publishableKey = data.publishableKey || '';
+    state.amount = data.amount || 0;
+    state.currency = (data.currency || 'USD').toLowerCase();
+    state.contactId = data.contact?.id || '';
+    state.contactName = data.contact?.name || '';
+    state.contactEmail = data.contact?.email || '';
+    state.orderId = data.orderId || '';
+    state.transactionId = data.transactionId || '';
+    state.subscriptionId = data.subscriptionId || '';
+    state.locationId = data.locationId || '';
+    state.productDetails = data.productDetails || null;
+
+    // Parse pricing options
+    parsePricing(data.productDetails);
+
+    // Show product section
+    el('product-section').classList.remove('hidden');
+    el('setup-section').classList.add('hidden');
+
+    if (state.productDetails && state.productDetails[0]) {
+      el('product-name').textContent = state.productDetails[0].name || 'Payment';
+    }
+    updateDisplayAmount();
+
+    // Load processor config
+    loadConfig();
+  }
+
+  // ─── Initialize card-on-file flow ───────────────────────
+  function initSetup(data) {
+    state.mode = 'setup';
+    state.publishableKey = data.publishableKey || '';
+    state.currency = (data.currency || 'USD').toLowerCase();
+    state.contactId = data.contact?.id || '';
+    state.contactName = data.contact?.name || '';
+    state.contactEmail = data.contact?.email || '';
+    state.locationId = data.locationId || '';
+
+    el('product-section').classList.add('hidden');
+    el('setup-section').classList.remove('hidden');
+    el('save-card-row').classList.add('hidden');
+    el('pay-btn').textContent = 'Save Card';
+
+    loadConfig();
+  }
+
+  // ─── Parse PIF vs installments ──────────────────────────
+  function parsePricing(productDetails) {
+    if (!productDetails || !productDetails[0] || !productDetails[0].prices) return;
+    var prices = productDetails[0].prices;
+
+    prices.forEach(function(p) {
+      if (p.type === 'onetime' || p.type === 'one_time') {
+        state.pifPrice = p;
+      } else if (p.type === 'recurring') {
+        state.installmentPrice = p;
+      }
+    });
+
+    if (state.pifPrice && state.installmentPrice) {
+      el('toggle-group').classList.remove('hidden');
+      el('pif-amount').textContent = formatCents(state.pifPrice.amount);
+      var ip = state.installmentPrice;
+      var cycles = ip.totalCycles || '?';
+      el('installments-amount').textContent = cycles + 'x ' + formatCents(ip.amount);
+    }
+  }
+
+  function selectPricing(type) {
+    state.selectedPricing = type;
+    el('toggle-pif').classList.toggle('active', type === 'pif');
+    el('toggle-installments').classList.toggle('active', type === 'installments');
+    updateDisplayAmount();
+  }
+  window.selectPricing = selectPricing;
+
+  function updateDisplayAmount() {
+    var amt = state.amount;
+    if (state.selectedPricing === 'pif' && state.pifPrice) {
+      amt = state.pifPrice.amount;
+    } else if (state.selectedPricing === 'installments' && state.installmentPrice) {
+      amt = state.installmentPrice.amount;
+    }
+    state.amount = amt;
+    el('product-amount').textContent = formatCents(amt);
+    el('pay-btn').textContent = 'Pay ' + formatCents(amt);
+  }
+
+  // ─── Load merchant/processor config ─────────────────────
+  function loadConfig() {
+    fetch(API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(state.publishableKey))
+      .then(function(r) { return r.json(); })
+      .then(function(cfg) {
+        state.processorType = cfg.processorType;
+        el('merchant-name').textContent = cfg.merchantName || '';
+
+        if (cfg.processorType === 'nmi') {
+          state.nmiTokenizationKey = cfg.nmiTokenizationKey;
+          initNmi(cfg.nmiTokenizationKey);
+        } else if (cfg.processorType === 'stripe') {
+          state.stripeAccountId = cfg.stripeAccountId;
+          state.stripePublishableKey = cfg.stripePublishableKey;
+          initStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
+        }
+      })
+      .catch(function(err) {
+        showError('Failed to load payment configuration');
+      });
+  }
+
+  // ─── NMI Collect.js ─────────────────────────────────────
+  function initNmi(tokenKey) {
+    el('card-element').classList.add('hidden');
+    el('exp-cvv-row').classList.remove('hidden');
+
+    var script = document.createElement('script');
+    script.src = 'https://secure.nmi.com/token/Collect.js';
+    script.setAttribute('data-tokenization-key', tokenKey);
+    script.setAttribute('data-variant', 'inline');
+    script.onload = function() {
+      if (typeof CollectJS !== 'undefined') {
+        CollectJS.configure({
+          variant: 'inline',
+          fields: {
+            ccnumber: { selector: '#cc-number', placeholder: 'Card Number' },
+            ccexp: { selector: '#cc-exp', placeholder: 'MM/YY' },
+            cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
+          },
+          callback: function(response) {
+            state.nmiToken = response.token;
+            doSubmit(response.token);
+          }
+        });
+      }
+    };
+    document.head.appendChild(script);
+  }
+
+  // ─── Stripe Elements ────────────────────────────────────
+  function initStripe(pubKey, acctId) {
+    el('cc-number').classList.add('hidden');
+    el('exp-cvv-row').classList.add('hidden');
+    el('card-element').classList.remove('hidden');
+
+    var script = document.createElement('script');
+    script.src = 'https://js.stripe.com/v3/';
+    script.onload = function() {
+      state.stripe = Stripe(pubKey, { stripeAccount: acctId });
+      var elements = state.stripe.elements();
+      state.cardElement = elements.create('card', {
+        style: {
+          base: { fontSize: '16px', color: '#32325d', '::placeholder': { color: '#aab7c4' } }
+        }
+      });
+      state.cardElement.mount('#card-element');
+    };
+    document.head.appendChild(script);
+  }
+
+  // ─── Submit payment ─────────────────────────────────────
+  function submitPayment() {
+    if (state.processing) return;
+    hideError();
+
+    if (state.processorType === 'nmi') {
+      // Trigger Collect.js tokenization — callback calls doSubmit
+      if (typeof CollectJS !== 'undefined') {
+        CollectJS.startPaymentRequest();
+      }
+    } else if (state.processorType === 'stripe') {
+      state.processing = true;
+      setLoading(true);
+      state.stripe.createPaymentMethod({
+        type: 'card',
+        card: state.cardElement,
+        billing_details: { name: state.contactName, email: state.contactEmail }
+      }).then(function(result) {
+        if (result.error) {
+          state.processing = false;
+          setLoading(false);
+          showError(result.error.message);
+          return;
+        }
+        doSubmit(result.paymentMethod.id);
+      });
+    }
+  }
+  window.submitPayment = submitPayment;
+
+  // ─── Do the actual submission ───────────────────────────
+  function doSubmit(token) {
+    state.processing = true;
+    setLoading(true);
+
+    var evidence = captureEvidence();
+
+    if (state.mode === 'setup') {
+      // Card-on-file flow
+      fetch(API_BASE + '/api/checkout/save-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publishableKey: state.publishableKey,
+          paymentToken: token,
+          contactId: state.contactId,
+          contactEmail: state.contactEmail,
+          contactName: state.contactName,
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        state.processing = false;
+        setLoading(false);
+        if (data.success) {
+          window.parent.postMessage({
+            type: 'custom_element_success_response',
+            chargeId: data.paymentMethodId
+          }, '*');
+        } else {
+          showError(data.error || 'Failed to save card');
+        }
+      })
+      .catch(function() {
+        state.processing = false;
+        setLoading(false);
+        showError('Network error. Please try again.');
+      });
+      return;
+    }
+
+    // Payment flow
+    var urlParams = new URLSearchParams(window.location.search);
+    fetch(API_BASE + '/api/checkout/process-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publishableKey: state.publishableKey,
+        paymentToken: token,
+        amount: state.amount,
+        currency: state.currency,
+        contactId: state.contactId,
+        contactName: state.contactName,
+        contactEmail: state.contactEmail,
+        orderId: state.orderId,
+        transactionId: state.transactionId,
+        subscriptionId: state.subscriptionId,
+        offerId: urlParams.get('offer_id') || '',
+        consentToken: urlParams.get('consent_token') || '',
+        saveCard: el('save-card-checkbox') ? el('save-card-checkbox').checked : false,
+        ipAddress: '',
+        deviceFingerprint: evidence.deviceFingerprint,
+        browserInfo: evidence.browserInfo,
+        productDetails: state.productDetails,
+        requestThreeDSecure: false,
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      state.processing = false;
+      setLoading(false);
+      if (data.success) {
+        window.parent.postMessage({
+          type: 'custom_element_success_response',
+          chargeId: data.chargeId
+        }, '*');
+      } else if (data.threeDSecureUrl) {
+        window.location.href = data.threeDSecureUrl;
+      } else {
+        showError(data.error || 'Payment failed. Please try a different card.');
+      }
+    })
+    .catch(function() {
+      state.processing = false;
+      setLoading(false);
+      showError('Network error. Please try again.');
+    });
+  }
+
+  // ─── Evidence capture ───────────────────────────────────
+  function captureEvidence() {
+    return {
+      deviceFingerprint: navigator.userAgent + '|' + screen.width + 'x' + screen.height + '|' + navigator.language,
+      browserInfo: JSON.stringify({
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        platform: navigator.platform,
+        screenResolution: screen.width + 'x' + screen.height,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        cookiesEnabled: navigator.cookieEnabled,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+  }
+
+  // ─── Helpers ────────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+  function formatCents(cents) { return '$' + (cents / 100).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); }
+  function showError(msg) { var e = el('error-msg'); e.textContent = msg; e.style.display = 'block'; }
+  function hideError() { el('error-msg').style.display = 'none'; }
+  function setLoading(on) {
+    el('pay-btn').disabled = on;
+    el('pay-btn').classList.toggle('hidden', on);
+    el('spinner').style.display = on ? 'block' : 'none';
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+export default router;

@@ -5,10 +5,19 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
-// Enrollment endpoints are PUBLIC (client-facing funnel, no SSO)
+// ─── Public API Endpoints (called from GHL funnel widgets) ──────────
+// All these are public — no SSO auth. CORS is handled in app.ts.
+
+// Page 1: Create/update GHL contact
 router.post('/prep', enrollmentController.prep);
+
+// Page 2: Fetch offer details for widget display
 router.get('/offer/:id', enrollmentController.getOffer);
+
+// Page 3: Capture consent with full forensics
 router.post('/consent', enrollmentController.captureConsent);
+
+// ─── Public Enrollment Preview Page ─────────────────────────────────
 
 /**
  * GET /enrollment?offerId=xxx

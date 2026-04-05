@@ -52,11 +52,17 @@ import { ssoSession } from './composables/useApi';
       <router-link to="/clients" class="nav-item" :class="{ active: $route.path.startsWith('/clients') }">
         Clients
       </router-link>
-      <router-link to="/defense" class="nav-item" :class="{ active: $route.path.startsWith('/defense') }">
+      <router-link to="/defense" class="nav-item" :class="{ active: $route.path === '/defense' }">
         Defense
+      </router-link>
+      <router-link to="/defense/dashboard" class="nav-item nav-sub" :class="{ active: $route.path.startsWith('/defense/dashboard') || $route.path.startsWith('/defense/disputes') || $route.path.startsWith('/defense/prevention') }">
+        Health Dashboard
       </router-link>
       <router-link to="/settings" class="nav-item" :class="{ active: $route.name === 'settings' }">
         Settings
+      </router-link>
+      <router-link to="/settings/payments" class="nav-item nav-sub" :class="{ active: $route.name === 'settings-payments' }">
+        Payments
       </router-link>
     </nav>
     <main class="content">
@@ -106,6 +112,7 @@ body {
 
 .nav-item:hover { color: #fff; background: #2d2d50; }
 .nav-item.active { color: #fff; background: #3b82f6; }
+.nav-sub { padding-left: 36px; font-size: 13px; }
 
 .content {
   flex: 1;

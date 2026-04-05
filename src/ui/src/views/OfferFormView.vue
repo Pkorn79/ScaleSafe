@@ -191,6 +191,31 @@
         </div>
       </div>
 
+      <!-- Payment Processor Override -->
+      <h3 class="mt-4 mb-4">Payment Processor</h3>
+      <div class="grid grid-2">
+        <div class="form-group">
+          <label class="form-label">Payment Processor</label>
+          <select class="form-select" v-model="form.processorOverride">
+            <option value="">Use Default{{ defaultProcessorLabel ? ' (' + defaultProcessorLabel + ')' : '' }}</option>
+            <option value="nmi">NMI</option>
+            <option value="stripe" :disabled="!stripeConnected">Stripe{{ !stripeConnected ? ' (not connected)' : '' }}</option>
+          </select>
+        </div>
+        <div
+          v-if="(form.processorOverride === 'nmi' || (!form.processorOverride && defaultProcessor === 'nmi')) && nmiProcessorIds.length > 1"
+          class="form-group"
+        >
+          <label class="form-label">NMI Merchant Account</label>
+          <select class="form-select" v-model="form.nmiProcessorId">
+            <option value="">Default</option>
+            <option v-for="pid in nmiProcessorIds" :key="pid.id" :value="pid.id">
+              {{ pid.label || pid.id }}
+            </option>
+          </select>
+        </div>
+      </div>
+
       <!-- Milestones -->
       <h3 class="mt-4 mb-4">Milestones</h3>
       <p class="text-sm text-muted mb-4">
@@ -224,7 +249,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useApi } from '../composables/useApi';
+import { useApi, ssoSession } from '../composables/useApi';
 
 const route = useRoute();
 const routerNav = useRouter();
@@ -235,6 +260,15 @@ const isEdit = computed(() => !!route.params.id);
 
 const merchantConfigLoading = ref(true);
 const onboardingComplete = ref(false);
+
+// Processor override state
+const defaultProcessor = ref('');
+const defaultProcessorLabel = computed(() => {
+  const map: Record<string, string> = { nmi: 'NMI', stripe: 'Stripe' };
+  return map[defaultProcessor.value] || '';
+});
+const stripeConnected = ref(false);
+const nmiProcessorIds = ref<Array<{ id: string; label: string }>>([]);
 
 const standardClauses = [
   { key: 'purchase_summary', label: 'Purchase Summary', text: 'I confirm that I am purchasing the program described for the total amount and payment terms shown above.', recommended: true },
@@ -272,6 +306,8 @@ const form = ref({
   customClause2Title: '',
   customClause2Text: '',
   milestones: Array.from({ length: 8 }, () => ({ name: '', delivers: '', clientDoes: '' })),
+  processorOverride: '' as string,
+  nmiProcessorId: '' as string,
 });
 
 const calculatedInstallment = computed(() => {
@@ -282,13 +318,26 @@ const calculatedInstallment = computed(() => {
 });
 
 onMounted(async () => {
-  // Check onboarding status
+  // Check onboarding status and load processor config
   try {
     const mc = await api.get<any>('/api/merchants/config');
     onboardingComplete.value = mc?.onboardingComplete === true;
   } catch {
     onboardingComplete.value = false;
   }
+
+  // Load processor config for override dropdown
+  try {
+    const pc = await api.get<any>(`/api/processor-config/${ssoSession.locationId}`);
+    defaultProcessor.value = pc.defaultProcessor || '';
+    stripeConnected.value = pc.stripeConnected || false;
+    if (pc.nmiProcessorIds) {
+      nmiProcessorIds.value = pc.nmiProcessorIds;
+    }
+  } catch {
+    // Processor config may not exist yet
+  }
+
   merchantConfigLoading.value = false;
 
   // Load existing offer for edit mode
@@ -327,6 +376,9 @@ onMounted(async () => {
         form.value.milestones[i].delivers = offer[`m${i + 1}_delivers`] || '';
         form.value.milestones[i].clientDoes = offer[`m${i + 1}_client_does`] || '';
       }
+
+      form.value.processorOverride = offer.processor_override || '';
+      form.value.nmiProcessorId = offer.nmi_processor_id || '';
     } catch {}
   }
 });
@@ -363,6 +415,8 @@ async function save() {
     tcUrl: form.value.tcHasOwn ? form.value.tcUrl : '',
     clauses,
     milestones: form.value.milestones.filter(m => m.name),
+    processorOverride: form.value.processorOverride || null,
+    nmiProcessorId: form.value.nmiProcessorId || null,
   };
 
   try {

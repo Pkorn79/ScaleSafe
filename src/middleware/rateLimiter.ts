@@ -46,3 +46,6 @@ export const apiLimiter = createLimiter(100, 15 * 60 * 1000);
 
 /** Webhook routes: 500 requests per 15 minutes */
 export const webhookLimiter = createLimiter(500, 15 * 60 * 1000);
+
+/** Checkout endpoints: 10 payment attempts per minute per IP */
+export const checkoutLimiter = createLimiter(10, 1 * 60 * 1000);

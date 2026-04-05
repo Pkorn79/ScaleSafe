@@ -22,7 +22,7 @@ ScaleSafe is a GHL Marketplace app that helps coaches and service providers defe
 4. **GHL API calls** go through `src/clients/ghl.client.ts`. Never call GHL directly from controllers or services.
 5. **Every database query filters by `location_id`** — multi-tenant from day one.
 6. **Services never send communications** — they fire GHL custom workflow triggers; GHL workflows handle comms.
-7. **ScaleSafe observes payments, never processes them** — GHL Products/Prices + native order form handle payment processing.
+7. **Payment architecture:** ScaleSafe processes payments through merchant's connected NMI or Stripe accounts via GHL Custom Payment Provider. ScaleSafe never holds funds — transactions settle directly to the merchant's processor account. NMI is the processing rail. Stripe is the defense + optional processing rail (connected via Stripe Connect OAuth with direct charges).
 8. **The 5 SS contact fields** the app manages are in `SS_CONTACT_FIELDS` in `ghl-fields.ts`. Do not add more without explicit approval.
 9. **Offers Custom Object** key is `custom_objects.offers`. Schema is in `docs/ghl-offers-custom-object-schema.md`.
 
@@ -43,11 +43,22 @@ Documents in `/docs` may contain inaccuracies introduced by an external AI sessi
 2. If the claim is about live GHL state (what fields exist, what values are set), verify using Make.com MCP tools (`read_all_custom_values`, `list_ghl_custom_fields`, `get_co_schema_v_2_fresh`)
 3. The constants files and live GHL data are the **source of truth**, not the docs
 
+### Payment Processing (Custom Payment Provider)
+
+- `processor_configs` table — NMI credentials (encrypted) + Stripe Connect tokens per merchant
+- `ProcessorInterface` — shared checkout interface (charge, refund, saveCard, etc.)
+- `ProcessorFactory` — resolves merchant + offer → correct processor client
+- `nmi.client.ts` — NMI Collect.js + transact.php + Customer Vault (Phase B)
+- `stripe.client.ts` — Stripe Payment Intents + Elements + Connect (Phase C)
+- Stripe Defense Layer — 9 modules for evidence, disputes, Radar, health monitoring (Phases S1-S4)
+
 ## File Conventions
 
 ```
 src/
-  clients/         — External API clients (ghl.client.ts, supabase.client.ts)
+  clients/         — External API clients (ghl.client.ts, supabase.client.ts, nmi.client.ts, stripe.client.ts)
+  errors/          — Custom error classes (processor.error.ts)
+  interfaces/      — TypeScript interfaces (processor.interface.ts)
   config.ts        — Environment config
   constants/       — GHL field IDs, custom value IDs, standard clauses, trigger keys
   controllers/     — Express route handlers (*.controller.ts)
@@ -79,7 +90,7 @@ Report any mismatches before moving on.
 
 - `docs/FULL_ARCHITECTURE_MAP.md` — Every table, endpoint, service across all 10 phases
 - `docs/SCALESAFE_APP_BLUEPRINT_v2.1.md` — Complete product spec
-- `docs/MASTER_BUILD_SEQUENCE.md` — 10-phase roadmap
+- `docs/CUSTOM_PAYMENT_PROVIDER_BUILD_PLAN.md` — Payment infrastructure build plan (Phases A-E + S1-S4)
 - `docs/GHL_AUTOMATION_COMPANION.md` — All 18 triggers with payloads
 - `docs/ghl-custom-values-reference.md` — Custom value IDs and names
 - `docs/ghl-offers-custom-object-schema.md` — Offers Custom Object schema

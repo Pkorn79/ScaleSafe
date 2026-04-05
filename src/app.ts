@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
@@ -7,6 +8,20 @@ import routes from './routes';
 
 export function createApp(): express.Application {
   const app = express();
+
+  // CORS for public endpoints (called from GHL iframes)
+  app.use('/api/enrollment', cors({
+    origin: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'x-requested-with'],
+    credentials: false,
+  }));
+  app.use('/api/checkout', cors({
+    origin: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: false,
+  }));
 
   // Parse JSON with raw body capture for webhook signature verification
   app.use(express.json({ verify: captureRawBody as any }));
@@ -23,7 +38,7 @@ export function createApp(): express.Application {
   app.use(express.static(uiPath));
   // SPA catch-all: serve index.html for all routes EXCEPT API, auth, health,
   // webhooks, and enrollment (enrollment is public/client-facing, not SPA)
-  app.get(/^\/(?!api|auth|health|webhooks|enrollment).*/, (_req, res) => {
+  app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout).*/, (_req, res) => {
     res.sendFile(path.join(uiPath, 'index.html'));
   });
 

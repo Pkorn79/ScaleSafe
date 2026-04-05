@@ -1,5 +1,6 @@
 import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository, MerchantRecord } from '../repositories/merchant.repository';
+import { paymentProviderService } from './payment-provider.service';
 import { logger } from '../utils/logger';
 import { CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
@@ -144,6 +145,11 @@ export const merchantService = {
         await merchantRepository.updateSnapshotStatus(locationId, 'installed');
         logger.info({ locationId, pipelineId }, 'Merchant provisioning complete');
       }
+
+      // Register as custom payment provider + generate API keys (non-blocking)
+      this.registerPaymentProvider(locationId).catch((err: any) => {
+        logger.warn({ err: err.message, locationId }, 'Payment provider registration failed — can retry later');
+      });
     } catch (err: any) {
       logger.error({ err, locationId }, 'Merchant provisioning failed');
       await merchantRepository.updateSnapshotStatus(locationId, 'failed', err.message);
@@ -157,6 +163,17 @@ export const merchantService = {
         logger.error({ locationId, attempts: merchant.snapshot_attempts }, 'Provisioning failed after max retries');
       }
     }
+  },
+
+  /**
+   * Register ScaleSafe as a custom payment provider and generate API keys.
+   * Called after provisioning succeeds. Does NOT call connectConfig — that
+   * happens when the merchant connects a processor (NMI/Stripe).
+   */
+  async registerPaymentProvider(locationId: string): Promise<void> {
+    await paymentProviderService.registerProvider(locationId);
+    await paymentProviderService.generateProviderApiKey(locationId);
+    logger.info({ locationId }, 'Payment provider registered and API keys generated');
   },
 
   async findPipeline(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<string | null> {

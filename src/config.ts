@@ -29,8 +29,22 @@ export const config = {
     serviceKey: required('SUPABASE_SERVICE_KEY'),
   },
 
+  // Stripe Connect (platform keys)
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+    clientId: process.env.STRIPE_CLIENT_ID || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
+  // Processor encryption (AES-256-GCM for NMI keys)
+  processorEncryptionKey: process.env.PROCESSOR_ENCRYPTION_KEY || '',
+
   // Claude API (optional — only needed for defense compilation)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+
+  // App URL (for OAuth callbacks, webhook URLs)
+  appUrl: optional('APP_URL', 'http://localhost:3000'),
 
   // Server
   port: parseInt(optional('PORT', '3000'), 10),

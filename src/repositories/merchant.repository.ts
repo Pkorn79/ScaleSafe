@@ -27,6 +27,13 @@ export interface MerchantRecord {
   snapshot_status: string;
   snapshot_attempts: number;
   trigger_ids: Record<string, string>;
+  // Payment infrastructure (Phase A/D)
+  default_processor: string | null;
+  stripe_connected: boolean;
+  stripe_user_id: string | null;
+  payment_provider_registered: boolean;
+  provider_api_key: string | null;
+  provider_publishable_key: string | null;
   status: string;
   installed_at: string;
   updated_at: string;
