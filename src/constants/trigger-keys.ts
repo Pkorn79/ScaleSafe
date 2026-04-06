@@ -22,6 +22,7 @@ export const VALID_TRIGGER_KEYS = [
   'ss_evidence_milestone',
   'ss_chargeback_ratio_warning',
   'ss_chargeback_ratio_critical',
+  'ss_send_enrollment_link',
 ] as const;
 
 export type TriggerKey = typeof VALID_TRIGGER_KEYS[number];

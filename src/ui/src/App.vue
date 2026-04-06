@@ -1,154 +1,139 @@
 <script setup lang="ts">
 import { ssoSession } from './composables/useApi';
+import {
+  LayoutDashboard, Package, Users, CreditCard,
+  Shield, Activity, Settings, ChevronRight,
+} from 'lucide-vue-next';
 </script>
 
 <template>
   <!-- Loading state while SSO handshake completes -->
-  <div v-if="!ssoSession.ready" class="sso-loading">
-    <div class="sso-loading-inner">
-      <div class="sso-spinner"></div>
+  <div v-if="!ssoSession.ready" class="flex items-center justify-center min-h-screen bg-slate-50">
+    <div class="text-center text-slate-500 text-sm">
+      <div class="w-9 h-9 border-3 border-slate-200 border-t-ss-primary-500 rounded-full mx-auto mb-4 animate-spin"></div>
       <p>Connecting to GoHighLevel...</p>
     </div>
   </div>
 
   <!-- SSO failed — friendly error page -->
-  <div v-else-if="ssoSession.error || !ssoSession.locationId" class="sso-error">
-    <div class="sso-error-card">
-      <div class="sso-error-icon">!</div>
-      <h1>Unable to Connect</h1>
-      <p class="sso-error-detail">
+  <div v-else-if="ssoSession.error || !ssoSession.locationId" class="flex items-center justify-center min-h-screen bg-slate-50 p-6">
+    <div class="bg-white rounded-xl p-10 max-w-md w-full shadow-sm text-center">
+      <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 text-2xl font-bold flex items-center justify-center mx-auto mb-4">!</div>
+      <h1 class="text-xl font-semibold text-slate-900 mb-2">Unable to Connect</h1>
+      <p class="text-slate-500 text-sm leading-relaxed mb-5">
         ScaleSafe couldn't verify your account with GoHighLevel.
         This usually means the app needs to be reinstalled.
       </p>
-      <div class="sso-error-steps">
-        <p><strong>To fix this:</strong></p>
-        <ol>
+      <div class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
+        <p class="mb-2"><strong>To fix this:</strong></p>
+        <ol class="pl-5 space-y-1 list-decimal">
           <li>Go to <strong>Settings &gt; Integrations</strong> in your GHL account</li>
           <li>Find ScaleSafe and click <strong>Uninstall</strong></li>
           <li>Reinstall ScaleSafe from the Marketplace</li>
         </ol>
       </div>
-      <p class="sso-error-support">
+      <p class="text-xs text-slate-400 mb-4">
         Still having trouble? Contact support at
-        <a href="mailto:support@scalesafe.app">support@scalesafe.app</a>
+        <a href="mailto:support@scalesafe.app" class="text-ss-primary-500 no-underline">support@scalesafe.app</a>
       </p>
-      <details class="sso-error-debug">
-        <summary>Technical details</summary>
-        <code>{{ ssoSession.error || 'No location context received' }}</code>
+      <details class="text-left text-xs text-slate-400">
+        <summary class="cursor-pointer mb-1">Technical details</summary>
+        <code class="block bg-slate-100 p-2 rounded text-[11px] break-all text-slate-500">{{ ssoSession.error || 'No location context received' }}</code>
       </details>
     </div>
   </div>
 
   <!-- Normal app -->
-  <div v-else class="app">
-    <nav class="sidebar">
-      <div class="logo">ScaleSafe</div>
-      <router-link to="/" class="nav-item" :class="{ active: $route.name === 'dashboard' }">
-        Dashboard
+  <div v-else class="flex min-h-screen">
+    <nav class="w-[200px] bg-slate-900 text-white py-5 flex-shrink-0">
+      <div class="text-lg font-bold px-5 pb-5 border-b border-slate-700 mb-2">ScaleSafe</div>
+
+      <router-link to="/" class="nav-link" :class="{ 'nav-active': $route.name === 'dashboard' }">
+        <LayoutDashboard :size="16" /> Dashboard
       </router-link>
-      <router-link to="/offers" class="nav-item" :class="{ active: $route.path.startsWith('/offers') }">
-        Offers
+      <router-link to="/offers" class="nav-link" :class="{ 'nav-active': $route.path.startsWith('/offers') }">
+        <Package :size="16" /> Offers
       </router-link>
-      <router-link to="/clients" class="nav-item" :class="{ active: $route.path.startsWith('/clients') }">
-        Clients
+      <router-link to="/clients" class="nav-link" :class="{ 'nav-active': $route.path.startsWith('/clients') }">
+        <Users :size="16" /> Clients
       </router-link>
-      <router-link to="/payments" class="nav-item" :class="{ active: $route.path.startsWith('/payments') }">
-        Payments
+      <router-link to="/payments" class="nav-link" :class="{ 'nav-active': $route.path.startsWith('/payments') }">
+        <CreditCard :size="16" /> Payments
       </router-link>
-      <router-link to="/defense" class="nav-item" :class="{ active: $route.path === '/defense' }">
-        Defense
+      <router-link to="/defense" class="nav-link" :class="{ 'nav-active': $route.path === '/defense' }">
+        <Shield :size="16" /> Defense
       </router-link>
-      <router-link to="/defense/dashboard" class="nav-item nav-sub" :class="{ active: $route.path.startsWith('/defense/dashboard') || $route.path.startsWith('/defense/disputes') || $route.path.startsWith('/defense/prevention') }">
-        Health Dashboard
+      <router-link to="/defense/dashboard" class="nav-link nav-sub" :class="{ 'nav-active': $route.path.startsWith('/defense/dashboard') || $route.path.startsWith('/defense/disputes') || $route.path.startsWith('/defense/prevention') }">
+        <Activity :size="14" /> Health Dashboard
       </router-link>
-      <router-link to="/settings" class="nav-item" :class="{ active: $route.name === 'settings' }">
-        Settings
+      <router-link to="/settings" class="nav-link" :class="{ 'nav-active': $route.name === 'settings' }">
+        <Settings :size="16" /> Settings
       </router-link>
-      <router-link to="/settings/payments" class="nav-item nav-sub" :class="{ active: $route.name === 'settings-payments' }">
-        Payments
+      <router-link to="/settings/payments" class="nav-link nav-sub" :class="{ 'nav-active': $route.name === 'settings-payments' }">
+        <ChevronRight :size="14" /> Payments
       </router-link>
     </nav>
-    <main class="content">
+    <main class="flex-1 p-6 overflow-y-auto bg-slate-50">
       <router-view />
     </main>
   </div>
 </template>
 
 <style>
+/* ── Base reset + font ──────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   color: #1a1a2e;
-  background: #f5f6fa;
+  background: #f8fafc;
 }
 
-.app {
+/* ── Nav links ──────────────────────────────────────── */
+.nav-link {
   display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 200px;
-  background: #1a1a2e;
-  color: #fff;
-  padding: 20px 0;
-  flex-shrink: 0;
-}
-
-.logo {
-  font-size: 20px;
-  font-weight: 700;
-  padding: 0 20px 20px;
-  border-bottom: 1px solid #2d2d50;
-  margin-bottom: 10px;
-}
-
-.nav-item {
-  display: block;
-  padding: 12px 20px;
-  color: #a0a0c0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  color: #94a3b8;
   text-decoration: none;
   font-size: 14px;
   transition: all 0.15s;
 }
-
-.nav-item:hover { color: #fff; background: #2d2d50; }
-.nav-item.active { color: #fff; background: #3b82f6; }
+.nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.nav-active { color: #fff !important; background: #3b82f6 !important; }
 .nav-sub { padding-left: 36px; font-size: 13px; }
 
-.content {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto;
-}
-
-/* Shared component styles */
+/* ── Shared component styles (used by all views) ───── */
 .page-title {
   font-size: 24px;
   font-weight: 600;
   margin-bottom: 20px;
+  color: #0f172a;
 }
 
 .card {
   background: #fff;
   border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   margin-bottom: 16px;
+  border: 1px solid #f1f5f9;
 }
 
 .card-title {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: 12px;
+  color: #94a3b8;
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
 .card-value {
   font-size: 28px;
   font-weight: 700;
+  color: #0f172a;
 }
 
 .grid { display: grid; gap: 16px; }
@@ -159,6 +144,7 @@ body {
 .btn {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   padding: 8px 16px;
   border-radius: 6px;
   font-size: 14px;
@@ -171,13 +157,13 @@ body {
 
 .btn-primary { background: #3b82f6; color: #fff; }
 .btn-primary:hover { background: #2563eb; }
-.btn-secondary { background: #e5e7eb; color: #374151; }
-.btn-secondary:hover { background: #d1d5db; }
+.btn-secondary { background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; }
+.btn-secondary:hover { background: #e2e8f0; }
 .btn-danger { background: #ef4444; color: #fff; }
 .btn-danger:hover { background: #dc2626; }
 .btn-success { background: #10b981; color: #fff; }
 .btn-success:hover { background: #059669; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
 
 .badge {
   display: inline-block;
@@ -191,7 +177,7 @@ body {
 .badge-yellow { background: #fef3c7; color: #92400e; }
 .badge-red { background: #fee2e2; color: #991b1b; }
 .badge-blue { background: #dbeafe; color: #1e40af; }
-.badge-gray { background: #f3f4f6; color: #374151; }
+.badge-gray { background: #f1f5f9; color: #475569; }
 
 .table {
   width: 100%;
@@ -201,23 +187,21 @@ body {
 .table th, .table td {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #f1f5f9;
   font-size: 14px;
 }
 
 .table th {
-  color: #6b7280;
+  color: #94a3b8;
   font-weight: 500;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.table tr:hover td { background: #f9fafb; }
+.table tr:hover td { background: #f8fafc; }
 
-.form-group {
-  margin-bottom: 16px;
-}
+.form-group { margin-bottom: 16px; }
 
 .form-label {
   display: block;
@@ -230,11 +214,12 @@ body {
 .form-input, .form-select, .form-textarea {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
+  font-family: inherit;
 }
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
@@ -245,29 +230,31 @@ body {
 .form-textarea { min-height: 80px; resize: vertical; }
 
 .loading {
-  color: #6b7280;
+  color: #94a3b8;
   padding: 40px;
   text-align: center;
+  font-size: 14px;
 }
 
 .error-msg {
   color: #dc2626;
-  background: #fee2e2;
+  background: #fef2f2;
   padding: 12px 16px;
   border-radius: 6px;
   margin-bottom: 16px;
   font-size: 14px;
+  border: 1px solid #fecaca;
 }
 
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #9ca3af;
+  color: #94a3b8;
 }
 
 .score-bar {
   height: 8px;
-  background: #e5e7eb;
+  background: #e2e8f0;
   border-radius: 4px;
   overflow: hidden;
   margin-top: 4px;
@@ -287,134 +274,8 @@ body {
 .mt-4 { margin-top: 16px; }
 .mb-4 { margin-bottom: 16px; }
 .text-sm { font-size: 13px; }
-.text-muted { color: #6b7280; }
-
-/* SSO Loading */
-.sso-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  background: #f5f6fa;
-}
-
-.sso-loading-inner {
-  text-align: center;
-  color: #6b7280;
-  font-size: 15px;
-}
-
-.sso-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  margin: 0 auto 16px;
-  animation: spin 0.8s linear infinite;
-}
+.text-muted { color: #64748b; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* SSO Error */
-.sso-error {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  background: #f5f6fa;
-  padding: 24px;
-}
-
-.sso-error-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 40px;
-  max-width: 480px;
-  width: 100%;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  text-align: center;
-}
-
-.sso-error-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #fee2e2;
-  color: #dc2626;
-  font-size: 24px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
-}
-
-.sso-error-card h1 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #1a1a2e;
-}
-
-.sso-error-detail {
-  color: #6b7280;
-  font-size: 14px;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}
-
-.sso-error-steps {
-  text-align: left;
-  background: #f9fafb;
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin-bottom: 20px;
-  font-size: 14px;
-  color: #374151;
-}
-
-.sso-error-steps p { margin-bottom: 8px; }
-
-.sso-error-steps ol {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.sso-error-steps li {
-  margin-bottom: 4px;
-  line-height: 1.5;
-}
-
-.sso-error-support {
-  font-size: 13px;
-  color: #9ca3af;
-  margin-bottom: 16px;
-}
-
-.sso-error-support a {
-  color: #3b82f6;
-  text-decoration: none;
-}
-
-.sso-error-debug {
-  text-align: left;
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.sso-error-debug summary {
-  cursor: pointer;
-  margin-bottom: 4px;
-}
-
-.sso-error-debug code {
-  display: block;
-  background: #f3f4f6;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 11px;
-  word-break: break-all;
-  color: #6b7280;
-}
+.animate-spin { animation: spin 0.8s linear infinite; }
 </style>

@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { enrollmentController } from '../controllers/enrollment.controller';
+import { sendEnrollmentLink } from '../controllers/send-link.controller';
 import { enrollmentPublicLimiter } from '../middleware/rateLimiter';
+import { ssoAuth } from '../middleware/ssoAuth';
+import { requireTenant } from '../middleware/tenantContext';
 import { offerService } from '../services/offer.service';
 import { logger } from '../utils/logger';
 
@@ -16,6 +19,9 @@ router.get('/offer/:offerId/public', enrollmentPublicLimiter, enrollmentControll
 
 // Page 3 widget: Consent capture with forensics + consent_token generation
 router.post('/consent', enrollmentPublicLimiter, enrollmentController.funnelConsent);
+
+// ─── Send Enrollment Link (SSO-gated — merchant action) ─────────────
+router.post('/send-link', ssoAuth, requireTenant, sendEnrollmentLink);
 
 // ─── Original API Endpoints ─────────────────────────────────────────
 

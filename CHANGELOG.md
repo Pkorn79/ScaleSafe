@@ -7,6 +7,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-05
 
+### Added — Phase L: Send Enrollment Link
+- `POST /api/enrollment/send-link` (SSO-gated) — sends enrollment link to client via GHL email/SMS
+- Upserts GHL contact, writes enrollment URL + offer name to contact custom fields, fires `ss_send_enrollment_link` trigger
+- "Send Link" button + modal in Offers list — first name, email, phone, send via email/SMS toggles
+- `ss_send_enrollment_link` trigger key added to trigger-keys.ts
+- 7 unit tests for send-link controller
+
+### Added — Phase K: UI/UX Polish
+- Tailwind CSS v4 installed via PostCSS plugin
+- Lucide Vue icons added to sidebar navigation (LayoutDashboard, Package, Users, CreditCard, Shield, Activity, Settings)
+- Lucide icons added to Offers list buttons (Plus, Link2, Send, Edit, Copy)
+- App.vue sidebar refactored to Tailwind utility classes with Inter font
+- SSO loading/error screens converted to Tailwind
+- Global CSS refined: updated borders, shadows, and color tokens to Slate palette
+- Inter web font loaded from Google Fonts
+- `cn()` utility (clsx + tailwind-merge) added for class merging
+
 ### Added — Phase J: Product Enhancements
 - **Light Checkout Mode**: `checkout_mode` toggle on offers — `full_enrollment` (4-page funnel) or `quick_checkout` (compact single page with inline consent)
 - Quick Checkout page (`GET /quick-checkout`) — standalone/GHL iframe with offer summary, NMI/Stripe payment, consent checkbox, postMessage protocol
