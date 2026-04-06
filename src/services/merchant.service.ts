@@ -29,6 +29,9 @@ export interface MerchantFullConfig {
 
   enrollmentFunnelUrl: string;
 
+  stripeConnected: boolean;
+  stripeUserId: string;
+
   tcHasOwn: boolean;
   tcDocumentUrl: string;
   standardClauses: Record<StandardClauseKey, boolean>;
@@ -430,6 +433,9 @@ export const merchantService = {
       logoUrl: merchant.logo_url || gv('LOGO_URL') || '',
       shortDescription: gv('SHORT_DESCRIPTION') || (cfg as any).short_description || '',
       enrollmentFunnelUrl: gv('WEBSITE_BASE_URL') || (cfg as any).enrollment_funnel_url || '',
+
+      stripeConnected: merchant.stripe_connected || false,
+      stripeUserId: merchant.stripe_user_id || '',
 
       tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,
       tcDocumentUrl: gv('TC_DOCUMENT_URL') || (cfg as any).tc_document_url || '',

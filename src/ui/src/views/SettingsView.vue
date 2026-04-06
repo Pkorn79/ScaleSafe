@@ -109,6 +109,37 @@
         </div>
       </div>
 
+      <!-- Payment Processor -->
+      <div class="card mb-4">
+        <h3 class="section-title">Payment Processor</h3>
+
+        <div v-if="stripeConnected" class="processor-status connected">
+          <div class="status-row">
+            <span class="status-dot green"></span>
+            <span class="status-text">Stripe Connected</span>
+          </div>
+          <div class="status-details">
+            <span class="text-sm text-muted">Account: {{ stripeAccountId }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm mt-2" @click="disconnectStripe" :disabled="stripeDisconnecting">
+            {{ stripeDisconnecting ? 'Disconnecting...' : 'Disconnect Stripe' }}
+          </button>
+        </div>
+
+        <div v-else class="processor-status">
+          <p class="text-sm text-muted mb-4">
+            Connect your Stripe account to accept payments through the enrollment funnel.
+            ScaleSafe uses Stripe Connect so payments go directly to your Stripe account.
+          </p>
+          <button class="btn btn-primary" @click="connectStripe" :disabled="stripeConnecting">
+            {{ stripeConnecting ? 'Redirecting...' : 'Connect Stripe Account' }}
+          </button>
+        </div>
+
+        <div v-if="stripeError" class="error-msg mt-2">{{ stripeError }}</div>
+        <div v-if="stripeSuccess" class="success-msg mt-2">Stripe account connected successfully!</div>
+      </div>
+
       <!-- Evidence Module Toggles -->
       <div class="card mb-4">
         <h3 class="section-title">Evidence Modules</h3>
@@ -197,6 +228,12 @@ const provisionRetrying = ref(false);
 const logoUploading = ref(false);
 const showLogoUrlInput = ref(false);
 const logoFileInput = ref<HTMLInputElement | null>(null);
+const stripeConnected = ref(false);
+const stripeAccountId = ref('');
+const stripeConnecting = ref(false);
+const stripeDisconnecting = ref(false);
+const stripeError = ref('');
+const stripeSuccess = ref(false);
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -212,6 +249,26 @@ onMounted(async () => {
     if (config.value.config?.disengagement_thresholds) {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
+
+    // Check Stripe connection status
+    if (config.value.stripeConnected) {
+      stripeConnected.value = true;
+      stripeAccountId.value = config.value.stripeUserId || '';
+    }
+
+    // Check for Stripe callback result in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('stripe_connected') === 'true') {
+      stripeSuccess.value = true;
+      stripeConnected.value = true;
+      setTimeout(() => { stripeSuccess.value = false; }, 5000);
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (urlParams.get('stripe_error')) {
+      stripeError.value = 'Stripe connection failed: ' + (urlParams.get('stripe_error') || 'unknown error');
+      setTimeout(() => { stripeError.value = ''; }, 8000);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     // Auto-retry provisioning if failed or pending
     if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending' || config.value.snapshotStatus === 'partial')) {
       retryProvision();
@@ -329,6 +386,37 @@ async function cleanupKeys() {
     adminResult.value = `Cleanup complete: ${result.purged} old keys purged`;
   } catch {}
   running.value = false;
+}
+
+async function connectStripe() {
+  stripeConnecting.value = true;
+  stripeError.value = '';
+  try {
+    const locationId = config.value?.locationId;
+    if (!locationId) {
+      stripeError.value = 'Location ID not found. Please refresh and try again.';
+      stripeConnecting.value = false;
+      return;
+    }
+    window.location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+  } catch {
+    stripeError.value = 'Failed to start Stripe connection. Please try again.';
+    stripeConnecting.value = false;
+  }
+}
+
+async function disconnectStripe() {
+  if (!confirm('Disconnect your Stripe account? Payments will stop working until you reconnect.')) return;
+  stripeDisconnecting.value = true;
+  stripeError.value = '';
+  try {
+    await api.post<any>('/api/stripe/disconnect');
+    stripeConnected.value = false;
+    stripeAccountId.value = '';
+  } catch {
+    stripeError.value = 'Failed to disconnect. Please try again.';
+  }
+  stripeDisconnecting.value = false;
 }
 </script>
 
@@ -470,5 +558,45 @@ async function cleanupKeys() {
 
 .btn-link:hover {
   color: #374151;
+}
+
+.processor-status {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.processor-status.connected {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.green {
+  background: #22c55e;
+}
+
+.status-text {
+  font-weight: 600;
+  font-size: 15px;
+  color: #166534;
+}
+
+.status-details {
+  margin-left: 18px;
 }
 </style>
