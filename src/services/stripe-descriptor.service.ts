@@ -11,9 +11,15 @@ import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { DescriptorAnalysis } from '../types/stripe-defense.types';
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+let _stripe: any = null;
+function getStripe() {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
+    _stripe = Stripe(key, { apiVersion: '2024-12-18.acacia' });
+  }
+  return _stripe;
+}
 
 export class StripeDescriptorService {
   /**
@@ -77,7 +83,7 @@ export class StripeDescriptorService {
     }
 
     try {
-      const account = await stripe.accounts.retrieve(merchant.stripe_user_id);
+      const account = await getStripe().accounts.retrieve(merchant.stripe_user_id);
 
       const descriptor = account.settings?.payments?.statement_descriptor || '';
       const descriptorShort = account.settings?.payments?.statement_descriptor_prefix || '';

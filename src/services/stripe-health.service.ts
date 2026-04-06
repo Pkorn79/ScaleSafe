@@ -11,9 +11,15 @@ import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { AccountHealthSnapshot } from '../types/stripe-defense.types';
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+let _stripe: any = null;
+function getStripe() {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
+    _stripe = Stripe(key, { apiVersion: '2024-12-18.acacia' });
+  }
+  return _stripe;
+}
 
 export class StripeHealthService {
   /**
@@ -45,19 +51,19 @@ export class StripeHealthService {
     let disputes: any, charges: any, efws: any;
     try {
       const results = await Promise.all([
-        stripe.disputes.list(
+        getStripe().disputes.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
         ),
-        stripe.charges.list(
+        getStripe().charges.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
         ),
-        stripe.radar.earlyFraudWarnings.list(
+        getStripe().radar.earlyFraudWarnings.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
         ).catch(() => ({ data: [] })), // EFW API may not be available
-        stripe.balanceTransactions.list(
+        getStripe().balanceTransactions.list(
           { type: 'adjustment', created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
         ).catch(() => ({ data: [] })),

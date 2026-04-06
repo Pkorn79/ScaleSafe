@@ -10,9 +10,15 @@ import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { RadarListRecord } from '../types/stripe-defense.types';
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+let _stripe: any = null;
+function getStripe() {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
+    _stripe = Stripe(key, { apiVersion: '2024-12-18.acacia' });
+  }
+  return _stripe;
+}
 
 export class StripeRadarService {
   /**
@@ -58,7 +64,7 @@ export class StripeRadarService {
 
     for (const list of listsToCreate) {
       try {
-        const created = await stripe.radar.valueLists.create({
+        const created = await getStripe().radar.valueLists.create({
           alias: list.alias,
           name: list.name,
           item_type: list.itemType,
@@ -109,7 +115,7 @@ export class StripeRadarService {
     }
 
     try {
-      await stripe.radar.valueListItems.create({
+      await getStripe().radar.valueListItems.create({
         value_list: listRecord.stripe_value_list_id,
         value: cardFingerprint,
       }, { stripeAccount });
@@ -143,7 +149,7 @@ export class StripeRadarService {
     }
 
     try {
-      await stripe.radar.valueListItems.create({
+      await getStripe().radar.valueListItems.create({
         value_list: listRecord.stripe_value_list_id,
         value: customerEmail,
       }, { stripeAccount });
@@ -174,7 +180,7 @@ export class StripeRadarService {
     if (!listRecord) return [];
 
     try {
-      const items = await stripe.radar.valueListItems.list(
+      const items = await getStripe().radar.valueListItems.list(
         { value_list: listRecord.stripe_value_list_id, limit: 100 },
         { stripeAccount }
       );
