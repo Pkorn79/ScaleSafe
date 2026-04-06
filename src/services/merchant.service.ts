@@ -637,6 +637,9 @@ export const merchantService = {
     // Always sync compiled T&C HTML
     push('COMPILED_TERMS_HTML', compiledHtml);
 
+    // Enrollment funnel URL
+    if (updates.enrollmentFunnelUrl !== undefined) push('WEBSITE_BASE_URL', updates.enrollmentFunnelUrl);
+
     // Evidence module toggles
     if (updates.modules) {
       if (updates.modules.sessions !== undefined)    push('MODULE_SESSIONS', updates.modules.sessions ? 'Enabled' : 'Disabled');

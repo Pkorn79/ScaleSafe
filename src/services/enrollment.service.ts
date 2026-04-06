@@ -195,6 +195,7 @@ export const enrollmentService = {
       clauses,
       merchantName: merchant?.business_name || '',
       merchantSupportEmail: merchant?.support_email || '',
+      merchantLogoUrl: merchant?.logo_url || null,
     };
   },
 
