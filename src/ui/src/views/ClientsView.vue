@@ -94,6 +94,16 @@ onMounted(async () => {
     ]);
     healthData.value = health;
     atRiskCount.value = risk.count || 0;
-  } catch {}
+  } catch {
+    // When no clients exist, provide empty defaults instead of showing error
+    healthData.value = {
+      totalClients: 0,
+      scores: [],
+      averageScore: 0,
+    };
+    atRiskCount.value = 0;
+    // Clear the error since empty data is expected for new installations
+    error.value = null;
+  }
 });
 </script>

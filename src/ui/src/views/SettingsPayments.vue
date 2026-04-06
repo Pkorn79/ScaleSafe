@@ -162,19 +162,28 @@ const nmiForm = ref({
 
 onMounted(async () => {
   await loadProcessorStatus();
+
+  // Check for Stripe callback result in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('stripe_connected') === 'true') {
+    stripeConnected.value = true;
+    loadError.value = null;
+    window.history.replaceState({}, '', window.location.pathname);
+  } else if (urlParams.get('stripe_error')) {
+    loadError.value = 'Stripe connection failed: ' + (urlParams.get('stripe_error') || 'unknown error');
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 });
 
 async function loadProcessorStatus() {
   pageLoading.value = true;
   loadError.value = null;
   try {
-    const data = await api.get<any>(`/api/processor-config/${ssoSession.locationId}`);
-    nmiConnected.value = data.nmiConnected || false;
+    const data = await api.get<any>('/api/merchants/config');
     stripeConnected.value = data.stripeConnected || false;
+    stripeAccountId.value = data.stripeUserId || '';
     defaultProcessor.value = data.defaultProcessor || '';
-    stripeAccountId.value = data.stripeAccountId || '';
-    nmiProcessorId.value = data.nmiProcessorId || '';
-    autoSubmit.value = data.disputeAutoSubmit || false;
+    nmiConnected.value = false; // TODO: NMI status from config when NMI support is added
 
     if (stripeConnected.value) {
       try {
@@ -192,61 +201,39 @@ async function loadProcessorStatus() {
 }
 
 async function connectNmi() {
-  saving.value = true;
-  try {
-    await api.post('/api/processor-config/nmi', {
-      merchantId: ssoSession.locationId,
-      securityKey: nmiForm.value.securityKey,
-      tokenizationKey: nmiForm.value.tokenizationKey,
-      processorId: nmiForm.value.processorId || null,
-    });
-    nmiConnected.value = true;
-    nmiForm.value = { securityKey: '', tokenizationKey: '', processorId: '' };
-  } catch (err: any) {
-    loadError.value = err.message || 'Failed to connect NMI';
-  } finally {
-    saving.value = false;
-  }
+  // TODO: NMI processor config endpoints not yet built
+  loadError.value = 'NMI connection is not yet available. Use Stripe for now.';
 }
 
 async function testNmiConnection() {
-  testing.value = true;
-  nmiTestResult.value = null;
-  try {
-    const result = await api.post<any>('/api/processor-config/nmi/test', {
-      merchantId: ssoSession.locationId,
-    });
-    nmiTestResult.value = { success: result.success, message: result.message || 'Connection successful' };
-  } catch (err: any) {
-    nmiTestResult.value = { success: false, message: err.message || 'Connection test failed' };
-  } finally {
-    testing.value = false;
-  }
+  // TODO: NMI connection test endpoint not yet built
+  loadError.value = 'NMI connection test is not yet available.';
 }
 
 async function connectStripe() {
   try {
-    const { url } = await api.get<any>('/auth/stripe/connect');
-    window.top?.location.assign(url);
+    const config = await api.get<any>('/api/merchants/config');
+    const locationId = config?.locationId;
+    if (!locationId) {
+      loadError.value = 'Location ID not found. Please refresh and try again.';
+      return;
+    }
+    // Navigate to Stripe OAuth — this is a redirect, not an AJAX call
+    window.location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
   } catch (err: any) {
     loadError.value = err.message || 'Failed to initiate Stripe connection';
   }
 }
 
 async function disconnectNmi() {
-  if (!confirm('Disconnect NMI? Existing subscriptions will not be affected.')) return;
-  try {
-    await api.post('/api/processor-config/nmi/disconnect', { merchantId: ssoSession.locationId });
-    nmiConnected.value = false;
-  } catch (err: any) {
-    loadError.value = err.message || 'Failed to disconnect NMI';
-  }
+  // TODO: NMI disconnect endpoint not yet built
+  loadError.value = 'NMI disconnect is not yet available.';
 }
 
 async function disconnectStripe() {
   if (!confirm('Disconnect Stripe? Defense monitoring will stop.')) return;
   try {
-    await api.post('/api/stripe/disconnect', { merchantId: ssoSession.locationId });
+    await api.post('/api/stripe/disconnect');
     stripeConnected.value = false;
     riskAudit.value = null;
   } catch (err: any) {
@@ -256,25 +243,12 @@ async function disconnectStripe() {
 
 async function setDefaultProcessor(processor: string) {
   defaultProcessor.value = processor;
-  try {
-    await api.post('/api/processor-config/default', {
-      merchantId: ssoSession.locationId,
-      defaultProcessor: processor,
-    });
-  } catch (err: any) {
-    loadError.value = err.message || 'Failed to set default processor';
-  }
+  // TODO: Endpoint /api/processor-config/default not yet built
+  loadError.value = 'Default processor selection will be available soon.';
 }
 
 async function saveAutoSubmit() {
-  try {
-    await api.post('/api/merchant/settings', {
-      merchantId: ssoSession.locationId,
-      disputeAutoSubmit: autoSubmit.value,
-    });
-  } catch (err: any) {
-    loadError.value = err.message || 'Failed to save auto-submit setting';
-  }
+  // TODO: Endpoint /api/merchant/settings not yet built
 }
 </script>
 
