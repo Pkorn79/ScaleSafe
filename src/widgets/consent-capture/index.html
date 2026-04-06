@@ -520,17 +520,16 @@
           } catch (e) { /* silent */ }
         }
 
-        // Advance to next funnel page
-        try {
-          window.parent.postMessage({ type: 'customWidgetGoToNextStep' }, '*');
-        } catch (e) { /* silent */ }
-        try {
-          window.dispatchEvent(new Event('customWidgetGoToNextStep'));
-        } catch (e) { /* silent */ }
-
-        // Visual confirmation
-        submitBtn.textContent = 'Consent Recorded';
+        // Brief visual confirmation, then tell parent to advance
+        submitBtn.textContent = 'Consent Recorded — Redirecting...';
         submitBtn.style.background = '#16a34a';
+
+        // Notify parent page to advance to next funnel step
+        setTimeout(function() {
+          try {
+            window.parent.postMessage({ type: 'ssConsentComplete', consentToken: data.consentToken || '' }, '*');
+          } catch (e) { /* silent */ }
+        }, 800);
 
       } catch (err) {
         console.log('[ScaleSafe] Consent submit error:', err.message);
