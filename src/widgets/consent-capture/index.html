@@ -266,10 +266,30 @@
   'use strict';
 
   var API_BASE = window.location.origin;
-  var params = new URLSearchParams(window.location.search);
-  var offerId = params.get('offerId');
-  var emailParam = params.get('email') || '';
   var root = document.getElementById('ss-root');
+
+  // Try multiple methods to get offerId (widget runs inside iframe)
+  var offerId = null;
+
+  // Method 1: Own URL params (when embed code passes it correctly)
+  offerId = new URLSearchParams(window.location.search).get('offerId');
+
+  // Method 2: Try parent URL (works if same origin)
+  if (!offerId) {
+    try {
+      offerId = new URLSearchParams(window.parent.location.search).get('offerId');
+    } catch (e) { /* Cross-origin — expected */ }
+  }
+
+  // Method 3: Extract from document.referrer
+  if (!offerId && document.referrer) {
+    try {
+      var refUrl = new URL(document.referrer);
+      offerId = refUrl.searchParams.get('offerId');
+    } catch (e) { /* ignore */ }
+  }
+
+  var emailParam = new URLSearchParams(window.location.search).get('email') || '';
 
   if (!offerId) {
     root.innerHTML = '<div class="ss-error-msg">Terms not available. Please contact the provider.</div>';
