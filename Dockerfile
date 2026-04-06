@@ -23,6 +23,9 @@ RUN cd src/ui && npx vite build
 # Copy frontend build to dist
 RUN mkdir -p dist/ui && cp -r src/ui/dist dist/ui/dist
 
+# Copy widget HTML files to dist (not compiled by tsc)
+RUN cp -r src/widgets dist/widgets
+
 # --- Production stage ---
 FROM node:20-alpine
 
