@@ -375,7 +375,7 @@ onMounted(async () => {
     onboardingComplete.value = false;
   }
 
-  // Load processor config for override dropdown
+  // Load processor config for override dropdown (optional — may not exist yet)
   try {
     const pc = await api.get<any>(`/api/processor-config/${ssoSession.locationId}`);
     defaultProcessor.value = pc.defaultProcessor || '';
@@ -387,6 +387,8 @@ onMounted(async () => {
     // Processor config may not exist yet
   }
 
+  // Clear any 404 errors from optional config fetches above
+  error.value = null;
   merchantConfigLoading.value = false;
 
   // Load existing offer for edit mode
