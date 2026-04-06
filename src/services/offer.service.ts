@@ -359,11 +359,18 @@ export const offerService = {
     }
   },
 
-  generateEnrollmentLink(offerId: string, baseUrl: string, checkoutMode?: string): string {
+  generateEnrollmentLink(offerId: string, appBaseUrl: string, checkoutMode?: string, funnelBaseUrl?: string): string {
     if (checkoutMode === 'quick_checkout') {
-      return `${baseUrl}/quick-checkout?offerId=${offerId}`;
+      // Quick checkout is hosted on Railway, not the GHL funnel
+      return `${appBaseUrl}/quick-checkout?offerId=${offerId}`;
     }
-    return `${baseUrl}/enrollment?offerId=${offerId}`;
+    // Full enrollment funnel lives in GHL — use the merchant's funnel domain
+    if (funnelBaseUrl) {
+      const cleanUrl = funnelBaseUrl.replace(/\/+$/, '');
+      return `${cleanUrl}/welcome?offerId=${offerId}`;
+    }
+    // Fallback to app URL if no funnel URL configured
+    return `${appBaseUrl}/enrollment?offerId=${offerId}`;
   },
 
   async cloneOffer(offerId: string, locationId: string): Promise<OfferRecord> {

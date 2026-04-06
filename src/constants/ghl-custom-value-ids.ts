@@ -33,3 +33,6 @@ export const CV_MODULE_MILESTONES     = 'BPFyTTfzpYid2czXA9yc';
 export const CV_MODULE_PULSE          = 'zizjMRy90Wmne1HgBbbO';
 export const CV_MODULE_PAYMENTS       = 'tOpaMP3jA10snLbRaxYK';
 export const CV_MODULE_COURSE         = 'AU6yS8nrtosMMv604KKe';
+
+// ─── Enrollment Funnel ──────────────────────────────────────────────
+export const CV_WEBSITE_BASE_URL      = 'ESmKIbdworePhUq8ETlh';

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { offerService } from '../services/offer.service';
+import { merchantService } from '../services/merchant.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
@@ -50,10 +51,21 @@ export const offerController = {
 
   async getEnrollmentLink(req: Request, res: Response, next: NextFunction) {
     try {
+      const locationId = resolveLocationId(req);
       const offer = await offerService.getById(req.params.id);
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const link = offerService.generateEnrollmentLink(offer.id, baseUrl, (offer as any).checkout_mode);
-      res.json({ link });
+      const appBaseUrl = `${req.protocol}://${req.get('host')}`;
+
+      // Read the merchant's funnel URL from config
+      let funnelBaseUrl = '';
+      if (locationId) {
+        try {
+          const mc = await merchantService.getFullConfig(locationId);
+          funnelBaseUrl = mc.enrollmentFunnelUrl || '';
+        } catch {}
+      }
+
+      const link = offerService.generateEnrollmentLink(offer.id, appBaseUrl, (offer as any).checkout_mode, funnelBaseUrl);
+      res.json({ link, funnelConfigured: !!funnelBaseUrl });
     } catch (err) { next(err); }
   },
 

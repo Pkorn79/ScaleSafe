@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { ghlApi } from '../clients/ghl.client';
 import { offerRepository } from '../repositories/offer.repository';
+import { merchantService } from '../services/merchant.service';
+import { offerService } from '../services/offer.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { triggerService } from '../services/trigger.service';
 import { config } from '../config';
@@ -58,11 +60,17 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
 
     // ─── Build enrollment URL ────────────────────────
 
-    const baseUrl = config.appUrl;
+    const appBaseUrl = config.appUrl;
     const checkoutMode = (offer as any).checkout_mode || 'full_enrollment';
-    const enrollmentUrl = checkoutMode === 'quick_checkout'
-      ? `${baseUrl}/quick-checkout?offerId=${offerId}`
-      : `${baseUrl}/enrollment?offerId=${offerId}`;
+
+    // Read merchant's funnel URL
+    let funnelBaseUrl = '';
+    try {
+      const mc = await merchantService.getFullConfig(locationId);
+      funnelBaseUrl = mc.enrollmentFunnelUrl || '';
+    } catch {}
+
+    const enrollmentUrl = offerService.generateEnrollmentLink(offerId, appBaseUrl, checkoutMode, funnelBaseUrl);
 
     // ─── Upsert GHL contact ─────────────────────────
 

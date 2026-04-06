@@ -83,6 +83,8 @@ export const CUSTOM_VALUE_REGISTRY: readonly CustomValueDef[] = [
   { key: 'CUSTOM_CLAUSE_1_TEXT',  defaultName: 'Custom Clause 1 Text',     fieldKeyMatch: 'custom_clause_1_text' },
   { key: 'CUSTOM_CLAUSE_2_TITLE', defaultName: 'Custom Clause 2 Title',    fieldKeyMatch: 'custom_clause_2_title' },
   { key: 'CUSTOM_CLAUSE_2_TEXT',  defaultName: 'Custom Clause 2 Text',     fieldKeyMatch: 'custom_clause_2_text' },
+  // Enrollment Funnel (1)
+  { key: 'WEBSITE_BASE_URL',  defaultName: 'Website Base URL',          fieldKeyMatch: 'website_base_url' },
   // Evidence Module Toggles (5)
   { key: 'MODULE_SESSIONS',   defaultName: 'Module Session Tracking',   fieldKeyMatch: 'module_session_tracking' },
   { key: 'MODULE_MILESTONES', defaultName: 'Module Milestone Tracking', fieldKeyMatch: 'module_milestone_tracking' },

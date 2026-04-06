@@ -89,6 +89,15 @@
             <input class="form-input" v-model="config.shortDescription" placeholder="One-line description of what you offer" />
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Enrollment Funnel URL *</label>
+          <input class="form-input" v-model="config.enrollmentFunnelUrl" placeholder="https://yourdomain.com" />
+          <p class="text-sm text-muted mt-2">
+            Your GHL funnel domain. Found in GHL &gt; Sites &gt; Funnels &gt; your enrollment funnel URL.
+            Enrollment links will use this domain + /welcome path.
+          </p>
+        </div>
+
         <div class="text-sm text-muted mt-2">
           Location ID: {{ config.locationId }}
           &nbsp;&middot;&nbsp;Status: <span class="badge badge-green">{{ config.status }}</span>
@@ -281,6 +290,7 @@ async function saveSettings() {
       primaryServiceType: config.value.primaryServiceType,
       logoUrl: config.value.logoUrl,
       shortDescription: config.value.shortDescription,
+      enrollmentFunnelUrl: config.value.enrollmentFunnelUrl,
       modules: config.value.modules,
       config: { disengagement_thresholds: thresholds.value },
     });

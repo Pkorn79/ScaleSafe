@@ -161,9 +161,13 @@ function showToast(msg: string) {
 
 async function copyLink(offerId: string) {
   try {
-    const { link } = await api.get<{ link: string }>(`/api/offers/${offerId}/enrollment-link`);
-    await navigator.clipboard.writeText(link);
-    showToast('Enrollment link copied!');
+    const result = await api.get<{ link: string; funnelConfigured: boolean }>(`/api/offers/${offerId}/enrollment-link`);
+    await navigator.clipboard.writeText(result.link);
+    if (!result.funnelConfigured) {
+      showToast('Link copied (set your funnel URL in Settings for production links)');
+    } else {
+      showToast('Enrollment link copied!');
+    }
   } catch {}
 }
 

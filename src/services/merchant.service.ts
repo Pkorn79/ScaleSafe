@@ -27,6 +27,8 @@ export interface MerchantFullConfig {
   logoUrl: string;
   shortDescription: string;
 
+  enrollmentFunnelUrl: string;
+
   tcHasOwn: boolean;
   tcDocumentUrl: string;
   standardClauses: Record<StandardClauseKey, boolean>;
@@ -67,6 +69,8 @@ export interface MerchantConfigUpdate {
   customClause1Text?: string;
   customClause2Title?: string;
   customClause2Text?: string;
+
+  enrollmentFunnelUrl?: string;
 
   modules?: {
     sessions?: boolean;
@@ -425,6 +429,7 @@ export const merchantService = {
       primaryServiceType: gv('PRIMARY_SERVICE_TYPE') || (cfg as any).primary_service_type || '',
       logoUrl: merchant.logo_url || gv('LOGO_URL') || '',
       shortDescription: gv('SHORT_DESCRIPTION') || (cfg as any).short_description || '',
+      enrollmentFunnelUrl: gv('WEBSITE_BASE_URL') || (cfg as any).enrollment_funnel_url || '',
 
       tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,
       tcDocumentUrl: gv('TC_DOCUMENT_URL') || (cfg as any).tc_document_url || '',
@@ -490,6 +495,7 @@ export const merchantService = {
     if (updates.customClause1Text !== undefined) configUpdates.custom_clause_1_text = updates.customClause1Text;
     if (updates.customClause2Title !== undefined) configUpdates.custom_clause_2_title = updates.customClause2Title;
     if (updates.customClause2Text !== undefined) configUpdates.custom_clause_2_text = updates.customClause2Text;
+    if (updates.enrollmentFunnelUrl !== undefined) configUpdates.enrollment_funnel_url = updates.enrollmentFunnelUrl;
 
     if (updates.config) {
       Object.assign(configUpdates, updates.config);
