@@ -219,7 +219,8 @@ async function connectStripe() {
       return;
     }
     // Navigate to Stripe OAuth — this is a redirect, not an AJAX call
-    window.location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+    // Must break out of GHL iframe — Stripe blocks being loaded in iframes
+    (window.top || window).location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
   } catch (err: any) {
     loadError.value = err.message || 'Failed to initiate Stripe connection';
   }

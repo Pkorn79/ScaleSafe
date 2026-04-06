@@ -398,7 +398,8 @@ async function connectStripe() {
       stripeConnecting.value = false;
       return;
     }
-    window.location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+    // Must break out of GHL iframe — Stripe blocks being loaded in iframes
+    (window.top || window).location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
   } catch {
     stripeError.value = 'Failed to start Stripe connection. Please try again.';
     stripeConnecting.value = false;
