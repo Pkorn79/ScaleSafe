@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; }
+    .logo-container { text-align: center; padding: 8px 0; }
+    .logo-container img { max-height: 60px; max-width: 200px; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <div id="ss-logo"></div>
+<script>
+(function() {
+  'use strict';
+
+  var API_BASE = window.location.origin;
+
+  // Multi-method offerId extraction (widget runs inside iframe)
+  var offerId = null;
+  offerId = new URLSearchParams(window.location.search).get('offerId');
+  if (!offerId) {
+    try { offerId = new URLSearchParams(window.parent.location.search).get('offerId'); } catch(e) {}
+  }
+  if (!offerId && document.referrer) {
+    try { offerId = new URL(document.referrer).searchParams.get('offerId'); } catch(e) {}
+  }
+
+  if (!offerId) return;
+
+  fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(data) {
+      if (data && data.merchantLogoUrl) {
+        document.getElementById('ss-logo').innerHTML =
+          '<div class="logo-container"><img src="' + data.merchantLogoUrl + '" alt=""></div>';
+      }
+    })
+    .catch(function() { /* silent */ });
+})();
+</script>
+</body>
+</html>

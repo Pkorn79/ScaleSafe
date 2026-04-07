@@ -83,6 +83,13 @@ export const merchantController = {
       const storagePath = `logos/${locationId}/logo${ext}`;
 
       const supabase = getSupabase();
+
+      // Ensure storage bucket exists
+      const { error: bucketError } = await supabase.storage.getBucket('scalesafe-files');
+      if (bucketError) {
+        await supabase.storage.createBucket('scalesafe-files', { public: true });
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('scalesafe-files')
         .upload(storagePath, file.buffer, {

@@ -660,6 +660,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     el('loading').classList.add('hidden');
     el('offer-section').classList.remove('hidden');
 
+    // Merchant logo
+    if (offerData.merchantLogoUrl) {
+      var logoDiv = document.createElement('div');
+      logoDiv.style.cssText = 'text-align:center;margin-bottom:12px;';
+      logoDiv.innerHTML = '<img src="' + offerData.merchantLogoUrl + '" alt="" style="max-height:60px;max-width:200px;object-fit:contain;">';
+      el('offer-section').insertBefore(logoDiv, el('offer-section').firstChild);
+    }
+
     el('offer-name').textContent = offerData.programName;
     el('offer-price').textContent = formatCurrency(offerData.price);
     el('merchant-name').textContent = el('merchant-name').textContent || offerData.merchantName || '';
