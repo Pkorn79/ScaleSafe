@@ -190,6 +190,8 @@ export const enrollmentService = {
       pifPrice: offer.pif_price,
       pifDiscountEnabled: offer.pif_discount_enabled,
       deliveryMethod: offer.delivery_method || '',
+      programDurationValue: (offer as any).program_duration_value || null,
+      programDurationUnit: (offer as any).program_duration_unit || '',
       refundWindowText: offer.refund_window_text || '',
       milestones,
       compiledTcHtml: offer.compiled_tc_html || '',

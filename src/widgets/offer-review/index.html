@@ -266,48 +266,74 @@
     .then(function(offer) {
       var html = '';
 
+      // Payment choice state
+      var selectedPayment = 'pif'; // default
+
       // Merchant logo
       if (offer.merchantLogoUrl) {
         html += '<div style="text-align:center;margin-bottom:16px;"><img src="' + esc(offer.merchantLogoUrl) + '" alt="" style="max-height:60px;max-width:200px;object-fit:contain;"></div>';
       }
 
-      // Program name + description
+      // Headline
+      html += '<p style="font-size:13px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ss-muted);text-align:center;margin-bottom:8px;">Program Overview</p>';
+
+      // Program name + delivery method badge
       html += '<h1>' + esc(offer.programName) + '</h1>';
+      if (offer.deliveryMethod) {
+        html += '<div style="text-align:center;margin-bottom:8px;"><span style="display:inline-block;background:#f3e8ff;color:#7c3aed;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:500;">' + esc(offer.deliveryMethod) + '</span></div>';
+      }
+
+      // Program description
       if (offer.programDescription) {
         html += '<p class="ss-description">' + esc(offer.programDescription) + '</p>';
       }
 
-      // Delivery method
-      if (offer.deliveryMethod) {
-        html += '<div class="ss-divider">What\'s Included</div>';
-        html += '<p class="ss-delivery">' + esc(offer.deliveryMethod) + '</p>';
+      // Program duration
+      if (offer.programDurationValue) {
+        var unitLabel = (offer.programDurationUnit || 'weeks').charAt(0).toUpperCase() + (offer.programDurationUnit || 'weeks').slice(1);
+        html += '<p style="font-size:14px;color:var(--ss-muted);text-align:center;margin-bottom:16px;">Program Duration: ' + offer.programDurationValue + ' ' + esc(unitLabel) + '</p>';
       }
 
       // Pricing
       html += '<div class="ss-divider">Your Investment</div>';
-      html += '<div class="ss-price-box">';
 
-      if (offer.pifDiscountEnabled && offer.pifPrice != null) {
-        html += '<div class="ss-price-main">' + formatCurrency(offer.pifPrice) + '</div>';
-        if (offer.price != null && offer.price > offer.pifPrice) {
-          var savings = Number(offer.price) - Number(offer.pifPrice);
-          html += '<div class="ss-price-save">Save ' + formatCurrency(savings) + ' when you pay in full!</div>';
-        }
+      var hasBothOptions = offer.pifDiscountEnabled && offer.pifPrice != null && offer.installmentAmount != null && offer.installmentCount;
 
-        if (offer.installmentAmount != null && offer.installmentCount) {
-          html += '<div class="ss-price-or">&mdash; or &mdash;</div>';
-          html += '<div class="ss-price-installment">' + offer.installmentCount + ' ' + (offer.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(offer.installmentAmount) + '</div>';
+      if (hasBothOptions) {
+        // Two clickable cards side by side
+        html += '<div id="ss-pricing-toggle" style="display:flex;gap:10px;margin-bottom:16px;">';
+
+        // PIF card
+        var pifSavings = (offer.price != null && offer.price > offer.pifPrice) ? (Number(offer.price) - Number(offer.pifPrice)) : 0;
+        html += '<div class="ss-price-card selected" id="ss-pif-card" onclick="selectPayment(\'pif\')" style="flex:1;padding:16px;border:2px solid var(--ss-primary);border-radius:10px;background:#eff6ff;cursor:pointer;text-align:center;">';
+        html += '<div style="font-size:13px;color:var(--ss-muted);margin-bottom:4px;">Pay in Full</div>';
+        html += '<div style="font-size:24px;font-weight:700;color:var(--ss-primary);">' + formatCurrency(offer.pifPrice) + '</div>';
+        if (pifSavings > 0) {
+          html += '<div style="font-size:12px;color:#16a34a;font-weight:600;margin-top:2px;">Save ' + formatCurrency(pifSavings) + '</div>';
         }
+        html += '</div>';
+
+        // Installments card
+        html += '<div class="ss-price-card" id="ss-inst-card" onclick="selectPayment(\'installments\')" style="flex:1;padding:16px;border:2px solid var(--ss-border);border-radius:10px;background:#fff;cursor:pointer;text-align:center;">';
+        html += '<div style="font-size:13px;color:var(--ss-muted);margin-bottom:4px;">Payment Plan</div>';
+        html += '<div style="font-size:24px;font-weight:700;color:var(--ss-text);">' + formatCurrency(offer.installmentAmount) + '<span style="font-size:14px;font-weight:400;color:var(--ss-muted)">/' + (offer.installmentFrequency || 'mo') + '</span></div>';
+        html += '<div style="font-size:12px;color:var(--ss-muted);margin-top:2px;">' + offer.installmentCount + ' payments</div>';
+        html += '</div>';
+
+        html += '</div>';
       } else if (offer.paymentType === 'installment' || offer.paymentType === 'installments') {
+        selectedPayment = 'installments';
+        html += '<div class="ss-price-box">';
         if (offer.installmentAmount != null && offer.installmentCount) {
           html += '<div class="ss-price-main">' + formatCurrency(offer.installmentAmount) + '<span style="font-size:16px;font-weight:400;color:var(--ss-muted)">/' + (offer.installmentFrequency || 'month') + '</span></div>';
-          html += '<div class="ss-price-installment" style="margin-top:4px">' + offer.installmentCount + ' payments of ' + formatCurrency(offer.installmentAmount) + '</div>';
+          html += '<div class="ss-price-installment" style="margin-top:4px">' + offer.installmentCount + ' payments</div>';
         }
+        html += '</div>';
       } else {
+        html += '<div class="ss-price-box">';
         html += '<div class="ss-price-main">' + formatCurrency(offer.price) + '</div>';
+        html += '</div>';
       }
-
-      html += '</div>';
 
       // Milestones with clickwrap
       if (offer.milestones && offer.milestones.length > 0) {
@@ -359,6 +385,22 @@
 
       root.innerHTML = html;
 
+      // Payment choice toggle
+      window.selectPayment = function(choice) {
+        selectedPayment = choice;
+        var pifCard = document.getElementById('ss-pif-card');
+        var instCard = document.getElementById('ss-inst-card');
+        if (pifCard && instCard) {
+          if (choice === 'pif') {
+            pifCard.style.borderColor = '#2563eb'; pifCard.style.background = '#eff6ff';
+            instCard.style.borderColor = '#e5e7eb'; instCard.style.background = '#fff';
+          } else {
+            instCard.style.borderColor = '#2563eb'; instCard.style.background = '#eff6ff';
+            pifCard.style.borderColor = '#e5e7eb'; pifCard.style.background = '#fff';
+          }
+        }
+      };
+
       // Milestone checkbox + continue button logic
       var milestoneCbs = document.querySelectorAll('.ss-milestone-cb');
       var continueBtn = document.getElementById('ss-continue');
@@ -384,7 +426,7 @@
         continueBtn.addEventListener('click', function() {
           if (!continueBtn.disabled) {
             try {
-              window.parent.postMessage({ type: 'ssMilestonesComplete' }, '*');
+              window.parent.postMessage({ type: 'ssMilestonesComplete', paymentChoice: selectedPayment }, '*');
             } catch(e) {}
           }
         });

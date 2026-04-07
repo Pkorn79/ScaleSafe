@@ -85,9 +85,13 @@ export const merchantController = {
       const supabase = getSupabase();
 
       // Ensure storage bucket exists
-      const { error: bucketError } = await supabase.storage.getBucket('scalesafe-files');
-      if (bucketError) {
-        await supabase.storage.createBucket('scalesafe-files', { public: true });
+      const { data: buckets } = await supabase.storage.listBuckets();
+      if (!buckets?.find((b: any) => b.name === 'scalesafe-files')) {
+        await supabase.storage.createBucket('scalesafe-files', {
+          public: true,
+          fileSizeLimit: 5242880,
+          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'],
+        });
       }
 
       const { error: uploadError } = await supabase.storage

@@ -582,6 +582,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var cardElement = null;
   var paymentToken = null;
   var consentToken = params.get('consentToken') || '';
+  var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
 
   function el(id) { return document.getElementById(id); }
@@ -669,11 +670,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
 
     el('offer-name').textContent = offerData.programName;
-    el('offer-price').textContent = formatCurrency(offerData.price);
     el('merchant-name').textContent = el('merchant-name').textContent || offerData.merchantName || '';
+
+    // Determine display price based on payment choice
+    var displayPrice = offerData.price;
+    var priceNote = '';
+    if (paymentChoice === 'pif' && offerData.pifPrice != null) {
+      displayPrice = offerData.pifPrice;
+    } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
+      displayPrice = offerData.installmentAmount;
+      priceNote = 'First of ' + (offerData.installmentCount || '') + ' payments of ' + formatCurrency(offerData.installmentAmount) + '/' + (offerData.installmentFrequency || 'month');
+    }
+
+    el('offer-price').textContent = formatCurrency(displayPrice);
 
     if (offerData.programDescription) {
       el('offer-desc').textContent = offerData.programDescription;
+      el('offer-desc').classList.remove('hidden');
+    }
+    if (priceNote) {
+      el('offer-desc').textContent = priceNote;
       el('offer-desc').classList.remove('hidden');
     }
     if (offerData.refundWindowText) {
@@ -681,7 +697,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('offer-refund').classList.remove('hidden');
     }
 
-    el('pay-btn').textContent = 'Pay ' + formatCurrency(offerData.price);
+    el('pay-btn').textContent = 'Pay ' + formatCurrency(displayPrice);
     updatePayBtn();
   }
 
@@ -750,7 +766,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     try {
       var token = paymentToken;
-      var amount = Math.round(offerData.price * 100);
+      // Use payment choice to determine charge amount
+      var chargePrice = offerData.price;
+      if (paymentChoice === 'pif' && offerData.pifPrice != null) {
+        chargePrice = offerData.pifPrice;
+      } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
+        chargePrice = offerData.installmentAmount;
+      }
+      var amount = Math.round(chargePrice * 100);
       var consentToken = '';
       try { consentToken = sessionStorage.getItem('ss_consent_token') || ''; } catch(e){}
 
