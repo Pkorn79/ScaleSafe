@@ -3,6 +3,8 @@ import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentProviderService } from '../services/payment-provider.service';
 import { processorConfigService } from '../services/processor-config.service';
+import { offerRepository } from '../repositories/offer.repository';
+import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -54,6 +56,50 @@ export async function getCheckoutConfig(req: Request, res: Response): Promise<vo
   } else if (activeConfig.processor_type === 'stripe') {
     response.stripeAccountId = activeConfig.stripe_user_id;
     response.stripePublishableKey = config.stripe.publishableKey;
+  }
+
+  res.json(response);
+}
+
+// ─── GET /api/checkout/config-by-offer/:offerId ─────────────
+
+export async function getCheckoutConfigByOffer(req: Request, res: Response): Promise<void> {
+  const { offerId } = req.params;
+  if (!offerId) {
+    res.status(400).json({ error: 'Missing offerId' });
+    return;
+  }
+
+  const offer = await offerRepository.findById(offerId);
+  if (!offer || !offer.active) {
+    res.status(404).json({ error: 'Offer not found' });
+    return;
+  }
+
+  const merchant = await merchantRepository.findByLocationId(offer.location_id);
+  if (!merchant) {
+    res.status(404).json({ error: 'Merchant not found' });
+    return;
+  }
+
+  const configs = await processorConfigService.listConfigs(merchant.id);
+  const activeConfig = configs.find(c => c.is_active && c.is_default) || configs.find(c => c.is_active);
+
+  if (!activeConfig) {
+    res.status(503).json({ error: 'No processor configured' });
+    return;
+  }
+
+  const response: Record<string, any> = {
+    processorType: activeConfig.processor_type,
+    merchantName: merchant.business_name || '',
+  };
+
+  if (activeConfig.processor_type === 'nmi') {
+    response.nmiTokenizationKey = activeConfig.nmi_tokenization_key || '';
+  } else if (activeConfig.processor_type === 'stripe') {
+    response.stripePublishableKey = config.stripe.publishableKey;
+    response.stripeAccountId = activeConfig.stripe_user_id || '';
   }
 
   res.json(response);

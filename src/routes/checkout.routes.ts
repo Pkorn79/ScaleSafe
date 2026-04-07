@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getCheckoutConfig, processPayment, saveCard } from '../controllers/checkout.controller';
+import { getCheckoutConfig, getCheckoutConfigByOffer, processPayment, saveCard } from '../controllers/checkout.controller';
 import { config } from '../config';
 
 const router = Router();
 
 // API endpoints for checkout processing
 router.get('/api/checkout/config', getCheckoutConfig);
+router.get('/api/checkout/config-by-offer/:offerId', getCheckoutConfigByOffer);
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/save-card', saveCard);
 
@@ -605,18 +606,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       offerData = await res.json();
 
       // Load processor config
+      var cfg = null;
       if (publishableKey) {
         var cfgRes = await fetch(API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(publishableKey));
-        if (cfgRes.ok) {
-          var cfg = await cfgRes.json();
-          processorType = cfg.processorType;
-          el('merchant-name').textContent = cfg.merchantName || offerData.merchantName || '';
+        if (cfgRes.ok) cfg = await cfgRes.json();
+      } else if (offerId) {
+        var cfgRes2 = await fetch(API_BASE + '/api/checkout/config-by-offer/' + encodeURIComponent(offerId));
+        if (cfgRes2.ok) cfg = await cfgRes2.json();
+      }
 
-          if (processorType === 'nmi' && cfg.nmiTokenizationKey) {
-            await loadNmi(cfg.nmiTokenizationKey);
-          } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
-            await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
-          }
+      if (cfg) {
+        processorType = cfg.processorType;
+        el('merchant-name').textContent = cfg.merchantName || offerData.merchantName || '';
+
+        if (processorType === 'nmi' && cfg.nmiTokenizationKey) {
+          await loadNmi(cfg.nmiTokenizationKey);
+        } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
+          await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
         }
       }
 
