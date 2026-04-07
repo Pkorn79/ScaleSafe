@@ -624,7 +624,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadNmi(cfg.nmiTokenizationKey);
         } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
+        } else {
+          console.error('[ScaleSafe] No tokenization credentials available. processorType=' + processorType
+            + ' stripePublishableKey=' + (cfg.stripePublishableKey ? 'set' : 'MISSING')
+            + ' nmiTokenizationKey=' + (cfg.nmiTokenizationKey ? 'set' : 'MISSING'));
+          el('error-msg').textContent = 'Payment processing is not fully configured. Please contact the provider.';
+          el('error-msg').style.display = 'block';
         }
+      } else {
+        console.error('[ScaleSafe] No processor config returned for offerId=' + offerId);
+        el('error-msg').textContent = 'Payment processing is not available for this offer.';
+        el('error-msg').style.display = 'block';
       }
 
       renderOffer();
