@@ -665,7 +665,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (offerData.merchantLogoUrl) {
       var logoDiv = document.createElement('div');
       logoDiv.style.cssText = 'text-align:center;margin-bottom:12px;';
-      logoDiv.innerHTML = '<img src="' + offerData.merchantLogoUrl + '" alt="" style="max-height:60px;max-width:200px;object-fit:contain;">';
+      logoDiv.innerHTML = '<img src="' + offerData.merchantLogoUrl + '" alt="" style="max-width:150px;height:auto;">';
       el('offer-section').insertBefore(logoDiv, el('offer-section').firstChild);
     }
 
