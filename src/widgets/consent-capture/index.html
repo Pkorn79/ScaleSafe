@@ -79,40 +79,6 @@
       margin-bottom: 20px;
     }
 
-    /* T&C scrollable container */
-    .ss-tc-container {
-      border: 1px solid var(--ss-border);
-      border-radius: 8px;
-      background: #f9fafb;
-      max-height: 400px;
-      overflow-y: auto;
-      padding: 20px;
-      margin-bottom: 24px;
-      font-size: 14px;
-      line-height: 1.7;
-      color: #374151;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .ss-tc-container::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .ss-tc-container::-webkit-scrollbar-track {
-      background: #f1f1f1;
-      border-radius: 4px;
-    }
-
-    .ss-tc-container::-webkit-scrollbar-thumb {
-      background: #c4c4c4;
-      border-radius: 4px;
-    }
-
-    .ss-tc-container p { margin-bottom: 10px; }
-    .ss-tc-container ol, .ss-tc-container ul { padding-left: 20px; margin: 8px 0; }
-    .ss-tc-container li { margin-bottom: 6px; }
-    .ss-tc-container h2, .ss-tc-container h3, .ss-tc-container h4 { margin: 16px 0 8px; }
-
     /* Clause checkboxes */
     .ss-clauses {
       margin-bottom: 24px;
@@ -337,7 +303,7 @@
   // ─── Load offer and render ──────────────────────────────────
 
   var offerData = null;
-  var maxScrollDepth = 0;
+  var maxScrollDepth = 100; // No scroll box — terms are at external link
 
   fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
     .then(function(res) {
@@ -357,15 +323,24 @@
     var html = '';
 
     html += '<h1>Terms &amp; Conditions</h1>';
-    html += '<p class="ss-subtitle">Please review and accept the following terms before proceeding.</p>';
+    html += '<p class="ss-subtitle">Please review and accept the following before proceeding.</p>';
 
-    // T&C scrollable container
-    html += '<div class="ss-tc-container" id="ss-tc-scroll">';
-    html += offer.compiledTcHtml || '<p>No terms available.</p>';
+    // Section 1: Terms Document Link
+    var termsUrl = window.location.origin + '/terms/' + encodeURIComponent(offer.locationId || '');
+    html += '<div style="background:#f9fafb;border:1px solid var(--ss-border);border-radius:8px;padding:16px;margin-bottom:20px;">';
+    html += '<p style="font-size:15px;font-weight:600;margin-bottom:8px;">Terms &amp; Conditions</p>';
+    html += '<p style="font-size:14px;color:var(--ss-muted);margin-bottom:12px;">Please review the full terms and conditions before accepting.</p>';
+    html += '<a href="' + esc(termsUrl) + '" target="_blank" rel="noopener" style="display:inline-block;padding:10px 20px;background:var(--ss-primary);color:#fff;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">View Full Terms &amp; Conditions</a>';
+    html += '<div style="display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding-top:14px;border-top:1px solid var(--ss-border);">';
+    html += '<input type="checkbox" id="cb-terms-doc" class="ss-clause-cb" style="width:20px;height:20px;margin-top:2px;flex-shrink:0;accent-color:var(--ss-primary);cursor:pointer;">';
+    html += '<label for="cb-terms-doc" style="font-size:14px;font-weight:600;cursor:pointer;">I have read and agree to the Terms &amp; Conditions</label>';
+    html += '</div>';
     html += '</div>';
 
-    // Clause checkboxes
+    // Section 2: Additional Selected Clauses (clickwrap)
     if (offer.clauses && offer.clauses.length > 0) {
+      html += '<div style="margin-bottom:24px;">';
+      html += '<p style="font-size:15px;font-weight:600;margin-bottom:12px;">Additional Acknowledgments</p>';
       html += '<div class="ss-clauses">';
       offer.clauses.forEach(function(clause) {
         html += '<div class="ss-clause">';
@@ -377,6 +352,7 @@
         }
         html += '</div></div>';
       });
+      html += '</div>';
       html += '</div>';
     }
 
@@ -415,25 +391,6 @@
     var hintEl = document.getElementById('ss-hint');
     var errorEl = document.getElementById('ss-error');
     var emailInput = document.getElementById('ss-email');
-    var tcScroll = document.getElementById('ss-tc-scroll');
-
-    // Scroll depth tracking
-    if (tcScroll) {
-      tcScroll.addEventListener('scroll', function() {
-        var scrollHeight = tcScroll.scrollHeight - tcScroll.clientHeight;
-        if (scrollHeight > 0) {
-          var depth = Math.round((tcScroll.scrollTop / scrollHeight) * 100);
-          if (depth > maxScrollDepth) maxScrollDepth = depth;
-        } else {
-          maxScrollDepth = 100; // Content fits without scrolling
-        }
-      });
-
-      // If content fits without scroll, mark as 100%
-      if (tcScroll.scrollHeight <= tcScroll.clientHeight) {
-        maxScrollDepth = 100;
-      }
-    }
 
     function updateSubmitState() {
       var allChecked = true;

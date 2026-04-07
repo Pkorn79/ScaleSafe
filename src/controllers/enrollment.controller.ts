@@ -143,4 +143,30 @@ export const enrollmentController = {
       res.json(result);
     } catch (err) { next(err); }
   },
+
+  /** GET /api/enrollment/consent-lookup/:consentToken — look up email by consent token */
+  async getConsentData(req: Request, res: Response, next: NextFunction) {
+    try {
+      const consentToken = req.params.consentToken;
+      if (!consentToken) {
+        res.status(400).json({ error: 'Missing consent token' });
+        return;
+      }
+
+      const { getSupabase } = await import('../clients/supabase.client');
+      const supabase = getSupabase();
+      const { data: enrollment } = await supabase
+        .from('enrollments')
+        .select('email, contact_id')
+        .eq('consent_token', consentToken)
+        .maybeSingle();
+
+      if (!enrollment) {
+        res.status(404).json({ error: 'Consent record not found' });
+        return;
+      }
+
+      res.json({ email: enrollment.email || '' });
+    } catch (err) { next(err); }
+  },
 };

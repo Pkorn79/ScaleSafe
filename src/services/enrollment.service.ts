@@ -179,6 +179,7 @@ export const enrollmentService = {
 
     return {
       offerId: offer.id,
+      locationId: offer.location_id,
       programName: offer.offer_name,
       programDescription: offer.program_description || '',
       price: offer.price,

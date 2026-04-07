@@ -1,0 +1,4 @@
+-- 033_tc_custom_html.sql — Terms custom HTML support
+-- Stored in merchants.config JSONB as tc_custom_html (same pattern as tc_has_own, tc_document_url)
+-- No schema change needed — config is already a JSONB column.
+-- This migration is a no-op placeholder for documentation.

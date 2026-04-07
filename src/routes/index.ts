@@ -19,6 +19,7 @@ import disputeRoutes from './dispute.routes';
 import efwRoutes from './efw.routes';
 import stripeDefenseRoutes from './stripe-defense.routes';
 import paymentManagementRoutes from './payment-management.routes';
+import termsRoutes from './terms.routes';
 
 const router = Router();
 
@@ -62,6 +63,9 @@ router.use('/api/efws', apiLimiter, efwRoutes);
 // Stripe management (SSO-gated)
 router.use('/api/stripe', apiLimiter, stripeConnectRoutes);
 router.use('/api/stripe', apiLimiter, stripeDefenseRoutes);
+
+// Terms page (public, no auth)
+router.use('/terms', termsRoutes);
 
 // Webhook routes (higher rate limit)
 router.use('/webhooks', webhookLimiter, webhookRoutes);

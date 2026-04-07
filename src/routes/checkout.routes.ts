@@ -581,6 +581,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var stripeElements = null;
   var cardElement = null;
   var paymentToken = null;
+  var consentToken = params.get('consentToken') || '';
+  var enrollmentEmail = '';
 
   function el(id) { return document.getElementById(id); }
 
@@ -635,6 +637,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         console.error('[ScaleSafe] No processor config returned for offerId=' + offerId);
         el('error-msg').textContent = 'Payment processing is not available for this offer.';
         el('error-msg').style.display = 'block';
+      }
+
+      // Look up email from consent token if available
+      if (consentToken) {
+        try {
+          var consentRes = await fetch(API_BASE + '/api/enrollment/consent-lookup/' + encodeURIComponent(consentToken));
+          if (consentRes.ok) {
+            var consentData = await consentRes.json();
+            enrollmentEmail = consentData.email || '';
+          }
+        } catch(e) { /* silent */ }
       }
 
       renderOffer();
@@ -758,6 +771,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           currency: 'usd',
           offerId: offerId,
           consentToken: consentToken,
+          contactEmail: enrollmentEmail,
           deviceFingerprint: navigator.userAgent,
           browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
         })

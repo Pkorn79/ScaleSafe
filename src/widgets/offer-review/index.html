@@ -304,19 +304,24 @@
 
       html += '</div>';
 
-      // Milestones
+      // Milestones with clickwrap
       if (offer.milestones && offer.milestones.length > 0) {
         html += '<div class="ss-divider">Program Milestones</div>';
+        html += '<p style="font-size:14px;color:var(--ss-muted);margin-bottom:12px;">Please review each milestone and confirm you understand what is included and what is expected of you.</p>';
         html += '<ul class="ss-milestones">';
         offer.milestones.forEach(function(m, i) {
           html += '<li class="ss-milestone">';
-          html += '<div class="ss-milestone-name"><span class="ss-milestone-num">' + (i + 1) + '</span>' + esc(m.name) + '</div>';
+          html += '<div style="display:flex;gap:10px;align-items:flex-start;">';
+          html += '<input type="checkbox" class="ss-milestone-cb" id="ms-cb-' + i + '" style="width:18px;height:18px;margin-top:3px;flex-shrink:0;accent-color:var(--ss-primary);cursor:pointer;">';
+          html += '<div>';
+          html += '<label class="ss-milestone-name" for="ms-cb-' + i + '" style="cursor:pointer;"><span class="ss-milestone-num">' + (i + 1) + '</span>' + esc(m.name) + '</label>';
           if (m.delivers) {
             html += '<div class="ss-milestone-detail">What you\'ll receive: ' + esc(m.delivers) + '</div>';
           }
           if (m.clientDoes) {
             html += '<div class="ss-milestone-detail">What you\'ll do: ' + esc(m.clientDoes) + '</div>';
           }
+          html += '</div></div>';
           html += '</li>';
         });
         html += '</ul>';
@@ -339,6 +344,17 @@
       }
 
       root.innerHTML = html;
+
+      // Notify parent of milestone checkbox state
+      var milestoneCbs = document.querySelectorAll('.ss-milestone-cb');
+      function checkMilestoneState() {
+        var allChecked = true;
+        milestoneCbs.forEach(function(cb) { if (!cb.checked) allChecked = false; });
+        try {
+          window.parent.postMessage({ type: 'ssMilestonesState', allChecked: allChecked }, '*');
+        } catch(e) {}
+      }
+      milestoneCbs.forEach(function(cb) { cb.addEventListener('change', checkMilestoneState); });
     })
     .catch(function(err) {
       console.log('[ScaleSafe] Offer load error:', err.message);

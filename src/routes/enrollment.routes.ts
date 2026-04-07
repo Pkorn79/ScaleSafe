@@ -20,6 +20,9 @@ router.get('/offer/:offerId/public', enrollmentPublicLimiter, enrollmentControll
 // Page 3 widget: Consent capture with forensics + consent_token generation
 router.post('/consent', enrollmentPublicLimiter, enrollmentController.funnelConsent);
 
+// ─── Consent token lookup (public — used by checkout page) ──────────
+router.get('/consent-lookup/:consentToken', enrollmentPublicLimiter, enrollmentController.getConsentData);
+
 // ─── Send Enrollment Link (SSO-gated — merchant action) ─────────────
 router.post('/send-link', ssoAuth, requireTenant, sendEnrollmentLink);
 

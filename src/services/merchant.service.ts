@@ -34,6 +34,7 @@ export interface MerchantFullConfig {
 
   tcHasOwn: boolean;
   tcDocumentUrl: string;
+  tcCustomHtml: string;
   standardClauses: Record<StandardClauseKey, boolean>;
   customClause1Title: string;
   customClause1Text: string;
@@ -67,6 +68,7 @@ export interface MerchantConfigUpdate {
 
   tcHasOwn?: boolean;
   tcDocumentUrl?: string;
+  tcCustomHtml?: string;
   standardClauses?: Partial<Record<StandardClauseKey, boolean>>;
   customClause1Title?: string;
   customClause1Text?: string;
@@ -439,6 +441,7 @@ export const merchantService = {
 
       tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,
       tcDocumentUrl: gv('TC_DOCUMENT_URL') || (cfg as any).tc_document_url || '',
+      tcCustomHtml: (cfg as any).tc_custom_html || '',
       standardClauses: standardClauses as Record<StandardClauseKey, boolean>,
       customClause1Title: gv('CUSTOM_CLAUSE_1_TITLE') || (cfg as any).custom_clause_1_title || '',
       customClause1Text: gv('CUSTOM_CLAUSE_1_TEXT') || (cfg as any).custom_clause_1_text || '',
@@ -497,6 +500,7 @@ export const merchantService = {
     if (updates.shortDescription !== undefined) configUpdates.short_description = updates.shortDescription;
     if (updates.tcHasOwn !== undefined) configUpdates.tc_has_own = updates.tcHasOwn;
     if (updates.tcDocumentUrl !== undefined) configUpdates.tc_document_url = updates.tcDocumentUrl;
+    if (updates.tcCustomHtml !== undefined) configUpdates.tc_custom_html = updates.tcCustomHtml;
     if (updates.customClause1Title !== undefined) configUpdates.custom_clause_1_title = updates.customClause1Title;
     if (updates.customClause1Text !== undefined) configUpdates.custom_clause_1_text = updates.customClause1Text;
     if (updates.customClause2Title !== undefined) configUpdates.custom_clause_2_title = updates.customClause2Title;
