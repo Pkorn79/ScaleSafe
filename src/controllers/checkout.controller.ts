@@ -8,6 +8,8 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
+import { ghlApi } from '../clients/ghl.client';
+import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -270,29 +272,106 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       browser_info: browserInfo || null,
     });
 
-    // Complete enrollment if payment succeeded and consent token exists
+    // ─── Complete enrollment + create GHL records ──────
     if (result.success && consentToken) {
       try {
-        const { data: enrollmentRow } = await supabase
+        const { data: enrollment } = await supabase
           .from('enrollments')
-          .select('id, offer_id')
+          .select('id, location_id, offer_id, contact_id, email, digital_signature')
           .eq('consent_token', consentToken)
           .single();
 
-        if (enrollmentRow) {
+        if (enrollment) {
+          // 1. Complete enrollment in Supabase (status, evidence, triggers)
           await phase2EnrollmentService.completeEnrollment({
-            enrollmentId: enrollmentRow.id,
-            locationId: merchant.locationId,
-            contactId: contactId || '',
-            contactEmail: contactEmail || '',
+            enrollmentId: enrollment.id,
+            locationId: enrollment.location_id || merchant.locationId,
+            contactId: enrollment.contact_id || contactId || '',
+            contactEmail: contactEmail || enrollment.email || '',
             paymentAmount: amount / 100,
-            paymentType: 'one_time',
-            transactionId: result.chargeId || result.transactionId || '',
+            paymentType: req.body.paymentChoice || 'pif',
+            transactionId: result.transactionId || result.chargeId || '',
             paymentsTotal: null,
           });
+
+          // 2. Upsert GHL contact + update custom fields + create opportunity
+          try {
+            const locId = enrollment.location_id || merchant.locationId;
+            const api = await ghlApi(locId);
+            const merchantRecord = await merchantRepository.getByLocationId(locId);
+
+            // Upsert contact by email
+            let ghlContactId = enrollment.contact_id || contactId || '';
+            const clientEmail = contactEmail || enrollment.email || '';
+            if (!ghlContactId && clientEmail) {
+              const sigParts = (enrollment.digital_signature || '').split(' ');
+              const upsertRes = await api.post('/contacts/upsert', {
+                firstName: sigParts[0] || '',
+                lastName: sigParts.slice(1).join(' ') || '',
+                email: clientEmail,
+                locationId: locId,
+              });
+              ghlContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+            }
+
+            if (ghlContactId) {
+              // Update contact custom fields
+              const customFields: Record<string, any> = {
+                [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+                [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+              };
+
+              if (enrollment.offer_id) {
+                try {
+                  const offer = await offerRepository.getById(enrollment.offer_id);
+                  customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
+                  customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price || '';
+                  customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type || '';
+                  customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchantRecord.business_name || '';
+                } catch { /* offer lookup failed, skip offer fields */ }
+              }
+
+              await api.put(`/contacts/${ghlContactId}`, { customField: customFields });
+
+              // Create pipeline opportunity
+              const pipelineId = (merchantRecord.config as any)?.pipelineId || (merchantRecord.config as any)?.milestones_pipeline_id;
+              if (pipelineId) {
+                try {
+                  const pipelineRes = await api.get('/opportunities/pipelines', { params: { locationId: locId } });
+                  const pipelines = pipelineRes.data.pipelines || pipelineRes.data || [];
+                  const pipeline = pipelines.find((p: any) => p.id === pipelineId);
+                  const firstStageId = pipeline?.stages?.[0]?.id || '';
+
+                  const offer = await offerRepository.getById(enrollment.offer_id!).catch(() => null);
+                  await api.post('/opportunities/', {
+                    locationId: locId,
+                    contactId: ghlContactId,
+                    pipelineId,
+                    stageId: firstStageId,
+                    name: `${offer?.offer_name || 'Enrollment'} — ${enrollment.digital_signature || 'Client'}`,
+                    monetaryValue: amount / 100,
+                  });
+                  logger.info({ ghlContactId, pipelineId }, 'GHL pipeline opportunity created');
+                } catch (oppErr: any) {
+                  logger.warn({ err: oppErr.message }, 'Failed to create pipeline opportunity');
+                }
+              }
+
+              // Save contactId back to enrollment if it was missing
+              if (!enrollment.contact_id && ghlContactId) {
+                await supabase.from('enrollments').update({ contact_id: ghlContactId }).eq('id', enrollment.id);
+              }
+
+              logger.info({ enrollmentId: enrollment.id, ghlContactId }, 'GHL contact updated and enrollment completed');
+            }
+          } catch (ghlErr: any) {
+            logger.error({ err: ghlErr.message, enrollmentId: enrollment.id }, 'GHL record creation failed — enrollment still completed in Supabase');
+          }
+        } else {
+          logger.warn({ consentToken }, 'No enrollment found for consentToken after successful payment');
         }
-      } catch (err: any) {
-        logger.warn({ err: err.message }, 'Post-payment enrollment completion failed — payment still succeeded');
+      } catch (enrollErr: any) {
+        logger.error({ err: enrollErr.message, consentToken }, 'completeEnrollment failed — payment still succeeded');
       }
     }
 
