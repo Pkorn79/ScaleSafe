@@ -6,6 +6,7 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
+import { logger } from '../utils/logger';
 
 export const merchantController = {
   /** GET /api/merchants/config — get full merchant configuration */
@@ -94,25 +95,31 @@ export const merchantController = {
         });
       }
 
-      const { error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('scalesafe-files')
         .upload(storagePath, file.buffer, {
           contentType: file.mimetype,
           upsert: true,
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        logger.error({ err: uploadError, storagePath, mimetype: file.mimetype }, 'Logo upload failed');
+        throw uploadError;
+      }
+
+      logger.info({ storagePath, uploadData }, 'Logo uploaded successfully');
 
       const { data: urlData } = supabase.storage
         .from('scalesafe-files')
         .getPublicUrl(storagePath);
 
       const logoUrl = urlData.publicUrl;
+      logger.info({ logoUrl }, 'Logo public URL generated');
 
       // Save to merchant record
       await merchantService.updateFullConfig(locationId, { logoUrl });
 
-      res.json({ logoUrl });
+      res.json({ logoUrl, storagePath });
     } catch (err) { next(err); }
   },
 };
