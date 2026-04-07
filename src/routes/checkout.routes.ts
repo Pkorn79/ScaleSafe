@@ -774,8 +774,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         chargePrice = offerData.installmentAmount;
       }
       var amount = Math.round(chargePrice * 100);
-      var consentToken = '';
-      try { consentToken = sessionStorage.getItem('ss_consent_token') || ''; } catch(e){}
+      // consentToken already read from URL params at top of script — do NOT override with sessionStorage
 
       // For Stripe, create PaymentMethod first
       if (processorType === 'stripe' && cardElement) {

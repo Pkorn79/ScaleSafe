@@ -2,14 +2,18 @@ import { enrollmentRepository, EnrollmentRecord } from '../repositories/enrollme
 import { phase2EvidenceRepository, EvidenceRecord } from '../repositories/phase2Evidence.repository';
 import { paymentEventRepository, PaymentEventRecord } from '../repositories/paymentEvent.repository';
 import { offerRepository } from '../repositories/offer.repository';
+import { merchantRepository } from '../repositories/merchant.repository';
+import { ghlApi } from '../clients/ghl.client';
 import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
+import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 interface CompleteEnrollmentParams {
   enrollmentId: string;
   locationId: string;
   contactId: string;
+  contactEmail?: string;
   paymentAmount: number;
   paymentType: string;
   transactionId: string;
@@ -85,6 +89,78 @@ export const phase2EnrollmentService = {
       bump_1_accepted: false,
       bump_2_accepted: false,
     });
+
+    // 5. Update GHL contact fields + create pipeline opportunity
+    if (params.locationId) {
+      try {
+        const api = await ghlApi(params.locationId);
+        const merchant = await merchantRepository.getByLocationId(params.locationId);
+
+        // Find or create GHL contact
+        let contactId = params.contactId;
+        const email = params.contactEmail || (enrollment as any).email || '';
+        if (!contactId && email) {
+          const upsertRes = await api.post('/contacts/upsert', {
+            email,
+            locationId: params.locationId,
+          });
+          contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+          // Update enrollment record with the resolved contactId
+          if (contactId) {
+            await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
+              contact_id: contactId,
+            } as any);
+          }
+        }
+
+        if (!contactId) {
+          logger.warn({ enrollmentId: params.enrollmentId }, 'No contactId or email — skipping GHL sync');
+          return;
+        }
+
+        // Update SS contact fields
+        const customFields: Record<string, unknown> = {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+        };
+
+        // Copy offer fields to contact
+        if (enrollment.offer_id) {
+          try {
+            const offer = await offerRepository.getById(enrollment.offer_id);
+            customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchant.business_name || '';
+            customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
+            customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price;
+            customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
+            customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
+            customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
+            customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
+          } catch {
+            // Offer fields are nice-to-have
+          }
+        }
+
+        await api.put(`/contacts/${contactId}`, { customField: customFields });
+
+        // Create pipeline opportunity
+        const pipelineId = (merchant.config as any)?.milestones_pipeline_id || (merchant.config as any)?.pipelineId;
+        const stageId = (merchant.config as any)?.enrolled_stage_id;
+        if (pipelineId) {
+          await api.post('/opportunities/', {
+            locationId: params.locationId,
+            contactId,
+            pipelineId,
+            stageId: stageId || '',
+            name: `${offerName || 'Program'} — Enrollment`,
+            monetaryValue: params.paymentAmount,
+          });
+        }
+
+        logger.info({ contactId }, 'GHL contact updated + opportunity created');
+      } catch (err: any) {
+        logger.warn({ err: err.message, contactId: params.contactId }, 'GHL sync after enrollment failed (non-blocking)');
+      }
+    }
 
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: params.contactId, locationId: params.locationId },

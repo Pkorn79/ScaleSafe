@@ -186,6 +186,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       description: productDetails?.[0]?.name || 'ScaleSafe Payment',
       metadata: {
         scalesafe_offer_id: offerId || '',
+        consent_token: consentToken || '',
         ghl_transaction_id: transactionId || '',
         ghl_order_id: orderId || '',
         customer_email: contactEmail || '',
@@ -283,6 +284,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             enrollmentId: enrollmentRow.id,
             locationId: merchant.locationId,
             contactId: contactId || '',
+            contactEmail: contactEmail || '',
             paymentAmount: amount / 100,
             paymentType: 'one_time',
             transactionId: result.chargeId || result.transactionId || '',
