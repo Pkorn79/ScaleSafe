@@ -49,7 +49,14 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     }
 
     // Exchange code for stripe_user_id
-    const result = await stripeConnectService.handleCallback(code, state);
+    let result;
+    try {
+      result = await stripeConnectService.handleCallback(code, state);
+    } catch (err: any) {
+      logger.error({ err: err.message, code: err.code, state }, 'Stripe OAuth token exchange failed');
+      res.redirect('/?stripe_error=' + encodeURIComponent('Token exchange failed: ' + (err.message || 'unknown')));
+      return;
+    }
 
     // Look up merchant by locationId
     const merchant = await merchantRepository.findByLocationId(state);
@@ -71,12 +78,18 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     }
 
     // Save connection
-    await stripeConnectService.saveConnection(
-      merchant.id,
-      state,
-      result.stripeUserId,
-      webhookEndpointId,
-    );
+    try {
+      await stripeConnectService.saveConnection(
+        merchant.id,
+        state,
+        result.stripeUserId,
+        webhookEndpointId,
+      );
+    } catch (err: any) {
+      logger.error({ err: err.message }, 'Failed to save Stripe connection');
+      res.redirect('/?stripe_error=' + encodeURIComponent('Save failed: ' + (err.message || 'unknown')));
+      return;
+    }
 
     logger.info(
       { locationId: state, stripeUserId: result.stripeUserId },

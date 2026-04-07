@@ -22,9 +22,7 @@ const WEBHOOK_EVENTS: string[] = [
 ];
 
 function getStripe(): any {
-  return new Stripe(config.stripe.secretKey, {
-    apiVersion: '2025-03-31.basil',
-  });
+  return new Stripe(config.stripe.secretKey);
 }
 
 export const stripeConnectService = {
@@ -119,11 +117,39 @@ export const stripeConnectService = {
   ): Promise<void> {
     const supabase = getSupabase();
 
-    // Upsert processor_configs row
-    const { error: configError } = await supabase
+    // Check if a Stripe config already exists for this merchant
+    const { data: existing } = await supabase
       .from('processor_configs')
-      .upsert(
-        {
+      .select('id')
+      .eq('merchant_id', merchantId)
+      .eq('processor_type', 'stripe')
+      .maybeSingle();
+
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from('processor_configs')
+        .update({
+          location_id: locationId,
+          stripe_user_id: stripeUserId,
+          stripe_webhook_endpoint_id: webhookEndpointId || null,
+          is_active: true,
+          is_default: true,
+          label: 'Stripe Connect',
+        })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        logger.error({ err: updateError }, 'Failed to update Stripe processor config');
+        throw new ProcessorError(
+          `Failed to update Stripe config: ${updateError.message}`,
+          'stripe',
+          updateError.code,
+        );
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from('processor_configs')
+        .insert({
           merchant_id: merchantId,
           location_id: locationId,
           processor_type: 'stripe',
@@ -132,17 +158,16 @@ export const stripeConnectService = {
           stripe_webhook_endpoint_id: webhookEndpointId || null,
           is_active: true,
           is_default: true,
-        },
-        { onConflict: 'merchant_id,processor_type,nmi_processor_id' },
-      );
+        });
 
-    if (configError) {
-      logger.error({ err: configError }, 'Failed to save Stripe processor config');
-      throw new ProcessorError(
-        `Failed to save Stripe config: ${configError.message}`,
-        'stripe',
-        configError.code,
-      );
+      if (insertError) {
+        logger.error({ err: insertError }, 'Failed to insert Stripe processor config');
+        throw new ProcessorError(
+          `Failed to save Stripe config: ${insertError.message}`,
+          'stripe',
+          insertError.code,
+        );
+      }
     }
 
     // Update merchant record
