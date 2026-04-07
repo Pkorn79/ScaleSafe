@@ -7,6 +7,7 @@ import { offerRepository } from '../repositories/offer.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -267,6 +268,31 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       device_info: deviceFingerprint || null,
       browser_info: browserInfo || null,
     });
+
+    // Complete enrollment if payment succeeded and consent token exists
+    if (result.success && consentToken) {
+      try {
+        const { data: enrollmentRow } = await supabase
+          .from('enrollments')
+          .select('id, offer_id')
+          .eq('consent_token', consentToken)
+          .single();
+
+        if (enrollmentRow) {
+          await phase2EnrollmentService.completeEnrollment({
+            enrollmentId: enrollmentRow.id,
+            locationId: merchant.locationId,
+            contactId: contactId || '',
+            paymentAmount: amount / 100,
+            paymentType: 'one_time',
+            transactionId: result.chargeId || result.transactionId || '',
+            paymentsTotal: null,
+          });
+        }
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Post-payment enrollment completion failed — payment still succeeded');
+      }
+    }
 
     // Flag payment without consent (do NOT block — just warn)
     if (result.success && !consentToken && offerId) {

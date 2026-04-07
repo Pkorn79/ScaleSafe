@@ -782,9 +782,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       // Success
       el('pay-btn').classList.add('hidden');
+      el('success-msg').textContent = 'Payment Successful — Redirecting...';
       el('success-msg').style.display = 'block';
 
-      // Notify parent (GHL iframe protocol)
+      // Notify parent (GHL iframe protocol — backward compat)
       try {
         window.parent.postMessage(JSON.stringify({
           action: 'custom_element_success_response',
@@ -792,6 +793,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           transactionId: data.chargeId
         }), '*');
       } catch(e){}
+
+      // Tell parent to redirect to confirmation page
+      setTimeout(function() {
+        try {
+          window.parent.postMessage({ type: 'ssPaymentComplete' }, '*');
+        } catch(e) {}
+      }, 1500);
     } catch(err) {
       el('error-msg').textContent = err.message || 'Payment failed. Please try again.';
       el('error-msg').style.display = 'block';
