@@ -45,7 +45,7 @@ export class StripeClient implements ProcessorInterface {
         description: request.description,
         metadata: this.buildMetadata(request),
         statement_descriptor_suffix: request.statementDescriptorSuffix?.substring(0, 22),
-        receipt_email: request.metadata?.customer_email,
+        receipt_email: request.metadata?.customer_email || undefined,
       };
 
       if (request.requestThreeDSecure) {
