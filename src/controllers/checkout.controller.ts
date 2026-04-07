@@ -300,8 +300,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       threeDSecureUrl: result.threeDSecureUrl,
     });
   } catch (err: any) {
-    logger.error({ err: err.message, merchantId: merchant.merchantId }, 'Checkout payment failed');
-    res.status(500).json({ success: false, error: 'Payment processing error' });
+    logger.error({ err: err.message, stack: err.stack, merchantId: merchant.merchantId }, 'Checkout payment failed');
+    res.status(500).json({ success: false, error: err.message || 'Payment processing error' });
   }
 }
 
