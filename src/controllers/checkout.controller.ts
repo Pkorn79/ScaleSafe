@@ -93,12 +93,13 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
   const response: Record<string, any> = {
     processorType: activeConfig.processor_type,
     merchantName: merchant.business_name || '',
+    publishableKey: merchant.provider_publishable_key || '',
   };
 
   if (activeConfig.processor_type === 'nmi') {
     response.nmiTokenizationKey = activeConfig.nmi_tokenization_key || '';
   } else if (activeConfig.processor_type === 'stripe') {
-    response.stripePublishableKey = config.stripe.publishableKey;
+    response.stripePublishableKey = config.stripe.publishableKey || activeConfig.stripe_publishable_key || '';
     response.stripeAccountId = activeConfig.stripe_user_id || '';
   }
 

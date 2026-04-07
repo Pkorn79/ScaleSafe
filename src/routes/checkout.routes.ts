@@ -616,6 +616,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       if (cfg) {
+        if (cfg.publishableKey) publishableKey = cfg.publishableKey;
         processorType = cfg.processorType;
         el('merchant-name').textContent = cfg.merchantName || offerData.merchantName || '';
 
