@@ -118,8 +118,13 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     productDetails, requestThreeDSecure,
   } = req.body;
 
-  if (!publishableKey || !paymentToken || !amount) {
-    res.status(400).json({ success: false, error: 'Missing required fields: publishableKey, paymentToken, and amount are required' });
+  if (!paymentToken || !amount) {
+    res.status(400).json({ success: false, error: 'Missing required fields: paymentToken and amount are required' });
+    return;
+  }
+
+  if (!publishableKey && !offerId) {
+    res.status(400).json({ success: false, error: 'Either publishableKey or offerId is required' });
     return;
   }
 
@@ -133,9 +138,22 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     return;
   }
 
-  const merchant = await paymentProviderService.getMerchantByPublishableKey(publishableKey);
+  // Resolve merchant by publishableKey or by offerId
+  let merchant: { merchantId: string; locationId: string } | null = null;
+  if (publishableKey) {
+    merchant = await paymentProviderService.getMerchantByPublishableKey(publishableKey);
+  }
+  if (!merchant && offerId) {
+    const offer = await offerRepository.findById(offerId);
+    if (offer) {
+      const m = await merchantRepository.findByLocationId(offer.location_id);
+      if (m) {
+        merchant = { merchantId: m.id, locationId: m.location_id };
+      }
+    }
+  }
   if (!merchant) {
-    res.status(401).json({ success: false, error: 'Invalid publishable key' });
+    res.status(401).json({ success: false, error: 'Merchant not found' });
     return;
   }
 
