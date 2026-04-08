@@ -750,7 +750,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         el('stripe-fields').classList.remove('hidden');
         stripe = window.Stripe(pubKey, {stripeAccount: accountId});
         stripeElements = stripe.elements();
-        cardElement = stripeElements.create('card');
+        cardElement = stripeElements.create('card', { hidePostalCode: true });
         cardElement.mount('#card-element');
         resolve();
       };
