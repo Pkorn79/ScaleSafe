@@ -241,6 +241,7 @@ export const offerService = {
       if (calcAmount) dbUpdates.installment_amount = calcAmount;
     }
 
+    if ((updates as any).active !== undefined) dbUpdates.active = (updates as any).active;
     if (updates.offerName !== undefined) dbUpdates.offer_name = updates.offerName;
     if (updates.programDescription !== undefined) dbUpdates.program_description = updates.programDescription;
     if (updates.deliveryMethod !== undefined) dbUpdates.delivery_method = updates.deliveryMethod;

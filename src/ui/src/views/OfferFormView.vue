@@ -375,14 +375,11 @@ onMounted(async () => {
     onboardingComplete.value = false;
   }
 
-  // Load processor config for override dropdown (optional — may not exist yet)
+  // Load processor config from merchant config (optional)
   try {
-    const pc = await api.get<any>(`/api/processor-config/${ssoSession.locationId}`);
+    const pc = await api.get<any>('/api/merchants/config');
     defaultProcessor.value = pc.defaultProcessor || '';
     stripeConnected.value = pc.stripeConnected || false;
-    if (pc.nmiProcessorIds) {
-      nmiProcessorIds.value = pc.nmiProcessorIds;
-    }
   } catch {
     // Processor config may not exist yet
   }

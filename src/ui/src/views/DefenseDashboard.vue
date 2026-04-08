@@ -151,7 +151,7 @@ onMounted(async () => {
 async function loadDashboardData() {
   pageLoading.value = true;
   try {
-    const config = await api.get<any>(`/api/processor-config/${ssoSession.locationId}`);
+    const config = await api.get<any>('/api/merchants/config');
     stripeConnected.value = config.stripeConnected || false;
 
     if (!stripeConnected.value) {

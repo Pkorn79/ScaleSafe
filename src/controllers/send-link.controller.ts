@@ -125,13 +125,7 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
         phone: phone || '',
       });
     } catch (err: any) {
-      logger.error({ err: err.message, contactId }, 'Failed to fire send_enrollment_link trigger');
-      res.status(500).json({
-        error: 'Contact created but unable to send — try sending manually from GHL',
-        contactId,
-        enrollmentUrl,
-      });
-      return;
+      logger.warn({ err: err.message, contactId }, 'Trigger fire failed — link still generated');
     }
 
     logger.info({ contactId, offerId, sendVia, locationId }, 'Enrollment link sent');

@@ -375,6 +375,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
     }
 
+    // Insert payment_customer_map for payment management lookups
+    if (result.success && offerId) {
+      try {
+        await supabase.from('payment_customer_map').insert({
+          customer_id: result.chargeId || result.transactionId || '',
+          contact_id: contactId || '',
+          location_id: merchant.locationId,
+          offer_id: offerId,
+          program_name: productDetails?.[0]?.name || '',
+          payment_type: req.body.paymentChoice || 'pif',
+          processor: procConfig.processor_type,
+        });
+      } catch (mapErr: any) {
+        logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map — non-blocking');
+      }
+    }
+
     // Flag payment without consent (do NOT block — just warn)
     if (result.success && !consentToken && offerId) {
       logger.warn({

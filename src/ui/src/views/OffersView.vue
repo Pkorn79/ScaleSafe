@@ -60,6 +60,12 @@
               <button class="btn btn-sm btn-secondary" style="margin-left:4px" @click="cloneOffer(offer)">
                 <Copy :size="12" /> Clone
               </button>
+              <button v-if="offer.active" class="btn btn-sm btn-secondary" style="margin-left:4px" @click="archiveOffer(offer)">
+                Archive
+              </button>
+              <button v-else class="btn btn-sm btn-success" style="margin-left:4px" @click="unarchiveOffer(offer)">
+                Activate
+              </button>
             </td>
           </tr>
         </tbody>
@@ -227,6 +233,23 @@ async function submitSendLink() {
     sendError.value = err?.message || 'Failed to send link. Please try again.';
   }
   sendLoading.value = false;
+}
+
+async function archiveOffer(offer: any) {
+  if (!confirm(`Archive '${offer.offer_name}'? It will be deactivated and hidden from clients.`)) return;
+  try {
+    await api.put(`/api/offers/${offer.id}`, { active: false });
+    offer.active = false;
+    showToast('Offer archived');
+  } catch {}
+}
+
+async function unarchiveOffer(offer: any) {
+  try {
+    await api.put(`/api/offers/${offer.id}`, { active: true });
+    offer.active = true;
+    showToast('Offer activated');
+  } catch {}
 }
 
 // TODO: Phase L+ — Add bulk send capability
