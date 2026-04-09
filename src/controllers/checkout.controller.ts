@@ -300,6 +300,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           });
 
           // 2. Upsert GHL contact + update custom fields + create opportunity
+          let ghlContactId = enrollContactId || contactId || '';
           try {
             const locId = (enrollment as any).location_id || merchant.locationId;
             logger.info({ locId }, 'POST-PAYMENT: calling ghlApi');
@@ -307,7 +308,6 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             const merchantRecord = await merchantRepository.getByLocationId(locId);
 
             // Upsert contact by email
-            let ghlContactId = enrollContactId || contactId || '';
             const clientEmail = contactEmail || enrollEmail;
             logger.info({ clientEmail, locId, existingContactId: ghlContactId || 'NONE' }, 'POST-PAYMENT: upserting GHL contact');
             if (!ghlContactId && clientEmail) {
@@ -382,6 +382,22 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           } catch (ghlErr: any) {
             logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: enrollment.id }, 'POST-PAYMENT: GHL record creation failed — enrollment still completed in Supabase');
           }
+
+          // Insert payment_customer_map AFTER GHL upsert so we have the resolved contactId
+          try {
+            const resolvedContactId = ghlContactId || contactId || '';
+            await supabase.from('payment_customer_map').insert({
+              customer_id: result.chargeId || result.transactionId || '',
+              contact_id: resolvedContactId,
+              location_id: merchant.locationId,
+              offer_id: offerId || (enrollment as any).offer_id || '',
+              program_name: productDetails?.[0]?.name || '',
+              payment_type: req.body.paymentChoice || 'pif',
+              processor: procConfig.processor_type,
+            });
+          } catch (mapErr: any) {
+            logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map');
+          }
         } else {
           logger.warn({ consentToken, lookupError: enrollLookupErr?.message }, 'POST-PAYMENT: NO enrollment found for consent token');
         }
@@ -390,8 +406,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
     }
 
-    // Insert payment_customer_map for payment management lookups
-    if (result.success && offerId) {
+    // Fallback: insert payment_customer_map for payments WITHOUT consent token
+    if (result.success && offerId && !consentToken) {
       try {
         await supabase.from('payment_customer_map').insert({
           customer_id: result.chargeId || result.transactionId || '',
@@ -403,7 +419,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           processor: procConfig.processor_type,
         });
       } catch (mapErr: any) {
-        logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map — non-blocking');
+        logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map (no consent) — non-blocking');
       }
     }
 

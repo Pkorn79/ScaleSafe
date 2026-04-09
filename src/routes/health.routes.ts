@@ -75,6 +75,63 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
       .eq('consent_token', consentToken)
       .order('created_at', { ascending: false });
 
+    // 5. GHL diagnostic — test actual API operations
+    const ghlDiagnostic: Record<string, any> = {
+      ghlApiInit: { success: false, error: '' },
+      contactLookup: { success: false, found: false, contactData: null, error: '' },
+      pipelineConfig: { pipelineId: pipelineId || null, hasPipeline: !!pipelineId },
+    };
+
+    try {
+      const api = await ghlApi(locationId);
+      ghlDiagnostic.ghlApiInit = { success: true, error: '' };
+
+      // Try duplicate search to see if contact already exists
+      const enrollmentEmail = enrollment.email || '';
+      if (enrollmentEmail) {
+        try {
+          const searchRes = await api.get('/contacts/search/duplicate', {
+            params: { locationId, email: enrollmentEmail },
+          });
+          const existingContact = searchRes.data?.contact || null;
+          ghlDiagnostic.contactLookup = {
+            success: true,
+            found: !!existingContact,
+            contactData: existingContact ? {
+              id: existingContact.id,
+              firstName: existingContact.firstName,
+              lastName: existingContact.lastName,
+              email: existingContact.email,
+            } : null,
+            error: '',
+          };
+        } catch (searchErr: any) {
+          ghlDiagnostic.contactLookup = {
+            success: false,
+            found: false,
+            contactData: null,
+            error: searchErr.message || 'search failed',
+            status: searchErr.response?.status,
+            responseData: searchErr.response?.data,
+          };
+        }
+      } else {
+        ghlDiagnostic.contactLookup = {
+          success: false,
+          found: false,
+          contactData: null,
+          error: 'No email on enrollment — cannot search',
+        };
+      }
+    } catch (apiErr: any) {
+      ghlDiagnostic.ghlApiInit = {
+        success: false,
+        error: apiErr.message || 'ghlApi init failed',
+        status: apiErr.response?.status,
+        responseData: apiErr.response?.data,
+      };
+    }
+
     res.json({
       found: true,
       enrollment: {
@@ -92,6 +149,7 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
         tokenValid: ghlTokenValid,
         tokenError: ghlTokenError || undefined,
       },
+      ghlDiagnostic,
       merchant: {
         pipelineId: pipelineId || 'NOT SET',
         configKeys: Object.keys(merchantConfig),

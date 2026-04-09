@@ -30,7 +30,7 @@ export const evidenceRepository = {
       .select('*')
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
-      .order('event_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
@@ -43,7 +43,7 @@ export const evidenceRepository = {
   async getCounts(locationId: string, contactId: string): Promise<Record<string, number>> {
     const { data, error } = await getSupabase()
       .from('evidence_timeline')
-      .select('evidence_type')
+      .select('type')
       .eq('location_id', locationId)
       .eq('contact_id', contactId);
 
@@ -51,7 +51,7 @@ export const evidenceRepository = {
 
     const counts: Record<string, number> = {};
     for (const row of data || []) {
-      counts[row.evidence_type] = (counts[row.evidence_type] || 0) + 1;
+      counts[row.type] = (counts[row.type] || 0) + 1;
     }
     return counts;
   },
@@ -69,14 +69,14 @@ export const evidenceRepository = {
   async getLastEvidenceDate(locationId: string, contactId: string): Promise<string | null> {
     const { data, error } = await getSupabase()
       .from('evidence_timeline')
-      .select('event_date')
+      .select('created_at')
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
-      .order('event_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(1)
       .single();
 
     if (error && error.code !== 'PGRST116') throw error;
-    return data?.event_date || null;
+    return data?.created_at || null;
   },
 };

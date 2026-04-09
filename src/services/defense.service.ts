@@ -233,7 +233,7 @@ export const defenseService = {
 
     msg += `EVIDENCE TIMELINE (${evidence.length} records):\n`;
     for (const e of evidence) {
-      msg += `  [${e.event_date || e.created_at}] ${e.evidence_type}: ${JSON.stringify(e.summary || e.details || {})}\n`;
+      msg += `  [${e.created_at}] ${e.type}: ${JSON.stringify(e.summary || e.details || {})}\n`;
     }
     msg += `\n`;
 

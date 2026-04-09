@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-09
 
+### Fixed
+- evidence.repository.ts: `evidence_type` → `type`, `event_date` → `created_at` to match evidence_timeline view columns
+- defense.service.ts, pdf.service.ts: same column name fixes for evidence timeline data
+- payment_customer_map insert moved after GHL upsert block so resolved contactId is used instead of empty string
+- enrollment-check diagnostic now tests GHL API operations (contact duplicate search, pipeline config)
+
 ### Added
 - `GET /api/debug/enrollment-check/:consentToken` diagnostic endpoint — returns full enrollment record, GHL token validity, pipeline config, and payment events
 - Detailed `POST-PAYMENT:` logging throughout checkout.controller.ts GHL block — every step now logs with full context, all catch blocks upgraded to logger.error with stack traces

@@ -195,7 +195,7 @@ export const pdfService = {
       // Group evidence by type
       const grouped: Record<string, any[]> = {};
       for (const e of evidence) {
-        const type = e.evidence_type || 'unknown';
+        const type = e.type || 'unknown';
         if (!grouped[type]) grouped[type] = [];
         grouped[type].push(e);
       }
@@ -207,7 +207,7 @@ export const pdfService = {
         doc.fontSize(9);
 
         for (const r of records) {
-          const date = r.event_date || r.created_at || '';
+          const date = r.created_at || '';
           const summary = r.summary || JSON.stringify(r.details || {}).slice(0, 200);
           doc.text(`[${date}] ${summary}`, { width: 500 });
           doc.moveDown(0.3);
