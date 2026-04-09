@@ -79,6 +79,7 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
     const ghlDiagnostic: Record<string, any> = {
       ghlApiInit: { success: false, error: '' },
       contactLookup: { success: false, found: false, contactData: null, error: '' },
+      upsertTest: { success: false, contactId: '', error: '' },
       pipelineConfig: { pipelineId: pipelineId || null, hasPipeline: !!pipelineId },
     };
 
@@ -121,6 +122,36 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
           found: false,
           contactData: null,
           error: 'No email on enrollment — cannot search',
+        };
+      }
+
+      // Test actual upsert (creates or finds the contact)
+      try {
+        const email = enrollment.email;
+        if (email) {
+          const upsertRes = await api.post('/contacts/upsert', {
+            firstName: email.split('@')[0] || 'TestClient',
+            email: email,
+            locationId: locationId,
+          });
+          const cid = upsertRes.data?.contact?.id || upsertRes.data?.id || '';
+          ghlDiagnostic.upsertTest = { success: true, contactId: cid, error: '' };
+
+          // If we got a contactId, update the enrollment record
+          if (cid && !enrollment.contact_id) {
+            await supabase.from('enrollments').update({ contact_id: cid }).eq('id', enrollment.id);
+            ghlDiagnostic.upsertTest.contactId += ' (saved to enrollment)';
+          }
+        } else {
+          ghlDiagnostic.upsertTest = { success: false, contactId: '', error: 'no email on enrollment' };
+        }
+      } catch (upsertErr: any) {
+        ghlDiagnostic.upsertTest = {
+          success: false,
+          contactId: '',
+          error: upsertErr.message || 'upsert failed',
+          status: (upsertErr as any).response?.status,
+          responseData: (upsertErr as any).response?.data,
         };
       }
     } catch (apiErr: any) {
@@ -172,7 +203,7 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
       supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
       supabase
         .from('enrollments')
-        .select('id, contact_id, email, status, client_name, created_at')
+        .select('id, contact_id, email, status, created_at')
         .eq('location_id', locationId)
         .in('status', ['enrolled', 'consent_captured', 'completed']),
     ]);
@@ -183,7 +214,7 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
       contactId: e.contact_id || `enrollment:${e.id}`,
       hasRealContactId: !!e.contact_id,
       email: (e as any).email || '',
-      clientName: (e as any).client_name || '',
+      clientName: '',
       status: e.status,
       createdAt: e.created_at,
     }));
@@ -202,7 +233,7 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
         const entry = enrollmentLookup.get(cid)!;
         clientScores.push({
           contactId: cid,
-          displayName: entry.clientName || entry.email || 'Unknown',
+          displayName: entry.email || 'Unknown',
           score: 15,
           breakdown: {
             consent: { points: 15, max: 20 },
@@ -217,7 +248,7 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
         const entry = enrollmentLookup.get(cid);
         clientScores.push({
           contactId: cid,
-          displayName: entry?.clientName || entry?.email || '',
+          displayName: entry?.email || '',
           score,
           breakdown,
         });
@@ -271,7 +302,7 @@ router.get('/api/debug/payments-data/:locationId', async (req: Request, res: Res
     // Enrich from enrollments
     const { data: enrollmentProfiles } = await supabase
       .from('enrollments')
-      .select('contact_id, email, client_name, offer_id')
+      .select('contact_id, email, offer_id')
       .eq('location_id', locationId)
       .in('contact_id', contactIds);
 
@@ -279,7 +310,7 @@ router.get('/api/debug/payments-data/:locationId', async (req: Request, res: Res
     for (const ep of (enrollmentProfiles || [])) {
       if (ep.contact_id) {
         enrollmentMap[ep.contact_id] = {
-          name: (ep as any).client_name || '',
+          name: '',
           email: ep.email || '',
         };
       }

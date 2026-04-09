@@ -86,7 +86,7 @@ export const dashboardController = {
         supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
         supabase
           .from('enrollments')
-          .select('id, contact_id, email, status, client_name, created_at')
+          .select('id, contact_id, email, status, created_at')
           .eq('location_id', locationId)
           .in('status', ['enrolled', 'consent_captured', 'completed']),
       ]);
@@ -99,7 +99,7 @@ export const dashboardController = {
         contactId: e.contact_id || `enrollment:${e.id}`,
         hasRealContactId: !!e.contact_id,
         email: (e as any).email || '',
-        clientName: (e as any).client_name || '',
+        clientName: '',
         status: e.status,
         createdAt: e.created_at,
       }));
@@ -121,7 +121,7 @@ export const dashboardController = {
           const entry = enrollmentLookup.get(cid)!;
           clientScores.push({
             contactId: cid,
-            displayName: entry.clientName || entry.email || 'Unknown',
+            displayName: entry.email || 'Unknown',
             score: 15, // baseline: consent captured but no other evidence
             breakdown: {
               consent: { points: 15, max: 20 },
@@ -136,7 +136,7 @@ export const dashboardController = {
           const entry = enrollmentLookup.get(cid);
           clientScores.push({
             contactId: cid,
-            displayName: entry?.clientName || entry?.email || '',
+            displayName: entry?.email || '',
             score,
             breakdown,
           });

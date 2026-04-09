@@ -8,8 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-09
 
 ### Fixed
+- Removed non-existent `client_name` column from all enrollment queries (dashboard, payment-management, health debug endpoints)
 - evidence.repository.ts: `evidence_type` → `type`, `event_date` → `created_at` to match evidence_timeline view columns
 - defense.service.ts, pdf.service.ts: same column name fixes for evidence timeline data
+- enrollment-check diagnostic now performs actual GHL contact upsert and saves contactId to enrollment if missing
 - payment_customer_map insert moved after GHL upsert block so resolved contactId is used instead of empty string
 - enrollment-check diagnostic now tests GHL API operations (contact duplicate search, pipeline config)
 

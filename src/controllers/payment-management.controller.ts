@@ -57,7 +57,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     // Enrich from enrollments table (always available, no API call)
     const { data: enrollmentProfiles } = await supabase
       .from('enrollments')
-      .select('contact_id, email, client_name, offer_id')
+      .select('contact_id, email, offer_id')
       .eq('location_id', locationId)
       .in('contact_id', contactIds);
 
@@ -65,7 +65,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     for (const ep of (enrollmentProfiles || [])) {
       if (ep.contact_id) {
         enrollmentMap[ep.contact_id] = {
-          name: (ep as any).client_name || '',
+          name: '',
           email: ep.email || '',
         };
       }
