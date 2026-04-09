@@ -304,17 +304,24 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             let ghlContactId = enrollment.contact_id || contactId || '';
             const clientEmail = contactEmail || enrollment.email || '';
             if (!ghlContactId && clientEmail) {
-              const sigParts = (enrollment.digital_signature || '').split(' ');
+              logger.info({ clientEmail, locId }, 'Upserting GHL contact by email');
               const upsertRes = await api.post('/contacts/upsert', {
-                firstName: sigParts[0] || '',
-                lastName: sigParts.slice(1).join(' ') || '',
+                firstName: clientEmail.split('@')[0] || 'Client',
                 email: clientEmail,
                 locationId: locId,
               });
               ghlContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+              logger.info({ ghlContactId, clientEmail }, 'GHL contact upserted');
             }
 
             if (ghlContactId) {
+              // Save contactId to enrollment, payment_events, and payment_customer_map
+              await Promise.all([
+                supabase.from('enrollments').update({ contact_id: ghlContactId }).eq('id', enrollment.id),
+                supabase.from('payment_events').update({ contact_id: ghlContactId }).eq('consent_token', consentToken).eq('contact_id', ''),
+                supabase.from('payment_customer_map').update({ contact_id: ghlContactId }).eq('location_id', locId).eq('contact_id', ''),
+              ]);
+
               // Update contact custom fields
               const customFields: Record<string, any> = {
                 [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
@@ -328,10 +335,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price || '';
                   customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type || '';
                   customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchantRecord.business_name || '';
-                } catch { /* offer lookup failed, skip offer fields */ }
+                } catch { /* offer lookup failed */ }
               }
 
               await api.put(`/contacts/${ghlContactId}`, { customField: customFields });
+              logger.info({ ghlContactId, enrollmentId: enrollment.id }, 'GHL contact updated with enrollment data');
 
               // Create pipeline opportunity
               const pipelineId = (merchantRecord.config as any)?.pipelineId || (merchantRecord.config as any)?.milestones_pipeline_id;
@@ -348,7 +356,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     contactId: ghlContactId,
                     pipelineId,
                     stageId: firstStageId,
-                    name: `${offer?.offer_name || 'Enrollment'} — ${enrollment.digital_signature || 'Client'}`,
+                    name: `${offer?.offer_name || 'Enrollment'} — ${clientEmail || 'Client'}`,
                     monetaryValue: amount / 100,
                   });
                   logger.info({ ghlContactId, pipelineId }, 'GHL pipeline opportunity created');
@@ -356,16 +364,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   logger.warn({ err: oppErr.message }, 'Failed to create pipeline opportunity');
                 }
               }
-
-              // Save contactId back to enrollment if it was missing
-              if (!enrollment.contact_id && ghlContactId) {
-                await supabase.from('enrollments').update({ contact_id: ghlContactId }).eq('id', enrollment.id);
-              }
-
-              logger.info({ enrollmentId: enrollment.id, ghlContactId }, 'GHL contact updated and enrollment completed');
+            } else {
+              logger.warn({ clientEmail, enrollmentId: enrollment.id }, 'Could not resolve GHL contactId');
             }
           } catch (ghlErr: any) {
-            logger.error({ err: ghlErr.message, enrollmentId: enrollment.id }, 'GHL record creation failed — enrollment still completed in Supabase');
+            logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: enrollment.id }, 'GHL record creation failed — enrollment still completed in Supabase');
           }
         } else {
           logger.warn({ consentToken }, 'No enrollment found for consentToken after successful payment');

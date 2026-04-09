@@ -17,6 +17,57 @@ router.get('/health', async (_req: Request, res: Response) => {
   res.status(healthy ? 200 : 503).json({ status: healthy ? 'healthy' : 'degraded', checks });
 });
 
+// Temporary — backfill contact_id on enrollments that have email but no contact_id
+router.get('/api/debug/backfill-contacts', async (_req: Request, res: Response) => {
+  const supabase = getSupabase();
+  const results: any[] = [];
+
+  try {
+    // Find enrollments with email but no contact_id
+    const { data: enrollments } = await supabase
+      .from('enrollments')
+      .select('id, email, location_id, consent_token')
+      .is('contact_id', null)
+      .not('email', 'is', null);
+
+    if (!enrollments || enrollments.length === 0) {
+      res.json({ message: 'No enrollments to backfill', count: 0 });
+      return;
+    }
+
+    const { ghlApi } = await import('../clients/ghl.client');
+
+    for (const enrollment of enrollments) {
+      try {
+        const api = await ghlApi(enrollment.location_id);
+        const upsertRes = await api.post('/contacts/upsert', {
+          firstName: enrollment.email.split('@')[0] || 'Client',
+          email: enrollment.email,
+          locationId: enrollment.location_id,
+        });
+        const contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+
+        if (contactId) {
+          await supabase.from('enrollments').update({ contact_id: contactId }).eq('id', enrollment.id);
+          if (enrollment.consent_token) {
+            await supabase.from('payment_events').update({ contact_id: contactId }).eq('consent_token', enrollment.consent_token);
+            await supabase.from('payment_customer_map').update({ contact_id: contactId }).eq('location_id', enrollment.location_id).eq('contact_id', '');
+          }
+          results.push({ email: enrollment.email, contactId, status: 'ok' });
+        } else {
+          results.push({ email: enrollment.email, status: 'no_contact_id_returned' });
+        }
+      } catch (err: any) {
+        results.push({ email: enrollment.email, status: 'error', error: err.message });
+      }
+    }
+
+    res.json({ backfilled: results.length, results });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Temporary debug — check what data exists (remove after debugging)
 router.get('/api/debug/data-check', async (_req: Request, res: Response) => {
   const supabase = getSupabase();
