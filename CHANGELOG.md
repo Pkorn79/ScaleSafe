@@ -8,6 +8,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-09
 
 ### Fixed
+- Client detail page shows client name/email, enrollment summary, and improved evidence timeline with formatted types and data summaries
+- Payment management page shows client name/email instead of raw contact ID
+- Clients table header changed from "Contact ID" to "Client"
+- `GET /api/dashboard/client-info/:contactId` endpoint — returns client name, email, enrollment summary, and offer info
+- Evidence repository now queries both `evidence_timeline` view and `evidence` table, merging and deduplicating results
 - Added GHL upsert fallback in checkout controller — if completeEnrollment fails to save contactId, checkout does a direct upsert as safety net
 - `GET /api/debug/backfill-contacts/:locationId` — backfills contactId on all enrolled records missing it
 - Wrapped evidence insert, payment_event insert, and trigger fire in individual try/catch blocks so GHL contact creation always runs even if those tables don't exist

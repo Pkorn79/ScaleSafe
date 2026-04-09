@@ -2,8 +2,8 @@
   <div>
     <div class="flex-between mb-4">
       <div>
-        <h1 class="page-title" style="margin-bottom:4px">Payment Management</h1>
-        <p class="text-sm text-muted">Contact: {{ contactId }}</p>
+        <h1 class="page-title" style="margin-bottom:4px">{{ clientLabel }}</h1>
+        <p v-if="clientEmail" class="text-sm text-muted">{{ clientEmail }}</p>
       </div>
       <router-link to="/payments" class="btn btn-secondary">Back</router-link>
     </div>
@@ -157,9 +157,19 @@ const chargeForm = ref({ methodId: '', amount: 0, description: '' });
 const showRefundModal = ref(false);
 const refundLoading = ref(false);
 const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reason: '' });
+const clientLabel = ref('Payment Management');
+const clientEmail = ref('');
 
 onMounted(async () => {
   await Promise.all([loadHistory(), loadMethods()]);
+  // Load client name/email
+  try {
+    const info = await api.get<any>(`/api/dashboard/client-info/${contactId}`);
+    if (info) {
+      clientLabel.value = info.name || info.email || 'Payment Management';
+      clientEmail.value = info.email || '';
+    }
+  } catch {}
 });
 
 async function loadHistory() {

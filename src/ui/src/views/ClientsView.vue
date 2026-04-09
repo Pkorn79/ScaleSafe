@@ -27,7 +27,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Contact ID</th>
+            <th>Client</th>
             <th>Score</th>
             <th>Consent</th>
             <th>Payments</th>

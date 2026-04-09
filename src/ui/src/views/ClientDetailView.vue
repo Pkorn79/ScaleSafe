@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="flex-between mb-4">
-      <h1 class="page-title">Client: {{ contactId.slice(0, 16) }}...</h1>
+      <div>
+        <h1 class="page-title">{{ clientLabel }}</h1>
+        <p v-if="clientEmail" class="text-sm text-muted">{{ clientEmail }}</p>
+      </div>
       <router-link to="/clients" class="btn btn-secondary">Back</router-link>
     </div>
 
@@ -26,6 +29,18 @@
       </div>
     </div>
 
+    <!-- Enrollment Info -->
+    <div v-if="enrollmentInfo" class="card mb-4">
+      <div class="card-title">Enrollment Summary</div>
+      <div class="grid grid-3 mt-2">
+        <div class="text-sm"><strong>Status:</strong> {{ enrollmentInfo.status }}</div>
+        <div class="text-sm"><strong>Payment:</strong> ${{ enrollmentInfo.paymentAmount?.toFixed(2) || '0.00' }}</div>
+        <div class="text-sm"><strong>Enrolled:</strong> {{ enrollmentInfo.enrolledAt ? formatDate(enrollmentInfo.enrolledAt) : 'N/A' }}</div>
+      </div>
+      <div v-if="enrollmentInfo.offerName" class="text-sm mt-2"><strong>Program:</strong> {{ enrollmentInfo.offerName }}</div>
+      <div v-if="enrollmentInfo.signature" class="text-sm mt-2"><strong>Signature:</strong> {{ enrollmentInfo.signature }}</div>
+    </div>
+
     <!-- Evidence Timeline -->
     <div class="card">
       <div class="card-title mb-4">Evidence Timeline ({{ timeline.length }} records)</div>
@@ -33,7 +48,7 @@
       <div v-if="loading" class="loading">Loading timeline...</div>
 
       <div v-if="timeline.length === 0 && !loading" class="empty-state">
-        <p>No evidence recorded for this client.</p>
+        <p>No evidence recorded for this client yet. Evidence is logged automatically as clients enroll, make payments, and engage with your program.</p>
       </div>
 
       <table v-if="timeline.length > 0" class="table">
@@ -41,17 +56,15 @@
           <tr>
             <th>Date</th>
             <th>Type</th>
-            <th>Source</th>
             <th>Details</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(item, i) in timeline" :key="i">
-            <td class="text-sm">{{ formatDate(item.event_date || item.created_at) }}</td>
+            <td class="text-sm">{{ formatDate(item.created_at || item.event_date) }}</td>
             <td>
-              <span class="badge badge-blue">{{ item.evidence_type }}</span>
+              <span class="badge badge-blue">{{ formatEvidenceType(item.evidence_type || item.type) }}</span>
             </td>
-            <td class="text-sm text-muted">{{ item.source || '-' }}</td>
             <td class="text-sm">{{ summarize(item) }}</td>
           </tr>
         </tbody>
@@ -72,6 +85,9 @@ const { loading, error } = api;
 const contactId = computed(() => route.params.contactId as string);
 const score = ref<any>(null);
 const timeline = ref<any[]>([]);
+const enrollmentInfo = ref<any>(null);
+const clientEmail = ref('');
+const clientLabel = ref('Client');
 
 function scoreColor(s: number): string {
   if (s >= 70) return '#10b981';
@@ -88,21 +104,44 @@ function formatDate(d: string): string {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatEvidenceType(type: string): string {
+  if (!type) return 'Unknown';
+  return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
 function summarize(item: any): string {
-  const d = item.summary || item.details;
-  if (typeof d === 'string') return d.slice(0, 100);
-  if (typeof d === 'object' && d) return JSON.stringify(d).slice(0, 100);
+  const d = item.data || item.summary || item.details;
+  if (!d) return '-';
+  if (typeof d === 'string') return d.slice(0, 120);
+  if (typeof d === 'object') {
+    const parts: string[] = [];
+    if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);
+    if (d.payment_type) parts.push(d.payment_type);
+    if (d.transaction_id) parts.push(`Tx: ${d.transaction_id.slice(0, 12)}...`);
+    if (d.timestamp) parts.push(formatDate(d.timestamp));
+    if (parts.length > 0) return parts.join(' | ');
+    return JSON.stringify(d).slice(0, 120);
+  }
   return '-';
 }
 
 onMounted(async () => {
-  try {
-    const [s, t] = await Promise.all([
-      api.get<any>(`/api/evidence/${contactId.value}/score`),
-      api.get<any[]>(`/api/evidence/${contactId.value}`),
-    ]);
-    score.value = s;
-    timeline.value = t;
-  } catch {}
+  const cid = contactId.value;
+
+  const [scoreResult, timelineResult, enrollmentResult] = await Promise.allSettled([
+    api.get<any>(`/api/evidence/${cid}/score`),
+    api.get<any[]>(`/api/evidence/${cid}`),
+    api.get<any>(`/api/dashboard/client-info/${cid}`),
+  ]);
+
+  if (scoreResult.status === 'fulfilled') score.value = scoreResult.value;
+  if (timelineResult.status === 'fulfilled') timeline.value = timelineResult.value || [];
+  if (enrollmentResult.status === 'fulfilled' && enrollmentResult.value) {
+    enrollmentInfo.value = enrollmentResult.value;
+    clientEmail.value = enrollmentResult.value.email || '';
+    clientLabel.value = enrollmentResult.value.name || enrollmentResult.value.email || 'Client';
+  } else {
+    clientLabel.value = cid.includes('@') ? cid : 'Client';
+  }
 });
 </script>

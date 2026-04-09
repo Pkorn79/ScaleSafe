@@ -203,4 +203,66 @@ export const dashboardController = {
       });
     } catch (err) { next(err); }
   },
+
+  /** GET /api/dashboard/client-info/:contactId — client name + email + enrollment summary */
+  async clientInfo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+
+      const supabase = getSupabase();
+
+      // Get enrollment data for this contact
+      const { data: enrollment } = await supabase
+        .from('enrollments')
+        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      // Try GHL for name
+      let name = '';
+      let email = enrollment?.email || '';
+      try {
+        const { ghlApi } = require('../clients/ghl.client');
+        const api = await ghlApi(locationId);
+        const contactRes = await api.get(`/contacts/${contactId}`);
+        const contact = contactRes.data?.contact || contactRes.data || {};
+        const first = (contact.firstName || '').trim();
+        const last = (contact.lastName || '').trim();
+        name = `${first} ${last}`.trim();
+        if (!email) email = contact.email || '';
+      } catch {
+        // GHL lookup failed — use email as name
+      }
+
+      // Get offer name if available
+      let offerName = '';
+      if (enrollment?.offer_id) {
+        try {
+          const { data: offer } = await supabase
+            .from('offers_mirror')
+            .select('offer_name')
+            .eq('id', enrollment.offer_id)
+            .single();
+          offerName = offer?.offer_name || '';
+        } catch {}
+      }
+
+      res.json({
+        contactId,
+        name: name || (email ? email.split('@')[0] : ''),
+        email,
+        status: enrollment?.status || 'unknown',
+        paymentAmount: enrollment?.payment_amount || 0,
+        paymentType: enrollment?.payment_type || '',
+        enrolledAt: enrollment?.enrolled_at || null,
+        offerName,
+        signature: enrollment?.digital_signature || '',
+      });
+    } catch (err) { next(err); }
+  },
 };
