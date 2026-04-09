@@ -81,13 +81,17 @@ export const dashboardController = {
 
       const supabase = getSupabase();
 
-      // Get all contacts with evidence
-      const { data: contacts } = await supabase
-        .from('evidence_timeline')
-        .select('contact_id')
-        .eq('location_id', locationId);
+      // Get contacts from evidence_timeline + enrollments
+      const [{ data: evidenceContacts }, { data: enrolledContacts }] = await Promise.all([
+        supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
+        supabase.from('enrollments').select('contact_id').eq('location_id', locationId).not('contact_id', 'is', null),
+      ]);
 
-      const uniqueIds = [...new Set((contacts || []).map(c => c.contact_id))];
+      const allContactIds = [
+        ...(evidenceContacts || []).map(c => c.contact_id),
+        ...(enrolledContacts || []).map(c => c.contact_id),
+      ];
+      const uniqueIds = [...new Set(allContactIds)].filter(Boolean);
 
       // Score each (limit to 50 for performance)
       const clientScores = [];
