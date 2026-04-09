@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-09
 
 ### Fixed
+- Consolidated GHL contact creation: removed duplicate upsert block from checkout.controller.ts, single source of truth is now completeEnrollment in phase2Enrollment.service.ts
+- Added `firstName` to GHL contact upsert (was missing, causing silent failures)
+- Upgraded GHL sync error logging from warn to error with full stack traces
 - Removed non-existent `client_name` column from all enrollment queries (dashboard, payment-management, health debug endpoints)
 - evidence.repository.ts: `evidence_type` → `type`, `event_date` → `created_at` to match evidence_timeline view columns
 - defense.service.ts, pdf.service.ts: same column name fixes for evidence timeline data

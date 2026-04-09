@@ -8,8 +8,6 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
-import { ghlApi } from '../clients/ghl.client';
-import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -299,93 +297,26 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             paymentsTotal: null,
           });
 
-          // 2. Upsert GHL contact + update custom fields + create opportunity
-          let ghlContactId = enrollContactId || contactId || '';
-          try {
-            const locId = (enrollment as any).location_id || merchant.locationId;
-            logger.info({ locId }, 'POST-PAYMENT: calling ghlApi');
-            const api = await ghlApi(locId);
-            const merchantRecord = await merchantRepository.getByLocationId(locId);
+          // GHL contact upsert + custom fields + pipeline opportunity handled by completeEnrollment above.
+          // Re-query enrollment to get the contactId that completeEnrollment resolved.
+          const { data: updatedEnrollment } = await supabase
+            .from('enrollments')
+            .select('contact_id')
+            .eq('id', enrollment.id)
+            .single();
+          const resolvedContactId = updatedEnrollment?.contact_id || contactId || '';
+          logger.info({ resolvedContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: contactId after completeEnrollment');
 
-            // Upsert contact by email
-            const clientEmail = contactEmail || enrollEmail;
-            logger.info({ clientEmail, locId, existingContactId: ghlContactId || 'NONE' }, 'POST-PAYMENT: upserting GHL contact');
-            if (!ghlContactId && clientEmail) {
-              const upsertRes = await api.post('/contacts/upsert', {
-                firstName: clientEmail.split('@')[0] || 'Client',
-                email: clientEmail,
-                locationId: locId,
-              });
-              ghlContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
-              logger.info({ ghlContactId, clientEmail }, 'POST-PAYMENT: GHL contact upserted');
-            }
-
-            if (ghlContactId) {
-              // Save contactId to enrollment, payment_events, and payment_customer_map
-              await Promise.all([
-                supabase.from('enrollments').update({ contact_id: ghlContactId }).eq('id', enrollment.id),
-                supabase.from('payment_events').update({ contact_id: ghlContactId }).eq('consent_token', consentToken).eq('contact_id', ''),
-                supabase.from('payment_customer_map').update({ contact_id: ghlContactId }).eq('location_id', locId).eq('contact_id', ''),
-              ]);
-
-              // Update contact custom fields
-              const customFields: Record<string, any> = {
-                [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
-                [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
-              };
-
-              if ((enrollment as any).offer_id) {
-                try {
-                  const offer = await offerRepository.getById((enrollment as any).offer_id);
-                  customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
-                  customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price || '';
-                  customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type || '';
-                  customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchantRecord.business_name || '';
-                } catch (offerErr: any) {
-                  logger.error({ err: offerErr.message, stack: offerErr.stack, offerId: (enrollment as any).offer_id }, 'POST-PAYMENT: offer lookup failed');
-                }
-              }
-
-              logger.info({ ghlContactId, customFields: Object.keys(customFields) }, 'POST-PAYMENT: updating contact custom fields');
-              await api.put(`/contacts/${ghlContactId}`, { customField: customFields });
-              logger.info({ ghlContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: GHL contact updated with enrollment data');
-
-              // Create pipeline opportunity
-              const pipelineId = (merchantRecord.config as any)?.pipelineId || (merchantRecord.config as any)?.milestones_pipeline_id;
-              if (pipelineId) {
-                try {
-                  const pipelineRes = await api.get('/opportunities/pipelines', { params: { locationId: locId } });
-                  const pipelines = pipelineRes.data.pipelines || pipelineRes.data || [];
-                  const pipeline = pipelines.find((p: any) => p.id === pipelineId);
-                  const firstStageId = pipeline?.stages?.[0]?.id || '';
-
-                  logger.info({ ghlContactId, pipelineId, firstStageId }, 'POST-PAYMENT: creating pipeline opportunity');
-                  const offer = await offerRepository.getById((enrollment as any).offer_id!).catch(() => null);
-                  await api.post('/opportunities/', {
-                    locationId: locId,
-                    contactId: ghlContactId,
-                    pipelineId,
-                    stageId: firstStageId,
-                    name: `${offer?.offer_name || 'Enrollment'} — ${clientEmail || 'Client'}`,
-                    monetaryValue: amount / 100,
-                  });
-                  logger.info({ ghlContactId, pipelineId }, 'POST-PAYMENT: GHL pipeline opportunity created');
-                } catch (oppErr: any) {
-                  logger.error({ err: oppErr.message, stack: oppErr.stack, ghlContactId, pipelineId }, 'POST-PAYMENT: GHL opportunity creation failed');
-                }
-              } else {
-                logger.warn({ locId, configKeys: Object.keys(merchantRecord.config || {}) }, 'POST-PAYMENT: no pipelineId in merchant config — skipping opportunity');
-              }
-            } else {
-              logger.error({ clientEmail, enrollmentId: enrollment.id }, 'POST-PAYMENT: could not resolve GHL contactId — no email and no existing contactId');
-            }
-          } catch (ghlErr: any) {
-            logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: enrollment.id }, 'POST-PAYMENT: GHL record creation failed — enrollment still completed in Supabase');
+          // Backfill contactId on payment_events that were inserted before GHL upsert
+          if (resolvedContactId) {
+            await supabase.from('payment_events')
+              .update({ contact_id: resolvedContactId })
+              .eq('consent_token', consentToken)
+              .eq('contact_id', '');
           }
 
-          // Insert payment_customer_map AFTER GHL upsert so we have the resolved contactId
+          // Insert payment_customer_map with the resolved contactId
           try {
-            const resolvedContactId = ghlContactId || contactId || '';
             await supabase.from('payment_customer_map').insert({
               customer_id: result.chargeId || result.transactionId || '',
               contact_id: resolvedContactId,

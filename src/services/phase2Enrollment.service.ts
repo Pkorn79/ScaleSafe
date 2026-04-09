@@ -101,6 +101,7 @@ export const phase2EnrollmentService = {
         const email = params.contactEmail || (enrollment as any).email || '';
         if (!contactId && email) {
           const upsertRes = await api.post('/contacts/upsert', {
+            firstName: email.split('@')[0] || 'Client',
             email,
             locationId: params.locationId,
           });
@@ -158,7 +159,7 @@ export const phase2EnrollmentService = {
 
         logger.info({ contactId }, 'GHL contact updated + opportunity created');
       } catch (err: any) {
-        logger.warn({ err: err.message, contactId: params.contactId }, 'GHL sync after enrollment failed (non-blocking)');
+        logger.error({ err: err.message, stack: err.stack, enrollmentId: params.enrollmentId, email: params.contactEmail, contactId: params.contactId }, 'GHL sync after enrollment failed (non-blocking)');
       }
     }
 
