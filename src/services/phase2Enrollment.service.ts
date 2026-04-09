@@ -51,44 +51,56 @@ export const phase2EnrollmentService = {
       enrolled_at: new Date().toISOString(),
     } as any);
 
-    // 2. Log enrollment_payment evidence
-    await phase2EvidenceRepository.create({
-      location_id: params.locationId,
-      contact_id: params.contactId,
-      enrollment_id: params.enrollmentId,
-      evidence_type: 'enrollment_payment',
-      data: {
+    // 2. Log enrollment_payment evidence (non-blocking — table may not exist yet)
+    try {
+      await phase2EvidenceRepository.create({
+        location_id: params.locationId,
+        contact_id: params.contactId,
+        enrollment_id: params.enrollmentId,
+        evidence_type: 'enrollment_payment',
+        data: {
+          amount: params.paymentAmount,
+          payment_type: params.paymentType,
+          transaction_id: params.transactionId,
+          payments_total: params.paymentsTotal,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (evidenceErr: any) {
+      logger.warn({ err: evidenceErr.message, enrollmentId: params.enrollmentId }, 'Evidence insert failed (table may not exist) — continuing enrollment');
+    }
+
+    // 3. Create payment_event record (non-blocking — may already exist from checkout controller)
+    try {
+      await paymentEventRepository.create({
+        location_id: params.locationId,
+        contact_id: params.contactId,
+        enrollment_id: params.enrollmentId,
+        event_type: 'payment_success',
+        processor: 'ghl',
+        processor_transaction_id: params.transactionId,
+        amount: params.paymentAmount,
+        payment_number: 1,
+        payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
+      });
+    } catch (paymentErr: any) {
+      logger.warn({ err: paymentErr.message, enrollmentId: params.enrollmentId }, 'Payment event insert failed — continuing enrollment');
+    }
+
+    // 4. Fire enrollment_complete trigger (non-blocking)
+    try {
+      await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
+        contact_id: params.contactId,
+        offer_id: enrollment.offer_id,
+        offer_name: offerName,
         amount: params.paymentAmount,
         payment_type: params.paymentType,
-        transaction_id: params.transactionId,
-        payments_total: params.paymentsTotal,
-        timestamp: new Date().toISOString(),
-      },
-    });
-
-    // 3. Create payment_event record
-    await paymentEventRepository.create({
-      location_id: params.locationId,
-      contact_id: params.contactId,
-      enrollment_id: params.enrollmentId,
-      event_type: 'payment_success',
-      processor: 'ghl',
-      processor_transaction_id: params.transactionId,
-      amount: params.paymentAmount,
-      payment_number: 1,
-      payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
-    });
-
-    // 4. Fire enrollment_complete trigger
-    await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
-      contact_id: params.contactId,
-      offer_id: enrollment.offer_id,
-      offer_name: offerName,
-      amount: params.paymentAmount,
-      payment_type: params.paymentType,
-      bump_1_accepted: false,
-      bump_2_accepted: false,
-    });
+        bump_1_accepted: false,
+        bump_2_accepted: false,
+      });
+    } catch (triggerErr: any) {
+      logger.warn({ err: triggerErr.message, enrollmentId: params.enrollmentId }, 'Trigger fire failed — continuing enrollment');
+    }
 
     // 5. Update GHL contact fields + create pipeline opportunity
     if (params.locationId) {
