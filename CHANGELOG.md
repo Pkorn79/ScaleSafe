@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-09
+
+### Added
+- `GET /api/debug/enrollment-check/:consentToken` diagnostic endpoint — returns full enrollment record, GHL token validity, pipeline config, and payment events
+- Detailed `POST-PAYMENT:` logging throughout checkout.controller.ts GHL block — every step now logs with full context, all catch blocks upgraded to logger.error with stack traces
+
+### Fixed
+- Payment customer search now enriches from enrollments table and payment_events as fallback when GHL API is unavailable
+- Customer cards display client name/email instead of raw GHL contact IDs
+- Added `lastPaymentDate` and `programName` to payment customer response
+- Refund/charge endpoints now resolve merchantId from locationId when `req.merchantId` is not set (root cause of "unexpected error" on refund)
+- Clients tab now includes enrollments with status enrolled/consent_captured/completed, even if no GHL contact_id exists yet
+- Clients table shows displayName (client name or email) instead of truncated contact ID
+
+---
+
 ## 2026-04-05
 
 ### Added — Phase L: Send Enrollment Link

@@ -273,21 +273,26 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     });
 
     // ─── Complete enrollment + create GHL records ──────
+    logger.info({ consentToken: consentToken || 'EMPTY', hasConsent: !!consentToken, paymentSuccess: result.success }, 'POST-PAYMENT: checking enrollment completion eligibility');
     if (result.success && consentToken) {
       try {
-        const { data: enrollment } = await supabase
+        const { data: enrollment, error: enrollLookupErr } = await supabase
           .from('enrollments')
-          .select('id, location_id, offer_id, contact_id, email, digital_signature')
+          .select('*')
           .eq('consent_token', consentToken)
           .single();
 
         if (enrollment) {
+          const enrollEmail = (enrollment as any).email || '';
+          const enrollContactId = (enrollment as any).contact_id || '';
+          logger.info({ enrollmentId: enrollment.id, email: enrollEmail, contactId: enrollContactId, status: (enrollment as any).status }, 'POST-PAYMENT: enrollment found');
+
           // 1. Complete enrollment in Supabase (status, evidence, triggers)
           await phase2EnrollmentService.completeEnrollment({
             enrollmentId: enrollment.id,
-            locationId: enrollment.location_id || merchant.locationId,
-            contactId: enrollment.contact_id || contactId || '',
-            contactEmail: contactEmail || enrollment.email || '',
+            locationId: (enrollment as any).location_id || merchant.locationId,
+            contactId: enrollContactId || contactId || '',
+            contactEmail: contactEmail || enrollEmail,
             paymentAmount: amount / 100,
             paymentType: req.body.paymentChoice || 'pif',
             transactionId: result.transactionId || result.chargeId || '',
@@ -296,22 +301,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
           // 2. Upsert GHL contact + update custom fields + create opportunity
           try {
-            const locId = enrollment.location_id || merchant.locationId;
+            const locId = (enrollment as any).location_id || merchant.locationId;
+            logger.info({ locId }, 'POST-PAYMENT: calling ghlApi');
             const api = await ghlApi(locId);
             const merchantRecord = await merchantRepository.getByLocationId(locId);
 
             // Upsert contact by email
-            let ghlContactId = enrollment.contact_id || contactId || '';
-            const clientEmail = contactEmail || enrollment.email || '';
+            let ghlContactId = enrollContactId || contactId || '';
+            const clientEmail = contactEmail || enrollEmail;
+            logger.info({ clientEmail, locId, existingContactId: ghlContactId || 'NONE' }, 'POST-PAYMENT: upserting GHL contact');
             if (!ghlContactId && clientEmail) {
-              logger.info({ clientEmail, locId }, 'Upserting GHL contact by email');
               const upsertRes = await api.post('/contacts/upsert', {
                 firstName: clientEmail.split('@')[0] || 'Client',
                 email: clientEmail,
                 locationId: locId,
               });
               ghlContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
-              logger.info({ ghlContactId, clientEmail }, 'GHL contact upserted');
+              logger.info({ ghlContactId, clientEmail }, 'POST-PAYMENT: GHL contact upserted');
             }
 
             if (ghlContactId) {
@@ -328,18 +334,21 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                 [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
               };
 
-              if (enrollment.offer_id) {
+              if ((enrollment as any).offer_id) {
                 try {
-                  const offer = await offerRepository.getById(enrollment.offer_id);
+                  const offer = await offerRepository.getById((enrollment as any).offer_id);
                   customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
                   customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price || '';
                   customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type || '';
                   customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchantRecord.business_name || '';
-                } catch { /* offer lookup failed */ }
+                } catch (offerErr: any) {
+                  logger.error({ err: offerErr.message, stack: offerErr.stack, offerId: (enrollment as any).offer_id }, 'POST-PAYMENT: offer lookup failed');
+                }
               }
 
+              logger.info({ ghlContactId, customFields: Object.keys(customFields) }, 'POST-PAYMENT: updating contact custom fields');
               await api.put(`/contacts/${ghlContactId}`, { customField: customFields });
-              logger.info({ ghlContactId, enrollmentId: enrollment.id }, 'GHL contact updated with enrollment data');
+              logger.info({ ghlContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: GHL contact updated with enrollment data');
 
               // Create pipeline opportunity
               const pipelineId = (merchantRecord.config as any)?.pipelineId || (merchantRecord.config as any)?.milestones_pipeline_id;
@@ -350,7 +359,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   const pipeline = pipelines.find((p: any) => p.id === pipelineId);
                   const firstStageId = pipeline?.stages?.[0]?.id || '';
 
-                  const offer = await offerRepository.getById(enrollment.offer_id!).catch(() => null);
+                  logger.info({ ghlContactId, pipelineId, firstStageId }, 'POST-PAYMENT: creating pipeline opportunity');
+                  const offer = await offerRepository.getById((enrollment as any).offer_id!).catch(() => null);
                   await api.post('/opportunities/', {
                     locationId: locId,
                     contactId: ghlContactId,
@@ -359,22 +369,24 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     name: `${offer?.offer_name || 'Enrollment'} — ${clientEmail || 'Client'}`,
                     monetaryValue: amount / 100,
                   });
-                  logger.info({ ghlContactId, pipelineId }, 'GHL pipeline opportunity created');
+                  logger.info({ ghlContactId, pipelineId }, 'POST-PAYMENT: GHL pipeline opportunity created');
                 } catch (oppErr: any) {
-                  logger.warn({ err: oppErr.message }, 'Failed to create pipeline opportunity');
+                  logger.error({ err: oppErr.message, stack: oppErr.stack, ghlContactId, pipelineId }, 'POST-PAYMENT: GHL opportunity creation failed');
                 }
+              } else {
+                logger.warn({ locId, configKeys: Object.keys(merchantRecord.config || {}) }, 'POST-PAYMENT: no pipelineId in merchant config — skipping opportunity');
               }
             } else {
-              logger.warn({ clientEmail, enrollmentId: enrollment.id }, 'Could not resolve GHL contactId');
+              logger.error({ clientEmail, enrollmentId: enrollment.id }, 'POST-PAYMENT: could not resolve GHL contactId — no email and no existing contactId');
             }
           } catch (ghlErr: any) {
-            logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: enrollment.id }, 'GHL record creation failed — enrollment still completed in Supabase');
+            logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: enrollment.id }, 'POST-PAYMENT: GHL record creation failed — enrollment still completed in Supabase');
           }
         } else {
-          logger.warn({ consentToken }, 'No enrollment found for consentToken after successful payment');
+          logger.warn({ consentToken, lookupError: enrollLookupErr?.message }, 'POST-PAYMENT: NO enrollment found for consent token');
         }
       } catch (enrollErr: any) {
-        logger.error({ err: enrollErr.message, consentToken }, 'completeEnrollment failed — payment still succeeded');
+        logger.error({ err: enrollErr.message, stack: enrollErr.stack, consentToken }, 'POST-PAYMENT: completeEnrollment failed — payment still succeeded');
       }
     }
 

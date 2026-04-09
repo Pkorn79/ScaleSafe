@@ -81,23 +81,66 @@ export const dashboardController = {
 
       const supabase = getSupabase();
 
-      // Get contacts from evidence_timeline + enrollments
+      // Get contacts from evidence_timeline + enrollments (including those without contact_id)
       const [{ data: evidenceContacts }, { data: enrolledContacts }] = await Promise.all([
         supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
-        supabase.from('enrollments').select('contact_id').eq('location_id', locationId).not('contact_id', 'is', null),
+        supabase
+          .from('enrollments')
+          .select('id, contact_id, email, status, client_name, created_at')
+          .eq('location_id', locationId)
+          .in('status', ['enrolled', 'consent_captured', 'completed']),
       ]);
 
+      // Build set of contact IDs from evidence_timeline
+      const evidenceIds = (evidenceContacts || []).map(c => c.contact_id).filter(Boolean);
+
+      // Build enrollment contact IDs — use contact_id if available, else synthetic key
+      const enrollmentEntries = (enrolledContacts || []).map(e => ({
+        contactId: e.contact_id || `enrollment:${e.id}`,
+        hasRealContactId: !!e.contact_id,
+        email: (e as any).email || '',
+        clientName: (e as any).client_name || '',
+        status: e.status,
+        createdAt: e.created_at,
+      }));
+
       const allContactIds = [
-        ...(evidenceContacts || []).map(c => c.contact_id),
-        ...(enrolledContacts || []).map(c => c.contact_id),
+        ...evidenceIds,
+        ...enrollmentEntries.map(e => e.contactId),
       ];
       const uniqueIds = [...new Set(allContactIds)].filter(Boolean);
 
+      // Build enrollment lookup for baseline scores
+      const enrollmentLookup = new Map(enrollmentEntries.map(e => [e.contactId, e]));
+
       // Score each (limit to 50 for performance)
       const clientScores = [];
-      for (const contactId of uniqueIds.slice(0, 50)) {
-        const { score, breakdown } = await evidenceService.calculateReadinessScore(locationId, contactId);
-        clientScores.push({ contactId, score, breakdown });
+      for (const cid of uniqueIds.slice(0, 50)) {
+        if (cid.startsWith('enrollment:')) {
+          // No real GHL contact — provide baseline score from enrollment data
+          const entry = enrollmentLookup.get(cid)!;
+          clientScores.push({
+            contactId: cid,
+            displayName: entry.clientName || entry.email || 'Unknown',
+            score: 15, // baseline: consent captured but no other evidence
+            breakdown: {
+              consent: { points: 15, max: 20 },
+              payments: { points: 0, max: 15 },
+              delivery: { points: 0, max: 25 },
+              engagement: { points: 0, max: 20 },
+              recency: { points: 0, max: 10 },
+            },
+          });
+        } else {
+          const { score, breakdown } = await evidenceService.calculateReadinessScore(locationId, cid);
+          const entry = enrollmentLookup.get(cid);
+          clientScores.push({
+            contactId: cid,
+            displayName: entry?.clientName || entry?.email || '',
+            score,
+            breakdown,
+          });
+        }
       }
 
       // Sort by score ascending (weakest first)

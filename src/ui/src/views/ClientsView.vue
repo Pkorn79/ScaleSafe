@@ -41,7 +41,7 @@
           <tr v-for="client in healthData.scores" :key="client.contactId">
             <td>
               <router-link :to="`/clients/${client.contactId}`" style="color:#3b82f6;text-decoration:none">
-                {{ client.contactId.slice(0, 12) }}...
+                {{ client.displayName || client.contactId.slice(0, 12) + '...' }}
               </router-link>
             </td>
             <td>

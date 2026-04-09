@@ -20,10 +20,13 @@
     <div v-for="c in customers" :key="c.contactId" class="card" style="max-width:600px">
       <div class="flex-between">
         <div>
-          <strong>{{ c.name || c.contactId }}</strong>
+          <strong>{{ c.name || c.email || c.contactId.slice(0, 12) + '...' }}</strong>
+          <div v-if="c.email && c.name" class="text-sm text-muted">{{ c.email }}</div>
+          <div v-if="c.programName" class="text-sm text-muted">{{ c.programName }}</div>
           <div class="text-sm text-muted">
             ${{ c.totalCharged.toFixed(2) }} charged
             <span v-if="c.totalRefunded > 0"> &middot; ${{ c.totalRefunded.toFixed(2) }} refunded</span>
+            <span v-if="c.lastPaymentDate"> &middot; Last: {{ formatDate(c.lastPaymentDate) }}</span>
           </div>
         </div>
         <router-link :to="`/payments/${c.contactId}`" class="btn btn-sm btn-primary">
@@ -45,6 +48,10 @@ const customers = ref<any[]>([]);
 const searched = ref(false);
 
 onMounted(() => search());
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 async function search() {
   try {

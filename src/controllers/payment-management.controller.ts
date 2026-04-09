@@ -9,6 +9,16 @@ function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
 }
 
+async function resolveMerchantId(locationId: string): Promise<string> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from('merchants')
+    .select('id')
+    .eq('location_id', locationId)
+    .single();
+  return data?.id || '';
+}
+
 // ─── GET /api/payments/customers ────────────────────────────────
 
 export async function searchCustomers(req: Request, res: Response, next: NextFunction) {
@@ -44,44 +54,84 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       return;
     }
 
+    // Enrich from enrollments table (always available, no API call)
+    const { data: enrollmentProfiles } = await supabase
+      .from('enrollments')
+      .select('contact_id, email, client_name, offer_id')
+      .eq('location_id', locationId)
+      .in('contact_id', contactIds);
+
+    const enrollmentMap: Record<string, { name: string; email: string }> = {};
+    for (const ep of (enrollmentProfiles || [])) {
+      if (ep.contact_id) {
+        enrollmentMap[ep.contact_id] = {
+          name: (ep as any).client_name || '',
+          email: ep.email || '',
+        };
+      }
+    }
+
+    // Also check payment_events for contact emails
+    const { data: emailEvents } = await supabase
+      .from('payment_events')
+      .select('contact_id, contact_email')
+      .eq('location_id', locationId)
+      .in('contact_id', contactIds)
+      .not('contact_email', 'is', null);
+
+    for (const ev of (emailEvents || [])) {
+      if (ev.contact_id && (ev as any).contact_email && !enrollmentMap[ev.contact_id]?.email) {
+        if (!enrollmentMap[ev.contact_id]) enrollmentMap[ev.contact_id] = { name: '', email: '' };
+        enrollmentMap[ev.contact_id].email = (ev as any).contact_email;
+      }
+    }
+
     const contactProfiles: Record<string, { name: string; email: string }> = {};
     if (shouldEnrichFromGhl) {
       // Enrich with live GHL profile to support name/email matches.
-      const api = await ghlApi(locationId);
-      await Promise.all(contactIds.map(async (cid) => {
-        try {
-          const response = await api.get(`/contacts/${cid}`);
-          const contact = response.data?.contact || response.data || {};
-          const first = String(contact.firstName || '').trim();
-          const last = String(contact.lastName || '').trim();
-          const fullName = `${first} ${last}`.trim();
+      try {
+        const api = await ghlApi(locationId);
+        await Promise.all(contactIds.map(async (cid) => {
+          try {
+            const response = await api.get(`/contacts/${cid}`);
+            const contact = response.data?.contact || response.data || {};
+            const first = String(contact.firstName || '').trim();
+            const last = String(contact.lastName || '').trim();
+            const fullName = `${first} ${last}`.trim();
 
-          contactProfiles[cid] = {
-            name: fullName || String(contact.name || ''),
-            email: String(contact.email || '').trim(),
-          };
-        } catch {
-          // Continue gracefully if one contact lookup fails.
-          contactProfiles[cid] = { name: '', email: '' };
-        }
-      }));
+            contactProfiles[cid] = {
+              name: fullName || String(contact.name || ''),
+              email: String(contact.email || '').trim(),
+            };
+          } catch {
+            contactProfiles[cid] = { name: '', email: '' };
+          }
+        }));
+      } catch {
+        // GHL API unavailable — fall through to enrollment data
+      }
     }
 
     // Aggregate payment totals per contact
     const { data: events } = await supabase
       .from('payment_events')
-      .select('contact_id, amount, event_type')
+      .select('contact_id, amount, event_type, created_at')
       .eq('location_id', locationId)
       .in('contact_id', contactIds);
 
-    const totals: Record<string, { charged: number; refunded: number; name: string; email: string }> = {};
+    const totals: Record<string, { charged: number; refunded: number; name: string; email: string; lastPaymentDate: string }> = {};
     for (const cid of contactIds) {
       const map = maps!.find(m => m.contact_id === cid);
+      const ghlName = contactProfiles[cid]?.name || '';
+      const enrollName = enrollmentMap[cid]?.name || '';
+      const ghlEmail = contactProfiles[cid]?.email || '';
+      const enrollEmail = enrollmentMap[cid]?.email || '';
       totals[cid] = {
         charged: 0,
         refunded: 0,
-        name: contactProfiles[cid]?.name || map?.program_name || '',
-        email: contactProfiles[cid]?.email || '',
+        name: ghlName || enrollName || map?.program_name || '',
+        email: ghlEmail || enrollEmail || '',
+        lastPaymentDate: '',
       };
     }
 
@@ -92,16 +142,27 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       } else if (ev.event_type === 'sale') {
         totals[ev.contact_id].charged += Number(ev.amount) || 0;
       }
+      // Track most recent payment date
+      if (ev.created_at && (!totals[ev.contact_id].lastPaymentDate || ev.created_at > totals[ev.contact_id].lastPaymentDate)) {
+        totals[ev.contact_id].lastPaymentDate = ev.created_at;
+      }
     }
 
     const customers = contactIds
-      .map(cid => ({
-        contactId: cid,
-        name: totals[cid].name,
-        email: totals[cid].email,
-        totalCharged: totals[cid].charged,
-        totalRefunded: totals[cid].refunded,
-      }))
+      .map(cid => {
+        const t = totals[cid];
+        // Use email-derived name as last resort
+        const displayName = t.name || (t.email ? t.email.split('@')[0] : '');
+        return {
+          contactId: cid,
+          name: displayName,
+          email: t.email,
+          totalCharged: t.charged,
+          totalRefunded: t.refunded,
+          lastPaymentDate: t.lastPaymentDate || null,
+          programName: maps!.find(m => m.contact_id === cid)?.program_name || '',
+        };
+      })
       .filter(c => {
         if (!search) return true;
         const name = c.name.toLowerCase();
@@ -196,7 +257,7 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
 export async function chargeStoredCard(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
-    const merchantId = getMerchantId(req);
+    const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
     const { contactId, paymentMethodId, amount, description } = req.body;
 
     if (!contactId || !paymentMethodId || !amount) {
@@ -259,7 +320,7 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
 export async function issueRefund(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
-    const merchantId = getMerchantId(req);
+    const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
     const { paymentEventId, amount, reason } = req.body;
 
     if (!paymentEventId || !amount) {
