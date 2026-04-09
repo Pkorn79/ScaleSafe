@@ -8,6 +8,7 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
+import { ghlApi } from '../clients/ghl.client';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -297,15 +298,39 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             paymentsTotal: null,
           });
 
-          // GHL contact upsert + custom fields + pipeline opportunity handled by completeEnrollment above.
           // Re-query enrollment to get the contactId that completeEnrollment resolved.
           const { data: updatedEnrollment } = await supabase
             .from('enrollments')
             .select('contact_id')
             .eq('id', enrollment.id)
             .single();
-          const resolvedContactId = updatedEnrollment?.contact_id || contactId || '';
-          logger.info({ resolvedContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: contactId after completeEnrollment');
+          let resolvedContactId = updatedEnrollment?.contact_id || contactId || '';
+
+          // FALLBACK: If completeEnrollment didn't save a contactId, do it here directly
+          if (!resolvedContactId) {
+            const clientEmail = contactEmail || enrollEmail;
+            if (clientEmail) {
+              try {
+                const locId = (enrollment as any).location_id || merchant.locationId;
+                const api = await ghlApi(locId);
+                const upsertRes = await api.post('/contacts/upsert', {
+                  firstName: contactName || clientEmail.split('@')[0] || 'Client',
+                  email: clientEmail,
+                  locationId: locId,
+                });
+                resolvedContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+                logger.info({ resolvedContactId, clientEmail }, 'POST-PAYMENT FALLBACK: GHL contact upserted');
+                if (resolvedContactId) {
+                  await supabase.from('enrollments')
+                    .update({ contact_id: resolvedContactId })
+                    .eq('id', enrollment.id);
+                }
+              } catch (fallbackErr: any) {
+                logger.error({ err: fallbackErr.message, stack: fallbackErr.stack }, 'POST-PAYMENT FALLBACK: GHL upsert failed');
+              }
+            }
+          }
+          logger.info({ resolvedContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: final contactId');
 
           // Backfill contactId on payment_events that were inserted before GHL upsert
           if (resolvedContactId) {

@@ -403,4 +403,67 @@ router.get('/api/debug/enrollments/:locationId', async (req: Request, res: Respo
   }
 });
 
+// ─── Debug: backfill all enrollments missing contactId ───────
+router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res: Response) => {
+  try {
+    const locationId = req.params.locationId;
+    const supabase = getSupabase();
+
+    const { data: broken } = await supabase
+      .from('enrollments')
+      .select('id, email, contact_id')
+      .eq('location_id', locationId)
+      .eq('status', 'enrolled')
+      .is('contact_id', null);
+
+    if (!broken || broken.length === 0) {
+      res.json({ _debug: true, message: 'No enrollments need backfill', count: 0 });
+      return;
+    }
+
+    const api = await ghlApi(locationId);
+    const results: any[] = [];
+
+    for (const enrollment of broken) {
+      const email = enrollment.email || '';
+      if (!email) {
+        results.push({ id: enrollment.id, status: 'skipped', reason: 'no email' });
+        continue;
+      }
+
+      try {
+        const upsertRes = await api.post('/contacts/upsert', {
+          firstName: email.split('@')[0] || 'Client',
+          email,
+          locationId,
+        });
+        const newContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+        if (newContactId) {
+          await supabase.from('enrollments')
+            .update({ contact_id: newContactId })
+            .eq('id', enrollment.id);
+          await supabase.from('payment_events')
+            .update({ contact_id: newContactId })
+            .eq('enrollment_id', enrollment.id)
+            .eq('contact_id', '');
+          await supabase.from('payment_customer_map')
+            .update({ contact_id: newContactId })
+            .eq('location_id', locationId)
+            .eq('contact_id', '');
+          results.push({ id: enrollment.id, email, status: 'fixed', contactId: newContactId });
+        } else {
+          results.push({ id: enrollment.id, email, status: 'failed', reason: 'upsert returned no id' });
+        }
+      } catch (err: any) {
+        results.push({ id: enrollment.id, email, status: 'error', reason: err.message });
+      }
+    }
+
+    res.json({ _debug: true, totalBroken: broken.length, results });
+  } catch (err: any) {
+    logger.error({ err: err.message, stack: err.stack }, 'debug backfill-contacts failed');
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 export default router;

@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-09
 
 ### Fixed
+- Added GHL upsert fallback in checkout controller — if completeEnrollment fails to save contactId, checkout does a direct upsert as safety net
+- `GET /api/debug/backfill-contacts/:locationId` — backfills contactId on all enrolled records missing it
 - Wrapped evidence insert, payment_event insert, and trigger fire in individual try/catch blocks so GHL contact creation always runs even if those tables don't exist
 - Consolidated GHL contact creation: removed duplicate upsert block from checkout.controller.ts, single source of truth is now completeEnrollment in phase2Enrollment.service.ts
 - Added `firstName` to GHL contact upsert (was missing, causing silent failures)
