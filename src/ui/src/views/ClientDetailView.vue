@@ -33,9 +33,9 @@
     <div v-if="enrollmentInfo" class="card mb-4">
       <div class="flex-between">
         <div class="card-title">Enrollment Summary</div>
-        <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed'].includes(enrollmentInfo.status)"
-          class="btn btn-sm btn-primary" @click="downloadPacket">
-          Download Enrollment Packet
+        <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed', 'consent_captured'].includes(enrollmentInfo.status)"
+          class="btn btn-sm btn-primary" @click="downloadPacket" :disabled="packetLoading">
+          {{ packetLoading ? 'Generating...' : 'Download Enrollment Packet' }}
         </button>
       </div>
       <div class="grid grid-3 mt-2">
@@ -45,6 +45,7 @@
       </div>
       <div v-if="enrollmentInfo.offerName" class="text-sm mt-2"><strong>Program:</strong> {{ enrollmentInfo.offerName }}</div>
       <div v-if="enrollmentInfo.signature" class="text-sm mt-2"><strong>Signature:</strong> {{ enrollmentInfo.signature }}</div>
+      <div v-if="packetError" class="text-sm mt-2" style="color:#ef4444">{{ packetError }}</div>
     </div>
 
     <!-- Evidence Timeline -->
@@ -94,6 +95,8 @@ const timeline = ref<any[]>([]);
 const enrollmentInfo = ref<any>(null);
 const clientEmail = ref('');
 const clientLabel = ref('Client');
+const packetLoading = ref(false);
+const packetError = ref('');
 
 function scoreColor(s: number): string {
   if (s >= 70) return '#10b981';
@@ -151,28 +154,44 @@ async function downloadPacket() {
   const eid = enrollmentInfo.value?.enrollmentId;
   if (!eid) return;
 
-  const headers: Record<string, string> = {};
-  const payload = sessionStorage.getItem('ss_sso_payload');
-  if (payload) {
-    headers['x-sso-payload'] = payload;
-  } else {
-    const loc = sessionStorage.getItem('ss_location_id');
-    if (loc) headers['x-location-id'] = loc;
-    const comp = sessionStorage.getItem('ss_company_id');
-    if (comp) headers['x-company-id'] = comp;
-    const uid = sessionStorage.getItem('ss_user_id');
-    if (uid) headers['x-user-id'] = uid;
-  }
+  packetLoading.value = true;
+  packetError.value = '';
+  try {
+    const headers: Record<string, string> = {};
+    const payload = sessionStorage.getItem('ss_sso_payload');
+    if (payload) {
+      headers['x-sso-payload'] = payload;
+    } else {
+      const loc = sessionStorage.getItem('ss_location_id');
+      if (loc) headers['x-location-id'] = loc;
+      const comp = sessionStorage.getItem('ss_company_id');
+      if (comp) headers['x-company-id'] = comp;
+      const uid = sessionStorage.getItem('ss_user_id');
+      if (uid) headers['x-user-id'] = uid;
+    }
 
-  const res = await fetch(`/api/enrollments/${eid}/packet?download=true`, { headers });
-  if (!res.ok) return;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `enrollment-packet-${eid}.pdf`;
-  a.click();
-  URL.revokeObjectURL(url);
+    const res = await fetch(`/api/enrollments/${eid}/packet?download=true`, { headers });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error('Packet download failed:', res.status, body);
+      packetError.value = `Failed to generate packet (${res.status})`;
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enrollment-packet-${eid}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err: any) {
+    console.error('Packet download error:', err);
+    packetError.value = err.message || 'Download failed';
+  } finally {
+    packetLoading.value = false;
+  }
 }
 
 onMounted(async () => {
