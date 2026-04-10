@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-10
+
+### Fixed
+- Client names now show enrollment digital signature (e.g., "Philip Korniotes") instead of GHL email-prefix firstName (e.g., "p_korniotes")
+- Consent evidence displays formatted summary (signature, clauses count, scroll depth, IP) instead of raw JSON
+- `clauses_accepted` array no longer includes null values — filtered with `.filter(Boolean)` before saving
+
+---
+
 ## 2026-04-09
 
 ### Fixed

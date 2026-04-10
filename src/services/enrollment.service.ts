@@ -246,7 +246,7 @@ export const enrollmentService = {
           consent_device: JSON.stringify(consentDevice),
           tc_version_hash: input.tcVersionHash,
           digital_signature: input.digitalSignature,
-          clauses_accepted: input.clausesAccepted,
+          clauses_accepted: (input.clausesAccepted || []).filter(Boolean),
           scroll_depth: input.scrollDepth,
         })
         .eq('id', existing.id);

@@ -110,17 +110,33 @@ function formatEvidenceType(type: string): string {
 }
 
 function summarize(item: any): string {
+  const type = item.evidence_type || item.type || '';
   const d = item.data || item.summary || item.details;
   if (!d) return '-';
   if (typeof d === 'string') return d.slice(0, 120);
   if (typeof d === 'object') {
+    // Consent evidence
+    if (type === 'consent') {
+      const parts: string[] = [];
+      if (d.digital_signature) parts.push(`Signed: ${d.digital_signature}`);
+      const clauses = (d.clauses_accepted || []).filter(Boolean);
+      if (clauses.length > 0) parts.push(`${clauses.length} clauses accepted`);
+      if (d.scroll_depth != null) parts.push(`${d.scroll_depth}% scroll`);
+      if (d.ip_address) parts.push(`IP: ${d.ip_address}`);
+      if (parts.length > 0) return parts.join(' | ');
+    }
+    // Payment evidence
     const parts: string[] = [];
     if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);
     if (d.payment_type) parts.push(d.payment_type);
     if (d.transaction_id) parts.push(`Tx: ${d.transaction_id.slice(0, 12)}...`);
     if (d.timestamp) parts.push(formatDate(d.timestamp));
+    if (d.source) parts.push(d.source);
     if (parts.length > 0) return parts.join(' | ');
-    return JSON.stringify(d).slice(0, 120);
+    // Generic fallback — show key fields, not raw JSON
+    const keys = Object.keys(d).filter(k => d[k] != null && d[k] !== '');
+    const summary = keys.slice(0, 4).map(k => `${k}: ${String(d[k]).slice(0, 30)}`).join(', ');
+    return summary || JSON.stringify(d).slice(0, 80);
   }
   return '-';
 }

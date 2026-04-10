@@ -87,7 +87,7 @@ export const dashboardController = {
         supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
         supabase
           .from('enrollments')
-          .select('id, contact_id, email, status, created_at')
+          .select('id, contact_id, email, status, created_at, digital_signature')
           .eq('location_id', locationId)
           .in('status', ['enrolled', 'consent_captured', 'completed']),
       ]);
@@ -144,7 +144,15 @@ export const dashboardController = {
         }
       }
 
-      // Enrich displayNames: GHL names for real contacts, email fallback for enrollment-only
+      // Build signature lookup from enrollments for better name fallback
+      const signatureLookup = new Map<string, string>();
+      for (const ec of (enrolledContacts || [])) {
+        if (ec.contact_id && (ec as any).digital_signature) {
+          signatureLookup.set(ec.contact_id, (ec as any).digital_signature);
+        }
+      }
+
+      // Enrich displayNames: GHL names for real contacts, signature/email fallback
       const realContactIds = clientScores
         .filter(c => !c.contactId.startsWith('enrollment:'))
         .map(c => c.contactId);
@@ -156,7 +164,16 @@ export const dashboardController = {
             try {
               const resp = await api.get(`/contacts/${cid}`);
               const contact = resp.data?.contact || resp.data || {};
-              const name = `${(contact.firstName || '').trim()} ${(contact.lastName || '').trim()}`.trim();
+              const first = (contact.firstName || '').trim();
+              const last = (contact.lastName || '').trim();
+              const looksLikeEmail = first.includes('_') || first.includes('@') || first.includes('.');
+              let name = '';
+              if (looksLikeEmail) {
+                // GHL firstName was set from email prefix — prefer enrollment signature
+                name = signatureLookup.get(cid) || `${first} ${last}`.trim();
+              } else {
+                name = `${first} ${last}`.trim();
+              }
               if (name) {
                 const entry = clientScores.find(c => c.contactId === cid);
                 if (entry) entry.displayName = name;
@@ -169,8 +186,9 @@ export const dashboardController = {
       // Ensure every entry has a displayName
       for (const cs of clientScores) {
         if (!cs.displayName) {
+          const sig = signatureLookup.get(cs.contactId);
           const entry = enrollmentLookup.get(cs.contactId);
-          cs.displayName = entry?.email || cs.contactId.slice(0, 12);
+          cs.displayName = sig || entry?.email || cs.contactId.slice(0, 12);
         }
       }
 
@@ -258,16 +276,22 @@ export const dashboardController = {
       let name = '';
       let email = enrollment?.email || '';
       try {
-        const { ghlApi } = require('../clients/ghl.client');
         const api = await ghlApi(locationId);
         const contactRes = await api.get(`/contacts/${contactId}`);
         const contact = contactRes.data?.contact || contactRes.data || {};
         const first = (contact.firstName || '').trim();
         const last = (contact.lastName || '').trim();
-        name = `${first} ${last}`.trim();
+        // Skip email-prefix firstNames (e.g., "p_korniotes") — use enrollment signature instead
+        const looksLikeEmail = first.includes('_') || first.includes('@') || first.includes('.');
+        if (looksLikeEmail && enrollment?.digital_signature) {
+          name = enrollment.digital_signature;
+        } else {
+          name = `${first} ${last}`.trim();
+        }
         if (!email) email = contact.email || '';
       } catch {
-        // GHL lookup failed — use email as name
+        // GHL lookup failed — use enrollment signature or email as name
+        if (enrollment?.digital_signature) name = enrollment.digital_signature;
       }
 
       // Get offer name if available
@@ -285,7 +309,7 @@ export const dashboardController = {
 
       res.json({
         contactId,
-        name: name || (email ? email.split('@')[0] : ''),
+        name: name || enrollment?.digital_signature || (email ? email.split('@')[0] : ''),
         email,
         status: enrollment?.status || 'unknown',
         paymentAmount: enrollment?.payment_amount || 0,
