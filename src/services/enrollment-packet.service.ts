@@ -88,20 +88,30 @@ export const enrollmentPacketService = {
 async function renderHtmlToPdf(html: string): Promise<Buffer> {
   let browser;
   try {
-    // Use system Chromium in Docker (PUPPETEER_EXECUTABLE_PATH env var),
-    // fall back to @sparticuz/chromium binary for local dev
-    const execPath = process.env.PUPPETEER_EXECUTABLE_PATH || await chromium.executablePath();
-    browser = await puppeteer.launch({
-      args: [
-        ...chromium.args,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-      ],
-      defaultViewport: { width: 1280, height: 900 },
-      executablePath: execPath,
-      headless: true,
-    });
+    const systemChromium = process.env.PUPPETEER_EXECUTABLE_PATH;
+    if (systemChromium) {
+      // Production: use system Chromium installed via apk in Dockerfile
+      browser = await puppeteer.launch({
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process',
+        ],
+        defaultViewport: { width: 1280, height: 900 },
+        executablePath: systemChromium,
+        headless: true,
+      });
+    } else {
+      // Local dev: use @sparticuz/chromium bundled binary
+      browser = await puppeteer.launch({
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+        defaultViewport: { width: 1280, height: 900 },
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    }
 
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -112,6 +122,9 @@ async function renderHtmlToPdf(html: string): Promise<Buffer> {
     });
 
     return Buffer.from(pdfBuffer);
+  } catch (err: any) {
+    logger.error({ err: err.message, stack: err.stack, execPath: process.env.PUPPETEER_EXECUTABLE_PATH || 'chromium-bundled' }, 'Puppeteer PDF rendering failed');
+    throw err;
   } finally {
     if (browser) await browser.close();
   }
