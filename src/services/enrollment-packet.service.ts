@@ -118,7 +118,12 @@ async function renderHtmlToPdf(html: string): Promise<Buffer> {
     const pdfBuffer = await page.pdf({
       format: 'Letter',
       printBackground: true,
-      margin: { top: '0.5in', bottom: '0.75in', left: '0.6in', right: '0.6in' },
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: `<div style="width:100%;text-align:center;font-size:9px;color:#9ca3af;padding:0 0.6in">
+        <span class="pageNumber"></span> of <span class="totalPages"></span>
+      </div>`,
+      margin: { top: '0.5in', bottom: '0.7in', left: '0.6in', right: '0.6in' },
     });
 
     return Buffer.from(pdfBuffer);
@@ -194,17 +199,33 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
     }
   }
 
-  // Payment structure
+  // Price: show what the client actually pays
+  let displayPrice = (offer?.price || 0);
+  if (offer && e.payment_type === 'pif' && offer.pif_discount_enabled && offer.pif_price) {
+    displayPrice = offer.pif_price;
+  } else if (offer && offer.payment_type === 'installment' && offer.installment_amount && offer.num_payments) {
+    displayPrice = offer.installment_amount * offer.num_payments;
+  }
+
+  // Payment structure: human-readable breakdown
   let paymentStructure = '';
   if (offer) {
     if (offer.payment_type === 'installment' && offer.installment_amount) {
-      paymentStructure = `$${offer.installment_amount.toFixed(2)} / ${offer.installment_frequency || 'month'} × ${offer.num_payments || '?'} payments`;
+      paymentStructure = `${offer.num_payments || '?'} ${offer.installment_frequency || 'monthly'} payments of $${offer.installment_amount.toFixed(2)}`;
     } else {
-      paymentStructure = `$${(offer.price || 0).toFixed(2)} — Paid in Full`;
+      paymentStructure = 'Paid in Full';
+      if (offer.pif_discount_enabled && offer.pif_price && offer.price && offer.pif_price < offer.price) {
+        paymentStructure += ` (discounted from $${offer.price.toFixed(2)})`;
+      }
     }
-    if (offer.pif_discount_enabled && offer.pif_price) {
-      paymentStructure += ` (PIF price: $${offer.pif_price.toFixed(2)})`;
-    }
+  }
+
+  // Payment type: human-readable
+  function humanPaymentType(t: string): string {
+    if (!t) return 'N/A';
+    if (t === 'pif') return 'Paid in Full';
+    if (t === 'installment') return 'Installment Plan';
+    return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
   }
 
   const logoHtml = merchant.logoUrl
@@ -216,16 +237,16 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
 <head><meta charset="utf-8"><style>
   body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1f2937; font-size: 13px; line-height: 1.5; }
   h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: #111827; }
-  h2 { font-size: 15px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; margin: 24px 0 10px; }
+  h2 { font-size: 15px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 3px; margin: 16px 0 8px; }
   .subtitle { color: #6b7280; font-size: 11px; margin-bottom: 20px; }
-  .header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #111827; }
+  .header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #111827; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
   .info-table td { padding: 4px 0; vertical-align: top; }
   .info-table td:first-child { color: #6b7280; width: 180px; font-size: 12px; }
   .info-table td:last-child { font-weight: 500; }
   .clause-table { border: 1px solid #e5e7eb; border-radius: 4px; }
   .clause-table th { background: #f9fafb; padding: 8px 10px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
-  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #d1d5db; font-size: 10px; color: #9ca3af; text-align: center; }
+  .footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #d1d5db; font-size: 10px; color: #9ca3af; text-align: center; }
   .tc-html { background: #f9fafb; border: 1px solid #e5e7eb; padding: 12px 16px; border-radius: 4px; font-size: 11px; line-height: 1.6; max-height: none; }
   .evidence-row td { padding: 5px 8px; border-bottom: 1px solid #f3f4f6; font-size: 12px; }
 </style></head>
@@ -236,6 +257,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   <div style="font-size:14px;font-weight:600;color:#374151">${esc(merchant.businessName)}</div>
   <h1>Enrollment Packet</h1>
   <div class="subtitle">Generated ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })} — This document is a frozen record of the enrollment agreement</div>
+  <div style="font-size:10px;color:#9ca3af;margin-top:2px">Document Ref: EP-${esc(e.id?.slice(0, 8) || 'N/A')}</div>
 </div>
 
 <h2>1. Client Information</h2>
@@ -251,7 +273,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   <tr><td>Program</td><td>${esc(offer?.offer_name || 'N/A')}</td></tr>
   ${offer?.program_description ? `<tr><td>Description</td><td>${esc(offer.program_description)}</td></tr>` : ''}
   <tr><td>Delivery Method</td><td>${esc(offer?.delivery_method || 'N/A')}</td></tr>
-  <tr><td>Price</td><td>$${(offer?.price || 0).toFixed(2)}</td></tr>
+  <tr><td>Price</td><td>$${displayPrice.toFixed(2)}</td></tr>
   <tr><td>Payment Structure</td><td>${esc(paymentStructure)}</td></tr>
   ${offer?.program_duration_value ? `<tr><td>Duration</td><td>${offer.program_duration_value} ${offer.program_duration_unit || ''}</td></tr>` : ''}
   <tr><td>Refund Policy</td><td>${esc(offer?.refund_window_text || 'See terms below')}</td></tr>
@@ -259,7 +281,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
 ${milestones.length > 0 ? `
 <div style="margin-top:12px">
   <strong style="font-size:13px">Program Milestones</strong>
-  <p style="font-size:11px;color:#6b7280;margin:4px 0 8px">This enrollment includes the following milestones, documenting both what the merchant commits to deliver and what the client agrees to do.</p>
+  <p style="font-size:11px;color:#6b7280;margin:4px 0 8px">The following program milestones were presented to the client during enrollment and individually acknowledged via clickwrap consent. Each milestone documents both the services to be delivered and the client's agreed responsibilities.</p>
   ${milestones.map((m, i) => `<div style="margin-bottom:10px;padding:8px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px">
     <strong style="font-size:12px">${i + 1}. ${esc(m.name)}</strong>
     ${m.delivers ? `<div style="font-size:11px;margin-top:4px"><span style="color:#6b7280">Deliverables:</span> ${esc(m.delivers)}</div>` : ''}
@@ -294,7 +316,7 @@ ${clauseItems.length > 0 ? `
 <h2>5. Payment Confirmation</h2>
 <table class="info-table">
   <tr><td>Amount Paid</td><td>$${(e.payment_amount || 0).toFixed(2)}</td></tr>
-  <tr><td>Payment Type</td><td>${esc(e.payment_type || 'N/A')}</td></tr>
+  <tr><td>Payment Type</td><td>${esc(humanPaymentType(e.payment_type || ''))}</td></tr>
   <tr><td>Transaction ID</td><td><code style="font-size:10px;background:#f3f4f6;padding:2px 4px;border-radius:2px">${esc(e.payment_transaction_id || 'N/A')}</code></td></tr>
   <tr><td>Enrolled At</td><td>${enrollDate}</td></tr>
 </table>
