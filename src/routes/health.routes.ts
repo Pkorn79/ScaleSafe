@@ -466,4 +466,67 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
   }
 });
 
+// ─── Debug: evidence table diagnostic ──────────────────────
+router.get('/api/debug/evidence-check/:locationId', async (req: Request, res: Response) => {
+  try {
+    const locationId = req.params.locationId;
+    const contactId = req.query.contactId as string || '';
+    const supabase = getSupabase();
+
+    // 1. Count evidence_timeline rows for this location
+    const { data: timelineRows, error: tlError } = await supabase
+      .from('evidence_timeline')
+      .select('contact_id, type, created_at')
+      .eq('location_id', locationId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    // 2. Count evidence table rows for this location
+    let evidenceRows: any[] = [];
+    let evidenceError: string | null = null;
+    try {
+      const { data, error } = await supabase
+        .from('evidence')
+        .select('id, contact_id, evidence_type, created_at, enrollment_id')
+        .eq('location_id', locationId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      evidenceRows = data || [];
+      if (error) evidenceError = error.message;
+    } catch (e: any) {
+      evidenceError = e.message;
+    }
+
+    // 3. If specific contactId provided, get counts for them
+    let contactCounts: any = null;
+    if (contactId) {
+      const { getCounts, getLastEvidenceDate } = require('../repositories/evidence.repository').evidenceRepository;
+      try {
+        const counts = await getCounts(locationId, contactId);
+        const lastDate = await getLastEvidenceDate(locationId, contactId);
+        contactCounts = { counts, lastDate };
+      } catch (e: any) {
+        contactCounts = { error: e.message };
+      }
+    }
+
+    res.json({
+      _debug: true,
+      evidence_timeline: {
+        count: (timelineRows || []).length,
+        error: tlError?.message || null,
+        rows: timelineRows || [],
+      },
+      evidence_table: {
+        count: evidenceRows.length,
+        error: evidenceError,
+        rows: evidenceRows,
+      },
+      contactCounts,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 export default router;

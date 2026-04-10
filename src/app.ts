@@ -42,10 +42,22 @@ export function createApp(): express.Application {
 
   // Serve Vue 3 frontend (built assets)
   const uiPath = path.join(__dirname, 'ui', 'dist');
-  app.use(express.static(uiPath));
+  app.use(express.static(uiPath, {
+    maxAge: '1y',
+    immutable: true,
+    setHeaders: (res, filePath) => {
+      // index.html must never be cached — it references hashed asset filenames
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  }));
   // SPA catch-all: serve index.html for all routes EXCEPT API, auth, health,
   // webhooks, enrollment, checkout, and widgets
   app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout|quick-checkout|widgets|terms).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(uiPath, 'index.html'));
   });
 

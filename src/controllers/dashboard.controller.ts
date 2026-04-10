@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getSupabase } from '../clients/supabase.client';
+import { ghlApi } from '../clients/ghl.client';
 import { evidenceService } from '../services/evidence.service';
 import { disengagementService } from '../services/disengagement.service';
 import { resolveLocationId } from '../middleware/tenantContext';
@@ -114,7 +115,7 @@ export const dashboardController = {
       const enrollmentLookup = new Map(enrollmentEntries.map(e => [e.contactId, e]));
 
       // Score each (limit to 50 for performance)
-      const clientScores = [];
+      const clientScores: Array<{ contactId: string; displayName: string; score: number; breakdown: Record<string, { points: number; max: number; detail?: string }> }> = [];
       for (const cid of uniqueIds.slice(0, 50)) {
         if (cid.startsWith('enrollment:')) {
           // No real GHL contact — provide baseline score from enrollment data
@@ -140,6 +141,36 @@ export const dashboardController = {
             score,
             breakdown,
           });
+        }
+      }
+
+      // Enrich displayNames: GHL names for real contacts, email fallback for enrollment-only
+      const realContactIds = clientScores
+        .filter(c => !c.contactId.startsWith('enrollment:'))
+        .map(c => c.contactId);
+
+      if (realContactIds.length > 0) {
+        try {
+          const api = await ghlApi(locationId);
+          await Promise.all(realContactIds.slice(0, 30).map(async (cid) => {
+            try {
+              const resp = await api.get(`/contacts/${cid}`);
+              const contact = resp.data?.contact || resp.data || {};
+              const name = `${(contact.firstName || '').trim()} ${(contact.lastName || '').trim()}`.trim();
+              if (name) {
+                const entry = clientScores.find(c => c.contactId === cid);
+                if (entry) entry.displayName = name;
+              }
+            } catch {}
+          }));
+        } catch {}
+      }
+
+      // Ensure every entry has a displayName
+      for (const cs of clientScores) {
+        if (!cs.displayName) {
+          const entry = enrollmentLookup.get(cs.contactId);
+          cs.displayName = entry?.email || cs.contactId.slice(0, 12);
         }
       }
 

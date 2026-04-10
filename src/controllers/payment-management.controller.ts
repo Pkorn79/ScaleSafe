@@ -47,8 +47,21 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     const { data: maps, error } = await query;
     if (error) throw error;
 
-    // Get unique contact IDs
-    const contactIds = [...new Set((maps || []).map(m => m.contact_id))];
+    // Get unique contact IDs from payment_customer_map
+    let contactIds = [...new Set((maps || []).map(m => m.contact_id).filter(Boolean))];
+
+    // Fallback: if no results from payment_customer_map, check payment_events directly
+    if (contactIds.length === 0) {
+      const { data: fallbackEvents } = await supabase
+        .from('payment_events')
+        .select('contact_id')
+        .eq('location_id', locationId)
+        .not('contact_id', 'eq', '')
+        .not('contact_id', 'is', null)
+        .limit(50);
+      contactIds = [...new Set((fallbackEvents || []).map(e => e.contact_id).filter(Boolean))];
+    }
+
     if (contactIds.length === 0) {
       res.json({ customers: [] });
       return;
