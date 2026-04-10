@@ -606,6 +606,42 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
       logger.warn({ err: e.message }, 'Enrollment-to-evidence backfill partial failure');
     }
 
+    // Phase 5: Backfill first_name/last_name from digital_signature on old enrollments
+    let namesBackfilled = 0;
+    try {
+      const { data: nameless } = await supabase
+        .from('enrollments')
+        .select('id, contact_id, digital_signature')
+        .eq('location_id', locationId)
+        .is('first_name', null)
+        .not('digital_signature', 'is', null)
+        .not('digital_signature', 'eq', '');
+
+      for (const enr of (nameless || [])) {
+        const sig = (enr.digital_signature as string).trim();
+        if (!sig) continue;
+        const parts = sig.split(/\s+/);
+        const firstName = parts[0] || '';
+        const lastName = parts.slice(1).join(' ') || '';
+        await supabase.from('enrollments')
+          .update({ first_name: firstName, last_name: lastName })
+          .eq('id', enr.id);
+
+        // Re-upsert GHL contact with correct name if we have a contactId
+        if (enr.contact_id) {
+          try {
+            await api.put(`/contacts/${enr.contact_id}`, {
+              firstName,
+              lastName,
+            });
+          } catch { /* GHL update failed — name saved to DB at least */ }
+        }
+        namesBackfilled++;
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, 'Name backfill partial failure');
+    }
+
     res.json({
       _debug: true,
       enrollments: { totalBroken: (broken || []).length, results },
@@ -613,6 +649,7 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
       paymentEvents: { fixed: paymentEventsFixed },
       paymentCustomerMap: { fixed: paymentMapsFixed },
       evidenceFromEnrollments: { consentCreated, paymentEvidenceCreated },
+      namesBackfilled,
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug backfill-contacts failed');

@@ -70,17 +70,29 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     // Enrich from enrollments table (always available, no API call)
     const { data: enrollmentProfiles } = await supabase
       .from('enrollments')
-      .select('contact_id, email, offer_id')
+      .select('contact_id, email, offer_id, first_name, last_name, digital_signature')
       .eq('location_id', locationId)
       .in('contact_id', contactIds);
 
     const enrollmentMap: Record<string, { name: string; email: string }> = {};
     for (const ep of (enrollmentProfiles || [])) {
       if (ep.contact_id) {
-        enrollmentMap[ep.contact_id] = {
-          name: '',
-          email: ep.email || '',
-        };
+        // Name priority: first_name/last_name → digital_signature → empty
+        let name = '';
+        const first = ((ep as any).first_name || '').trim();
+        const last = ((ep as any).last_name || '').trim();
+        if (first) {
+          name = `${first} ${last}`.trim();
+        } else if ((ep as any).digital_signature) {
+          name = (ep as any).digital_signature;
+        }
+        // Only overwrite if we have better data
+        if (!enrollmentMap[ep.contact_id] || name) {
+          enrollmentMap[ep.contact_id] = {
+            name: name || enrollmentMap[ep.contact_id]?.name || '',
+            email: ep.email || enrollmentMap[ep.contact_id]?.email || '',
+          };
+        }
       }
     }
 
@@ -110,7 +122,10 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
             const contact = response.data?.contact || response.data || {};
             const first = String(contact.firstName || '').trim();
             const last = String(contact.lastName || '').trim();
-            const fullName = `${first} ${last}`.trim();
+            const looksLikeEmail = first.includes('_') || first.includes('@') || first.includes('.');
+            // If GHL firstName is email-prefix, prefer enrollment name
+            const enrollName = enrollmentMap[cid]?.name || '';
+            const fullName = (looksLikeEmail && enrollName) ? enrollName : `${first} ${last}`.trim();
 
             contactProfiles[cid] = {
               name: fullName || String(contact.name || ''),
@@ -161,12 +176,25 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       }
     }
 
-    const customers = contactIds
-      .map(cid => {
-        const t = totals[cid];
-        // Use email-derived name as last resort
-        const displayName = t.name || (t.email ? t.email.split('@')[0] : '');
-        return {
+    // Deduplicate by email — multiple contactIds can map to the same person
+    const byEmail = new Map<string, { contactId: string; name: string; email: string; totalCharged: number; totalRefunded: number; lastPaymentDate: string | null; programName: string }>();
+    for (const cid of contactIds) {
+      const t = totals[cid];
+      const displayName = t.name || (t.email ? t.email.split('@')[0] : '');
+      const email = (t.email || '').toLowerCase();
+      const key = email || cid; // group by email, fall back to contactId if no email
+
+      const existing = byEmail.get(key);
+      if (existing) {
+        existing.totalCharged += t.charged;
+        existing.totalRefunded += t.refunded;
+        if (t.lastPaymentDate && (!existing.lastPaymentDate || t.lastPaymentDate > existing.lastPaymentDate)) {
+          existing.lastPaymentDate = t.lastPaymentDate;
+        }
+        if (!existing.name && displayName) existing.name = displayName;
+        if (!existing.programName) existing.programName = maps!.find(m => m.contact_id === cid)?.program_name || '';
+      } else {
+        byEmail.set(key, {
           contactId: cid,
           name: displayName,
           email: t.email,
@@ -174,8 +202,11 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
           totalRefunded: t.refunded,
           lastPaymentDate: t.lastPaymentDate || null,
           programName: maps!.find(m => m.contact_id === cid)?.program_name || '',
-        };
-      })
+        });
+      }
+    }
+
+    const customers = [...byEmail.values()]
       .filter(c => {
         if (!search) return true;
         const name = c.name.toLowerCase();

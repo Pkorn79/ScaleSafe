@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-10
 
 ### Fixed
+- Payment card list now shows real client names (from enrollment first_name/last_name/digital_signature), not email prefix
+- Duplicate payment cards merged — customers with same email are grouped into one card with combined totals
+- Evidence timeline shows time alongside date (e.g., "Apr 10, 2026 2:34 PM") for forensic precision
+- Backfill endpoint parses digital_signature into first_name/last_name on old enrollments and re-upserts GHL contacts with correct names
 - **GHL contacts now created with real names** — `first_name`/`last_name` columns added to enrollments (migration 035), parsed from digital signature at consent capture. GHL upsert uses enrollment name → signature parse → email prefix (last resort)
 - `completeEnrollment` now inserts consent evidence (with signature, clauses, scroll depth, IP) alongside payment evidence — new enrollments get both records automatically
 - Evidence insert try/catch blocks upgraded from `logger.warn` to `logger.error` with full stack traces and contactId context
