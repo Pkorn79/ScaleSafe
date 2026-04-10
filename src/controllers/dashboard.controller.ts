@@ -309,6 +309,7 @@ export const dashboardController = {
 
       res.json({
         contactId,
+        enrollmentId: enrollment?.id || null,
         name: name || enrollment?.digital_signature || (email ? email.split('@')[0] : ''),
         email,
         status: enrollment?.status || 'unknown',

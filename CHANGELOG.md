@@ -7,6 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-10
 
+### Added
+- **Enrollment Packet PDF** — auto-generated on enrollment via Puppeteer (HTML→PDF). Contains: client info, program details, full T&C with clause acceptance, consent forensics (timestamp, IP, device, scroll depth, signature), and payment confirmation
+- `GET /api/enrollments/:id/packet` — SSO-gated endpoint serves enrollment packet PDF (inline or `?download=true`)
+- `enrollment-packet.service.ts` — Puppeteer-based PDF generator with professional HTML template, reusable for defense packets
+- Migration 036 adds `packet_pdf_path` column to enrollments for stored PDFs
+- "Download Enrollment Packet" button on Client Detail page (visible for enrolled clients)
+- Dockerfile updated with Chromium + shared libs for Alpine-based PDF rendering
+- `puppeteer-core` + `@sparticuz/chromium` dependencies for lightweight containerized PDF generation
+
 ### Fixed
 - Payment card list now shows real client names (from enrollment first_name/last_name/digital_signature), not email prefix
 - Duplicate payment cards merged — customers with same email are grouped into one card with combined totals

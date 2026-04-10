@@ -31,6 +31,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Shared libraries required by @sparticuz/chromium for PDF generation
+RUN apk add --no-cache \
+  chromium \
+  nss \
+  freetype \
+  harfbuzz \
+  ca-certificates \
+  ttf-freefont
+
+# Tell @sparticuz/chromium to use the system Chromium on Alpine
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 COPY package.json package-lock.json ./
 RUN npm ci --production
 

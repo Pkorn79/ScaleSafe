@@ -31,7 +31,13 @@
 
     <!-- Enrollment Info -->
     <div v-if="enrollmentInfo" class="card mb-4">
-      <div class="card-title">Enrollment Summary</div>
+      <div class="flex-between">
+        <div class="card-title">Enrollment Summary</div>
+        <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed'].includes(enrollmentInfo.status)"
+          class="btn btn-sm btn-primary" @click="downloadPacket">
+          Download Enrollment Packet
+        </button>
+      </div>
       <div class="grid grid-3 mt-2">
         <div class="text-sm"><strong>Status:</strong> {{ enrollmentInfo.status }}</div>
         <div class="text-sm"><strong>Payment:</strong> ${{ enrollmentInfo.paymentAmount?.toFixed(2) || '0.00' }}</div>
@@ -139,6 +145,12 @@ function summarize(item: any): string {
     return summary || JSON.stringify(d).slice(0, 80);
   }
   return '-';
+}
+
+function downloadPacket() {
+  if (enrollmentInfo.value?.enrollmentId) {
+    window.open(`/api/enrollments/${enrollmentInfo.value.enrollmentId}/packet?download=true`, '_blank');
+  }
 }
 
 onMounted(async () => {

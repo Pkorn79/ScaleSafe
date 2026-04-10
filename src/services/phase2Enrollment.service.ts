@@ -214,6 +214,14 @@ export const phase2EnrollmentService = {
       }
     }
 
+    // 8. Generate enrollment packet PDF (non-blocking)
+    try {
+      const { enrollmentPacketService } = require('./enrollment-packet.service');
+      await enrollmentPacketService.generateAndStore(params.enrollmentId, params.locationId);
+    } catch (pdfErr: any) {
+      logger.error({ err: pdfErr.message, stack: pdfErr.stack, enrollmentId: params.enrollmentId }, 'Enrollment packet PDF generation failed (non-blocking)');
+    }
+
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: resolvedContactId, locationId: params.locationId },
       'Enrollment completed',

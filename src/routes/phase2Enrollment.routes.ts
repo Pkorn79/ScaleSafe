@@ -6,6 +6,7 @@ const router = Router();
 
 // Merchant-authenticated enrollment list & detail
 router.get('/', ssoAuth, phase2EnrollmentController.list);
+router.get('/:id/packet', ssoAuth, phase2EnrollmentController.packet);
 router.get('/:id', ssoAuth, phase2EnrollmentController.detail);
 
 export default router;

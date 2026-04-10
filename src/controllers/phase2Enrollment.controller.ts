@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { consentService } from '../services/consent.service';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
+import { enrollmentPacketService } from '../services/enrollment-packet.service';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
-import { ValidationError } from '../utils/errors';
+import { getSupabase } from '../clients/supabase.client';
+import { ValidationError, NotFoundError } from '../utils/errors';
 
 export const phase2EnrollmentController = {
   /**
@@ -86,6 +88,48 @@ export const phase2EnrollmentController = {
       );
 
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+  /**
+   * GET /api/enrollments/:id/packet
+   * SSO-authenticated — generates or serves the enrollment packet PDF.
+   */
+  async packet(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = req.tenantContext?.locationId;
+      if (!locationId) throw new ValidationError('Location context required');
+
+      const enrollmentId = req.params.id;
+      const enrollment = await enrollmentRepository.findById(enrollmentId);
+      if (!enrollment || enrollment.location_id !== locationId) {
+        throw new NotFoundError(`Enrollment ${enrollmentId}`);
+      }
+
+      // If we already have a stored PDF, serve from storage
+      const storedPath = (enrollment as any).packet_pdf_path;
+      if (storedPath) {
+        const supabase = getSupabase();
+        const { data } = await supabase.storage
+          .from('scalesafe-files')
+          .download(storedPath);
+        if (data) {
+          const buffer = Buffer.from(await data.arrayBuffer());
+          const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `${disposition}; filename="enrollment-packet-${enrollmentId}.pdf"`);
+          res.send(buffer);
+          return;
+        }
+      }
+
+      // Generate on the fly
+      const buffer = await enrollmentPacketService.generatePacket(enrollmentId, locationId);
+      const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="enrollment-packet-${enrollmentId}.pdf"`);
+      res.send(buffer);
     } catch (err) {
       next(err);
     }
