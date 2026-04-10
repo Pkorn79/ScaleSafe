@@ -234,6 +234,11 @@ export const enrollmentService = {
       .limit(1)
       .maybeSingle();
 
+    // Parse first/last name from digital signature (e.g., "Susan Katz" → "Susan", "Katz")
+    const sigParts = (input.digitalSignature || '').trim().split(/\s+/);
+    const firstName = sigParts[0] || '';
+    const lastName = sigParts.slice(1).join(' ') || '';
+
     if (existing) {
       // Update existing record
       const { error } = await supabase
@@ -248,6 +253,8 @@ export const enrollmentService = {
           digital_signature: input.digitalSignature,
           clauses_accepted: (input.clausesAccepted || []).filter(Boolean),
           scroll_depth: input.scrollDepth,
+          first_name: firstName,
+          last_name: lastName,
         })
         .eq('id', existing.id);
 
@@ -271,8 +278,10 @@ export const enrollmentService = {
         consent_device: JSON.stringify(consentDevice),
         tc_version_hash: input.tcVersionHash,
         digital_signature: input.digitalSignature,
-        clauses_accepted: input.clausesAccepted,
+        clauses_accepted: (input.clausesAccepted || []).filter(Boolean),
         scroll_depth: input.scrollDepth,
+        first_name: firstName,
+        last_name: lastName,
       })
       .select('id')
       .single();

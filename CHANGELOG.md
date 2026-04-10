@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-10
 
 ### Fixed
+- **GHL contacts now created with real names** — `first_name`/`last_name` columns added to enrollments (migration 035), parsed from digital signature at consent capture. GHL upsert uses enrollment name → signature parse → email prefix (last resort)
+- `completeEnrollment` now inserts consent evidence (with signature, clauses, scroll depth, IP) alongside payment evidence — new enrollments get both records automatically
+- Evidence insert try/catch blocks upgraded from `logger.warn` to `logger.error` with full stack traces and contactId context
+- Checkout controller fallback GHL upsert uses same name priority (enrollment first_name → digital_signature → email prefix)
 - Client names now show enrollment digital signature (e.g., "Philip Korniotes") instead of GHL email-prefix firstName (e.g., "p_korniotes")
 - Consent evidence displays formatted summary (signature, clauses count, scroll depth, IP) instead of raw JSON
 - `clauses_accepted` array no longer includes null values — filtered with `.filter(Boolean)` before saving

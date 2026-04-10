@@ -60,8 +60,21 @@ export const phase2EnrollmentService = {
         // Find or create GHL contact if we don't have one
         const email = params.contactEmail || (enrollment as any).email || '';
         if (!resolvedContactId && email) {
+          // Name priority: enrollment first_name/last_name → digital_signature parse → email prefix
+          let firstName = (enrollment as any).first_name || '';
+          let lastName = (enrollment as any).last_name || '';
+          if (!firstName && (enrollment as any).digital_signature) {
+            const sigParts = ((enrollment as any).digital_signature as string).trim().split(/\s+/);
+            firstName = sigParts[0] || '';
+            lastName = sigParts.slice(1).join(' ') || '';
+          }
+          if (!firstName) {
+            firstName = email.split('@')[0] || 'Client';
+          }
+
           const upsertRes = await api.post('/contacts/upsert', {
-            firstName: email.split('@')[0] || 'Client',
+            firstName,
+            lastName,
             email,
             locationId: params.locationId,
           });
@@ -70,7 +83,7 @@ export const phase2EnrollmentService = {
             await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
               contact_id: resolvedContactId,
             } as any);
-            logger.info({ resolvedContactId, enrollmentId: params.enrollmentId }, 'GHL contact resolved before evidence insert');
+            logger.info({ resolvedContactId, firstName, lastName, enrollmentId: params.enrollmentId }, 'GHL contact resolved before evidence insert');
           }
         }
       } catch (ghlErr: any) {
@@ -78,7 +91,28 @@ export const phase2EnrollmentService = {
       }
     }
 
-    // 3. Log enrollment_payment evidence (non-blocking — uses resolved contactId)
+    // 3. Log consent evidence (non-blocking — uses resolved contactId)
+    try {
+      await phase2EvidenceRepository.create({
+        location_id: params.locationId,
+        contact_id: resolvedContactId,
+        enrollment_id: params.enrollmentId,
+        evidence_type: 'consent',
+        data: {
+          digital_signature: (enrollment as any).digital_signature || '',
+          clauses_accepted: (enrollment as any).clauses_accepted || [],
+          scroll_depth: (enrollment as any).scroll_depth || 0,
+          ip_address: (enrollment as any).consent_ip || '',
+          consent_captured_at: (enrollment as any).consent_captured_at || '',
+        },
+        ip_address: (enrollment as any).consent_ip || '',
+        device_info: (enrollment as any).consent_device || '',
+      });
+    } catch (consentErr: any) {
+      logger.error({ err: consentErr.message, stack: consentErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Consent evidence insert failed');
+    }
+
+    // 4. Log enrollment_payment evidence (non-blocking — uses resolved contactId)
     try {
       await phase2EvidenceRepository.create({
         location_id: params.locationId,
@@ -94,10 +128,10 @@ export const phase2EnrollmentService = {
         },
       });
     } catch (evidenceErr: any) {
-      logger.warn({ err: evidenceErr.message, enrollmentId: params.enrollmentId }, 'Evidence insert failed (table may not exist) — continuing enrollment');
+      logger.error({ err: evidenceErr.message, stack: evidenceErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Payment evidence insert failed');
     }
 
-    // 4. Create payment_event record (non-blocking — uses resolved contactId)
+    // 5. Create payment_event record (non-blocking — uses resolved contactId)
     try {
       await paymentEventRepository.create({
         location_id: params.locationId,
@@ -111,10 +145,10 @@ export const phase2EnrollmentService = {
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
       });
     } catch (paymentErr: any) {
-      logger.warn({ err: paymentErr.message, enrollmentId: params.enrollmentId }, 'Payment event insert failed — continuing enrollment');
+      logger.error({ err: paymentErr.message, stack: paymentErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Payment event insert failed');
     }
 
-    // 5. Fire enrollment_complete trigger (non-blocking)
+    // 6. Fire enrollment_complete trigger (non-blocking)
     try {
       await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
         contact_id: resolvedContactId,
@@ -129,7 +163,7 @@ export const phase2EnrollmentService = {
       logger.warn({ err: triggerErr.message, enrollmentId: params.enrollmentId }, 'Trigger fire failed — continuing enrollment');
     }
 
-    // 6. Update GHL contact fields + create pipeline opportunity
+    // 7. Update GHL contact fields + create pipeline opportunity
     if (params.locationId && resolvedContactId) {
       try {
         const api = await ghlApi(params.locationId);

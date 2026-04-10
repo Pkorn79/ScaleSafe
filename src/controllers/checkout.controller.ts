@@ -313,8 +313,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               try {
                 const locId = (enrollment as any).location_id || merchant.locationId;
                 const api = await ghlApi(locId);
+                // Name priority: enrollment first_name → digital_signature → contactName → email prefix
+                let fallbackFirstName = (enrollment as any).first_name || '';
+                let fallbackLastName = (enrollment as any).last_name || '';
+                if (!fallbackFirstName && (enrollment as any).digital_signature) {
+                  const sigParts = ((enrollment as any).digital_signature as string).trim().split(/\s+/);
+                  fallbackFirstName = sigParts[0] || '';
+                  fallbackLastName = sigParts.slice(1).join(' ') || '';
+                }
+                if (!fallbackFirstName) {
+                  fallbackFirstName = contactName || clientEmail.split('@')[0] || 'Client';
+                }
                 const upsertRes = await api.post('/contacts/upsert', {
-                  firstName: contactName || clientEmail.split('@')[0] || 'Client',
+                  firstName: fallbackFirstName,
+                  lastName: fallbackLastName,
                   email: clientEmail,
                   locationId: locId,
                 });
