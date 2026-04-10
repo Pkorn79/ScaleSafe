@@ -294,17 +294,16 @@ ${milestones.length > 0 ? `
 </div>` : ''}
 
 <h2>3. Terms & Conditions</h2>
-${offer?.compiled_tc_html
-    ? `<div class="tc-html">${offer.compiled_tc_html}</div>`
-    : clauseItems.length > 0
-      ? `<table class="clause-table"><thead><tr><th style="width:30px">✓</th><th>Clause</th></tr></thead><tbody>${clauseItems.join('')}</tbody></table>`
-      : '<p style="color:#6b7280">No terms recorded.</p>'}
+${(offer as any)?.tc_url
+    ? `<p style="font-size:12px;line-height:1.5">The client reviewed and accepted the Terms &amp; Conditions document available at: <a href="${esc((offer as any).tc_url)}" style="color:#3b82f6">${esc((offer as any).tc_url)}</a></p>`
+    : `<p style="font-size:12px;line-height:1.5">The client reviewed and accepted the Terms &amp; Conditions compiled from the clauses detailed in the Individual Clause Acceptance section below.</p>`}
+<p style="font-size:11px;color:#6b7280;margin-top:4px">The T&amp;C version hash (shown in Section 4 — Consent Forensics) can be used to verify the exact version of the terms presented at the time of enrollment.</p>
 ${clauseItems.length > 0 ? `
-<div style="margin-top:14px">
+<div style="margin-top:12px">
   <strong style="font-size:12px">Individual Clause Acceptance</strong>
   <p style="font-size:11px;color:#374151;margin:6px 0 8px;line-height:1.5">The following clauses were individually presented to the client during the enrollment process. Each clause required separate review and active acknowledgment before the client could proceed. Checked clauses below were individually accepted by the client.</p>
   <table class="clause-table" style="margin-top:4px"><thead><tr><th style="width:30px">✓</th><th>Clause</th></tr></thead><tbody>${clauseItems.join('')}</tbody></table>
-  <p style="font-size:11px;color:#374151;margin:8px 0 0;line-height:1.5">In addition to the individual clauses above, the client reviewed and accepted the complete Terms &amp; Conditions shown in Section 3 by scrolling through the full document (scroll depth: ${e.scroll_depth != null ? e.scroll_depth + '%' : 'N/A'}) and providing their digital signature.</p>
+  <p style="font-size:11px;color:#374151;margin:8px 0 0;line-height:1.5">In addition to the individual clauses above, the client scrolled through the full terms document (scroll depth: ${e.scroll_depth != null ? e.scroll_depth + '%' : 'N/A'}) and provided their digital signature to confirm acceptance.</p>
 </div>` : ''}
 
 <h2>4. Consent Forensics</h2>
