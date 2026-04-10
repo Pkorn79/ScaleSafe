@@ -51,11 +51,38 @@ export const phase2EnrollmentService = {
       enrolled_at: new Date().toISOString(),
     } as any);
 
-    // 2. Log enrollment_payment evidence (non-blocking — table may not exist yet)
+    // 2. Resolve GHL contact FIRST — evidence and payment records need the contactId
+    let resolvedContactId = params.contactId;
+    if (params.locationId) {
+      try {
+        const api = await ghlApi(params.locationId);
+
+        // Find or create GHL contact if we don't have one
+        const email = params.contactEmail || (enrollment as any).email || '';
+        if (!resolvedContactId && email) {
+          const upsertRes = await api.post('/contacts/upsert', {
+            firstName: email.split('@')[0] || 'Client',
+            email,
+            locationId: params.locationId,
+          });
+          resolvedContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+          if (resolvedContactId) {
+            await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
+              contact_id: resolvedContactId,
+            } as any);
+            logger.info({ resolvedContactId, enrollmentId: params.enrollmentId }, 'GHL contact resolved before evidence insert');
+          }
+        }
+      } catch (ghlErr: any) {
+        logger.error({ err: ghlErr.message, stack: ghlErr.stack, enrollmentId: params.enrollmentId }, 'GHL contact resolution failed — evidence will use empty contactId');
+      }
+    }
+
+    // 3. Log enrollment_payment evidence (non-blocking — uses resolved contactId)
     try {
       await phase2EvidenceRepository.create({
         location_id: params.locationId,
-        contact_id: params.contactId,
+        contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
         evidence_type: 'enrollment_payment',
         data: {
@@ -70,11 +97,11 @@ export const phase2EnrollmentService = {
       logger.warn({ err: evidenceErr.message, enrollmentId: params.enrollmentId }, 'Evidence insert failed (table may not exist) — continuing enrollment');
     }
 
-    // 3. Create payment_event record (non-blocking — may already exist from checkout controller)
+    // 4. Create payment_event record (non-blocking — uses resolved contactId)
     try {
       await paymentEventRepository.create({
         location_id: params.locationId,
-        contact_id: params.contactId,
+        contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
         event_type: 'payment_success',
         processor: 'ghl',
@@ -87,10 +114,10 @@ export const phase2EnrollmentService = {
       logger.warn({ err: paymentErr.message, enrollmentId: params.enrollmentId }, 'Payment event insert failed — continuing enrollment');
     }
 
-    // 4. Fire enrollment_complete trigger (non-blocking)
+    // 5. Fire enrollment_complete trigger (non-blocking)
     try {
       await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
-        contact_id: params.contactId,
+        contact_id: resolvedContactId,
         offer_id: enrollment.offer_id,
         offer_name: offerName,
         amount: params.paymentAmount,
@@ -102,34 +129,12 @@ export const phase2EnrollmentService = {
       logger.warn({ err: triggerErr.message, enrollmentId: params.enrollmentId }, 'Trigger fire failed — continuing enrollment');
     }
 
-    // 5. Update GHL contact fields + create pipeline opportunity
-    if (params.locationId) {
+    // 6. Update GHL contact fields + create pipeline opportunity
+    if (params.locationId && resolvedContactId) {
       try {
         const api = await ghlApi(params.locationId);
         const merchant = await merchantRepository.getByLocationId(params.locationId);
-
-        // Find or create GHL contact
-        let contactId = params.contactId;
-        const email = params.contactEmail || (enrollment as any).email || '';
-        if (!contactId && email) {
-          const upsertRes = await api.post('/contacts/upsert', {
-            firstName: email.split('@')[0] || 'Client',
-            email,
-            locationId: params.locationId,
-          });
-          contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
-          // Update enrollment record with the resolved contactId
-          if (contactId) {
-            await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
-              contact_id: contactId,
-            } as any);
-          }
-        }
-
-        if (!contactId) {
-          logger.warn({ enrollmentId: params.enrollmentId }, 'No contactId or email — skipping GHL sync');
-          return;
-        }
+        const contactId = resolvedContactId;
 
         // Update SS contact fields
         const customFields: Record<string, unknown> = {
@@ -176,7 +181,7 @@ export const phase2EnrollmentService = {
     }
 
     logger.info(
-      { enrollmentId: params.enrollmentId, contactId: params.contactId, locationId: params.locationId },
+      { enrollmentId: params.enrollmentId, contactId: resolvedContactId, locationId: params.locationId },
       'Enrollment completed',
     );
   },

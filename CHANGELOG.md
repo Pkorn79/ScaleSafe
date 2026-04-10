@@ -8,9 +8,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-09
 
 ### Fixed
+- **Root cause: evidence records had empty contact_id** — `completeEnrollment` inserted evidence BEFORE GHL upsert resolved the contactId. Restructured: GHL contact resolution now step 2 (before evidence/payment inserts)
 - **Browser cache fix:** `index.html` now served with `Cache-Control: no-cache` headers so deploys take effect immediately without hard refresh; hashed assets get 1-year immutable cache
 - Clients list page now shows GHL contact names (batch lookup) instead of only email or empty string
 - Payment search falls back to `payment_events` when `payment_customer_map` has no results (catches broken enrollment runs)
+- Backfill endpoint now fixes evidence records, payment_events, and payment_customer_map with empty `contact_id`
 - Client detail page shows client name/email, enrollment summary, and improved evidence timeline with formatted types and data summaries
 - Payment management page shows client name/email instead of raw contact ID
 - Clients table header changed from "Contact ID" to "Client"

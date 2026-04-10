@@ -403,12 +403,13 @@ router.get('/api/debug/enrollments/:locationId', async (req: Request, res: Respo
   }
 });
 
-// ─── Debug: backfill all enrollments missing contactId ───────
+// ─── Debug: backfill all enrollments missing contactId + fix evidence records ───────
 router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res: Response) => {
   try {
     const locationId = req.params.locationId;
     const supabase = getSupabase();
 
+    // Phase 1: Fix enrollments with null contact_id
     const { data: broken } = await supabase
       .from('enrollments')
       .select('id, email, contact_id')
@@ -416,15 +417,10 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
       .eq('status', 'enrolled')
       .is('contact_id', null);
 
-    if (!broken || broken.length === 0) {
-      res.json({ _debug: true, message: 'No enrollments need backfill', count: 0 });
-      return;
-    }
-
     const api = await ghlApi(locationId);
     const results: any[] = [];
 
-    for (const enrollment of broken) {
+    for (const enrollment of (broken || [])) {
       const email = enrollment.email || '';
       if (!email) {
         results.push({ id: enrollment.id, status: 'skipped', reason: 'no email' });
@@ -442,14 +438,6 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
           await supabase.from('enrollments')
             .update({ contact_id: newContactId })
             .eq('id', enrollment.id);
-          await supabase.from('payment_events')
-            .update({ contact_id: newContactId })
-            .eq('enrollment_id', enrollment.id)
-            .eq('contact_id', '');
-          await supabase.from('payment_customer_map')
-            .update({ contact_id: newContactId })
-            .eq('location_id', locationId)
-            .eq('contact_id', '');
           results.push({ id: enrollment.id, email, status: 'fixed', contactId: newContactId });
         } else {
           results.push({ id: enrollment.id, email, status: 'failed', reason: 'upsert returned no id' });
@@ -459,7 +447,94 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
       }
     }
 
-    res.json({ _debug: true, totalBroken: broken.length, results });
+    // Phase 2: Backfill evidence records with empty contact_id using enrollment_id lookup
+    let evidenceFixed = 0;
+    try {
+      const { data: emptyEvidence } = await supabase
+        .from('evidence')
+        .select('id, enrollment_id')
+        .eq('location_id', locationId)
+        .eq('contact_id', '');
+
+      for (const ev of (emptyEvidence || [])) {
+        if (!ev.enrollment_id) continue;
+        const { data: enr } = await supabase
+          .from('enrollments')
+          .select('contact_id')
+          .eq('id', ev.enrollment_id)
+          .single();
+        if (enr?.contact_id) {
+          await supabase.from('evidence')
+            .update({ contact_id: enr.contact_id })
+            .eq('id', ev.id);
+          evidenceFixed++;
+        }
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, 'Evidence backfill partial failure');
+    }
+
+    // Phase 3: Backfill payment_events and payment_customer_map with empty contact_id
+    let paymentEventsFixed = 0;
+    let paymentMapsFixed = 0;
+    try {
+      const { data: emptyPE } = await supabase
+        .from('payment_events')
+        .select('id, enrollment_id')
+        .eq('location_id', locationId)
+        .eq('contact_id', '');
+
+      for (const pe of (emptyPE || [])) {
+        if (!pe.enrollment_id) continue;
+        const { data: enr } = await supabase
+          .from('enrollments')
+          .select('contact_id')
+          .eq('id', pe.enrollment_id)
+          .single();
+        if (enr?.contact_id) {
+          await supabase.from('payment_events')
+            .update({ contact_id: enr.contact_id })
+            .eq('id', pe.id);
+          paymentEventsFixed++;
+        }
+      }
+
+      // Fix payment_customer_map with empty contact_id
+      const { data: emptyMaps } = await supabase
+        .from('payment_customer_map')
+        .select('id, offer_id')
+        .eq('location_id', locationId)
+        .eq('contact_id', '');
+
+      for (const m of (emptyMaps || [])) {
+        // Find any enrollment for this offer that has a contact_id
+        if (!m.offer_id) continue;
+        const { data: enr } = await supabase
+          .from('enrollments')
+          .select('contact_id')
+          .eq('location_id', locationId)
+          .eq('offer_id', m.offer_id)
+          .not('contact_id', 'is', null)
+          .limit(1)
+          .single();
+        if (enr?.contact_id) {
+          await supabase.from('payment_customer_map')
+            .update({ contact_id: enr.contact_id })
+            .eq('id', m.id);
+          paymentMapsFixed++;
+        }
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, 'Payment backfill partial failure');
+    }
+
+    res.json({
+      _debug: true,
+      enrollments: { totalBroken: (broken || []).length, results },
+      evidence: { fixed: evidenceFixed },
+      paymentEvents: { fixed: paymentEventsFixed },
+      paymentCustomerMap: { fixed: paymentMapsFixed },
+    });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug backfill-contacts failed');
     res.status(500).json({ error: err.message, stack: err.stack });
