@@ -802,6 +802,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           offerId: offerId,
           consentToken: consentToken,
           contactEmail: enrollmentEmail,
+          paymentChoice: paymentChoice || 'pif',
           deviceFingerprint: navigator.userAgent,
           browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
         })

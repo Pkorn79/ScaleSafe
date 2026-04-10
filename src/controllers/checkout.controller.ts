@@ -10,6 +10,13 @@ import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { ghlApi } from '../clients/ghl.client';
 
+/** Normalize payment choice from checkout page ('installments' → 'installment', default 'pif') */
+function normalizePaymentType(choice?: string): string {
+  if (!choice) return 'pif';
+  if (choice === 'installments') return 'installment';
+  return choice;
+}
+
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
     || req.headers['x-real-ip']?.toString()
@@ -284,7 +291,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         if (enrollment) {
           const enrollEmail = (enrollment as any).email || '';
           const enrollContactId = (enrollment as any).contact_id || '';
-          logger.info({ enrollmentId: enrollment.id, email: enrollEmail, contactId: enrollContactId, status: (enrollment as any).status }, 'POST-PAYMENT: enrollment found');
+          logger.info({ enrollmentId: enrollment.id, email: enrollEmail, contactId: enrollContactId, status: (enrollment as any).status, paymentChoice: req.body.paymentChoice }, 'POST-PAYMENT: enrollment found');
+
+          // Resolve payment type and installment count
+          const resolvedPaymentType = normalizePaymentType(req.body.paymentChoice);
+          let paymentsTotal: number | null = null;
+          if (resolvedPaymentType === 'installment' && (enrollment as any).offer_id) {
+            const { data: offerRow } = await supabase
+              .from('offers_mirror').select('num_payments').eq('id', (enrollment as any).offer_id).single();
+            paymentsTotal = offerRow?.num_payments || null;
+          }
 
           // 1. Complete enrollment in Supabase (status, evidence, triggers)
           await phase2EnrollmentService.completeEnrollment({
@@ -293,9 +309,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             contactId: enrollContactId || contactId || '',
             contactEmail: contactEmail || enrollEmail,
             paymentAmount: amount / 100,
-            paymentType: req.body.paymentChoice || 'pif',
+            paymentType: resolvedPaymentType,
             transactionId: result.transactionId || result.chargeId || '',
-            paymentsTotal: null,
+            paymentsTotal,
           });
 
           // Re-query enrollment to get the contactId that completeEnrollment resolved.
@@ -360,7 +376,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               location_id: merchant.locationId,
               offer_id: offerId || (enrollment as any).offer_id || '',
               program_name: productDetails?.[0]?.name || '',
-              payment_type: req.body.paymentChoice || 'pif',
+              payment_type: normalizePaymentType(req.body.paymentChoice),
               processor: procConfig.processor_type,
             });
           } catch (mapErr: any) {
@@ -383,7 +399,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           location_id: merchant.locationId,
           offer_id: offerId,
           program_name: productDetails?.[0]?.name || '',
-          payment_type: req.body.paymentChoice || 'pif',
+          payment_type: normalizePaymentType(req.body.paymentChoice),
           processor: procConfig.processor_type,
         });
       } catch (mapErr: any) {

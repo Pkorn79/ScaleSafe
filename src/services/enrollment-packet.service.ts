@@ -123,7 +123,7 @@ async function renderHtmlToPdf(html: string): Promise<Buffer> {
       footerTemplate: `<div style="width:100%;text-align:center;font-size:9px;color:#9ca3af;padding:0 0.6in">
         <span class="pageNumber"></span> of <span class="totalPages"></span>
       </div>`,
-      margin: { top: '0.5in', bottom: '0.7in', left: '0.6in', right: '0.6in' },
+      margin: { top: '0.4in', bottom: '0.6in', left: '0.6in', right: '0.6in' },
     });
 
     return Buffer.from(pdfBuffer);
@@ -199,24 +199,24 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
     }
   }
 
-  // Price: show what the client actually pays
+  // Determine if this is an installment enrollment
+  const isInstallment = e.payment_type === 'installment' ||
+    (offer?.payment_type === 'installment' && offer?.installment_amount && e.payment_amount < (offer?.price || 0));
+
+  // Price: total program cost
   let displayPrice = (offer?.price || 0);
-  if (offer && e.payment_type === 'pif' && offer.pif_discount_enabled && offer.pif_price) {
+  if (!isInstallment && offer?.pif_discount_enabled && offer?.pif_price) {
     displayPrice = offer.pif_price;
-  } else if (offer && offer.payment_type === 'installment' && offer.installment_amount && offer.num_payments) {
-    displayPrice = offer.installment_amount * offer.num_payments;
   }
 
-  // Payment structure: human-readable breakdown
+  // Payment structure: human-readable
   let paymentStructure = '';
-  if (offer) {
-    if (offer.payment_type === 'installment' && offer.installment_amount) {
-      paymentStructure = `${offer.num_payments || '?'} ${offer.installment_frequency || 'monthly'} payments of $${offer.installment_amount.toFixed(2)}`;
-    } else {
-      paymentStructure = 'Paid in Full';
-      if (offer.pif_discount_enabled && offer.pif_price && offer.price && offer.pif_price < offer.price) {
-        paymentStructure += ` (discounted from $${offer.price.toFixed(2)})`;
-      }
+  if (isInstallment && offer?.installment_amount) {
+    paymentStructure = `Installment Plan — ${offer.num_payments || '?'} ${offer.installment_frequency || 'monthly'} payments of $${offer.installment_amount.toFixed(2)}`;
+  } else {
+    paymentStructure = 'Paid in Full';
+    if (offer?.pif_discount_enabled && offer?.pif_price && offer?.price && offer.pif_price < offer.price) {
+      paymentStructure += ` (discounted from $${offer.price.toFixed(2)})`;
     }
   }
 
@@ -228,6 +228,10 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
     return t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ');
   }
 
+  // Installment payment details for section 5
+  const totalProgramCost = offer?.price || 0;
+  const remainingBalance = isInstallment ? Math.max(0, totalProgramCost - (e.payment_amount || 0)) : 0;
+
   const logoHtml = merchant.logoUrl
     ? `<img src="${esc(merchant.logoUrl)}" style="max-width:150px;max-height:60px;margin-bottom:8px" /><br>`
     : '';
@@ -235,13 +239,13 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1f2937; font-size: 13px; line-height: 1.5; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1f2937; font-size: 12px; line-height: 1.45; margin: 0; padding: 0; }
   h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: #111827; }
   h2 { font-size: 15px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 3px; margin: 16px 0 8px; }
   .subtitle { color: #6b7280; font-size: 11px; margin-bottom: 20px; }
   .header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #111827; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  .info-table td { padding: 4px 0; vertical-align: top; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  .info-table td { padding: 3px 0; vertical-align: top; }
   .info-table td:first-child { color: #6b7280; width: 180px; font-size: 12px; }
   .info-table td:last-child { font-weight: 500; }
   .clause-table { border: 1px solid #e5e7eb; border-radius: 4px; }
@@ -315,7 +319,10 @@ ${clauseItems.length > 0 ? `
 
 <h2>5. Payment Confirmation</h2>
 <table class="info-table">
-  <tr><td>Amount Paid</td><td>$${(e.payment_amount || 0).toFixed(2)}</td></tr>
+  <tr><td>${isInstallment ? 'Amount Paid (this payment)' : 'Amount Paid'}</td><td>$${(e.payment_amount || 0).toFixed(2)}</td></tr>
+  ${isInstallment ? `<tr><td>Total Program Cost</td><td>$${totalProgramCost.toFixed(2)}</td></tr>
+  <tr><td>Payment Schedule</td><td>${offer?.num_payments || '?'} ${offer?.installment_frequency || 'monthly'} payments of $${(offer?.installment_amount || 0).toFixed(2)}</td></tr>
+  <tr><td>Remaining Balance</td><td>$${remainingBalance.toFixed(2)}</td></tr>` : ''}
   <tr><td>Payment Type</td><td>${esc(humanPaymentType(e.payment_type || ''))}</td></tr>
   <tr><td>Transaction ID</td><td><code style="font-size:10px;background:#f3f4f6;padding:2px 4px;border-radius:2px">${esc(e.payment_transaction_id || 'N/A')}</code></td></tr>
   <tr><td>Enrolled At</td><td>${enrollDate}</td></tr>
