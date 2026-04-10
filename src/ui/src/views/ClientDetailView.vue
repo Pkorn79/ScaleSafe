@@ -147,10 +147,32 @@ function summarize(item: any): string {
   return '-';
 }
 
-function downloadPacket() {
-  if (enrollmentInfo.value?.enrollmentId) {
-    window.open(`/api/enrollments/${enrollmentInfo.value.enrollmentId}/packet?download=true`, '_blank');
+async function downloadPacket() {
+  const eid = enrollmentInfo.value?.enrollmentId;
+  if (!eid) return;
+
+  const headers: Record<string, string> = {};
+  const payload = sessionStorage.getItem('ss_sso_payload');
+  if (payload) {
+    headers['x-sso-payload'] = payload;
+  } else {
+    const loc = sessionStorage.getItem('ss_location_id');
+    if (loc) headers['x-location-id'] = loc;
+    const comp = sessionStorage.getItem('ss_company_id');
+    if (comp) headers['x-company-id'] = comp;
+    const uid = sessionStorage.getItem('ss_user_id');
+    if (uid) headers['x-user-id'] = uid;
   }
+
+  const res = await fetch(`/api/enrollments/${eid}/packet?download=true`, { headers });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `enrollment-packet-${eid}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 onMounted(async () => {
