@@ -720,4 +720,43 @@ router.get('/api/debug/evidence-check/:locationId', async (req: Request, res: Re
   }
 });
 
+// ─── Debug: test PDF storage upload ─────────────────────────
+router.get('/api/debug/test-pdf-storage', async (_req: Request, res: Response) => {
+  try {
+    const supabase = getSupabase();
+
+    // 1. Check bucket exists and its config
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const bucket = buckets?.find((b: any) => b.name === 'scalesafe-files');
+
+    // 2. Try uploading a tiny test PDF
+    const testPdf = Buffer.from('%PDF-1.0\ntest');
+    const testPath = `test/pdf-upload-test-${Date.now()}.pdf`;
+    const { error: uploadErr } = await supabase.storage
+      .from('scalesafe-files')
+      .upload(testPath, testPdf, { contentType: 'application/pdf', upsert: true });
+
+    // 3. Clean up test file
+    if (!uploadErr) {
+      await supabase.storage.from('scalesafe-files').remove([testPath]);
+    }
+
+    // 4. Check if any enrollments have packet_pdf_path set
+    const { data: withPacket } = await supabase
+      .from('enrollments')
+      .select('id, packet_pdf_path')
+      .not('packet_pdf_path', 'is', null)
+      .limit(5);
+
+    res.json({
+      _debug: true,
+      bucket: bucket ? { name: bucket.name, public: bucket.public, fileSizeLimit: (bucket as any).file_size_limit, allowedMimeTypes: (bucket as any).allowed_mime_types } : 'NOT FOUND',
+      pdfUploadTest: uploadErr ? { error: uploadErr.message, statusCode: (uploadErr as any).statusCode } : 'SUCCESS',
+      enrollmentsWithPacket: withPacket || [],
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 export default router;

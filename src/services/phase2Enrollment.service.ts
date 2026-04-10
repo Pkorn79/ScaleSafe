@@ -215,11 +215,13 @@ export const phase2EnrollmentService = {
     }
 
     // 8. Generate enrollment packet PDF (non-blocking)
+    logger.info({ enrollmentId: params.enrollmentId, locationId: params.locationId }, 'PACKET: Starting auto-generation');
     try {
       const { enrollmentPacketService } = require('./enrollment-packet.service');
-      await enrollmentPacketService.generateAndStore(params.enrollmentId, params.locationId);
+      const pdfUrl = await enrollmentPacketService.generateAndStore(params.enrollmentId, params.locationId);
+      logger.info({ enrollmentId: params.enrollmentId, pdfUrl }, 'PACKET: Auto-generation succeeded');
     } catch (pdfErr: any) {
-      logger.error({ err: pdfErr.message, stack: pdfErr.stack, enrollmentId: params.enrollmentId }, 'Enrollment packet PDF generation failed (non-blocking)');
+      logger.error({ err: pdfErr.message, stack: pdfErr.stack, code: (pdfErr as any).statusCode || (pdfErr as any).code, enrollmentId: params.enrollmentId, locationId: params.locationId }, 'PACKET: Auto-generation FAILED');
     }
 
     logger.info(

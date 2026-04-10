@@ -55,7 +55,11 @@ export const enrollmentPacketService = {
    * Returns the signed URL.
    */
   async generateAndStore(enrollmentId: string, locationId: string): Promise<string> {
+    logger.info({ enrollmentId, locationId }, 'PACKET: generateAndStore starting');
+
     const buffer = await this.generatePacket(enrollmentId, locationId);
+    logger.info({ enrollmentId, bufferSize: buffer.length }, 'PACKET: PDF buffer generated');
+
     const storagePath = `enrollment-packets/${locationId}/${enrollmentId}.pdf`;
 
     const supabase = getSupabase();
@@ -64,7 +68,7 @@ export const enrollmentPacketService = {
       .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
 
     if (uploadErr) {
-      logger.error({ err: uploadErr.message, enrollmentId }, 'Failed to upload enrollment packet PDF');
+      logger.error({ err: uploadErr.message, statusCode: (uploadErr as any).statusCode, enrollmentId, storagePath, bufferSize: buffer.length }, 'PACKET: Storage upload FAILED');
       throw uploadErr;
     }
 
