@@ -528,12 +528,91 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
       logger.warn({ err: e.message }, 'Payment backfill partial failure');
     }
 
+    // Phase 4: Create missing consent + enrollment_payment evidence from enrollment records
+    let consentCreated = 0;
+    let paymentEvidenceCreated = 0;
+    try {
+      const { data: enrolled } = await supabase
+        .from('enrollments')
+        .select('id, contact_id, location_id, digital_signature, clauses_accepted, scroll_depth, consent_ip, consent_device, consent_captured_at, payment_amount, payment_type, payment_transaction_id, payments_total')
+        .eq('location_id', locationId)
+        .in('status', ['enrolled', 'consent_captured', 'completed'])
+        .not('contact_id', 'is', null);
+
+      for (const enr of (enrolled || [])) {
+        if (!enr.contact_id) continue;
+
+        // Check if consent evidence already exists for this enrollment
+        const { data: existingConsent } = await supabase
+          .from('evidence')
+          .select('id')
+          .eq('enrollment_id', enr.id)
+          .eq('evidence_type', 'consent')
+          .limit(1);
+
+        if (!existingConsent || existingConsent.length === 0) {
+          if (enr.digital_signature || enr.clauses_accepted) {
+            try {
+              await supabase.from('evidence').insert({
+                location_id: enr.location_id,
+                contact_id: enr.contact_id,
+                enrollment_id: enr.id,
+                evidence_type: 'consent',
+                data: {
+                  digital_signature: enr.digital_signature,
+                  clauses_accepted: enr.clauses_accepted,
+                  scroll_depth: enr.scroll_depth,
+                  ip_address: enr.consent_ip,
+                  consent_captured_at: enr.consent_captured_at,
+                },
+                ip_address: enr.consent_ip,
+                device_info: enr.consent_device,
+              });
+              consentCreated++;
+            } catch { /* duplicate or constraint error — skip */ }
+          }
+        }
+
+        // Check if enrollment_payment evidence already exists
+        const { data: existingPayment } = await supabase
+          .from('evidence')
+          .select('id')
+          .eq('enrollment_id', enr.id)
+          .eq('evidence_type', 'enrollment_payment')
+          .limit(1);
+
+        if (!existingPayment || existingPayment.length === 0) {
+          if (enr.payment_amount) {
+            try {
+              await supabase.from('evidence').insert({
+                location_id: enr.location_id,
+                contact_id: enr.contact_id,
+                enrollment_id: enr.id,
+                evidence_type: 'enrollment_payment',
+                data: {
+                  amount: enr.payment_amount,
+                  payment_type: enr.payment_type,
+                  transaction_id: enr.payment_transaction_id,
+                  payments_total: enr.payments_total,
+                  timestamp: enr.consent_captured_at || new Date().toISOString(),
+                },
+              });
+              paymentEvidenceCreated++;
+            } catch { /* duplicate or constraint error — skip */ }
+          }
+        }
+      }
+    } catch (e: any) {
+      logger.warn({ err: e.message }, 'Enrollment-to-evidence backfill partial failure');
+    }
+
     res.json({
       _debug: true,
       enrollments: { totalBroken: (broken || []).length, results },
       evidence: { fixed: evidenceFixed },
       paymentEvents: { fixed: paymentEventsFixed },
       paymentCustomerMap: { fixed: paymentMapsFixed },
+      evidenceFromEnrollments: { consentCreated, paymentEvidenceCreated },
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug backfill-contacts failed');
