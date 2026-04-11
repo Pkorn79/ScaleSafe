@@ -37,7 +37,7 @@
         <div class="card-title">Enrollment Summary</div>
         <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed', 'consent_captured'].includes(enrollmentInfo.status)"
           class="btn btn-sm btn-primary" @click="downloadPacket" :disabled="packetLoading">
-          {{ packetLoading ? 'Generating...' : 'Download Enrollment Packet' }}
+          {{ packetLoading ? 'Downloading...' : 'Download Enrollment Packet' }}
         </button>
       </div>
       <div class="grid grid-3 mt-2">
