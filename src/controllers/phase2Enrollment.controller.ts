@@ -5,6 +5,7 @@ import { enrollmentPacketService } from '../services/enrollment-packet.service';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { getSupabase } from '../clients/supabase.client';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { logger } from '../utils/logger';
 
 export const phase2EnrollmentController = {
   /**
@@ -106,16 +107,21 @@ export const phase2EnrollmentController = {
       if (!enrollment || enrollment.location_id !== locationId) {
         throw new NotFoundError(`Enrollment ${enrollmentId}`);
       }
+      logger.info({ enrollmentId, locationId }, 'PACKET: Found enrollment');
+
+      const storedPath = (enrollment as any).packet_pdf_path;
+      logger.info({ enrollmentId, storedPath: storedPath || 'NONE' }, 'PACKET: Checking stored path');
 
       // If we already have a stored PDF, serve from storage
-      const storedPath = (enrollment as any).packet_pdf_path;
       if (storedPath) {
         try {
           const supabase = getSupabase();
           const { data, error: dlErr } = await supabase.storage
             .from('scalesafe-files')
             .download(storedPath);
+
           if (data && !dlErr) {
+            logger.info({ enrollmentId, storedPath, size: data.size }, 'PACKET: Serving from storage');
             const buffer = Buffer.from(await data.arrayBuffer());
             const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
             res.setHeader('Content-Type', 'application/pdf');
@@ -123,18 +129,15 @@ export const phase2EnrollmentController = {
             res.send(buffer);
             return;
           }
-          // Log why storage download failed so we can debug
-          if (dlErr) {
-            const { logger } = require('../utils/logger');
-            logger.warn({ storedPath, err: dlErr.message }, 'PACKET: Storage download failed, generating on the fly');
-          }
+
+          logger.error({ enrollmentId, storedPath, err: dlErr?.message || 'data was null' }, 'PACKET: Storage download failed, regenerating');
         } catch (storageErr: any) {
-          const { logger } = require('../utils/logger');
-          logger.warn({ storedPath, err: storageErr.message }, 'PACKET: Storage download threw, generating on the fly');
+          logger.error({ enrollmentId, storedPath, err: storageErr.message, stack: storageErr.stack }, 'PACKET: Storage download threw, regenerating');
         }
       }
 
       // Generate on the fly (fallback for old enrollments or failed storage)
+      logger.info({ enrollmentId }, 'PACKET: Regenerating PDF on the fly');
       const buffer = await enrollmentPacketService.generatePacket(enrollmentId, locationId);
       const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
       res.setHeader('Content-Type', 'application/pdf');
