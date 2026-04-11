@@ -8,10 +8,12 @@
       <router-link to="/clients" class="btn btn-secondary">Back</router-link>
     </div>
 
-    <div v-if="error" class="error-msg">{{ error }}</div>
+    <div v-if="pageLoading" class="loading">Loading client data...</div>
+
+    <div v-if="error && !pageLoading" class="error-msg">{{ error }}</div>
 
     <!-- Readiness Score -->
-    <div v-if="score" class="card mb-4">
+    <div v-if="score && !pageLoading" class="card mb-4">
       <div class="flex-between">
         <div>
           <div class="card-title">Defense Readiness Score</div>
@@ -30,7 +32,7 @@
     </div>
 
     <!-- Enrollment Info -->
-    <div v-if="enrollmentInfo" class="card mb-4">
+    <div v-if="enrollmentInfo && !pageLoading" class="card mb-4">
       <div class="flex-between">
         <div class="card-title">Enrollment Summary</div>
         <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed', 'consent_captured'].includes(enrollmentInfo.status)"
@@ -49,12 +51,10 @@
     </div>
 
     <!-- Evidence Timeline -->
-    <div class="card">
+    <div v-if="!pageLoading" class="card">
       <div class="card-title mb-4">Evidence Timeline ({{ timeline.length }} records)</div>
 
-      <div v-if="loading" class="loading">Loading timeline...</div>
-
-      <div v-if="timeline.length === 0 && !loading" class="empty-state">
+      <div v-if="timeline.length === 0" class="empty-state">
         <p>No evidence recorded for this client yet. Evidence is logged automatically as clients enroll, make payments, and engage with your program.</p>
       </div>
 
@@ -95,6 +95,7 @@ const timeline = ref<any[]>([]);
 const enrollmentInfo = ref<any>(null);
 const clientEmail = ref('');
 const clientLabel = ref('Client');
+const pageLoading = ref(true);
 const packetLoading = ref(false);
 const packetError = ref('');
 
@@ -212,5 +213,7 @@ onMounted(async () => {
   } else {
     clientLabel.value = cid.includes('@') ? cid : 'Client';
   }
+
+  pageLoading.value = false;
 });
 </script>

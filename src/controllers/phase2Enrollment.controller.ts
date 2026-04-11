@@ -110,21 +110,31 @@ export const phase2EnrollmentController = {
       // If we already have a stored PDF, serve from storage
       const storedPath = (enrollment as any).packet_pdf_path;
       if (storedPath) {
-        const supabase = getSupabase();
-        const { data } = await supabase.storage
-          .from('scalesafe-files')
-          .download(storedPath);
-        if (data) {
-          const buffer = Buffer.from(await data.arrayBuffer());
-          const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `${disposition}; filename="enrollment-packet-${enrollmentId}.pdf"`);
-          res.send(buffer);
-          return;
+        try {
+          const supabase = getSupabase();
+          const { data, error: dlErr } = await supabase.storage
+            .from('scalesafe-files')
+            .download(storedPath);
+          if (data && !dlErr) {
+            const buffer = Buffer.from(await data.arrayBuffer());
+            const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `${disposition}; filename="enrollment-packet-${enrollmentId}.pdf"`);
+            res.send(buffer);
+            return;
+          }
+          // Log why storage download failed so we can debug
+          if (dlErr) {
+            const { logger } = require('../utils/logger');
+            logger.warn({ storedPath, err: dlErr.message }, 'PACKET: Storage download failed, generating on the fly');
+          }
+        } catch (storageErr: any) {
+          const { logger } = require('../utils/logger');
+          logger.warn({ storedPath, err: storageErr.message }, 'PACKET: Storage download threw, generating on the fly');
         }
       }
 
-      // Generate on the fly
+      // Generate on the fly (fallback for old enrollments or failed storage)
       const buffer = await enrollmentPacketService.generatePacket(enrollmentId, locationId);
       const disposition = req.query.download === 'true' ? 'attachment' : 'inline';
       res.setHeader('Content-Type', 'application/pdf');
