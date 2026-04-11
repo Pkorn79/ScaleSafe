@@ -1,5 +1,6 @@
 import { evidenceRepository, EvidenceInsert } from '../repositories/evidence.repository';
 import { ghlApi } from '../clients/ghl.client';
+import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { EvidenceType, EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
@@ -49,39 +50,53 @@ export const evidenceService = {
         type: EVIDENCE_TYPES.SESSION_DELIVERY,
         mapper: (d) => ({
           session_date: d.session_date,
+          session_type: d.session_type || d.delivery_method,
+          session_title: d.session_title || d.topics,
           duration_minutes: d.duration,
-          topics: d.topics,
           delivery_method: d.delivery_method,
-          notes: d.notes,
+          topics_covered: d.topics || d.topics_covered,
+          attendance_status: d.no_show ? 'no_show' : 'attended',
+          facilitator: d.facilitator,
           no_show: d.no_show || false,
+          notes: d.notes,
+          raw_payload: d,
         }),
       },
       'SYS2-08': {
         type: EVIDENCE_TYPES.MODULE_COMPLETION,
         mapper: (d) => ({
           module_name: d.module_name,
-          completed_at: d.completion_date,
-          assessment_score: d.score,
+          completion_date: d.completion_date,
+          completion_status: d.status || (d.progress === 100 || d.progress_pct === 100 ? 'completed' : 'in_progress'),
+          progress_pct: d.progress || d.progress_pct || 100,
+          score: d.score || d.assessment_score,
           time_spent_minutes: d.time_spent,
-          progress_pct: d.progress || 100,
+          notes: d.notes,
+          raw_payload: d,
         }),
       },
       'SYS2-09': {
         type: EVIDENCE_TYPES.PULSE_CHECKIN,
         mapper: (d) => ({
           checkin_date: d.checkin_date || new Date().toISOString(),
-          satisfaction_score: d.satisfaction || d.sentiment,
+          sentiment_score: d.satisfaction || d.sentiment || d.sentiment_score,
           feedback_text: d.feedback_text || d.feedback,
-          followup_needed: d.follow_up_flag || false,
+          follow_up_needed: d.follow_up_flag || d.followup_needed || false,
+          follow_up_action: d.follow_up_action,
+          raw_payload: d,
         }),
       },
       'SYS2-10': {
         type: EVIDENCE_TYPES.PAYMENT_CONFIRMATION,
         mapper: (d) => ({
+          ghl_transaction_id: d.transaction_id,
           amount: d.amount,
           payment_date: d.payment_date || new Date().toISOString(),
+          payment_number: d.payment_number,
           running_total: d.running_total,
           payments_remaining: d.payments_remaining,
+          payment_method: d.payment_method,
+          raw_payload: d,
         }),
       },
       'SYS2-11': {
@@ -91,6 +106,9 @@ export const evidenceService = {
           reason: d.reason,
           refund_eligibility: d.refund_eligibility,
           status_at_cancellation: d.status_at_cancellation,
+          initiated_by: d.initiated_by || 'merchant',
+          notes: d.notes,
+          raw_payload: d,
         }),
       },
     };
@@ -103,6 +121,42 @@ export const evidenceService = {
 
     const mappedData = handler.mapper(formData);
     await this.logEvidence(handler.type, locationId, contactId, `ghl_form_${formId}`, mappedData);
+
+    // Fire workflow triggers (non-blocking)
+    try {
+      if (formId === 'SYS2-07') {
+        await triggerService.fireTrigger(locationId, 'ss_session_logged', {
+          contact_id: contactId,
+          session_date: mappedData.session_date,
+          duration: mappedData.duration_minutes,
+          topics: mappedData.topics_covered,
+          no_show_flag: mappedData.no_show,
+        });
+        if (mappedData.no_show) {
+          await triggerService.fireTrigger(locationId, 'ss_session_noshow', {
+            contact_id: contactId,
+            scheduled_date: mappedData.session_date,
+            follow_up_action: 'auto_reschedule_sent',
+          });
+        }
+      } else if (formId === 'SYS2-08') {
+        await triggerService.fireTrigger(locationId, 'ss_module_completed', {
+          contact_id: contactId,
+          module_name: mappedData.module_name,
+          progress_pct: mappedData.progress_pct,
+          completion_date: mappedData.completion_date,
+        });
+      } else if (formId === 'SYS2-11') {
+        await triggerService.fireTrigger(locationId, 'ss_cancellation_requested', {
+          contact_id: contactId,
+          reason: mappedData.reason,
+          refund_eligibility: mappedData.refund_eligibility,
+        });
+      }
+    } catch (triggerErr: any) {
+      logger.warn({ err: triggerErr.message, formId, contactId }, 'Trigger fire failed after form evidence — non-blocking');
+    }
+
     return handler.type;
   },
 
@@ -125,8 +179,9 @@ export const evidenceService = {
           duration_minutes: d.duration,
           session_type: d.session_type,
           recording_url: d.recording_url,
-          topics: d.topics,
+          topics_covered: d.topics || d.topics_covered,
           notes: d.notes,
+          raw_payload: d,
         }),
       },
       no_show: {
@@ -135,16 +190,19 @@ export const evidenceService = {
           session_date: d.session_date,
           status: 'no_show',
           followup_action: d.notes,
+          raw_payload: d,
         }),
       },
       module_completed: {
         evidenceType: EVIDENCE_TYPES.MODULE_COMPLETION,
         mapper: (d) => ({
           module_name: d.module_name,
-          completed_at: d.completion_date,
-          assessment_score: d.score,
-          time_spent_minutes: d.time_spent,
+          completion_date: d.completion_date,
+          completion_status: 'completed',
           progress_pct: 100,
+          score: d.score,
+          time_spent_minutes: d.time_spent,
+          raw_payload: d,
         }),
       },
       milestone_signed: {
@@ -154,15 +212,17 @@ export const evidenceService = {
           work_summary: d.summary,
           approved: d.approved,
           signed_at: new Date().toISOString(),
+          raw_payload: d,
         }),
       },
       pulse_check: {
         evidenceType: EVIDENCE_TYPES.PULSE_CHECKIN,
         mapper: (d) => ({
-          satisfaction_score: d.satisfaction,
-          feedback_text: d.going_well ? `${d.going_well} | Concerns: ${d.concerns || 'none'}` : '',
-          nps_score: d.nps_score,
           checkin_date: new Date().toISOString(),
+          sentiment_score: d.satisfaction || d.sentiment,
+          feedback_text: d.going_well ? `${d.going_well} | Concerns: ${d.concerns || 'none'}` : '',
+          follow_up_needed: d.follow_up_needed || false,
+          raw_payload: d,
         }),
       },
       payment_update: {
@@ -170,7 +230,8 @@ export const evidenceService = {
         mapper: (d) => ({
           amount: d.amount,
           payment_date: new Date().toISOString(),
-          payment_reason: d.reason,
+          payment_method: d.payment_method || d.reason,
+          raw_payload: d,
         }),
       },
       service_access: {
