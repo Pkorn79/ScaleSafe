@@ -612,12 +612,18 @@ export const merchantService = {
     const cvIds = merchant.custom_value_ids || {};
     const api = await ghlApi(locationId);
 
+    // Build key→name lookup from registry for GHL PUT (requires name + value)
+    const registryNameMap: Record<string, string> = {};
+    for (const entry of CUSTOM_VALUE_REGISTRY) {
+      registryNameMap[entry.key] = entry.defaultName;
+    }
+
     // Helper: queue a sync if the merchant has the ID for this key
-    const toSync: Array<{ key: string; id: string; value: string }> = [];
+    const toSync: Array<{ key: string; id: string; name: string; value: string }> = [];
     const push = (key: string, value: string) => {
       const id = cvIds[key];
       if (id) {
-        toSync.push({ key, id, value });
+        toSync.push({ key, id, name: registryNameMap[key] || key, value });
       } else {
         logger.debug({ locationId, key }, 'Skipping GHL sync — no stored ID for this key');
       }
@@ -664,9 +670,9 @@ export const merchantService = {
     let skipped = 0;
     for (let i = 0; i < toSync.length; i += 5) {
       const batch = toSync.slice(i, i + 5);
-      await Promise.all(batch.map(async ({ key, id, value }) => {
+      await Promise.all(batch.map(async ({ key, id, name, value }) => {
         try {
-          await api.put(`/locations/${locationId}/customValues/${id}`, { value });
+          await api.put(`/locations/${locationId}/customValues/${id}`, { name, value });
           synced++;
         } catch (err) {
           skipped++;
