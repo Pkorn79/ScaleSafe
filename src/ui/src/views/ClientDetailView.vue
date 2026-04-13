@@ -34,22 +34,63 @@
       </div>
     </div>
 
-    <!-- Enrollment Info -->
-    <div v-if="enrollmentInfo && !pageLoading" class="card mb-4">
+    <!-- Programs & Enrollments -->
+    <div v-if="!pageLoading" class="card mb-4">
       <div class="flex-between">
-        <div class="card-title">Enrollment Summary</div>
-        <button v-if="enrollmentInfo.enrollmentId && ['enrolled', 'completed', 'consent_captured'].includes(enrollmentInfo.status)"
-          class="btn btn-sm btn-primary" @click="downloadPacket" :disabled="packetLoading">
-          {{ packetLoading ? 'Downloading...' : 'Download Enrollment Packet' }}
-        </button>
+        <div>
+          <div class="card-title">Programs & Enrollments</div>
+          <div v-if="enrollmentSummary" class="text-sm text-muted" style="margin-top:2px">
+            {{ enrollmentSummary.total }} program{{ enrollmentSummary.total !== 1 ? 's' : '' }}
+            <span v-if="enrollmentSummary.active"> · {{ enrollmentSummary.active }} active</span>
+            <span v-if="enrollmentSummary.completed"> · {{ enrollmentSummary.completed }} completed</span>
+            <span v-if="enrollmentSummary.cancelled"> · {{ enrollmentSummary.cancelled }} cancelled</span>
+            <span v-if="enrollmentSummary.clientSince"> · Client since {{ formatDateShort(enrollmentSummary.clientSince) }}</span>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-primary" @click="openSendOffer">Send Offer</button>
       </div>
-      <div class="grid grid-3 mt-2">
-        <div class="text-sm"><strong>Status:</strong> {{ enrollmentInfo.status }}</div>
-        <div class="text-sm"><strong>Payment:</strong> ${{ enrollmentInfo.paymentAmount?.toFixed(2) || '0.00' }}</div>
-        <div class="text-sm"><strong>Enrolled:</strong> {{ enrollmentInfo.enrolledAt ? formatDate(enrollmentInfo.enrolledAt) : 'N/A' }}</div>
+
+      <div v-if="enrollments.length === 0" class="empty-state" style="padding:20px 0">
+        <p class="text-sm text-muted">No enrollments yet. Send this client an offer to get started.</p>
       </div>
-      <div v-if="enrollmentInfo.offerName" class="text-sm mt-2"><strong>Program:</strong> {{ enrollmentInfo.offerName }}</div>
-      <div v-if="enrollmentInfo.signature" class="text-sm mt-2"><strong>Signature:</strong> {{ enrollmentInfo.signature }}</div>
+
+      <div v-for="enr in enrollments" :key="enr.id" style="margin-top:12px;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
+        <div class="flex-between">
+          <div>
+            <strong style="font-size:14px">{{ enr.offerName }}</strong>
+            <span class="badge" :class="enrollmentBadge(enr.status)" style="margin-left:8px">{{ enr.status }}</span>
+          </div>
+          <div class="flex gap-2">
+            <button v-if="enr.packetPdfPath && ['enrolled','completed'].includes(enr.status)"
+              class="btn btn-sm btn-secondary" @click="downloadPacketFor(enr.id)" :disabled="packetLoading">
+              {{ packetLoading ? '...' : 'Packet' }}
+            </button>
+          </div>
+        </div>
+        <div class="grid grid-3 mt-2">
+          <div class="text-sm">
+            <strong>Enrolled:</strong> {{ enr.enrolledAt ? formatDateShort(enr.enrolledAt) : 'Pending' }}
+            <span v-if="enr.programDuration" class="text-muted"> ({{ enr.programDuration }} {{ enr.programDurationUnit || '' }})</span>
+          </div>
+          <div class="text-sm">
+            <strong>Payment:</strong>
+            <span v-if="enr.paymentType === 'one_time'">${{ (enr.paymentAmount || enr.offerPrice || 0).toFixed(2) }} PIF</span>
+            <span v-else-if="enr.paymentType === 'installments' || enr.paymentType === 'installment'">
+              {{ enr.paymentsMade || 0 }}/{{ enr.paymentsTotal || '?' }} payments
+              <span v-if="enr.installmentAmount" class="text-muted">(${{ Number(enr.installmentAmount).toFixed(2) }}/{{ enr.installmentFrequency || 'mo' }})</span>
+            </span>
+            <span v-else-if="enr.paymentType === 'subscription'">
+              ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }}/{{ enr.installmentFrequency || 'mo' }}
+            </span>
+            <span v-else>${{ (enr.paymentAmount || 0).toFixed(2) }}</span>
+          </div>
+          <div class="text-sm" v-if="enr.deliveryMethod">
+            <strong>Delivery:</strong> {{ enr.deliveryMethod }}
+          </div>
+        </div>
+        <div v-if="enr.cancelledAt" class="text-sm mt-2" style="color:#ef4444">Cancelled: {{ formatDateShort(enr.cancelledAt) }}</div>
+        <div v-if="enr.completedAt" class="text-sm mt-2" style="color:#10b981">Completed: {{ formatDateShort(enr.completedAt) }}</div>
+      </div>
       <div v-if="packetError" class="text-sm mt-2" style="color:#ef4444">{{ packetError }}</div>
     </div>
 
@@ -177,6 +218,8 @@ const clientLabel = ref('Client');
 const pageLoading = ref(true);
 const packetLoading = ref(false);
 const packetError = ref('');
+const enrollments = ref<any[]>([]);
+const enrollmentSummary = ref<any>(null);
 
 // Send Offer modal
 const showSendOfferModal = ref(false);
@@ -195,6 +238,48 @@ function scoreColor(s: number): string {
 
 function formatKey(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function formatDateShort(d: string): string {
+  if (!d) return '-';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function enrollmentBadge(status: string): string {
+  if (['enrolled', 'active'].includes(status)) return 'badge-green';
+  if (status === 'completed') return 'badge-blue';
+  if (status === 'cancelled') return 'badge-red';
+  if (['consent_captured', 'device_captured', 'pending'].includes(status)) return 'badge-yellow';
+  return 'badge-gray';
+}
+
+async function downloadPacketFor(enrollmentId: string) {
+  packetLoading.value = true;
+  packetError.value = '';
+  try {
+    const headers: Record<string, string> = {};
+    const payload = sessionStorage.getItem('ss_sso_payload');
+    if (payload) headers['x-sso-payload'] = payload;
+    else {
+      const loc = sessionStorage.getItem('ss_location_id');
+      if (loc) headers['x-location-id'] = loc;
+    }
+    const res = await fetch(`/api/enrollments/${enrollmentId}/packet?download=true`, { headers });
+    if (!res.ok) { packetError.value = `Failed (${res.status})`; return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enrollment-packet-${enrollmentId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err: any) {
+    packetError.value = err.message || 'Download failed';
+  } finally {
+    packetLoading.value = false;
+  }
 }
 
 function formatDate(d: string): string {
@@ -326,10 +411,11 @@ async function downloadPacket() {
 onMounted(async () => {
   const cid = contactId.value;
 
-  const [scoreResult, timelineResult, enrollmentResult] = await Promise.allSettled([
+  const [scoreResult, timelineResult, enrollmentResult, enrollmentsResult] = await Promise.allSettled([
     api.get<any>(`/api/evidence/${cid}/score`),
     api.get<any[]>(`/api/evidence/${cid}`),
     api.get<any>(`/api/dashboard/client-info/${cid}`),
+    api.get<any>(`/api/dashboard/client-enrollments/${cid}`),
   ]);
 
   if (scoreResult.status === 'fulfilled') score.value = scoreResult.value;
@@ -340,6 +426,10 @@ onMounted(async () => {
     clientLabel.value = enrollmentResult.value.name || enrollmentResult.value.email || 'Client';
   } else {
     clientLabel.value = cid.includes('@') ? cid : 'Client';
+  }
+  if (enrollmentsResult.status === 'fulfilled' && enrollmentsResult.value) {
+    enrollments.value = enrollmentsResult.value.enrollments || [];
+    enrollmentSummary.value = enrollmentsResult.value.summary || null;
   }
 
   pageLoading.value = false;

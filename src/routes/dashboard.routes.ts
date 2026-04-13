@@ -12,5 +12,6 @@ router.get('/at-risk', dashboardController.atRisk);
 router.get('/evidence-health', dashboardController.evidenceHealth);
 router.get('/defense-history', dashboardController.defenseHistory);
 router.get('/client-info/:contactId', dashboardController.clientInfo);
+router.get('/client-enrollments/:contactId', dashboardController.clientEnrollments);
 
 export default router;

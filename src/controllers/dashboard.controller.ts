@@ -349,4 +349,74 @@ export const dashboardController = {
       });
     } catch (err) { next(err); }
   },
+
+  /** GET /api/dashboard/client-enrollments/:contactId — all enrollments for a contact */
+  async clientEnrollments(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+
+      const supabase = getSupabase();
+
+      // Get all enrollments for this contact, with offer details
+      const { data: enrollments, error } = await supabase
+        .from('enrollments')
+        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, digital_signature, packet_pdf_path, created_at, email')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Get all offer IDs to fetch offer details in one query
+      const offerIds = [...new Set((enrollments || []).map(e => e.offer_id).filter(Boolean))];
+      let offerMap: Record<string, any> = {};
+      if (offerIds.length > 0) {
+        const { data: offers } = await supabase
+          .from('offers_mirror')
+          .select('id, offer_name, price, payment_type, installment_amount, installment_frequency, num_payments, program_duration_value, program_duration_unit, delivery_method')
+          .in('id', offerIds);
+        for (const o of (offers || [])) {
+          offerMap[o.id] = o;
+        }
+      }
+
+      const result = (enrollments || []).map(e => {
+        const offer = e.offer_id ? offerMap[e.offer_id] : null;
+        return {
+          id: e.id,
+          status: e.status,
+          offerName: offer?.offer_name || 'Unknown Program',
+          offerPrice: offer?.price || e.payment_amount || 0,
+          paymentType: e.payment_type || offer?.payment_type || 'one_time',
+          paymentAmount: e.payment_amount || 0,
+          enrolledAt: e.enrolled_at,
+          cancelledAt: e.cancelled_at,
+          completedAt: e.completed_at,
+          createdAt: e.created_at,
+          paymentsMade: e.payments_made || 0,
+          paymentsTotal: e.payments_total || offer?.num_payments || null,
+          installmentAmount: offer?.installment_amount || null,
+          installmentFrequency: offer?.installment_frequency || null,
+          programDuration: offer?.program_duration_value || null,
+          programDurationUnit: offer?.program_duration_unit || null,
+          deliveryMethod: offer?.delivery_method || null,
+          digitalSignature: e.digital_signature || '',
+          packetPdfPath: e.packet_pdf_path || null,
+        };
+      });
+
+      // Summary stats
+      const active = result.filter(e => ['enrolled', 'active', 'consent_captured'].includes(e.status)).length;
+      const completed = result.filter(e => e.status === 'completed').length;
+      const cancelled = result.filter(e => e.status === 'cancelled').length;
+      const clientSince = result.length > 0 ? result[result.length - 1].createdAt : null;
+
+      res.json({
+        enrollments: result,
+        summary: { total: result.length, active, completed, cancelled, clientSince },
+      });
+    } catch (err) { next(err); }
+  },
 };
