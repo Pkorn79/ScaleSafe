@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-12
+
+### Added
+- **Payment Update Widget** — client-facing page at `/payment-update?contactId=X&locationId=Y` for updating payment methods
+- `GET /api/payment-update/config` — returns processor type + tokenization key for the widget
+- `POST /api/payment-update/update-method` — saves new card via ProcessorFactory (NMI Collect.js or Stripe Elements)
+- Dual-rail support: NMI (Collect.js inline fields) and Stripe (Elements CardElement) in one widget
+- Evidence logging on every payment method update (type: payment_update)
+- Previous payment methods marked non-default when new one is saved
+- postMessage `ssPaymentMethodUpdated` sent to parent GHL iframe on success
+
+---
+
 ## 2026-04-10
 
 ### Added

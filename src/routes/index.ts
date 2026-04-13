@@ -20,6 +20,7 @@ import efwRoutes from './efw.routes';
 import stripeDefenseRoutes from './stripe-defense.routes';
 import paymentManagementRoutes from './payment-management.routes';
 import termsRoutes from './terms.routes';
+import paymentUpdateRoutes from './payment-update.routes';
 
 const router = Router();
 
@@ -63,6 +64,9 @@ router.use('/api/efws', apiLimiter, efwRoutes);
 // Stripe management (SSO-gated)
 router.use('/api/stripe', apiLimiter, stripeConnectRoutes);
 router.use('/api/stripe', apiLimiter, stripeDefenseRoutes);
+
+// Payment update widget (public, rate limited — client-facing)
+router.use(paymentUpdateRoutes);
 
 // Terms page (public, no auth)
 router.use('/terms', termsRoutes);

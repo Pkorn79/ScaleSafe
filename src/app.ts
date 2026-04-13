@@ -54,7 +54,7 @@ export function createApp(): express.Application {
   }));
   // SPA catch-all: serve index.html for all routes EXCEPT API, auth, health,
   // webhooks, enrollment, checkout, and widgets
-  app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout|quick-checkout|widgets|terms).*/, (_req, res) => {
+  app.get(/^\/(?!api|auth|health|webhooks|enrollment|checkout|quick-checkout|payment-update|widgets|terms).*/, (_req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
