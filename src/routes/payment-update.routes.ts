@@ -99,9 +99,12 @@ function paymentUpdateHtml(): string {
 
 <script>
 var API_BASE = window.location.origin;
+console.log('RAW search:', window.location.search);
+console.log('RAW href:', window.location.href);
 var params = new URLSearchParams(window.location.search);
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
+console.log('Parsed contactId:', contactId, 'locationId:', locationId);
 
 var state = {
   config: null,
