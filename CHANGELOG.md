@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-13
+
+### Added — Phase G Gap Fill: Payment Lifecycle Service
+- **Dunning service** — `initiateDunning()` classifies soft/hard declines, sets retry schedule (3/7/14 days for soft declines), fires `ss_payment_failed` trigger with dunning context. `retryPayment()` charges saved card, resolves dunning on success or escalates after max retries. `escalateDunning()` marks contact delinquent, fires `ss_client_at_risk`.
+- **Subscription management** — `pauseSubscription()`, `resumeSubscription()`, `cancelSubscription()` with evidence logging (subscription_change + cancellation types), GHL trigger firing, and contact status updates
+- **Card management** — `listCards()`, `deleteCard()`, `updateDefaultCard()` as unified service consolidating scattered implementations
+- **Payment notification helpers** — `notifyPaymentSuccess()`, `notifyPaymentFailed()`, `notifyRefundProcessed()` extracted from inline trigger-firing code
+- API routes at `/api/payments/lifecycle/*`: subscription pause/resume/cancel, card CRUD, dunning retry (all SSO-gated)
+- Migration 037: dunning tracking columns on payment_events (dunning_status, retry_count, next_retry, started_at, resolved_at, source)
+- Types in `src/types/payment-lifecycle.types.ts`: DunningParams, SubscriptionParams, CardManagementParams
+
+---
+
 ## 2026-04-12
 
 ### Added

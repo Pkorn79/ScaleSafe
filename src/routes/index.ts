@@ -21,6 +21,7 @@ import stripeDefenseRoutes from './stripe-defense.routes';
 import paymentManagementRoutes from './payment-management.routes';
 import termsRoutes from './terms.routes';
 import paymentUpdateRoutes from './payment-update.routes';
+import paymentLifecycleRoutes from './payment-lifecycle.routes';
 
 const router = Router();
 
@@ -67,6 +68,9 @@ router.use('/api/stripe', apiLimiter, stripeDefenseRoutes);
 
 // Payment update widget (public, rate limited — client-facing)
 router.use(paymentUpdateRoutes);
+
+// Payment lifecycle (SSO-gated — subscription mgmt, card mgmt, dunning)
+router.use('/api/payments/lifecycle', apiLimiter, paymentLifecycleRoutes);
 
 // Terms page (public, no auth)
 router.use('/terms', termsRoutes);
