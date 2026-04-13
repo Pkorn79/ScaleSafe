@@ -23,11 +23,19 @@ export const paymentLifecycleService = {
   async initiateDunning(params: DunningParams): Promise<void> {
     const supabase = getSupabase();
 
+    // Check if dunning is enabled for this merchant
+    const merchant = await merchantRepository.getByLocationId(params.locationId);
+    if (!(merchant as any).dunning_enabled) {
+      logger.info({ locationId: params.locationId, contactId: params.contactId }, 'Dunning disabled for this merchant — skipping auto-retry');
+      return;
+    }
+    const maxRetries = (merchant as any).dunning_max_retries || 3;
+
     // Determine retry schedule based on failure reason
     const isSoftDecline = ['insufficient_funds', 'card_declined', 'do_not_honor']
       .some(code => (params.failureReason + (params.failureCode || '')).toLowerCase().includes(code));
 
-    const retryDays = isSoftDecline ? [3, 7, 14] : []; // Hard decline = no auto-retry
+    const retryDays = isSoftDecline ? [3, 7, 14].slice(0, maxRetries) : []; // Hard decline = no auto-retry
     const nextRetryDate = retryDays.length > 0
       ? new Date(Date.now() + retryDays[0] * 24 * 60 * 60 * 1000).toISOString()
       : null;

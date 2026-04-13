@@ -50,6 +50,46 @@
       <div v-if="packetError" class="text-sm mt-2" style="color:#ef4444">{{ packetError }}</div>
     </div>
 
+    <!-- Payment Overview -->
+    <div v-if="enrollmentInfo && !pageLoading" class="card mb-4">
+      <div class="flex-between">
+        <div class="card-title">Payment Overview</div>
+        <router-link :to="`/payments/${contactId}`" class="btn btn-sm btn-secondary">Manage Payments</router-link>
+      </div>
+      <div class="grid grid-3 mt-2">
+        <div class="text-sm">
+          <strong>Card on File:</strong>
+          <span v-if="enrollmentInfo.cardOnFile" style="margin-left:4px">
+            {{ enrollmentInfo.cardOnFile.brand || 'Card' }} ending in {{ enrollmentInfo.cardOnFile.last4 }}
+            <span class="text-muted">({{ enrollmentInfo.cardOnFile.expMonth }}/{{ enrollmentInfo.cardOnFile.expYear }})</span>
+          </span>
+          <span v-else class="text-muted" style="margin-left:4px">No card on file</span>
+        </div>
+        <div class="text-sm">
+          <strong>Total Charged:</strong> ${{ (enrollmentInfo.totalCharged || 0).toFixed(2) }}
+          <span v-if="enrollmentInfo.totalRefunded > 0" class="text-muted"> (${{ enrollmentInfo.totalRefunded.toFixed(2) }} refunded)</span>
+        </div>
+        <div class="text-sm">
+          <strong>Last Payment:</strong> {{ enrollmentInfo.lastPaymentDate ? formatDate(enrollmentInfo.lastPaymentDate) : 'N/A' }}
+        </div>
+      </div>
+      <div v-if="enrollmentInfo.paymentType === 'installments' || enrollmentInfo.paymentType === 'installment'" class="text-sm mt-2">
+        <strong>Installment Progress:</strong>
+        {{ enrollmentInfo.paymentsMade || 0 }} of {{ enrollmentInfo.paymentsTotal || '?' }} payments made
+        <span v-if="enrollmentInfo.installmentAmount" class="text-muted">
+          (${{ Number(enrollmentInfo.installmentAmount).toFixed(2) }} / {{ enrollmentInfo.installmentFrequency || 'month' }})
+        </span>
+      </div>
+      <div v-if="enrollmentInfo.paymentType === 'subscription'" class="text-sm mt-2">
+        <strong>Subscription:</strong>
+        ${{ Number(enrollmentInfo.installmentAmount || enrollmentInfo.paymentAmount || 0).toFixed(2) }} / {{ enrollmentInfo.installmentFrequency || 'month' }} (ongoing)
+      </div>
+      <div v-if="enrollmentInfo.dunningActive" class="text-sm mt-2" style="color:#ef4444;font-weight:500">
+        Dunning active — failed payment being retried.
+        <router-link :to="`/payments/${contactId}`" style="color:#3b82f6">View details</router-link>
+      </div>
+    </div>
+
     <!-- Evidence Timeline -->
     <div v-if="!pageLoading" class="card">
       <div class="card-title mb-4">Evidence Timeline ({{ timeline.length }} records)</div>

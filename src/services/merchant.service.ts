@@ -49,6 +49,9 @@ export interface MerchantFullConfig {
     course: boolean;
   };
 
+  dunningEnabled: boolean;
+  dunningMaxRetries: number;
+
   config: Record<string, unknown>;
 }
 
@@ -84,6 +87,9 @@ export interface MerchantConfigUpdate {
     payments?: boolean;
     course?: boolean;
   };
+
+  dunningEnabled?: boolean;
+  dunningMaxRetries?: number;
 
   config?: Record<string, unknown>;
 }
@@ -456,6 +462,9 @@ export const merchantService = {
         course: merchant.module_course,
       },
 
+      dunningEnabled: (merchant as any).dunning_enabled ?? true,
+      dunningMaxRetries: (merchant as any).dunning_max_retries ?? 3,
+
       config: cfg,
     };
   },
@@ -482,6 +491,10 @@ export const merchantService = {
       if (updates.modules.payments !== undefined) dbUpdates.module_payments = updates.modules.payments;
       if (updates.modules.course !== undefined) dbUpdates.module_course = updates.modules.course;
     }
+
+    // Dunning settings
+    if (updates.dunningEnabled !== undefined) dbUpdates.dunning_enabled = updates.dunningEnabled;
+    if (updates.dunningMaxRetries !== undefined) dbUpdates.dunning_max_retries = updates.dunningMaxRetries;
 
     // 2. Store T&C clause toggles in dedicated JSONB column
     if (updates.standardClauses) {

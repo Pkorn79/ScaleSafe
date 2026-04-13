@@ -265,7 +265,7 @@ export const dashboardController = {
       // Get enrollment data for this contact
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature')
+        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false })
@@ -294,17 +294,33 @@ export const dashboardController = {
         if (enrollment?.digital_signature) name = enrollment.digital_signature;
       }
 
-      // Get offer name if available
-      let offerName = '';
-      if (enrollment?.offer_id) {
-        try {
-          const { data: offer } = await supabase
-            .from('offers_mirror')
-            .select('offer_name')
-            .eq('id', enrollment.offer_id)
-            .single();
-          offerName = offer?.offer_name || '';
-        } catch {}
+      // Get offer name, card on file, payment summary in parallel
+      const [offerResult, cardResult, paymentSummaryResult, dunningResult] = await Promise.allSettled([
+        enrollment?.offer_id
+          ? supabase.from('offers_mirror').select('offer_name, payment_type, num_payments, installment_amount, installment_frequency').eq('id', enrollment.offer_id).single()
+          : Promise.resolve({ data: null }),
+        supabase.from('payment_methods').select('card_last_four, card_brand, card_exp_month, card_exp_year, is_default')
+          .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
+        supabase.from('payment_events').select('amount, event_type, created_at')
+          .eq('location_id', locationId).eq('contact_id', contactId),
+        supabase.from('payment_events').select('id, dunning_status')
+          .eq('location_id', locationId).eq('contact_id', contactId).in('dunning_status', ['active', 'escalated']).limit(1).maybeSingle(),
+      ]);
+
+      const offer = offerResult.status === 'fulfilled' ? (offerResult.value as any)?.data : null;
+      const card = cardResult.status === 'fulfilled' ? (cardResult.value as any)?.data : null;
+      const paymentEvents = paymentSummaryResult.status === 'fulfilled' ? ((paymentSummaryResult.value as any)?.data || []) : [];
+      const dunningRow = dunningResult.status === 'fulfilled' ? (dunningResult.value as any)?.data : null;
+
+      // Compute payment summary
+      let totalCharged = 0;
+      let totalRefunded = 0;
+      let lastPaymentDate: string | null = null;
+      for (const ev of paymentEvents) {
+        const amt = Number(ev.amount) || 0;
+        if (ev.event_type === 'refund') totalRefunded += amt;
+        else if (ev.event_type === 'sale') totalCharged += amt;
+        if (ev.created_at && (!lastPaymentDate || ev.created_at > lastPaymentDate)) lastPaymentDate = ev.created_at;
       }
 
       res.json({
@@ -316,8 +332,20 @@ export const dashboardController = {
         paymentAmount: enrollment?.payment_amount || 0,
         paymentType: enrollment?.payment_type || '',
         enrolledAt: enrollment?.enrolled_at || null,
-        offerName,
+        offerName: offer?.offer_name || '',
         signature: enrollment?.digital_signature || '',
+        // Payment enrichment
+        cardOnFile: card ? { last4: card.card_last_four, brand: card.card_brand, expMonth: card.card_exp_month, expYear: card.card_exp_year } : null,
+        totalCharged,
+        totalRefunded,
+        totalPayments: paymentEvents.filter((e: any) => e.event_type === 'sale').length,
+        lastPaymentDate,
+        dunningActive: !!dunningRow,
+        // Installment progress
+        paymentsMade: enrollment?.payments_made || 0,
+        paymentsTotal: enrollment?.payments_total || offer?.num_payments || null,
+        installmentAmount: offer?.installment_amount || null,
+        installmentFrequency: offer?.installment_frequency || null,
       });
     } catch (err) { next(err); }
   },

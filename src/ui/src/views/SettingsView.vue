@@ -157,6 +157,45 @@
         </div>
       </div>
 
+      <!-- Dunning & Retry Settings -->
+      <div class="card mb-4" v-if="config">
+        <h3 class="section-title">Dunning & Payment Retry</h3>
+        <p class="text-sm text-muted mb-4">
+          When a recurring payment fails, ScaleSafe can automatically retry the charge. Configure the behavior below.
+        </p>
+        <div class="flex-between mb-4">
+          <div>
+            <span class="text-sm" style="font-weight:500">Enable automatic payment retry</span>
+            <div class="text-sm text-muted">When enabled, failed recurring payments are automatically retried on a schedule.</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="config.dunningEnabled" />
+            <span class="toggle-track" :class="{ active: config.dunningEnabled }">
+              <span class="toggle-thumb" :class="{ active: config.dunningEnabled }"></span>
+            </span>
+          </label>
+        </div>
+        <div v-if="config.dunningEnabled" class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Max Retry Attempts</label>
+            <select class="form-select" v-model.number="config.dunningMaxRetries">
+              <option :value="2">2 retries</option>
+              <option :value="3">3 retries (recommended)</option>
+              <option :value="5">5 retries</option>
+            </select>
+          </div>
+          <div style="padding-top:24px">
+            <div class="text-sm text-muted">
+              <strong>Retry schedule:</strong> Soft declines (insufficient funds) are retried at 3, 7, and 14 day intervals.
+              Hard declines (expired/invalid card) trigger merchant notification — no automatic retry.
+            </div>
+          </div>
+        </div>
+        <div v-if="!config.dunningEnabled" class="text-sm text-muted" style="background:#fef2f2;padding:8px 12px;border-radius:6px;color:#991b1b">
+          Dunning is disabled. Failed recurring payments will not be retried automatically. You will need to handle payment failures manually.
+        </div>
+      </div>
+
       <!-- Disengagement Thresholds -->
       <div class="card mb-4">
         <h3 class="section-title">Disengagement Thresholds</h3>
@@ -349,6 +388,8 @@ async function saveSettings() {
       shortDescription: config.value.shortDescription,
       enrollmentFunnelUrl: config.value.enrollmentFunnelUrl,
       modules: config.value.modules,
+      dunningEnabled: config.value.dunningEnabled,
+      dunningMaxRetries: config.value.dunningMaxRetries,
       config: { disengagement_thresholds: thresholds.value },
     });
     config.value = result;
