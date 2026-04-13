@@ -50,7 +50,13 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
       logger.info({ locationId, processorType, hasStripeKey: !!stripePublishableKey, hasStripeAcct: !!stripeAccountId, hasNmiKey: !!nmiTokenizationKey }, 'Payment update config resolved');
     } catch (procErr: any) {
       logger.error({ err: procErr.message, stack: procErr.stack, locationId, merchantId: merchant.id }, 'Payment update: processor resolution failed');
-      processorType = 'none';
+      // Return error details so the widget can display useful info
+      res.json({
+        processorType: 'none',
+        error: procErr.message || 'Processor resolution failed',
+        merchantName: merchant.business_name || '',
+      });
+      return;
     }
 
     // Get contact name for display
