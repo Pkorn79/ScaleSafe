@@ -9,6 +9,7 @@
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
+    <div v-if="actionError" class="error-msg">{{ actionError }}</div>
 
     <!-- Dunning Alert Banner -->
     <div v-if="dunningEvent" class="card mb-4" :style="{ borderLeft: '4px solid ' + (dunningEvent.dunning_status === 'escalated' ? '#ef4444' : '#f59e0b') }">
@@ -58,8 +59,8 @@
       </div>
     </div>
 
-    <!-- Subscription Status -->
-    <div v-if="subscriptionStatus" class="card">
+    <!-- Subscription Status (installment plans only) -->
+    <div v-if="subscriptionStatus && isInstallment" class="card">
       <div class="flex-between">
         <div class="card-title" style="display:flex;align-items:center;gap:8px">
           Subscription
@@ -257,6 +258,9 @@ const totalRefunded = ref(0);
 const clientLabel = ref('Payment Management');
 const clientEmail = ref('');
 const subscriptionStatus = ref('');
+const paymentType = ref('');
+const isInstallment = computed(() => paymentType.value === 'installment');
+const actionError = ref('');
 
 // Dunning
 const dunningEvent = ref<any>(null);
@@ -312,7 +316,7 @@ async function loadHistory() {
       dunning_retry_count: dunning.dunningRetryCount || 0,
       dunning_next_retry: dunning.dunningNextRetry,
     } : null;
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to load payment history'; }
 }
 
 async function loadMethods() {
@@ -322,7 +326,7 @@ async function loadMethods() {
     if (methods.value.length > 0) {
       chargeForm.value.methodId = methods.value[0].id;
     }
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to load payment methods'; }
 }
 
 async function loadClientInfo() {
@@ -332,8 +336,11 @@ async function loadClientInfo() {
       clientLabel.value = info.name || info.email || 'Payment Management';
       clientEmail.value = info.email || '';
       subscriptionStatus.value = info.status || '';
+      paymentType.value = info.paymentType || '';
     }
-  } catch {}
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to load client info';
+  }
 }
 
 function formatDate(d: string) {
@@ -345,20 +352,22 @@ function formatDate(d: string) {
 
 async function setDefaultCard(cardId: string) {
   cardActionLoading.value = true;
+  actionError.value = '';
   try {
     await api.post(`/api/payments/lifecycle/cards/${contactId}/default`, { cardId });
     await loadMethods();
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to set default card'; }
   cardActionLoading.value = false;
 }
 
 async function removeCard(cardId: string, last4: string) {
   if (!confirm(`Remove card ending in ${last4}? This cannot be undone.`)) return;
   cardActionLoading.value = true;
+  actionError.value = '';
   try {
     await api.del(`/api/payments/lifecycle/cards/${contactId}/${cardId}`);
     await loadMethods();
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to remove card'; }
   cardActionLoading.value = false;
 }
 
@@ -366,6 +375,7 @@ async function removeCard(cardId: string, last4: string) {
 
 async function pauseSubscription() {
   subLoading.value = true;
+  actionError.value = '';
   try {
     await api.post('/api/payments/lifecycle/subscription/pause', {
       contactId, reason: pauseReason.value,
@@ -375,23 +385,25 @@ async function pauseSubscription() {
     subResult.value = 'Subscription paused.';
     subscriptionStatus.value = 'paused';
     setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to pause subscription'; }
   subLoading.value = false;
 }
 
 async function resumeSubscription() {
   subLoading.value = true;
+  actionError.value = '';
   try {
     await api.post('/api/payments/lifecycle/subscription/resume', { contactId });
     subResult.value = 'Subscription resumed.';
     subscriptionStatus.value = 'enrolled';
     setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to resume subscription'; }
   subLoading.value = false;
 }
 
 async function cancelSubscription() {
   subLoading.value = true;
+  actionError.value = '';
   try {
     await api.post('/api/payments/lifecycle/subscription/cancel', {
       contactId, reason: cancelReason.value,
@@ -402,7 +414,7 @@ async function cancelSubscription() {
     subResult.value = 'Subscription cancelled.';
     subscriptionStatus.value = 'cancelled';
     setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Failed to cancel subscription'; }
   subLoading.value = false;
 }
 
@@ -441,6 +453,7 @@ function openRefund(payment: any) {
 
 async function submitCharge() {
   chargeLoading.value = true;
+  actionError.value = '';
   try {
     await api.post('/api/payments/manage/charge', {
       contactId,
@@ -451,12 +464,13 @@ async function submitCharge() {
     showChargeModal.value = false;
     chargeForm.value = { methodId: methods.value[0]?.id || '', amount: 0, description: '' };
     await loadHistory();
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Charge failed'; }
   chargeLoading.value = false;
 }
 
 async function submitRefund() {
   refundLoading.value = true;
+  actionError.value = '';
   try {
     await api.post('/api/payments/manage/refund', {
       paymentEventId: refundForm.value.paymentEventId,
@@ -465,7 +479,7 @@ async function submitRefund() {
     });
     showRefundModal.value = false;
     await loadHistory();
-  } catch {}
+  } catch (e: any) { actionError.value = e.message || 'Refund failed'; }
   refundLoading.value = false;
 }
 </script>

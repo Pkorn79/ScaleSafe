@@ -242,10 +242,10 @@ export const paymentLifecycleService = {
       }
     }
 
-    // Log evidence
+    // Log evidence (action must match CHECK constraint: pause/resume/cancel/card_update/plan_change)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'paused', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
     );
 
     // Fire trigger
@@ -270,10 +270,10 @@ export const paymentLifecycleService = {
    * Resume a paused subscription. Logs evidence, fires trigger, updates GHL.
    */
   async resumeSubscription(params: SubscriptionParams): Promise<void> {
-    // Log evidence
+    // Log evidence (action must match CHECK constraint: pause/resume/cancel/card_update/plan_change)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'resumed', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'resume', change_date: new Date().toISOString(), reason: params.reason },
     );
 
     // Fire trigger
@@ -309,10 +309,10 @@ export const paymentLifecycleService = {
       }
     }
 
-    // Log subscription change evidence
+    // Log subscription change evidence (action must match CHECK constraint)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'cancelled', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason },
     );
 
     // Log cancellation evidence (separate — valuable for defense)
