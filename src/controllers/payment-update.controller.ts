@@ -44,10 +44,12 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
         nmiTokenizationKey = procConfig.nmi_tokenization_key || '';
       } else if (procConfig.processor_type === 'stripe') {
         const { config: appConfig } = require('../config');
-        stripePublishableKey = appConfig.stripe.publishableKey || procConfig.stripe_publishable_key || '';
+        stripePublishableKey = appConfig.stripe?.publishableKey || procConfig.stripe_publishable_key || '';
         stripeAccountId = procConfig.stripe_user_id || '';
       }
-    } catch {
+      logger.info({ locationId, processorType, hasStripeKey: !!stripePublishableKey, hasStripeAcct: !!stripeAccountId, hasNmiKey: !!nmiTokenizationKey }, 'Payment update config resolved');
+    } catch (procErr: any) {
+      logger.error({ err: procErr.message, stack: procErr.stack, locationId, merchantId: merchant.id }, 'Payment update: processor resolution failed');
       processorType = 'none';
     }
 
