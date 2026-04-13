@@ -532,6 +532,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="offer-refund hidden" id="offer-refund"></div>
     </div>
 
+    <!-- PIF / Installment toggle (shown when offer supports both) -->
+    <div id="pricing-toggle" class="hidden" style="display:none;margin:12px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+      <div style="display:flex">
+        <button type="button" id="toggle-pif-btn" onclick="selectPaymentOption('pif')" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#3b82f6;color:#fff;transition:background 0.15s">
+          Pay in Full <span id="toggle-pif-price"></span>
+        </button>
+        <button type="button" id="toggle-inst-btn" onclick="selectPaymentOption('installments')" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#f9fafb;color:#374151;transition:background 0.15s">
+          Installments <span id="toggle-inst-price"></span>
+        </button>
+      </div>
+    </div>
+    <div id="installment-note" class="hidden" style="display:none;font-size:12px;color:#6b7280;text-align:center;margin-bottom:8px"></div>
+
     <div class="divider"></div>
 
     <div class="section-title">Payment Information</div>
@@ -672,33 +685,67 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     el('offer-name').textContent = offerData.programName;
     el('merchant-name').textContent = el('merchant-name').textContent || offerData.merchantName || '';
 
-    // Determine display price based on payment choice
-    var displayPrice = offerData.price;
-    var priceNote = '';
-    if (paymentChoice === 'pif' && offerData.pifPrice != null) {
-      displayPrice = offerData.pifPrice;
-    } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
-      displayPrice = offerData.installmentAmount;
-      priceNote = 'First of ' + (offerData.installmentCount || '') + ' payments of ' + formatCurrency(offerData.installmentAmount) + '/' + (offerData.installmentFrequency || 'month');
+    // Show pricing toggle if offer supports both PIF and installments
+    var hasBothOptions = offerData.paymentType === 'installments' && offerData.pifDiscountEnabled && offerData.pifPrice && offerData.installmentAmount;
+    if (hasBothOptions) {
+      el('pricing-toggle').style.display = 'block';
+      el('pricing-toggle').classList.remove('hidden');
+      el('toggle-pif-price').textContent = formatCurrency(offerData.pifPrice);
+      el('toggle-inst-price').textContent = formatCurrency(offerData.installmentAmount) + '/mo';
+      if (!paymentChoice) paymentChoice = 'pif'; // Default to PIF when toggle shown
+    } else if (offerData.paymentType === 'installments' && offerData.installmentAmount) {
+      // Installment-only (no PIF discount) — force installments
+      paymentChoice = 'installments';
+    } else if (offerData.paymentType === 'subscription' && offerData.installmentAmount) {
+      paymentChoice = 'subscription';
     }
 
-    el('offer-price').textContent = formatCurrency(displayPrice);
+    updatePricingDisplay();
 
     if (offerData.programDescription) {
       el('offer-desc').textContent = offerData.programDescription;
-      el('offer-desc').classList.remove('hidden');
-    }
-    if (priceNote) {
-      el('offer-desc').textContent = priceNote;
       el('offer-desc').classList.remove('hidden');
     }
     if (offerData.refundWindowText) {
       el('offer-refund').textContent = offerData.refundWindowText;
       el('offer-refund').classList.remove('hidden');
     }
+  }
 
+  function updatePricingDisplay() {
+    var displayPrice = offerData.price;
+    var note = '';
+    if (paymentChoice === 'pif' && offerData.pifPrice != null) {
+      displayPrice = offerData.pifPrice;
+    } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
+      displayPrice = offerData.installmentAmount;
+      note = offerData.installmentCount + ' ' + (offerData.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(offerData.installmentAmount);
+    } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
+      displayPrice = offerData.installmentAmount;
+      note = formatCurrency(offerData.installmentAmount) + ' / ' + (offerData.installmentFrequency || 'month') + ' (ongoing)';
+    }
+    el('offer-price').textContent = formatCurrency(displayPrice);
     el('pay-btn').textContent = 'Pay ' + formatCurrency(displayPrice);
+    if (note) {
+      el('installment-note').textContent = note;
+      el('installment-note').style.display = 'block';
+      el('installment-note').classList.remove('hidden');
+    } else {
+      el('installment-note').style.display = 'none';
+    }
+    // Update toggle button styles
+    if (el('toggle-pif-btn')) {
+      el('toggle-pif-btn').style.background = paymentChoice === 'pif' ? '#3b82f6' : '#f9fafb';
+      el('toggle-pif-btn').style.color = paymentChoice === 'pif' ? '#fff' : '#374151';
+      el('toggle-inst-btn').style.background = paymentChoice === 'installments' ? '#3b82f6' : '#f9fafb';
+      el('toggle-inst-btn').style.color = paymentChoice === 'installments' ? '#fff' : '#374151';
+    }
     updatePayBtn();
+  }
+
+  window.selectPaymentOption = function(choice) {
+    paymentChoice = choice;
+    updatePricingDisplay();
   }
 
   function formatCurrency(val) {

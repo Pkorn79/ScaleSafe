@@ -59,8 +59,8 @@
       </div>
     </div>
 
-    <!-- Subscription Status (installment plans only) -->
-    <div v-if="subscriptionStatus && isInstallment" class="card">
+    <!-- Subscription Status (recurring plans only — installments + subscriptions) -->
+    <div v-if="subscriptionStatus && isRecurring" class="card">
       <div class="flex-between">
         <div class="card-title" style="display:flex;align-items:center;gap:8px">
           Subscription
@@ -259,7 +259,7 @@ const clientLabel = ref('Payment Management');
 const clientEmail = ref('');
 const subscriptionStatus = ref('');
 const paymentType = ref('');
-const isInstallment = computed(() => paymentType.value === 'installment');
+const isRecurring = computed(() => paymentType.value === 'installment' || paymentType.value === 'installments' || paymentType.value === 'subscription');
 const actionError = ref('');
 
 // Dunning

@@ -15,7 +15,17 @@
       <p>No offers yet. Create your first offer to start enrolling clients.</p>
     </div>
 
-    <div class="card" v-if="offers.length > 0">
+    <!-- Tab filter -->
+    <div v-if="offers.length > 0" class="flex gap-2 mb-4">
+      <button class="btn btn-sm" :class="tab === 'active' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'active'">
+        Active ({{ activeOffers.length }})
+      </button>
+      <button class="btn btn-sm" :class="tab === 'archived' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'archived'">
+        Archived ({{ archivedOffers.length }})
+      </button>
+    </div>
+
+    <div class="card" v-if="filteredOffers.length > 0">
       <table class="table">
         <thead>
           <tr>
@@ -28,15 +38,15 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="offer in offers" :key="offer.id">
+          <tr v-for="offer in filteredOffers" :key="offer.id">
             <td>
               <strong>{{ offer.offer_name }}</strong>
               <div class="text-sm text-muted">{{ offer.delivery_method || 'Not set' }}</div>
             </td>
             <td>${{ offer.price || 0 }}</td>
             <td>
-              <span class="badge" :class="offer.payment_type === 'one_time' ? 'badge-blue' : 'badge-green'">
-                {{ offer.payment_type === 'one_time' ? 'Pay in Full' : `${offer.num_payments}x $${offer.installment_amount}` }}
+              <span class="badge" :class="offer.payment_type === 'one_time' ? 'badge-blue' : offer.payment_type === 'subscription' ? 'badge-yellow' : 'badge-green'">
+                {{ offer.payment_type === 'one_time' ? 'Pay in Full' : offer.payment_type === 'subscription' ? `$${offer.installment_amount || offer.price}/${offer.installment_frequency || 'mo'}` : `${offer.num_payments}x $${offer.installment_amount}` }}
               </span>
             </td>
             <td>
@@ -128,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
@@ -138,6 +148,10 @@ const routerNav = useRouter();
 const { loading, error } = api;
 const offers = ref<any[]>([]);
 const toast = ref('');
+const tab = ref<'active' | 'archived'>('active');
+const activeOffers = computed(() => offers.value.filter(o => o.active));
+const archivedOffers = computed(() => offers.value.filter(o => !o.active));
+const filteredOffers = computed(() => tab.value === 'active' ? activeOffers.value : archivedOffers.value);
 
 // Send link modal state
 const showSendModal = ref(false);

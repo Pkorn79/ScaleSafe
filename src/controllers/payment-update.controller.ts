@@ -223,3 +223,75 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
     res.status(500).json({ success: false, error: err.message || 'Payment method update failed' });
   }
 }
+
+/**
+ * POST /api/payment-update/cancel-subscription
+ * Public endpoint — called by the client-facing cancellation widget.
+ */
+export async function cancelSubscriptionPublic(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { contactId, locationId, reason } = req.body;
+    if (!contactId || !locationId || !reason) {
+      res.status(400).json({ success: false, error: 'contactId, locationId, and reason are required' });
+      return;
+    }
+
+    const merchant = await merchantRepository.findByLocationId(locationId);
+    if (!merchant) {
+      res.status(404).json({ success: false, error: 'Merchant not found' });
+      return;
+    }
+
+    const supabase = getSupabase();
+    const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
+
+    // Verify contact belongs to this location (via enrollment)
+    const { data: enrollment } = await supabase
+      .from('enrollments')
+      .select('id, status, offer_id')
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .in('status', ['enrolled', 'active'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!enrollment) {
+      res.status(404).json({ success: false, error: 'No active enrollment found' });
+      return;
+    }
+
+    // Use the lifecycle service to cancel with full evidence logging
+    const { paymentLifecycleService } = require('../services/payment-lifecycle.service');
+    await paymentLifecycleService.cancelSubscription({
+      merchantId: merchant.id,
+      locationId,
+      contactId,
+      offerId: enrollment.offer_id || '',
+      reason: `Client-initiated: ${reason}`,
+    });
+
+    // Log additional evidence with client IP
+    try {
+      await supabase.from('evidence').insert({
+        location_id: locationId,
+        contact_id: contactId,
+        enrollment_id: enrollment.id,
+        evidence_type: 'cancellation',
+        data: {
+          reason,
+          initiated_by: 'client',
+          cancellation_date: new Date().toISOString(),
+          ip_address: clientIp,
+        },
+        ip_address: clientIp,
+      });
+    } catch { /* non-blocking */ }
+
+    logger.info({ contactId, locationId, reason }, 'Client-initiated subscription cancellation');
+    res.json({ success: true });
+  } catch (err: any) {
+    logger.error({ err: err.message, stack: err.stack }, 'Client subscription cancel failed');
+    res.status(500).json({ success: false, error: err.message || 'Cancellation failed' });
+  }
+}

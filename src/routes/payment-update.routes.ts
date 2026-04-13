@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getPaymentUpdateConfig, updatePaymentMethod } from '../controllers/payment-update.controller';
+import { getPaymentUpdateConfig, updatePaymentMethod, cancelSubscriptionPublic } from '../controllers/payment-update.controller';
 
 const router = Router();
 
-// API endpoints (public — called by the widget)
+// API endpoints (public — called by the widgets)
 router.get('/api/payment-update/config', getPaymentUpdateConfig);
 router.post('/api/payment-update/update-method', updatePaymentMethod);
+router.post('/api/payment-update/cancel-subscription', cancelSubscriptionPublic);
 
 // Widget page (loaded in GHL funnel iframe or standalone)
 const widgetCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com";
@@ -294,6 +295,142 @@ async function doSubmit(token, processorType) {
   var stripeBtn = el('stripe-submit');
   if (nmiBtn) { nmiBtn.disabled = false; nmiBtn.textContent = 'Update Payment Method'; }
   if (stripeBtn) { stripeBtn.disabled = false; stripeBtn.textContent = 'Update Payment Method'; }
+}
+</script>
+</body>
+</html>`;
+}
+
+// Subscription cancellation page (client-facing)
+router.get('/subscription-cancel', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(subscriptionCancelHtml());
+});
+
+function subscriptionCancelHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cancel Subscription</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #1f2937; padding: 24px 16px; max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
+  .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .field-label { font-size: 12px; font-weight: 500; color: #6b7280; margin-bottom: 6px; display: block; }
+  .field-row { margin-bottom: 14px; }
+  textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; resize: vertical; min-height: 80px; font-family: inherit; }
+  textarea:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-danger:disabled { background: #fca5a5; cursor: not-allowed; }
+  .status { text-align: center; padding: 16px; border-radius: 8px; margin-top: 16px; font-size: 14px; }
+  .status-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .status-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .loading { text-align: center; padding: 40px 0; color: #6b7280; }
+  .contact-info { font-size: 13px; color: #374151; margin-bottom: 16px; padding: 10px 12px; background: #f3f4f6; border-radius: 6px; }
+  .warning { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #991b1b; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<h1>Cancel Subscription</h1>
+<p class="subtitle" id="merchant-name"></p>
+
+<div id="loading" class="loading">Loading...</div>
+<div id="contact-info" class="contact-info hidden"></div>
+
+<div id="cancel-form" class="hidden">
+  <div class="warning">
+    Cancelling your subscription will stop all future billing. This action cannot be undone. If you have questions, contact your provider before proceeding.
+  </div>
+
+  <div class="field-row">
+    <label class="field-label">Why are you cancelling? (required)</label>
+    <textarea id="reason" placeholder="Please let us know why you'd like to cancel..."></textarea>
+  </div>
+
+  <button class="btn btn-danger" id="cancel-btn" onclick="submitCancel()" disabled>
+    Cancel My Subscription
+  </button>
+</div>
+
+<div id="success-msg" class="status status-success hidden">
+  Your subscription has been cancelled. You will not be charged again. Thank you.
+</div>
+<div id="error-msg" class="status status-error hidden"></div>
+
+<script>
+var API_BASE = window.location.origin;
+var params = new URLSearchParams(window.location.search);
+var contactId = params.get('contactId') || '';
+var locationId = params.get('locationId') || '';
+
+(async function init() {
+  if (!contactId || !locationId) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = 'Invalid link. Please use the cancellation link provided by your provider.';
+    document.getElementById('error-msg').classList.remove('hidden');
+    return;
+  }
+
+  try {
+    var res = await fetch(API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId));
+    var data = await res.json();
+
+    document.getElementById('loading').classList.add('hidden');
+
+    if (data.merchantName) document.getElementById('merchant-name').textContent = data.merchantName;
+    if (data.contactName || data.contactEmail) {
+      document.getElementById('contact-info').textContent = (data.contactName || '') + (data.contactEmail ? ' (' + data.contactEmail + ')' : '');
+      document.getElementById('contact-info').classList.remove('hidden');
+    }
+
+    document.getElementById('cancel-form').classList.remove('hidden');
+  } catch (err) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = 'Failed to load. Please try again.';
+    document.getElementById('error-msg').classList.remove('hidden');
+  }
+})();
+
+// Enable button when reason is entered
+document.getElementById('reason').addEventListener('input', function() {
+  document.getElementById('cancel-btn').disabled = !this.value.trim();
+});
+
+async function submitCancel() {
+  var reason = document.getElementById('reason').value.trim();
+  if (!reason) return;
+
+  document.getElementById('cancel-btn').disabled = true;
+  document.getElementById('cancel-btn').textContent = 'Cancelling...';
+  document.getElementById('error-msg').classList.add('hidden');
+
+  try {
+    var res = await fetch(API_BASE + '/api/payment-update/cancel-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId: contactId, locationId: locationId, reason: reason })
+    });
+    var data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Cancellation failed');
+
+    document.getElementById('cancel-form').classList.add('hidden');
+    document.getElementById('success-msg').classList.remove('hidden');
+    window.parent.postMessage({ type: 'ssSubscriptionCancelled' }, '*');
+  } catch (err) {
+    document.getElementById('error-msg').textContent = err.message || 'Cancellation failed. Please try again.';
+    document.getElementById('error-msg').classList.remove('hidden');
+    document.getElementById('cancel-btn').disabled = false;
+    document.getElementById('cancel-btn').textContent = 'Cancel My Subscription';
+  }
 }
 </script>
 </body>

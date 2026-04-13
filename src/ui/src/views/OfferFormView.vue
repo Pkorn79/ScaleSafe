@@ -63,10 +63,31 @@
           <select class="form-select" v-model="form.paymentType">
             <option value="one_time">Pay in Full</option>
             <option value="installments">Installments</option>
+            <option value="subscription">Subscription (Ongoing)</option>
           </select>
         </div>
       </div>
 
+      <!-- Subscription fields -->
+      <div v-if="form.paymentType === 'subscription'">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Amount Per Period *</label>
+            <input class="form-input" type="number" step="0.01" min="0.01" v-model.number="form.installmentAmount" placeholder="e.g., 99.00" />
+            <p class="text-sm text-muted mt-2">Recurring charge amount each billing period</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Billing Frequency</label>
+            <select class="form-select" v-model="form.installmentFrequency">
+              <option value="weekly">Weekly</option>
+              <option value="bi_weekly">Bi-Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Installment fields -->
       <div v-if="form.paymentType === 'installments'">
         <div class="grid grid-3">
           <div class="form-group">
