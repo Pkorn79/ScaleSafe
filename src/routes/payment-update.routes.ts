@@ -164,23 +164,35 @@ function showError(msg) {
 function initNmi(tokenKey) {
   var script = document.createElement('script');
   script.src = 'https://secure.nmi.com/token/Collect.js';
-  script.setAttribute('data-tokenization-key', tokenKey);
-  script.setAttribute('data-variant', 'inline');
   script.onload = function() {
-    if (typeof CollectJS !== 'undefined') {
-      CollectJS.configure({
-        variant: 'inline',
-        fields: {
-          ccnumber: { selector: '#cc-number', placeholder: 'Card Number' },
-          ccexp: { selector: '#cc-exp', placeholder: 'MM/YY' },
-          cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
-        },
-        callback: function(response) {
-          state.nmiToken = response.token;
-          doSubmit(response.token, 'nmi');
-        }
-      });
-    }
+    // Delay to ensure DOM elements are painted before Collect.js mounts iframes
+    setTimeout(function() {
+      if (typeof CollectJS !== 'undefined') {
+        CollectJS.configure({
+          tokenizationKey: tokenKey,
+          variant: 'inline',
+          fields: {
+            ccnumber: { selector: '#cc-number', placeholder: 'Card Number' },
+            ccexp: { selector: '#cc-exp', placeholder: 'MM/YY' },
+            cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
+          },
+          customCss: {
+            'border': 'none',
+            'height': '100%',
+            'width': '100%',
+            'font-size': '16px',
+            'color': '#32325d',
+            'outline': 'none',
+          },
+          invalidCss: { 'color': '#ef4444' },
+          focusCss: { 'outline': 'none' },
+          callback: function(response) {
+            state.nmiToken = response.token;
+            doSubmit(response.token, 'nmi');
+          }
+        });
+      }
+    }, 150);
   };
   document.head.appendChild(script);
 }
