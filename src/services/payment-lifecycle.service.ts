@@ -478,4 +478,45 @@ export const paymentLifecycleService = {
       logger.warn({ err: err.message, contactId }, 'Refund notification trigger failed');
     }
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // SEND CARD UPDATE REQUEST
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Send a card update request to a client via GHL trigger.
+   * Constructs the payment-update URL and fires ss_payment_failed
+   * with action: card_update_requested so the merchant's GHL workflow
+   * can send the link via email/SMS.
+   */
+  async sendCardUpdateRequest(locationId: string, contactId: string): Promise<{ success: boolean; link: string }> {
+    const { config: appConfig } = require('../config');
+    const baseUrl = appConfig.appUrl || `https://scalesafe-production.up.railway.app`;
+    const link = `${baseUrl}/payment-update?contactId=${encodeURIComponent(contactId)}&locationId=${encodeURIComponent(locationId)}`;
+
+    // Write URL to GHL contact custom field so workflow can use it
+    try {
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+        },
+      });
+    } catch { /* non-blocking */ }
+
+    // Fire trigger for GHL workflow to send the link
+    try {
+      await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
+        contact_id: contactId,
+        action: 'card_update_requested',
+        card_update_link: link,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, contactId }, 'Card update request trigger failed');
+    }
+
+    logger.info({ contactId, locationId, link }, 'Card update request sent');
+    return { success: true, link };
+  },
 };

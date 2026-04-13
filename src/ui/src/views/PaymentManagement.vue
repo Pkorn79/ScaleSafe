@@ -40,7 +40,18 @@
 
     <!-- Saved Payment Methods -->
     <div class="card">
-      <div class="card-title">Saved Payment Methods</div>
+      <div class="flex-between">
+        <div class="card-title">Saved Payment Methods</div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm btn-secondary" @click="copyCardUpdateLink" :disabled="cardUpdateSending">
+            Copy Update Link
+          </button>
+          <button class="btn btn-sm btn-primary" @click="sendCardUpdateRequest" :disabled="cardUpdateSending">
+            {{ cardUpdateSending ? 'Sending...' : 'Request Card Update' }}
+          </button>
+        </div>
+      </div>
+      <div v-if="cardUpdateResult" class="text-sm mt-2" :style="{ color: '#10b981' }">{{ cardUpdateResult }}</div>
       <div v-if="methods.length === 0" class="text-sm text-muted">No saved payment methods.</div>
       <div v-for="m in methods" :key="m.id" class="flex-between" style="padding:8px 0;border-bottom:1px solid #f3f4f6">
         <div>
@@ -269,6 +280,8 @@ const dunningResult = ref<any>(null);
 
 // Card actions
 const cardActionLoading = ref(false);
+const cardUpdateSending = ref(false);
+const cardUpdateResult = ref('');
 
 // Subscription
 const subLoading = ref(false);
@@ -349,6 +362,29 @@ function formatDate(d: string) {
 }
 
 // ─── Card Management ────────────────────────────────────
+
+async function sendCardUpdateRequest() {
+  cardUpdateSending.value = true;
+  cardUpdateResult.value = '';
+  actionError.value = '';
+  try {
+    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId });
+    cardUpdateResult.value = 'Card update request sent! Link: ' + (result.link || '').split('?')[0] + '...';
+    setTimeout(() => { cardUpdateResult.value = ''; }, 6000);
+  } catch (e: any) { actionError.value = e.message || 'Failed to send card update request'; }
+  cardUpdateSending.value = false;
+}
+
+async function copyCardUpdateLink() {
+  const link = `${window.location.origin}/payment-update?contactId=${encodeURIComponent(contactId)}&locationId=${encodeURIComponent(sessionStorage.getItem('ss_location_id') || '')}`;
+  try {
+    await navigator.clipboard.writeText(link);
+    cardUpdateResult.value = 'Link copied to clipboard!';
+    setTimeout(() => { cardUpdateResult.value = ''; }, 3000);
+  } catch {
+    cardUpdateResult.value = link; // Fallback: show the link
+  }
+}
 
 async function setDefaultCard(cardId: string) {
   cardActionLoading.value = true;

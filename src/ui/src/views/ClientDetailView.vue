@@ -5,7 +5,10 @@
         <h1 class="page-title">{{ clientLabel }}</h1>
         <p v-if="clientEmail" class="text-sm text-muted">{{ clientEmail }}</p>
       </div>
-      <router-link to="/clients" class="btn btn-secondary">Back</router-link>
+      <div class="flex gap-2">
+        <button v-if="!pageLoading && clientEmail" class="btn btn-primary" @click="openSendOffer">Send Offer</button>
+        <router-link to="/clients" class="btn btn-secondary">Back</router-link>
+      </div>
     </div>
 
     <div v-if="pageLoading" class="loading">Loading client data...</div>
@@ -117,6 +120,42 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Send Offer Modal -->
+    <div v-if="showSendOfferModal" class="modal-overlay" @click.self="showSendOfferModal = false">
+      <div class="modal-card">
+        <h3 style="margin-bottom:4px">Send Offer to {{ clientLabel }}</h3>
+        <p class="text-sm text-muted mb-4">{{ clientEmail }}</p>
+
+        <div v-if="offersLoading" class="loading">Loading offers...</div>
+
+        <div v-if="!offersLoading && activeOffers.length === 0" class="text-sm text-muted">
+          No active offers. Create an offer first.
+        </div>
+
+        <div v-if="!offersLoading && activeOffers.length > 0">
+          <div class="form-group">
+            <label class="form-label">Select Offer</label>
+            <select class="form-select" v-model="selectedOfferId">
+              <option value="">Choose an offer...</option>
+              <option v-for="o in activeOffers" :key="o.id" :value="o.id">
+                {{ o.offer_name }} — ${{ o.price }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="sendOfferResult" class="text-sm mt-2" :style="{ color: '#10b981' }">{{ sendOfferResult }}</div>
+        <div v-if="sendOfferError" class="text-sm mt-2" style="color:#ef4444">{{ sendOfferError }}</div>
+
+        <div class="flex gap-2 mt-4" style="justify-content:flex-end">
+          <button class="btn btn-secondary" @click="showSendOfferModal = false">Close</button>
+          <button class="btn btn-primary" @click="submitSendOffer" :disabled="sendOfferLoading || !selectedOfferId">
+            {{ sendOfferLoading ? 'Sending...' : 'Send Offer' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -138,6 +177,15 @@ const clientLabel = ref('Client');
 const pageLoading = ref(true);
 const packetLoading = ref(false);
 const packetError = ref('');
+
+// Send Offer modal
+const showSendOfferModal = ref(false);
+const activeOffers = ref<any[]>([]);
+const offersLoading = ref(false);
+const selectedOfferId = ref('');
+const sendOfferLoading = ref(false);
+const sendOfferResult = ref('');
+const sendOfferError = ref('');
 
 function scoreColor(s: number): string {
   if (s >= 70) return '#10b981';
@@ -189,6 +237,46 @@ function summarize(item: any): string {
     return summary || JSON.stringify(d).slice(0, 80);
   }
   return '-';
+}
+
+async function openSendOffer() {
+  showSendOfferModal.value = true;
+  sendOfferResult.value = '';
+  sendOfferError.value = '';
+  selectedOfferId.value = '';
+  if (activeOffers.value.length === 0) {
+    offersLoading.value = true;
+    try {
+      const offers = await api.get<any[]>('/api/offers');
+      activeOffers.value = (offers || []).filter(o => o.active);
+    } catch (e: any) {
+      sendOfferError.value = e.message || 'Failed to load offers';
+    }
+    offersLoading.value = false;
+  }
+}
+
+async function submitSendOffer() {
+  if (!selectedOfferId.value || !clientEmail.value) return;
+  sendOfferLoading.value = true;
+  sendOfferError.value = '';
+  sendOfferResult.value = '';
+  try {
+    // Extract first/last name from clientLabel
+    const parts = clientLabel.value.split(' ');
+    await api.post('/api/enrollment/send-link', {
+      offerId: selectedOfferId.value,
+      firstName: parts[0] || '',
+      lastName: parts.slice(1).join(' ') || '',
+      email: clientEmail.value,
+      sendVia: 'email',
+    });
+    sendOfferResult.value = 'Offer sent successfully!';
+    selectedOfferId.value = '';
+  } catch (e: any) {
+    sendOfferError.value = e.message || 'Failed to send offer';
+  }
+  sendOfferLoading.value = false;
 }
 
 async function downloadPacket() {

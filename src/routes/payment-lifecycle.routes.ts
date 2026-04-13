@@ -123,4 +123,18 @@ router.post('/dunning/retry', async (req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 });
 
+// ─── Send Card Update Request ───────────────────────────────────
+
+router.post('/send-card-update', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const locationId = resolveLocationId(req);
+    if (!locationId) throw new ValidationError('locationId required');
+    const { contactId } = req.body;
+    if (!contactId) throw new ValidationError('contactId required');
+
+    const result = await paymentLifecycleService.sendCardUpdateRequest(locationId, contactId);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 export default router;
