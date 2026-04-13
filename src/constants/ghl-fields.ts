@@ -78,11 +78,7 @@ export const CUSTOM_VALUE_REGISTRY: readonly CustomValueDef[] = [
   // T&C Config (7)
   { key: 'TC_HAS_OWN',            defaultName: 'TC Has Own',                fieldKeyMatch: 'tc_has_own' },
   { key: 'TC_DOCUMENT_URL',       defaultName: 'TC Document URL',           fieldKeyMatch: 'tc_document_url' },
-  { key: 'COMPILED_TERMS_HTML',   defaultName: 'Compiled Terms HTML',       fieldKeyMatch: 'compiled_terms_html' },
-  { key: 'CUSTOM_CLAUSE_1_TITLE', defaultName: 'Custom Clause 1 Title',    fieldKeyMatch: 'custom_clause_1_title' },
-  { key: 'CUSTOM_CLAUSE_1_TEXT',  defaultName: 'Custom Clause 1 Text',     fieldKeyMatch: 'custom_clause_1_text' },
-  { key: 'CUSTOM_CLAUSE_2_TITLE', defaultName: 'Custom Clause 2 Title',    fieldKeyMatch: 'custom_clause_2_title' },
-  { key: 'CUSTOM_CLAUSE_2_TEXT',  defaultName: 'Custom Clause 2 Text',     fieldKeyMatch: 'custom_clause_2_text' },
+  // REMOVED: COMPILED_TERMS_HTML, CUSTOM_CLAUSE_1/2_TITLE/TEXT — moved to per-offer (offers_mirror table)
   // Enrollment Funnel (1)
   { key: 'WEBSITE_BASE_URL',  defaultName: 'Website Base URL',          fieldKeyMatch: 'website_base_url' },
   // Evidence Module Toggles (5)

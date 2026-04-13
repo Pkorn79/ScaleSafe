@@ -645,13 +645,7 @@ export const merchantService = {
     // T&C config
     if (updates.tcHasOwn !== undefined)             push('TC_HAS_OWN', String(updates.tcHasOwn));
     if (updates.tcDocumentUrl !== undefined)         push('TC_DOCUMENT_URL', updates.tcDocumentUrl);
-    if (updates.customClause1Title !== undefined)    push('CUSTOM_CLAUSE_1_TITLE', updates.customClause1Title);
-    if (updates.customClause1Text !== undefined)     push('CUSTOM_CLAUSE_1_TEXT', updates.customClause1Text);
-    if (updates.customClause2Title !== undefined)    push('CUSTOM_CLAUSE_2_TITLE', updates.customClause2Title);
-    if (updates.customClause2Text !== undefined)     push('CUSTOM_CLAUSE_2_TEXT', updates.customClause2Text);
-
-    // Always sync compiled T&C HTML
-    push('COMPILED_TERMS_HTML', compiledHtml);
+    // Custom clauses + compiled T&C HTML are now per-offer (offers_mirror), not location-level custom values
 
     // Enrollment funnel URL
     if (updates.enrollmentFunnelUrl !== undefined) push('WEBSITE_BASE_URL', updates.enrollmentFunnelUrl);
