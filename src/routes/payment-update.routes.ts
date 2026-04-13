@@ -13,6 +13,7 @@ const widgetCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://j
 router.get('/payment-update', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('Content-Security-Policy', widgetCsp);
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.send(paymentUpdateHtml());
 });
 
@@ -128,6 +129,7 @@ function showError(msg) {
   try {
     var res = await fetch(API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId));
     var data = await res.json();
+    console.log('Payment update config:', JSON.stringify(data));
     state.config = data;
 
     el('loading').classList.add('hidden');
