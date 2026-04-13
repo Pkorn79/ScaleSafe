@@ -256,6 +256,9 @@ export async function getPaymentHistory(req: Request, res: Response, next: NextF
         description: ev.event_type === 'refund' ? 'Refund' : 'Payment',
         transactionId: ev.processor_transaction_id,
         refundable: ev.event_type === 'sale' && !ev.failure_reason,
+        dunningStatus: ev.dunning_status || null,
+        dunningRetryCount: ev.dunning_retry_count || 0,
+        dunningNextRetry: ev.dunning_next_retry || null,
       };
     });
 

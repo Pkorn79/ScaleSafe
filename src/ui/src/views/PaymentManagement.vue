@@ -10,6 +10,33 @@
 
     <div v-if="error" class="error-msg">{{ error }}</div>
 
+    <!-- Dunning Alert Banner -->
+    <div v-if="dunningEvent" class="card mb-4" :style="{ borderLeft: '4px solid ' + (dunningEvent.dunning_status === 'escalated' ? '#ef4444' : '#f59e0b') }">
+      <div class="flex-between">
+        <div>
+          <div class="card-title" style="display:flex;align-items:center;gap:8px">
+            Dunning Active
+            <span class="badge" :class="dunningEvent.dunning_status === 'escalated' ? 'badge-red' : 'badge-yellow'">
+              {{ dunningEvent.dunning_status }}
+            </span>
+          </div>
+          <div class="text-sm text-muted" style="margin-top:4px">
+            Retry {{ dunningEvent.dunning_retry_count || 0 }} of 3
+            <span v-if="dunningEvent.dunning_next_retry"> · Next retry: {{ formatDate(dunningEvent.dunning_next_retry) }}</span>
+          </div>
+          <div v-if="dunningEvent.dunning_status === 'escalated'" class="text-sm" style="color:#ef4444;margin-top:4px;font-weight:500">
+            Max retries reached — contact is delinquent. Request card update or escalate manually.
+          </div>
+        </div>
+        <button v-if="dunningEvent.dunning_status !== 'resolved'" class="btn btn-sm btn-primary" @click="retryDunning" :disabled="dunningRetrying">
+          {{ dunningRetrying ? 'Retrying...' : 'Retry Now' }}
+        </button>
+      </div>
+      <div v-if="dunningResult" class="text-sm" :style="{ color: dunningResult.success ? '#10b981' : '#ef4444', marginTop: '8px' }">
+        {{ dunningResult.success ? 'Payment succeeded! Dunning resolved.' : dunningResult.error }}
+      </div>
+    </div>
+
     <!-- Saved Payment Methods -->
     <div class="card">
       <div class="card-title">Saved Payment Methods</div>
@@ -20,7 +47,37 @@
           <span class="text-sm text-muted">(exp {{ m.expMonth }}/{{ m.expYear }})</span>
           <span v-if="m.isDefault" class="badge badge-blue" style="margin-left:6px">Default</span>
         </div>
+        <div class="flex gap-2">
+          <button v-if="!m.isDefault" class="btn btn-sm btn-secondary" @click="setDefaultCard(m.id)" :disabled="cardActionLoading">
+            Set Default
+          </button>
+          <button class="btn btn-sm btn-secondary" style="color:#ef4444" @click="removeCard(m.id, m.last4)" :disabled="cardActionLoading">
+            Remove
+          </button>
+        </div>
       </div>
+    </div>
+
+    <!-- Subscription Status -->
+    <div v-if="subscriptionStatus" class="card">
+      <div class="flex-between">
+        <div class="card-title" style="display:flex;align-items:center;gap:8px">
+          Subscription
+          <span class="badge" :class="subscriptionBadge">{{ subscriptionStatus }}</span>
+        </div>
+        <div class="flex gap-2">
+          <button v-if="subscriptionStatus === 'enrolled' || subscriptionStatus === 'active'" class="btn btn-sm btn-secondary" @click="showPauseModal = true">
+            Pause
+          </button>
+          <button v-if="subscriptionStatus === 'paused'" class="btn btn-sm btn-primary" @click="resumeSubscription" :disabled="subLoading">
+            {{ subLoading ? 'Resuming...' : 'Resume' }}
+          </button>
+          <button v-if="subscriptionStatus !== 'cancelled'" class="btn btn-sm btn-danger" @click="showCancelModal = true">
+            Cancel
+          </button>
+        </div>
+      </div>
+      <div v-if="subResult" class="text-sm" :style="{ color: '#10b981', marginTop: '8px' }">{{ subResult }}</div>
     </div>
 
     <!-- Quick Actions -->
@@ -41,6 +98,7 @@
             <th>Amount</th>
             <th>Type</th>
             <th>Status</th>
+            <th>Dunning</th>
             <th></th>
           </tr>
         </thead>
@@ -56,6 +114,11 @@
             <td>
               <span class="badge" :class="p.status === 'success' ? 'badge-green' : 'badge-red'">
                 {{ p.status === 'success' ? 'Paid' : 'Failed' }}
+              </span>
+            </td>
+            <td>
+              <span v-if="p.dunningStatus" class="badge" :class="p.dunningStatus === 'resolved' ? 'badge-green' : p.dunningStatus === 'escalated' ? 'badge-red' : 'badge-yellow'">
+                {{ p.dunningStatus }}
               </span>
             </td>
             <td>
@@ -129,11 +192,53 @@
         </div>
       </div>
     </div>
+
+    <!-- Pause Subscription Modal -->
+    <div v-if="showPauseModal" class="modal-overlay" @click.self="showPauseModal = false">
+      <div class="modal-card">
+        <h3 style="margin-bottom:16px">Pause Subscription</h3>
+        <p class="text-sm text-muted mb-4">Pausing will stop future billing until resumed. This is logged as evidence.</p>
+        <div class="form-group">
+          <label class="form-label">Reason for pausing</label>
+          <textarea class="form-textarea" v-model="pauseReason" rows="3" placeholder="e.g., Client requested temporary hold"></textarea>
+        </div>
+        <div class="flex gap-2" style="justify-content:flex-end">
+          <button class="btn btn-secondary" @click="showPauseModal = false">Cancel</button>
+          <button class="btn btn-primary" @click="pauseSubscription" :disabled="subLoading || !pauseReason.trim()">
+            {{ subLoading ? 'Pausing...' : 'Pause Subscription' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cancel Subscription Modal -->
+    <div v-if="showCancelModal" class="modal-overlay" @click.self="showCancelModal = false">
+      <div class="modal-card">
+        <h3 style="margin-bottom:16px;color:#ef4444">Cancel Subscription</h3>
+        <p class="text-sm text-muted mb-4">This will permanently cancel the subscription and stop all future billing. This action is logged as evidence for chargeback defense.</p>
+        <div class="form-group">
+          <label class="form-label">Reason for cancellation</label>
+          <textarea class="form-textarea" v-model="cancelReason" rows="3" placeholder="e.g., Client completed program, financial hardship"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="cancelConfirmed" />
+            I understand this cannot be undone
+          </label>
+        </div>
+        <div class="flex gap-2" style="justify-content:flex-end">
+          <button class="btn btn-secondary" @click="showCancelModal = false">Cancel</button>
+          <button class="btn btn-danger" @click="cancelSubscription" :disabled="subLoading || !cancelReason.trim() || !cancelConfirmed">
+            {{ subLoading ? 'Cancelling...' : 'Cancel Subscription' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 
@@ -148,6 +253,28 @@ const methods = ref<any[]>([]);
 const totalCharged = ref(0);
 const totalRefunded = ref(0);
 
+// Client info
+const clientLabel = ref('Payment Management');
+const clientEmail = ref('');
+const subscriptionStatus = ref('');
+
+// Dunning
+const dunningEvent = ref<any>(null);
+const dunningRetrying = ref(false);
+const dunningResult = ref<any>(null);
+
+// Card actions
+const cardActionLoading = ref(false);
+
+// Subscription
+const subLoading = ref(false);
+const subResult = ref('');
+const showPauseModal = ref(false);
+const showCancelModal = ref(false);
+const pauseReason = ref('');
+const cancelReason = ref('');
+const cancelConfirmed = ref(false);
+
 // Charge modal
 const showChargeModal = ref(false);
 const chargeLoading = ref(false);
@@ -157,19 +284,17 @@ const chargeForm = ref({ methodId: '', amount: 0, description: '' });
 const showRefundModal = ref(false);
 const refundLoading = ref(false);
 const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reason: '' });
-const clientLabel = ref('Payment Management');
-const clientEmail = ref('');
+
+const subscriptionBadge = computed(() => {
+  const s = subscriptionStatus.value;
+  if (s === 'enrolled' || s === 'active') return 'badge-green';
+  if (s === 'paused') return 'badge-yellow';
+  if (s === 'cancelled' || s === 'delinquent') return 'badge-red';
+  return 'badge-gray';
+});
 
 onMounted(async () => {
-  await Promise.all([loadHistory(), loadMethods()]);
-  // Load client name/email
-  try {
-    const info = await api.get<any>(`/api/dashboard/client-info/${contactId}`);
-    if (info) {
-      clientLabel.value = info.name || info.email || 'Payment Management';
-      clientEmail.value = info.email || '';
-    }
-  } catch {}
+  await Promise.all([loadHistory(), loadMethods(), loadClientInfo()]);
 });
 
 async function loadHistory() {
@@ -178,6 +303,15 @@ async function loadHistory() {
     payments.value = data?.payments || [];
     totalCharged.value = data?.totalCharged || 0;
     totalRefunded.value = data?.totalRefunded || 0;
+
+    // Check for active dunning
+    const dunning = payments.value.find((p: any) => p.dunningStatus && p.dunningStatus !== 'resolved');
+    dunningEvent.value = dunning ? {
+      id: dunning.id,
+      dunning_status: dunning.dunningStatus,
+      dunning_retry_count: dunning.dunningRetryCount || 0,
+      dunning_next_retry: dunning.dunningNextRetry,
+    } : null;
   } catch {}
 }
 
@@ -191,9 +325,109 @@ async function loadMethods() {
   } catch {}
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+async function loadClientInfo() {
+  try {
+    const info = await api.get<any>(`/api/dashboard/client-info/${contactId}`);
+    if (info) {
+      clientLabel.value = info.name || info.email || 'Payment Management';
+      clientEmail.value = info.email || '';
+      subscriptionStatus.value = info.status || '';
+    }
+  } catch {}
 }
+
+function formatDate(d: string) {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// ─── Card Management ────────────────────────────────────
+
+async function setDefaultCard(cardId: string) {
+  cardActionLoading.value = true;
+  try {
+    await api.post(`/api/payments/lifecycle/cards/${contactId}/default`, { cardId });
+    await loadMethods();
+  } catch {}
+  cardActionLoading.value = false;
+}
+
+async function removeCard(cardId: string, last4: string) {
+  if (!confirm(`Remove card ending in ${last4}? This cannot be undone.`)) return;
+  cardActionLoading.value = true;
+  try {
+    await api.del(`/api/payments/lifecycle/cards/${contactId}/${cardId}`);
+    await loadMethods();
+  } catch {}
+  cardActionLoading.value = false;
+}
+
+// ─── Subscription Management ────────────────────────────
+
+async function pauseSubscription() {
+  subLoading.value = true;
+  try {
+    await api.post('/api/payments/lifecycle/subscription/pause', {
+      contactId, reason: pauseReason.value,
+    });
+    showPauseModal.value = false;
+    pauseReason.value = '';
+    subResult.value = 'Subscription paused.';
+    subscriptionStatus.value = 'paused';
+    setTimeout(() => { subResult.value = ''; }, 4000);
+  } catch {}
+  subLoading.value = false;
+}
+
+async function resumeSubscription() {
+  subLoading.value = true;
+  try {
+    await api.post('/api/payments/lifecycle/subscription/resume', { contactId });
+    subResult.value = 'Subscription resumed.';
+    subscriptionStatus.value = 'enrolled';
+    setTimeout(() => { subResult.value = ''; }, 4000);
+  } catch {}
+  subLoading.value = false;
+}
+
+async function cancelSubscription() {
+  subLoading.value = true;
+  try {
+    await api.post('/api/payments/lifecycle/subscription/cancel', {
+      contactId, reason: cancelReason.value,
+    });
+    showCancelModal.value = false;
+    cancelReason.value = '';
+    cancelConfirmed.value = false;
+    subResult.value = 'Subscription cancelled.';
+    subscriptionStatus.value = 'cancelled';
+    setTimeout(() => { subResult.value = ''; }, 4000);
+  } catch {}
+  subLoading.value = false;
+}
+
+// ─── Dunning ────────────────────────────────────────────
+
+async function retryDunning() {
+  if (!dunningEvent.value) return;
+  dunningRetrying.value = true;
+  dunningResult.value = null;
+  try {
+    const result = await api.post<any>('/api/payments/lifecycle/dunning/retry', {
+      contactId, paymentEventId: dunningEvent.value.id,
+    });
+    dunningResult.value = result;
+    if (result.success) {
+      dunningEvent.value = null;
+      await loadHistory();
+    }
+  } catch (err: any) {
+    dunningResult.value = { success: false, error: err.message || 'Retry failed' };
+  }
+  dunningRetrying.value = false;
+}
+
+// ─── Charge & Refund ────────────────────────────────────
 
 function openRefund(payment: any) {
   refundForm.value = {
@@ -268,5 +502,20 @@ async function submitRefund() {
   width: 16px;
   height: 16px;
   accent-color: #3b82f6;
+}
+
+.form-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.form-textarea:focus {
+  border-color: #3b82f6;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
 }
 </style>
