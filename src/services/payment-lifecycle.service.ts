@@ -256,10 +256,10 @@ export const paymentLifecycleService = {
       { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire trigger + update GHL contact + add note
+    // Fire dedicated pause trigger + update GHL contact + add note
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
-        contact_id: params.contactId, action: 'subscription_paused', reason: params.reason,
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', {
+        contact_id: params.contactId, reason: params.reason,
       });
     } catch { /* non-blocking */ }
 
@@ -286,10 +286,10 @@ export const paymentLifecycleService = {
       { action: 'resume', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire trigger
+    // Fire dedicated resume trigger
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
-        contact_id: params.contactId, action: 'subscription_resumed',
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', {
+        contact_id: params.contactId,
       });
     } catch { /* non-blocking */ }
 

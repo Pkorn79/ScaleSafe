@@ -128,6 +128,23 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
       logger.warn({ err: err.message, contactId }, 'Trigger fire failed — link still generated');
     }
 
+    // Log COMMUNICATION evidence (enrollment link sent = outreach)
+    try {
+      const { evidenceService } = require('../services/evidence.service');
+      const { EVIDENCE_TYPES } = require('../constants/evidence-types');
+      await evidenceService.logEvidence(
+        EVIDENCE_TYPES.COMMUNICATION, locationId, contactId, 'send_enrollment_link',
+        {
+          direction: 'outbound',
+          type: sendVia.join('+'),
+          message_summary: `Enrollment link sent for ${offer.offer_name}: ${enrollmentUrl}`,
+          date: new Date().toISOString(),
+        },
+      );
+    } catch (evErr: any) {
+      logger.warn({ err: evErr.message, contactId }, 'Failed to log send-link evidence (non-blocking)');
+    }
+
     logger.info({ contactId, offerId, sendVia, locationId }, 'Enrollment link sent');
 
     res.json({

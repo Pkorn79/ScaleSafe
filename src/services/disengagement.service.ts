@@ -191,6 +191,17 @@ export const disengagementService = {
         const assessment = await this.scoreClient(locationId, contactId);
         if (assessment.flagged) {
           flaggedClients.push(assessment);
+          // Fire ss_client_at_risk trigger for GHL workflow
+          try {
+            const { triggerService } = require('./trigger.service');
+            await triggerService.fireTrigger(locationId, 'ss_client_at_risk', {
+              contact_id: contactId,
+              risk_score: assessment.riskScore,
+              risk_factors: assessment.riskFactors.join(', '),
+              days_inactive: assessment.daysInactive,
+              action: 'disengagement_flagged',
+            });
+          } catch { /* non-blocking */ }
         }
       } catch (err) {
         logger.warn({ err, contactId, locationId }, 'Error scoring client engagement');
