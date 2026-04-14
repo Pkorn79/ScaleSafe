@@ -69,6 +69,20 @@ export const merchantRepository = {
     return data;
   },
 
+  /**
+   * Find ALL merchants for a company. Used for safe disambiguation
+   * when SSO payload has companyId but no locationId.
+   */
+  async findAllByCompanyId(companyId: string): Promise<MerchantRecord[]> {
+    const { data, error } = await getSupabase()
+      .from('merchants')
+      .select('*')
+      .eq('company_id', companyId);
+
+    if (error) throw error;
+    return data || [];
+  },
+
   async create(data: {
     location_id: string;
     company_id?: string;

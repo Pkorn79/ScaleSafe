@@ -23,9 +23,9 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
     try {
       const userData = decryptSsoPayload(ssoPayload, config.ghl.ssoKey);
       req.tenantContext = {
-        locationId: userData.activeLocation || userData.locationId || '',
-        companyId: userData.companyId || '',
-        userId: userData.userId || '',
+        locationId: userData.activeLocation || userData.locationId || userData.location_id || '',
+        companyId: userData.companyId || userData.company_id || '',
+        userId: userData.userId || userData.user_id || '',
         email: userData.email || '',
         role: userData.role || 'user',
       };
@@ -55,9 +55,9 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
     try {
       const userData = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
       req.tenantContext = {
-        locationId: userData.activeLocation || userData.locationId || '',
-        companyId: userData.companyId || '',
-        userId: userData.userId || '',
+        locationId: userData.activeLocation || userData.locationId || userData.location_id || '',
+        companyId: userData.companyId || userData.company_id || '',
+        userId: userData.userId || userData.user_id || '',
         email: userData.email || '',
         role: userData.role || 'user',
       };

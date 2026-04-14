@@ -12,6 +12,7 @@ jest.mock('../../src/clients/ghl.client', () => ({
 
 const mockFindByLocationId = jest.fn();
 const mockFindByCompanyId = jest.fn();
+const mockFindAllByCompanyId = jest.fn();
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
@@ -20,6 +21,7 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     findByLocationId: mockFindByLocationId,
     findByCompanyId: mockFindByCompanyId,
+    findAllByCompanyId: mockFindAllByCompanyId,
     create: mockCreate,
     update: mockUpdate,
     updateSnapshotStatus: mockUpdateSnapshotStatus,
@@ -193,13 +195,13 @@ describe('POST /auth/sso', () => {
       email: 'philip@test.com',
     });
     mockFindByLocationId.mockResolvedValue(null); // won't be called with empty string
-    mockFindByCompanyId.mockResolvedValue(MERCHANT_RECORD);
+    mockFindAllByCompanyId.mockResolvedValue([MERCHANT_RECORD]); // single location = safe
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
     expect(res.status).toBe(200);
     expect(res.body.locationId).toBe('loc-abc'); // resolved from merchant record
-    expect(mockFindByCompanyId).toHaveBeenCalledWith('comp-xyz');
+    expect(mockFindAllByCompanyId).toHaveBeenCalledWith('comp-xyz');
   });
 
   it('returns 401 when no merchant found by locationId or companyId', async () => {
@@ -207,7 +209,7 @@ describe('POST /auth/sso', () => {
       companyId: 'comp-unknown',
       userId: 'user-1',
     });
-    mockFindByCompanyId.mockResolvedValue(null);
+    mockFindAllByCompanyId.mockResolvedValue([]); // no merchants for company
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 

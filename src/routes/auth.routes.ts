@@ -112,7 +112,17 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
 
     if (!merchant && companyId) {
       logger.info({ companyId }, 'No merchant found by locationId, trying companyId lookup');
-      merchant = await merchantRepository.findByCompanyId(companyId);
+      const companyMerchants = await merchantRepository.findAllByCompanyId(companyId);
+      if (companyMerchants.length === 1) {
+        merchant = companyMerchants[0];
+        logger.info({ companyId, locationId: merchant.location_id }, 'Single merchant found for company');
+      } else if (companyMerchants.length > 1) {
+        logger.error({ companyId, count: companyMerchants.length, locations: companyMerchants.map(m => m.location_id) },
+          'SSO: multiple locations for company — cannot resolve without explicit locationId');
+        throw new AuthenticationError(
+          'Multiple locations found for this company. Please access ScaleSafe from a specific location.'
+        );
+      }
     }
 
     if (!merchant) {
