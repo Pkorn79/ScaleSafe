@@ -136,9 +136,11 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
         EVIDENCE_TYPES.COMMUNICATION, locationId, contactId, 'send_enrollment_link',
         {
           direction: 'outbound',
-          type: sendVia.join('+'),
-          message_summary: `Enrollment link sent for ${offer.offer_name}: ${enrollmentUrl}`,
-          date: new Date().toISOString(),
+          comm_type: sendVia.includes('sms') ? 'sms' : 'email',
+          comm_date: new Date().toISOString(),
+          subject: `Enrollment link: ${offer.offer_name}`,
+          summary: `Enrollment link sent for ${offer.offer_name}`,
+          body_preview: enrollmentUrl,
         },
       );
     } catch (evErr: any) {

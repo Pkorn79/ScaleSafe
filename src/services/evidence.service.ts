@@ -27,11 +27,63 @@ export const evidenceService = {
     await evidenceRepository.insert(evidenceType, record);
 
     // Update GHL contact: last evidence date + evidence score
+    let newScore = 0;
     try {
-      await this.updateContactEvidenceFields(locationId, contactId);
+      const result = await this.calculateReadinessScore(locationId, contactId);
+      newScore = result.score;
+      const lastDate = await evidenceRepository.getLastEvidenceDate(locationId, contactId);
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [SS_CONTACT_FIELDS.EVIDENCE_SCORE]: newScore,
+          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: lastDate || '',
+        },
+      });
     } catch (err) {
       logger.warn({ err, contactId, locationId }, 'Failed to update GHL evidence fields');
     }
+
+    // Check for re-engagement: if contact was at-risk and just logged evidence, they're back
+    try {
+      const { getSupabase } = await import('../clients/supabase.client');
+      const { data: atRiskEvent } = await getSupabase()
+        .from('payment_events')
+        .select('id, dunning_status')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .in('dunning_status', ['active', 'escalated'])
+        .limit(1)
+        .maybeSingle();
+
+      // Also check if disengagement recently flagged this contact (via evidence of at-risk trigger)
+      const { data: atRiskEvidence } = await getSupabase()
+        .from('evidence')
+        .select('id, data')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .eq('evidence_type', 'custom_event')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      const wasAtRisk = !!atRiskEvent || (atRiskEvidence || []).some(
+        (e: any) => e.data?.event_type === 'disengagement_flagged' || e.data?.action === 'dunning_escalated'
+      );
+
+      if (wasAtRisk && ['session_delivery', 'module_completion', 'pulse_checkin', 'payment_confirmation', 'enrollment_payment', 'milestone_completion'].includes(evidenceType)) {
+        const { triggerService: ts } = await import('./trigger.service');
+        await ts.fireTrigger(locationId, 'ss_client_reengaged', {
+          contact_id: contactId,
+          reengagement_type: evidenceType,
+          readiness_score: newScore,
+        });
+        logger.info({ contactId, evidenceType }, 'Client re-engaged — at-risk flag cleared');
+      }
+    } catch { /* re-engagement detection is non-blocking */ }
+
+    // Check evidence milestone thresholds
+    try {
+      await this.checkEvidenceMilestone(locationId, contactId, newScore);
+    } catch { /* non-blocking */ }
 
     logger.info({ evidenceType, contactId, locationId, source }, 'Evidence logged');
   },
@@ -360,16 +412,62 @@ export const evidenceService = {
   /**
    * Update the 2 evidence-related contact fields in GHL.
    */
-  async updateContactEvidenceFields(locationId: string, contactId: string): Promise<void> {
-    const { score } = await this.calculateReadinessScore(locationId, contactId);
-    const lastDate = await evidenceRepository.getLastEvidenceDate(locationId, contactId);
+  /**
+   * Check if evidence readiness score crossed a milestone threshold.
+   * Fires ss_evidence_milestone when score crosses 25, 50, 75, or 90.
+   */
+  async checkEvidenceMilestone(locationId: string, contactId: string, currentScore: number): Promise<void> {
+    const thresholds = [25, 50, 75, 90];
+    const { getSupabase } = await import('../clients/supabase.client');
 
-    const api = await ghlApi(locationId);
-    await api.put(`/contacts/${contactId}`, {
-      customField: {
-        [SS_CONTACT_FIELDS.EVIDENCE_SCORE]: score,
-        [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: lastDate || '',
-      },
-    });
+    // Get the previously stored score from GHL (approximation: check evidence table for last milestone)
+    const { data: lastMilestone } = await getSupabase()
+      .from('evidence')
+      .select('data')
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .eq('evidence_type', 'custom_event')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    const firedMilestones = new Set(
+      (lastMilestone || [])
+        .filter((e: any) => e.data?.event_type === 'evidence_milestone')
+        .map((e: any) => e.data?.milestone_threshold)
+    );
+
+    for (const threshold of thresholds) {
+      if (currentScore >= threshold && !firedMilestones.has(threshold)) {
+        // New milestone crossed — fire trigger and log
+        const counts = await evidenceRepository.getCounts(locationId, contactId);
+        const totalEvidence = Object.values(counts).reduce((a, b) => a + b, 0);
+
+        const { triggerService: ts } = await import('./trigger.service');
+        await ts.fireTrigger(locationId, 'ss_evidence_milestone', {
+          contact_id: contactId,
+          milestone_type: `score_${threshold}`,
+          evidence_count: totalEvidence,
+          readiness_score: currentScore,
+        });
+
+        // Log the milestone as evidence so we don't fire it again
+        const { phase2EvidenceRepository } = await import('../repositories/phase2Evidence.repository');
+        await phase2EvidenceRepository.create({
+          location_id: locationId,
+          contact_id: contactId,
+          evidence_type: 'custom_event',
+          data: {
+            event_type: 'evidence_milestone',
+            milestone_threshold: threshold,
+            readiness_score: currentScore,
+            evidence_count: totalEvidence,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        logger.info({ contactId, threshold, currentScore, totalEvidence }, 'Evidence milestone reached');
+        break; // Only fire one milestone per evidence log
+      }
+    }
   },
 };
