@@ -2,6 +2,8 @@ import { config } from './config';
 import { createApp } from './app';
 import { logger } from './utils/logger';
 import { getSupabase } from './clients/supabase.client';
+import { runDailyHealthCheck } from './jobs/daily-health-check';
+import { runPaymentReminderCheck } from './jobs/payment-reminder-check';
 
 const app = createApp();
 
@@ -40,4 +42,13 @@ app.listen(config.port, () => {
       logger.warn({ err: err.message, stack: err.stack }, 'Could not ensure storage bucket exists');
     }
   })();
+
+  // Schedule daily jobs (first run 5 min after startup, then every 24 hours)
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+    runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed'));
+    runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed'));
+    setInterval(() => runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed')), DAY_MS);
+    setInterval(() => runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed')), DAY_MS);
+  }, 5 * 60 * 1000);
 });

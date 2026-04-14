@@ -295,3 +295,99 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
     res.status(500).json({ success: false, error: err.message || 'Cancellation failed' });
   }
 }
+
+/**
+ * GET /api/milestone-signoff/config — milestone details for sign-off widget
+ */
+export async function getMilestoneConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contactId = req.query.contactId as string;
+    const locationId = req.query.locationId as string;
+    const milestoneNumber = parseInt(req.query.milestoneNumber as string);
+    if (!contactId || !locationId || !milestoneNumber) {
+      res.status(400).json({ error: 'contactId, locationId, milestoneNumber required' });
+      return;
+    }
+
+    const supabase = getSupabase();
+    const { data: enrollment } = await supabase
+      .from('enrollments').select('id, offer_id, current_milestone')
+      .eq('location_id', locationId).eq('contact_id', contactId).in('status', ['enrolled', 'active'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!enrollment || !enrollment.offer_id) {
+      res.status(404).json({ error: 'No active enrollment found' });
+      return;
+    }
+
+    const { data: offer } = await supabase
+      .from('offers_mirror')
+      .select('*')
+      .eq('id', enrollment.offer_id).single();
+
+    const merchant = await merchantRepository.findByLocationId(locationId);
+
+    res.json({
+      milestoneName: (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`,
+      delivers: (offer as any)?.[`m${milestoneNumber}_delivers`] || '',
+      clientDoes: (offer as any)?.[`m${milestoneNumber}_client_does`] || '',
+      offerName: offer?.offer_name || '',
+      merchantName: merchant?.business_name || '',
+      milestoneNumber,
+    });
+  } catch (err) { next(err); }
+}
+
+/**
+ * POST /api/milestone-signoff/submit — client confirms milestone completion
+ */
+export async function submitMilestoneSignoff(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { contactId, locationId, milestoneNumber, signature } = req.body;
+    if (!contactId || !locationId || !milestoneNumber || !signature) {
+      res.status(400).json({ success: false, error: 'contactId, locationId, milestoneNumber, signature required' });
+      return;
+    }
+
+    const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
+    const supabase = getSupabase();
+
+    // Verify enrollment
+    const { data: enrollment } = await supabase
+      .from('enrollments').select('id, offer_id')
+      .eq('location_id', locationId).eq('contact_id', contactId).in('status', ['enrolled', 'active'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!enrollment) {
+      res.status(404).json({ success: false, error: 'No active enrollment' });
+      return;
+    }
+
+    // Get milestone name
+    const { data: offer } = await supabase
+      .from('offers_mirror').select('*').eq('id', enrollment.offer_id).single();
+    const milestoneName = (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`;
+
+    // Insert evidence signoff
+    await supabase.from('evidence_signoffs').insert({
+      location_id: locationId, contact_id: contactId, source: 'client_signoff',
+      milestone_number: milestoneNumber, milestone_name: milestoneName,
+      signature_data: signature, ip_address: clientIp,
+      signed_at: new Date().toISOString(),
+    });
+
+    // Fire trigger — flat doc contract
+    const { triggerService } = require('../services/trigger.service');
+    await triggerService.fireTrigger(locationId, 'ss_milestone_signedoff', {
+      contact_id: contactId,
+      milestone_number: milestoneNumber,
+      milestone_name: milestoneName,
+      signature_timestamp: new Date().toISOString(),
+      ip_address: clientIp,
+    });
+
+    logger.info({ contactId, milestoneNumber, milestoneName }, 'Milestone signed off by client');
+    res.json({ success: true });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Milestone signoff failed');
+    res.status(500).json({ success: false, error: err.message || 'Sign-off failed' });
+  }
+}

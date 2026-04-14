@@ -152,8 +152,8 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 |-------------|-----|-----------|-------------|
 | Client At Risk | `ss_client_at_risk` | Disengagement detected | contact_id, risk_score, risk_factors, days_inactive, last_activity_date |
 | Client Re-Engaged | `ss_client_reengaged` | At-risk client returns | contact_id, reengagement_type, previous_risk_score |
-| Chargeback Detected | `ss_chargeback_detected` | Dispute filed | contact_id, amount, reason_code, dispute_date |
-| Defense Ready | `ss_defense_ready` | Defense packet compiled | contact_id, packet_url, evidence_count, readiness_score |
+| Chargeback Detected | `ss_chargeback_detected` | Dispute filed | contact_id, amount, reason_code, dispute_date, processor |
+| Defense Ready | `ss_defense_ready` | Defense packet compiled | contact_id, packet_url, evidence_count, readiness_score, processor |
 | Evidence Milestone | `ss_evidence_milestone` | Evidence threshold hit | contact_id, milestone_type, evidence_count, readiness_score |
 
 **SUBSCRIPTION (2):**
@@ -165,8 +165,13 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **CHARGEBACK RATIO MONITORING (2):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Chargeback Ratio Warning | `ss_chargeback_ratio_warning` | Ratio hits 0.5% | location_id, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, trend |
-| Chargeback Ratio Critical | `ss_chargeback_ratio_critical` | Ratio hits 0.75% | location_id, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, days_until_program_risk |
+| Chargeback Ratio Warning | `ss_chargeback_ratio_warning` | Ratio hits threshold | location_id, processor, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, trend |
+| Chargeback Ratio Critical | `ss_chargeback_ratio_critical` | Ratio hits critical | location_id, processor, current_ratio, threshold, dispute_count, transaction_count, rolling_window_days, trend |
+
+**PAYMENT REMINDERS (1):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Upcoming Payment Reminder | `ss_upcoming_payment_reminder` | 3 days before scheduled payment | contact_id, amount, next_billing_date, payments_remaining, offer_name |
 
 **Subscription URL (all triggers):** `https://scalesafe-production.up.railway.app/webhooks/ghl/triggers`
 

@@ -42,14 +42,33 @@ export const phase2EnrollmentService = {
       }
     }
 
-    // 1. Update enrollment to 'enrolled'
+    // 1. Update enrollment to 'enrolled' + set next_billing_date for installments/subscriptions
+    const enrolledAt = new Date();
+    let nextBilling: string | null = null;
+    if (['installment', 'installments', 'subscription'].includes(params.paymentType)) {
+      // Get frequency from offer
+      try {
+        if (enrollment.offer_id) {
+          const ofr = await offerRepository.findById(enrollment.offer_id);
+          if (ofr) {
+            const freq = ofr.installment_frequency || 'monthly';
+            const next = new Date(enrolledAt);
+            if (freq === 'weekly') next.setDate(next.getDate() + 7);
+            else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
+            else next.setMonth(next.getMonth() + 1); // monthly default
+            nextBilling = next.toISOString().split('T')[0];
+          }
+        }
+      } catch { /* non-blocking */ }
+    }
     await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
       payment_amount: params.paymentAmount,
       payment_type: params.paymentType,
       payment_transaction_id: params.transactionId,
       payments_made: 1,
       payments_total: params.paymentsTotal,
-      enrolled_at: new Date().toISOString(),
+      enrolled_at: enrolledAt.toISOString(),
+      ...(nextBilling ? { next_billing_date: nextBilling } : {}),
     } as any);
 
     // 2. Resolve GHL contact FIRST — evidence and payment records need the contactId
@@ -271,8 +290,24 @@ export const phase2EnrollmentService = {
       raw_webhook_payload: params.rawPayload,
     });
 
-    // Increment payments_made
+    // Increment payments_made + advance next_billing_date
     await enrollmentRepository.incrementPaymentsMade(params.enrollmentId);
+    try {
+      const enr = await enrollmentRepository.getById(params.enrollmentId);
+      if (enr.offer_id) {
+        const ofr = await offerRepository.findById(enr.offer_id);
+        if (ofr) {
+          const freq = ofr.installment_frequency || 'monthly';
+          const next = new Date();
+          if (freq === 'weekly') next.setDate(next.getDate() + 7);
+          else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
+          else next.setMonth(next.getMonth() + 1);
+          await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, {
+            next_billing_date: next.toISOString().split('T')[0],
+          } as any);
+        }
+      }
+    } catch { /* non-blocking */ }
 
     // Log evidence
     await phase2EvidenceRepository.create({

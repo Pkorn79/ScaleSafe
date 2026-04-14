@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getPaymentUpdateConfig, updatePaymentMethod, cancelSubscriptionPublic } from '../controllers/payment-update.controller';
+import { getPaymentUpdateConfig, updatePaymentMethod, cancelSubscriptionPublic, getMilestoneConfig, submitMilestoneSignoff } from '../controllers/payment-update.controller';
 
 const router = Router();
 
@@ -7,6 +7,8 @@ const router = Router();
 router.get('/api/payment-update/config', getPaymentUpdateConfig);
 router.post('/api/payment-update/update-method', updatePaymentMethod);
 router.post('/api/payment-update/cancel-subscription', cancelSubscriptionPublic);
+router.get('/api/milestone-signoff/config', getMilestoneConfig);
+router.post('/api/milestone-signoff/submit', submitMilestoneSignoff);
 
 // Widget page (loaded in GHL funnel iframe or standalone)
 const widgetCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com";
@@ -430,6 +432,126 @@ async function submitCancel() {
     document.getElementById('error-msg').classList.remove('hidden');
     document.getElementById('cancel-btn').disabled = false;
     document.getElementById('cancel-btn').textContent = 'Cancel My Subscription';
+  }
+}
+</script>
+</body>
+</html>`;
+}
+
+// Milestone sign-off page (client-facing)
+router.get('/milestone-signoff', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(milestoneSignoffHtml());
+});
+
+function milestoneSignoffHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Milestone Sign-Off</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #1f2937; padding: 24px 16px; max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
+  .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .field-label { font-size: 12px; font-weight: 500; color: #6b7280; margin-bottom: 6px; display: block; }
+  .field-row { margin-bottom: 14px; }
+  input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 16px; }
+  input[type="text"]:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn-primary { background: #3b82f6; color: #fff; }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .status { text-align: center; padding: 16px; border-radius: 8px; margin-top: 16px; font-size: 14px; }
+  .status-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .status-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .loading { text-align: center; padding: 40px 0; color: #6b7280; }
+  .checkbox-label { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; margin-bottom: 12px; }
+  .checkbox-label input { width: 18px; height: 18px; margin-top: 2px; accent-color: #3b82f6; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1 id="title">Milestone Sign-Off</h1>
+<p class="subtitle" id="merchant-name"></p>
+<div id="loading" class="loading">Loading...</div>
+<div id="form-section" class="hidden">
+  <div class="card">
+    <div class="card-title" id="milestone-title"></div>
+    <div id="delivers" class="field-row" style="font-size:13px;color:#374151"></div>
+    <div id="client-does" class="field-row" style="font-size:13px;color:#374151"></div>
+  </div>
+  <div class="field-row">
+    <label class="checkbox-label">
+      <input type="checkbox" id="confirm-cb" />
+      I confirm this milestone was delivered as described above
+    </label>
+  </div>
+  <div class="field-row">
+    <label class="field-label">Your Full Legal Name (Electronic Signature)</label>
+    <input type="text" id="signature" placeholder="Type your full legal name" />
+  </div>
+  <button class="btn btn-primary" id="submit-btn" onclick="submitSignoff()" disabled>Sign Off</button>
+</div>
+<div id="success-msg" class="status status-success hidden">Milestone signed off. Thank you!</div>
+<div id="error-msg" class="status status-error hidden"></div>
+<script>
+var API_BASE = window.location.origin;
+var params = new URLSearchParams(window.location.search);
+var contactId = params.get('contactId') || '';
+var locationId = params.get('locationId') || '';
+var milestoneNumber = params.get('milestoneNumber') || '';
+(async function() {
+  if (!contactId || !locationId || !milestoneNumber) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = 'Invalid link.';
+    document.getElementById('error-msg').classList.remove('hidden');
+    return;
+  }
+  try {
+    var res = await fetch(API_BASE + '/api/milestone-signoff/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId) + '&milestoneNumber=' + milestoneNumber);
+    var data = await res.json();
+    document.getElementById('loading').classList.add('hidden');
+    if (data.error) { document.getElementById('error-msg').textContent = data.error; document.getElementById('error-msg').classList.remove('hidden'); return; }
+    document.getElementById('merchant-name').textContent = data.merchantName || '';
+    document.getElementById('milestone-title').textContent = 'Milestone ' + milestoneNumber + ': ' + data.milestoneName;
+    if (data.delivers) document.getElementById('delivers').innerHTML = '<strong>Deliverables:</strong> ' + data.delivers;
+    if (data.clientDoes) document.getElementById('client-does').innerHTML = '<strong>Your Responsibility:</strong> ' + data.clientDoes;
+    document.getElementById('form-section').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('error-msg').textContent = 'Failed to load. Please try again.';
+    document.getElementById('error-msg').classList.remove('hidden');
+  }
+})();
+function updateBtn() {
+  document.getElementById('submit-btn').disabled = !(document.getElementById('confirm-cb').checked && document.getElementById('signature').value.trim());
+}
+document.getElementById('confirm-cb').addEventListener('change', updateBtn);
+document.getElementById('signature').addEventListener('input', updateBtn);
+async function submitSignoff() {
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').textContent = 'Submitting...';
+  document.getElementById('error-msg').classList.add('hidden');
+  try {
+    var res = await fetch(API_BASE + '/api/milestone-signoff/submit', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ contactId: contactId, locationId: locationId, milestoneNumber: parseInt(milestoneNumber), signature: document.getElementById('signature').value.trim() })
+    });
+    var data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    document.getElementById('form-section').classList.add('hidden');
+    document.getElementById('success-msg').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('error-msg').textContent = e.message || 'Sign-off failed.';
+    document.getElementById('error-msg').classList.remove('hidden');
+    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('submit-btn').textContent = 'Sign Off';
   }
 }
 </script>

@@ -462,4 +462,52 @@ export const dashboardController = {
       res.json({ success: true });
     } catch (err) { next(err); }
   },
+
+  /** POST /api/dashboard/mark-milestone — merchant marks a milestone complete for a client */
+  async markMilestone(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId, enrollmentId, milestoneNumber } = req.body;
+      if (!contactId || !enrollmentId || !milestoneNumber) throw new ValidationError('contactId, enrollmentId, milestoneNumber required');
+
+      const supabase = getSupabase();
+
+      // Verify enrollment belongs to location + check sequential order
+      const { data: enrollment } = await supabase
+        .from('enrollments').select('id, location_id, current_milestone, offer_id')
+        .eq('id', enrollmentId).single();
+      if (!enrollment || enrollment.location_id !== locationId) throw new ValidationError('Enrollment not found');
+      if (milestoneNumber !== (enrollment.current_milestone || 0) + 1) {
+        throw new ValidationError(`Must complete milestone ${(enrollment.current_milestone || 0) + 1} before ${milestoneNumber}`);
+      }
+
+      // Get milestone name from offer
+      const { data: offer } = await supabase
+        .from('offers_mirror').select('*')
+        .eq('id', enrollment.offer_id).single();
+      const milestoneName = (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`;
+
+      // Log evidence
+      await supabase.from('evidence_milestones').insert({
+        location_id: locationId, contact_id: contactId,
+        milestone_number: milestoneNumber, milestone_name: milestoneName,
+        completed_at: new Date().toISOString(), source: 'merchant_action',
+      });
+
+      // Update enrollment
+      await supabase.from('enrollments').update({ current_milestone: milestoneNumber }).eq('id', enrollmentId);
+
+      // Fire trigger — flat doc contract
+      const { triggerService: ts } = require('../services/trigger.service');
+      await ts.fireTrigger(locationId, 'ss_milestone_reached', {
+        contact_id: contactId,
+        milestone_number: milestoneNumber,
+        milestone_name: milestoneName,
+        offer_id: enrollment.offer_id || '',
+      });
+
+      res.json({ success: true, currentMilestone: milestoneNumber, milestoneName });
+    } catch (err) { next(err); }
+  },
 };

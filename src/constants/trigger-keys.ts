@@ -25,6 +25,7 @@ export const VALID_TRIGGER_KEYS = [
   'ss_send_enrollment_link',
   'ss_subscription_paused',
   'ss_subscription_resumed',
+  'ss_upcoming_payment_reminder',
 ] as const;
 
 export type TriggerKey = typeof VALID_TRIGGER_KEYS[number];
