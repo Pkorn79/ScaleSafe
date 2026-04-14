@@ -224,6 +224,22 @@ export const phase2EnrollmentService = {
       logger.error({ err: pdfErr.message, stack: pdfErr.stack, code: (pdfErr as any).statusCode || (pdfErr as any).code, enrollmentId: params.enrollmentId, locationId: params.locationId }, 'PACKET: Auto-generation FAILED');
     }
 
+    // 9. Verify evidence chain (non-blocking)
+    try {
+      const { evidenceChainService } = require('./evidence-chain.service');
+      // Find the payment event we just created
+      const { getSupabase: getSb } = require('../clients/supabase.client');
+      const { data: pe } = await getSb().from('payment_events')
+        .select('id').eq('enrollment_id', params.enrollmentId).eq('event_type', 'sale')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (pe) {
+        const chain = await evidenceChainService.verifyChain(pe.id);
+        logger.info({ enrollmentId: params.enrollmentId, chainStrength: chain.chainStrength, complete: chain.complete, gaps: chain.gaps }, 'Evidence chain verified');
+      }
+    } catch (chainErr: any) {
+      logger.warn({ err: chainErr.message, enrollmentId: params.enrollmentId }, 'Evidence chain verification failed (non-blocking)');
+    }
+
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: resolvedContactId, locationId: params.locationId },
       'Enrollment completed',
@@ -274,13 +290,68 @@ export const phase2EnrollmentService = {
 
     // Fire trigger
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
+    const runningTotal = (enrollment.payments_made) * params.amount;
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
       contact_id: params.contactId,
       amount: params.amount,
       transaction_id: params.transactionId,
       payments_remaining: params.paymentsRemaining,
-      running_total: (enrollment.payments_made) * params.amount,
+      running_total: runningTotal,
     });
+
+    // Final installment detection — all payments complete
+    if (enrollment.payments_total && enrollment.payments_made >= enrollment.payments_total) {
+      try {
+        // Update enrollment to completed
+        await enrollmentRepository.updateStatus(params.enrollmentId, 'completed', {
+          completed_at: new Date().toISOString(),
+        } as any);
+
+        // Log completion evidence
+        await phase2EvidenceRepository.create({
+          location_id: params.locationId,
+          contact_id: params.contactId,
+          enrollment_id: params.enrollmentId,
+          evidence_type: 'custom_event',
+          data: {
+            event_type: 'program_completed',
+            total_payments: enrollment.payments_total,
+            total_amount: runningTotal,
+            completion_date: new Date().toISOString(),
+          },
+        });
+
+        // Fire program completed trigger
+        let offerName = '';
+        if (enrollment.offer_id) {
+          try {
+            const offer = await offerRepository.getById(enrollment.offer_id);
+            offerName = offer.offer_name;
+          } catch { /* non-blocking */ }
+        }
+        await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
+          contact_id: params.contactId,
+          offer_id: enrollment.offer_id || '',
+          offer_name: offerName,
+          total_payments: enrollment.payments_total,
+          total_amount: runningTotal,
+          enrollment_date: enrollment.enrolled_at || '',
+          completion_date: new Date().toISOString(),
+        });
+
+        // Update GHL contact status
+        try {
+          const api = await ghlApi(params.locationId);
+          await api.put(`/contacts/${params.contactId}`, {
+            customField: { 'contact.ss_enrollment_status': 'completed' },
+          });
+        } catch { /* non-blocking */ }
+
+        logger.info({ enrollmentId: params.enrollmentId, paymentsMade: enrollment.payments_made, paymentsTotal: enrollment.payments_total }, 'Final installment — program completed');
+      } catch (completionErr: any) {
+        logger.error({ err: completionErr.message, enrollmentId: params.enrollmentId }, 'Program completion handling failed (non-blocking)');
+      }
+    }
 
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: params.contactId, amount: params.amount },
@@ -332,6 +403,34 @@ export const phase2EnrollmentService = {
       failure_reason: params.failureReason || 'unknown',
       attempt_count: params.attemptCount || 1,
     });
+
+    // Initiate dunning for recurring payment failures
+    if (params.enrollmentId) {
+      try {
+        const { paymentLifecycleService } = require('./payment-lifecycle.service');
+        const merchant = await merchantRepository.getByLocationId(params.locationId);
+        // Get the payment event ID we just created (most recent for this enrollment)
+        const { getSupabase } = require('../clients/supabase.client');
+        const { data: pe } = await getSupabase().from('payment_events')
+          .select('id').eq('enrollment_id', params.enrollmentId).eq('event_type', 'payment_failed')
+          .order('created_at', { ascending: false }).limit(1).single();
+        if (pe) {
+          await paymentLifecycleService.initiateDunning({
+            merchantId: merchant.id,
+            locationId: params.locationId,
+            contactId: params.contactId,
+            offerId: '',
+            paymentEventId: pe.id,
+            failureReason: params.failureReason || 'unknown',
+            failureCode: '',
+            amountCents: Math.round((params.amount || 0) * 100),
+            attemptCount: params.attemptCount || 1,
+          });
+        }
+      } catch (dunningErr: any) {
+        logger.warn({ err: dunningErr.message, enrollmentId: params.enrollmentId }, 'Dunning initiation failed (non-blocking)');
+      }
+    }
 
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: params.contactId, amount: params.amount },
