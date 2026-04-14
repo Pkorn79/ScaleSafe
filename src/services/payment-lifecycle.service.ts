@@ -277,8 +277,8 @@ export const paymentLifecycleService = {
         contact_id: params.contactId,
         offer_name: offerName,
         pause_reason: params.reason,
+        pause_resume_date: '',
         payments_remaining: paymentsRemaining,
-        next_billing_date: '',
       });
     } catch { /* non-blocking */ }
 
@@ -583,84 +583,4 @@ export const paymentLifecycleService = {
   // ENRICHED TRIGGER PAYLOAD BUILDER
   // ═══════════════════════════════════════════════════════════════
 
-  /**
-   * Build a rich trigger payload with contact, enrollment, offer, and merchant context.
-   * Used by subscription pause/resume/cancel triggers so GHL workflows have
-   * all the data they need for email/SMS templates.
-   */
-  async buildSubscriptionTriggerPayload(
-    params: SubscriptionParams,
-    status: string,
-  ): Promise<Record<string, unknown>> {
-    const supabase = getSupabase();
-
-    // Fetch contact info from GHL
-    let contact = { first_name: '', last_name: '', email: '', phone: '' };
-    try {
-      const api = await ghlApi(params.locationId);
-      const res = await api.get(`/contacts/${params.contactId}`);
-      const c = res.data?.contact || res.data || {};
-      contact = {
-        first_name: (c.firstName || '').trim(),
-        last_name: (c.lastName || '').trim(),
-        email: c.email || '',
-        phone: c.phone || '',
-      };
-    } catch { /* non-blocking */ }
-
-    // Fetch enrollment + offer info
-    let enrollment: any = {};
-    let offer: any = {};
-    try {
-      const { data: enr } = await supabase
-        .from('enrollments')
-        .select('id, payment_amount, payment_type, payments_made, payments_total, enrolled_at, offer_id')
-        .eq('location_id', params.locationId)
-        .eq('contact_id', params.contactId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      enrollment = enr || {};
-
-      if (enrollment.offer_id) {
-        const { data: ofr } = await supabase
-          .from('offers_mirror')
-          .select('id, offer_name, payment_type, price, installment_amount, installment_frequency, num_payments')
-          .eq('id', enrollment.offer_id)
-          .single();
-        offer = ofr || {};
-      }
-    } catch { /* non-blocking */ }
-
-    // Fetch merchant info
-    let merchant = { business_name: '', support_email: '' };
-    try {
-      const m = await merchantRepository.getByLocationId(params.locationId);
-      merchant = { business_name: m.business_name || '', support_email: m.support_email || '' };
-    } catch { /* non-blocking */ }
-
-    const paymentsRemaining = (enrollment.payments_total || offer.num_payments || 0) - (enrollment.payments_made || 0);
-
-    return {
-      contact_id: params.contactId,
-      contact,
-      enrollment_id: enrollment.id || '',
-      offer: {
-        id: offer.id || params.offerId || '',
-        name: offer.offer_name || '',
-        type: offer.payment_type || enrollment.payment_type || '',
-        price: offer.price || 0,
-        installment_amount: offer.installment_amount || 0,
-        installment_frequency: offer.installment_frequency || '',
-      },
-      subscription: {
-        status,
-        reason: params.reason || '',
-        payments_made: enrollment.payments_made || 0,
-        payments_remaining: paymentsRemaining > 0 ? paymentsRemaining : 0,
-        enrolled_at: enrollment.enrolled_at || '',
-      },
-      merchant,
-    };
-  },
 };

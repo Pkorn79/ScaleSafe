@@ -159,7 +159,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **SUBSCRIPTION (2):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Subscription Paused | `ss_subscription_paused` | Merchant pauses subscription | contact_id, offer_name, pause_reason, payments_remaining, next_billing_date |
+| Subscription Paused | `ss_subscription_paused` | Merchant pauses subscription | contact_id, offer_name, pause_reason, pause_resume_date, payments_remaining |
 | Subscription Resumed | `ss_subscription_resumed` | Merchant resumes subscription | contact_id, offer_name, next_billing_date, payments_remaining, days_paused |
 
 **CHARGEBACK RATIO MONITORING (2):**

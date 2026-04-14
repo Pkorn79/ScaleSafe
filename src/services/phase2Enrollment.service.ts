@@ -289,25 +289,15 @@ export const phase2EnrollmentService = {
       },
     });
 
-    // Fire trigger with enriched payload
+    // Fire trigger — flat doc contract: contact_id, amount, transaction_id, payments_remaining, running_total
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
     const runningTotal = (enrollment.payments_made) * params.amount;
-    let offerName = '';
-    if (enrollment.offer_id) {
-      try { offerName = (await offerRepository.getById(enrollment.offer_id)).offer_name; } catch {}
-    }
-    const merchant = await merchantRepository.getByLocationId(params.locationId);
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
       contact_id: params.contactId,
       amount: params.amount,
       transaction_id: params.transactionId,
       payments_remaining: params.paymentsRemaining,
-      payments_made: enrollment.payments_made,
-      payments_total: enrollment.payments_total,
       running_total: runningTotal,
-      offer_name: offerName,
-      merchant_name: merchant.business_name || '',
-      is_final_payment: enrollment.payments_total ? enrollment.payments_made >= enrollment.payments_total : false,
     });
 
     // Final installment detection — all payments complete
