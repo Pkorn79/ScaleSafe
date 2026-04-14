@@ -288,15 +288,25 @@ export const phase2EnrollmentService = {
       },
     });
 
-    // Fire trigger
+    // Fire trigger with enriched payload
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
     const runningTotal = (enrollment.payments_made) * params.amount;
+    let offerName = '';
+    if (enrollment.offer_id) {
+      try { offerName = (await offerRepository.getById(enrollment.offer_id)).offer_name; } catch {}
+    }
+    const merchant = await merchantRepository.getByLocationId(params.locationId);
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
       contact_id: params.contactId,
       amount: params.amount,
       transaction_id: params.transactionId,
       payments_remaining: params.paymentsRemaining,
+      payments_made: enrollment.payments_made,
+      payments_total: enrollment.payments_total,
       running_total: runningTotal,
+      offer_name: offerName,
+      merchant_name: merchant.business_name || '',
+      is_final_payment: enrollment.payments_total ? enrollment.payments_made >= enrollment.payments_total : false,
     });
 
     // Final installment detection — all payments complete
@@ -397,11 +407,17 @@ export const phase2EnrollmentService = {
       });
     }
 
+    // Build enriched payload for GHL workflow
+    const { config: appConfig } = require('../config');
+    const baseUrl = appConfig.appUrl || 'https://scalesafe-production.up.railway.app';
+    const cardUpdateLink = `${baseUrl}/payment-update?contactId=${encodeURIComponent(params.contactId)}&locationId=${encodeURIComponent(params.locationId)}`;
+
     await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
       contact_id: params.contactId,
       amount: params.amount,
       failure_reason: params.failureReason || 'unknown',
       attempt_count: params.attemptCount || 1,
+      card_update_link: cardUpdateLink,
     });
 
     // Initiate dunning for recurring payment failures

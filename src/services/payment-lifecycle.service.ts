@@ -244,23 +244,24 @@ export const paymentLifecycleService = {
       try {
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
         const processor = createProcessorClient(procConfig);
-        await processor.cancelSubscription(params.processorSubscriptionId); // NMI/Stripe pause = cancel with metadata
+        await processor.cancelSubscription(params.processorSubscriptionId);
       } catch (err: any) {
         logger.warn({ err: err.message }, 'Processor subscription pause failed — logging evidence anyway');
       }
     }
 
-    // Log evidence (action must match CHECK constraint: pause/resume/cancel/card_update/plan_change)
+    // Log evidence
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
       { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire dedicated pause trigger + update GHL contact + add note
+    // Build enriched trigger payload
+    const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'paused');
+
+    // Fire trigger + update GHL + add note
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', {
-        contact_id: params.contactId, reason: params.reason,
-      });
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', triggerPayload);
     } catch { /* non-blocking */ }
 
     try {
@@ -286,11 +287,10 @@ export const paymentLifecycleService = {
       { action: 'resume', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire dedicated resume trigger
+    // Fire dedicated resume trigger with enriched payload
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', {
-        contact_id: params.contactId,
-      });
+      const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'active');
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', triggerPayload);
     } catch { /* non-blocking */ }
 
     // Update GHL contact
@@ -331,11 +331,10 @@ export const paymentLifecycleService = {
       { cancellation_date: new Date().toISOString(), reason: params.reason, refund_eligibility: 'per_terms', status_at_cancellation: 'cancelled', initiated_by: 'merchant' },
     );
 
-    // Fire trigger
+    // Fire trigger with enriched payload
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', {
-        contact_id: params.contactId, offer_id: params.offerId, reason: params.reason,
-      });
+      const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'cancelled');
+      await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', triggerPayload);
     } catch { /* non-blocking */ }
 
     // Update GHL contact + add note
@@ -523,5 +522,90 @@ export const paymentLifecycleService = {
 
     logger.info({ contactId, locationId, link }, 'Card update request sent');
     return { success: true, link };
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ENRICHED TRIGGER PAYLOAD BUILDER
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Build a rich trigger payload with contact, enrollment, offer, and merchant context.
+   * Used by subscription pause/resume/cancel triggers so GHL workflows have
+   * all the data they need for email/SMS templates.
+   */
+  async buildSubscriptionTriggerPayload(
+    params: SubscriptionParams,
+    status: string,
+  ): Promise<Record<string, unknown>> {
+    const supabase = getSupabase();
+
+    // Fetch contact info from GHL
+    let contact = { first_name: '', last_name: '', email: '', phone: '' };
+    try {
+      const api = await ghlApi(params.locationId);
+      const res = await api.get(`/contacts/${params.contactId}`);
+      const c = res.data?.contact || res.data || {};
+      contact = {
+        first_name: (c.firstName || '').trim(),
+        last_name: (c.lastName || '').trim(),
+        email: c.email || '',
+        phone: c.phone || '',
+      };
+    } catch { /* non-blocking */ }
+
+    // Fetch enrollment + offer info
+    let enrollment: any = {};
+    let offer: any = {};
+    try {
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('id, payment_amount, payment_type, payments_made, payments_total, enrolled_at, offer_id')
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      enrollment = enr || {};
+
+      if (enrollment.offer_id) {
+        const { data: ofr } = await supabase
+          .from('offers_mirror')
+          .select('id, offer_name, payment_type, price, installment_amount, installment_frequency, num_payments')
+          .eq('id', enrollment.offer_id)
+          .single();
+        offer = ofr || {};
+      }
+    } catch { /* non-blocking */ }
+
+    // Fetch merchant info
+    let merchant = { business_name: '', support_email: '' };
+    try {
+      const m = await merchantRepository.getByLocationId(params.locationId);
+      merchant = { business_name: m.business_name || '', support_email: m.support_email || '' };
+    } catch { /* non-blocking */ }
+
+    const paymentsRemaining = (enrollment.payments_total || offer.num_payments || 0) - (enrollment.payments_made || 0);
+
+    return {
+      contact_id: params.contactId,
+      contact,
+      enrollment_id: enrollment.id || '',
+      offer: {
+        id: offer.id || params.offerId || '',
+        name: offer.offer_name || '',
+        type: offer.payment_type || enrollment.payment_type || '',
+        price: offer.price || 0,
+        installment_amount: offer.installment_amount || 0,
+        installment_frequency: offer.installment_frequency || '',
+      },
+      subscription: {
+        status,
+        reason: params.reason || '',
+        payments_made: enrollment.payments_made || 0,
+        payments_remaining: paymentsRemaining > 0 ? paymentsRemaining : 0,
+        enrolled_at: enrollment.enrolled_at || '',
+      },
+      merchant,
+    };
   },
 };
