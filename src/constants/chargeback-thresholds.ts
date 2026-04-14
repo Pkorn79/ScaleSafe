@@ -1,21 +1,21 @@
 /**
  * Chargeback ratio thresholds by processor.
  *
- * Stripe: thresholds from stripe-health.service.ts risk assessment.
- * NMI: card-brand thresholds (Visa VAMP/VDMP, Mastercard ECM).
- * OPEN QUESTION: NMI values need confirmation from Philip's NMI sponsor bank.
+ * Stripe: thresholds from Stripe's dispute monitoring program.
+ * NMI: Visa VAMP enforcement threshold is 1.5%. Early warning at 1.25%
+ *   gives merchants time to react before program enrollment.
+ *
+ * NOTE: 1.25% warning is a suggested early-warning buffer — flagged for
+ * Philip to confirm with NMI sponsor bank.
  */
 
 export const CHARGEBACK_THRESHOLDS = {
   stripe: {
-    warning: 0.005,   // 0.50% — elevated
-    critical: 0.009,  // 0.90% — critical (Stripe program threshold)
+    warning: 0.005,    // 0.50% — Stripe elevated monitoring
+    critical: 0.009,   // 0.90% — Stripe critical / program threshold
   },
   nmi: {
-    // Visa VAMP: 0.65% warning, 0.90% program enrollment
-    // Mastercard ECM: 0.75% warning, 1.50% program enrollment
-    // Using the lower of the two brand thresholds as default
-    warning: 0.0065,  // 0.65% — Visa VAMP warning
-    critical: 0.009,  // 0.90% — Visa VAMP program / Stripe critical
+    warning: 0.0125,   // 1.25% — early warning before VAMP enforcement
+    critical: 0.015,   // 1.50% — Visa VAMP enforcement threshold
   },
 } as const;
