@@ -74,7 +74,7 @@ export const evidenceService = {
         await ts.fireTrigger(locationId, 'ss_client_reengaged', {
           contact_id: contactId,
           reengagement_type: evidenceType,
-          readiness_score: newScore,
+          previous_risk_score: newScore,
         });
         logger.info({ contactId, evidenceType }, 'Client re-engaged — at-risk flag cleared');
       }

@@ -215,8 +215,11 @@ export const paymentLifecycleService = {
     // Fire at-risk trigger
     try {
       await triggerService.fireTrigger(locationId, 'ss_client_at_risk', {
-        contact_id: contactId, risk_reason: 'delinquent_payment',
-        action: 'dunning_escalated',
+        contact_id: contactId,
+        risk_score: 90,
+        risk_factors: 'delinquent_payment, dunning_escalated',
+        days_inactive: 0,
+        last_activity_date: new Date().toISOString(),
       });
     } catch { /* non-blocking */ }
 

@@ -132,7 +132,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 | Session Logged | `ss_session_logged` | Session recorded | contact_id, session_date, duration, topics, no_show_flag |
 | Session No-Show | `ss_session_noshow` | Client misses session | contact_id, scheduled_date, follow_up_action |
 | Module Completed | `ss_module_completed` | Client completes module | contact_id, module_name, progress_pct, completion_date |
-| Program Completed | `ss_program_completed` | All milestones + payments done | contact_id, offer_id, offer_name, total_sessions, total_milestones, enrollment_date, completion_date |
+| Program Completed | `ss_program_completed` | All milestones + payments done | contact_id, offer_id, offer_name, total_sessions, total_milestones, total_payments, total_amount, enrollment_date, completion_date |
 
 **MILESTONE (2):**
 | Trigger Name | Key | Fired When | Data Payload |

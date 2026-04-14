@@ -194,12 +194,18 @@ export const disengagementService = {
           // Fire ss_client_at_risk trigger for GHL workflow
           try {
             const { triggerService } = require('./trigger.service');
+            // Compute last_activity_date from evidence
+            let lastActivityDate = '';
+            try {
+              const { evidenceRepository: evRepo } = require('../repositories/evidence.repository');
+              lastActivityDate = await evRepo.getLastEvidenceDate(locationId, contactId) || '';
+            } catch {}
             await triggerService.fireTrigger(locationId, 'ss_client_at_risk', {
               contact_id: contactId,
               risk_score: assessment.riskScore,
               risk_factors: assessment.riskFactors.join(', '),
               days_inactive: assessment.daysInactive,
-              action: 'disengagement_flagged',
+              last_activity_date: lastActivityDate,
             });
           } catch { /* non-blocking */ }
         }

@@ -1,4 +1,5 @@
 import { enrollmentRepository, EnrollmentRecord } from '../repositories/enrollment.repository';
+import { evidenceRepository } from '../repositories/evidence.repository';
 import { phase2EvidenceRepository, EvidenceRecord } from '../repositories/phase2Evidence.repository';
 import { paymentEventRepository, PaymentEventRecord } from '../repositories/paymentEvent.repository';
 import { offerRepository } from '../repositories/offer.repository';
@@ -339,10 +340,21 @@ export const phase2EnrollmentService = {
             offerName = offer.offer_name;
           } catch { /* non-blocking */ }
         }
+        // Get evidence counts for session/milestone totals
+        let totalSessions = 0;
+        let totalMilestones = 0;
+        try {
+          const counts = await evidenceRepository.getCounts(params.locationId, params.contactId);
+          totalSessions = (counts['session_delivery'] || 0) + (counts['external_session'] || 0);
+          totalMilestones = (counts['milestone_completion'] || 0) + (counts['milestone_signoff'] || 0);
+        } catch {}
+
         await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
           contact_id: params.contactId,
           offer_id: enrollment.offer_id || '',
           offer_name: offerName,
+          total_sessions: totalSessions,
+          total_milestones: totalMilestones,
           total_payments: enrollment.payments_total,
           total_amount: runningTotal,
           enrollment_date: enrollment.enrolled_at || '',
@@ -492,6 +504,7 @@ export const phase2EnrollmentService = {
     await triggerService.fireTrigger(params.locationId, 'ss_refund_processed', {
       contact_id: params.contactId,
       amount: params.amount,
+      refund_type: 'full',
       reason: params.reason || '',
     });
 
