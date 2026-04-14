@@ -150,8 +150,8 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **RISK & DEFENSE (5):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Client At Risk | `ss_client_at_risk` | Disengagement detected | contact_id, risk_score, risk_factors, days_inactive, last_activity_date |
-| Client Re-Engaged | `ss_client_reengaged` | At-risk client returns | contact_id, reengagement_type, previous_risk_score |
+| Client At Risk | _(field update)_ | Disengagement detected | Writes `ss_engagement_status = 'At Risk'` on GHL contact. GHL Contact Field Changed trigger drives workflow. |
+| Client Re-Engaged | _(field update)_ | At-risk client returns | Writes `ss_engagement_status = 'Active'` on GHL contact. GHL Contact Field Changed trigger drives workflow. |
 | Chargeback Detected | `ss_chargeback_detected` | Dispute filed | contact_id, amount, reason_code, dispute_date, processor |
 | Defense Ready | `ss_defense_ready` | Defense packet compiled | contact_id, packet_url, evidence_count, readiness_score, processor |
 | Evidence Milestone | `ss_evidence_milestone` | Evidence threshold hit | contact_id, milestone_type, evidence_count, readiness_score |

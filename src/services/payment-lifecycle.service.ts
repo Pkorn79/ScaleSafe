@@ -210,22 +210,14 @@ export const paymentLifecycleService = {
       { action: 'dunning_escalated', reason: 'Max retries reached', timestamp: new Date().toISOString() },
     );
 
-    // Fire at-risk trigger
-    try {
-      await triggerService.fireTrigger(locationId, 'ss_client_at_risk', {
-        contact_id: contactId,
-        risk_score: 90,
-        risk_factors: 'delinquent_payment, dunning_escalated',
-        days_inactive: 0,
-        last_activity_date: new Date().toISOString(),
-      });
-    } catch { /* non-blocking */ }
-
-    // Update GHL contact
+    // Update GHL contact — set engagement status + enrollment status
     try {
       const api = await ghlApi(locationId);
       await api.put(`/contacts/${contactId}`, {
-        customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'delinquent' },
+        customField: {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'delinquent',
+          [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'At Risk',
+        },
       });
     } catch { /* non-blocking */ }
 

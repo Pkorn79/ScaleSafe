@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { reconciliationService } from '../services/reconciliation.service';
 import { disengagementService } from '../services/disengagement.service';
-import { notificationService } from '../services/notification.service';
+// notificationService import removed — at-risk now handled by contact field update in disengagement service
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { ssoAuth } from '../middleware/ssoAuth';
 import { requireTenant, resolveLocationId } from '../middleware/tenantContext';
@@ -36,17 +36,8 @@ router.post('/disengagement/run', async (req: Request, res: Response, next: Next
     const locationId = resolveLocationId(req);
     if (!locationId) throw new ValidationError('locationId required');
 
+    // checkAllClients now sets ss_engagement_status = 'At Risk' directly on GHL contacts
     const flagged = await disengagementService.checkAllClients(locationId);
-
-    // Fire Client At Risk triggers for each flagged client
-    for (const client of flagged) {
-      await notificationService.fireClientAtRisk(locationId, client.contactId, {
-        riskScore: client.riskScore,
-        riskFactors: client.riskFactors,
-        daysInactive: client.daysInactive,
-      });
-    }
-
     res.json({ flagged: flagged.length, clients: flagged });
   } catch (err) { next(err); }
 });

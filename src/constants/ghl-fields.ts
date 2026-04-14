@@ -1,13 +1,14 @@
 /**
- * The 5 SS- contact fields the app actively manages (v2.1).
+ * The 6 SS- contact fields the app actively manages (v2.1).
  * All other data lives in Supabase.
  */
 export const SS_CONTACT_FIELDS = {
-  ENROLLMENT_STATUS: 'contact.ss_enrollment_status',
-  EVIDENCE_SCORE:    'contact.ss_evidence_score',
-  LAST_EVIDENCE_DATE:'contact.ss_last_evidence_date',
-  CHARGEBACK_STATUS: 'contact.ss_chargeback_status',
-  DEFENSE_STATUS:    'contact.ss_defense_status',
+  ENROLLMENT_STATUS:  'contact.ss_enrollment_status',
+  EVIDENCE_SCORE:     'contact.ss_evidence_score',
+  LAST_EVIDENCE_DATE: 'contact.ss_last_evidence_date',
+  CHARGEBACK_STATUS:  'contact.ss_chargeback_status',
+  DEFENSE_STATUS:     'contact.ss_defense_status',
+  ENGAGEMENT_STATUS:  'contact.ss_engagement_status',
 } as const;
 
 /**

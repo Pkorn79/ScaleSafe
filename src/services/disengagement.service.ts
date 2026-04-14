@@ -191,21 +191,13 @@ export const disengagementService = {
         const assessment = await this.scoreClient(locationId, contactId);
         if (assessment.flagged) {
           flaggedClients.push(assessment);
-          // Fire ss_client_at_risk trigger for GHL workflow
+          // Set engagement status to "At Risk" — GHL Contact Field Changed trigger drives the workflow
           try {
-            const { triggerService } = require('./trigger.service');
-            // Compute last_activity_date from evidence
-            let lastActivityDate = '';
-            try {
-              const { evidenceRepository: evRepo } = require('../repositories/evidence.repository');
-              lastActivityDate = await evRepo.getLastEvidenceDate(locationId, contactId) || '';
-            } catch {}
-            await triggerService.fireTrigger(locationId, 'ss_client_at_risk', {
-              contact_id: contactId,
-              risk_score: assessment.riskScore,
-              risk_factors: assessment.riskFactors.join(', '),
-              days_inactive: assessment.daysInactive,
-              last_activity_date: lastActivityDate,
+            const { ghlApi: getApi } = require('../clients/ghl.client');
+            const { SS_CONTACT_FIELDS: fields } = require('../constants/ghl-fields');
+            const api = await getApi(locationId);
+            await api.put(`/contacts/${contactId}`, {
+              customField: { [fields.ENGAGEMENT_STATUS]: 'At Risk' },
             });
           } catch { /* non-blocking */ }
         }

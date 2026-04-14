@@ -15,8 +15,8 @@ export const VALID_TRIGGER_KEYS = [
   'ss_payment_received',
   'ss_payment_failed',
   'ss_refund_processed',
-  'ss_client_at_risk',
-  'ss_client_reengaged',
+  // ss_client_at_risk — migrated to contact field update (ss_engagement_status = 'At Risk')
+  // ss_client_reengaged — migrated to contact field update (ss_engagement_status = 'Active')
   'ss_chargeback_detected',
   'ss_defense_ready',
   'ss_evidence_milestone',

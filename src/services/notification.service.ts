@@ -86,17 +86,9 @@ export const notificationService = {
     });
   },
 
-  async fireClientAtRisk(
-    locationId: string,
-    contactId: string,
-    data: { riskScore: number; riskFactors: string[]; daysInactive: number },
-  ): Promise<void> {
-    await this.fireTrigger(locationId, CUSTOM_TRIGGERS.CLIENT_AT_RISK, contactId, {
-      risk_score: data.riskScore,
-      risk_factors: data.riskFactors.join('; '),
-      days_inactive: data.daysInactive,
-    });
-  },
+  // fireClientAtRisk — REMOVED. At-risk detection now writes to
+  // ss_engagement_status contact field ('At Risk'). GHL's native
+  // Contact Field Changed trigger drives the workflow.
 
   async firePaymentFailed(
     locationId: string,
