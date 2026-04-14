@@ -68,7 +68,6 @@ export const defenseService = {
       amount: input.disputeAmount,
       reasonCode: input.reasonCode,
       disputeDate: input.disputeDate,
-      caseNumber: input.caseNumber,
     });
 
     // Update GHL contact
@@ -160,10 +159,18 @@ export const defenseService = {
     }
 
     // 11. Fire defense ready notification
+    // Compute readiness score for defense notification
+    let readinessScore = 0;
+    try {
+      const { evidenceService } = require('./evidence.service');
+      const result = await evidenceService.calculateReadinessScore(input.locationId, input.contactId);
+      readinessScore = result.score;
+    } catch {}
+
     await notificationService.fireDefenseReady(input.locationId, input.contactId, {
-      packetUrl: '', // Will be set once PDF is generated
-      deadline: input.deadline,
+      packetUrl: '',
       evidenceCount: evidence.length,
+      readinessScore,
     });
 
     logger.info({

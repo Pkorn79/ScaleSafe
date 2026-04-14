@@ -156,6 +156,12 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 | Defense Ready | `ss_defense_ready` | Defense packet compiled | contact_id, packet_url, evidence_count, readiness_score |
 | Evidence Milestone | `ss_evidence_milestone` | Evidence threshold hit | contact_id, milestone_type, evidence_count, readiness_score |
 
+**SUBSCRIPTION (2):**
+| Trigger Name | Key | Fired When | Data Payload |
+|-------------|-----|-----------|-------------|
+| Subscription Paused | `ss_subscription_paused` | Merchant pauses subscription | contact_id, offer_name, pause_reason, payments_remaining, next_billing_date |
+| Subscription Resumed | `ss_subscription_resumed` | Merchant resumes subscription | contact_id, offer_name, next_billing_date, payments_remaining, days_paused |
+
 **CHARGEBACK RATIO MONITORING (2):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|

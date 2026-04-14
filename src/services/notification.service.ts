@@ -47,25 +47,28 @@ export const notificationService = {
   async fireChargebackDetected(
     locationId: string,
     contactId: string,
-    data: { amount: number; reasonCode: string; disputeDate: string; caseNumber?: string },
+    data: { amount: number; reasonCode: string; disputeDate: string },
   ): Promise<void> {
+    // Doc contract: contact_id, amount, reason_code, dispute_date
     await this.fireTrigger(locationId, CUSTOM_TRIGGERS.CHARGEBACK_DETECTED, contactId, {
+      contact_id: contactId,
       amount: data.amount,
       reason_code: data.reasonCode,
       dispute_date: data.disputeDate,
-      case_number: data.caseNumber,
     });
   },
 
   async fireDefenseReady(
     locationId: string,
     contactId: string,
-    data: { packetUrl: string; deadline: string; evidenceCount: number },
+    data: { packetUrl: string; evidenceCount: number; readinessScore: number },
   ): Promise<void> {
+    // Doc contract: contact_id, packet_url, evidence_count, readiness_score
     await this.fireTrigger(locationId, CUSTOM_TRIGGERS.DEFENSE_READY, contactId, {
+      contact_id: contactId,
       packet_url: data.packetUrl,
-      deadline: data.deadline,
       evidence_count: data.evidenceCount,
+      readiness_score: data.readinessScore,
     });
   },
 

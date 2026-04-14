@@ -429,7 +429,7 @@ export const phase2EnrollmentService = {
       amount: params.amount,
       failure_reason: params.failureReason || 'unknown',
       attempt_count: params.attemptCount || 1,
-      card_update_link: cardUpdateLink,
+      next_retry_date: 'none',
     });
 
     // Initiate dunning for recurring payment failures

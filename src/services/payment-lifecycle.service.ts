@@ -56,8 +56,6 @@ export const paymentLifecycleService = {
         failure_reason: params.failureReason,
         attempt_count: params.attemptCount,
         next_retry_date: nextRetryDate || 'none',
-        action: 'dunning_start',
-        is_soft_decline: isSoftDecline,
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId: params.contactId }, 'Dunning trigger failed');
@@ -259,12 +257,29 @@ export const paymentLifecycleService = {
       { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Build enriched trigger payload
-    const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'paused');
-
-    // Fire trigger + update GHL + add note
+    // Fire trigger — flat payload
     try {
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', triggerPayload);
+      let offerName = '';
+      let paymentsRemaining = 0;
+      try {
+        const supabase = getSupabase();
+        const { data: enr } = await supabase.from('enrollments')
+          .select('offer_id, payments_made, payments_total')
+          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (enr?.offer_id) {
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
+          offerName = ofr?.offer_name || '';
+          paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
+        }
+      } catch {}
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', {
+        contact_id: params.contactId,
+        offer_name: offerName,
+        pause_reason: params.reason,
+        payments_remaining: paymentsRemaining,
+        next_billing_date: '',
+      });
     } catch { /* non-blocking */ }
 
     try {
@@ -290,10 +305,33 @@ export const paymentLifecycleService = {
       { action: 'resume', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire dedicated resume trigger with enriched payload
+    // Fire trigger — flat doc contract: contact_id, offer_name, next_billing_date, payments_remaining, days_paused
     try {
-      const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'active');
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', triggerPayload);
+      let offerName = '';
+      let paymentsRemaining = 0;
+      let daysPaused = 0;
+      try {
+        const supabase = getSupabase();
+        const { data: enr } = await supabase.from('enrollments')
+          .select('offer_id, payments_made, payments_total, updated_at')
+          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (enr?.offer_id) {
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
+          offerName = ofr?.offer_name || '';
+          paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
+        }
+        if (enr?.updated_at) {
+          daysPaused = Math.floor((Date.now() - new Date(enr.updated_at).getTime()) / (1000 * 60 * 60 * 24));
+        }
+      } catch {}
+      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', {
+        contact_id: params.contactId,
+        offer_name: offerName,
+        next_billing_date: '',
+        payments_remaining: paymentsRemaining,
+        days_paused: daysPaused,
+      });
     } catch { /* non-blocking */ }
 
     // Update GHL contact
@@ -334,10 +372,23 @@ export const paymentLifecycleService = {
       { cancellation_date: new Date().toISOString(), reason: params.reason, refund_eligibility: 'per_terms', status_at_cancellation: 'cancelled', initiated_by: 'merchant' },
     );
 
-    // Fire trigger with enriched payload
+    // Fire trigger — flat doc contract: contact_id, offer_id, reason, refund_eligibility, enrollment_date
     try {
-      const triggerPayload = await this.buildSubscriptionTriggerPayload(params, 'cancelled');
-      await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', triggerPayload);
+      let enrollmentDate = '';
+      try {
+        const supabase = getSupabase();
+        const { data: enr } = await supabase.from('enrollments')
+          .select('enrolled_at').eq('location_id', params.locationId).eq('contact_id', params.contactId)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        enrollmentDate = enr?.enrolled_at || '';
+      } catch {}
+      await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', {
+        contact_id: params.contactId,
+        offer_id: params.offerId,
+        reason: params.reason,
+        refund_eligibility: 'per_terms',
+        enrollment_date: enrollmentDate,
+      });
     } catch { /* non-blocking */ }
 
     // Update GHL contact + add note
@@ -515,9 +566,10 @@ export const paymentLifecycleService = {
     try {
       await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
         contact_id: contactId,
-        action: 'card_update_requested',
-        card_update_link: link,
-        timestamp: new Date().toISOString(),
+        amount: 0,
+        failure_reason: 'card_update_requested',
+        attempt_count: 0,
+        next_retry_date: 'none',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId }, 'Card update request trigger failed');

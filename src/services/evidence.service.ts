@@ -201,8 +201,10 @@ export const evidenceService = {
       } else if (formId === 'SYS2-11') {
         await triggerService.fireTrigger(locationId, 'ss_cancellation_requested', {
           contact_id: contactId,
+          offer_id: '',
           reason: mappedData.reason,
           refund_eligibility: mappedData.refund_eligibility,
+          enrollment_date: '',
         });
       }
     } catch (triggerErr: any) {
