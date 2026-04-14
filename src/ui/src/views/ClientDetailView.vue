@@ -3,10 +3,18 @@
     <div class="flex-between mb-4">
       <div>
         <h1 class="page-title">{{ clientLabel }}</h1>
-        <p v-if="clientEmail" class="text-sm text-muted">{{ clientEmail }}</p>
+        <div class="flex gap-4" style="flex-wrap:wrap;margin-top:2px">
+          <span v-if="clientEmail" class="text-sm text-muted">{{ clientEmail }}</span>
+          <span v-if="enrollmentInfo?.phone" class="text-sm text-muted">{{ enrollmentInfo.phone }}</span>
+          <span v-if="enrollmentInfo?.companyName" class="text-sm text-muted">{{ enrollmentInfo.companyName }}</span>
+        </div>
+        <div v-if="enrollmentInfo?.tags?.length" style="margin-top:4px">
+          <span v-for="tag in enrollmentInfo.tags" :key="tag" class="badge badge-gray" style="margin-right:4px;font-size:11px">{{ tag }}</span>
+        </div>
       </div>
       <div class="flex gap-2">
-        <button v-if="!pageLoading && clientEmail" class="btn btn-primary" @click="openSendOffer">Send Offer</button>
+        <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showNoteModal = true">Add Note</button>
+        <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showMessageModal = true">Send Message</button>
         <router-link to="/clients" class="btn btn-secondary">Back</router-link>
       </div>
     </div>
@@ -186,6 +194,18 @@
           </div>
         </div>
 
+        <div v-if="!offersLoading && activeOffers.length > 0" class="form-group">
+          <label class="form-label">Send via</label>
+          <div class="flex gap-4">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+              <input type="checkbox" v-model="sendViaEmail" /> Email
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+              <input type="checkbox" v-model="sendViaSms" /> SMS
+            </label>
+          </div>
+        </div>
+
         <div v-if="sendOfferResult" class="text-sm mt-2" :style="{ color: '#10b981' }">{{ sendOfferResult }}</div>
         <div v-if="sendOfferError" class="text-sm mt-2" style="color:#ef4444">{{ sendOfferError }}</div>
 
@@ -193,6 +213,50 @@
           <button class="btn btn-secondary" @click="showSendOfferModal = false">Close</button>
           <button class="btn btn-primary" @click="submitSendOffer" :disabled="sendOfferLoading || !selectedOfferId">
             {{ sendOfferLoading ? 'Sending...' : 'Send Offer' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Note Modal -->
+    <div v-if="showNoteModal" class="modal-overlay" @click.self="showNoteModal = false">
+      <div class="modal-card">
+        <h3 style="margin-bottom:12px">Add Note</h3>
+        <div class="form-group">
+          <textarea class="form-textarea" v-model="noteBody" rows="4" placeholder="Enter note..."></textarea>
+        </div>
+        <div v-if="noteResult" class="text-sm" :style="{ color: '#10b981', marginBottom: '8px' }">{{ noteResult }}</div>
+        <div v-if="noteError" class="text-sm" style="color:#ef4444;margin-bottom:8px">{{ noteError }}</div>
+        <div class="flex gap-2" style="justify-content:flex-end">
+          <button class="btn btn-secondary" @click="showNoteModal = false">Close</button>
+          <button class="btn btn-primary" @click="submitNote" :disabled="noteLoading || !noteBody.trim()">
+            {{ noteLoading ? 'Saving...' : 'Save Note' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Send Message Modal -->
+    <div v-if="showMessageModal" class="modal-overlay" @click.self="showMessageModal = false">
+      <div class="modal-card">
+        <h3 style="margin-bottom:12px">Send Message</h3>
+        <div class="form-group">
+          <label class="form-label">Send via</label>
+          <select class="form-select" v-model="messageType">
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <textarea class="form-textarea" v-model="messageBody" rows="4" placeholder="Type your message..."></textarea>
+        </div>
+        <div v-if="messageResult" class="text-sm" :style="{ color: '#10b981', marginBottom: '8px' }">{{ messageResult }}</div>
+        <div v-if="messageError" class="text-sm" style="color:#ef4444;margin-bottom:8px">{{ messageError }}</div>
+        <div class="flex gap-2" style="justify-content:flex-end">
+          <button class="btn btn-secondary" @click="showMessageModal = false">Close</button>
+          <button class="btn btn-primary" @click="submitMessage" :disabled="messageLoading || !messageBody.trim()">
+            {{ messageLoading ? 'Sending...' : 'Send' }}
           </button>
         </div>
       </div>
@@ -229,6 +293,23 @@ const selectedOfferId = ref('');
 const sendOfferLoading = ref(false);
 const sendOfferResult = ref('');
 const sendOfferError = ref('');
+const sendViaEmail = ref(true);
+const sendViaSms = ref(false);
+
+// Note modal
+const showNoteModal = ref(false);
+const noteBody = ref('');
+const noteLoading = ref(false);
+const noteResult = ref('');
+const noteError = ref('');
+
+// Message modal
+const showMessageModal = ref(false);
+const messageType = ref('email');
+const messageBody = ref('');
+const messageLoading = ref(false);
+const messageResult = ref('');
+const messageError = ref('');
 
 function scoreColor(s: number): string {
   if (s >= 70) return '#10b981';
@@ -343,18 +424,23 @@ async function openSendOffer() {
 
 async function submitSendOffer() {
   if (!selectedOfferId.value || !clientEmail.value) return;
+  const sendVia: string[] = [];
+  if (sendViaEmail.value) sendVia.push('email');
+  if (sendViaSms.value) sendVia.push('sms');
+  if (sendVia.length === 0) { sendOfferError.value = 'Select email or SMS'; return; }
+
   sendOfferLoading.value = true;
   sendOfferError.value = '';
   sendOfferResult.value = '';
   try {
-    // Extract first/last name from clientLabel
     const parts = clientLabel.value.split(' ');
     await api.post('/api/enrollment/send-link', {
       offerId: selectedOfferId.value,
       firstName: parts[0] || '',
       lastName: parts.slice(1).join(' ') || '',
       email: clientEmail.value,
-      sendVia: 'email',
+      phone: enrollmentInfo.value?.phone || '',
+      sendVia,
     });
     sendOfferResult.value = 'Offer sent successfully!';
     selectedOfferId.value = '';
@@ -362,6 +448,45 @@ async function submitSendOffer() {
     sendOfferError.value = e.message || 'Failed to send offer';
   }
   sendOfferLoading.value = false;
+}
+
+async function submitNote() {
+  if (!noteBody.value.trim()) return;
+  noteLoading.value = true;
+  noteError.value = '';
+  noteResult.value = '';
+  try {
+    await api.post('/api/dashboard/client-note', {
+      contactId: contactId.value,
+      body: noteBody.value,
+    });
+    noteResult.value = 'Note saved!';
+    noteBody.value = '';
+    setTimeout(() => { noteResult.value = ''; }, 3000);
+  } catch (e: any) {
+    noteError.value = e.message || 'Failed to save note';
+  }
+  noteLoading.value = false;
+}
+
+async function submitMessage() {
+  if (!messageBody.value.trim()) return;
+  messageLoading.value = true;
+  messageError.value = '';
+  messageResult.value = '';
+  try {
+    await api.post('/api/dashboard/client-message', {
+      contactId: contactId.value,
+      type: messageType.value,
+      message: messageBody.value,
+    });
+    messageResult.value = 'Message sent!';
+    messageBody.value = '';
+    setTimeout(() => { messageResult.value = ''; }, 3000);
+  } catch (e: any) {
+    messageError.value = e.message || 'Failed to send message';
+  }
+  messageLoading.value = false;
 }
 
 async function downloadPacket() {

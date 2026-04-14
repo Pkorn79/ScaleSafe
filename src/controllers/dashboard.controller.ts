@@ -272,16 +272,19 @@ export const dashboardController = {
         .limit(1)
         .single();
 
-      // Try GHL for name
+      // Fetch GHL contact for name, phone, company, tags
       let name = '';
       let email = enrollment?.email || '';
+      let phone = '';
+      let companyName = '';
+      let tags: string[] = [];
+      let dateAdded = '';
       try {
         const api = await ghlApi(locationId);
         const contactRes = await api.get(`/contacts/${contactId}`);
         const contact = contactRes.data?.contact || contactRes.data || {};
         const first = (contact.firstName || '').trim();
         const last = (contact.lastName || '').trim();
-        // Skip email-prefix firstNames (e.g., "p_korniotes") — use enrollment signature instead
         const looksLikeEmail = first.includes('_') || first.includes('@') || first.includes('.');
         if (looksLikeEmail && enrollment?.digital_signature) {
           name = enrollment.digital_signature;
@@ -289,8 +292,11 @@ export const dashboardController = {
           name = `${first} ${last}`.trim();
         }
         if (!email) email = contact.email || '';
+        phone = contact.phone || '';
+        companyName = contact.companyName || contact.company_name || '';
+        tags = (contact.tags || []).map((t: any) => typeof t === 'string' ? t : t.name || '').filter(Boolean);
+        dateAdded = contact.dateAdded || contact.date_added || '';
       } catch {
-        // GHL lookup failed — use enrollment signature or email as name
         if (enrollment?.digital_signature) name = enrollment.digital_signature;
       }
 
@@ -346,6 +352,11 @@ export const dashboardController = {
         paymentsTotal: enrollment?.payments_total || offer?.num_payments || null,
         installmentAmount: offer?.installment_amount || null,
         installmentFrequency: offer?.installment_frequency || null,
+        // GHL contact data
+        phone,
+        companyName,
+        tags,
+        dateAdded,
       });
     } catch (err) { next(err); }
   },
@@ -417,6 +428,38 @@ export const dashboardController = {
         enrollments: result,
         summary: { total: result.length, active, completed, cancelled, clientSince },
       });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/client-note — add a note to a GHL contact */
+  async addClientNote(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId, body } = req.body;
+      if (!contactId || !body) throw new ValidationError('contactId and body required');
+
+      const api = await ghlApi(locationId);
+      await api.post(`/contacts/${contactId}/notes`, { body });
+      res.json({ success: true });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/client-message — send email/SMS via GHL Conversations */
+  async sendClientMessage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId, type, message } = req.body;
+      if (!contactId || !type || !message) throw new ValidationError('contactId, type, and message required');
+
+      const api = await ghlApi(locationId);
+      await api.post('/conversations/messages', {
+        type: type === 'sms' ? 'SMS' : 'Email',
+        contactId,
+        message,
+      });
+      res.json({ success: true });
     } catch (err) { next(err); }
   },
 };

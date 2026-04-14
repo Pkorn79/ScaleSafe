@@ -13,5 +13,7 @@ router.get('/evidence-health', dashboardController.evidenceHealth);
 router.get('/defense-history', dashboardController.defenseHistory);
 router.get('/client-info/:contactId', dashboardController.clientInfo);
 router.get('/client-enrollments/:contactId', dashboardController.clientEnrollments);
+router.post('/client-note', dashboardController.addClientNote);
+router.post('/client-message', dashboardController.sendClientMessage);
 
 export default router;

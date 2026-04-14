@@ -256,18 +256,20 @@ export const paymentLifecycleService = {
       { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
     );
 
-    // Fire trigger
+    // Fire trigger + update GHL contact + add note
     try {
       await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
         contact_id: params.contactId, action: 'subscription_paused', reason: params.reason,
       });
     } catch { /* non-blocking */ }
 
-    // Update GHL contact
     try {
       const api = await ghlApi(params.locationId);
       await api.put(`/contacts/${params.contactId}`, {
         customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'paused' },
+      });
+      await api.post(`/contacts/${params.contactId}/notes`, {
+        body: `Subscription paused: ${params.reason}`,
       });
     } catch { /* non-blocking */ }
 
@@ -336,11 +338,14 @@ export const paymentLifecycleService = {
       });
     } catch { /* non-blocking */ }
 
-    // Update GHL contact
+    // Update GHL contact + add note
     try {
       const api = await ghlApi(params.locationId);
       await api.put(`/contacts/${params.contactId}`, {
         customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'cancelled' },
+      });
+      await api.post(`/contacts/${params.contactId}/notes`, {
+        body: `Subscription cancelled: ${params.reason}`,
       });
     } catch { /* non-blocking */ }
 
