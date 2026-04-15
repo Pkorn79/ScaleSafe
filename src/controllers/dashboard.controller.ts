@@ -510,4 +510,69 @@ export const dashboardController = {
       res.json({ success: true, currentMilestone: milestoneNumber, milestoneName });
     } catch (err) { next(err); }
   },
+
+  /** GET /api/dashboard/clients — paginated client list from denormalized view */
+  async clients(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
+      const search = (req.query.search as string || '').trim();
+      const status = req.query.status as string || '';
+      const offset = (page - 1) * limit;
+
+      const supabase = getSupabase();
+
+      // Build query against the client_list_view
+      let query = supabase
+        .from('client_list_view')
+        .select('*', { count: 'exact' })
+        .eq('location_id', locationId)
+        .order('last_activity_date', { ascending: false, nullsFirst: false });
+
+      // Status filter
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      // Search by name/email
+      if (search) {
+        query = query.or(
+          `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,digital_signature.ilike.%${search}%`,
+        );
+      }
+
+      // Pagination
+      query = query.range(offset, offset + limit - 1);
+
+      const { data: rows, count, error } = await query;
+      if (error) throw error;
+
+      const clients = (rows || []).map((r: any) => ({
+        contactId: r.contact_id,
+        enrollmentId: r.enrollment_id,
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.digital_signature || r.email || r.contact_id.slice(0, 12),
+        email: r.email || '',
+        status: r.status || 'unknown',
+        paymentType: r.payment_type || '',
+        offerName: r.offer_name || '',
+        enrolledAt: r.enrolled_at || null,
+        lastActivityDate: r.last_activity_date || null,
+        hasCard: r.has_card || false,
+        nextBillingDate: r.next_billing_date || null,
+        paymentsMade: r.payments_made || 0,
+        paymentsTotal: r.payments_total || null,
+        paymentAmount: r.payment_amount || 0,
+      }));
+
+      res.json({
+        clients,
+        total: count || 0,
+        page,
+        limit,
+      });
+    } catch (err) { next(err); }
+  },
 };

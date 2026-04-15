@@ -8,6 +8,7 @@ const router = Router();
 router.use(ssoAuth, requireTenant);
 
 router.get('/overview', dashboardController.overview);
+router.get('/clients', dashboardController.clients);
 router.get('/at-risk', dashboardController.atRisk);
 router.get('/evidence-health', dashboardController.evidenceHealth);
 router.get('/defense-history', dashboardController.defenseHistory);
