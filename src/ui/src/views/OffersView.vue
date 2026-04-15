@@ -83,52 +83,49 @@
     </div>
 
     <!-- Send Link Modal -->
-    <div v-if="showSendModal" class="modal-overlay" @click.self="showSendModal = false">
-      <div class="modal-card">
-        <h3 style="margin-bottom:4px">Send Enrollment Link</h3>
-        <p class="text-sm text-muted mb-4">Sending link for: <strong>{{ sendForm.offerName }}</strong></p>
+    <Modal v-model:open="showSendModal" title="Send Enrollment Link">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">Sending link for: <strong>{{ sendForm.offerName }}</strong></p>
 
-        <div class="form-group">
-          <label class="form-label">First Name *</label>
-          <input class="form-input" v-model="sendForm.firstName" placeholder="John" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Last Name</label>
-          <input class="form-input" v-model="sendForm.lastName" placeholder="Smith" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email *</label>
-          <input class="form-input" type="email" v-model="sendForm.email" placeholder="john@example.com" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Phone</label>
-          <input class="form-input" type="tel" v-model="sendForm.phone" placeholder="+15551234567" />
-        </div>
+      <div class="form-group">
+        <label class="form-label">First Name *</label>
+        <input class="form-input" v-model="sendForm.firstName" placeholder="John" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Last Name</label>
+        <input class="form-input" v-model="sendForm.lastName" placeholder="Smith" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" type="email" v-model="sendForm.email" placeholder="john@example.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" type="tel" v-model="sendForm.phone" placeholder="+15551234567" />
+      </div>
 
-        <div class="form-group">
-          <label class="form-label">Send via:</label>
-          <div class="flex gap-4" style="margin-top:4px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
-              <input type="checkbox" v-model="sendForm.sendEmail" style="width:16px;height:16px;accent-color:#3b82f6" /> Email
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
-              <input type="checkbox" v-model="sendForm.sendSms" style="width:16px;height:16px;accent-color:#3b82f6" /> SMS
-            </label>
-          </div>
-        </div>
-
-        <p class="text-sm text-muted mb-4">If this person is already a contact in your CRM, we'll use their existing record.</p>
-
-        <div v-if="sendError" class="error-msg">{{ sendError }}</div>
-
-        <div class="flex gap-2" style="justify-content:flex-end">
-          <button class="btn btn-secondary" @click="showSendModal = false">Cancel</button>
-          <button class="btn btn-primary" @click="submitSendLink" :disabled="sendLoading">
-            <Send :size="14" /> {{ sendLoading ? 'Sending...' : 'Send Link' }}
-          </button>
+      <div class="form-group">
+        <label class="form-label">Send via:</label>
+        <div class="flex gap-4" style="margin-top:4px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+            <input type="checkbox" v-model="sendForm.sendEmail" style="width:16px;height:16px;accent-color:#3b82f6" /> Email
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+            <input type="checkbox" v-model="sendForm.sendSms" style="width:16px;height:16px;accent-color:#3b82f6" /> SMS
+          </label>
         </div>
       </div>
-    </div>
+
+      <p class="text-sm text-muted">If this person is already a contact in your CRM, we'll use their existing record.</p>
+
+      <div v-if="sendError" class="error-msg" style="margin-top:8px">{{ sendError }}</div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="showSendModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="submitSendLink" :disabled="sendLoading">
+          <Send :size="14" /> {{ sendLoading ? 'Sending...' : 'Send Link' }}
+        </button>
+      </template>
+    </Modal>
 
     <!-- Toast notifications -->
     <div v-if="toast" style="position:fixed;bottom:20px;right:20px;background:#10b981;color:#fff;padding:10px 20px;border-radius:6px;font-size:14px;z-index:200">
@@ -142,6 +139,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
+import Modal from '../components/Modal.vue';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -270,23 +268,3 @@ async function unarchiveOffer(offer: any) {
 // Select multiple contacts from GHL → send enrollment link to all
 </script>
 
-<style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 24px;
-  max-width: 440px;
-  width: 100%;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-}
-</style>

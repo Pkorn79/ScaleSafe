@@ -148,105 +148,93 @@
     </div>
 
     <!-- Charge Modal -->
-    <div v-if="showChargeModal" class="modal-overlay" @click.self="showChargeModal = false">
-      <div class="modal-card">
-        <h3 style="margin-bottom:16px">One-Time Charge</h3>
-        <div class="form-group">
-          <label class="form-label">Payment Method</label>
-          <select class="form-select" v-model="chargeForm.methodId">
-            <option v-for="m in methods" :key="m.id" :value="m.id">
-              {{ m.brand }} ending in {{ m.last4 }}
-            </option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Amount ($)</label>
-          <input class="form-input" type="number" step="0.01" min="0.01" v-model.number="chargeForm.amount" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Description</label>
-          <input class="form-input" v-model="chargeForm.description" placeholder="e.g., Additional session" />
-        </div>
-        <div class="flex gap-2" style="justify-content:flex-end">
-          <button class="btn btn-secondary" @click="showChargeModal = false">Cancel</button>
-          <button class="btn btn-primary" @click="submitCharge" :disabled="chargeLoading">
-            {{ chargeLoading ? 'Processing...' : 'Charge Card' }}
-          </button>
-        </div>
+    <Modal v-model:open="showChargeModal" title="One-Time Charge">
+      <div class="form-group">
+        <label class="form-label">Payment Method</label>
+        <select class="form-select" v-model="chargeForm.methodId">
+          <option v-for="m in methods" :key="m.id" :value="m.id">
+            {{ m.brand }} ending in {{ m.last4 }}
+          </option>
+        </select>
       </div>
-    </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($)</label>
+        <input class="form-input" type="number" step="0.01" min="0.01" v-model.number="chargeForm.amount" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input class="form-input" v-model="chargeForm.description" placeholder="e.g., Additional session" />
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showChargeModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="submitCharge" :disabled="chargeLoading">
+          {{ chargeLoading ? 'Processing...' : 'Charge Card' }}
+        </button>
+      </template>
+    </Modal>
 
     <!-- Refund Modal -->
-    <div v-if="showRefundModal" class="modal-overlay" @click.self="showRefundModal = false">
-      <div class="modal-card">
-        <h3 style="margin-bottom:16px">Issue Refund</h3>
-        <p class="text-sm text-muted mb-4">Original charge: ${{ refundForm.originalAmount.toFixed(2) }}</p>
-        <div class="form-group">
-          <label class="form-label">Refund Amount ($)</label>
-          <input class="form-input" type="number" step="0.01" min="0.01"
-            :max="refundForm.originalAmount" v-model.number="refundForm.amount" />
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" @change="refundForm.amount = refundForm.originalAmount" />
-            Full refund (${{ refundForm.originalAmount.toFixed(2) }})
-          </label>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Reason</label>
-          <input class="form-input" v-model="refundForm.reason" placeholder="Client requested refund" />
-        </div>
-        <p class="text-sm text-muted mb-4">Refunds may take 5-10 business days to process.</p>
-        <div class="flex gap-2" style="justify-content:flex-end">
-          <button class="btn btn-secondary" @click="showRefundModal = false">Cancel</button>
-          <button class="btn btn-danger" @click="submitRefund" :disabled="refundLoading">
-            {{ refundLoading ? 'Processing...' : 'Issue Refund' }}
-          </button>
-        </div>
+    <Modal v-model:open="showRefundModal" title="Issue Refund">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">Original charge: ${{ refundForm.originalAmount.toFixed(2) }}</p>
+      <div class="form-group">
+        <label class="form-label">Refund Amount ($)</label>
+        <input class="form-input" type="number" step="0.01" min="0.01"
+          :max="refundForm.originalAmount" v-model.number="refundForm.amount" />
       </div>
-    </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" @change="refundForm.amount = refundForm.originalAmount" />
+          Full refund (${{ refundForm.originalAmount.toFixed(2) }})
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reason</label>
+        <input class="form-input" v-model="refundForm.reason" placeholder="Client requested refund" />
+      </div>
+      <p class="text-sm text-muted">Refunds may take 5-10 business days to process.</p>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showRefundModal = false">Cancel</button>
+        <button class="btn btn-danger" @click="submitRefund" :disabled="refundLoading">
+          {{ refundLoading ? 'Processing...' : 'Issue Refund' }}
+        </button>
+      </template>
+    </Modal>
 
     <!-- Pause Subscription Modal -->
-    <div v-if="showPauseModal" class="modal-overlay" @click.self="showPauseModal = false">
-      <div class="modal-card">
-        <h3 style="margin-bottom:16px">Pause Subscription</h3>
-        <p class="text-sm text-muted mb-4">Pausing will stop future billing until resumed. This is logged as evidence.</p>
-        <div class="form-group">
-          <label class="form-label">Reason for pausing</label>
-          <textarea class="form-textarea" v-model="pauseReason" rows="3" placeholder="e.g., Client requested temporary hold"></textarea>
-        </div>
-        <div class="flex gap-2" style="justify-content:flex-end">
-          <button class="btn btn-secondary" @click="showPauseModal = false">Cancel</button>
-          <button class="btn btn-primary" @click="pauseSubscription" :disabled="subLoading || !pauseReason.trim()">
-            {{ subLoading ? 'Pausing...' : 'Pause Subscription' }}
-          </button>
-        </div>
+    <Modal v-model:open="showPauseModal" title="Pause Subscription">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">Pausing will stop future billing until resumed. This is logged as evidence.</p>
+      <div class="form-group">
+        <label class="form-label">Reason for pausing</label>
+        <textarea class="form-textarea" v-model="pauseReason" rows="3" placeholder="e.g., Client requested temporary hold"></textarea>
       </div>
-    </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showPauseModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="pauseSubscription" :disabled="subLoading || !pauseReason.trim()">
+          {{ subLoading ? 'Pausing...' : 'Pause Subscription' }}
+        </button>
+      </template>
+    </Modal>
 
     <!-- Cancel Subscription Modal -->
-    <div v-if="showCancelModal" class="modal-overlay" @click.self="showCancelModal = false">
-      <div class="modal-card">
-        <h3 style="margin-bottom:16px;color:#ef4444">Cancel Subscription</h3>
-        <p class="text-sm text-muted mb-4">This will permanently cancel the subscription and stop all future billing. This action is logged as evidence for chargeback defense.</p>
-        <div class="form-group">
-          <label class="form-label">Reason for cancellation</label>
-          <textarea class="form-textarea" v-model="cancelReason" rows="3" placeholder="e.g., Client completed program, financial hardship"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="cancelConfirmed" />
-            I understand this cannot be undone
-          </label>
-        </div>
-        <div class="flex gap-2" style="justify-content:flex-end">
-          <button class="btn btn-secondary" @click="showCancelModal = false">Cancel</button>
-          <button class="btn btn-danger" @click="cancelSubscription" :disabled="subLoading || !cancelReason.trim() || !cancelConfirmed">
-            {{ subLoading ? 'Cancelling...' : 'Cancel Subscription' }}
-          </button>
-        </div>
+    <Modal v-model:open="showCancelModal" title="Cancel Subscription">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">This will permanently cancel the subscription and stop all future billing. This action is logged as evidence for chargeback defense.</p>
+      <div class="form-group">
+        <label class="form-label">Reason for cancellation</label>
+        <textarea class="form-textarea" v-model="cancelReason" rows="3" placeholder="e.g., Client completed program, financial hardship"></textarea>
       </div>
-    </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="cancelConfirmed" />
+          I understand this cannot be undone
+        </label>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showCancelModal = false">Cancel</button>
+        <button class="btn btn-danger" @click="cancelSubscription" :disabled="subLoading || !cancelReason.trim() || !cancelConfirmed">
+          {{ subLoading ? 'Cancelling...' : 'Cancel Subscription' }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -254,6 +242,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import Modal from '../components/Modal.vue';
 
 const route = useRoute();
 const api = useApi();
@@ -522,25 +511,6 @@ async function submitRefund() {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 24px;
-  max-width: 420px;
-  width: 100%;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-}
-
 .checkbox-label {
   display: flex;
   align-items: center;

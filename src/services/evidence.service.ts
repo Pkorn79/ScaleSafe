@@ -341,10 +341,14 @@ export const evidenceService = {
   },
 
   /**
-   * Get full evidence timeline for a contact.
+   * Get evidence timeline for a contact, with optional filters.
    */
-  async getTimeline(locationId: string, contactId: string) {
-    return evidenceRepository.getTimeline(locationId, contactId);
+  async getTimeline(
+    locationId: string,
+    contactId: string,
+    opts: { limit?: number; offset?: number; type?: string; from?: string; to?: string } = {},
+  ) {
+    return evidenceRepository.getTimeline(locationId, contactId, opts);
   },
 
   /**

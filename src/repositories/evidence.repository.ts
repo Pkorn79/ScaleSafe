@@ -34,23 +34,41 @@ export const evidenceRepository = {
   /**
    * Get the unified evidence timeline for a contact.
    * Queries both evidence_timeline view and evidence table, merges and deduplicates.
+   *
+   * Optional filters:
+   *   - type: evidence type (e.g., 'consent', 'session', 'milestone')
+   *   - from / to: ISO date strings (inclusive)
+   *   - limit / offset: pagination
    */
-  async getTimeline(locationId: string, contactId: string, limit: number = 100): Promise<any[]> {
+  async getTimeline(
+    locationId: string,
+    contactId: string,
+    opts: { limit?: number; offset?: number; type?: string; from?: string; to?: string } = {},
+  ): Promise<{ rows: any[]; total: number }> {
     const supabase = getSupabase();
+    const limit = opts.limit ?? 100;
+    const offset = opts.offset ?? 0;
+
+    // Build filter clauses common to both sources
+    const applyFilters = (q: any, typeField: 'type' | 'evidence_type') => {
+      let out = q.eq('location_id', locationId).eq('contact_id', contactId);
+      if (opts.type) out = out.eq(typeField, opts.type);
+      if (opts.from) out = out.gte('created_at', opts.from);
+      if (opts.to) out = out.lte('created_at', opts.to);
+      return out;
+    };
 
     const [timelineResult, evidenceResult] = await Promise.all([
-      supabase
-        .from('evidence_timeline')
-        .select('*')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false }),
-      safeQuery(() => supabase
-        .from('evidence')
-        .select('*')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false })),
+      applyFilters(
+        supabase.from('evidence_timeline').select('*'),
+        'type',
+      ).order('created_at', { ascending: false }),
+      safeQuery(() =>
+        applyFilters(
+          supabase.from('evidence').select('*'),
+          'evidence_type',
+        ).order('created_at', { ascending: false }),
+      ),
     ]);
 
     if (timelineResult.error) throw timelineResult.error;
@@ -66,8 +84,8 @@ export const evidenceRepository = {
     const allRows = [...timelineRows, ...evidenceRows];
     const seen = new Set<string>();
     const unique = allRows.filter(r => {
-      if (seen.has(r.id)) return false;
-      seen.add(r.id);
+      if (r.id && seen.has(r.id)) return false;
+      if (r.id) seen.add(r.id);
       return true;
     });
 
@@ -77,7 +95,10 @@ export const evidenceRepository = {
       return dateB - dateA;
     });
 
-    return unique.slice(0, limit);
+    return {
+      rows: unique.slice(offset, offset + limit),
+      total: unique.length,
+    };
   },
 
   /**
@@ -117,7 +138,8 @@ export const evidenceRepository = {
    * Get all evidence for a contact as a snapshot (used for defense compilation).
    */
   async getFullSnapshot(locationId: string, contactId: string): Promise<any[]> {
-    return this.getTimeline(locationId, contactId, 10000);
+    const { rows } = await this.getTimeline(locationId, contactId, { limit: 10000 });
+    return rows;
   },
 
   /**

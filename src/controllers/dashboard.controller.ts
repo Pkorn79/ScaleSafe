@@ -531,6 +531,252 @@ export const dashboardController = {
     } catch (err) { next(err); }
   },
 
+  /**
+   * GET /api/dashboard/client-activity/:contactId
+   * Bundled overview data: recent N activities + most recent note + at-risk snapshot.
+   */
+  async clientActivity(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+      const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 5));
+
+      // 1) Recent activity (slice of timeline)
+      const [timelineResult, noteResult, riskResult] = await Promise.allSettled([
+        evidenceService.getTimeline(locationId, contactId, { limit }),
+        (async () => {
+          try {
+            const api = await ghlApi(locationId);
+            const resp = await api.get(`/contacts/${contactId}/notes`);
+            const notes = (resp.data?.notes || resp.data || []) as any[];
+            if (!Array.isArray(notes) || notes.length === 0) return null;
+            const sorted = [...notes].sort((a, b) => {
+              const da = new Date(a.dateAdded || a.createdAt || 0).getTime();
+              const db = new Date(b.dateAdded || b.createdAt || 0).getTime();
+              return db - da;
+            });
+            const top = sorted[0];
+            return { body: top.body || '', createdAt: top.dateAdded || top.createdAt || '' };
+          } catch {
+            return null;
+          }
+        })(),
+        disengagementService.scoreClient(locationId, contactId),
+      ]);
+
+      const recentActivity = timelineResult.status === 'fulfilled' ? (timelineResult.value.rows || []) : [];
+      const recentNote = noteResult.status === 'fulfilled' ? noteResult.value : null;
+      const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
+
+      res.json({
+        recentActivity,
+        recentNote,
+        atRisk: risk ? { flagged: risk.flagged, riskScore: risk.riskScore, riskFactors: risk.riskFactors, daysInactive: risk.daysInactive } : null,
+      });
+    } catch (err) { next(err); }
+  },
+
+  /**
+   * GET /api/dashboard/client-communications/:contactId
+   * Unified feed of messages (GHL conversations) + notes (GHL) with source marking.
+   *
+   * Query params:
+   *   limit: default 50 (max 200)
+   *   offset: default 0
+   *   windowDays: default 30 (cap fetch window for rate-limit safety)
+   */
+  async clientCommunications(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+
+      const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+      const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+      const windowDays = Math.min(365, Math.max(1, parseInt(req.query.windowDays as string) || 30));
+      const windowStart = new Date(Date.now() - windowDays * 86400000);
+
+      const supabase = getSupabase();
+
+      // Pull GHL data + evidence cross-reference in parallel
+      const [ghlMessages, ghlNotes, appSentEvidence] = await Promise.allSettled([
+        (async () => {
+          try {
+            const api = await ghlApi(locationId);
+            const convRes = await api.get('/conversations/search', { params: { locationId, contactId } });
+            const conversations = convRes.data?.conversations || [];
+            const all: any[] = [];
+            for (const conv of conversations) {
+              try {
+                const msgRes = await api.get(`/conversations/${conv.id}/messages`, { params: { limit: 50 } });
+                const msgs = msgRes.data?.messages || msgRes.data?.items || [];
+                for (const msg of msgs) {
+                  all.push({ msg, convId: conv.id });
+                }
+              } catch { /* skip conversation on error */ }
+            }
+            return all;
+          } catch {
+            return [] as any[];
+          }
+        })(),
+        (async () => {
+          try {
+            const api = await ghlApi(locationId);
+            const resp = await api.get(`/contacts/${contactId}/notes`);
+            const rows = (resp.data?.notes || resp.data || []) as any[];
+            return Array.isArray(rows) ? rows : [];
+          } catch {
+            return [] as any[];
+          }
+        })(),
+        // Cross-reference: app-sent messages logged with source='app_triggered'
+        supabase
+          .from('evidence_communication')
+          .select('comm_type, comm_date, summary, direction')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .eq('source', 'app_triggered')
+          .gte('comm_date', windowStart.toISOString())
+          .order('comm_date', { ascending: false }),
+      ]);
+
+      const messages = ghlMessages.status === 'fulfilled' ? ghlMessages.value : [];
+      const notes = ghlNotes.status === 'fulfilled' ? ghlNotes.value : [];
+      const appSentRows = (appSentEvidence.status === 'fulfilled' ? (appSentEvidence.value?.data || []) : []) as any[];
+
+      // Build marker set for fast cross-reference: (channel|direction|timestamp bucket)
+      // Use 5-minute buckets on comm_date for matching outbound GHL messages to app-sent evidence rows.
+      const appSentMarkers = new Set<string>();
+      for (const row of appSentRows) {
+        const bucket = Math.floor(new Date(row.comm_date).getTime() / (5 * 60 * 1000));
+        const channel = String(row.comm_type || '').toLowerCase();
+        appSentMarkers.add(`${channel}|outbound|${bucket}`);
+      }
+
+      function markSource(channel: string, direction: string, date: string): 'automated' | 'manual' | null {
+        if (direction !== 'outbound') return null;
+        const bucket = Math.floor(new Date(date).getTime() / (5 * 60 * 1000));
+        // Check this bucket and ±1 neighbor buckets for clock skew
+        for (const b of [bucket - 1, bucket, bucket + 1]) {
+          if (appSentMarkers.has(`${channel.toLowerCase()}|outbound|${b}`)) return 'automated';
+        }
+        return 'manual';
+      }
+
+      // Normalize GHL messages into unified feed items
+      const messageItems = messages
+        .map(({ msg, convId }) => {
+          const direction: 'inbound' | 'outbound' = msg.direction === 1 || msg.direction === 'inbound' ? 'inbound' : 'outbound';
+          const ghlType = String(msg.type || '').toUpperCase();
+          let channel: string = 'other';
+          if (ghlType === 'SMS' || ghlType === 'TYPE_SMS') channel = 'sms';
+          else if (ghlType === 'EMAIL' || ghlType === 'TYPE_EMAIL') channel = 'email';
+          else if (ghlType === 'CALL' || ghlType === 'TYPE_CALL') channel = 'call';
+          else if (ghlType) channel = ghlType.toLowerCase();
+          const date = msg.dateAdded || msg.createdAt || msg.date || '';
+          return {
+            id: `msg-${msg.id || convId}-${date}`,
+            channel,
+            direction,
+            date,
+            body: msg.body || msg.text || msg.message || '',
+            sourceMark: markSource(channel, direction, date),
+          };
+        })
+        .filter(m => m.date && (new Date(m.date).getTime() >= windowStart.getTime()));
+
+      // Normalize GHL notes into feed items
+      const noteItems = notes
+        .map((n: any) => ({
+          id: `note-${n.id || ''}`,
+          channel: 'note',
+          direction: 'note' as const,
+          date: n.dateAdded || n.createdAt || '',
+          body: n.body || '',
+          sourceMark: null as null,
+        }))
+        .filter((n: any) => n.date && (new Date(n.date).getTime() >= windowStart.getTime()));
+
+      // Merge + sort newest-first
+      const combined = [...messageItems, ...noteItems].sort((a, b) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+
+      const page = combined.slice(offset, offset + limit);
+      const hasMore = combined.length > offset + limit;
+
+      res.json({
+        items: page,
+        total: combined.length,
+        hasMore,
+        windowDays,
+      });
+    } catch (err) { next(err); }
+  },
+
+  /**
+   * GET /api/dashboard/client-files/:contactId
+   * Returns enrollment packet signed URLs + signed-milestone metadata.
+   */
+  async clientFiles(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+
+      const supabase = getSupabase();
+
+      // Fetch enrollments w/ packet paths and signoffs in parallel
+      const [enrollmentRes, signoffRes] = await Promise.all([
+        supabase
+          .from('enrollments')
+          .select('id, offer_id, packet_pdf_path, created_at')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .not('packet_pdf_path', 'is', null)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('evidence_signoffs')
+          .select('id, milestone_number, milestone_name, signed_at, digital_signature, work_summary')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .order('signed_at', { ascending: false }),
+      ]);
+
+      // Resolve offer names for packet rows
+      const offerIds = [...new Set((enrollmentRes.data || []).map(e => e.offer_id).filter(Boolean))];
+      let offerMap: Record<string, string> = {};
+      if (offerIds.length > 0) {
+        const { data: offers } = await supabase
+          .from('offers_mirror')
+          .select('id, offer_name')
+          .in('id', offerIds);
+        for (const o of (offers || [])) offerMap[o.id] = o.offer_name;
+      }
+
+      // Build packet list — do NOT pre-generate signed URLs (merchant can hit /api/enrollments/:id/packet)
+      // The frontend FilesTab downloads via the existing streaming route to avoid URL leakage.
+      const packets = (enrollmentRes.data || []).map(e => ({
+        enrollmentId: e.id,
+        offerName: e.offer_id ? (offerMap[e.offer_id] || 'Enrollment Packet') : 'Enrollment Packet',
+        createdAt: e.created_at,
+      }));
+
+      const signoffs = (signoffRes.data || []).map((s: any) => ({
+        id: s.id,
+        milestoneNumber: s.milestone_number,
+        milestoneName: s.milestone_name,
+        signedAt: s.signed_at,
+        signedBy: s.digital_signature || null,
+        workSummary: s.work_summary || null,
+      }));
+
+      res.json({ packets, signoffs });
+    } catch (err) { next(err); }
+  },
+
   /** GET /api/dashboard/clients — paginated client list from denormalized view */
   async clients(req: Request, res: Response, next: NextFunction) {
     try {

@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-15
+
+### Added — Slice 2: Client Profile Restructure
+- **ClientDetailView rewritten as tab-based layout.** Sticky header (name, meta, status chip, actions) + summary strip (readiness, active programs, paid lifetime, next billing, last activity) + six tabs: **Overview / Programs / Payments / Evidence / Communications / Files**. Active tab persists to URL hash.
+- **`<Modal>` component** (`src/ui/src/components/Modal.vue`) — reusable overlay with `v-model:open`, title prop, default + footer slots, ESC + click-outside close, body scroll lock, teleport to body, responsive bottom-sheet on mobile. Fixes broken Send Offer / Add Note / Send Message modals in ClientDetailView (the classes `.modal-overlay` / `.modal-card` were only defined in OffersView + PaymentManagement as `<style scoped>`, so CDV's modals rendered as inline panels at bottom of page).
+- **`<ProfileTabs>` component** (`src/ui/src/components/ProfileTabs.vue`) — sticky tab nav on desktop, fixed bottom-nav on mobile with icons + labels. iOS-safe (`env(safe-area-inset-bottom)`), `100dvh`-ready, hides on keyboard open via `ss-profile-open` body class hook.
+- **Tab components** in `src/ui/src/views/client-profile/`:
+  - `OverviewTab.vue` — compact readiness score, quick stats, recent 5 activities, most recent note, at-risk/engaged pill
+  - `ProgramsTab.vue` — enrollment cards lifted from old CDV, milestone progress + Mark Complete + Packet download
+  - `PaymentsTab.vue` — card on file, totals, last 5 payments, deep link to standalone `/payments/:contactId`
+  - `EvidenceTab.vue` — timeline with type filter + date range filter + Load More pagination
+  - `CommunicationsTab.vue` — unified feed of GHL messages + notes with Manual/Automated source chips
+  - `FilesTab.vue` — enrollment packets (downloadable) + signed milestone metadata rows
+- **New backend endpoints** (all SSO-gated, `location_id`-scoped, in `dashboard.controller.ts` + `dashboard.routes.ts`):
+  - `GET /api/dashboard/client-activity/:contactId?limit=5` — bundled overview data (recent activity + recent note + at-risk snapshot). Calls GHL `GET /contacts/:contactId/notes` for most-recent note.
+  - `GET /api/dashboard/client-communications/:contactId?limit=50&offset=0&windowDays=30` — unified messages + notes feed. Pulls GHL `/conversations/search` + per-conv `/conversations/:id/messages` + `/contacts/:contactId/notes`. Marks outbound messages as `automated` (ScaleSafe-sent) or `manual` via cross-reference against `evidence_communication` rows where `source='app_triggered'`, matched by 5-minute timestamp buckets with ±1 neighbor tolerance for clock skew. Default 30-day window for rate-limit safety.
+  - `GET /api/dashboard/client-files/:contactId` — enrollment packets metadata + `evidence_signoffs` rows. Packets download through existing `/api/enrollments/:id/packet` streaming route; signoffs are metadata-only (no PDF generation in this slice).
+- **Evidence timeline endpoint filter support.** `GET /api/evidence/:contactId` now accepts `?type=`, `?from=`, `?to=`, `?limit=`, `?offset=` query params. Response shape changed from plain array to `{ rows, total }` — frontend handles both for backward-compat. Filters push down to Supabase via `evidenceRepository.getTimeline()` which applies them to both `evidence_timeline` view and unified `evidence` table in parallel.
+- **Migration 042** — composite indexes `idx_evidence_location_contact_created (location_id, contact_id, created_at DESC)` and `idx_evidence_location_contact_type (location_id, contact_id, evidence_type)` on unified `evidence` table for filtered timeline perf.
+
+### Changed
+- **8 existing inline modals migrated to `<Modal>`**: Send Offer, Add Note, Send Message (ClientDetailView); Send Enrollment Link (OffersView); Charge, Refund, Pause, Cancel (PaymentManagement). Duplicate `.modal-overlay` / `.modal-card` scoped style blocks removed from OffersView and PaymentManagement.
+- `evidenceRepository.getTimeline()` signature changed to `(locationId, contactId, opts)` where `opts = { limit, offset, type, from, to }`. Returns `{ rows, total }` instead of raw array. Internal callers (`getFullSnapshot`) updated.
+- `evidenceService.getTimeline()` updated to thread `opts` through to the repository.
+
+### Fixed
+- **Broken modal rendering in ClientDetailView.** Previously the Send Offer / Add Note / Send Message modals rendered as unstyled divs flowing in document order ("panel at bottom of page" UX bug) because `.modal-overlay` and `.modal-card` classes were defined inside `<style scoped>` blocks in OffersView.vue and PaymentManagement.vue — scoping meant those classes didn't apply to CDV's elements. The new `<Modal>` component uses global `.ss-modal-*` classes on a teleported node, properly overlaying regardless of host view.
+
+---
+
 ## 2026-04-13
 
 ### Added — Phase G Gap Fill: Payment Lifecycle Service
