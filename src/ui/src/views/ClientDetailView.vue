@@ -96,6 +96,25 @@
             <strong>Delivery:</strong> {{ enr.deliveryMethod }}
           </div>
         </div>
+        <!-- Milestone Progress -->
+        <div v-if="enr.milestones && enr.milestones.length > 0" style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb">
+          <div class="flex-between">
+            <div class="text-sm">
+              <strong>Milestones:</strong> {{ enr.currentMilestone || 0 }} of {{ enr.milestones.length }} complete
+              <span v-if="enr.currentMilestone < enr.milestones.length && enr.milestones[enr.currentMilestone]" class="text-muted">
+                — Next: {{ enr.milestones[enr.currentMilestone].name }}
+              </span>
+            </div>
+            <button v-if="enr.currentMilestone < enr.milestones.length && ['enrolled','active'].includes(enr.status)"
+              class="btn btn-sm btn-primary" @click="markMilestone(enr)" :disabled="milestoneLoading">
+              {{ milestoneLoading ? '...' : 'Mark Complete' }}
+            </button>
+          </div>
+          <!-- Progress bar -->
+          <div style="margin-top:4px;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden">
+            <div :style="{ width: (enr.milestones.length > 0 ? ((enr.currentMilestone || 0) / enr.milestones.length * 100) : 0) + '%', height: '100%', background: '#10b981', borderRadius: '3px', transition: 'width 0.3s' }"></div>
+          </div>
+        </div>
         <div v-if="enr.cancelledAt" class="text-sm mt-2" style="color:#ef4444">Cancelled: {{ formatDateShort(enr.cancelledAt) }}</div>
         <div v-if="enr.completedAt" class="text-sm mt-2" style="color:#10b981">Completed: {{ formatDateShort(enr.completedAt) }}</div>
       </div>
@@ -284,6 +303,7 @@ const packetLoading = ref(false);
 const packetError = ref('');
 const enrollments = ref<any[]>([]);
 const enrollmentSummary = ref<any>(null);
+const milestoneLoading = ref(false);
 
 // Send Offer modal
 const showSendOfferModal = ref(false);
@@ -319,6 +339,28 @@ function scoreColor(s: number): string {
 
 function formatKey(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+async function markMilestone(enr: any) {
+  if (!enr.milestones || enr.currentMilestone >= enr.milestones.length) return;
+  const nextMilestone = enr.milestones[enr.currentMilestone];
+  milestoneLoading.value = true;
+  try {
+    await api.post('/api/dashboard/mark-milestone', {
+      contactId: contactId.value,
+      enrollmentId: enr.id,
+      milestoneNumber: nextMilestone.number,
+    });
+    // Refresh enrollments to show updated progress
+    const result = await api.get<any>(`/api/dashboard/client-enrollments/${contactId.value}`);
+    if (result) {
+      enrollments.value = result.enrollments || [];
+      enrollmentSummary.value = result.summary || null;
+    }
+  } catch (e: any) {
+    packetError.value = e.message || 'Failed to mark milestone';
+  }
+  milestoneLoading.value = false;
 }
 
 function formatDateShort(d: string): string {

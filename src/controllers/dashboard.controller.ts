@@ -6,6 +6,24 @@ import { disengagementService } from '../services/disengagement.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
+/** Build milestone list from offer's m1-m8 fields */
+function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
+  if (!offer) return [];
+  const milestones: Array<{ number: number; name: string; delivers: string; clientDoes: string }> = [];
+  for (let i = 1; i <= 8; i++) {
+    const name = offer[`m${i}_name`];
+    if (name) {
+      milestones.push({
+        number: i,
+        name,
+        delivers: offer[`m${i}_delivers`] || '',
+        clientDoes: offer[`m${i}_client_does`] || '',
+      });
+    }
+  }
+  return milestones;
+}
+
 export const dashboardController = {
   /** GET /api/dashboard/overview — merchant dashboard summary */
   async overview(req: Request, res: Response, next: NextFunction) {
@@ -373,7 +391,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, digital_signature, packet_pdf_path, created_at, email')
+        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, digital_signature, packet_pdf_path, created_at, email, current_milestone')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -386,7 +404,7 @@ export const dashboardController = {
       if (offerIds.length > 0) {
         const { data: offers } = await supabase
           .from('offers_mirror')
-          .select('id, offer_name, price, payment_type, installment_amount, installment_frequency, num_payments, program_duration_value, program_duration_unit, delivery_method')
+          .select('*')
           .in('id', offerIds);
         for (const o of (offers || [])) {
           offerMap[o.id] = o;
@@ -415,6 +433,8 @@ export const dashboardController = {
           deliveryMethod: offer?.delivery_method || null,
           digitalSignature: e.digital_signature || '',
           packetPdfPath: e.packet_pdf_path || null,
+          currentMilestone: e.current_milestone || 0,
+          milestones: buildMilestoneList(offer),
         };
       });
 
