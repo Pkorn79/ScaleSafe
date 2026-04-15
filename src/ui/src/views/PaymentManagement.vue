@@ -97,6 +97,7 @@
       <button class="btn btn-primary" @click="showChargeModal = true" :disabled="methods.length === 0">
         + Charge Card
       </button>
+      <span v-if="methods.length === 0" class="text-sm text-muted" style="align-self:center">No card on file — send a card update request first</span>
     </div>
 
     <!-- Payment History -->
