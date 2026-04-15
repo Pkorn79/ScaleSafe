@@ -390,20 +390,62 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
     }
 
-    // Fallback: insert payment_customer_map for payments WITHOUT consent token
-    if (result.success && offerId && !consentToken) {
-      try {
-        await supabase.from('payment_customer_map').insert({
-          customer_id: result.chargeId || result.transactionId || '',
-          contact_id: contactId || '',
-          location_id: merchant.locationId,
-          offer_id: offerId,
-          program_name: productDetails?.[0]?.name || '',
-          payment_type: normalizePaymentType(req.body.paymentChoice),
-          processor: procConfig.processor_type,
-        });
-      } catch (mapErr: any) {
-        logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map (no consent) — non-blocking');
+    // For payments WITHOUT consent token: upsert GHL contact from customer fields
+    if (result.success && !consentToken) {
+      const quickPayEmail = contactEmail || req.body.contactEmail || '';
+      const quickPayName = contactName || req.body.contactName || '';
+      const quickPayPhone = req.body.contactPhone || '';
+      let resolvedQuickPayContact = contactId || '';
+      if (quickPayEmail && !resolvedQuickPayContact) {
+        try {
+          const api = await ghlApi(merchant.locationId);
+          const nameParts = quickPayName.split(' ');
+          const upsertRes = await api.post('/contacts/upsert', {
+            firstName: nameParts[0] || quickPayEmail.split('@')[0] || 'Client',
+            lastName: nameParts.slice(1).join(' ') || '',
+            email: quickPayEmail,
+            phone: quickPayPhone,
+            locationId: merchant.locationId,
+          });
+          resolvedQuickPayContact = upsertRes.data.contact?.id || upsertRes.data.id || '';
+          logger.info({ contactId: resolvedQuickPayContact, quickPayEmail }, 'Quick Pay: GHL contact upserted');
+
+          // Set engagement status baseline for new contacts
+          if (resolvedQuickPayContact) {
+            try {
+              await api.put(`/contacts/${resolvedQuickPayContact}`, {
+                customField: { 'contact.ss_engagement_status': 'Active' },
+              });
+            } catch {}
+          }
+
+          // Backfill payment_events with resolved contactId
+          if (resolvedQuickPayContact) {
+            await supabase.from('payment_events')
+              .update({ contact_id: resolvedQuickPayContact })
+              .eq('processor_transaction_id', result.transactionId)
+              .eq('contact_id', '');
+          }
+        } catch (upsertErr: any) {
+          logger.warn({ err: upsertErr.message }, 'Quick Pay: GHL contact upsert failed — payment still succeeded');
+        }
+      }
+
+      // Insert payment_customer_map
+      if (offerId) {
+        try {
+          await supabase.from('payment_customer_map').insert({
+            customer_id: result.chargeId || result.transactionId || '',
+            contact_id: resolvedQuickPayContact || '',
+            location_id: merchant.locationId,
+            offer_id: offerId,
+            program_name: productDetails?.[0]?.name || '',
+            payment_type: normalizePaymentType(req.body.paymentChoice),
+            processor: procConfig.processor_type,
+          });
+        } catch (mapErr: any) {
+          logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map — non-blocking');
+        }
       }
     }
 

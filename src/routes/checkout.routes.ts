@@ -26,6 +26,40 @@ router.get('/quick-checkout', (_req: Request, res: Response) => {
   res.send(quickCheckoutHtml());
 });
 
+// Payment thank-you page (standalone redirect after quick-checkout)
+router.get('/payment-thank-you', async (req: Request, res: Response) => {
+  const amount = req.query.amount as string || '0.00';
+  const name = req.query.name as string || 'Customer';
+  const offerId = req.query.offerId as string || '';
+
+  let merchantName = '';
+  if (offerId) {
+    try {
+      const { getSupabase } = require('../clients/supabase.client');
+      const { data: offer } = await getSupabase().from('offers_mirror').select('location_id').eq('id', offerId).single();
+      if (offer) {
+        const { data: merchant } = await getSupabase().from('merchants').select('business_name').eq('location_id', offer.location_id).single();
+        merchantName = merchant?.business_name || '';
+      }
+    } catch {}
+  }
+
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment Confirmed</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;color:#1f2937;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.card{max-width:420px;text-align:center;padding:40px 32px;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:12px}
+.check{font-size:48px;margin-bottom:16px}h1{font-size:22px;font-weight:600;margin-bottom:8px}
+.amount{font-size:28px;font-weight:700;color:#10b981;margin:12px 0}.name{font-size:14px;color:#6b7280;margin-bottom:4px}
+.merchant{font-size:14px;color:#374151;margin-top:16px;padding-top:16px;border-top:1px solid #d1fae5}</style></head>
+<body><div class="card"><div class="check">&#10003;</div><h1>Payment Confirmed</h1>
+<div class="name">Thank you, ${name.replace(/</g, '&lt;')}!</div>
+<div class="amount">$${amount}</div>
+<div class="name">Your payment has been processed successfully.</div>
+${merchantName ? `<div class="merchant">${merchantName.replace(/</g, '&lt;')}</div>` : ''}
+</div></body></html>`);
+});
+
 function checkoutHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -547,6 +581,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     <div class="divider"></div>
 
+    <!-- Customer Information -->
+    <div class="section-title">Your Information</div>
+    <div style="margin-bottom:12px">
+      <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Full Name *</label>
+      <input type="text" id="cust-name" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Full name" required />
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:12px">
+      <div style="flex:1">
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Email *</label>
+        <input type="email" id="cust-email" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Email" required />
+      </div>
+      <div style="flex:1">
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Phone *</label>
+        <input type="tel" id="cust-phone" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Phone" required />
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
     <div class="section-title">Payment Information</div>
     <div id="nmi-fields" class="hidden">
       <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Card Number</label>
@@ -598,7 +651,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
 
+  // Prefill mode: if URL has contactId + name + email, lock the customer fields
+  var prefillContactId = params.get('contactId') || '';
+  var prefillName = params.get('contactName') || '';
+  var prefillEmail = params.get('contactEmail') || '';
+  var prefillPhone = params.get('contactPhone') || '';
+
   function el(id) { return document.getElementById(id); }
+
+  // Apply prefill on load
+  (function() {
+    if (prefillName) { el('cust-name').value = prefillName; el('cust-name').readOnly = true; el('cust-name').style.background = '#f3f4f6'; }
+    if (prefillEmail) { el('cust-email').value = prefillEmail; el('cust-email').readOnly = true; el('cust-email').style.background = '#f3f4f6'; enrollmentEmail = prefillEmail; }
+    if (prefillPhone) { el('cust-phone').value = prefillPhone; el('cust-phone').readOnly = true; el('cust-phone').style.background = '#f3f4f6'; }
+  })();
 
   // Listen for GHL postMessage (paymentsUrl protocol)
   window.addEventListener('message', function(e) {
@@ -820,8 +886,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
         chargePrice = offerData.installmentAmount;
       }
+      // Validate customer fields
+      var custName = el('cust-name').value.trim();
+      var custEmail = el('cust-email').value.trim();
+      var custPhone = el('cust-phone').value.trim();
+      if (!custName || !custEmail || !custPhone) {
+        throw new Error('Please fill in your name, email, and phone number');
+      }
+      if (!enrollmentEmail) enrollmentEmail = custEmail;
+
       var amount = Math.round(chargePrice * 100);
-      // consentToken already read from URL params at top of script — do NOT override with sessionStorage
 
       // For Stripe, create PaymentMethod first
       if (processorType === 'stripe' && cardElement) {
@@ -848,7 +922,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           currency: 'usd',
           offerId: offerId,
           consentToken: consentToken,
-          contactEmail: enrollmentEmail,
+          contactId: prefillContactId || '',
+          contactName: custName,
+          contactEmail: custEmail || enrollmentEmail,
+          contactPhone: custPhone,
           paymentChoice: paymentChoice || 'pif',
           deviceFingerprint: navigator.userAgent,
           browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -860,24 +937,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       // Success
       el('pay-btn').classList.add('hidden');
-      el('success-msg').textContent = 'Payment Successful — Redirecting...';
+      el('success-msg').textContent = 'Payment Successful!';
       el('success-msg').style.display = 'block';
 
-      // Notify parent (GHL iframe protocol — backward compat)
-      try {
-        window.parent.postMessage(JSON.stringify({
-          action: 'custom_element_success_response',
-          chargeId: data.chargeId,
-          transactionId: data.chargeId
-        }), '*');
-      } catch(e){}
-
-      // Tell parent to redirect to confirmation page
-      setTimeout(function() {
+      // In GHL iframe: notify parent
+      if (window !== window.parent) {
         try {
-          window.parent.postMessage({ type: 'ssPaymentComplete' }, '*');
-        } catch(e) {}
-      }, 1500);
+          window.parent.postMessage(JSON.stringify({
+            action: 'custom_element_success_response',
+            chargeId: data.chargeId,
+            transactionId: data.chargeId
+          }), '*');
+        } catch(e){}
+        setTimeout(function() {
+          try { window.parent.postMessage({ type: 'ssPaymentComplete' }, '*'); } catch(e) {}
+        }, 1500);
+      } else {
+        // Standalone: redirect to thank-you page or returnUrl
+        var returnUrl = params.get('returnUrl');
+        if (returnUrl) {
+          el('success-msg').textContent = 'Payment Successful — Redirecting...';
+          setTimeout(function() { window.location.href = returnUrl; }, 2000);
+        } else {
+          // Redirect to ScaleSafe thank-you page
+          var tyUrl = API_BASE + '/payment-thank-you?amount=' + encodeURIComponent((amount / 100).toFixed(2)) + '&name=' + encodeURIComponent(custName) + '&offerId=' + encodeURIComponent(offerId);
+          el('success-msg').textContent = 'Payment Successful — Redirecting...';
+          setTimeout(function() { window.location.href = tyUrl; }, 2000);
+        }
+      }
     } catch(err) {
       el('error-msg').textContent = err.message || 'Payment failed. Please try again.';
       el('error-msg').style.display = 'block';
