@@ -211,35 +211,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       requestThreeDSecure,
     });
 
-    // Save card if requested and payment succeeded
-    if (result.success && saveCard && contactEmail) {
-      try {
-        const saveResult = await processor.saveCard({
-          paymentToken,
-          contactId: contactId || '',
-          customerEmail: contactEmail,
-          customerName: contactName,
-        });
+    // Recurring payment types REQUIRE card persistence so the daily recurring-billing
+    // job can charge subsequent installments. Auto-derive shouldSaveCard from
+    // paymentChoice so callers don't have to remember the saveCard flag.
+    const isRecurringPaymentType = ['installments', 'installment', 'subscription']
+      .includes(String(req.body.paymentChoice || '').toLowerCase());
+    const shouldSaveCard = result.success && !!contactEmail
+      && (saveCard === true || isRecurringPaymentType);
 
-        // Store in payment_methods
-        await supabase.from('payment_methods').insert({
-          merchant_id: merchant.merchantId,
-          location_id: merchant.locationId,
-          contact_id: contactId,
-          processor_type: procConfig.processor_type,
-          nmi_customer_vault_id: procConfig.processor_type === 'nmi' ? saveResult.customerId : null,
-          stripe_customer_id: procConfig.processor_type === 'stripe' ? saveResult.customerId : null,
-          stripe_payment_method_id: procConfig.processor_type === 'stripe' ? saveResult.paymentMethodId : null,
-          card_last_four: saveResult.cardLastFour,
-          card_brand: saveResult.cardBrand,
-          card_exp_month: saveResult.cardExpMonth,
-          card_exp_year: saveResult.cardExpYear,
-          is_default: true,
-        });
-      } catch (err: any) {
-        logger.warn({ err: err.message }, 'Failed to save card — payment still succeeded');
-      }
-    }
+    // Card persistence is deferred until AFTER the consent-token / quick-pay
+    // contactId resolution blocks below — on the consent-token funnel path,
+    // the bare `contactId` from req.body is empty until phase2EnrollmentService
+    // (or the GHL upsert fallback) resolves it. We track the resolved value in
+    // `finalContactId` and run the save-card block once at the end.
+    let finalContactId = contactId || '';
 
     // Create transaction mapping
     if (transactionId || orderId) {
@@ -359,6 +344,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             }
           }
           logger.info({ resolvedContactId, enrollmentId: enrollment.id }, 'POST-PAYMENT: final contactId');
+          if (resolvedContactId) finalContactId = resolvedContactId;
 
           // Backfill contactId on payment_events that were inserted before GHL upsert
           if (resolvedContactId) {
@@ -408,6 +394,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             locationId: merchant.locationId,
           });
           resolvedQuickPayContact = upsertRes.data.contact?.id || upsertRes.data.id || '';
+          if (resolvedQuickPayContact) finalContactId = resolvedQuickPayContact;
           logger.info({ contactId: resolvedQuickPayContact, quickPayEmail }, 'Quick Pay: GHL contact upserted');
 
           // Set engagement status baseline for new contacts
@@ -445,6 +432,61 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           });
         } catch (mapErr: any) {
           logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map — non-blocking');
+        }
+      }
+    }
+
+    // ─── Persist card to payment_methods (recurring-billing prerequisite) ──
+    // Runs AFTER both contactId resolution branches above so we always have
+    // a real contactId to attach to the payment_methods row. Without this row
+    // (with is_default=true), the daily recurring-billing job has nothing to
+    // charge for installment / subscription enrollments.
+    if (shouldSaveCard) {
+      if (!finalContactId) {
+        logger.warn({ contactEmail }, 'CARD-SAVE: skipped — could not resolve contactId for recurring payment');
+      } else {
+        try {
+          const saveResult = await processor.saveCard({
+            paymentToken,
+            contactId: finalContactId,
+            customerEmail: contactEmail,
+            customerName: contactName,
+          });
+
+          // Demote any existing defaults for this contact (one is_default=true at a time)
+          await supabase.from('payment_methods')
+            .update({ is_default: false })
+            .eq('location_id', merchant.locationId)
+            .eq('contact_id', finalContactId)
+            .eq('is_default', true);
+
+          await supabase.from('payment_methods').insert({
+            merchant_id: merchant.merchantId,
+            location_id: merchant.locationId,
+            contact_id: finalContactId,
+            processor_type: procConfig.processor_type,
+            nmi_customer_vault_id: procConfig.processor_type === 'nmi' ? saveResult.customerId : null,
+            stripe_customer_id: procConfig.processor_type === 'stripe' ? saveResult.customerId : null,
+            stripe_payment_method_id: procConfig.processor_type === 'stripe' ? saveResult.paymentMethodId : null,
+            card_last_four: saveResult.cardLastFour,
+            card_brand: saveResult.cardBrand,
+            card_exp_month: saveResult.cardExpMonth,
+            card_exp_year: saveResult.cardExpYear,
+            is_default: true,
+          });
+
+          logger.info({
+            contactId: finalContactId,
+            processor: procConfig.processor_type,
+            paymentChoice: req.body.paymentChoice,
+            recurring: isRecurringPaymentType,
+          }, 'CARD-SAVE: payment method persisted for recurring billing');
+        } catch (err: any) {
+          logger.warn({
+            err: err.message,
+            contactId: finalContactId,
+            paymentChoice: req.body.paymentChoice,
+          }, 'CARD-SAVE: failed — payment still succeeded but recurring billing will not run');
         }
       }
     }

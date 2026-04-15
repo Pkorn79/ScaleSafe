@@ -4,6 +4,7 @@ import { logger } from './utils/logger';
 import { getSupabase } from './clients/supabase.client';
 import { runDailyHealthCheck } from './jobs/daily-health-check';
 import { runPaymentReminderCheck } from './jobs/payment-reminder-check';
+import { runRecurringBilling } from './jobs/recurring-billing';
 
 const app = createApp();
 
@@ -48,7 +49,9 @@ app.listen(config.port, () => {
   setTimeout(() => {
     runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed'));
     runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed'));
+    runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed'));
     setInterval(() => runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed')), DAY_MS);
     setInterval(() => runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed')), DAY_MS);
+    setInterval(() => runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed')), DAY_MS);
   }, 5 * 60 * 1000);
 });

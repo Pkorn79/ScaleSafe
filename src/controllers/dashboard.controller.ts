@@ -293,7 +293,7 @@ export const dashboardController = {
       // Get enrollment data for this contact
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total')
+        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false })
@@ -380,6 +380,7 @@ export const dashboardController = {
         paymentsTotal: enrollment?.payments_total || offer?.num_payments || null,
         installmentAmount: offer?.installment_amount || null,
         installmentFrequency: offer?.installment_frequency || null,
+        nextBillingDate: enrollment?.next_billing_date || null,
         // GHL contact data
         phone,
         companyName,
