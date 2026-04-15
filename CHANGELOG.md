@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Changed
+- **Overview tab + summary strip — "Paid Lifetime" now shows two decimals** (was `.toFixed(0)` which rounded $0.50 → "$1" and read as the program total). The underlying backend value was always correct; this was a display rounding bug.
+- **Overview tab "Next Billing" card — now an "Installment Progress" card** when the client is on a recurring payment type. Shows `1 of 2 paid` + `Next: <date>` instead of just the next date. PIF clients still see the simple Next Billing card.
+- **Overview tab "Paid Lifetime" card — now shows `of $X program total`** as a sub-line for installment / subscription clients so the merchant immediately sees collected vs. agreed.
+- **Payments tab installment progress block — now shows `paid · collected of total · Next: <date>`** in one compact line, with the per-installment price as a sub-line. Subscription block also gains the next billing date.
+- **Mark Complete on milestones now shows a confirmation modal** before firing. Renders a merchant-friendly summary: "Mark this milestone complete for {firstName}? They'll receive a confirmation request to sign off." Plus the milestone name, what was delivered (`m{n}_delivers`), and what the client does (`m{n}_client_does`). Cancel returns to the page; Mark Complete fires the same backend action as before.
+
 ### Added
 - **Recurring billing daily job** (`src/jobs/recurring-billing.ts`) — scans `enrollments` where `next_billing_date <= today` and `payment_type IN ('installments','installment','subscription')`, loads the saved card from `payment_methods` (`is_default = true`), resolves the merchant's processor + offer, calls `processor.chargeStoredCard()`, and on success: writes a `payment_events` row (`event_type='sale'`, `source='recurring_billing'`, `is_recurring=true`), increments `payments_made`, advances `next_billing_date` per `installment_frequency`, fires `ss_payment_received`, runs final-installment detection (sets `status='completed'` + fires `ss_program_completed`), logs evidence. On failure: writes a `payment_events` row (`event_type='payment_failed'`) and hands off to `paymentLifecycleService.initiateDunning()`. Wired into `src/index.ts` alongside the existing daily health check + payment reminder jobs (5 min after startup, then every 24 hours).
 

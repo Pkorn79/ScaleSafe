@@ -27,12 +27,24 @@
       </div>
       <div class="card">
         <div class="card-title">Paid Lifetime</div>
-        <div class="card-value">${{ Number(enrollmentInfo?.totalCharged || 0).toFixed(0) }}</div>
+        <div class="card-value">${{ Number(enrollmentInfo?.totalCharged || 0).toFixed(2) }}</div>
+        <div v-if="programTotal > 0" class="text-sm text-muted" style="margin-top:4px">
+          of ${{ programTotal.toFixed(2) }} program total
+        </div>
       </div>
       <div class="card">
-        <div class="card-title">Next Billing</div>
-        <div class="card-value" style="font-size:18px">
-          {{ nextBillingDisplay }}
+        <div class="card-title">{{ isRecurring ? 'Installment Progress' : 'Next Billing' }}</div>
+        <div v-if="isRecurring" style="margin-top:4px">
+          <div class="card-value" style="font-size:18px">
+            {{ enrollmentInfo?.paymentsMade || 0 }} of {{ enrollmentInfo?.paymentsTotal || '?' }} paid
+          </div>
+          <div class="text-sm text-muted" style="margin-top:4px">
+            <span v-if="nextBillingDisplay">Next: {{ nextBillingDisplay }}</span>
+            <span v-else>—</span>
+          </div>
+        </div>
+        <div v-else class="card-value" style="font-size:18px">
+          {{ nextBillingDisplay || '—' }}
         </div>
       </div>
     </div>
@@ -135,14 +147,27 @@ function summarize(item: any): string {
 
 // Next billing: soonest across all active enrollments with installment frequency
 const nextBillingDisplay = computed(() => {
-  if (!props.enrollments) return '—';
+  if (!props.enrollments) return '';
   const upcoming = props.enrollments
     .filter(e => ['enrolled', 'active'].includes(e.status))
     .map(e => e.nextBillingDate)
     .filter(Boolean)
     .sort();
-  if (upcoming.length === 0) return '—';
+  if (upcoming.length === 0) return '';
   return formatDateShort(upcoming[0]);
+});
+
+// Recurring? (drives whether to show installment progress card vs next-billing card)
+const isRecurring = computed(() => {
+  const t = String(props.enrollmentInfo?.paymentType || '').toLowerCase();
+  return t === 'installments' || t === 'installment' || t === 'subscription';
+});
+
+// Program total = paymentsTotal × installmentAmount (or 0 if not applicable)
+const programTotal = computed(() => {
+  const made = Number(props.enrollmentInfo?.paymentsTotal || 0);
+  const amt = Number(props.enrollmentInfo?.installmentAmount || 0);
+  return made > 0 && amt > 0 ? made * amt : 0;
 });
 </script>
 

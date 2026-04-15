@@ -63,7 +63,7 @@
             </span>
           </div>
           <button v-if="(enr.currentMilestone || 0) < enr.milestones.length && ['enrolled','active'].includes(enr.status)"
-            class="btn btn-sm btn-primary" @click="markMilestone(enr)" :disabled="milestoneLoading">
+            class="btn btn-sm btn-primary" @click="confirmMilestone(enr)" :disabled="milestoneLoading">
             {{ milestoneLoading ? '...' : 'Mark Complete' }}
           </button>
         </div>
@@ -80,15 +80,46 @@
     </div>
 
     <div v-if="packetError" class="text-sm mt-2" style="color:#ef4444">{{ packetError }}</div>
+
+    <!-- Mark Complete confirmation modal -->
+    <Modal v-model:open="showMilestoneModal" title="Mark milestone complete">
+      <div v-if="pendingMilestone">
+        <p style="margin-bottom:14px">
+          Mark this milestone complete for <strong>{{ clientFirstName }}</strong>?
+          They'll receive a confirmation request to sign off.
+        </p>
+        <div class="milestone-preview">
+          <div class="milestone-preview-row">
+            <strong>Milestone {{ pendingMilestone.number }}:</strong> {{ pendingMilestone.name }}
+          </div>
+          <div v-if="pendingMilestone.delivers" class="milestone-preview-row">
+            <div class="milestone-preview-label">What you delivered:</div>
+            <div class="milestone-preview-body">{{ pendingMilestone.delivers }}</div>
+          </div>
+          <div v-if="pendingMilestone.clientDoes" class="milestone-preview-row">
+            <div class="milestone-preview-label">What the client does:</div>
+            <div class="milestone-preview-body">{{ pendingMilestone.clientDoes }}</div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showMilestoneModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="executeMilestone" :disabled="milestoneLoading">
+          {{ milestoneLoading ? 'Marking...' : 'Mark Complete' }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useApi } from '../../composables/useApi';
+import Modal from '../../components/Modal.vue';
 
 const props = defineProps<{
   contactId: string;
+  clientLabel?: string;
   enrollments: any[];
   summary: any;
 }>();
@@ -104,6 +135,17 @@ const packetLoading = ref(false);
 const packetError = ref('');
 const milestoneLoading = ref(false);
 
+// Mark Complete confirmation modal
+const showMilestoneModal = ref(false);
+const pendingEnrollment = ref<any>(null);
+const pendingMilestone = ref<any>(null);
+
+const clientFirstName = computed(() => {
+  const label = (props.clientLabel || '').trim();
+  if (!label) return 'this client';
+  return label.split(/\s+/)[0];
+});
+
 function formatDateShort(d: string): string {
   if (!d) return '-';
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -117,16 +159,28 @@ function enrollmentBadge(status: string): string {
   return 'badge-gray';
 }
 
-async function markMilestone(enr: any) {
+function confirmMilestone(enr: any) {
   if (!enr.milestones || (enr.currentMilestone || 0) >= enr.milestones.length) return;
-  const nextMilestone = enr.milestones[enr.currentMilestone || 0];
+  pendingEnrollment.value = enr;
+  pendingMilestone.value = enr.milestones[enr.currentMilestone || 0];
+  packetError.value = '';
+  showMilestoneModal.value = true;
+}
+
+async function executeMilestone() {
+  const enr = pendingEnrollment.value;
+  const milestone = pendingMilestone.value;
+  if (!enr || !milestone) return;
   milestoneLoading.value = true;
   try {
     await api.post('/api/dashboard/mark-milestone', {
       contactId: props.contactId,
       enrollmentId: enr.id,
-      milestoneNumber: nextMilestone.number,
+      milestoneNumber: milestone.number,
     });
+    showMilestoneModal.value = false;
+    pendingEnrollment.value = null;
+    pendingMilestone.value = null;
     emit('enrollments-updated');
   } catch (e: any) {
     packetError.value = e.message || 'Failed to mark milestone';
@@ -196,5 +250,36 @@ async function downloadPacket(enrollmentId: string) {
 
 .empty-state {
   padding: 20px 0;
+}
+
+.milestone-preview {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.milestone-preview-row {
+  margin-bottom: 10px;
+}
+
+.milestone-preview-row:last-child {
+  margin-bottom: 0;
+}
+
+.milestone-preview-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+
+.milestone-preview-body {
+  font-size: 14px;
+  color: #1e293b;
+  white-space: pre-wrap;
+  line-height: 1.5;
 }
 </style>

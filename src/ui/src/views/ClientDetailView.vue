@@ -43,7 +43,7 @@
         </div>
         <div class="summary-cell">
           <div class="summary-label">Paid Lifetime</div>
-          <div class="summary-value">${{ Number(enrollmentInfo?.totalCharged || 0).toFixed(0) }}</div>
+          <div class="summary-value">${{ Number(enrollmentInfo?.totalCharged || 0).toFixed(2) }}</div>
         </div>
         <div class="summary-cell">
           <div class="summary-label">Next Billing</div>
@@ -79,6 +79,7 @@
       <ProgramsTab
         v-else-if="activeTab === 'programs'"
         :contact-id="contactId"
+        :client-label="clientLabel"
         :enrollments="enrollments"
         :summary="enrollmentSummary"
         @send-offer="openSendOffer"

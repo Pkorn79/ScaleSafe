@@ -33,17 +33,29 @@
           <strong>Last Payment:</strong> {{ enrollmentInfo?.lastPaymentDate ? formatDate(enrollmentInfo.lastPaymentDate) : 'N/A' }}
         </div>
       </div>
-      <div v-if="enrollmentInfo?.paymentType === 'installments' || enrollmentInfo?.paymentType === 'installment'" class="text-sm mt-2">
+
+      <!-- Installment progress: "1 of 2 paid · $0.50 of $1.00 · Next: Apr 22, 2026" -->
+      <div v-if="isInstallment" class="text-sm mt-2">
         <strong>Installment Progress:</strong>
-        {{ enrollmentInfo.paymentsMade || 0 }} of {{ enrollmentInfo.paymentsTotal || '?' }} payments made
-        <span v-if="enrollmentInfo.installmentAmount" class="text-muted">
-          (${{ Number(enrollmentInfo.installmentAmount).toFixed(2) }} / {{ enrollmentInfo.installmentFrequency || 'month' }})
+        {{ enrollmentInfo.paymentsMade || 0 }} of {{ enrollmentInfo.paymentsTotal || '?' }} paid
+        <span v-if="programTotal > 0">
+          · ${{ Number(enrollmentInfo.totalCharged || 0).toFixed(2) }} of ${{ programTotal.toFixed(2) }}
         </span>
+        <span v-if="enrollmentInfo.nextBillingDate">
+          · Next: {{ formatDateShort(enrollmentInfo.nextBillingDate) }}
+        </span>
+        <div class="text-muted" style="margin-top:2px">
+          ${{ Number(enrollmentInfo.installmentAmount || 0).toFixed(2) }} per {{ enrollmentInfo.installmentFrequency || 'month' }}
+        </div>
       </div>
+
       <div v-if="enrollmentInfo?.paymentType === 'subscription'" class="text-sm mt-2">
         <strong>Subscription:</strong>
         ${{ Number(enrollmentInfo.installmentAmount || enrollmentInfo.paymentAmount || 0).toFixed(2) }} /
         {{ enrollmentInfo.installmentFrequency || 'month' }} (ongoing)
+        <span v-if="enrollmentInfo.nextBillingDate">
+          · Next: {{ formatDateShort(enrollmentInfo.nextBillingDate) }}
+        </span>
       </div>
     </div>
 
@@ -82,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useApi } from '../../composables/useApi';
 
 const props = defineProps<{
@@ -96,9 +108,25 @@ const recentPayments = ref<any[]>([]);
 const loading = ref(false);
 const error = ref('');
 
+const isInstallment = computed(() => {
+  const t = String(props.enrollmentInfo?.paymentType || '').toLowerCase();
+  return t === 'installments' || t === 'installment';
+});
+
+const programTotal = computed(() => {
+  const total = Number(props.enrollmentInfo?.paymentsTotal || 0);
+  const amt = Number(props.enrollmentInfo?.installmentAmount || 0);
+  return total > 0 && amt > 0 ? total * amt : 0;
+});
+
 function formatDate(d: string) {
   if (!d) return '-';
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDateShort(d: string) {
+  if (!d) return '-';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 onMounted(async () => {
