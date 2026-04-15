@@ -182,8 +182,9 @@ async function loadProcessorStatus() {
     const data = await api.get<any>('/api/merchants/config');
     stripeConnected.value = data.stripeConnected || false;
     stripeAccountId.value = data.stripeUserId || '';
+    nmiConnected.value = data.nmiConnected || false;
+    nmiProcessorId.value = data.nmiProcessorId || '';
     defaultProcessor.value = data.defaultProcessor || '';
-    nmiConnected.value = false; // TODO: NMI status from config when NMI support is added
 
     if (stripeConnected.value) {
       try {
@@ -201,13 +202,49 @@ async function loadProcessorStatus() {
 }
 
 async function connectNmi() {
-  // TODO: NMI processor config endpoints not yet built
-  loadError.value = 'NMI connection is not yet available. Use Stripe for now.';
+  if (!nmiForm.value.securityKey || !nmiForm.value.tokenizationKey) {
+    loadError.value = 'Security Key and Tokenization Key are required.';
+    return;
+  }
+  saving.value = true;
+  loadError.value = null;
+  try {
+    await api.post('/api/processor-config/nmi', {
+      securityKey: nmiForm.value.securityKey,
+      tokenizationKey: nmiForm.value.tokenizationKey,
+      processorId: nmiForm.value.processorId || undefined,
+    });
+    nmiConnected.value = true;
+    nmiProcessorId.value = nmiForm.value.processorId || '';
+    nmiForm.value = { securityKey: '', tokenizationKey: '', processorId: '' };
+    nmiTestResult.value = null;
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to connect NMI';
+  }
+  saving.value = false;
 }
 
 async function testNmiConnection() {
-  // TODO: NMI connection test endpoint not yet built
-  loadError.value = 'NMI connection test is not yet available.';
+  if (!nmiForm.value.securityKey || !nmiForm.value.tokenizationKey) {
+    nmiTestResult.value = { success: false, message: 'Enter Security Key and Tokenization Key first.' };
+    return;
+  }
+  testing.value = true;
+  nmiTestResult.value = null;
+  try {
+    const result = await api.post<{ success: boolean; message: string }>(
+      '/api/processor-config/nmi/test',
+      {
+        securityKey: nmiForm.value.securityKey,
+        tokenizationKey: nmiForm.value.tokenizationKey,
+        processorId: nmiForm.value.processorId || undefined,
+      },
+    );
+    nmiTestResult.value = result;
+  } catch (err: any) {
+    nmiTestResult.value = { success: false, message: err?.message || 'Test failed' };
+  }
+  testing.value = false;
 }
 
 async function connectStripe() {
@@ -227,8 +264,15 @@ async function connectStripe() {
 }
 
 async function disconnectNmi() {
-  // TODO: NMI disconnect endpoint not yet built
-  loadError.value = 'NMI disconnect is not yet available.';
+  if (!confirm('Disconnect NMI? Future charges via NMI will not be possible until you reconnect.')) return;
+  try {
+    await api.del('/api/processor-config/nmi');
+    nmiConnected.value = false;
+    nmiProcessorId.value = '';
+    if (defaultProcessor.value === 'nmi') defaultProcessor.value = '';
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to disconnect NMI';
+  }
 }
 
 async function disconnectStripe() {
@@ -243,9 +287,15 @@ async function disconnectStripe() {
 }
 
 async function setDefaultProcessor(processor: string) {
+  const previous = defaultProcessor.value;
   defaultProcessor.value = processor;
-  // TODO: Endpoint /api/processor-config/default not yet built
-  loadError.value = 'Default processor selection will be available soon.';
+  loadError.value = null;
+  try {
+    await api.post('/api/processor-config/default', { processor });
+  } catch (err: any) {
+    defaultProcessor.value = previous;
+    loadError.value = err?.message || 'Failed to set default processor';
+  }
 }
 
 async function saveAutoSubmit() {

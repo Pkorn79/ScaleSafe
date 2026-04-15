@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Added
+- **NMI Settings page wiring — merchants can now connect NMI alongside Stripe.** The Settings page UI was already built (form fields, Test Connection button, Default Processor toggle), but the four handlers (`connectNmi`, `testNmiConnection`, `disconnectNmi`, `setDefaultProcessor`) were stubbed with TODOs that surfaced "NMI connection is not yet available. Use Stripe for now." This wires them up. The NMI client, `processorConfigService.createNmiConfig()`, encryption flow, `processor.factory.ts` dual-rail support, and `processor_configs` schema all already existed and required no changes — this was purely finish-the-plumbing.
+  - **New endpoints under `/api/processor-config/`** (`src/controllers/processor-config.controller.ts`, `src/routes/processor-config.routes.ts`):
+    - `POST /nmi` — stores credentials via `processorConfigService.createNmiConfig()` (encrypts the security key with AES-256-GCM via `PROCESSOR_ENCRYPTION_KEY`); returns config metadata without the encrypted key.
+    - `POST /nmi/test` — instantiates a one-shot `NmiClient` and calls `testConnection()` to validate credentials against the live NMI API without persisting them. Used by the Test Connection button.
+    - `DELETE /nmi` — soft-disconnect: deactivates all active NMI configs for the merchant and clears `merchants.default_processor` if it pointed at NMI.
+    - `POST /default` — sets `merchants.default_processor` to `nmi` or `stripe`. Validates that the chosen processor is actually connected before writing. Used when both rails are active so `processor.factory.ts:resolveProcessor()` knows which to use by default.
+  - **`/api/merchants/config` now surfaces NMI status**: new fields `nmiConnected`, `nmiProcessorId`, `defaultProcessor` on the `getFullConfig()` response. The Settings page reads these to render the NMI badge + the "Default Processor" toggle (which only shows when both NMI and Stripe are connected). The lookup is wrapped in try/catch so a `processor_configs` query failure falls back to `nmiConnected=false` instead of breaking the whole Settings page.
+  - **`SettingsPayments.vue` handlers wired to real endpoints** — the four TODO stubs replaced with actual `api.post` / `api.del` calls, plus a status loader update to read `nmiConnected` / `nmiProcessorId` / `defaultProcessor` from the config response. Front-end input validation prevents empty Test Connection / Connect NMI calls; failed `setDefaultProcessor` rolls back the local toggle to its previous value.
+- **NMI and Stripe can be connected simultaneously per merchant** (architectural confirmation, no code change). `processor.factory.ts:resolveProcessor()` handles offer-level override → merchant default → single-connected-fallback resolution. The "Default Processor" toggle in Settings only renders when both are connected.
+
 ### Changed
 - **Overview tab + summary strip — "Paid Lifetime" now shows two decimals** (was `.toFixed(0)` which rounded $0.50 → "$1" and read as the program total). The underlying backend value was always correct; this was a display rounding bug.
 - **Overview tab "Next Billing" card — now an "Installment Progress" card** when the client is on a recurring payment type. Shows `1 of 2 paid` + `Next: <date>` instead of just the next date. PIF clients still see the simple Next Billing card.

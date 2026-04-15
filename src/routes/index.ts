@@ -22,6 +22,7 @@ import paymentManagementRoutes from './payment-management.routes';
 import termsRoutes from './terms.routes';
 import paymentUpdateRoutes from './payment-update.routes';
 import paymentLifecycleRoutes from './payment-lifecycle.routes';
+import processorConfigRoutes from './processor-config.routes';
 
 const router = Router();
 
@@ -71,6 +72,9 @@ router.use(paymentUpdateRoutes);
 
 // Payment lifecycle (SSO-gated — subscription mgmt, card mgmt, dunning)
 router.use('/api/payments/lifecycle', apiLimiter, paymentLifecycleRoutes);
+
+// Processor connection management (SSO-gated — Settings page)
+router.use('/api/processor-config', apiLimiter, processorConfigRoutes);
 
 // Terms page (public, no auth)
 router.use('/terms', termsRoutes);

@@ -4,6 +4,7 @@ import { paymentProviderService } from './payment-provider.service';
 import { logger } from '../utils/logger';
 import { CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
+import { getSupabase } from '../clients/supabase.client';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -31,6 +32,10 @@ export interface MerchantFullConfig {
 
   stripeConnected: boolean;
   stripeUserId: string;
+
+  nmiConnected: boolean;
+  nmiProcessorId: string;
+  defaultProcessor: '' | 'nmi' | 'stripe';
 
   tcHasOwn: boolean;
   tcDocumentUrl: string;
@@ -415,6 +420,29 @@ export const merchantService = {
     const cfg = merchant.config || {};
     const clauseToggles = (merchant as any).tc_clause_toggles || {};
 
+    // Look up active NMI processor config for this merchant (best-effort — if
+    // the table read fails for any reason, fall back to nmiConnected=false so
+    // the Settings page still loads).
+    let nmiConnected = false;
+    let nmiProcessorId = '';
+    try {
+      const supabase = getSupabase();
+      const { data: nmiCfg } = await supabase
+        .from('processor_configs')
+        .select('id, nmi_processor_id')
+        .eq('merchant_id', merchant.id)
+        .eq('processor_type', 'nmi')
+        .eq('is_active', true)
+        .eq('is_default', true)
+        .maybeSingle();
+      if (nmiCfg) {
+        nmiConnected = true;
+        nmiProcessorId = (nmiCfg as any).nmi_processor_id || '';
+      }
+    } catch (err) {
+      logger.warn({ err, locationId }, 'Failed to look up NMI processor config — defaulting to disconnected');
+    }
+
     // Build standard clause toggle map
     const standardClauses: Record<string, boolean> = {};
     for (const clause of STANDARD_CLAUSES) {
@@ -444,6 +472,10 @@ export const merchantService = {
 
       stripeConnected: merchant.stripe_connected || false,
       stripeUserId: merchant.stripe_user_id || '',
+
+      nmiConnected,
+      nmiProcessorId,
+      defaultProcessor: ((merchant as any).default_processor || '') as '' | 'nmi' | 'stripe',
 
       tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,
       tcDocumentUrl: gv('TC_DOCUMENT_URL') || (cfg as any).tc_document_url || '',
