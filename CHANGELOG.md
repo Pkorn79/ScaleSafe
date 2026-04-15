@@ -8,6 +8,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-15
 
 ### Fixed
+- **Full enrollment funnel checkout no longer re-asks for name/email/phone or T&C.** Quick Pay hotfix `ee3a9ba` added the customer info section + consent checkbox to `quickCheckoutHtml()` to support direct Quick Pay links, but those fields rendered unconditionally — so when a client reached Page 4 of the full funnel they were forced to re-enter info already collected on Page 1 + re-accept terms already accepted on Page 3. Now the checkout detects consent-mode (`?consentToken=` present) and:
+  - Hides `#customer-info-section` (the Your Information block) immediately on load.
+  - Hides `#consent-row` (the T&C checkbox) immediately on load.
+  - Pre-checks the hidden consent checkbox so `updatePayBtn()` ungates without user action — the actual T&C acceptance was logged at funnel Page 3 with full forensics (IP, device, scroll depth, signature).
+  - Calls `/api/enrollment/consent-lookup/:token` and populates the (hidden) `cust-name` + `cust-email` fields with `firstName + lastName` (or `digital_signature` fallback) and `email` from the enrollment row, so the existing submit body keeps working unchanged.
+  - Skips phone validation in the submit handler when consent-mode (phone was collected at Page 1 and is already on the GHL contact; backend `process-payment` doesn't read `contactPhone` on the consent-token path).
+  - Quick Pay path (no consent token) is unchanged — fields visible, name/email/phone required, T&C checkbox required.
+- **`GET /api/enrollment/consent-lookup/:token`** extended to return `firstName`, `lastName`, `contactId`, `digitalSignature` in addition to `email`, so the checkout can prefill the hidden fields without a second round trip.
 - **Defense "New Defense" submission no longer 500s with "An unexpected error occurred."** Long-standing schema/code mismatch in the entire Defense subsystem. `defenseRepository.create()` was inserting columns named `reason_code`, `dispute_amount`, `dispute_date`, `deadline`, `offer_id` — but `defense_packets` (migration 002) actually has `chargeback_reason_code`, `chargeback_amount`, `chargeback_date`, `response_deadline`, and no `offer_id` column at all. Postgres was rejecting every insert with "column does not exist", which propagated up through `defense.service.ts` → `defenseController.compile`'s catch → global error handler. Fixed by:
   - **Migration 043** — `ALTER TABLE defense_packets ADD COLUMN IF NOT EXISTS offer_id UUID` + index, additive and idempotent.
   - **`src/repositories/defense.repository.ts`** — rewrote `DefensePacketRecord` interface to mirror the actual schema (renamed 5 fields, removed 6 fictional fields, added 12 missing real ones) and updated `create()` parameter shape to use the chargeback_* names.

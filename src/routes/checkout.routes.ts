@@ -581,24 +581,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     <div class="divider"></div>
 
-    <!-- Customer Information -->
-    <div class="section-title">Your Information</div>
-    <div style="margin-bottom:12px">
-      <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Full Name *</label>
-      <input type="text" id="cust-name" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Full name" required />
-    </div>
-    <div style="display:flex;gap:12px;margin-bottom:12px">
-      <div style="flex:1">
-        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Email *</label>
-        <input type="email" id="cust-email" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Email" required />
+    <!-- Customer Information (hidden when ?consentToken= is present — full funnel already collected this on Page 1) -->
+    <div id="customer-info-section">
+      <div class="section-title">Your Information</div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Full Name *</label>
+        <input type="text" id="cust-name" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Full name" required />
       </div>
-      <div style="flex:1">
-        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Phone *</label>
-        <input type="tel" id="cust-phone" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Phone" required />
+      <div style="display:flex;gap:12px;margin-bottom:12px">
+        <div style="flex:1">
+          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Email *</label>
+          <input type="email" id="cust-email" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Email" required />
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Phone *</label>
+          <input type="tel" id="cust-phone" class="field-wrapper" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:16px" placeholder="Phone" required />
+        </div>
       </div>
-    </div>
 
-    <div class="divider"></div>
+      <div class="divider"></div>
+    </div>
 
     <div class="section-title">Payment Information</div>
     <div id="nmi-fields" class="hidden">
@@ -619,7 +621,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="field-wrapper"><div id="card-element"></div></div>
     </div>
 
-    <div class="consent-row">
+    <!-- Terms checkbox (hidden when ?consentToken= is present — accepted on funnel Page 3) -->
+    <div class="consent-row" id="consent-row">
       <input type="checkbox" id="consent-cb">
       <label for="consent-cb" id="consent-text">I agree to the terms and conditions and authorize this charge.</label>
     </div>
@@ -651,7 +654,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
 
-  // Prefill mode: if URL has contactId + name + email, lock the customer fields
+  // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
+  // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
+  // populate them from /api/enrollment/consent-lookup so the submit handler stays unchanged.
+  var consentMode = !!consentToken;
+
+  // Prefill mode: if URL has contactId + name + email, lock the customer fields (Quick Pay prefilled link)
   var prefillContactId = params.get('contactId') || '';
   var prefillName = params.get('contactName') || '';
   var prefillEmail = params.get('contactEmail') || '';
@@ -664,6 +672,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (prefillName) { el('cust-name').value = prefillName; el('cust-name').readOnly = true; el('cust-name').style.background = '#f3f4f6'; }
     if (prefillEmail) { el('cust-email').value = prefillEmail; el('cust-email').readOnly = true; el('cust-email').style.background = '#f3f4f6'; enrollmentEmail = prefillEmail; }
     if (prefillPhone) { el('cust-phone').value = prefillPhone; el('cust-phone').readOnly = true; el('cust-phone').style.background = '#f3f4f6'; }
+  })();
+
+  // Consent-mode setup: hide the redundant sections immediately so the user never sees them flash.
+  (function() {
+    if (!consentMode) return;
+    var infoSec = el('customer-info-section');
+    if (infoSec) infoSec.style.display = 'none';
+    var consentRow = el('consent-row');
+    if (consentRow) consentRow.style.display = 'none';
+    // Pre-check the consent box so updatePayBtn() ungates without user action.
+    // The actual T&C acceptance was logged at funnel Page 3.
+    var cb = el('consent-cb');
+    if (cb) cb.checked = true;
   })();
 
   // Listen for GHL postMessage (paymentsUrl protocol)
@@ -719,13 +740,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         el('error-msg').style.display = 'block';
       }
 
-      // Look up email from consent token if available
+      // Look up enrollment data from consent token (full funnel path).
+      // Populates the hidden cust-name/cust-email fields so the existing submit
+      // body keeps working without re-prompting the user.
       if (consentToken) {
         try {
           var consentRes = await fetch(API_BASE + '/api/enrollment/consent-lookup/' + encodeURIComponent(consentToken));
           if (consentRes.ok) {
             var consentData = await consentRes.json();
             enrollmentEmail = consentData.email || '';
+            var fullName = ((consentData.firstName || '') + ' ' + (consentData.lastName || '')).trim()
+              || consentData.digitalSignature
+              || '';
+            if (el('cust-name') && fullName) el('cust-name').value = fullName;
+            if (el('cust-email') && consentData.email) el('cust-email').value = consentData.email;
+            if (consentData.contactId) prefillContactId = consentData.contactId;
           }
         } catch(e) { /* silent */ }
       }
@@ -886,12 +915,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
         chargePrice = offerData.installmentAmount;
       }
-      // Validate customer fields
+      // Validate customer fields. Phone is only required on Quick Pay (no consent token);
+      // on the full funnel path the contact already exists in GHL with phone from Page 1.
       var custName = el('cust-name').value.trim();
       var custEmail = el('cust-email').value.trim();
       var custPhone = el('cust-phone').value.trim();
-      if (!custName || !custEmail || !custPhone) {
-        throw new Error('Please fill in your name, email, and phone number');
+      if (consentMode) {
+        if (!custName || !custEmail) {
+          throw new Error('Missing enrollment data. Please refresh and try again.');
+        }
+      } else {
+        if (!custName || !custEmail || !custPhone) {
+          throw new Error('Please fill in your name, email, and phone number');
+        }
       }
       if (!enrollmentEmail) enrollmentEmail = custEmail;
 

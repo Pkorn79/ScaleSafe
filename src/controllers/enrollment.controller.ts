@@ -144,7 +144,12 @@ export const enrollmentController = {
     } catch (err) { next(err); }
   },
 
-  /** GET /api/enrollment/consent-lookup/:consentToken — look up email by consent token */
+  /**
+   * GET /api/enrollment/consent-lookup/:consentToken
+   * Look up enrollment-time customer info by consent token. Used by the checkout
+   * page to detect "full funnel" path (consent token present) and prefill the
+   * customer fields that were collected on Page 1, so they don't get re-asked.
+   */
   async getConsentData(req: Request, res: Response, next: NextFunction) {
     try {
       const consentToken = req.params.consentToken;
@@ -157,7 +162,7 @@ export const enrollmentController = {
       const supabase = getSupabase();
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('email, contact_id')
+        .select('email, contact_id, first_name, last_name, digital_signature')
         .eq('consent_token', consentToken)
         .maybeSingle();
 
@@ -166,7 +171,13 @@ export const enrollmentController = {
         return;
       }
 
-      res.json({ email: enrollment.email || '' });
+      res.json({
+        email: enrollment.email || '',
+        firstName: enrollment.first_name || '',
+        lastName: enrollment.last_name || '',
+        contactId: enrollment.contact_id || '',
+        digitalSignature: enrollment.digital_signature || '',
+      });
     } catch (err) { next(err); }
   },
 };
