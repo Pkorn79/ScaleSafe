@@ -1,27 +1,49 @@
 import { getSupabase } from '../clients/supabase.client';
 import { NotFoundError } from '../utils/errors';
 
+/**
+ * Mirror of the actual `defense_packets` table schema (migration 002 + 043).
+ * Field names here MUST match Postgres column names exactly — the repository
+ * passes objects through to Supabase without renaming.
+ */
 export interface DefensePacketRecord {
   id: string;
   location_id: string;
   contact_id: string;
   offer_id: string | null;
   status: string;
-  reason_code: string | null;
-  reason_category: string | null;
-  dispute_amount: number | null;
-  dispute_date: string | null;
-  deadline: string | null;
+  triggered_by: string | null;
+  triggered_at: string | null;
+  completed_at: string | null;
+
+  // Chargeback details
+  chargeback_reason_code: string | null;
+  reason_code_category: string | null;
+  chargeback_amount: number | null;
+  chargeback_date: string | null;
+  response_deadline: string | null;
   case_number: string | null;
+  arn: string | null;
+
+  // Evidence (frozen at compilation time)
   evidence_snapshot: unknown;
+  evidence_count: number | null;
+
+  // AI output
   defense_letter_text: string | null;
-  defense_letter_url: string | null;
-  evidence_pdf_url: string | null;
-  enrollment_packet_url: string | null;
-  bundled_pdf_url: string | null;
+  prompt_tokens_used: number | null;
+  response_tokens_used: number | null;
   template_id: string | null;
-  input_tokens: number | null;
-  output_tokens: number | null;
+
+  // PDF bundle
+  pdf_storage_path: string | null;
+  pdf_url: string | null;
+  enrollment_packet_id: string | null;
+
+  // Error tracking
+  error_message: string | null;
+  retry_count: number | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -31,11 +53,11 @@ export const defenseRepository = {
     location_id: string;
     contact_id: string;
     offer_id?: string;
-    reason_code?: string;
-    reason_category?: string;
-    dispute_amount?: number;
-    dispute_date?: string;
-    deadline?: string;
+    chargeback_reason_code?: string;
+    reason_code_category?: string;
+    chargeback_amount?: number;
+    chargeback_date?: string;
+    response_deadline?: string;
     case_number?: string;
   }): Promise<DefensePacketRecord> {
     const { data: packet, error } = await getSupabase()

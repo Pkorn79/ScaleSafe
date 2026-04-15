@@ -233,7 +233,7 @@ export const dashboardController = {
 
       const { data: packets } = await supabase
         .from('defense_packets')
-        .select('id, contact_id, reason_code, reason_category, dispute_amount, dispute_date, deadline, status, created_at')
+        .select('id, contact_id, chargeback_reason_code, reason_code_category, chargeback_amount, chargeback_date, response_deadline, status, created_at')
         .eq('location_id', locationId)
         .order('created_at', { ascending: false });
 
@@ -246,8 +246,18 @@ export const dashboardController = {
 
       const outcomeMap = new Map((outcomes || []).map(o => [o.defense_packet_id, o]));
 
+      // Alias DB column names to the response shape the frontend already reads,
+      // keeping DefenseDashboard / DefenseView stable.
       const history = (packets || []).map(p => ({
-        ...p,
+        id: p.id,
+        contact_id: p.contact_id,
+        reason_code: p.chargeback_reason_code,
+        reason_category: p.reason_code_category,
+        dispute_amount: p.chargeback_amount,
+        dispute_date: p.chargeback_date,
+        deadline: p.response_deadline,
+        status: p.status,
+        created_at: p.created_at,
         outcome: outcomeMap.get(p.id) || null,
       }));
 

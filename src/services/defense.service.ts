@@ -42,6 +42,26 @@ interface CompileDefenseInput {
   caseNumber?: string;
 }
 
+/**
+ * Map a raw defense_packets row (with the actual schema column names) into the
+ * response shape the frontend reads. Keeps DefenseDetailView.vue stable without
+ * forcing it to learn the new column names.
+ */
+function shapePacketResponse(packet: any): any {
+  if (!packet) return packet;
+  return {
+    ...packet,
+    // Aliases for legacy field names the frontend reads
+    reason_code: packet.chargeback_reason_code,
+    reason_category: packet.reason_code_category,
+    dispute_amount: packet.chargeback_amount,
+    dispute_date: packet.chargeback_date,
+    deadline: packet.response_deadline,
+    input_tokens: packet.prompt_tokens_used,
+    output_tokens: packet.response_tokens_used,
+  };
+}
+
 export const defenseService = {
   /**
    * Trigger defense compilation. Returns defenseId immediately.
@@ -50,16 +70,16 @@ export const defenseService = {
   async compileDefense(input: CompileDefenseInput): Promise<string> {
     const category = REASON_CODE_CATEGORIES[input.reasonCode] || 'services_not_provided';
 
-    // Create pending defense packet
+    // Create pending defense packet (column names match migration 002 + 043)
     const packet = await defenseRepository.create({
       location_id: input.locationId,
       contact_id: input.contactId,
       offer_id: input.offerId,
-      reason_code: input.reasonCode,
-      reason_category: category,
-      dispute_amount: input.disputeAmount,
-      dispute_date: input.disputeDate,
-      deadline: input.deadline,
+      chargeback_reason_code: input.reasonCode,
+      reason_code_category: category,
+      chargeback_amount: input.disputeAmount,
+      chargeback_date: input.disputeDate,
+      response_deadline: input.deadline,
       case_number: input.caseNumber,
     });
 
@@ -138,13 +158,14 @@ export const defenseService = {
     // 8. Call Claude API
     const result = await callClaude(systemPrompt, userMessage, 8192);
 
-    // 9. Update packet with result
+    // 9. Update packet with result (column names per migration 002)
     await defenseRepository.updateStatus(defenseId, 'complete', {
       defense_letter_text: result.text,
-      input_tokens: result.inputTokens,
-      output_tokens: result.outputTokens,
+      prompt_tokens_used: result.inputTokens,
+      response_tokens_used: result.outputTokens,
       template_id: template?.id || null,
-    } as any);
+      completed_at: new Date().toISOString(),
+    });
 
     // 10. Update GHL contact
     try {
@@ -260,25 +281,27 @@ export const defenseService = {
     return {
       id: packet.id,
       status: packet.status,
-      reasonCode: packet.reason_code,
-      category: packet.reason_category,
+      reasonCode: packet.chargeback_reason_code,
+      category: packet.reason_code_category,
       createdAt: packet.created_at,
       hasLetter: !!packet.defense_letter_text,
-      hasPdf: !!packet.bundled_pdf_url,
+      hasPdf: !!packet.pdf_url,
     };
   },
 
   async getPacket(defenseId: string) {
-    return defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId);
+    return shapePacketResponse(packet);
   },
 
   async listForContact(locationId: string, contactId: string) {
-    return defenseRepository.listByContact(locationId, contactId);
+    const packets = await defenseRepository.listByContact(locationId, contactId);
+    return packets.map(shapePacketResponse);
   },
 
   async recordOutcome(defenseId: string, outcome: 'won' | 'lost', notes?: string) {
     const packet = await defenseRepository.getById(defenseId);
-    await defenseRepository.recordOutcome(defenseId, outcome, packet.dispute_amount || 0, notes);
+    await defenseRepository.recordOutcome(defenseId, outcome, packet.chargeback_amount || 0, notes);
 
     // Update GHL contact chargeback status
     const newStatus = outcome === 'won' ? 'won' : 'lost';
@@ -293,6 +316,6 @@ export const defenseService = {
       logger.warn({ err, defenseId }, 'Failed to update chargeback outcome on contact');
     }
 
-    logger.info({ defenseId, outcome, amount: packet.dispute_amount }, 'Defense outcome recorded');
+    logger.info({ defenseId, outcome, amount: packet.chargeback_amount }, 'Defense outcome recorded');
   },
 };

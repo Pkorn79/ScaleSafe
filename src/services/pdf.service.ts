@@ -79,10 +79,14 @@ export const pdfService = {
     const path = `defense-packets/${locationId}/${defenseId}_letter.pdf`;
     const url = await this.uploadToStorage(path, buffer);
 
-    await getSupabase()
+    // Persist PDF location to the actual schema column (migration 002 → `pdf_url`)
+    const { error: updateErr } = await getSupabase()
       .from('defense_packets')
-      .update({ defense_letter_url: url })
+      .update({ pdf_url: url, pdf_storage_path: path })
       .eq('id', defenseId);
+    if (updateErr) {
+      logger.warn({ err: updateErr.message, defenseId }, 'Failed to persist defense PDF url');
+    }
 
     logger.info({ defenseId, locationId }, 'Defense letter PDF generated');
     return url;
