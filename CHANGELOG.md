@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Fixed
+- **Mark Complete on milestones no longer 500s after a successful evidence write.** `POST /api/dashboard/mark-milestone` was throwing "An unexpected error occurred" to the merchant whenever `triggerService.fireTrigger('ss_milestone_reached', …)` propagated a Supabase error from `triggerRepository.getActiveSubscriptions()` — but by that point the `evidence_milestones` row and `enrollments.current_milestone` update had already committed, so a refresh showed the milestone as completed despite the visible error. Trigger fire is now wrapped in try/catch (fire-and-forget; `postWithRetry` already handles delivery retries internally) and logs a warning on failure. Also tightened `.error` checks on the two writes so genuine DB failures surface clearly.
+- **Enriched milestone evidence rows.** Now writes `description` (from offer `m{n}_delivers`), `notes` (from `m{n}_client_does`), `contact_email` (from enrollment), and `raw_payload` (full trigger payload) into `evidence_milestones`. Previously only 6 of 11 user-fillable schema fields were populated, leaving the row sparse for downstream defense compilation.
+
 ### Added — Slice 2: Client Profile Restructure
 - **ClientDetailView rewritten as tab-based layout.** Sticky header (name, meta, status chip, actions) + summary strip (readiness, active programs, paid lifetime, next billing, last activity) + six tabs: **Overview / Programs / Payments / Evidence / Communications / Files**. Active tab persists to URL hash.
 - **`<Modal>` component** (`src/ui/src/components/Modal.vue`) — reusable overlay with `v-model:open`, title prop, default + footer slots, ESC + click-outside close, body scroll lock, teleport to body, responsive bottom-sheet on mobile. Fixes broken Send Offer / Add Note / Send Message modals in ClientDetailView (the classes `.modal-overlay` / `.modal-card` were only defined in OffersView + PaymentManagement as `<style scoped>`, so CDV's modals rendered as inline panels at bottom of page).

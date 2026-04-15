@@ -495,37 +495,64 @@ export const dashboardController = {
 
       // Verify enrollment belongs to location + check sequential order
       const { data: enrollment } = await supabase
-        .from('enrollments').select('id, location_id, current_milestone, offer_id')
+        .from('enrollments').select('id, location_id, current_milestone, offer_id, email')
         .eq('id', enrollmentId).single();
       if (!enrollment || enrollment.location_id !== locationId) throw new ValidationError('Enrollment not found');
       if (milestoneNumber !== (enrollment.current_milestone || 0) + 1) {
         throw new ValidationError(`Must complete milestone ${(enrollment.current_milestone || 0) + 1} before ${milestoneNumber}`);
       }
 
-      // Get milestone name from offer
+      // Get milestone name + delivers + client_does from offer
       const { data: offer } = await supabase
         .from('offers_mirror').select('*')
         .eq('id', enrollment.offer_id).single();
       const milestoneName = (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`;
+      const milestoneDelivers = (offer as any)?.[`m${milestoneNumber}_delivers`] || '';
+      const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
 
-      // Log evidence
-      await supabase.from('evidence_milestones').insert({
-        location_id: locationId, contact_id: contactId,
-        milestone_number: milestoneNumber, milestone_name: milestoneName,
-        completed_at: new Date().toISOString(), source: 'merchant_action',
-      });
-
-      // Update enrollment
-      await supabase.from('enrollments').update({ current_milestone: milestoneNumber }).eq('id', enrollmentId);
-
-      // Fire trigger — flat doc contract
-      const { triggerService: ts } = require('../services/trigger.service');
-      await ts.fireTrigger(locationId, 'ss_milestone_reached', {
+      const completedAt = new Date().toISOString();
+      const triggerPayload = {
         contact_id: contactId,
         milestone_number: milestoneNumber,
         milestone_name: milestoneName,
         offer_id: enrollment.offer_id || '',
+      };
+
+      // Log evidence — enriched with description + contact_email + raw_payload for downstream defense compilation
+      const { error: insertError } = await supabase.from('evidence_milestones').insert({
+        location_id: locationId,
+        contact_id: contactId,
+        source: 'merchant_action',
+        milestone_number: milestoneNumber,
+        milestone_name: milestoneName,
+        description: milestoneDelivers || null,
+        notes: milestoneClientDoes || null,
+        contact_email: (enrollment as any).email || null,
+        completed_at: completedAt,
+        raw_payload: triggerPayload,
       });
+      if (insertError) throw insertError;
+
+      // Update enrollment
+      const { error: updateError } = await supabase
+        .from('enrollments')
+        .update({ current_milestone: milestoneNumber })
+        .eq('id', enrollmentId);
+      if (updateError) throw updateError;
+
+      // Fire trigger — fire-and-forget. Trigger delivery has its own retry/backoff
+      // (postWithRetry) and a subscription-list fetch failure must NOT 500 the
+      // merchant action since the evidence row + enrollment update have already succeeded.
+      try {
+        const { triggerService: ts } = require('../services/trigger.service');
+        await ts.fireTrigger(locationId, 'ss_milestone_reached', triggerPayload);
+      } catch (triggerErr: any) {
+        const { logger } = require('../utils/logger');
+        logger.warn(
+          { err: triggerErr?.message || String(triggerErr), locationId, contactId, milestoneNumber },
+          'Milestone trigger fire failed (non-fatal — evidence already logged)',
+        );
+      }
 
       res.json({ success: true, currentMilestone: milestoneNumber, milestoneName });
     } catch (err) { next(err); }
