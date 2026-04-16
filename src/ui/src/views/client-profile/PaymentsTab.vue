@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <!-- Totals + installment / subscription -->
+    <!-- Totals -->
     <div class="card mb-4">
       <div class="card-title">Totals</div>
       <div class="grid grid-3 mt-2">
@@ -33,33 +33,44 @@
           <strong>Last Payment:</strong> {{ enrollmentInfo?.lastPaymentDate ? formatDate(enrollmentInfo.lastPaymentDate) : 'N/A' }}
         </div>
       </div>
+    </div>
 
-      <!-- Installment progress: "1 of 2 paid · $0.50 of $1.00 · Next: Apr 22, 2026" -->
-      <div v-if="isInstallment" class="text-sm mt-2">
-        <strong>Installment Progress:</strong>
-        {{ enrollmentInfo.paymentsMade || 0 }} of {{ enrollmentInfo.paymentsTotal || '?' }} paid
-        <span v-if="programTotal > 0">
-          · ${{ Number(enrollmentInfo.totalCharged || 0).toFixed(2) }} of ${{ programTotal.toFixed(2) }}
-        </span>
-        <span v-if="enrollmentInfo.nextBillingDate">
-          · Next: {{ formatDateShort(enrollmentInfo.nextBillingDate) }}
-        </span>
-        <div class="text-muted" style="margin-top:2px">
-          ${{ Number(enrollmentInfo.installmentAmount || 0).toFixed(2) }} per {{ enrollmentInfo.installmentFrequency || 'month' }}
+    <!-- Per-program installment / subscription progress -->
+    <div v-if="activeRecurringEnrollments.length > 0" class="card mb-4">
+      <div class="card-title">Program Payment Progress</div>
+      <div
+        v-for="enr in activeRecurringEnrollments"
+        :key="enr.id"
+        class="program-progress-card"
+      >
+        <div class="program-progress-header">
+          <strong class="text-sm">{{ enr.offerName }}</strong>
+          <span class="badge badge-blue text-xs">{{ enr.paymentType === 'subscription' ? 'Subscription' : 'Installments' }}</span>
         </div>
-      </div>
-
-      <div v-if="enrollmentInfo?.paymentType === 'subscription'" class="text-sm mt-2">
-        <strong>Subscription:</strong>
-        ${{ Number(enrollmentInfo.installmentAmount || enrollmentInfo.paymentAmount || 0).toFixed(2) }} /
-        {{ enrollmentInfo.installmentFrequency || 'month' }} (ongoing)
-        <span v-if="enrollmentInfo.nextBillingDate">
-          · Next: {{ formatDateShort(enrollmentInfo.nextBillingDate) }}
-        </span>
+        <div v-if="enr.paymentType !== 'subscription'" class="text-sm mt-1">
+          {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} paid
+          <span v-if="enrProgramTotal(enr) > 0">
+            · ${{ enrAmountPaid(enr) }} of ${{ enrProgramTotal(enr).toFixed(2) }}
+          </span>
+        </div>
+        <div v-else class="text-sm mt-1">
+          ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }} /
+          {{ enr.installmentFrequency || 'month' }} (ongoing)
+        </div>
+        <div v-if="enr.installmentAmount && enr.paymentType !== 'subscription'" class="text-muted text-xs" style="margin-top:2px">
+          ${{ Number(enr.installmentAmount).toFixed(2) }} per {{ enr.installmentFrequency || 'month' }}
+        </div>
+        <div v-if="enr.nextBillingDate" class="text-muted text-xs" style="margin-top:2px">
+          Next: {{ formatDateShort(enr.nextBillingDate) }}
+        </div>
+        <!-- Progress bar for installments -->
+        <div v-if="enr.paymentType !== 'subscription' && enr.paymentsTotal" class="progress-bar-wrapper mt-1">
+          <div class="progress-bar" :style="{ width: progressPct(enr) + '%' }"></div>
+        </div>
       </div>
     </div>
 
-    <!-- Recent payments (compact) -->
+    <!-- Recent payments -->
     <div class="card">
       <div class="card-title">Recent Payments</div>
       <div v-if="loading" class="text-sm text-muted">Loading...</div>
@@ -67,7 +78,7 @@
       <div v-else-if="recentPayments.length === 0" class="text-sm text-muted">No payments yet.</div>
       <table v-else class="table">
         <thead>
-          <tr><th>Date</th><th>Amount</th><th>Type</th><th>Status</th></tr>
+          <tr><th>Date</th><th>Amount</th><th>Type</th><th>Processor</th><th>Status</th></tr>
         </thead>
         <tbody>
           <tr v-for="p in recentPayments" :key="p.id">
@@ -76,6 +87,11 @@
             <td>
               <span class="badge" :class="p.type === 'refund' ? 'badge-red' : 'badge-green'">
                 {{ p.type === 'refund' ? 'Refund' : 'Charge' }}
+              </span>
+            </td>
+            <td>
+              <span class="badge" :class="processorBadge(p.processor)">
+                {{ processorLabel(p.processor) }}
               </span>
             </td>
             <td>
@@ -100,6 +116,7 @@ import { useApi } from '../../composables/useApi';
 const props = defineProps<{
   contactId: string;
   enrollmentInfo: any;
+  enrollments?: any[];
 }>();
 
 const api = useApi();
@@ -108,16 +125,49 @@ const recentPayments = ref<any[]>([]);
 const loading = ref(false);
 const error = ref('');
 
-const isInstallment = computed(() => {
-  const t = String(props.enrollmentInfo?.paymentType || '').toLowerCase();
-  return t === 'installments' || t === 'installment';
+/** Filter enrollments to active installment/subscription programs */
+const activeRecurringEnrollments = computed(() => {
+  if (!props.enrollments?.length) return [];
+  return props.enrollments.filter(e => {
+    const status = String(e.status || '').toLowerCase();
+    const type = String(e.paymentType || '').toLowerCase();
+    const isActive = ['enrolled', 'active', 'consent_captured'].includes(status);
+    const isRecurring = ['installments', 'installment', 'subscription'].includes(type);
+    return isActive && isRecurring;
+  });
 });
 
-const programTotal = computed(() => {
-  const total = Number(props.enrollmentInfo?.paymentsTotal || 0);
-  const amt = Number(props.enrollmentInfo?.installmentAmount || 0);
+function enrProgramTotal(enr: any): number {
+  const total = Number(enr.paymentsTotal || 0);
+  const amt = Number(enr.installmentAmount || 0);
   return total > 0 && amt > 0 ? total * amt : 0;
-});
+}
+
+function enrAmountPaid(enr: any): string {
+  const paid = Number(enr.paymentsMade || 0);
+  const amt = Number(enr.installmentAmount || 0);
+  return (paid * amt).toFixed(2);
+}
+
+function progressPct(enr: any): number {
+  const made = Number(enr.paymentsMade || 0);
+  const total = Number(enr.paymentsTotal || 1);
+  return Math.min(100, Math.round((made / total) * 100));
+}
+
+function processorLabel(proc: string): string {
+  if (proc === 'nmi') return 'NMI';
+  if (proc === 'stripe') return 'Stripe';
+  if (proc === 'ghl') return 'GHL';
+  return proc || 'Unknown';
+}
+
+function processorBadge(proc: string): string {
+  if (proc === 'nmi') return 'badge-blue';
+  if (proc === 'stripe') return 'badge-purple';
+  if (proc === 'ghl') return 'badge-gray';
+  return 'badge-gray';
+}
 
 function formatDate(d: string) {
   if (!d) return '-';
@@ -140,3 +190,33 @@ onMounted(async () => {
   loading.value = false;
 });
 </script>
+
+<style scoped>
+.program-progress-card {
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+.program-progress-card:last-child {
+  border-bottom: none;
+}
+.program-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-bar-wrapper {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.text-xs {
+  font-size: 12px;
+}
+</style>

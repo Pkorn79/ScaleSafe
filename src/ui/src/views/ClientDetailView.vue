@@ -89,6 +89,7 @@
         v-else-if="activeTab === 'payments'"
         :contact-id="contactId"
         :enrollment-info="enrollmentInfo"
+        :enrollments="enrollments"
       />
       <EvidenceTab
         v-else-if="activeTab === 'evidence'"

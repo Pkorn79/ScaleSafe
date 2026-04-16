@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-16
+
+### Fixed
+- **Per-program installment progress on Payments tab.** Previously showed a single combined summary when a client had multiple active enrollments. Now renders each active installment/subscription enrollment as a separate progress card with program name, payments made/total, amount collected, next billing date, and a progress bar. Backend `clientEnrollments` endpoint now includes `next_billing_date` in the response.
+- **Processor identification on Recent Payments table.** Added Processor column (NMI / Stripe / GHL badge) to the Recent Payments table on the client profile Payments tab. The `processor` field was already stored correctly in `payment_events` and returned by the payment history API — it just wasn't displayed.
+
+### Added
+- **`badge-purple` CSS class** for Stripe processor badge styling.
+
+---
+
 ## 2026-04-15
 
 ### Fixed

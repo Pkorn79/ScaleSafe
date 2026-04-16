@@ -422,7 +422,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, digital_signature, packet_pdf_path, created_at, email, current_milestone')
+        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -464,6 +464,7 @@ export const dashboardController = {
           deliveryMethod: offer?.delivery_method || null,
           digitalSignature: e.digital_signature || '',
           packetPdfPath: e.packet_pdf_path || null,
+          nextBillingDate: e.next_billing_date || null,
           currentMilestone: e.current_milestone || 0,
           milestones: buildMilestoneList(offer),
         };

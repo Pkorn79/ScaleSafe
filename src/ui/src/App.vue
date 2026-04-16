@@ -178,6 +178,7 @@ body {
 .badge-red { background: #fee2e2; color: #991b1b; }
 .badge-blue { background: #dbeafe; color: #1e40af; }
 .badge-gray { background: #f1f5f9; color: #475569; }
+.badge-purple { background: #ede9fe; color: #5b21b6; }
 
 .table {
   width: 100%;
