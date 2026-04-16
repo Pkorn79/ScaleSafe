@@ -91,6 +91,17 @@ export interface CreateSubscriptionRequest {
   metadata?: Record<string, string>;
 }
 
+export interface ResumeSubscriptionRequest {
+  subscriptionId: string;        // existing processor subscription ID (Stripe only; NMI creates new)
+  paymentMethodId: string;       // NMI vault ID or Stripe payment method ID
+  customerId: string;            // NMI vault ID or Stripe customer ID
+  planAmount: number;            // in cents
+  interval: 'weekly' | 'biweekly' | 'monthly';
+  remainingPayments: number;     // how many payments left
+  startDate?: string;            // ISO date for next charge
+  description?: string;
+}
+
 export interface SubscriptionResult {
   success: boolean;
   subscriptionId: string;

@@ -13,6 +13,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Added
 - **`badge-purple` CSS class** for Stripe processor badge styling.
+- **Processor-native recurring billing.** After first payment for installment/subscription offers, ScaleSafe now creates a recurring schedule at the processor level (NMI `add_subscription` or Stripe Subscription). The processor manages all future charges. Migration 049 adds `processor_subscription_id` to enrollments.
+  - **Shared recurring-payment service** (`recurring-payment.service.ts`) — extracted success/failure handling from the daily cron into reusable functions called by the cron, Stripe webhooks, and NMI Silent Post.
+  - **Stripe webhook handlers** — `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.deleted`, `customer.subscription.updated` events now update enrollment state, log evidence, and fire triggers.
+  - **NMI Silent Post endpoint** (`POST /webhooks/nmi/silent-post`) — receives NMI recurring billing notifications, verifies transactions, and processes payments.
+  - **Pause/resume support** — Stripe uses `pause_collection` (keeps subscription alive); NMI cancels and recreates (no native pause). `pauseSubscription()` and `resumeSubscription()` added to ProcessorInterface and both clients.
+  - **Cron backward compat** — daily job now skips enrollments with `processor_subscription_id` set. Legacy enrollments continue to be charged by the cron. If subscription creation fails at checkout, the cron handles billing as fallback.
 
 ---
 

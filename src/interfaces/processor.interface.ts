@@ -2,7 +2,7 @@ import {
   ChargeRequest, ChargeResult,
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
-  CreateSubscriptionRequest, SubscriptionResult,
+  CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
   VerifyResult,
 } from '../types/processor.types';
 
@@ -29,6 +29,10 @@ export interface ProcessorInterface {
   ): Promise<ChargeResult>;
 
   createSubscription(request: CreateSubscriptionRequest): Promise<SubscriptionResult>;
+
+  pauseSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }>;
+
+  resumeSubscription(request: ResumeSubscriptionRequest): Promise<SubscriptionResult>;
 
   cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }>;
 

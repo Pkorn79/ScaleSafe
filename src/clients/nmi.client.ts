@@ -4,7 +4,7 @@ import {
   ChargeRequest, ChargeResult,
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
-  CreateSubscriptionRequest, SubscriptionResult,
+  CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
   VerifyResult,
 } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
@@ -232,6 +232,28 @@ export class NmiClient implements ProcessorInterface {
       success: nmi.response === '1',
       errorMessage: nmi.response !== '1' ? nmi.responsetext : undefined,
     };
+  }
+
+  // ─── pauseSubscription ──────────────────────────────────────
+  // NMI has no pause concept — delete the subscription. resumeSubscription creates a new one.
+
+  async pauseSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {
+    return this.cancelSubscription(subscriptionId);
+  }
+
+  // ─── resumeSubscription ────────────────────────────────────
+  // NMI has no resume — create a brand new subscription with remaining payments.
+
+  async resumeSubscription(request: ResumeSubscriptionRequest): Promise<SubscriptionResult> {
+    return this.createSubscription({
+      paymentMethodId: request.paymentMethodId,
+      customerId: request.customerId,
+      planAmount: request.planAmount,
+      interval: request.interval,
+      totalPayments: request.remainingPayments,
+      startDate: request.startDate,
+      description: request.description,
+    });
   }
 
   // ─── verifyTransaction ─────────────────────────────────────

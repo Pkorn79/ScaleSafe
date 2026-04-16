@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { stripeEvidenceVaultService } from '../services/stripe-evidence-vault.service';
 import { stripeDisputeService } from '../services/stripe-dispute.service';
 import { stripeEfwService } from '../services/stripe-efw.service';
+import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -92,6 +93,23 @@ async function routeWebhookEvent(event: any, merchant: any): Promise<void> {
 
     case 'charge.refunded':
       logger.info({ merchantId: merchant.id, eventType: event.type }, 'Charge refunded event received');
+      break;
+
+    // ─── Subscription lifecycle (processor-native recurring billing) ───
+    case 'invoice.payment_succeeded':
+      await handleInvoicePaymentSucceeded(event, merchant);
+      break;
+
+    case 'invoice.payment_failed':
+      await handleInvoicePaymentFailed(event, merchant);
+      break;
+
+    case 'customer.subscription.deleted':
+      await handleSubscriptionDeleted(event, merchant);
+      break;
+
+    case 'customer.subscription.updated':
+      await handleSubscriptionUpdated(event, merchant);
       break;
 
     default:
@@ -270,4 +288,187 @@ async function handleEfwEvent(event: any, merchant: any): Promise<void> {
   logger.info({ merchantId: merchant.id, efwId: efw.id }, 'EFW event received');
 
   await stripeEfwService.handleEfw(efw, merchant);
+}
+
+// ─── Subscription recurring billing handlers ────────────
+
+/**
+ * Stripe invoice.payment_succeeded — a subscription cycle payment landed.
+ * Skip the initial invoice (billing_reason='subscription_create') since the
+ * first payment is handled as a one-off charge in checkout.
+ */
+async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise<void> {
+  const invoice = event.data.object;
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    logger.debug({ invoiceId: invoice.id, reason: invoice.billing_reason }, 'Skipping non-cycle invoice');
+    return;
+  }
+
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) return;
+
+  const supabase = getSupabase();
+
+  // Look up enrollment by processor_subscription_id
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type')
+    .eq('processor_subscription_id', subscriptionId)
+    .single();
+
+  if (!enrollment) {
+    logger.warn({ subscriptionId, merchantId: merchant.id }, 'Invoice succeeded for unknown subscription — ignoring');
+    return;
+  }
+
+  // Idempotency: check if we already logged this charge
+  const chargeId = invoice.charge;
+  if (chargeId) {
+    const { data: existing } = await supabase
+      .from('payment_events')
+      .select('id')
+      .eq('processor_transaction_id', chargeId)
+      .maybeSingle();
+    if (existing) {
+      logger.debug({ chargeId }, 'Invoice charge already processed — skipping duplicate');
+      return;
+    }
+  }
+
+  // Resolve offer for installment details
+  let installmentFrequency = 'monthly';
+  let offerName = '';
+  if (enrollment.offer_id) {
+    const { data: offer } = await supabase
+      .from('offers_mirror')
+      .select('offer_name, installment_frequency')
+      .eq('id', enrollment.offer_id)
+      .single();
+    if (offer) {
+      installmentFrequency = offer.installment_frequency || 'monthly';
+      offerName = offer.offer_name || '';
+    }
+  }
+
+  const amountCents = invoice.amount_paid || 0;
+
+  const result = await handleRecurringPaymentSuccess({
+    enrollment,
+    processorType: 'stripe',
+    transactionId: chargeId || invoice.id,
+    amountCents,
+    offerName,
+    installmentFrequency,
+    source: 'stripe_webhook',
+  });
+
+  logger.info({
+    enrollmentId: enrollment.id,
+    subscriptionId,
+    chargeId,
+    amountCents,
+    newPaymentsMade: result.newPaymentsMade,
+    isFinal: result.isFinal,
+  }, 'Stripe subscription payment processed');
+}
+
+/**
+ * Stripe invoice.payment_failed — a subscription payment failed.
+ */
+async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<void> {
+  const invoice = event.data.object;
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) return;
+
+  const supabase = getSupabase();
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('id, merchant_id, location_id, contact_id, offer_id')
+    .eq('processor_subscription_id', subscriptionId)
+    .single();
+
+  if (!enrollment) {
+    logger.warn({ subscriptionId }, 'Invoice failed for unknown subscription — ignoring');
+    return;
+  }
+
+  const amountCents = invoice.amount_due || 0;
+  const errorMessage = invoice.last_finalization_error?.message || 'Stripe subscription payment failed';
+
+  await handleRecurringPaymentFailure({
+    enrollment,
+    processorType: 'stripe',
+    amountCents,
+    errorMessage,
+    source: 'stripe_webhook',
+  });
+
+  logger.warn({ enrollmentId: enrollment.id, subscriptionId, amountCents }, 'Stripe subscription payment failed — dunning initiated');
+}
+
+/**
+ * customer.subscription.deleted — Stripe auto-cancelled after cancel_at or explicit cancel.
+ */
+async function handleSubscriptionDeleted(event: any, merchant: any): Promise<void> {
+  const subscription = event.data.object;
+  const subscriptionId = subscription.id;
+
+  const supabase = getSupabase();
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('id, status')
+    .eq('processor_subscription_id', subscriptionId)
+    .single();
+
+  if (!enrollment) return;
+
+  // If already completed, this is the expected auto-cancel after final payment
+  if (enrollment.status === 'completed') {
+    logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Subscription deleted after completion — expected');
+    return;
+  }
+
+  // Otherwise log the cancellation event
+  await supabase.from('payment_events').insert({
+    merchant_id: merchant.id,
+    location_id: merchant.location_id,
+    contact_id: subscription.metadata?.contact_id || null,
+    enrollment_id: enrollment.id,
+    event_type: 'subscription_cancelled',
+    processor: 'stripe',
+    processor_subscription_id: subscriptionId,
+    amount: 0,
+    currency: 'usd',
+    source: 'stripe_webhook',
+  });
+
+  logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Stripe subscription deleted');
+}
+
+/**
+ * customer.subscription.updated — detect pause/resume state changes.
+ */
+async function handleSubscriptionUpdated(event: any, merchant: any): Promise<void> {
+  const subscription = event.data.object;
+  const subscriptionId = subscription.id;
+  const pauseCollection = subscription.pause_collection;
+
+  const supabase = getSupabase();
+  const { data: enrollment } = await supabase
+    .from('enrollments')
+    .select('id, status')
+    .eq('processor_subscription_id', subscriptionId)
+    .single();
+
+  if (!enrollment) return;
+
+  // Detect pause/resume transitions
+  const previousAttributes = event.data.previous_attributes || {};
+  if (previousAttributes.pause_collection !== undefined) {
+    if (pauseCollection) {
+      logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Stripe subscription paused');
+    } else {
+      logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Stripe subscription resumed');
+    }
+  }
 }

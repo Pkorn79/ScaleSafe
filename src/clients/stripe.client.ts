@@ -4,7 +4,7 @@ import {
   ChargeRequest, ChargeResult,
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
-  CreateSubscriptionRequest, SubscriptionResult,
+  CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
   VerifyResult,
 } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
@@ -237,6 +237,46 @@ export class StripeClient implements ProcessorInterface {
     } catch (err) {
       const procErr = this.toProcessorError(err);
       return { success: false, errorMessage: procErr.message };
+    }
+  }
+
+  // ─── pauseSubscription ──────────────────────────────────────
+
+  async pauseSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {
+    try {
+      await this.stripe.subscriptions.update(
+        subscriptionId,
+        { pause_collection: { behavior: 'void' } },
+        this.acct,
+      );
+      return { success: true };
+    } catch (err) {
+      const procErr = this.toProcessorError(err);
+      return { success: false, errorMessage: procErr.message };
+    }
+  }
+
+  // ─── resumeSubscription ────────────────────────────────────
+
+  async resumeSubscription(request: ResumeSubscriptionRequest): Promise<SubscriptionResult> {
+    try {
+      // For Stripe, resume = remove pause_collection from existing subscription
+      const subscription = await this.stripe.subscriptions.update(
+        request.subscriptionId,
+        { pause_collection: '' as any },
+        this.acct,
+      );
+      return {
+        success: true,
+        subscriptionId: subscription.id,
+        status: subscription.status === 'active' ? 'active' : 'pending',
+        nextPaymentDate: subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString()
+          : undefined,
+      };
+    } catch (err) {
+      const procErr = this.toProcessorError(err);
+      return { success: false, subscriptionId: request.subscriptionId, status: 'failed', errorMessage: procErr.message };
     }
   }
 

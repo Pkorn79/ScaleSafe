@@ -237,10 +237,20 @@ export const paymentLifecycleService = {
       try {
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
         const processor = createProcessorClient(procConfig);
-        await processor.cancelSubscription(params.processorSubscriptionId);
+        await processor.pauseSubscription(params.processorSubscriptionId);
       } catch (err: any) {
         logger.warn({ err: err.message }, 'Processor subscription pause failed — logging evidence anyway');
       }
+
+      // Clear next_billing_date during pause to prevent cron from charging
+      try {
+        const supabase = getSupabase();
+        await supabase.from('enrollments')
+          .update({ next_billing_date: null })
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId)
+          .in('status', ['enrolled', 'active']);
+      } catch {}
     }
 
     // Log evidence (enriched with context for defense letters)
@@ -291,6 +301,83 @@ export const paymentLifecycleService = {
    * Resume a paused subscription. Logs evidence, fires trigger, updates GHL.
    */
   async resumeSubscription(params: SubscriptionParams): Promise<void> {
+    // Resume via processor if we have a subscription ID
+    if (params.processorSubscriptionId) {
+      try {
+        const supabase = getSupabase();
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const processor = createProcessorClient(procConfig);
+
+        // Fetch enrollment + offer for remaining payments and frequency
+        const { data: enr } = await supabase.from('enrollments')
+          .select('id, offer_id, payments_made, payments_total')
+          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
+          .eq('processor_subscription_id', params.processorSubscriptionId)
+          .maybeSingle();
+
+        let interval: 'weekly' | 'biweekly' | 'monthly' = 'monthly';
+        let planAmount = 0;
+        let remaining = 0;
+        let description = '';
+        if (enr?.offer_id) {
+          const { data: ofr } = await supabase.from('offers_mirror')
+            .select('offer_name, installment_amount, installment_frequency')
+            .eq('id', enr.offer_id).single();
+          if (ofr) {
+            const freq = (ofr.installment_frequency || 'monthly').toLowerCase();
+            interval = freq === 'weekly' ? 'weekly' : freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' : 'monthly';
+            planAmount = Math.round(Number(ofr.installment_amount || 0) * 100);
+            description = ofr.offer_name || '';
+          }
+          remaining = Math.max(0, (enr.payments_total || 0) - (enr.payments_made || 0));
+        }
+
+        // Get payment method for customerId/paymentMethodId
+        const { data: pm } = await supabase.from('payment_methods')
+          .select('*').eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId).eq('is_default', true).limit(1).maybeSingle();
+
+        const customerId = pm?.nmi_customer_vault_id || pm?.stripe_customer_id || '';
+        const paymentMethodId = pm?.stripe_payment_method_id || pm?.nmi_customer_vault_id || '';
+
+        // Calculate next billing date
+        const nextDate = new Date();
+        if (interval === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+        else if (interval === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
+        else nextDate.setMonth(nextDate.getMonth() + 1);
+
+        if (remaining > 0 && planAmount > 0 && customerId) {
+          const result = await processor.resumeSubscription({
+            subscriptionId: params.processorSubscriptionId,
+            paymentMethodId,
+            customerId,
+            planAmount,
+            interval,
+            remainingPayments: remaining,
+            startDate: nextDate.toISOString().split('T')[0],
+            description,
+          });
+
+          // For NMI, resumeSubscription creates a NEW subscription — update the stored ID
+          if (result.success && result.subscriptionId !== params.processorSubscriptionId && enr) {
+            await supabase.from('enrollments')
+              .update({
+                processor_subscription_id: result.subscriptionId,
+                next_billing_date: nextDate.toISOString().split('T')[0],
+              })
+              .eq('id', enr.id);
+          } else if (enr) {
+            // Stripe resume — just update next_billing_date
+            await supabase.from('enrollments')
+              .update({ next_billing_date: nextDate.toISOString().split('T')[0] })
+              .eq('id', enr.id);
+          }
+        }
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Processor subscription resume failed — logging evidence anyway');
+      }
+    }
+
     // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
@@ -350,6 +437,17 @@ export const paymentLifecycleService = {
       } catch (err: any) {
         logger.warn({ err: err.message }, 'Processor subscription cancel failed — logging evidence anyway');
       }
+
+      // Clear processor_subscription_id so the enrollment is inert (cron won't pick it up
+      // because status will be 'cancelled', and processor won't charge because subscription is deleted)
+      try {
+        const supabase = getSupabase();
+        await supabase.from('enrollments')
+          .update({ processor_subscription_id: null, next_billing_date: null })
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId)
+          .eq('processor_subscription_id', params.processorSubscriptionId);
+      } catch {}
     }
 
     // Log subscription change evidence (enriched with context)
