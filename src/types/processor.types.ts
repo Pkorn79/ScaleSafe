@@ -13,6 +13,9 @@ export interface ChargeRequest {
   statementDescriptorSuffix?: string;
   requestThreeDSecure?: boolean; // Stripe only
   processorId?: string; // NMI multi-MID routing
+  shouldVault?: boolean; // When true, vault card during charge (NMI atomic sale+vault)
+  customerEmail?: string; // Required when shouldVault=true
+  customerName?: string; // Optional, for vault customer record
 }
 
 export interface ChargeResult {
@@ -28,6 +31,12 @@ export interface ChargeResult {
   cvvResponse?: string;
   threeDSecureUrl?: string;
   rawResponse?: Record<string, any>;
+  // Populated when shouldVault=true and vault succeeded (NMI customer_vault_id)
+  vaultedCustomerId?: string;
+  vaultedCardLastFour?: string;
+  vaultedCardBrand?: string;
+  vaultedCardExpMonth?: number;
+  vaultedCardExpYear?: number;
 }
 
 // ============================================================

@@ -49,11 +49,42 @@ export class NmiClient implements ProcessorInterface {
     params.set('currency', (request.currency || 'USD').toUpperCase());
     params.set('payment_token', request.paymentToken);
 
+    // Atomic vault: charge + vault in a single NMI API call.
+    // NMI tokens are single-use — if we charge first then try to vault separately,
+    // the vault fails because the token is consumed. This combines both operations.
+    if (request.shouldVault) {
+      params.set('customer_vault', 'add_customer');
+      if (request.customerEmail) params.set('email', request.customerEmail);
+      if (request.customerName) {
+        const parts = request.customerName.split(' ');
+        params.set('first_name', parts[0] || '');
+        if (parts.length > 1) params.set('last_name', parts.slice(1).join(' '));
+      }
+    }
+
     this.addProcessorId(params);
     this.addMetadata(params, request);
 
     const nmi = await this.postTransact(params);
-    return this.toChargeResult(nmi);
+    const result = this.toChargeResult(nmi);
+
+    // If vault succeeded, populate vault metadata on the result
+    if (result.success && nmi.customer_vault_id) {
+      result.vaultedCustomerId = nmi.customer_vault_id;
+      try {
+        const cardInfo = await this.queryVaultCard(nmi.customer_vault_id);
+        result.vaultedCardLastFour = cardInfo.lastFour;
+        result.vaultedCardBrand = cardInfo.brand;
+        result.vaultedCardExpMonth = cardInfo.expMonth;
+        result.vaultedCardExpYear = cardInfo.expYear;
+      } catch {
+        // Vault query failed — vault ID is still valid for subscriptions
+        result.vaultedCardLastFour = '****';
+        result.vaultedCardBrand = 'unknown';
+      }
+    }
+
+    return result;
   }
 
   // ─── refund ────────────────────────────────────────────────

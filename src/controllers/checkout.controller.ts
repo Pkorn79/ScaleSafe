@@ -187,6 +187,14 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     const { config: procConfig } = await resolveProcessor(merchant.merchantId, merchant.locationId);
     const processor = createProcessorClient(procConfig);
 
+    // Determine recurring status BEFORE charge — NMI needs to vault atomically during charge
+    // because NMI tokens are single-use (consumed by charge, can't be reused for separate vault)
+    const isRecurringPaymentType = ['installments', 'installment', 'subscription']
+      .includes(String(req.body.paymentChoice || '').toLowerCase());
+    const shouldVaultDuringCharge = procConfig.processor_type === 'nmi'
+      && !!contactEmail
+      && (saveCard === true || isRecurringPaymentType);
+
     const result = await processor.charge({
       amount,
       currency: (currency || 'usd').toLowerCase(),
@@ -209,13 +217,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       },
       statementDescriptorSuffix: productDetails?.[0]?.name?.substring(0, 22),
       requestThreeDSecure,
+      shouldVault: shouldVaultDuringCharge,
+      customerEmail: shouldVaultDuringCharge ? contactEmail : undefined,
+      customerName: shouldVaultDuringCharge ? contactName : undefined,
     });
 
-    // Recurring payment types REQUIRE card persistence so the daily recurring-billing
-    // job can charge subsequent installments. Auto-derive shouldSaveCard from
-    // paymentChoice so callers don't have to remember the saveCard flag.
-    const isRecurringPaymentType = ['installments', 'installment', 'subscription']
-      .includes(String(req.body.paymentChoice || '').toLowerCase());
     const shouldSaveCard = result.success && !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
@@ -448,12 +454,29 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         logger.warn({ contactEmail }, 'CARD-SAVE: skipped — could not resolve contactId for recurring payment');
       } else {
         try {
-          const saveResult = await processor.saveCard({
-            paymentToken,
-            contactId: finalContactId,
-            customerEmail: contactEmail,
-            customerName: contactName,
-          });
+          let saveResult: { success: boolean; paymentMethodId: string; customerId: string; cardLastFour: string; cardBrand: string; cardExpMonth: number; cardExpYear: number };
+
+          if (result.vaultedCustomerId) {
+            // NMI atomic vault succeeded during charge — no separate saveCard needed
+            saveResult = {
+              success: true,
+              paymentMethodId: result.vaultedCustomerId,
+              customerId: result.vaultedCustomerId,
+              cardLastFour: result.vaultedCardLastFour || '****',
+              cardBrand: result.vaultedCardBrand || 'unknown',
+              cardExpMonth: result.vaultedCardExpMonth || 0,
+              cardExpYear: result.vaultedCardExpYear || 0,
+            };
+            logger.info({ vaultId: result.vaultedCustomerId, contactId: finalContactId }, 'CARD-SAVE: using vault from atomic charge');
+          } else {
+            // Stripe path (multi-use tokens) or NMI fallback
+            saveResult = await processor.saveCard({
+              paymentToken,
+              contactId: finalContactId,
+              customerEmail: contactEmail,
+              customerName: contactName,
+            });
+          }
 
           // Demote any existing defaults for this contact (one is_default=true at a time)
           await supabase.from('payment_methods')
