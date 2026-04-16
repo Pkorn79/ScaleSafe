@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentProviderService } from '../services/payment-provider.service';
-import { processorConfigService } from '../services/processor-config.service';
 import { offerRepository } from '../repositories/offer.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
@@ -46,28 +45,27 @@ export async function getCheckoutConfig(req: Request, res: Response): Promise<vo
     .eq('id', merchant.merchantId)
     .single();
 
-  // Get processor config
-  const configs = await processorConfigService.listConfigs(merchant.merchantId);
-  const activeConfig = configs.find(c => c.is_active && c.is_default) || configs.find(c => c.is_active);
+  // Resolve processor using the same logic as charge-time (respects merchant default)
+  try {
+    const { config: procConfig } = await resolveProcessor(merchant.merchantId, merchant.locationId);
 
-  if (!activeConfig) {
-    res.status(503).json({ error: 'No processor configured' });
+    const response: Record<string, any> = {
+      processorType: procConfig.processor_type,
+      merchantName: merchantRow?.business_name || '',
+    };
+
+    if (procConfig.processor_type === 'nmi') {
+      response.nmiTokenizationKey = procConfig.nmi_tokenization_key;
+    } else if (procConfig.processor_type === 'stripe') {
+      response.stripeAccountId = procConfig.stripe_user_id;
+      response.stripePublishableKey = config.stripe.publishableKey;
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    res.status(503).json({ error: err.message || 'No processor configured' });
     return;
   }
-
-  const response: Record<string, any> = {
-    processorType: activeConfig.processor_type,
-    merchantName: merchantRow?.business_name || '',
-  };
-
-  if (activeConfig.processor_type === 'nmi') {
-    response.nmiTokenizationKey = activeConfig.nmi_tokenization_key;
-  } else if (activeConfig.processor_type === 'stripe') {
-    response.stripeAccountId = activeConfig.stripe_user_id;
-    response.stripePublishableKey = config.stripe.publishableKey;
-  }
-
-  res.json(response);
 }
 
 // ─── GET /api/checkout/config-by-offer/:offerId ─────────────
@@ -91,28 +89,32 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
     return;
   }
 
-  const configs = await processorConfigService.listConfigs(merchant.id);
-  const activeConfig = configs.find(c => c.is_active && c.is_default) || configs.find(c => c.is_active);
+  // Resolve processor using the same logic as charge-time (respects offer override + merchant default)
+  try {
+    const offerHint = {
+      processor_override: (offer as any).processor_override || null,
+      nmi_processor_id: (offer as any).nmi_processor_id || null,
+    };
+    const { config: procConfig } = await resolveProcessor(merchant.id, offer.location_id, offerHint);
 
-  if (!activeConfig) {
-    res.status(503).json({ error: 'No processor configured' });
+    const response: Record<string, any> = {
+      processorType: procConfig.processor_type,
+      merchantName: merchant.business_name || '',
+      publishableKey: merchant.provider_publishable_key || '',
+    };
+
+    if (procConfig.processor_type === 'nmi') {
+      response.nmiTokenizationKey = procConfig.nmi_tokenization_key || '';
+    } else if (procConfig.processor_type === 'stripe') {
+      response.stripePublishableKey = config.stripe.publishableKey || procConfig.stripe_publishable_key || '';
+      response.stripeAccountId = procConfig.stripe_user_id || '';
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    res.status(503).json({ error: err.message || 'No processor configured' });
     return;
   }
-
-  const response: Record<string, any> = {
-    processorType: activeConfig.processor_type,
-    merchantName: merchant.business_name || '',
-    publishableKey: merchant.provider_publishable_key || '',
-  };
-
-  if (activeConfig.processor_type === 'nmi') {
-    response.nmiTokenizationKey = activeConfig.nmi_tokenization_key || '';
-  } else if (activeConfig.processor_type === 'stripe') {
-    response.stripePublishableKey = config.stripe.publishableKey || activeConfig.stripe_publishable_key || '';
-    response.stripeAccountId = activeConfig.stripe_user_id || '';
-  }
-
-  res.json(response);
 }
 
 // ─── POST /api/checkout/process-payment ──────────────────────
