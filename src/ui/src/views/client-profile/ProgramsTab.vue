@@ -25,6 +25,11 @@
           <span class="badge" :class="enrollmentBadge(enr.status)" style="margin-left:8px">{{ enr.status }}</span>
         </div>
         <div class="flex gap-2">
+          <!-- Status action buttons -->
+          <button v-if="canPause(enr)" class="btn btn-sm btn-secondary" @click="openActionModal(enr, 'pause')" :disabled="actionLoading">Pause</button>
+          <button v-if="canResume(enr)" class="btn btn-sm btn-secondary" @click="executeAction(enr, 'resume')" :disabled="actionLoading">Resume</button>
+          <button v-if="canComplete(enr)" class="btn btn-sm btn-secondary" @click="openActionModal(enr, 'complete')" :disabled="actionLoading">Complete</button>
+          <button v-if="canCancel(enr)" class="btn btn-sm btn-red" @click="openActionModal(enr, 'cancel')" :disabled="actionLoading">Cancel</button>
           <button v-if="enr.packetPdfPath && ['enrolled','completed'].includes(enr.status)"
             class="btn btn-sm btn-secondary" @click="downloadPacket(enr.id)" :disabled="packetLoading">
             {{ packetLoading ? '...' : 'Packet' }}
@@ -35,6 +40,9 @@
         <div class="text-sm">
           <strong>Enrolled:</strong> {{ enr.enrolledAt ? formatDateShort(enr.enrolledAt) : 'Pending' }}
           <span v-if="enr.programDuration" class="text-muted"> ({{ enr.programDuration }} {{ enr.programDurationUnit || '' }})</span>
+          <div v-if="programEndDate(enr)" class="text-muted" style="font-size:12px">
+            Ends: {{ programEndDate(enr) }}
+          </div>
         </div>
         <div class="text-sm">
           <strong>Payment:</strong>
@@ -79,7 +87,7 @@
       <div v-if="enr.completedAt" class="text-sm mt-2" style="color:#10b981">Completed: {{ formatDateShort(enr.completedAt) }}</div>
     </div>
 
-    <div v-if="packetError" class="text-sm mt-2" style="color:#ef4444">{{ packetError }}</div>
+    <div v-if="packetError || actionError" class="text-sm mt-2" style="color:#ef4444">{{ packetError || actionError }}</div>
 
     <!-- Mark Complete confirmation modal -->
     <Modal v-model:open="showMilestoneModal" title="Mark milestone complete">
@@ -109,6 +117,28 @@
         </button>
       </template>
     </Modal>
+
+    <!-- Status action confirmation modal -->
+    <Modal v-model:open="showActionModal" :title="actionModalTitle">
+      <div v-if="pendingAction">
+        <p style="margin-bottom:14px">
+          {{ actionModalDescription }}
+        </p>
+        <div v-if="pendingAction.action !== 'complete'" class="form-group">
+          <label class="form-label">Reason (optional)</label>
+          <textarea class="form-textarea" v-model="actionReason" rows="2" placeholder="Why are you making this change?"></textarea>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showActionModal = false">Go Back</button>
+        <button
+          class="btn" :class="pendingAction?.action === 'cancel' ? 'btn-red' : 'btn-primary'"
+          @click="confirmAction" :disabled="actionLoading"
+        >
+          {{ actionLoading ? 'Processing...' : actionModalConfirmLabel }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -134,17 +164,104 @@ const api = useApi();
 const packetLoading = ref(false);
 const packetError = ref('');
 const milestoneLoading = ref(false);
+const actionLoading = ref(false);
+const actionError = ref('');
 
-// Mark Complete confirmation modal
+// Milestone modal
 const showMilestoneModal = ref(false);
 const pendingEnrollment = ref<any>(null);
 const pendingMilestone = ref<any>(null);
+
+// Status action modal
+const showActionModal = ref(false);
+const pendingAction = ref<{ enrollment: any; action: string } | null>(null);
+const actionReason = ref('');
 
 const clientFirstName = computed(() => {
   const label = (props.clientLabel || '').trim();
   if (!label) return 'this client';
   return label.split(/\s+/)[0];
 });
+
+const actionModalTitle = computed(() => {
+  if (!pendingAction.value) return '';
+  const labels: Record<string, string> = { pause: 'Pause Enrollment', cancel: 'Cancel Enrollment', complete: 'Mark Complete' };
+  return labels[pendingAction.value.action] || 'Update Status';
+});
+
+const actionModalDescription = computed(() => {
+  if (!pendingAction.value) return '';
+  const name = pendingAction.value.enrollment.offerName || 'this program';
+  const labels: Record<string, string> = {
+    pause: `Pause "${name}" for ${clientFirstName.value}? Recurring billing will be suspended until you resume.`,
+    cancel: `Cancel "${name}" for ${clientFirstName.value}? This will stop all future billing and mark the enrollment as cancelled.`,
+    complete: `Mark "${name}" as complete for ${clientFirstName.value}? This will end the program and stop future billing.`,
+  };
+  return labels[pendingAction.value.action] || '';
+});
+
+const actionModalConfirmLabel = computed(() => {
+  if (!pendingAction.value) return 'Confirm';
+  const labels: Record<string, string> = { pause: 'Pause', cancel: 'Cancel Enrollment', complete: 'Mark Complete' };
+  return labels[pendingAction.value.action] || 'Confirm';
+});
+
+// Status action visibility
+function canPause(enr: any): boolean {
+  return ['enrolled', 'active'].includes(enr.status);
+}
+function canResume(enr: any): boolean {
+  return enr.status === 'paused';
+}
+function canCancel(enr: any): boolean {
+  return ['enrolled', 'active', 'paused', 'consent_captured', 'device_captured'].includes(enr.status);
+}
+function canComplete(enr: any): boolean {
+  return ['enrolled', 'active'].includes(enr.status);
+}
+
+function programEndDate(enr: any): string {
+  if (!enr.enrolledAt || !enr.programDuration) return '';
+  const enrolled = new Date(enr.enrolledAt);
+  const unit = (enr.programDurationUnit || 'months').toLowerCase();
+  if (unit === 'weeks') {
+    enrolled.setDate(enrolled.getDate() + enr.programDuration * 7);
+  } else {
+    enrolled.setMonth(enrolled.getMonth() + enr.programDuration);
+  }
+  return enrolled.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function openActionModal(enr: any, action: string) {
+  pendingAction.value = { enrollment: enr, action };
+  actionReason.value = '';
+  actionError.value = '';
+  showActionModal.value = true;
+}
+
+async function confirmAction() {
+  if (!pendingAction.value) return;
+  await executeAction(pendingAction.value.enrollment, pendingAction.value.action, actionReason.value);
+  showActionModal.value = false;
+  pendingAction.value = null;
+}
+
+async function executeAction(enr: any, action: string, reason?: string) {
+  actionLoading.value = true;
+  actionError.value = '';
+  try {
+    await api.post('/api/payments/lifecycle/enrollment/status', {
+      enrollmentId: enr.id,
+      contactId: props.contactId,
+      action,
+      reason: reason || undefined,
+    });
+    emit('enrollments-updated');
+  } catch (e: any) {
+    actionError.value = e.message || `Failed to ${action} enrollment`;
+  }
+  actionLoading.value = false;
+}
 
 function formatDateShort(d: string): string {
   if (!d) return '-';
@@ -155,6 +272,7 @@ function enrollmentBadge(status: string): string {
   if (['enrolled', 'active'].includes(status)) return 'badge-green';
   if (status === 'completed') return 'badge-blue';
   if (status === 'cancelled') return 'badge-red';
+  if (status === 'paused') return 'badge-yellow';
   if (['consent_captured', 'device_captured', 'pending'].includes(status)) return 'badge-yellow';
   return 'badge-gray';
 }
@@ -281,5 +399,23 @@ async function downloadPacket(enrollmentId: string) {
   color: #1e293b;
   white-space: pre-wrap;
   line-height: 1.5;
+}
+
+.btn-red {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+}
+.btn-red:hover {
+  background: #dc2626;
+}
+
+.form-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  resize: vertical;
 }
 </style>

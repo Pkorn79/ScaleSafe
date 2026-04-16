@@ -871,10 +871,16 @@ export const dashboardController = {
         .eq('location_id', locationId)
         .order('last_activity_date', { ascending: false, nullsFirst: false });
 
-      // Status filter
+      // Status filter — specific status takes priority over statusGroup
+      const statusGroup = req.query.statusGroup as string || '';
       if (status) {
         query = query.eq('status', status);
+      } else if (statusGroup === 'active') {
+        query = query.in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused']);
+      } else if (statusGroup === 'archive') {
+        query = query.in('status', ['completed', 'cancelled']);
       }
+      // statusGroup === 'all' or empty → no filter
 
       // Search by name/email
       if (search) {

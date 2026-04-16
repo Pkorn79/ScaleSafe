@@ -242,16 +242,17 @@ export const paymentLifecycleService = {
         logger.warn({ err: err.message }, 'Processor subscription pause failed — logging evidence anyway');
       }
 
-      // Clear next_billing_date during pause to prevent cron from charging
-      try {
-        const supabase = getSupabase();
-        await supabase.from('enrollments')
-          .update({ next_billing_date: null })
-          .eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId)
-          .in('status', ['enrolled', 'active']);
-      } catch {}
     }
+
+    // Update enrollment status to 'paused' and clear next_billing_date
+    try {
+      const supabase = getSupabase();
+      await supabase.from('enrollments')
+        .update({ status: 'paused', next_billing_date: null })
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId)
+        .in('status', ['enrolled', 'active']);
+    } catch {}
 
     // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
@@ -362,20 +363,31 @@ export const paymentLifecycleService = {
           if (result.success && result.subscriptionId !== params.processorSubscriptionId && enr) {
             await supabase.from('enrollments')
               .update({
+                status: 'enrolled',
                 processor_subscription_id: result.subscriptionId,
                 next_billing_date: nextDate.toISOString().split('T')[0],
               })
               .eq('id', enr.id);
           } else if (enr) {
-            // Stripe resume — just update next_billing_date
+            // Stripe resume — update status + next_billing_date
             await supabase.from('enrollments')
-              .update({ next_billing_date: nextDate.toISOString().split('T')[0] })
+              .update({ status: 'enrolled', next_billing_date: nextDate.toISOString().split('T')[0] })
               .eq('id', enr.id);
           }
         }
       } catch (err: any) {
         logger.warn({ err: err.message }, 'Processor subscription resume failed — logging evidence anyway');
       }
+    } else {
+      // No processor subscription — just update enrollment status back to 'enrolled'
+      try {
+        const supabase = getSupabase();
+        await supabase.from('enrollments')
+          .update({ status: 'enrolled' })
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId)
+          .eq('status', 'paused');
+      } catch {}
     }
 
     // Log evidence (enriched with context for defense letters)
@@ -438,15 +450,24 @@ export const paymentLifecycleService = {
         logger.warn({ err: err.message }, 'Processor subscription cancel failed — logging evidence anyway');
       }
 
-      // Clear processor_subscription_id so the enrollment is inert (cron won't pick it up
-      // because status will be 'cancelled', and processor won't charge because subscription is deleted)
+      // Clear processor_subscription_id and mark cancelled
       try {
         const supabase = getSupabase();
         await supabase.from('enrollments')
-          .update({ processor_subscription_id: null, next_billing_date: null })
+          .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), processor_subscription_id: null, next_billing_date: null })
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId)
           .eq('processor_subscription_id', params.processorSubscriptionId);
+      } catch {}
+    } else {
+      // No processor subscription — still mark the enrollment as cancelled
+      try {
+        const supabase = getSupabase();
+        await supabase.from('enrollments')
+          .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null })
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId)
+          .in('status', ['enrolled', 'active', 'paused']);
       } catch {}
     }
 
@@ -532,6 +553,70 @@ export const paymentLifecycleService = {
     } catch { /* non-blocking */ }
 
     logger.info({ contactId: params.contactId, reason: params.reason }, 'Subscription cancelled');
+  },
+
+  /**
+   * Manually complete an enrollment. Logs evidence, fires trigger, updates GHL.
+   * Cancels any active processor subscription.
+   */
+  async completeEnrollment(params: SubscriptionParams): Promise<void> {
+    const supabase = getSupabase();
+
+    // Cancel processor subscription if one exists
+    if (params.processorSubscriptionId) {
+      try {
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const processor = createProcessorClient(procConfig);
+        await processor.cancelSubscription(params.processorSubscriptionId);
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Processor subscription cancel on complete failed — completing anyway');
+      }
+    }
+
+    // Update enrollment status
+    const completedAt = new Date().toISOString();
+    try {
+      const updateFilter = params.processorSubscriptionId
+        ? supabase.from('enrollments').update({
+            status: 'completed', completed_at: completedAt,
+            next_billing_date: null, processor_subscription_id: null,
+          }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
+           .eq('processor_subscription_id', params.processorSubscriptionId)
+        : supabase.from('enrollments').update({
+            status: 'completed', completed_at: completedAt, next_billing_date: null,
+          }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
+           .in('status', ['enrolled', 'active', 'paused']);
+      await updateFilter;
+    } catch {}
+
+    // Log evidence
+    await evidenceService.logEvidence(
+      EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
+      { action: 'manual_complete', change_date: completedAt, reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'completed' },
+    );
+
+    // Fire trigger
+    try {
+      await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
+        contact_id: params.contactId,
+        offer_id: params.offerId,
+        completed_at: completedAt,
+        completion_reason: params.reason || 'manual_complete',
+      });
+    } catch {}
+
+    // Update GHL contact
+    try {
+      const api = await ghlApi(params.locationId);
+      await api.put(`/contacts/${params.contactId}`, {
+        customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'completed' },
+      });
+      await api.post(`/contacts/${params.contactId}/notes`, {
+        body: `Program marked complete: ${params.reason || 'Merchant action'}`,
+      });
+    } catch {}
+
+    logger.info({ contactId: params.contactId, reason: params.reason }, 'Enrollment manually completed');
   },
 
   // ═══════════════════════════════════════════════════════════════

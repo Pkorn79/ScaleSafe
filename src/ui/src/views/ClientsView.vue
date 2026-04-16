@@ -2,6 +2,13 @@
   <div>
     <h1 class="page-title">Clients</h1>
 
+    <!-- Active / Archive tabs -->
+    <div class="status-tabs mb-4">
+      <button class="status-tab" :class="{ active: statusGroup === 'active' }" @click="switchGroup('active')">Active</button>
+      <button class="status-tab" :class="{ active: statusGroup === 'archive' }" @click="switchGroup('archive')">Archive</button>
+      <button class="status-tab" :class="{ active: statusGroup === 'all' }" @click="switchGroup('all')">All</button>
+    </div>
+
     <!-- Search + Filters -->
     <div class="flex gap-2 mb-4" style="flex-wrap:wrap">
       <input class="form-input" v-model="searchInput" @input="debouncedSearch" placeholder="Search by name or email..." style="flex:1;min-width:200px" />
@@ -75,6 +82,7 @@
 
     <div v-if="clients.length === 0 && !loading" class="empty-state">
       <p v-if="searchInput || statusFilter">No clients match your filters.</p>
+      <p v-else-if="statusGroup === 'archive'">No archived clients yet.</p>
       <p v-else>No clients yet. Send an enrollment link to get started.</p>
     </div>
 
@@ -100,6 +108,7 @@ const page = ref(1);
 const limit = ref(25);
 const searchInput = ref('');
 const statusFilter = ref('');
+const statusGroup = ref('active');
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -123,6 +132,13 @@ function debouncedSearch() {
   searchTimeout = setTimeout(() => { page.value = 1; loadClients(); }, 300);
 }
 
+function switchGroup(group: string) {
+  statusGroup.value = group;
+  statusFilter.value = '';
+  page.value = 1;
+  loadClients();
+}
+
 async function loadClients() {
   try {
     const params = new URLSearchParams();
@@ -130,6 +146,7 @@ async function loadClients() {
     params.set('limit', String(limit.value));
     if (searchInput.value) params.set('search', searchInput.value);
     if (statusFilter.value) params.set('status', statusFilter.value);
+    if (!statusFilter.value) params.set('statusGroup', statusGroup.value);
 
     const result = await api.get<any>(`/api/dashboard/clients?${params.toString()}`);
     clients.value = result.clients || [];
@@ -143,3 +160,30 @@ async function loadClients() {
 
 onMounted(() => loadClients());
 </script>
+
+<style scoped>
+.status-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e5e7eb;
+}
+.status-tab {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.status-tab:hover {
+  color: #1e293b;
+}
+.status-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+</style>

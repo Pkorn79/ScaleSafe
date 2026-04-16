@@ -8,11 +8,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-16
 
 ### Fixed
+- **Enrollment status DB sync for pause/resume/cancel.** Previously these actions updated the GHL contact field but never updated `enrollments.status` in the database, causing permanent divergence. Now: pause sets `status='paused'`, resume sets `status='enrolled'`, cancel sets `status='cancelled'` + `cancelled_at`. All three work with or without a processor subscription.
 - **Per-program installment progress on Payments tab.** Previously showed a single combined summary when a client had multiple active enrollments. Now renders each active installment/subscription enrollment as a separate progress card with program name, payments made/total, amount collected, next billing date, and a progress bar. Backend `clientEnrollments` endpoint now includes `next_billing_date` in the response.
 - **Processor identification on Recent Payments table.** Added Processor column (NMI / Stripe / GHL badge) to the Recent Payments table on the client profile Payments tab. The `processor` field was already stored correctly in `payment_events` and returned by the payment history API — it just wasn't displayed.
 
 ### Added
 - **`badge-purple` CSS class** for Stripe processor badge styling.
+- **PIF auto-completion cron** (`pif-completion-check.ts`) — daily job checks PIF enrollments against offer `program_duration_value` + `program_duration_unit`. When `enrolled_at + duration <= today`, marks enrollment as `completed`, logs evidence, fires `ss_program_completed` trigger, and updates GHL contact.
+- **Manual enrollment status controls** — new `POST /api/payments/lifecycle/enrollment/status` endpoint accepts `action: pause|resume|cancel|complete` with optional reason. New `completeEnrollment()` method on payment-lifecycle service handles manual completion with evidence, triggers, and processor subscription cleanup.
+- **ProgramsTab action buttons** — each enrollment card now shows Pause/Resume/Cancel/Complete buttons based on current status. Confirmation modals with reason input for pause and cancel. Program end date displayed when offer has a duration set.
+- **Client list Active/Archive tabs** — default view now shows only active clients (enrolled, active, paused, pending). Archive tab shows completed and cancelled. "All" tab shows everything. Status dropdown filter still works within each tab.
 - **Processor-native recurring billing.** After first payment for installment/subscription offers, ScaleSafe now creates a recurring schedule at the processor level (NMI `add_subscription` or Stripe Subscription). The processor manages all future charges. Migration 049 adds `processor_subscription_id` to enrollments.
   - **Shared recurring-payment service** (`recurring-payment.service.ts`) — extracted success/failure handling from the daily cron into reusable functions called by the cron, Stripe webhooks, and NMI Silent Post.
   - **Stripe webhook handlers** — `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.deleted`, `customer.subscription.updated` events now update enrollment state, log evidence, and fire triggers.

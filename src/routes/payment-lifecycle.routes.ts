@@ -61,6 +61,58 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 });
 
+// ─── Manual Enrollment Status Change ────────────────────────────
+
+router.post('/enrollment/status', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const locationId = resolveLocationId(req);
+    if (!locationId) throw new ValidationError('locationId required');
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const { enrollmentId, contactId, action, reason } = req.body;
+    if (!enrollmentId || !contactId || !action) throw new ValidationError('enrollmentId, contactId, and action required');
+
+    const supabase = (await import('../clients/supabase.client')).getSupabase();
+
+    // Look up enrollment for processor subscription ID and offer ID
+    const { data: enrollment } = await supabase
+      .from('enrollments')
+      .select('id, processor_subscription_id, offer_id, status')
+      .eq('id', enrollmentId)
+      .eq('location_id', locationId)
+      .single();
+
+    if (!enrollment) throw new ValidationError('Enrollment not found');
+
+    const serviceParams = {
+      merchantId: merchant.id,
+      locationId,
+      contactId,
+      offerId: enrollment.offer_id || '',
+      reason: reason || `Merchant-initiated ${action}`,
+      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+    };
+
+    switch (action) {
+      case 'pause':
+        await paymentLifecycleService.pauseSubscription(serviceParams);
+        break;
+      case 'resume':
+        await paymentLifecycleService.resumeSubscription(serviceParams);
+        break;
+      case 'cancel':
+        await paymentLifecycleService.cancelSubscription(serviceParams);
+        break;
+      case 'complete':
+        await paymentLifecycleService.completeEnrollment(serviceParams);
+        break;
+      default:
+        throw new ValidationError(`Invalid action: ${action}. Must be pause, resume, cancel, or complete`);
+    }
+
+    res.json({ success: true, action });
+  } catch (err) { next(err); }
+});
+
 // ─── Card Management ────────────────────────────────────────────
 
 router.get('/cards/:contactId', async (req: Request, res: Response, next: NextFunction) => {
