@@ -63,8 +63,8 @@ import {
       <router-link to="/defense" class="nav-link" :class="{ 'nav-active': $route.path === '/defense' }">
         <Shield :size="16" /> Defense
       </router-link>
-      <router-link to="/defense/dashboard" class="nav-link nav-sub" :class="{ 'nav-active': $route.path.startsWith('/defense/dashboard') || $route.path.startsWith('/defense/disputes') || $route.path.startsWith('/defense/prevention') }">
-        <Activity :size="14" /> Health Dashboard
+      <router-link to="/risk-health" class="nav-link nav-sub" :class="{ 'nav-active': $route.path === '/risk-health' }">
+        <Activity :size="14" /> Stripe Risk Health
       </router-link>
       <router-link to="/settings" class="nav-link" :class="{ 'nav-active': $route.name === 'settings' }">
         <Settings :size="16" /> Settings

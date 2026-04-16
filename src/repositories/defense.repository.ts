@@ -137,7 +137,7 @@ export const defenseRepository = {
     return data;
   },
 
-  async recordOutcome(defensePacketId: string, outcome: 'won' | 'lost', amountSaved: number, notes?: string): Promise<void> {
+  async recordOutcome(defensePacketId: string, outcome: 'won' | 'lost' | 'withdrawn', amountSaved: number, notes?: string): Promise<void> {
     const { error } = await getSupabase()
       .from('defense_outcomes')
       .insert({

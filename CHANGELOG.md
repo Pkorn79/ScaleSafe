@@ -7,6 +7,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Added — Defense Module Rebuild
+- **Defense Dashboard at `/defense`** — card layout replacing the old table, with summary cards (Total / Won / Win Rate / Value Saved), filter buttons (All / Active / Pending Outcome / Won / Lost / Withdrawn), sort dropdown (Deadline / Date Created / Amount), and a "New Defense" compile modal migrated to the `<Modal>` component from Slice 2. Each card shows client, amount, reason code, deadline countdown, lifecycle status badge, outcome badge.
+- **Defense Packet Detail view with 4 tabs** — uses `<ProfileTabs>` from Slice 2: Letter / Exhibits / History / Outcome. Sticky header with deadline countdown (color-coded), lifecycle + compilation status badges, Download PDF + Mark Submitted buttons. PDF inline preview via `<iframe>` with prominent download fallback.
+  - **Letter tab** — editable Markdown textarea before submission, locked read-only after. Regenerate + Save Edit buttons. Token count + version number displayed.
+  - **Exhibits tab** — numbered exhibit cards (A/B/C…) with name, category badge, date, and server-rendered summary. Single source of truth from `defense-exhibits.service.ts`.
+  - **History tab** — chronological version list from `defense_letter_versions` table. Each version shows AI/Manual badge, token counts, expand-to-view.
+  - **Outcome tab** — gated on `lifecycle_status === 'submitted'`. Won/Lost/Withdrawn buttons, amount recovered, decision date, notes field. Propagates outcome to linked `dispute_events` row for chargeback ratio monitoring.
+- **AI letter prompt rewrite** — clinical/factual tone (no argumentative language), pre-grouped evidence by semantic category (Consent / Service Delivery / Communication / Payments / Termination), hard rule that cancellation/refund events are TERMINATION events and must not be framed as engagement, numbered exhibit references (`(Exhibit A)` / `(see Exhibit C)`), never-leave-placeholders rule, addressee handling (default per processor, merchant override), current date always substituted.
+- **Defense exhibits service** (`src/services/defense-exhibits.service.ts`) — single source of truth for the exhibit list. Reads from all 20 evidence tables + signed enrollment packet path from storage. Groups by category, assigns sequential exhibit letters, generates plain-English summaries server-side. The same list is passed to BOTH the AI prompt AND the PDF bundler so citations and assembly never drift.
+- **Defense letter PDF renderer** (`src/services/defense-letter-pdf.service.ts`) — renders the AI letter as professional HTML→PDF via the shared Puppeteer `renderHtmlToPdf` util. Includes header, metadata table, letter body with Markdown→HTML conversion, and exhibit index table.
+- **Defense bundle service** (`src/services/defense-bundle.service.ts`) — merges defense letter PDF + evidence exhibits PDF + signed enrollment packet PDF (loaded AS-IS from `scalesafe-files` storage to preserve consent-time forensic integrity) into one combined PDF via `pdf-lib`. Uploads to `scalesafe-files/defense-packets/{locationId}/{defenseId}-v{n}.pdf` with versioned key. Signed URL persisted on `defense_packets.pdf_url` + `pdf_storage_path`.
+- **Shared PDF renderer** (`src/services/pdf-renderer.service.ts`) — extracted from `enrollment-packet.service.ts`. Used by enrollment packet, defense letter, and defense bundle services. No behavior change to enrollment packets.
+- **6 new defense lifecycle endpoints** (all SSO-gated):
+  - `POST /api/defense/:id/submit` — sets `lifecycle_status='submitted'`, locks the latest letter version (`is_submitted_version=true`), records `submitted_at`, updates linked `dispute_events.status='under_review'`.
+  - `POST /api/defense/:id/outcome` — accepts `won/lost/withdrawn` + `amountRecovered` + `resolvedAt` + `notes`. Writes to `defense_outcomes`, updates `defense_packets.lifecycle_status`, propagates to linked `dispute_events` (outcome + status mapping + net_financial_impact).
+  - `POST /api/defense/:id/regenerate` — re-runs the AI letter compilation, inserts a new `defense_letter_versions` row, mirrors to the fast-read column, rebundles the PDF. Pre-submit only (400 if already submitted).
+  - `PUT /api/defense/:id/letter` — saves a manual text edit as a new version, mirrors + rebundles. Pre-submit only.
+  - `GET /api/defense/:id/versions` — returns the full version history for the History tab.
+  - `POST /api/defense/:id/rebundle` — manual PDF regeneration trigger (defensive, in case bundle generation failed).
+- **Migration 044** (`044_defense_lifecycle.sql`):
+  - `defense_packets.lifecycle_status` (pending_submission / submitted / won / lost / withdrawn)
+  - `defense_packets.submitted_at`, `dispute_event_id` FK, `addressee`
+  - `defense_outcomes.outcome` CHECK widened to include `'withdrawn'`
+  - `dispute_events.stripe_dispute_id` relaxed to NULLABLE (enables NMI rows with no Stripe ID)
+  - `dispute_events.processor` column added (discriminates 'stripe' vs 'nmi')
+  - Index on `(lifecycle_status, response_deadline)` for dashboard filtering/sorting
+- **Migration 045** (`045_defense_letter_versions.sql`): new `defense_letter_versions` table (defense_packet_id FK, version_number, letter_text, generated_at, generated_by, model_used, prompt_tokens_used, response_tokens_used, is_submitted_version, notes). Unique on `(defense_packet_id, version_number)`.
+- **NMI dispute_events path** — when a merchant compiles a defense on the NMI rail (no Stripe dispute), `compileDefense` creates the `dispute_events` row server-side with `processor='nmi'` and links via FK. This ensures the chargeback ratio monitoring covers both rails.
+
+### Changed
+- **Stripe Risk Health moved** — renamed `DefenseDashboard.vue` → `StripeRiskHealth.vue`, route moved from `/defense/dashboard` to `/risk-health`, nav sub-link renamed from "Health Dashboard" to "Stripe Risk Health". The new Defense Dashboard now owns `/defense`.
+- **Compile form** — now includes an optional Addressee field (default per processor: Stripe = "Stripe Disputes Team", NMI = "Sponsor Bank — Chargeback Department"). Compile modal migrated from inline `<div>` to `<Modal>` component.
+- **`defense.service.ts recordOutcome`** — now accepts `won/lost/withdrawn` (was `won/lost` only). Propagates outcome to linked `dispute_events` via the FK (`dispute_event_id`).
+- **`enrollment-packet.service.ts`** — refactored to import `renderHtmlToPdf` from the new shared `pdf-renderer.service.ts`. No behavior change.
+- **`docs/DEFENSE_REBUILD_PLAN.md`** — file moved from repo root to `docs/`. Sections 5-7 (Platform Decision Matrix, Build Order, Risk Register) written as part of Phase 3 STRATEGIZE.
+
 ### Added
 - **NMI Settings page wiring — merchants can now connect NMI alongside Stripe.** The Settings page UI was already built (form fields, Test Connection button, Default Processor toggle), but the four handlers (`connectNmi`, `testNmiConnection`, `disconnectNmi`, `setDefaultProcessor`) were stubbed with TODOs that surfaced "NMI connection is not yet available. Use Stripe for now." This wires them up. The NMI client, `processorConfigService.createNmiConfig()`, encryption flow, `processor.factory.ts` dual-rail support, and `processor_configs` schema all already existed and required no changes — this was purely finish-the-plumbing.
   - **New endpoints under `/api/processor-config/`** (`src/controllers/processor-config.controller.ts`, `src/routes/processor-config.routes.ts`):

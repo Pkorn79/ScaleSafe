@@ -1,9 +1,8 @@
-import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 import { getSupabase } from '../clients/supabase.client';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { merchantService } from './merchant.service';
+import { renderHtmlToPdf } from './pdf-renderer.service';
 import { logger } from '../utils/logger';
 
 interface PacketData {
@@ -46,8 +45,7 @@ export const enrollmentPacketService = {
       { enrollment: enrollment as any, offer, merchant, evidence: evidence || [] },
     );
 
-    const buffer = await renderHtmlToPdf(html);
-    return buffer;
+    return await renderHtmlToPdf(html);
   },
 
   /**
@@ -86,58 +84,6 @@ export const enrollmentPacketService = {
     return urlData?.signedUrl || storagePath;
   },
 };
-
-// ─── Puppeteer HTML→PDF renderer ───────────────────────────────
-
-async function renderHtmlToPdf(html: string): Promise<Buffer> {
-  let browser;
-  try {
-    const systemChromium = process.env.PUPPETEER_EXECUTABLE_PATH;
-    if (systemChromium) {
-      // Production: use system Chromium installed via apk in Dockerfile
-      browser = await puppeteer.launch({
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--single-process',
-        ],
-        defaultViewport: { width: 1280, height: 900 },
-        executablePath: systemChromium,
-        headless: true,
-      });
-    } else {
-      // Local dev: use @sparticuz/chromium bundled binary
-      browser = await puppeteer.launch({
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-        defaultViewport: { width: 1280, height: 900 },
-        executablePath: await chromium.executablePath(),
-        headless: true,
-      });
-    }
-
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({
-      format: 'Letter',
-      printBackground: true,
-      displayHeaderFooter: true,
-      headerTemplate: '<span></span>',
-      footerTemplate: `<div style="width:100%;text-align:center;font-size:9px;color:#9ca3af;padding:0 0.6in">
-        <span class="pageNumber"></span> of <span class="totalPages"></span>
-      </div>`,
-      margin: { top: '0.4in', bottom: '0.6in', left: '0.6in', right: '0.6in' },
-    });
-
-    return Buffer.from(pdfBuffer);
-  } catch (err: any) {
-    logger.error({ err: err.message, stack: err.stack, execPath: process.env.PUPPETEER_EXECUTABLE_PATH || 'chromium-bundled' }, 'Puppeteer PDF rendering failed');
-    throw err;
-  } finally {
-    if (browser) await browser.close();
-  }
-}
 
 // ─── HTML template builder ─────────────────────────────────────
 

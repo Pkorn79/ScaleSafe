@@ -10,7 +10,7 @@ export const defenseController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const { contactId, reasonCode, disputeAmount, disputeDate, deadline, caseNumber, offerId } = req.body;
+      const { contactId, reasonCode, disputeAmount, disputeDate, deadline, caseNumber, offerId, addressee, disputeEventId, processor } = req.body;
       if (!contactId || !reasonCode || !disputeAmount || !disputeDate || !deadline) {
         throw new ValidationError('contactId, reasonCode, disputeAmount, disputeDate, deadline required');
       }
@@ -18,6 +18,7 @@ export const defenseController = {
       const defenseId = await defenseService.compileDefense({
         locationId, contactId, offerId,
         reasonCode, disputeAmount, disputeDate, deadline, caseNumber,
+        addressee, disputeEventId, processor,
       });
 
       res.status(202).json({ defenseId, status: 'pending' });
@@ -51,16 +52,72 @@ export const defenseController = {
     } catch (err) { next(err); }
   },
 
-  /** POST /api/defense/:id/outcome — record win/loss */
+  /** POST /api/defense/:id/outcome — record win/loss/withdrawn */
   async recordOutcome(req: Request, res: Response, next: NextFunction) {
     try {
-      const { outcome, notes } = req.body;
-      if (!outcome || !['won', 'lost'].includes(outcome)) {
-        throw new ValidationError('outcome must be "won" or "lost"');
+      const { outcome, amountRecovered, resolvedAt, notes } = req.body;
+      if (!outcome || !['won', 'lost', 'withdrawn'].includes(outcome)) {
+        throw new ValidationError('outcome must be "won", "lost", or "withdrawn"');
       }
 
-      await defenseService.recordOutcome(req.params.id, outcome, notes);
-      res.json({ status: 'ok' });
+      await defenseService.recordOutcome(req.params.id, outcome, {
+        amountRecovered: amountRecovered ?? undefined,
+        resolvedAt: resolvedAt ?? undefined,
+        notes,
+      });
+      res.json({ status: 'ok', outcome });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/defense/:id/submit — mark packet as submitted to processor */
+  async markSubmitted(req: Request, res: Response, next: NextFunction) {
+    try {
+      await defenseService.markSubmitted(req.params.id);
+      res.json({ status: 'ok', lifecycleStatus: 'submitted' });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/defense/:id/regenerate — regenerate the AI letter (pre-submit only) */
+  async regenerateLetter(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await defenseService.regenerateLetter(req.params.id);
+      const packet = await defenseService.getPacket(req.params.id);
+      res.json({ ...result, pdfUrl: (packet as any).pdf_url || '' });
+    } catch (err) { next(err); }
+  },
+
+  /** PUT /api/defense/:id/letter — save a manual letter edit (pre-submit only) */
+  async saveLetterEdit(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { letterText } = req.body;
+      if (!letterText || typeof letterText !== 'string') {
+        throw new ValidationError('letterText is required');
+      }
+      const result = await defenseService.saveLetterEdit(req.params.id, letterText);
+      const packet = await defenseService.getPacket(req.params.id);
+      res.json({ ...result, pdfUrl: (packet as any).pdf_url || '' });
+    } catch (err) { next(err); }
+  },
+
+  /** GET /api/defense/:id/versions — letter version history */
+  async getVersions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const versions = await defenseService.getLetterVersions(req.params.id);
+      res.json(versions);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/defense/:id/rebundle — manually trigger PDF rebundle */
+  async rebundle(req: Request, res: Response, next: NextFunction) {
+    try {
+      const packet = await defenseService.getPacket(req.params.id);
+      const { defenseBundleService } = require('../services/defense-bundle.service');
+      const url = await defenseBundleService.bundleDefensePdf(
+        req.params.id,
+        (packet as any).location_id,
+        (packet as any).contact_id,
+      );
+      res.json({ status: 'ok', pdfUrl: url });
     } catch (err) { next(err); }
   },
 };
