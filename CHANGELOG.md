@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Security
+- **RLS lockdown: dropped 44 overly-permissive policies that gave the Supabase anon key unrestricted read/write access.** Every table had `CREATE POLICY "Service role full access" ... FOR ALL USING (true) WITH CHECK (true)` with no `TO` clause — this applies to ALL roles including `anon`, effectively making RLS a no-op. Migration 046 drops all 44 policies. With RLS enabled and no matching policy for anon, PostgreSQL's default-deny kicks in — anon gets zero access. The backend uses `SUPABASE_SERVICE_KEY` which bypasses RLS entirely, so the app is completely unaffected. Verified: no `@supabase/supabase-js` import exists in the frontend; all queries go through the backend. Tables covered: merchants, processor_configs, payment_methods, payment_events, enrollments, all 20 evidence tables, defense_packets, defense_outcomes, dispute_events, and 14 more.
+
 ### Added — Defense Module Rebuild
 - **Defense Dashboard at `/defense`** — card layout replacing the old table, with summary cards (Total / Won / Win Rate / Value Saved), filter buttons (All / Active / Pending Outcome / Won / Lost / Withdrawn), sort dropdown (Deadline / Date Created / Amount), and a "New Defense" compile modal migrated to the `<Modal>` component from Slice 2. Each card shows client, amount, reason code, deadline countdown, lifecycle status badge, outcome badge.
 - **Defense Packet Detail view with 4 tabs** — uses `<ProfileTabs>` from Slice 2: Letter / Exhibits / History / Outcome. Sticky header with deadline countdown (color-coded), lifecycle + compilation status badges, Download PDF + Mark Submitted buttons. PDF inline preview via `<iframe>` with prominent download fallback.
