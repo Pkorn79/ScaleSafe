@@ -7,6 +7,7 @@ const router = Router();
 
 router.use(ssoAuth, requireTenant);
 
+router.get('/transactions/:contactId', defenseController.getTransactions);
 router.post('/compile', defenseController.compile);
 router.post('/:id/submit', defenseController.markSubmitted);
 router.post('/:id/outcome', defenseController.recordOutcome);

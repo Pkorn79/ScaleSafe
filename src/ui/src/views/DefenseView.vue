@@ -48,7 +48,7 @@
     <div v-for="p in filteredPackets" :key="p.id" class="defense-card" @click="$router.push(`/defense/${p.id}`)">
       <div class="flex-between" style="margin-bottom:8px">
         <div>
-          <strong style="font-size:14px">{{ p.contact_id?.slice(0, 12) }}...</strong>
+          <strong style="font-size:14px">{{ p.contactName || 'Unknown' }}</strong>
           <span class="badge" :class="lifecycleBadge(p.lifecycleStatus || p.lifecycle_status || 'pending_submission')" style="margin-left:8px">
             {{ p.lifecycleStatus || p.lifecycle_status || 'pending_submission' }}
           </span>
@@ -88,6 +88,21 @@
           </button>
           <div v-if="!customerSearchLoading && customerSearch.trim().length >= 3 && customerResults.length === 0" class="customer-option text-sm text-muted">No matching customers</div>
           <div v-if="!customerSearchLoading && customerSearch.trim().length < 3" class="customer-option text-sm text-muted">Type at least 3 characters</div>
+        </div>
+      </div>
+
+      <!-- Transaction selector (loads after customer is selected) -->
+      <div v-if="compileForm.contactId" class="form-group">
+        <label class="form-label">Disputed Transaction</label>
+        <div v-if="transactionsLoading" class="text-sm text-muted">Loading transactions...</div>
+        <select v-else class="form-select" v-model="selectedTransactionId" @change="onTransactionSelected">
+          <option value="">Manual entry (no specific transaction)</option>
+          <option v-for="t in transactions" :key="t.id" :value="t.id">
+            {{ formatDate(t.date) }} — ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' — ' + t.offerName : '' }}{{ t.transactionId ? ' — ' + t.transactionId.slice(0, 12) : '' }}
+          </option>
+        </select>
+        <div v-if="transactions.length === 0 && !transactionsLoading && compileForm.contactId" class="text-sm text-muted mt-2">
+          No transactions found for this client. You can still file a defense with manual entry.
         </div>
       </div>
 
@@ -180,7 +195,14 @@ const compileForm = ref({
   deadline: '',
   caseNumber: '',
   addressee: '',
+  paymentEventId: '',
+  enrollmentId: '',
 });
+
+// Transaction selector state
+const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; offerName: string; enrollmentId: string; offerId: string }>>([]);
+const transactionsLoading = ref(false);
+const selectedTransactionId = ref('');
 
 watch(() => compileForm.value.disputeDate, (disputeDate) => {
   if (!disputeDate) { compileForm.value.deadline = ''; return; }
@@ -258,10 +280,39 @@ function onCustomerSearchInput() {
   }, 400);
 }
 
-function selectCustomer(customer: { contactId: string; name?: string; email?: string }) {
+async function selectCustomer(customer: { contactId: string; name?: string; email?: string }) {
   compileForm.value.contactId = customer.contactId;
   customerSearch.value = customer.name || customer.email || customer.contactId;
   showCustomerDropdown.value = false;
+
+  // Fetch transactions for the selected customer
+  selectedTransactionId.value = '';
+  compileForm.value.paymentEventId = '';
+  compileForm.value.enrollmentId = '';
+  transactionsLoading.value = true;
+  try {
+    const data = await api.get<any>(`/api/defense/transactions/${encodeURIComponent(customer.contactId)}`);
+    transactions.value = data?.transactions || [];
+  } catch {
+    transactions.value = [];
+  }
+  transactionsLoading.value = false;
+}
+
+function onTransactionSelected() {
+  const txId = selectedTransactionId.value;
+  if (!txId) {
+    // Manual entry fallback — clear auto-filled fields
+    compileForm.value.paymentEventId = '';
+    compileForm.value.enrollmentId = '';
+    return;
+  }
+  const tx = transactions.value.find(t => t.id === txId);
+  if (tx) {
+    compileForm.value.paymentEventId = tx.id;
+    compileForm.value.enrollmentId = tx.enrollmentId || '';
+    compileForm.value.disputeAmount = tx.amount || compileForm.value.disputeAmount;
+  }
 }
 
 async function compile() {

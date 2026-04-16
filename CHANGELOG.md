@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Added
+- **Transaction selector on defense compile form.** The "New Defense" modal now shows a transaction dropdown after a customer is selected. Fetches the customer's payment_events from `GET /api/defense/transactions/:contactId` (new endpoint) and displays each as `"{date} — ${amount} — {offerName} — {transactionId}"`. Selecting a transaction auto-fills the dispute amount and stores `payment_event_id` + `enrollment_id` on the defense_packets row (new columns via migration 047). Evidence queries in `defense-exhibits.service.ts buildExhibitList()` now accept an optional `enrollmentId` filter — when present, the exhibit list is scoped to that enrollment's evidence only (instead of pulling all evidence for the contact). Manual entry fallback remains available when no transactions are found.
+
+### Fixed
+- **Customer name on defense dashboard cards.** `defenseHistory` handler now batch-resolves contact names from enrollments (first_name + last_name, digital_signature fallback, email fallback) and returns `contactName` per packet. Defense Dashboard cards show the resolved name instead of a truncated GHL UUID.
+
 ### Security
 - **RLS lockdown: dropped 44 overly-permissive policies that gave the Supabase anon key unrestricted read/write access.** Every table had `CREATE POLICY "Service role full access" ... FOR ALL USING (true) WITH CHECK (true)` with no `TO` clause — this applies to ALL roles including `anon`, effectively making RLS a no-op. Migration 046 drops all 44 policies. With RLS enabled and no matching policy for anon, PostgreSQL's default-deny kicks in — anon gets zero access. The backend uses `SUPABASE_SERVICE_KEY` which bypasses RLS entirely, so the app is completely unaffected. Verified: no `@supabase/supabase-js` import exists in the frontend; all queries go through the backend. Tables covered: merchants, processor_configs, payment_methods, payment_events, enrollments, all 20 evidence tables, defense_packets, defense_outcomes, dispute_events, and 14 more.
 

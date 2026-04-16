@@ -4,13 +4,70 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
 export const defenseController = {
+  /** GET /api/defense/transactions/:contactId — list payment events for the transaction selector */
+  async getTransactions(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId } = req.params;
+
+      const { getSupabase } = await import('../clients/supabase.client');
+      const supabase = getSupabase();
+
+      const { data: events } = await supabase
+        .from('payment_events')
+        .select('id, created_at, amount, processor_transaction_id, processor, event_type, enrollment_id')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .eq('event_type', 'sale')
+        .order('created_at', { ascending: false });
+
+      // Resolve offer names for each enrollment
+      const enrollmentIds = [...new Set((events || []).map(e => e.enrollment_id).filter(Boolean))];
+      const offerMap: Record<string, { offerName: string; offerId: string }> = {};
+      if (enrollmentIds.length > 0) {
+        const { data: enrollments } = await supabase
+          .from('enrollments')
+          .select('id, offer_id')
+          .in('id', enrollmentIds);
+        const offerIds = [...new Set((enrollments || []).map(e => e.offer_id).filter(Boolean))];
+        if (offerIds.length > 0) {
+          const { data: offers } = await supabase
+            .from('offers_mirror')
+            .select('id, offer_name')
+            .in('id', offerIds);
+          const offerNameMap = new Map((offers || []).map(o => [o.id, o.offer_name]));
+          for (const enr of (enrollments || [])) {
+            offerMap[enr.id] = {
+              offerName: enr.offer_id ? (offerNameMap.get(enr.offer_id) || '') : '',
+              offerId: enr.offer_id || '',
+            };
+          }
+        }
+      }
+
+      const transactions = (events || []).map(e => ({
+        id: e.id,
+        date: e.created_at,
+        amount: e.amount,
+        transactionId: e.processor_transaction_id || '',
+        processor: e.processor || '',
+        enrollmentId: e.enrollment_id || null,
+        offerId: e.enrollment_id ? (offerMap[e.enrollment_id]?.offerId || '') : '',
+        offerName: e.enrollment_id ? (offerMap[e.enrollment_id]?.offerName || '') : '',
+      }));
+
+      res.json({ transactions });
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/defense/compile — trigger defense compilation */
   async compile(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const { contactId, reasonCode, disputeAmount, disputeDate, deadline, caseNumber, offerId, addressee, disputeEventId, processor } = req.body;
+      const { contactId, reasonCode, disputeAmount, disputeDate, deadline, caseNumber, offerId, addressee, disputeEventId, processor, paymentEventId, enrollmentId } = req.body;
       if (!contactId || !reasonCode || !disputeAmount || !disputeDate || !deadline) {
         throw new ValidationError('contactId, reasonCode, disputeAmount, disputeDate, deadline required');
       }
@@ -18,7 +75,7 @@ export const defenseController = {
       const defenseId = await defenseService.compileDefense({
         locationId, contactId, offerId,
         reasonCode, disputeAmount, disputeDate, deadline, caseNumber,
-        addressee, disputeEventId, processor,
+        addressee, disputeEventId, processor, paymentEventId, enrollmentId,
       });
 
       res.status(202).json({ defenseId, status: 'pending' });

@@ -106,23 +106,47 @@ export const defenseExhibitsService = {
   /**
    * Build the exhibit list for a contact at compilation time.
    * Returns ordered exhibits + by-category index + totals.
+   *
+   * When `opts.enrollmentId` is provided (from the transaction selector), evidence
+   * queries are scoped to that enrollment's offer_id so multi-enrollment contacts
+   * don't get irrelevant evidence in their defense packet.
    */
-  async buildExhibitList(locationId: string, contactId: string): Promise<ExhibitList> {
+  async buildExhibitList(
+    locationId: string,
+    contactId: string,
+    opts?: { enrollmentId?: string },
+  ): Promise<ExhibitList> {
     const supabase = getSupabase();
     const exhibits: ExhibitEntry[] = [];
     let nextIdx = 1;
 
+    // Resolve the target enrollment's offer_id for scoping (when available)
+    let scopeOfferId: string | null = null;
+    if (opts?.enrollmentId) {
+      try {
+        const { data: enr } = await supabase
+          .from('enrollments')
+          .select('offer_id')
+          .eq('id', opts.enrollmentId)
+          .maybeSingle();
+        scopeOfferId = enr?.offer_id || null;
+      } catch {}
+    }
+
     // ── 1. Signed enrollment packet PDF (Exhibit A — always first if it exists) ──
     let enrollmentPacketPath: string | null = null;
     try {
-      const { data: enrollment } = await supabase
+      let enrollmentQuery = supabase
         .from('enrollments')
         .select('id, packet_pdf_path, enrolled_at, offer_id')
         .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .eq('contact_id', contactId);
+      if (opts?.enrollmentId) {
+        enrollmentQuery = enrollmentQuery.eq('id', opts.enrollmentId);
+      } else {
+        enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+      }
+      const { data: enrollment } = await enrollmentQuery.maybeSingle();
 
       if (enrollment?.packet_pdf_path) {
         enrollmentPacketPath = enrollment.packet_pdf_path;

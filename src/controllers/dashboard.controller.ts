@@ -233,7 +233,7 @@ export const dashboardController = {
 
       const { data: packets } = await supabase
         .from('defense_packets')
-        .select('id, contact_id, chargeback_reason_code, reason_code_category, chargeback_amount, chargeback_date, response_deadline, status, created_at')
+        .select('id, contact_id, chargeback_reason_code, reason_code_category, chargeback_amount, chargeback_date, response_deadline, status, lifecycle_status, created_at')
         .eq('location_id', locationId)
         .order('created_at', { ascending: false });
 
@@ -246,17 +246,37 @@ export const dashboardController = {
 
       const outcomeMap = new Map((outcomes || []).map(o => [o.defense_packet_id, o]));
 
-      // Alias DB column names to the response shape the frontend already reads,
-      // keeping DefenseDashboard / DefenseView stable.
+      // Resolve customer names from enrollments (avoids GHL API rate limits)
+      const contactIds = [...new Set((packets || []).map(p => p.contact_id).filter(Boolean))];
+      const nameMap: Record<string, string> = {};
+      if (contactIds.length > 0) {
+        const { data: enrollmentNames } = await supabase
+          .from('enrollments')
+          .select('contact_id, first_name, last_name, digital_signature, email')
+          .eq('location_id', locationId)
+          .in('contact_id', contactIds)
+          .order('created_at', { ascending: false });
+        for (const e of (enrollmentNames || [])) {
+          if (nameMap[e.contact_id]) continue; // keep the most recent enrollment's name
+          nameMap[e.contact_id] = [e.first_name, e.last_name].filter(Boolean).join(' ')
+            || e.digital_signature
+            || e.email
+            || e.contact_id.slice(0, 12);
+        }
+      }
+
+      // Alias DB column names to the response shape the frontend reads
       const history = (packets || []).map(p => ({
         id: p.id,
         contact_id: p.contact_id,
+        contactName: nameMap[p.contact_id] || p.contact_id?.slice(0, 12) || 'Unknown',
         reason_code: p.chargeback_reason_code,
         reason_category: p.reason_code_category,
         dispute_amount: p.chargeback_amount,
         dispute_date: p.chargeback_date,
         deadline: p.response_deadline,
         status: p.status,
+        lifecycleStatus: p.lifecycle_status || 'pending_submission',
         created_at: p.created_at,
         outcome: outcomeMap.get(p.id) || null,
       }));

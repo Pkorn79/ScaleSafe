@@ -48,6 +48,10 @@ interface CompileDefenseInput {
   disputeEventId?: string;
   /** 'stripe' | 'nmi' — required when creating a new dispute_event server-side. */
   processor?: 'stripe' | 'nmi';
+  /** The specific payment_event being disputed (from the transaction selector). */
+  paymentEventId?: string;
+  /** The enrollment tied to the disputed transaction (resolved from payment_event). */
+  enrollmentId?: string;
 }
 
 /**
@@ -135,6 +139,8 @@ export const defenseService = {
       lifecycle_status: 'pending_submission',
       dispute_event_id: disputeEventId,
       addressee,
+      payment_event_id: input.paymentEventId || null,
+      enrollment_id: input.enrollmentId || null,
     } as any);
 
     // Fire chargeback detected notification
@@ -177,7 +183,10 @@ export const defenseService = {
     const supabase = getSupabase();
 
     // 1. Build the single-source-of-truth exhibit list (used by BOTH the prompt AND the PDF bundler)
-    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId);
+    // When an enrollmentId is available (from the transaction selector), scope exhibits to that enrollment.
+    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, {
+      enrollmentId: input.enrollmentId,
+    });
 
     // 2. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
     const evidence = await evidenceRepository.getFullSnapshot(input.locationId, input.contactId);
