@@ -28,6 +28,9 @@ interface CreateOfferInput {
   quickCheckoutConsentText?: string;
   quickCheckoutShowDescription?: boolean;
   quickCheckoutShowRefundPolicy?: boolean;
+  // Per-offer processor selection
+  processorOverride?: 'nmi' | 'stripe' | null;
+  nmiProcessorId?: string | null;
 }
 
 function extractId(data: any, objectKey?: string): string {
@@ -190,6 +193,8 @@ export const offerService = {
       quick_checkout_consent_text: input.quickCheckoutConsentText || null,
       quick_checkout_show_description: input.quickCheckoutShowDescription ?? true,
       quick_checkout_show_refund_policy: input.quickCheckoutShowRefundPolicy ?? true,
+      processor_override: input.processorOverride || null,
+      nmi_processor_id: input.nmiProcessorId || null,
     };
 
     // Map clause slots 1-11 directly
@@ -260,6 +265,8 @@ export const offerService = {
     if (updates.quickCheckoutConsentText !== undefined) dbUpdates.quick_checkout_consent_text = updates.quickCheckoutConsentText || null;
     if (updates.quickCheckoutShowDescription !== undefined) dbUpdates.quick_checkout_show_description = updates.quickCheckoutShowDescription;
     if (updates.quickCheckoutShowRefundPolicy !== undefined) dbUpdates.quick_checkout_show_refund_policy = updates.quickCheckoutShowRefundPolicy;
+    if (updates.processorOverride !== undefined) dbUpdates.processor_override = updates.processorOverride || null;
+    if (updates.nmiProcessorId !== undefined) dbUpdates.nmi_processor_id = updates.nmiProcessorId || null;
 
     // Refund text
     if (updates.refundPolicyType !== undefined) {

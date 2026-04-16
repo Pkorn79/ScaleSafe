@@ -24,6 +24,8 @@ export interface OfferRecord {
   program_duration_value: number | null;
   program_duration_unit: string | null;
   tc_clause_overrides: Record<string, boolean>;
+  processor_override: string | null;
+  nmi_processor_id: string | null;
   redirect_slug: string | null;
   price_display: string | null;
   active: boolean;
