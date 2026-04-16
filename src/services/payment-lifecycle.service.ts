@@ -243,10 +243,10 @@ export const paymentLifecycleService = {
       }
     }
 
-    // Log evidence
+    // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'pause', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'pause', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'paused' },
     );
 
     // Fire trigger — flat payload
@@ -291,10 +291,10 @@ export const paymentLifecycleService = {
    * Resume a paused subscription. Logs evidence, fires trigger, updates GHL.
    */
   async resumeSubscription(params: SubscriptionParams): Promise<void> {
-    // Log evidence (action must match CHECK constraint: pause/resume/cancel/card_update/plan_change)
+    // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'resume', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'resume', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'paused', new_status: 'enrolled' },
     );
 
     // Fire trigger — flat doc contract: contact_id, offer_name, next_billing_date, payments_remaining, days_paused
@@ -352,16 +352,55 @@ export const paymentLifecycleService = {
       }
     }
 
-    // Log subscription change evidence (action must match CHECK constraint)
+    // Log subscription change evidence (enriched with context)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason },
+      { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'cancelled' },
     );
 
-    // Log cancellation evidence (separate — valuable for defense)
+    // Log cancellation evidence (enriched for defense letter quality)
+    let cancelEnrollmentId: string | null = null;
+    let cancelContactName = '';
+    let cancelContactEmail = '';
+    let cancelPaymentsMade = 0;
+    let cancelPaymentsTotal = 0;
+    let cancelEnrolledAt = '';
+    try {
+      const supabase = getSupabase();
+      const { data: enr } = await supabase.from('enrollments')
+        .select('id, email, first_name, last_name, digital_signature, payments_made, payments_total, enrolled_at')
+        .eq('location_id', params.locationId).eq('contact_id', params.contactId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (enr) {
+        cancelEnrollmentId = enr.id;
+        cancelContactName = [enr.first_name, enr.last_name].filter(Boolean).join(' ') || enr.digital_signature || '';
+        cancelContactEmail = enr.email || '';
+        cancelPaymentsMade = enr.payments_made || 0;
+        cancelPaymentsTotal = enr.payments_total || 0;
+        cancelEnrolledAt = enr.enrolled_at || '';
+      }
+    } catch {}
+
+    const cancelDate = new Date().toISOString();
+    const fmtCancelDate = new Date(cancelDate).toLocaleDateString('en-US', { dateStyle: 'long' });
+    const fmtEnrolledAt = cancelEnrolledAt ? new Date(cancelEnrolledAt).toLocaleDateString('en-US', { dateStyle: 'long' }) : 'unknown';
+    const daysSinceEnroll = cancelEnrolledAt
+      ? Math.floor((Date.now() - new Date(cancelEnrolledAt).getTime()) / 86400000)
+      : null;
+
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.CANCELLATION, params.locationId, params.contactId, 'merchant_action',
-      { cancellation_date: new Date().toISOString(), reason: params.reason, refund_eligibility: 'per_terms', status_at_cancellation: 'cancelled', initiated_by: 'merchant' },
+      {
+        cancellation_date: cancelDate,
+        reason: params.reason,
+        refund_eligibility: 'per_terms',
+        status_at_cancellation: 'cancelled',
+        initiated_by: 'merchant',
+        enrollment_id: cancelEnrollmentId,
+        contact_name: cancelContactName || null,
+        contact_email: cancelContactEmail || null,
+        description: `Merchant-initiated cancellation on ${fmtCancelDate}. Reason: ${params.reason || 'not specified'}. Status at cancellation: enrolled (${cancelPaymentsMade} of ${cancelPaymentsTotal || '?'} payments made). Active service period: ${fmtEnrolledAt} to ${fmtCancelDate}${daysSinceEnroll !== null ? ` (${daysSinceEnroll} days)` : ''}.`,
+      },
     );
 
     // Fire trigger — flat doc contract: contact_id, offer_id, reason, refund_eligibility, enrollment_date

@@ -366,12 +366,51 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
       .from('offers_mirror').select('*').eq('id', enrollment.offer_id).single();
     const milestoneName = (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`;
 
-    // Insert evidence signoff
+    // Resolve enrichment data for defense letter quality
+    const milestoneDelivers = (offer as any)?.[`m${milestoneNumber}_delivers`] || '';
+    const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
+    const workSummary = [milestoneDelivers, milestoneClientDoes].filter(Boolean).join('. Client responsibility: ') || null;
+
+    let signoffContactName = '';
+    let signoffContactEmail = '';
+    try {
+      const { data: enrInfo } = await supabase
+        .from('enrollments')
+        .select('first_name, last_name, digital_signature, email')
+        .eq('id', enrollment.id)
+        .maybeSingle();
+      signoffContactName = [enrInfo?.first_name, enrInfo?.last_name].filter(Boolean).join(' ')
+        || enrInfo?.digital_signature || '';
+      signoffContactEmail = enrInfo?.email || '';
+    } catch {}
+
+    const signedAt = new Date().toISOString();
+    const userAgent = req.headers['user-agent'] || '';
+    let browserDisplay = 'unknown browser';
+    if (userAgent.includes('Chrome')) browserDisplay = 'Chrome';
+    else if (userAgent.includes('Firefox')) browserDisplay = 'Firefox';
+    else if (userAgent.includes('Safari')) browserDisplay = 'Safari';
+
+    const fmtSignedDate = new Date(signedAt).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+
+    // Insert evidence signoff (enriched)
     await supabase.from('evidence_signoffs').insert({
-      location_id: locationId, contact_id: contactId, source: 'client_signoff',
-      milestone_number: milestoneNumber, milestone_name: milestoneName,
-      signature_data: signature, ip_address: clientIp,
-      signed_at: new Date().toISOString(),
+      location_id: locationId,
+      contact_id: contactId,
+      enrollment_id: enrollment.id,
+      source: 'client_signoff',
+      milestone_number: milestoneNumber,
+      milestone_name: milestoneName,
+      work_summary: workSummary,
+      signature_data: signature,
+      ip_address: clientIp,
+      device_fingerprint: req.body.deviceFingerprint || null,
+      browser: browserDisplay,
+      signed_at: signedAt,
+      contact_name: signoffContactName || null,
+      contact_email: signoffContactEmail || null,
+      raw_payload: { contactId, locationId, milestoneNumber, milestoneDelivers, milestoneClientDoes },
+      description: `${signoffContactName || 'Client'} digitally signed off on Milestone ${milestoneNumber} (${milestoneName}) on ${fmtSignedDate} from IP ${clientIp || 'unknown'} (${browserDisplay}).${milestoneDelivers ? ` Work delivered: ${milestoneDelivers}.` : ''}`,
     });
 
     // Fire trigger — flat doc contract

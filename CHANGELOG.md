@@ -8,6 +8,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-15
 
 ### Added
+- **Evidence enrichment for 5 critical defense types (Problem 2).** Migration 048 adds `description TEXT` + `enrollment_id UUID` columns to `evidence_consent`, `evidence_enrollment_payment`, `evidence_signoffs`, `evidence_cancellation` (milestones already had description). Write paths enriched:
+  - `evidence_consent` — now populates: `contact_name`, `contact_email`, `tc_version`, `consent_method`, `raw_payload`, `enrollment_id`, and a server-rendered `description` sentence.
+  - `evidence_enrollment_payment` — now populates: `currency`, `payment_timestamp`, `processor_ref`, `contact_name`, `contact_email`, `raw_payload`, `enrollment_id`, `description`.
+  - `evidence_milestones` — now populates: `contact_name`, `enrollment_id` (description/notes already enriched in commit ed19b55).
+  - `evidence_signoffs` — now populates: `work_summary` (from offer m{n}_delivers + m{n}_client_does), `device_fingerprint`, `browser`, `contact_name`, `contact_email`, `raw_payload`, `enrollment_id`, `description`.
+  - `evidence_cancellation` — now populates: `contact_name`, `contact_email`, `enrollment_id`, and a server-rendered `description` that pre-frames the event as a termination with the active service period calculated server-side (e.g., "Merchant-initiated cancellation on April 20, 2026. Active service period: March 15 to April 20, 2026 (36 days).").
+  - `evidence_subscription_changes` — now wired in `payment-lifecycle.service.ts` pause/resume/cancel handlers with `initiated_by`, `previous_status`, `new_status` fields populated (table existed since migration 003 but was never written to).
+  - Forward-only: old rows stay sparse. New enrollments / milestones / signoffs / cancellations get enriched rows going forward.
 - **Transaction selector on defense compile form.** The "New Defense" modal now shows a transaction dropdown after a customer is selected. Fetches the customer's payment_events from `GET /api/defense/transactions/:contactId` (new endpoint) and displays each as `"{date} — ${amount} — {offerName} — {transactionId}"`. Selecting a transaction auto-fills the dispute amount and stores `payment_event_id` + `enrollment_id` on the defense_packets row (new columns via migration 047). Evidence queries in `defense-exhibits.service.ts buildExhibitList()` now accept an optional `enrollmentId` filter — when present, the exhibit list is scoped to that enrollment's evidence only (instead of pulling all evidence for the contact). Manual entry fallback remains available when no transactions are found.
 
 ### Fixed

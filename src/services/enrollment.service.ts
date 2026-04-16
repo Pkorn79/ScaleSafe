@@ -376,19 +376,54 @@ export const enrollmentService = {
   async captureConsent(input: CaptureConsentInput) {
     const tcHash = sha256(input.tcHtml);
 
-    // Log consent as evidence
+    // Resolve enrollment + contact info for enriched evidence row
+    let enrollmentId: string | null = null;
+    let contactName = '';
+    let contactEmail = '';
+    try {
+      const supabase = getSupabase();
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('id, email, first_name, last_name')
+        .eq('location_id', input.locationId)
+        .eq('contact_id', input.contactId)
+        .eq('offer_id', input.offerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (enr) {
+        enrollmentId = enr.id;
+        contactName = [enr.first_name, enr.last_name].filter(Boolean).join(' ');
+        contactEmail = enr.email || '';
+      }
+    } catch {}
+
+    const fmtTs = new Date(input.consentTimestamp).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+
+    // Log consent as evidence (enriched for defense letter quality)
     const { error } = await getSupabase()
       .from('evidence_consent')
       .insert({
         location_id: input.locationId,
         contact_id: input.contactId,
         offer_id: input.offerId,
+        enrollment_id: enrollmentId,
         consent_timestamp: input.consentTimestamp,
         ip_address: input.ip,
         device_fingerprint: input.deviceFingerprint,
         browser: input.browser,
         user_agent: input.userAgent,
         tc_hash: tcHash,
+        tc_version: 'v1',
+        consent_method: 'checkbox',
+        contact_name: contactName || null,
+        contact_email: contactEmail || null,
+        raw_payload: {
+          locationId: input.locationId, contactId: input.contactId, offerId: input.offerId,
+          consentTimestamp: input.consentTimestamp, ip: input.ip, deviceFingerprint: input.deviceFingerprint,
+          browser: input.browser, userAgent: input.userAgent, tcHash,
+        },
+        description: `${contactName || 'Client'}${contactEmail ? ` (${contactEmail})` : ''} accepted Terms & Conditions on ${fmtTs} from IP ${input.ip || 'unknown'} (${input.browser || 'unknown browser'}). Consent captured via checkbox. T&C hash: ${tcHash.slice(0, 12)}...`,
         source: 'enrollment_funnel',
       });
 
@@ -456,15 +491,50 @@ export const enrollmentService = {
       monetaryValue: offer.price,
     });
 
-    // 4. Log enrollment payment evidence
+    // 4. Log enrollment payment evidence (enriched for defense letter quality)
+    // Resolve enrollment for linkage
+    let payEnrollmentId: string | null = null;
+    let payContactName = '';
+    let payContactEmail = '';
+    try {
+      const { data: enr } = await getSupabase()
+        .from('enrollments')
+        .select('id, email, first_name, last_name')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .eq('offer_id', offerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (enr) {
+        payEnrollmentId = enr.id;
+        payContactName = [enr.first_name, enr.last_name].filter(Boolean).join(' ');
+        payContactEmail = enr.email || '';
+      }
+    } catch {}
+
+    const payTimestamp = new Date().toISOString();
+    const fmtPayDate = new Date(payTimestamp).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+
     await getSupabase().from('evidence_enrollment_payment').insert({
       location_id: locationId,
       contact_id: contactId,
       offer_id: offerId,
+      enrollment_id: payEnrollmentId,
       ghl_order_id: input.ghlOrderId,
       ghl_transaction_id: input.ghlTransactionId,
       amount: input.paymentAmount,
+      currency: 'USD',
       payment_method: input.paymentMethod,
+      payment_timestamp: payTimestamp,
+      processor_ref: input.ghlTransactionId || null,
+      contact_name: payContactName || null,
+      contact_email: payContactEmail || null,
+      raw_payload: {
+        ghlOrderId: input.ghlOrderId, ghlTransactionId: input.ghlTransactionId,
+        paymentAmount: input.paymentAmount, paymentMethod: input.paymentMethod,
+      },
+      description: `Enrollment payment of $${Number(input.paymentAmount || 0).toFixed(2)} USD processed ${fmtPayDate} via ${input.paymentMethod || 'card'}. Transaction: ${input.ghlTransactionId || 'n/a'}. Program: ${offer.offer_name}.`,
       source: 'ghl_webhook',
     });
 

@@ -550,14 +550,28 @@ export const dashboardController = {
       };
 
       // Log evidence — enriched with description + contact_email + raw_payload for downstream defense compilation
+      // Resolve contact name for enriched evidence row
+      let milestoneContactName = '';
+      try {
+        const { data: enrName } = await supabase
+          .from('enrollments')
+          .select('first_name, last_name, digital_signature')
+          .eq('id', enrollmentId)
+          .maybeSingle();
+        milestoneContactName = [enrName?.first_name, enrName?.last_name].filter(Boolean).join(' ')
+          || enrName?.digital_signature || '';
+      } catch {}
+
       const { error: insertError } = await supabase.from('evidence_milestones').insert({
         location_id: locationId,
         contact_id: contactId,
+        enrollment_id: enrollmentId,
         source: 'merchant_action',
         milestone_number: milestoneNumber,
         milestone_name: milestoneName,
         description: milestoneDelivers || null,
         notes: milestoneClientDoes || null,
+        contact_name: milestoneContactName || null,
         contact_email: (enrollment as any).email || null,
         completed_at: completedAt,
         raw_payload: triggerPayload,
