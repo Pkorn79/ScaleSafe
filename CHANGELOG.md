@@ -7,6 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-15
 
+### Fixed
+- **NMI checkout rendering + submission bugs on both full-funnel and Quick Pay surfaces.** When NMI is the default processor, Collect.js inline iframes were rendering as dark lines / black boxes and the Pay button was permanently disabled. Five fixes applied:
+  - **Quick Pay pay button deadlock broken** — the gate `paymentToken !== null` blocked the button from ever enabling because the Collect.js callback only fires on `startPaymentRequest()` which requires the button click. Changed to allow the button to enable when consent is checked (matching Stripe behavior); the submit handler's existing `startPaymentRequest()` fallback path handles tokenization at click time.
+  - **GHL iframe tokenization key validation** — now shows "NMI is not fully configured. The tokenization key is missing." instead of rendering a broken form when the key is empty/null.
+  - **GHL iframe pay button gate** — button starts disabled ("Enter card details...") and only enables after Collect.js's `fieldsAvailableCallback` fires confirming fields rendered successfully.
+  - **`fieldsAvailableCallback` + `timeoutCallback`** added to both surfaces — Collect.js now logs field render success and surfaces timeout errors instead of failing silently.
+  - **Quick Pay NMI-specific error message** — when tokenization key is missing, shows "NMI is not fully configured" instead of the generic "not fully configured" message (which merchants couldn't act on).
+  - Stripe path is unaffected by all 5 changes — every fix is gated on `processorType === 'nmi'`.
+
 ### Added
 - **Evidence enrichment for 5 critical defense types (Problem 2).** Migration 048 adds `description TEXT` + `enrollment_id UUID` columns to `evidence_consent`, `evidence_enrollment_payment`, `evidence_signoffs`, `evidence_cancellation` (milestones already had description). Write paths enriched:
   - `evidence_consent` — now populates: `contact_name`, `contact_email`, `tc_version`, `consent_method`, `raw_payload`, `enrollment_id`, and a server-rendered `description` sentence.

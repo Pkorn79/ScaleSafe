@@ -297,7 +297,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         el('merchant-name').textContent = cfg.merchantName || '';
 
         if (cfg.processorType === 'nmi') {
+          if (!cfg.nmiTokenizationKey) {
+            showError('NMI is not fully configured. The tokenization key is missing. Please check Settings > Payments.');
+            return;
+          }
           state.nmiTokenizationKey = cfg.nmiTokenizationKey;
+          el('pay-btn').disabled = true;
+          el('pay-btn').textContent = 'Enter card details...';
           initNmi(cfg.nmiTokenizationKey);
         } else if (cfg.processorType === 'stripe') {
           state.stripeAccountId = cfg.stripeAccountId;
@@ -327,6 +333,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             ccnumber: { selector: '#cc-number', placeholder: 'Card Number' },
             ccexp: { selector: '#cc-exp', placeholder: 'MM/YY' },
             cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
+          },
+          fieldsAvailableCallback: function() {
+            console.log('[ScaleSafe] Collect.js fields rendered');
+            el('pay-btn').disabled = false;
+            if (state.amount) el('pay-btn').textContent = 'Pay ' + formatCents(state.amount);
+            else el('pay-btn').textContent = 'Pay';
+          },
+          timeoutCallback: function() {
+            showError('Card input timed out. Please refresh and try again.');
+            el('pay-btn').disabled = false;
+            el('pay-btn').textContent = 'Pay';
           },
           callback: function(response) {
             state.nmiToken = response.token;
@@ -367,8 +384,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (state.processorType === 'nmi') {
       // Trigger Collect.js tokenization — callback calls doSubmit
       if (typeof CollectJS !== 'undefined') {
+        el('pay-btn').disabled = true;
+        el('pay-btn').textContent = 'Processing...';
         CollectJS.startPaymentRequest();
+      } else {
+        showError('Payment system not loaded. Please refresh the page.');
       }
+      return; // NMI callback handles doSubmit
     } else if (state.processorType === 'stripe') {
       state.processing = true;
       setLoading(true);
@@ -727,6 +749,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadNmi(cfg.nmiTokenizationKey);
         } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
+        } else if (processorType === 'nmi' && !cfg.nmiTokenizationKey) {
+          console.error('[ScaleSafe] NMI tokenization key missing');
+          el('error-msg').textContent = 'NMI is not fully configured. The tokenization key is missing. Please contact the provider to update their payment settings.';
+          el('error-msg').style.display = 'block';
         } else {
           console.error('[ScaleSafe] No tokenization credentials available. processorType=' + processorType
             + ' stripePublishableKey=' + (cfg.stripePublishableKey ? 'set' : 'MISSING')
@@ -848,10 +874,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return '$' + Number(val).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
-  // Consent checkbox
+  // Consent checkbox + pay button gate
+  // For NMI: button enables when consent is checked (token is generated on submit via startPaymentRequest).
+  // For Stripe: button enables when consent is checked (token is created inline via createPaymentMethod on submit).
+  // Both processors handle tokenization at submit time — no pre-tokenization gate needed.
   el('consent-cb').addEventListener('change', updatePayBtn);
   function updatePayBtn() {
-    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe');
+    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi');
     el('pay-btn').disabled = !ready;
   }
 
@@ -870,6 +899,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
               ccnumber: {selector:'#ccnumber',placeholder:'Card Number'},
               ccexp: {selector:'#ccexp',placeholder:'MM/YY'},
               cvv: {selector:'#cvv',placeholder:'CVV'}
+            },
+            fieldsAvailableCallback: function() {
+              console.log('[ScaleSafe] Collect.js fields rendered');
+            },
+            timeoutCallback: function() {
+              el('error-msg').textContent = 'Card input timed out. Please refresh and try again.';
+              el('error-msg').style.display = 'block';
             },
             callback: function(r) {
               paymentToken = r.token;
