@@ -332,7 +332,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var script = document.createElement('script');
     script.src = 'https://secure.nmi.com/token/Collect.js';
     script.setAttribute('data-tokenization-key', tokenKey);
-    script.setAttribute('data-variant', 'inline');
     script.onload = function() {
       if (typeof CollectJS !== 'undefined') {
         CollectJS.configure({
@@ -343,18 +342,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
           },
           customCss: {
-            'color': '#1f2937',
+            'border': 'none',
+            'height': '100%',
+            'width': '100%',
             'font-size': '16px',
-            'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            'font-weight': '400',
-            'background-color': 'transparent',
-          },
-          placeholderCss: {
-            'color': '#9ca3af',
-          },
-          focusCss: {
+            'color': '#1f2937',
             'outline': 'none',
+            'background-color': '#ffffff',
           },
+          invalidCss: { 'color': '#ef4444' },
+          placeholderCss: { 'color': '#9ca3af' },
+          focusCss: { 'outline': 'none' },
           fieldsAvailableCallback: function() {
             console.log('[ScaleSafe] Collect.js fields rendered');
             el('pay-btn').disabled = false;
@@ -923,18 +921,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
               cvv: {selector:'#cvv',placeholder:'CVV'}
             },
             customCss: {
-              'color': '#1f2937',
+              'border': 'none',
+              'height': '100%',
+              'width': '100%',
               'font-size': '16px',
-              'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              'font-weight': '400',
-              'background-color': 'transparent',
-            },
-            placeholderCss: {
-              'color': '#9ca3af',
-            },
-            focusCss: {
+              'color': '#1f2937',
               'outline': 'none',
+              'background-color': '#ffffff',
             },
+            invalidCss: { 'color': '#ef4444' },
+            placeholderCss: { 'color': '#9ca3af' },
+            focusCss: { 'outline': 'none' },
             fieldsAvailableCallback: function() {
               console.log('[ScaleSafe] Collect.js fields rendered');
             },

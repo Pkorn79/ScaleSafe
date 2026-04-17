@@ -132,17 +132,23 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
     // The trigger above is for workflow automation. The direct send ensures
     // the message actually reaches the client even without a workflow.
 
+    // Match the working format from dashboard.controller.ts sendClientMessage()
+    // GHL Conversations API: { type: 'Email'|'SMS', contactId, message }
     if (sendVia.includes('email') && email) {
       try {
         await api.post('/conversations/messages', {
           type: 'Email',
           contactId,
-          subject: `Your enrollment link for ${offer.offer_name}`,
           message: `Hi ${firstName},\n\nHere's your enrollment link for ${offer.offer_name}:\n\n${enrollmentUrl}\n\nClick the link above to get started.`,
         });
         logger.info({ contactId, email }, 'Enrollment link email sent via GHL Conversations');
       } catch (emailErr: any) {
-        logger.error({ err: emailErr.message, status: emailErr.response?.status, contactId, email }, 'Failed to send enrollment link email via GHL Conversations');
+        logger.error({
+          err: emailErr.message,
+          status: emailErr.response?.status,
+          responseData: emailErr.response?.data,
+          contactId, email,
+        }, 'Failed to send enrollment link email via GHL Conversations');
       }
     }
 
@@ -155,7 +161,12 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
         });
         logger.info({ contactId, phone }, 'Enrollment link SMS sent via GHL Conversations');
       } catch (smsErr: any) {
-        logger.error({ err: smsErr.message, status: smsErr.response?.status, contactId, phone }, 'Failed to send enrollment link SMS via GHL Conversations');
+        logger.error({
+          err: smsErr.message,
+          status: smsErr.response?.status,
+          responseData: smsErr.response?.data,
+          contactId, phone,
+        }, 'Failed to send enrollment link SMS via GHL Conversations');
       }
     }
 

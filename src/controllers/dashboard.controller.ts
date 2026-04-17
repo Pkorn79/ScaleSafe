@@ -310,15 +310,22 @@ export const dashboardController = {
 
       const supabase = getSupabase();
 
-      // Get enrollment data for this contact
-      const { data: enrollment } = await supabase
+      // Get enrollment data for this contact — pick the best enrollment by status priority
+      // (matches the client_list_view logic from migration 050: active > paused > pending > completed > cancelled)
+      const { data: allEnrollments } = await supabase
         .from('enrollments')
-        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date')
+        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date, created_at')
         .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .eq('contact_id', contactId);
+
+      const statusPriority: Record<string, number> = { enrolled: 0, active: 0, paused: 1, consent_captured: 2, device_captured: 2, completed: 3, cancelled: 4 };
+      const sorted = (allEnrollments || []).sort((a: any, b: any) => {
+        const pa = statusPriority[a.status] ?? 5;
+        const pb = statusPriority[b.status] ?? 5;
+        if (pa !== pb) return pa - pb;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      const enrollment = sorted[0] || null;
 
       // Fetch GHL contact for name, phone, company, tags
       let name = '';
