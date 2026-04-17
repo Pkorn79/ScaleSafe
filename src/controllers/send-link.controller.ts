@@ -128,6 +128,37 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
       logger.warn({ err: err.message, contactId }, 'Trigger fire failed — link still generated');
     }
 
+    // ─── Send directly via GHL Conversations API ──────
+    // The trigger above is for workflow automation. The direct send ensures
+    // the message actually reaches the client even without a workflow.
+
+    if (sendVia.includes('email') && email) {
+      try {
+        await api.post('/conversations/messages', {
+          type: 'Email',
+          contactId,
+          subject: `Your enrollment link for ${offer.offer_name}`,
+          message: `Hi ${firstName},\n\nHere's your enrollment link for ${offer.offer_name}:\n\n${enrollmentUrl}\n\nClick the link above to get started.`,
+        });
+        logger.info({ contactId, email }, 'Enrollment link email sent via GHL Conversations');
+      } catch (emailErr: any) {
+        logger.error({ err: emailErr.message, status: emailErr.response?.status, contactId, email }, 'Failed to send enrollment link email via GHL Conversations');
+      }
+    }
+
+    if (sendVia.includes('sms') && phone) {
+      try {
+        await api.post('/conversations/messages', {
+          type: 'SMS',
+          contactId,
+          message: `Hi ${firstName}! Here's your enrollment link for ${offer.offer_name}: ${enrollmentUrl}`,
+        });
+        logger.info({ contactId, phone }, 'Enrollment link SMS sent via GHL Conversations');
+      } catch (smsErr: any) {
+        logger.error({ err: smsErr.message, status: smsErr.response?.status, contactId, phone }, 'Failed to send enrollment link SMS via GHL Conversations');
+      }
+    }
+
     // Log COMMUNICATION evidence (enrollment link sent = outreach)
     try {
       const { evidenceService } = require('../services/evidence.service');

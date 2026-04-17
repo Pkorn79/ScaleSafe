@@ -563,12 +563,24 @@ export const paymentLifecycleService = {
       });
     } catch { /* non-blocking */ }
 
-    // Update GHL contact + add note
+    // Update GHL contact — only set status to 'cancelled' if NO other active enrollments exist
     try {
       const api = await ghlApi(params.locationId);
-      await api.put(`/contacts/${params.contactId}`, {
-        customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'cancelled' },
-      });
+      const supabaseCheck = getSupabase();
+      const { data: otherActive } = await supabaseCheck.from('enrollments')
+        .select('id')
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId)
+        .in('status', ['enrolled', 'active', 'paused'])
+        .neq('id', params.enrollmentId || '_none_')
+        .limit(1)
+        .maybeSingle();
+
+      if (!otherActive) {
+        await api.put(`/contacts/${params.contactId}`, {
+          customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'cancelled' },
+        });
+      }
       await api.post(`/contacts/${params.contactId}/notes`, {
         body: `Subscription cancelled: ${params.reason}`,
       });
