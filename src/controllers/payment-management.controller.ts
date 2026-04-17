@@ -233,6 +233,7 @@ export async function getPaymentHistory(req: Request, res: Response, next: NextF
       .select('*')
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
+      .not('enrollment_id', 'is', null)
       .order('created_at', { ascending: false });
 
     if (error) throw error;

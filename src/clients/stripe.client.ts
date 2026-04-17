@@ -48,6 +48,18 @@ export class StripeClient implements ProcessorInterface {
         receipt_email: request.metadata?.customer_email || undefined,
       };
 
+      // Atomic vault: attach customer + save card for future off-session use
+      // Stripe equivalent of NMI's customer_vault=add_customer during charge
+      let vaultCustomer: any = null;
+      if (request.shouldVault && request.customerEmail) {
+        vaultCustomer = await this.findOrCreateCustomer(
+          request.customerEmail,
+          request.customerName,
+        );
+        params.customer = vaultCustomer.id;
+        params.setup_future_usage = 'off_session';
+      }
+
       if (request.requestThreeDSecure) {
         params.payment_method_options = {
           card: { request_three_d_secure: 'any' },
@@ -55,7 +67,24 @@ export class StripeClient implements ProcessorInterface {
       }
 
       const pi = await this.stripe.paymentIntents.create(params, this.acct);
-      return this.toChargeResult(pi);
+      const result = this.toChargeResult(pi);
+
+      // Populate vault metadata if customer was attached
+      if (result.success && vaultCustomer) {
+        result.vaultedCustomerId = vaultCustomer.id;
+        try {
+          const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
+          result.vaultedCardLastFour = pm.card?.last4 || '****';
+          result.vaultedCardBrand = pm.card?.brand || 'unknown';
+          result.vaultedCardExpMonth = pm.card?.exp_month || 0;
+          result.vaultedCardExpYear = pm.card?.exp_year || 0;
+        } catch {
+          result.vaultedCardLastFour = '****';
+          result.vaultedCardBrand = 'unknown';
+        }
+      }
+
+      return result;
     } catch (err) {
       return this.handleChargeError(err);
     }

@@ -190,11 +190,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     const processor = createProcessorClient(procConfig);
 
     // Determine recurring status BEFORE charge — NMI needs to vault atomically during charge
-    // because NMI tokens are single-use (consumed by charge, can't be reused for separate vault)
+    // Vault during charge for BOTH processors:
+    // - NMI: tokens are single-use, must vault atomically (customer_vault=add_customer)
+    // - Stripe: setup_future_usage='off_session' saves card for recurring
     const isRecurringPaymentType = ['installments', 'installment', 'subscription']
       .includes(String(req.body.paymentChoice || '').toLowerCase());
-    const shouldVaultDuringCharge = procConfig.processor_type === 'nmi'
-      && !!contactEmail
+    const shouldVaultDuringCharge = !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
     const result = await processor.charge({
@@ -459,19 +460,21 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           let saveResult: { success: boolean; paymentMethodId: string; customerId: string; cardLastFour: string; cardBrand: string; cardExpMonth: number; cardExpYear: number };
 
           if (result.vaultedCustomerId) {
-            // NMI atomic vault succeeded during charge — no separate saveCard needed
+            // Atomic vault succeeded during charge — no separate saveCard needed
+            // NMI: customerId = vaultId, paymentMethodId = vaultId (same value)
+            // Stripe: customerId = cus_xxx, paymentMethodId = pm_xxx (the original token)
             saveResult = {
               success: true,
-              paymentMethodId: result.vaultedCustomerId,
+              paymentMethodId: procConfig.processor_type === 'stripe' ? paymentToken : result.vaultedCustomerId,
               customerId: result.vaultedCustomerId,
               cardLastFour: result.vaultedCardLastFour || '****',
               cardBrand: result.vaultedCardBrand || 'unknown',
               cardExpMonth: result.vaultedCardExpMonth || 0,
               cardExpYear: result.vaultedCardExpYear || 0,
             };
-            logger.info({ vaultId: result.vaultedCustomerId, contactId: finalContactId }, 'CARD-SAVE: using vault from atomic charge');
+            logger.info({ customerId: result.vaultedCustomerId, processor: procConfig.processor_type, contactId: finalContactId }, 'CARD-SAVE: using vault from atomic charge');
           } else {
-            // Stripe path (multi-use tokens) or NMI fallback
+            // Fallback — separate saveCard call
             saveResult = await processor.saveCard({
               paymentToken,
               contactId: finalContactId,

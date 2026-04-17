@@ -168,102 +168,110 @@ export const phase2EnrollmentService = {
       logger.error({ err: paymentErr.message, stack: paymentErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Payment event insert failed');
     }
 
-    // 6. Fire enrollment_complete trigger (non-blocking)
-    try {
-      await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
-        contact_id: resolvedContactId,
-        offer_id: enrollment.offer_id,
-        offer_name: offerName,
-        amount: params.paymentAmount,
-        payment_type: params.paymentType,
-        bump_1_accepted: false,
-        bump_2_accepted: false,
-      });
-    } catch (triggerErr: any) {
-      logger.warn({ err: triggerErr.message, enrollmentId: params.enrollmentId }, 'Trigger fire failed — continuing enrollment');
-    }
-
-    // 7. Update GHL contact fields + create pipeline opportunity
-    if (params.locationId && resolvedContactId) {
-      try {
-        const api = await ghlApi(params.locationId);
-        const merchant = await merchantRepository.getByLocationId(params.locationId);
-        const contactId = resolvedContactId;
-
-        // Update SS contact fields
-        const customFields: Record<string, unknown> = {
-          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
-          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
-        };
-
-        // Copy offer fields to contact
-        if (enrollment.offer_id) {
-          try {
-            const offer = await offerRepository.getById(enrollment.offer_id);
-            customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchant.business_name || '';
-            customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
-            customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price;
-            customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
-            customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
-            customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
-            customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
-          } catch {
-            // Offer fields are nice-to-have
-          }
-        }
-
-        await api.put(`/contacts/${contactId}`, { customField: customFields });
-
-        // Create pipeline opportunity
-        const pipelineId = (merchant.config as any)?.milestones_pipeline_id || (merchant.config as any)?.pipelineId;
-        const stageId = (merchant.config as any)?.enrolled_stage_id;
-        if (pipelineId) {
-          await api.post('/opportunities/', {
-            locationId: params.locationId,
-            contactId,
-            pipelineId,
-            stageId: stageId || '',
-            name: `${offerName || 'Program'} — Enrollment`,
-            monetaryValue: params.paymentAmount,
-          });
-        }
-
-        logger.info({ contactId }, 'GHL contact updated + opportunity created');
-      } catch (err: any) {
-        logger.error({ err: err.message, stack: err.stack, enrollmentId: params.enrollmentId, email: params.contactEmail, contactId: params.contactId }, 'GHL sync after enrollment failed (non-blocking)');
-      }
-    }
-
-    // 8. Generate enrollment packet PDF (non-blocking)
-    logger.info({ enrollmentId: params.enrollmentId, locationId: params.locationId }, 'PACKET: Starting auto-generation');
-    try {
-      const { enrollmentPacketService } = require('./enrollment-packet.service');
-      const pdfUrl = await enrollmentPacketService.generateAndStore(params.enrollmentId, params.locationId);
-      logger.info({ enrollmentId: params.enrollmentId, pdfUrl }, 'PACKET: Auto-generation succeeded');
-    } catch (pdfErr: any) {
-      logger.error({ err: pdfErr.message, stack: pdfErr.stack, code: (pdfErr as any).statusCode || (pdfErr as any).code, enrollmentId: params.enrollmentId, locationId: params.locationId }, 'PACKET: Auto-generation FAILED');
-    }
-
-    // 9. Verify evidence chain (non-blocking)
-    try {
-      const { evidenceChainService } = require('./evidence-chain.service');
-      // Find the payment event we just created
-      const { getSupabase: getSb } = require('../clients/supabase.client');
-      const { data: pe } = await getSb().from('payment_events')
-        .select('id').eq('enrollment_id', params.enrollmentId).eq('event_type', 'sale')
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
-      if (pe) {
-        const chain = await evidenceChainService.verifyChain(pe.id);
-        logger.info({ enrollmentId: params.enrollmentId, chainStrength: chain.chainStrength, complete: chain.complete, gaps: chain.gaps }, 'Evidence chain verified');
-      }
-    } catch (chainErr: any) {
-      logger.warn({ err: chainErr.message, enrollmentId: params.enrollmentId }, 'Evidence chain verification failed (non-blocking)');
-    }
-
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: resolvedContactId, locationId: params.locationId },
-      'Enrollment completed',
+      'Enrollment completed (critical path done — background work queued)',
     );
+
+    // ─── FIRE-AND-FORGET: Steps 6-9 run in background after function returns ───
+    // These are important but NOT on the checkout critical path. Trigger firing,
+    // GHL field updates, opportunity creation, PDF generation, and evidence chain
+    // verification all run asynchronously so the checkout response is fast (~5-7s
+    // instead of ~12s).
+    const bgEnrollmentId = params.enrollmentId;
+    const bgLocationId = params.locationId;
+    const bgContactId = resolvedContactId;
+    const bgOfferId = enrollment.offer_id;
+    const bgPaymentAmount = params.paymentAmount;
+    const bgPaymentType = params.paymentType;
+
+    Promise.resolve().then(async () => {
+      // 6. Fire enrollment_complete trigger
+      try {
+        await triggerService.fireTrigger(bgLocationId, 'enrollment_complete', {
+          contact_id: bgContactId,
+          offer_id: bgOfferId,
+          offer_name: offerName,
+          amount: bgPaymentAmount,
+          payment_type: bgPaymentType,
+          bump_1_accepted: false,
+          bump_2_accepted: false,
+        });
+      } catch (triggerErr: any) {
+        logger.warn({ err: triggerErr.message, enrollmentId: bgEnrollmentId }, 'BG: trigger fire failed');
+      }
+
+      // 7. Update GHL contact fields + create pipeline opportunity
+      if (bgLocationId && bgContactId) {
+        try {
+          const api = await ghlApi(bgLocationId);
+          const merchant = await merchantRepository.getByLocationId(bgLocationId);
+
+          const customFields: Record<string, unknown> = {
+            [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+            [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+          };
+
+          if (bgOfferId) {
+            try {
+              const offer = await offerRepository.getById(bgOfferId);
+              customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchant.business_name || '';
+              customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
+              customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price;
+              customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
+              customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
+              customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
+              customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
+            } catch {}
+          }
+
+          await api.put(`/contacts/${bgContactId}`, { customField: customFields });
+
+          const pipelineId = (merchant.config as any)?.milestones_pipeline_id || (merchant.config as any)?.pipelineId;
+          const stageId = (merchant.config as any)?.enrolled_stage_id;
+          if (pipelineId) {
+            await api.post('/opportunities/', {
+              locationId: bgLocationId,
+              contactId: bgContactId,
+              pipelineId,
+              stageId: stageId || '',
+              name: `${offerName || 'Program'} — Enrollment`,
+              monetaryValue: bgPaymentAmount,
+            });
+          }
+
+          logger.info({ contactId: bgContactId }, 'BG: GHL contact updated + opportunity created');
+        } catch (err: any) {
+          logger.error({ err: err.message, enrollmentId: bgEnrollmentId }, 'BG: GHL sync after enrollment failed');
+        }
+      }
+
+      // 8. Generate enrollment packet PDF
+      try {
+        const { enrollmentPacketService } = require('./enrollment-packet.service');
+        const pdfUrl = await enrollmentPacketService.generateAndStore(bgEnrollmentId, bgLocationId);
+        logger.info({ enrollmentId: bgEnrollmentId, pdfUrl }, 'BG: PACKET auto-generation succeeded');
+      } catch (pdfErr: any) {
+        logger.error({ err: pdfErr.message, enrollmentId: bgEnrollmentId }, 'BG: PACKET auto-generation FAILED');
+      }
+
+      // 9. Verify evidence chain
+      try {
+        const { evidenceChainService } = require('./evidence-chain.service');
+        const { getSupabase: getSb } = require('../clients/supabase.client');
+        const { data: pe } = await getSb().from('payment_events')
+          .select('id').eq('enrollment_id', bgEnrollmentId).eq('event_type', 'sale')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (pe) {
+          const chain = await evidenceChainService.verifyChain(pe.id);
+          logger.info({ enrollmentId: bgEnrollmentId, chainStrength: chain.chainStrength, complete: chain.complete }, 'BG: Evidence chain verified');
+        }
+      } catch (chainErr: any) {
+        logger.warn({ err: chainErr.message, enrollmentId: bgEnrollmentId }, 'BG: Evidence chain verification failed');
+      }
+    }).catch((bgErr: any) => {
+      logger.error({ err: bgErr.message, enrollmentId: bgEnrollmentId }, 'BG: post-enrollment background work failed');
+    });
   },
 
   async handleRecurringPayment(params: {

@@ -356,9 +356,9 @@ export const dashboardController = {
         supabase.from('payment_methods').select('card_last_four, card_brand, card_exp_month, card_exp_year, is_default')
           .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
         supabase.from('payment_events').select('amount, event_type, created_at')
-          .eq('location_id', locationId).eq('contact_id', contactId),
+          .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null),
         supabase.from('payment_events').select('id, dunning_status')
-          .eq('location_id', locationId).eq('contact_id', contactId).in('dunning_status', ['active', 'escalated']).limit(1).maybeSingle(),
+          .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null).in('dunning_status', ['active', 'escalated']).limit(1).maybeSingle(),
       ]);
 
       const offer = offerResult.status === 'fulfilled' ? (offerResult.value as any)?.data : null;
