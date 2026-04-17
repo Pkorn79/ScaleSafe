@@ -342,6 +342,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             ccexp: { selector: '#cc-exp', placeholder: 'MM/YY' },
             cvv: { selector: '#cc-cvv', placeholder: 'CVV' },
           },
+          customCss: {
+            'color': '#1f2937',
+            'font-size': '16px',
+            'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            'font-weight': '400',
+            'background-color': 'transparent',
+          },
+          placeholderCss: {
+            'color': '#9ca3af',
+          },
+          focusCss: {
+            'outline': 'none',
+          },
           fieldsAvailableCallback: function() {
             console.log('[ScaleSafe] Collect.js fields rendered');
             el('pay-btn').disabled = false;
@@ -908,6 +921,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
               ccnumber: {selector:'#ccnumber',placeholder:'Card Number'},
               ccexp: {selector:'#ccexp',placeholder:'MM/YY'},
               cvv: {selector:'#cvv',placeholder:'CVV'}
+            },
+            customCss: {
+              'color': '#1f2937',
+              'font-size': '16px',
+              'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              'font-weight': '400',
+              'background-color': 'transparent',
+            },
+            placeholderCss: {
+              'color': '#9ca3af',
+            },
+            focusCss: {
+              'outline': 'none',
             },
             fieldsAvailableCallback: function() {
               console.log('[ScaleSafe] Collect.js fields rendered');

@@ -601,6 +601,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             processor: procConfig.processor_type,
             paymentChoice: req.body.paymentChoice,
             recurring: isRecurringPaymentType,
+            cardLastFour: saveResult.cardLastFour,
+            cardBrand: saveResult.cardBrand,
+            cardExpMonth: saveResult.cardExpMonth,
+            cardExpYear: saveResult.cardExpYear,
           }, 'CARD-SAVE: payment method persisted for recurring billing');
 
           // ─── Create processor-level subscription (fire-and-forget) ──

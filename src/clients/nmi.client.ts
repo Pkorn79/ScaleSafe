@@ -71,15 +71,18 @@ export class NmiClient implements ProcessorInterface {
     // If vault succeeded, populate vault metadata on the result
     if (result.success && nmi.customer_vault_id) {
       result.vaultedCustomerId = nmi.customer_vault_id;
+      console.log('[NMI] Vault created, ID:', nmi.customer_vault_id, 'Transact response keys:', Object.keys(nmi).join(','));
       try {
         const cardInfo = await this.queryVaultCard(nmi.customer_vault_id);
         result.vaultedCardLastFour = cardInfo.lastFour;
         result.vaultedCardBrand = cardInfo.brand;
         result.vaultedCardExpMonth = cardInfo.expMonth;
         result.vaultedCardExpYear = cardInfo.expYear;
+        console.log('[NMI] Card metadata from vault query:', { last4: cardInfo.lastFour, brand: cardInfo.brand, expMonth: cardInfo.expMonth, expYear: cardInfo.expYear });
       } catch (vaultErr: any) {
         // Vault query failed — try extracting from the charge response directly
-        // NMI may return cc_number (masked) in the transact response
+        console.warn('[NMI] Vault card query FAILED:', vaultErr.message, '— trying transact response fallback');
+        console.log('[NMI] Transact response cc fields:', { cc_number: nmi.cc_number, cc_type: nmi.cc_type, cc_exp: nmi.cc_exp });
         const maskedCC = nmi.cc_number || '';
         if (maskedCC.length >= 4) {
           result.vaultedCardLastFour = maskedCC.slice(-4);
@@ -87,7 +90,6 @@ export class NmiClient implements ProcessorInterface {
           result.vaultedCardLastFour = '****';
         }
         result.vaultedCardBrand = nmi.cc_type || 'unknown';
-        // Try parsing expiration from response
         const expStr = nmi.cc_exp || '';
         if (expStr.length === 4) {
           result.vaultedCardExpMonth = parseInt(expStr.substring(0, 2)) || 0;
@@ -96,7 +98,6 @@ export class NmiClient implements ProcessorInterface {
           result.vaultedCardExpMonth = 0;
           result.vaultedCardExpYear = 0;
         }
-        console.warn('[NMI] Vault card query failed, using charge response fallback:', vaultErr.message, { vaultId: nmi.customer_vault_id, maskedCC, ccType: nmi.cc_type });
       }
     }
 
@@ -462,7 +463,9 @@ export class NmiClient implements ProcessorInterface {
       params.set('customer_vault_id', vaultId);
 
       const xml = await this.postQuery(params);
+      console.log('[NMI] Vault query XML length:', xml.length, 'first 200 chars:', xml.substring(0, 200));
       const records = parseNmiVaultRecords(xml);
+      console.log('[NMI] Parsed vault records:', records.length, records.length > 0 ? { ccNumber: records[0].ccNumber, ccType: records[0].ccType, ccExp: records[0].ccExp } : 'none');
 
       if (records.length > 0) {
         const r = records[0];

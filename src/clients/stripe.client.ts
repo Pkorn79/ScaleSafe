@@ -66,6 +66,9 @@ export class StripeClient implements ProcessorInterface {
         };
       }
 
+      // Expand latest_charge so we get card details (last4, brand, exp) without a separate API call
+      params.expand = ['latest_charge'];
+
       const pi = await this.stripe.paymentIntents.create(params, this.acct);
       const result = this.toChargeResult(pi);
 
@@ -74,21 +77,25 @@ export class StripeClient implements ProcessorInterface {
       if (result.success && vaultCustomer) {
         result.vaultedCustomerId = vaultCustomer.id;
         const latestCharge = typeof pi.latest_charge === 'object' ? pi.latest_charge : null;
+        console.log('[Stripe] latest_charge type:', typeof pi.latest_charge, 'isObject:', !!latestCharge);
         const pmDetails = latestCharge?.payment_method_details?.card;
         if (pmDetails) {
           result.vaultedCardLastFour = pmDetails.last4 || '****';
           result.vaultedCardBrand = pmDetails.brand || 'unknown';
           result.vaultedCardExpMonth = pmDetails.exp_month || 0;
           result.vaultedCardExpYear = pmDetails.exp_year || 0;
+          console.log('[Stripe] Card metadata from expanded charge:', { last4: result.vaultedCardLastFour, brand: result.vaultedCardBrand, expMonth: result.vaultedCardExpMonth, expYear: result.vaultedCardExpYear });
         } else {
-          // Fallback: try retrieving the PaymentMethod directly
+          console.log('[Stripe] No pmDetails from latest_charge — trying PM retrieve fallback');
           try {
             const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
             result.vaultedCardLastFour = pm.card?.last4 || '****';
             result.vaultedCardBrand = pm.card?.brand || 'unknown';
             result.vaultedCardExpMonth = pm.card?.exp_month || 0;
             result.vaultedCardExpYear = pm.card?.exp_year || 0;
-          } catch {
+            console.log('[Stripe] Card metadata from PM retrieve:', { last4: result.vaultedCardLastFour, brand: result.vaultedCardBrand });
+          } catch (pmErr: any) {
+            console.warn('[Stripe] PM retrieve fallback failed:', pmErr.message);
             result.vaultedCardLastFour = '****';
             result.vaultedCardBrand = 'unknown';
           }
