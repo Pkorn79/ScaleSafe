@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-17
 
 ### Fixed
+- **Quick Pay T&C link.** Quick checkout consent label now shows a clickable "Terms and Conditions" link when the offer has a `tc_url`. Falls back to custom consent text if set, otherwise default static text. Added `tcUrl` + `quickCheckoutConsentText` to the public offer API response.
+- **Quick Pay offer save error.** Saving a one-time (Quick Pay) offer with processor override failed with CHECK constraint violation. Root cause: `installment_frequency` was sent as empty string `''` which violates `CHECK (installment_frequency IN ('weekly', 'bi_weekly', 'monthly'))`. Fixed: empty strings now converted to null via `|| null` in both create and update paths.
 - **Send Offer email — use `html` field.** GHL Conversations API rejects emails with only `message` field ("no message or attachments"). Email type requires `html` (and optionally `subject`). SMS uses `message` and works fine.
 - **CRITICAL: GHL customField → customFields migration.** Every GHL contact update was silently failing (422: "property customField should not exist"). GHL V2 API requires `customFields` (plural, array of `{key, field_value}`) not `customField` (singular object). Added a request interceptor in `ghl.client.ts` that auto-transforms the old format — fixes all 20+ call sites without touching each file.
 - **trigger_subscriptions table noise eliminated.** `getActiveSubscriptions()` was throwing on every trigger fire because the table doesn't exist. Now returns empty array on error instead of throwing.

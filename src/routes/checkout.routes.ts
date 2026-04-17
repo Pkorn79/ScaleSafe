@@ -851,6 +851,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('offer-refund').textContent = offerData.refundWindowText;
       el('offer-refund').classList.remove('hidden');
     }
+
+    // Update consent label with T&C link (source order: per-offer tcUrl → default text)
+    var consentLabel = el('consent-text');
+    if (offerData.tcUrl) {
+      consentLabel.innerHTML = 'I agree to the <a href="' + offerData.tcUrl + '" target="_blank" style="color:#3b82f6;text-decoration:underline">Terms and Conditions</a> and authorize this charge.';
+    } else if (offerData.quickCheckoutConsentText) {
+      consentLabel.textContent = offerData.quickCheckoutConsentText;
+    }
   }
 
   function updatePricingDisplay() {

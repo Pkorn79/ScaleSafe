@@ -176,9 +176,9 @@ export const offerService = {
       program_description: input.programDescription,
       delivery_method: input.deliveryMethod,
       price: input.price,
-      payment_type: input.paymentType,
+      payment_type: input.paymentType || null,
       installment_amount: input.installmentAmount,
-      installment_frequency: input.installmentFrequency,
+      installment_frequency: input.installmentFrequency || null,
       num_payments: input.numPayments,
       pif_price: input.pifPrice,
       pif_discount_enabled: input.pifDiscountEnabled || false,
@@ -251,8 +251,8 @@ export const offerService = {
     if (updates.programDescription !== undefined) dbUpdates.program_description = updates.programDescription;
     if (updates.deliveryMethod !== undefined) dbUpdates.delivery_method = updates.deliveryMethod;
     if (updates.price !== undefined) dbUpdates.price = updates.price;
-    if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType;
-    if (updates.installmentFrequency !== undefined) dbUpdates.installment_frequency = updates.installmentFrequency;
+    if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType || null;
+    if (updates.installmentFrequency !== undefined) dbUpdates.installment_frequency = updates.installmentFrequency || null;
     if (updates.numPayments !== undefined) dbUpdates.num_payments = updates.numPayments;
     if (updates.pifPrice !== undefined) dbUpdates.pif_price = updates.pifPrice;
     if (updates.pifDiscountEnabled !== undefined) dbUpdates.pif_discount_enabled = updates.pifDiscountEnabled;

@@ -195,6 +195,8 @@ export const enrollmentService = {
       refundWindowText: offer.refund_window_text || '',
       milestones,
       compiledTcHtml: offer.compiled_tc_html || '',
+      tcUrl: (offer as any).tc_url || null,
+      quickCheckoutConsentText: (offer as any).quick_checkout_consent_text || null,
       clauses,
       merchantName: merchant?.business_name || '',
       merchantSupportEmail: merchant?.support_email || '',
