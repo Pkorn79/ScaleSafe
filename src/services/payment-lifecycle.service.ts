@@ -247,11 +247,15 @@ export const paymentLifecycleService = {
     // Update enrollment status to 'paused' and clear next_billing_date
     try {
       const supabase = getSupabase();
-      await supabase.from('enrollments')
+      let pauseQuery = supabase.from('enrollments')
         .update({ status: 'paused', next_billing_date: null })
-        .eq('location_id', params.locationId)
-        .eq('contact_id', params.contactId)
-        .in('status', ['enrolled', 'active']);
+        .eq('location_id', params.locationId);
+      if (params.enrollmentId) {
+        pauseQuery = pauseQuery.eq('id', params.enrollmentId);
+      } else {
+        pauseQuery = pauseQuery.eq('contact_id', params.contactId).in('status', ['enrolled', 'active']);
+      }
+      await pauseQuery;
     } catch {}
 
     // Log evidence (enriched with context for defense letters)
@@ -453,21 +457,31 @@ export const paymentLifecycleService = {
       // Clear processor_subscription_id and mark cancelled
       try {
         const supabase = getSupabase();
-        await supabase.from('enrollments')
+        let cancelQuery = supabase.from('enrollments')
           .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), processor_subscription_id: null, next_billing_date: null })
-          .eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId)
-          .eq('processor_subscription_id', params.processorSubscriptionId);
+          .eq('location_id', params.locationId);
+        if (params.enrollmentId) {
+          cancelQuery = cancelQuery.eq('id', params.enrollmentId);
+        } else {
+          cancelQuery = cancelQuery.eq('contact_id', params.contactId)
+            .eq('processor_subscription_id', params.processorSubscriptionId);
+        }
+        await cancelQuery;
       } catch {}
     } else {
       // No processor subscription — still mark the enrollment as cancelled
       try {
         const supabase = getSupabase();
-        await supabase.from('enrollments')
+        let cancelQuery = supabase.from('enrollments')
           .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null })
-          .eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId)
-          .in('status', ['enrolled', 'active', 'paused']);
+          .eq('location_id', params.locationId);
+        if (params.enrollmentId) {
+          cancelQuery = cancelQuery.eq('id', params.enrollmentId);
+        } else {
+          cancelQuery = cancelQuery.eq('contact_id', params.contactId)
+            .in('status', ['enrolled', 'active', 'paused']);
+        }
+        await cancelQuery;
       } catch {}
     }
 
@@ -573,20 +587,26 @@ export const paymentLifecycleService = {
       }
     }
 
-    // Update enrollment status
+    // Update enrollment status — scope to single enrollment when enrollmentId is provided
     const completedAt = new Date().toISOString();
     try {
-      const updateFilter = params.processorSubscriptionId
-        ? supabase.from('enrollments').update({
-            status: 'completed', completed_at: completedAt,
-            next_billing_date: null, processor_subscription_id: null,
-          }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
-           .eq('processor_subscription_id', params.processorSubscriptionId)
-        : supabase.from('enrollments').update({
-            status: 'completed', completed_at: completedAt, next_billing_date: null,
-          }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
-           .in('status', ['enrolled', 'active', 'paused']);
-      await updateFilter;
+      if (params.enrollmentId) {
+        await supabase.from('enrollments').update({
+          status: 'completed', completed_at: completedAt,
+          next_billing_date: null, processor_subscription_id: null,
+        }).eq('id', params.enrollmentId);
+      } else if (params.processorSubscriptionId) {
+        await supabase.from('enrollments').update({
+          status: 'completed', completed_at: completedAt,
+          next_billing_date: null, processor_subscription_id: null,
+        }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
+         .eq('processor_subscription_id', params.processorSubscriptionId);
+      } else {
+        await supabase.from('enrollments').update({
+          status: 'completed', completed_at: completedAt, next_billing_date: null,
+        }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
+         .in('status', ['enrolled', 'active', 'paused']);
+      }
     } catch {}
 
     // Log evidence

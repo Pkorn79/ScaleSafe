@@ -69,18 +69,29 @@ export class StripeClient implements ProcessorInterface {
       const pi = await this.stripe.paymentIntents.create(params, this.acct);
       const result = this.toChargeResult(pi);
 
-      // Populate vault metadata if customer was attached
+      // Populate vault metadata from the PaymentIntent's charge object
+      // (avoids a separate API call and works even if token format changed)
       if (result.success && vaultCustomer) {
         result.vaultedCustomerId = vaultCustomer.id;
-        try {
-          const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
-          result.vaultedCardLastFour = pm.card?.last4 || '****';
-          result.vaultedCardBrand = pm.card?.brand || 'unknown';
-          result.vaultedCardExpMonth = pm.card?.exp_month || 0;
-          result.vaultedCardExpYear = pm.card?.exp_year || 0;
-        } catch {
-          result.vaultedCardLastFour = '****';
-          result.vaultedCardBrand = 'unknown';
+        const latestCharge = typeof pi.latest_charge === 'object' ? pi.latest_charge : null;
+        const pmDetails = latestCharge?.payment_method_details?.card;
+        if (pmDetails) {
+          result.vaultedCardLastFour = pmDetails.last4 || '****';
+          result.vaultedCardBrand = pmDetails.brand || 'unknown';
+          result.vaultedCardExpMonth = pmDetails.exp_month || 0;
+          result.vaultedCardExpYear = pmDetails.exp_year || 0;
+        } else {
+          // Fallback: try retrieving the PaymentMethod directly
+          try {
+            const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
+            result.vaultedCardLastFour = pm.card?.last4 || '****';
+            result.vaultedCardBrand = pm.card?.brand || 'unknown';
+            result.vaultedCardExpMonth = pm.card?.exp_month || 0;
+            result.vaultedCardExpYear = pm.card?.exp_year || 0;
+          } catch {
+            result.vaultedCardLastFour = '****';
+            result.vaultedCardBrand = 'unknown';
+          }
         }
       }
 

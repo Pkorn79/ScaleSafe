@@ -138,6 +138,28 @@
 
         <div v-if="stripeError" class="error-msg mt-2">{{ stripeError }}</div>
         <div v-if="stripeSuccess" class="success-msg mt-2">Stripe account connected successfully!</div>
+
+        <!-- NMI Connection Status -->
+        <div v-if="nmiConnected" class="processor-status connected mt-4" style="border-top:1px solid #e5e7eb;padding-top:14px">
+          <div class="status-row">
+            <span class="status-dot green"></span>
+            <span class="status-text">NMI Connected</span>
+          </div>
+          <div class="status-details">
+            <span class="text-sm text-muted">Configured via Settings > Processors</span>
+          </div>
+        </div>
+
+        <!-- Default Processor Selector (when both connected) -->
+        <div v-if="stripeConnected && nmiConnected" class="mt-4" style="border-top:1px solid #e5e7eb;padding-top:14px">
+          <label class="form-label">Default Processor</label>
+          <div class="text-sm text-muted mb-2">Used for offers without a specific processor override.</div>
+          <select class="form-select" :value="defaultProcessor" @change="setDefaultProcessor(($event.target as HTMLSelectElement).value)" style="width:200px">
+            <option value="nmi">NMI</option>
+            <option value="stripe">Stripe</option>
+          </select>
+          <div v-if="defaultProcessorSaved" class="text-sm mt-1" style="color:#10b981">Default processor updated.</div>
+        </div>
       </div>
 
       <!-- Evidence Module Toggles -->
@@ -273,6 +295,9 @@ const stripeConnecting = ref(false);
 const stripeDisconnecting = ref(false);
 const stripeError = ref('');
 const stripeSuccess = ref(false);
+const nmiConnected = ref(false);
+const defaultProcessor = ref('');
+const defaultProcessorSaved = ref(false);
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -289,11 +314,15 @@ onMounted(async () => {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
 
-    // Check Stripe connection status
+    // Check processor connection status
     if (config.value.stripeConnected) {
       stripeConnected.value = true;
       stripeAccountId.value = config.value.stripeUserId || '';
     }
+    if (config.value.nmiConnected) {
+      nmiConnected.value = true;
+    }
+    defaultProcessor.value = config.value.defaultProcessor || '';
 
     // Check for Stripe callback result in URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -459,6 +488,18 @@ async function disconnectStripe() {
     stripeError.value = 'Failed to disconnect. Please try again.';
   }
   stripeDisconnecting.value = false;
+}
+
+async function setDefaultProcessor(proc: string) {
+  defaultProcessorSaved.value = false;
+  try {
+    await api.post<any>('/api/processor-config/default', { processor: proc });
+    defaultProcessor.value = proc;
+    defaultProcessorSaved.value = true;
+    setTimeout(() => { defaultProcessorSaved.value = false; }, 3000);
+  } catch {
+    // Silently fail — the select will revert on next load
+  }
 }
 </script>
 

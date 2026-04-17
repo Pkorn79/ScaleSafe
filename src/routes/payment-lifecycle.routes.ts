@@ -89,6 +89,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
       contactId,
       offerId: enrollment.offer_id || '',
       reason: reason || `Merchant-initiated ${action}`,
+      enrollmentId,
       processorSubscriptionId: enrollment.processor_subscription_id || undefined,
     };
 

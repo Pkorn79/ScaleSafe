@@ -111,9 +111,9 @@ export const phase2EnrollmentService = {
       }
     }
 
-    // 3. Log consent evidence (non-blocking — uses resolved contactId)
-    try {
-      await phase2EvidenceRepository.create({
+    // 3-5. Log consent evidence, payment evidence, and payment event — all in parallel
+    await Promise.allSettled([
+      phase2EvidenceRepository.create({
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
@@ -127,14 +127,8 @@ export const phase2EnrollmentService = {
         },
         ip_address: (enrollment as any).consent_ip || '',
         device_info: (enrollment as any).consent_device || '',
-      });
-    } catch (consentErr: any) {
-      logger.error({ err: consentErr.message, stack: consentErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Consent evidence insert failed');
-    }
-
-    // 4. Log enrollment_payment evidence (non-blocking — uses resolved contactId)
-    try {
-      await phase2EvidenceRepository.create({
+      }),
+      phase2EvidenceRepository.create({
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
@@ -146,14 +140,8 @@ export const phase2EnrollmentService = {
           payments_total: params.paymentsTotal,
           timestamp: new Date().toISOString(),
         },
-      });
-    } catch (evidenceErr: any) {
-      logger.error({ err: evidenceErr.message, stack: evidenceErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Payment evidence insert failed');
-    }
-
-    // 5. Create payment_event record (non-blocking — uses resolved contactId)
-    try {
-      await paymentEventRepository.create({
+      }),
+      paymentEventRepository.create({
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
@@ -163,10 +151,15 @@ export const phase2EnrollmentService = {
         amount: params.paymentAmount,
         payment_number: 1,
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
+      }),
+    ]).then(results => {
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          const labels = ['Consent evidence', 'Payment evidence', 'Payment event'];
+          logger.error({ err: (r.reason as any)?.message, enrollmentId: params.enrollmentId }, `${labels[i]} insert failed`);
+        }
       });
-    } catch (paymentErr: any) {
-      logger.error({ err: paymentErr.message, stack: paymentErr.stack, enrollmentId: params.enrollmentId, contactId: resolvedContactId }, 'Payment event insert failed');
-    }
+    });
 
     logger.info(
       { enrollmentId: params.enrollmentId, contactId: resolvedContactId, locationId: params.locationId },

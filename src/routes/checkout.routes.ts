@@ -290,7 +290,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   // ─── Load merchant/processor config ─────────────────────
   function loadConfig() {
-    fetch(API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(state.publishableKey))
+    var oid = urlParams.get('offer_id');
+    var configUrl = oid
+      ? API_BASE + '/api/checkout/config-by-offer/' + encodeURIComponent(oid)
+      : API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(state.publishableKey);
+    fetch(configUrl)
       .then(function(r) { return r.json(); })
       .then(function(cfg) {
         state.processorType = cfg.processorType;

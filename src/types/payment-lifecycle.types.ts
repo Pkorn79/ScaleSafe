@@ -20,6 +20,7 @@ export interface SubscriptionParams {
   contactId: string;
   offerId: string;
   reason: string;
+  enrollmentId?: string;
   processorSubscriptionId?: string;
 }
 

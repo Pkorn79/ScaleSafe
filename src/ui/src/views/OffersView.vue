@@ -32,6 +32,7 @@
             <th>Offer Name</th>
             <th>Price</th>
             <th>Payment</th>
+            <th>Processor</th>
             <th>Status</th>
             <th>Link</th>
             <th></th>
@@ -47,6 +48,11 @@
             <td>
               <span class="badge" :class="offer.payment_type === 'one_time' ? 'badge-blue' : offer.payment_type === 'subscription' ? 'badge-yellow' : 'badge-green'">
                 {{ offer.payment_type === 'one_time' ? 'Pay in Full' : offer.payment_type === 'subscription' ? `$${offer.installment_amount || offer.price}/${offer.installment_frequency || 'mo'}` : `${offer.num_payments}x $${offer.installment_amount}` }}
+              </span>
+            </td>
+            <td>
+              <span class="badge" :class="offer.processor_override === 'nmi' ? 'badge-blue' : offer.processor_override === 'stripe' ? 'badge-purple' : 'badge-gray'">
+                {{ offer.processor_override === 'nmi' ? 'NMI' : offer.processor_override === 'stripe' ? 'Stripe' : 'Default' }}
               </span>
             </td>
             <td>

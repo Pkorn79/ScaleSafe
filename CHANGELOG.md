@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-17
+
+### Fixed
+- **Per-offer processor override reaching checkout tokenizer.** Enrollment funnel checkout always loaded the merchant default processor's tokenizer, ignoring offer-level `processor_override`. Fixed: checkout now calls `/api/checkout/config-by-offer/:offerId` when an offerId is in the URL params, so the correct tokenizer (Collect.js vs Stripe Elements) loads per-offer.
+- **Cancel/pause/complete scoped to single enrollment.** Previously these actions filtered by `contact_id + status` which affected ALL active enrollments for a contact. Added `enrollmentId` to `SubscriptionParams` and all three methods now filter by `.eq('id', enrollmentId)` when available.
+- **Card on file metadata extraction.** Stripe: extract card details from the PaymentIntent's `latest_charge.payment_method_details.card` instead of a separate API call. NMI: added fallback extraction from the charge response (`cc_number`, `cc_type`, `cc_exp`) when vault query fails, plus diagnostic logging.
+- **Checkout performance — subscription creation moved to fire-and-forget.** `createSubscription()` (~1-2s) now runs in background after the checkout response is sent. Evidence inserts in `completeEnrollment()` parallelized with `Promise.allSettled()` instead of sequential awaits.
+
+### Added
+- **Processor column on offers list.** Shows "Default" / "NMI" / "Stripe" per offer with color-coded badges.
+- **NMI connection status + default processor selector on Settings page.** Settings now shows both Stripe and NMI connection status. When both are connected, a dropdown lets the merchant set the default processor.
+
+---
+
 ## 2026-04-16
 
 ### Fixed

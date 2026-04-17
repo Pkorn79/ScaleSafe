@@ -512,77 +512,83 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             recurring: isRecurringPaymentType,
           }, 'CARD-SAVE: payment method persisted for recurring billing');
 
-          // ─── Create processor-level subscription for recurring enrollments ──
-          // The processor manages all future charges; the daily cron skips enrollments
-          // that have processor_subscription_id set. If this fails, the cron handles
-          // billing as before (automatic fallback).
+          // ─── Create processor-level subscription (fire-and-forget) ──
+          // Runs in background after response is sent. The subscription doesn't
+          // need to exist before the checkout confirmation — the cron fallback
+          // handles billing if subscription creation is delayed or fails.
           if (isRecurringPaymentType && finalEnrollmentId) {
-            try {
-              const { data: enrForSub } = await supabase
-                .from('enrollments')
-                .select('id, offer_id, payments_total, next_billing_date')
-                .eq('id', finalEnrollmentId)
-                .single();
-
-              if (enrForSub?.offer_id && enrForSub.next_billing_date) {
-                const { data: subOffer } = await supabase
-                  .from('offers_mirror')
-                  .select('offer_name, installment_amount, installment_frequency')
-                  .eq('id', enrForSub.offer_id)
+            const bgSaveResult = { ...saveResult };
+            const bgEnrId = finalEnrollmentId;
+            const bgContactId = finalContactId;
+            const bgProcType = procConfig.processor_type;
+            Promise.resolve().then(async () => {
+              try {
+                const bgSupabase = getSupabase();
+                const { data: enrForSub } = await bgSupabase
+                  .from('enrollments')
+                  .select('id, offer_id, payments_total, next_billing_date')
+                  .eq('id', bgEnrId)
                   .single();
 
-                if (subOffer?.installment_amount) {
-                  const subAmountCents = Math.round(Number(subOffer.installment_amount) * 100);
-                  const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
-                  const subInterval: 'weekly' | 'biweekly' | 'monthly' =
-                    freq === 'weekly' ? 'weekly' :
-                    freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' : 'monthly';
+                if (enrForSub?.offer_id && enrForSub.next_billing_date) {
+                  const { data: subOffer } = await bgSupabase
+                    .from('offers_mirror')
+                    .select('offer_name, installment_amount, installment_frequency')
+                    .eq('id', enrForSub.offer_id)
+                    .single();
 
-                  // Payment 1 already collected — subscription covers 2..N
-                  const remainingPayments = (enrForSub.payments_total || 0) - 1;
+                  if (subOffer?.installment_amount) {
+                    const subAmountCents = Math.round(Number(subOffer.installment_amount) * 100);
+                    const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
+                    const subInterval: 'weekly' | 'biweekly' | 'monthly' =
+                      freq === 'weekly' ? 'weekly' :
+                      freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' : 'monthly';
 
-                  if (remainingPayments > 0) {
-                    const subResult = await processor.createSubscription({
-                      paymentMethodId: saveResult.paymentMethodId || saveResult.customerId,
-                      customerId: saveResult.customerId,
-                      planAmount: subAmountCents,
-                      interval: subInterval,
-                      totalPayments: remainingPayments,
-                      startDate: enrForSub.next_billing_date,
-                      description: subOffer.offer_name || 'ScaleSafe Installment',
-                      metadata: {
-                        enrollment_id: finalEnrollmentId,
-                        offer_id: enrForSub.offer_id,
-                        contact_id: finalContactId,
-                      },
-                    });
+                    const remainingPayments = (enrForSub.payments_total || 0) - 1;
 
-                    if (subResult.success && subResult.subscriptionId) {
-                      await supabase.from('enrollments')
-                        .update({ processor_subscription_id: subResult.subscriptionId })
-                        .eq('id', finalEnrollmentId);
-                      logger.info({
-                        enrollmentId: finalEnrollmentId,
-                        subscriptionId: subResult.subscriptionId,
-                        processor: procConfig.processor_type,
+                    if (remainingPayments > 0) {
+                      const subResult = await processor.createSubscription({
+                        paymentMethodId: bgSaveResult.paymentMethodId || bgSaveResult.customerId,
+                        customerId: bgSaveResult.customerId,
+                        planAmount: subAmountCents,
                         interval: subInterval,
-                        remainingPayments,
-                      }, 'SUBSCRIPTION: processor-level recurring schedule created');
-                    } else {
-                      logger.warn({
-                        enrollmentId: finalEnrollmentId,
-                        error: subResult.errorMessage,
-                      }, 'SUBSCRIPTION: processor createSubscription failed — cron will handle billing');
+                        totalPayments: remainingPayments,
+                        startDate: enrForSub.next_billing_date,
+                        description: subOffer.offer_name || 'ScaleSafe Installment',
+                        metadata: {
+                          enrollment_id: bgEnrId,
+                          offer_id: enrForSub.offer_id,
+                          contact_id: bgContactId,
+                        },
+                      });
+
+                      if (subResult.success && subResult.subscriptionId) {
+                        await bgSupabase.from('enrollments')
+                          .update({ processor_subscription_id: subResult.subscriptionId })
+                          .eq('id', bgEnrId);
+                        logger.info({
+                          enrollmentId: bgEnrId,
+                          subscriptionId: subResult.subscriptionId,
+                          processor: bgProcType,
+                          interval: subInterval,
+                          remainingPayments,
+                        }, 'BG-SUBSCRIPTION: processor-level recurring schedule created');
+                      } else {
+                        logger.warn({
+                          enrollmentId: bgEnrId,
+                          error: subResult.errorMessage,
+                        }, 'BG-SUBSCRIPTION: processor createSubscription failed — cron will handle billing');
+                      }
                     }
                   }
                 }
+              } catch (subErr: any) {
+                logger.warn({
+                  err: subErr.message,
+                  enrollmentId: bgEnrId,
+                }, 'BG-SUBSCRIPTION: failed to create processor subscription — cron will handle billing');
               }
-            } catch (subErr: any) {
-              logger.warn({
-                err: subErr.message,
-                enrollmentId: finalEnrollmentId,
-              }, 'SUBSCRIPTION: failed to create processor subscription — cron will handle billing');
-            }
+            }).catch(() => {});
           }
         } catch (err: any) {
           logger.warn({

@@ -77,10 +77,26 @@ export class NmiClient implements ProcessorInterface {
         result.vaultedCardBrand = cardInfo.brand;
         result.vaultedCardExpMonth = cardInfo.expMonth;
         result.vaultedCardExpYear = cardInfo.expYear;
-      } catch {
-        // Vault query failed — vault ID is still valid for subscriptions
-        result.vaultedCardLastFour = '****';
-        result.vaultedCardBrand = 'unknown';
+      } catch (vaultErr: any) {
+        // Vault query failed — try extracting from the charge response directly
+        // NMI may return cc_number (masked) in the transact response
+        const maskedCC = nmi.cc_number || '';
+        if (maskedCC.length >= 4) {
+          result.vaultedCardLastFour = maskedCC.slice(-4);
+        } else {
+          result.vaultedCardLastFour = '****';
+        }
+        result.vaultedCardBrand = nmi.cc_type || 'unknown';
+        // Try parsing expiration from response
+        const expStr = nmi.cc_exp || '';
+        if (expStr.length === 4) {
+          result.vaultedCardExpMonth = parseInt(expStr.substring(0, 2)) || 0;
+          result.vaultedCardExpYear = 2000 + (parseInt(expStr.substring(2, 4)) || 0);
+        } else {
+          result.vaultedCardExpMonth = 0;
+          result.vaultedCardExpYear = 0;
+        }
+        console.warn('[NMI] Vault card query failed, using charge response fallback:', vaultErr.message, { vaultId: nmi.customer_vault_id, maskedCC, ccType: nmi.cc_type });
       }
     }
 
