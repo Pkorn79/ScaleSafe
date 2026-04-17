@@ -331,6 +331,20 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     timeout: 30000,
   });
 
+  // Intercept request: auto-transform customField (singular object) → customFields (plural array)
+  // GHL V2 API requires customFields as an array, not customField as an object.
+  instance.interceptors.request.use((reqConfig) => {
+    if (reqConfig.data && typeof reqConfig.data === 'object' && reqConfig.data.customField && !reqConfig.data.customFields) {
+      const cf = reqConfig.data.customField;
+      reqConfig.data.customFields = Object.entries(cf).map(([key, value]) => ({
+        key,
+        field_value: value,
+      }));
+      delete reqConfig.data.customField;
+    }
+    return reqConfig;
+  });
+
   // Intercept 401 → refresh company token → get new location token → retry once
   instance.interceptors.response.use(
     (response) => response,

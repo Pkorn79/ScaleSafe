@@ -60,7 +60,8 @@ export const triggerRepository = {
       .eq('trigger_key', triggerKey)
       .eq('is_active', true);
 
-    if (error) throw error;
+    // Table may not exist — triggers fire directly to GHL Marketplace without it
+    if (error) return [];
     return data || [];
   },
 };

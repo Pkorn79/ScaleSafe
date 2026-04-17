@@ -132,14 +132,15 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
     // The trigger above is for workflow automation. The direct send ensures
     // the message actually reaches the client even without a workflow.
 
-    // Match the working format from dashboard.controller.ts sendClientMessage()
-    // GHL Conversations API: { type: 'Email'|'SMS', contactId, message }
+    // GHL Conversations API: Email requires 'html' field (not 'message'); SMS uses 'message'
     if (sendVia.includes('email') && email) {
       try {
+        const emailBody = `<p>Hi ${firstName},</p><p>Here's your enrollment link for <strong>${offer.offer_name}</strong>:</p><p><a href="${enrollmentUrl}">${enrollmentUrl}</a></p><p>Click the link above to get started.</p>`;
         await api.post('/conversations/messages', {
           type: 'Email',
           contactId,
-          message: `Hi ${firstName},\n\nHere's your enrollment link for ${offer.offer_name}:\n\n${enrollmentUrl}\n\nClick the link above to get started.`,
+          html: emailBody,
+          subject: `Your enrollment link for ${offer.offer_name}`,
         });
         logger.info({ contactId, email }, 'Enrollment link email sent via GHL Conversations');
       } catch (emailErr: any) {

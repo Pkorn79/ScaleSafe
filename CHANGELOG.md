@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-17
 
 ### Fixed
+- **Send Offer email — use `html` field.** GHL Conversations API rejects emails with only `message` field ("no message or attachments"). Email type requires `html` (and optionally `subject`). SMS uses `message` and works fine.
+- **CRITICAL: GHL customField → customFields migration.** Every GHL contact update was silently failing (422: "property customField should not exist"). GHL V2 API requires `customFields` (plural, array of `{key, field_value}`) not `customField` (singular object). Added a request interceptor in `ghl.client.ts` that auto-transforms the old format — fixes all 20+ call sites without touching each file.
+- **trigger_subscriptions table noise eliminated.** `getActiveSubscriptions()` was throwing on every trigger fire because the table doesn't exist. Now returns empty array on error instead of throwing.
 - **NMI Collect.js card field styling (black bar fix).** Updated `customCss` in both checkout `CollectJS.configure()` calls to match the working `payment-update.routes.ts` pattern: added `border: none`, `height: 100%`, `width: 100%`, changed `background-color` from `transparent` to `#ffffff`, added `invalidCss`. Removed conflicting `data-variant` script tag attribute (already set in configure). These properties target the INPUT element inside the Collect.js iframe.
 - **Send Offer payload format.** Removed `subject` field from GHL Conversations API email payload — the working `dashboard.sendClientMessage()` doesn't use it and it may cause silent failures. Added full GHL error response logging (`response.data`) for both email and SMS paths.
 - **Profile header status priority.** `clientInfo()` was still picking the most recent enrollment by `created_at DESC`, showing "cancelled" even when active enrollments exist. Now uses the same status-priority logic as `client_list_view` (migration 050): active > paused > pending > completed > cancelled.
