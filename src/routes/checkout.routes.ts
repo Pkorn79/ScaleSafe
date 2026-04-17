@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getCheckoutConfig, getCheckoutConfigByOffer, processPayment, saveCard } from '../controllers/checkout.controller';
+import { getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, processPayment, saveCard } from '../controllers/checkout.controller';
 import { config } from '../config';
 
 const router = Router();
@@ -7,6 +7,7 @@ const router = Router();
 // API endpoints for checkout processing
 router.get('/api/checkout/config', getCheckoutConfig);
 router.get('/api/checkout/config-by-offer/:offerId', getCheckoutConfigByOffer);
+router.get('/api/checkout/config-by-product/:ghlProductId', getCheckoutConfigByProduct);
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/save-card', saveCard);
 
@@ -290,10 +291,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   // ─── Load merchant/processor config ─────────────────────
   function loadConfig() {
-    var oid = urlParams.get('offer_id');
-    var configUrl = oid
-      ? API_BASE + '/api/checkout/config-by-offer/' + encodeURIComponent(oid)
+    // GHL Custom Payment Provider iframe: offerId comes from productDetails (postMessage),
+    // not URL params (the iframe URL has no query params).
+    var ghlProductId = state.productDetails && state.productDetails[0] ? (state.productDetails[0]._id || state.productDetails[0].id || '') : '';
+    var configUrl = ghlProductId
+      ? API_BASE + '/api/checkout/config-by-product/' + encodeURIComponent(ghlProductId)
       : API_BASE + '/api/checkout/config?publishableKey=' + encodeURIComponent(state.publishableKey);
+    console.log('[ScaleSafe] loadConfig: ghlProductId=' + ghlProductId + ' configUrl=' + configUrl);
     fetch(configUrl)
       .then(function(r) { return r.json(); })
       .then(function(cfg) {
@@ -473,6 +477,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         transactionId: state.transactionId,
         subscriptionId: state.subscriptionId,
         offerId: urlParams.get('offer_id') || '',
+        ghlProductId: state.productDetails && state.productDetails[0] ? (state.productDetails[0]._id || state.productDetails[0].id || '') : '',
         consentToken: urlParams.get('consent_token') || '',
         saveCard: el('save-card-checkbox') ? el('save-card-checkbox').checked : false,
         ipAddress: '',

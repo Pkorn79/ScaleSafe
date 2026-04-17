@@ -117,6 +117,71 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
   }
 }
 
+// ─── GET /api/checkout/config-by-product/:ghlProductId ─────────
+// Used by the GHL Custom Payment Provider iframe which only has the GHL product ID
+// (from postMessage productDetails[0]._id), not the ScaleSafe offer ID.
+
+export async function getCheckoutConfigByProduct(req: Request, res: Response): Promise<void> {
+  const { ghlProductId } = req.params;
+  if (!ghlProductId) {
+    res.status(400).json({ error: 'Missing ghlProductId' });
+    return;
+  }
+
+  const supabase = getSupabase();
+  const { data: offer } = await supabase
+    .from('offers_mirror')
+    .select('*')
+    .eq('ghl_product_id', ghlProductId)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (!offer) {
+    // No matching offer — fall back to merchant default (non-fatal)
+    logger.info({ ghlProductId }, 'config-by-product: no offer found for GHL product ID — falling back to merchant default');
+    res.status(404).json({ error: 'Offer not found for product' });
+    return;
+  }
+
+  const merchant = await merchantRepository.findByLocationId(offer.location_id);
+  if (!merchant) {
+    res.status(404).json({ error: 'Merchant not found' });
+    return;
+  }
+
+  try {
+    const offerHint = {
+      processor_override: offer.processor_override || null,
+      nmi_processor_id: offer.nmi_processor_id || null,
+    };
+    const { config: procConfig } = await resolveProcessor(merchant.id, offer.location_id, offerHint);
+
+    logger.info({
+      ghlProductId,
+      offerId: offer.id,
+      offerName: offer.offer_name,
+      processorOverride: offer.processor_override,
+      resolvedProcessor: procConfig.processor_type,
+    }, 'config-by-product: resolved processor for GHL product');
+
+    const response: Record<string, any> = {
+      processorType: procConfig.processor_type,
+      merchantName: merchant.business_name || '',
+    };
+
+    if (procConfig.processor_type === 'nmi') {
+      response.nmiTokenizationKey = procConfig.nmi_tokenization_key || '';
+    } else if (procConfig.processor_type === 'stripe') {
+      response.stripePublishableKey = config.stripe.publishableKey || procConfig.stripe_publishable_key || '';
+      response.stripeAccountId = procConfig.stripe_user_id || '';
+    }
+
+    res.json(response);
+  } catch (err: any) {
+    res.status(503).json({ error: err.message || 'No processor configured' });
+  }
+}
+
 // ─── POST /api/checkout/process-payment ──────────────────────
 
 export async function processPayment(req: Request, res: Response): Promise<void> {
@@ -124,7 +189,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     publishableKey, paymentToken, amount, currency,
     contactId, contactEmail, contactName,
     orderId, transactionId, subscriptionId,
-    offerId, consentToken, saveCard,
+    offerId, ghlProductId, consentToken, saveCard,
     deviceFingerprint, browserInfo,
     productDetails, requestThreeDSecure,
   } = req.body;
@@ -186,8 +251,34 @@ export async function processPayment(req: Request, res: Response): Promise<void>
   }
 
   try {
-    const { config: procConfig } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+    // Resolve offer hint for per-offer processor override
+    let offerHint: { processor_override: 'nmi' | 'stripe' | null; nmi_processor_id: string | null } | undefined;
+    if (offerId) {
+      const ofr = await offerRepository.findById(offerId);
+      if (ofr?.processor_override) {
+        offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
+      }
+    } else if (ghlProductId) {
+      const { data: ofr } = await supabase.from('offers_mirror')
+        .select('processor_override, nmi_processor_id')
+        .eq('ghl_product_id', ghlProductId)
+        .eq('location_id', merchant.locationId)
+        .eq('active', true)
+        .maybeSingle();
+      if (ofr?.processor_override) {
+        offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
+      }
+    }
+
+    const { config: procConfig } = await resolveProcessor(merchant.merchantId, merchant.locationId, offerHint);
     const processor = createProcessorClient(procConfig);
+
+    logger.info({
+      offerId: offerId || null,
+      ghlProductId: ghlProductId || null,
+      processorOverride: offerHint?.processor_override || null,
+      resolvedProcessor: procConfig.processor_type,
+    }, 'processPayment: processor resolved');
 
     // Determine recurring status BEFORE charge — NMI needs to vault atomically during charge
     // Vault during charge for BOTH processors:

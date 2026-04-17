@@ -485,11 +485,15 @@ export const paymentLifecycleService = {
       } catch {}
     }
 
-    // Log subscription change evidence (enriched with context)
-    await evidenceService.logEvidence(
-      EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'cancelled' },
-    );
+    // Log subscription change evidence (enriched with context — non-fatal)
+    try {
+      await evidenceService.logEvidence(
+        EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
+        { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'cancelled' },
+      );
+    } catch (evErr: any) {
+      logger.warn({ err: evErr.message, enrollmentId: params.enrollmentId }, 'Cancel subscription change evidence failed (non-fatal)');
+    }
 
     // Log cancellation evidence (enriched for defense letter quality)
     let cancelEnrollmentId: string | null = null;
@@ -521,20 +525,24 @@ export const paymentLifecycleService = {
       ? Math.floor((Date.now() - new Date(cancelEnrolledAt).getTime()) / 86400000)
       : null;
 
-    await evidenceService.logEvidence(
-      EVIDENCE_TYPES.CANCELLATION, params.locationId, params.contactId, 'merchant_action',
-      {
-        cancellation_date: cancelDate,
-        reason: params.reason,
-        refund_eligibility: 'per_terms',
-        status_at_cancellation: 'cancelled',
-        initiated_by: 'merchant',
-        enrollment_id: cancelEnrollmentId,
-        contact_name: cancelContactName || null,
-        contact_email: cancelContactEmail || null,
-        description: `Merchant-initiated cancellation on ${fmtCancelDate}. Reason: ${params.reason || 'not specified'}. Status at cancellation: enrolled (${cancelPaymentsMade} of ${cancelPaymentsTotal || '?'} payments made). Active service period: ${fmtEnrolledAt} to ${fmtCancelDate}${daysSinceEnroll !== null ? ` (${daysSinceEnroll} days)` : ''}.`,
-      },
-    );
+    try {
+      await evidenceService.logEvidence(
+        EVIDENCE_TYPES.CANCELLATION, params.locationId, params.contactId, 'merchant_action',
+        {
+          cancellation_date: cancelDate,
+          reason: params.reason,
+          refund_eligibility: 'per_terms',
+          status_at_cancellation: 'cancelled',
+          initiated_by: 'merchant',
+          enrollment_id: cancelEnrollmentId,
+          contact_name: cancelContactName || null,
+          contact_email: cancelContactEmail || null,
+          description: `Merchant-initiated cancellation on ${fmtCancelDate}. Reason: ${params.reason || 'not specified'}. Status at cancellation: enrolled (${cancelPaymentsMade} of ${cancelPaymentsTotal || '?'} payments made). Active service period: ${fmtEnrolledAt} to ${fmtCancelDate}${daysSinceEnroll !== null ? ` (${daysSinceEnroll} days)` : ''}.`,
+        },
+      );
+    } catch (evErr: any) {
+      logger.warn({ err: evErr.message, enrollmentId: params.enrollmentId }, 'Cancellation evidence failed (non-fatal)');
+    }
 
     // Fire trigger — flat doc contract: contact_id, offer_id, reason, refund_eligibility, enrollment_date
     try {
