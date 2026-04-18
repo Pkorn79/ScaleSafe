@@ -485,6 +485,16 @@
           } catch (e) { /* silent */ }
         }
 
+        // Free offer: enrollment is already complete — show completion screen
+        if (data.freeOffer) {
+          root.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
+            '<div style="font-size:48px;margin-bottom:16px;">&#10003;</div>' +
+            '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">You\'re Enrolled!</h2>' +
+            '<p style="font-size:15px;color:var(--ss-muted);">Your enrollment is confirmed. No payment required for this program.</p>' +
+            '</div>';
+          return;
+        }
+
         // Brief visual confirmation, then tell parent to advance
         submitBtn.textContent = 'Consent Recorded — Redirecting...';
         submitBtn.style.background = '#16a34a';
