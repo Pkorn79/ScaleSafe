@@ -20,5 +20,7 @@ router.get('/client-files/:contactId', dashboardController.clientFiles);
 router.post('/client-note', dashboardController.addClientNote);
 router.post('/client-message', dashboardController.sendClientMessage);
 router.post('/mark-milestone', dashboardController.markMilestone);
+router.post('/add-client', dashboardController.addClient);
+router.post('/assign-offer', dashboardController.assignOffer);
 
 export default router;

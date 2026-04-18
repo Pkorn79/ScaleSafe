@@ -7,6 +7,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-17
 
+### Added
+- **Add Client button.** Client list page has "Add Client" button with modal (name, email, phone). Creates a GHL contact + minimal enrollment record with status `manual_add`. Client appears in Active list with no programs; merchant can later assign an offer.
+- **Assign Offer to client.** Client profile has "Assign Offer" button. Directly enrolls the client in a program — no funnel, no consent, no payment. Creates enrollment with `payment_type: 'manual'`. For situations where agreement was handled outside ScaleSafe.
+- **Free offers ($0).** Offers with $0 price now skip the checkout page entirely. After consent capture (Page 3), the enrollment is completed directly with `payment_type: 'free'`. The API returns `freeOffer: true` so the funnel can redirect to completion.
+- **Quarterly + annual billing frequencies.** Migration 051 expands the `installment_frequency` CHECK constraint. New options in offer form frequency dropdowns. NMI uses `month_frequency: 3/12`. Stripe uses `interval: month/year` with `interval_count: 3/1`. Next billing date calculations, processor types, and checkout interval mapping all updated.
+
 ### Fixed
 - **Quick Pay T&C link.** Quick checkout consent label now shows a clickable "Terms and Conditions" link when the offer has a `tc_url`. Falls back to custom consent text if set, otherwise default static text. Added `tcUrl` + `quickCheckoutConsentText` to the public offer API response.
 - **Quick Pay offer save error.** Saving a one-time (Quick Pay) offer with processor override failed with CHECK constraint violation. Root cause: `installment_frequency` was sent as empty string `''` which violates `CHECK (installment_frequency IN ('weekly', 'bi_weekly', 'monthly'))`. Fixed: empty strings now converted to null via `|| null` in both create and update paths.

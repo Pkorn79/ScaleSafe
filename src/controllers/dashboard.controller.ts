@@ -883,7 +883,7 @@ export const dashboardController = {
       if (status) {
         query = query.eq('status', status);
       } else if (statusGroup === 'active') {
-        query = query.in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused']);
+        query = query.in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused', 'manual_add']);
       } else if (statusGroup === 'archive') {
         query = query.in('status', ['completed', 'cancelled']);
       }
@@ -925,6 +925,118 @@ export const dashboardController = {
         page,
         limit,
       });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/add-client — create a client (GHL contact + minimal enrollment record) */
+  async addClient(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { firstName, lastName, email, phone } = req.body;
+      if (!firstName || !email) throw new ValidationError('firstName and email required');
+
+      const supabase = getSupabase();
+      const api = await ghlApi(locationId);
+
+      // Upsert GHL contact
+      const upsertRes = await api.post('/contacts/upsert', {
+        firstName,
+        lastName: lastName || '',
+        email,
+        phone: phone || '',
+        locationId,
+      });
+      const contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+      if (!contactId) throw new ValidationError('Failed to create GHL contact');
+
+      // Get merchant for merchant_id
+      const { data: merchant } = await supabase.from('merchants').select('id').eq('location_id', locationId).single();
+
+      // Create minimal enrollment record so client appears in client_list_view
+      await supabase.from('enrollments').insert({
+        location_id: locationId,
+        merchant_id: merchant?.id || null,
+        contact_id: contactId,
+        email,
+        first_name: firstName,
+        last_name: lastName || '',
+        status: 'manual_add',
+        created_at: new Date().toISOString(),
+      });
+
+      res.json({ success: true, contactId });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/assign-offer — directly enroll a client in an offer */
+  async assignOffer(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { contactId, offerId } = req.body;
+      if (!contactId || !offerId) throw new ValidationError('contactId and offerId required');
+
+      const supabase = getSupabase();
+
+      // Validate offer
+      const { data: offer } = await supabase.from('offers_mirror').select('id, offer_name, price, payment_type, location_id').eq('id', offerId).eq('active', true).single();
+      if (!offer) throw new ValidationError('Offer not found or inactive');
+
+      // Get merchant
+      const { data: merchant } = await supabase.from('merchants').select('id').eq('location_id', locationId).single();
+
+      // Get contact info from GHL
+      let contactEmail = '';
+      let contactFirstName = '';
+      let contactLastName = '';
+      try {
+        const api = await ghlApi(locationId);
+        const contactRes = await api.get(`/contacts/${contactId}`);
+        const contact = contactRes.data?.contact || contactRes.data || {};
+        contactEmail = contact.email || '';
+        contactFirstName = contact.firstName || '';
+        contactLastName = contact.lastName || '';
+      } catch {}
+
+      // Create enrollment
+      const { data: enrollment, error: insertErr } = await supabase.from('enrollments').insert({
+        location_id: locationId,
+        merchant_id: merchant?.id || null,
+        contact_id: contactId,
+        offer_id: offerId,
+        email: contactEmail,
+        first_name: contactFirstName,
+        last_name: contactLastName,
+        status: 'enrolled',
+        payment_type: 'manual',
+        payment_amount: 0,
+        enrolled_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      }).select('id').single();
+
+      if (insertErr) throw insertErr;
+
+      // Log evidence
+      try {
+        await evidenceService.logEvidence(
+          'subscription_change', locationId, contactId, 'merchant_action',
+          { action: 'manual_assign', offer_id: offerId, offer_name: offer.offer_name, change_date: new Date().toISOString(), initiated_by: 'merchant', previous_status: 'none', new_status: 'enrolled' },
+        );
+      } catch {}
+
+      // Update GHL contact status
+      try {
+        const api = await ghlApi(locationId);
+        await api.put(`/contacts/${contactId}`, {
+          customField: { 'contact.ss_enrollment_status': 'enrolled' },
+        });
+        await api.post(`/contacts/${contactId}/notes`, {
+          body: `Manually enrolled in ${offer.offer_name} by merchant.`,
+        });
+      } catch {}
+
+      res.json({ success: true, enrollmentId: enrollment?.id });
     } catch (err) { next(err); }
   },
 };

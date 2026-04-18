@@ -25,6 +25,7 @@
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showNoteModal = true">Add Note</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showMessageModal = true">Send Message</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-primary" @click="openSendOffer">Send Offer</button>
+          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openAssignOffer">Assign Offer</button>
           <router-link to="/clients" class="btn btn-sm btn-secondary">Back</router-link>
         </div>
       </div>
@@ -149,6 +150,39 @@
       </template>
     </Modal>
 
+    <!-- Assign Offer Modal -->
+    <Modal v-model:open="showAssignOfferModal" :title="`Assign Offer to ${clientLabel}`">
+      <p class="text-sm text-muted" style="margin-top:-4px;margin-bottom:12px">
+        Directly enroll this client in a program. No consent pages or payment required.
+      </p>
+
+      <div v-if="offersLoading" class="loading">Loading offers...</div>
+      <div v-else-if="activeOffers.length === 0" class="text-sm text-muted">
+        No active offers. Create an offer first.
+      </div>
+      <template v-else>
+        <div class="form-group">
+          <label class="form-label">Select Offer</label>
+          <select class="form-select" v-model="assignOfferId">
+            <option value="">Choose an offer...</option>
+            <option v-for="o in activeOffers" :key="o.id" :value="o.id">
+              {{ o.offer_name }} — ${{ o.price || 0 }}
+            </option>
+          </select>
+        </div>
+      </template>
+
+      <div v-if="assignOfferResult" class="text-sm mt-2" style="color:#10b981">{{ assignOfferResult }}</div>
+      <div v-if="assignOfferError" class="text-sm mt-2" style="color:#ef4444">{{ assignOfferError }}</div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="showAssignOfferModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="submitAssignOffer" :disabled="assignOfferLoading || !assignOfferId">
+          {{ assignOfferLoading ? 'Assigning...' : 'Assign & Enroll' }}
+        </button>
+      </template>
+    </Modal>
+
     <!-- Add Note Modal -->
     <Modal v-model:open="showNoteModal" title="Add Note">
       <div class="form-group">
@@ -262,6 +296,13 @@ const sendOfferError = ref('');
 const sendViaEmail = ref(true);
 const sendViaSms = ref(false);
 
+// Assign Offer modal
+const showAssignOfferModal = ref(false);
+const assignOfferId = ref('');
+const assignOfferLoading = ref(false);
+const assignOfferResult = ref('');
+const assignOfferError = ref('');
+
 // Note modal
 const showNoteModal = ref(false);
 const noteBody = ref('');
@@ -356,6 +397,43 @@ async function submitSendOffer() {
     sendOfferError.value = e.message || 'Failed to send offer';
   }
   sendOfferLoading.value = false;
+}
+
+async function openAssignOffer() {
+  showAssignOfferModal.value = true;
+  assignOfferResult.value = '';
+  assignOfferError.value = '';
+  assignOfferId.value = '';
+  if (activeOffers.value.length === 0) {
+    offersLoading.value = true;
+    try {
+      const offers = await api.get<any[]>('/api/offers');
+      activeOffers.value = (offers || []).filter(o => o.active);
+    } catch (e: any) {
+      assignOfferError.value = e.message || 'Failed to load offers';
+    }
+    offersLoading.value = false;
+  }
+}
+
+async function submitAssignOffer() {
+  if (!assignOfferId.value) return;
+  assignOfferLoading.value = true;
+  assignOfferError.value = '';
+  assignOfferResult.value = '';
+  try {
+    await api.post('/api/dashboard/assign-offer', {
+      contactId: contactId.value,
+      offerId: assignOfferId.value,
+    });
+    assignOfferResult.value = 'Client enrolled successfully!';
+    assignOfferId.value = '';
+    // Refresh enrollments
+    await reloadEnrollments();
+  } catch (e: any) {
+    assignOfferError.value = e.message || 'Failed to assign offer';
+  }
+  assignOfferLoading.value = false;
 }
 
 async function submitNote() {

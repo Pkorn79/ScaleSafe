@@ -82,6 +82,8 @@
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annual">Annual</option>
             </select>
           </div>
         </div>
@@ -107,6 +109,8 @@
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annual">Annual</option>
             </select>
           </div>
         </div>

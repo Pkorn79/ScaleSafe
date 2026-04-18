@@ -1,6 +1,9 @@
 <template>
   <div>
-    <h1 class="page-title">Clients</h1>
+    <div class="flex-between mb-2">
+      <h1 class="page-title" style="margin-bottom:0">Clients</h1>
+      <button class="btn btn-primary btn-sm" @click="showAddModal = true">Add Client</button>
+    </div>
 
     <!-- Active / Archive tabs -->
     <div class="status-tabs mb-4">
@@ -92,12 +95,39 @@
       <span class="text-sm text-muted">Page {{ page }} of {{ totalPages }}</span>
       <button class="btn btn-sm btn-secondary" :disabled="page >= totalPages" @click="page++; loadClients()">Next</button>
     </div>
+    <!-- Add Client Modal -->
+    <Modal v-model:open="showAddModal" title="Add Client">
+      <div class="form-group">
+        <label class="form-label">First Name *</label>
+        <input class="form-input" v-model="newClient.firstName" placeholder="First name" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Last Name</label>
+        <input class="form-input" v-model="newClient.lastName" placeholder="Last name" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" type="email" v-model="newClient.email" placeholder="client@example.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" type="tel" v-model="newClient.phone" placeholder="+1 (555) 000-0000" />
+      </div>
+      <div v-if="addClientError" class="text-sm mt-2" style="color:#ef4444">{{ addClientError }}</div>
+      <template #footer>
+        <button class="btn btn-secondary" @click="showAddModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="submitAddClient" :disabled="addClientLoading">
+          {{ addClientLoading ? 'Adding...' : 'Add Client' }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import Modal from '../components/Modal.vue';
 
 const api = useApi();
 const { loading, error } = api;
@@ -109,6 +139,12 @@ const limit = ref(25);
 const searchInput = ref('');
 const statusFilter = ref('');
 const statusGroup = ref('active');
+
+// Add Client modal
+const showAddModal = ref(false);
+const addClientLoading = ref(false);
+const addClientError = ref('');
+const newClient = ref({ firstName: '', lastName: '', email: '', phone: '' });
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -156,6 +192,24 @@ async function loadClients() {
     totalClients.value = 0;
     error.value = null;
   }
+}
+
+async function submitAddClient() {
+  if (!newClient.value.firstName || !newClient.value.email) {
+    addClientError.value = 'First name and email are required';
+    return;
+  }
+  addClientLoading.value = true;
+  addClientError.value = '';
+  try {
+    await api.post('/api/dashboard/add-client', newClient.value);
+    showAddModal.value = false;
+    newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
+    loadClients();
+  } catch (e: any) {
+    addClientError.value = e.message || 'Failed to add client';
+  }
+  addClientLoading.value = false;
 }
 
 onMounted(() => loadClients());

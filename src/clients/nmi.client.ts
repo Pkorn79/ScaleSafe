@@ -234,6 +234,12 @@ export class NmiClient implements ProcessorInterface {
       case 'monthly':
         params.set('month_frequency', '1');
         break;
+      case 'quarterly':
+        params.set('month_frequency', '3');
+        break;
+      case 'annual':
+        params.set('month_frequency', '12');
+        break;
     }
 
     // Start date

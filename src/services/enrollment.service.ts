@@ -263,7 +263,29 @@ export const enrollmentService = {
       if (error) throw error;
 
       logger.info({ enrollmentId: existing.id, offerId: input.offerId }, 'Funnel consent captured (updated)');
-      return { success: true, consentToken, enrollmentId: existing.id };
+
+      // Free offer: complete enrollment immediately (skip checkout)
+      const isFreeOffer = !offer.price || Number(offer.price) === 0;
+      if (isFreeOffer) {
+        try {
+          const { phase2EnrollmentService } = require('./phase2Enrollment.service');
+          await phase2EnrollmentService.completeEnrollment({
+            enrollmentId: existing.id,
+            locationId: offer.location_id,
+            contactId: (existing as any).contact_id || '',
+            contactEmail: input.email,
+            paymentAmount: 0,
+            paymentType: 'free',
+            transactionId: 'free_enrollment',
+            paymentsTotal: null,
+          });
+          logger.info({ enrollmentId: existing.id }, 'Free offer: enrollment completed (no checkout)');
+        } catch (freeErr: any) {
+          logger.error({ err: freeErr.message, enrollmentId: existing.id }, 'Free offer completion failed');
+        }
+      }
+
+      return { success: true, consentToken, enrollmentId: existing.id, freeOffer: isFreeOffer };
     }
 
     // No prior device capture — create new record
@@ -291,7 +313,29 @@ export const enrollmentService = {
     if (error) throw error;
 
     logger.info({ enrollmentId: created.id, offerId: input.offerId }, 'Funnel consent captured (new)');
-    return { success: true, consentToken, enrollmentId: created.id };
+
+    // Free offer: complete enrollment immediately (skip checkout)
+    const isFreeOffer = !offer.price || Number(offer.price) === 0;
+    if (isFreeOffer) {
+      try {
+        const { phase2EnrollmentService } = require('./phase2Enrollment.service');
+        await phase2EnrollmentService.completeEnrollment({
+          enrollmentId: created.id,
+          locationId: offer.location_id,
+          contactId: '',
+          contactEmail: input.email,
+          paymentAmount: 0,
+          paymentType: 'free',
+          transactionId: 'free_enrollment',
+          paymentsTotal: null,
+        });
+        logger.info({ enrollmentId: created.id }, 'Free offer: enrollment completed (no checkout)');
+      } catch (freeErr: any) {
+        logger.error({ err: freeErr.message, enrollmentId: created.id }, 'Free offer completion failed');
+      }
+    }
+
+    return { success: true, consentToken, enrollmentId: created.id, freeOffer: isFreeOffer };
   },
 
   // ─── Original Enrollment Methods ──────────────────────────────
