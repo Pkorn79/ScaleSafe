@@ -803,7 +803,7 @@ export const paymentLifecycleService = {
    */
   async sendCardUpdateRequest(locationId: string, contactId: string): Promise<{ success: boolean; link: string }> {
     const { config: appConfig } = require('../config');
-    const baseUrl = appConfig.appUrl || `https://scalesafe-production.up.railway.app`;
+    const baseUrl = appConfig.appUrl;
     const link = `${baseUrl}/payment-update?contactId=${encodeURIComponent(contactId)}&locationId=${encodeURIComponent(locationId)}`;
 
     // Write URL to GHL contact custom field so workflow can use it

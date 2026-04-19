@@ -449,7 +449,7 @@ export const phase2EnrollmentService = {
 
     // Build enriched payload for GHL workflow
     const { config: appConfig } = require('../config');
-    const baseUrl = appConfig.appUrl || 'https://scalesafe-production.up.railway.app';
+    const baseUrl = appConfig.appUrl;
     const cardUpdateLink = `${baseUrl}/payment-update?contactId=${encodeURIComponent(params.contactId)}&locationId=${encodeURIComponent(params.locationId)}`;
 
     await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {

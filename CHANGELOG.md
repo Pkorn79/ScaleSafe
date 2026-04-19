@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-18
+
+### Changed
+- **Domain cutover to dashboard.scalesafe.app.** Removed 2 hardcoded `scalesafe-production.up.railway.app` fallbacks from `payment-lifecycle.service.ts` and `phase2Enrollment.service.ts`. All URL generation now uses `APP_URL` env var via `config.appUrl`. Set `APP_URL=https://dashboard.scalesafe.app` in Railway.
+
+---
+
 ## 2026-04-17
 
 ### Added
