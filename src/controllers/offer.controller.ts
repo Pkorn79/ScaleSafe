@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { offerService } from '../services/offer.service';
 import { merchantService } from '../services/merchant.service';
+import { config } from '../config';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
@@ -53,7 +54,7 @@ export const offerController = {
     try {
       const locationId = resolveLocationId(req);
       const offer = await offerService.getById(req.params.id);
-      const appBaseUrl = `${req.protocol}://${req.get('host')}`;
+      const appBaseUrl = config.appUrl;
 
       // Read the merchant's funnel URL from config
       let funnelBaseUrl = '';
