@@ -80,60 +80,87 @@ import {
 </template>
 
 <style>
-/* ── Base reset + font ──────────────────────────────── */
+/*
+ * Global utility layer — used by every view.
+ * Brand tokens are defined in src/ui/src/style.css (:root). This file consumes them.
+ * Phase 4a (brand-systematization workstream): repointed to brand tokens —
+ *   .btn-primary  blue  → emerald (engagement CTA)
+ *   .nav-active   blue  → teal    (sidebar active state)
+ *   .form-input   blue  → emerald (focus ring)
+ *   body bg       slate → cream
+ */
+
+/* ── Base reset ─────────────────────────────────────── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  color: #1a1a2e;
-  background: #f8fafc;
+  color: var(--ss-navy-800);
+  background: var(--ss-cream-50);
 }
 
-/* ── Nav links ──────────────────────────────────────── */
+h1, h2, h3, h4 {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ── Sidebar nav ────────────────────────────────────── */
 .nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 20px;
-  color: #94a3b8;
+  color: var(--ss-navy-400);
   text-decoration: none;
   font-size: 14px;
+  font-weight: 500;
   transition: all 0.15s;
+  border-left: 3px solid transparent;
 }
 .nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.nav-active { color: #fff !important; background: #3b82f6 !important; }
+.nav-active {
+  color: #fff !important;
+  background: rgba(20, 184, 166, 0.15) !important;
+  border-left-color: var(--ss-teal-500) !important;
+}
 .nav-sub { padding-left: 36px; font-size: 13px; }
 
-/* ── Shared component styles (used by all views) ───── */
+/* ── Page title ─────────────────────────────────────── */
 .page-title {
-  font-size: 24px;
-  font-weight: 600;
+  font-family: 'Manrope', 'Inter', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
   margin-bottom: 20px;
-  color: #0f172a;
+  color: var(--ss-navy-900);
+  letter-spacing: -0.02em;
 }
 
+/* ── Card — white surface with subtle lift ──────────── */
 .card {
   background: #fff;
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   margin-bottom: 16px;
-  border: 1px solid #f1f5f9;
+  border: 1px solid var(--ss-navy-200);
 }
 
 .card-title {
-  font-size: 12px;
-  color: #94a3b8;
+  font-size: 11px;
+  color: var(--ss-navy-500);
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 500;
+  letter-spacing: 0.08em;
+  font-weight: 600;
 }
 
 .card-value {
-  font-size: 28px;
+  font-family: 'Manrope', 'Inter', sans-serif;
+  font-size: 30px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--ss-navy-900);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 .grid { display: grid; gap: 16px; }
@@ -141,107 +168,183 @@ body {
 .grid-3 { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .grid-2 { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
 
+/* ── Buttons — brand primary is emerald, pill shape ── */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 9px 18px;
+  border-radius: 9999px;            /* pill */
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  border: none;
-  transition: all 0.15s;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3); }
+
+.btn-primary {
+  background: var(--ss-primary-500);
+  color: #fff;
+  border-color: var(--ss-primary-500);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--ss-primary-600);
+  border-color: var(--ss-primary-600);
 }
 
-.btn-primary { background: #3b82f6; color: #fff; }
-.btn-primary:hover { background: #2563eb; }
-.btn-secondary { background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; }
-.btn-secondary:hover { background: #e2e8f0; }
-.btn-danger { background: #ef4444; color: #fff; }
-.btn-danger:hover { background: #dc2626; }
-.btn-success { background: #10b981; color: #fff; }
-.btn-success:hover { background: #059669; }
-.btn-sm { padding: 5px 10px; font-size: 12px; }
+/* Funnel orange — top-of-funnel only (enrollment funnel, customer checkout). DO NOT use in-app. */
+.btn-funnel {
+  background: var(--ss-funnel-500);
+  color: #fff;
+  border-color: var(--ss-funnel-500);
+}
+.btn-funnel:hover:not(:disabled) {
+  background: var(--ss-funnel-600);
+  border-color: var(--ss-funnel-600);
+}
 
+.btn-secondary {
+  background: transparent;
+  color: var(--ss-primary-700);
+  border: 1px solid var(--ss-primary-300);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--ss-primary-50);
+  border-color: var(--ss-primary-500);
+  color: var(--ss-primary-800);
+}
+
+/* Tertiary — text-only, used for low-emphasis links inline with text */
+.btn-tertiary {
+  background: transparent;
+  color: var(--ss-primary-700);
+  border-color: transparent;
+}
+.btn-tertiary:hover:not(:disabled) {
+  background: var(--ss-primary-50);
+  color: var(--ss-primary-800);
+}
+
+/* Destructive — red ghost. Cancel program, Archive, Delete, Disconnect. */
+.btn-danger {
+  background: transparent;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+.btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25); }
+
+/* Success — used in archived-list "Activate" action. Same as primary at the moment. */
+.btn-success {
+  background: var(--ss-primary-500);
+  color: #fff;
+  border-color: var(--ss-primary-500);
+}
+.btn-success:hover:not(:disabled) {
+  background: var(--ss-primary-600);
+  border-color: var(--ss-primary-600);
+}
+
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* ── Badges (pill-shaped status labels) ─────────────── */
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
-.badge-green { background: #d1fae5; color: #065f46; }
-.badge-yellow { background: #fef3c7; color: #92400e; }
-.badge-red { background: #fee2e2; color: #991b1b; }
-.badge-blue { background: #dbeafe; color: #1e40af; }
-.badge-gray { background: #f1f5f9; color: #475569; }
-.badge-purple { background: #ede9fe; color: #5b21b6; }
+.badge-green  { background: var(--ss-primary-50); color: var(--ss-primary-800); }
+.badge-yellow { background: #fef3c7;              color: #92400e; }
+.badge-red    { background: #fee2e2;              color: #991b1b; }
+.badge-blue   { background: var(--ss-teal-50);    color: var(--ss-teal-700); }   /* repurposed: was blue, now teal accent — preserves "informational tone" semantics */
+.badge-gray   { background: var(--ss-navy-100);   color: var(--ss-navy-600); }
+.badge-purple { background: var(--ss-navy-100);   color: var(--ss-navy-700); }   /* deprecated; renamed to navy semantically. callers should migrate to badge-gray */
 
+/* ── Tables ─────────────────────────────────────────── */
 .table {
   width: 100%;
   border-collapse: collapse;
 }
-
 .table th, .table td {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--ss-navy-200);
   font-size: 14px;
 }
-
 .table th {
-  color: #94a3b8;
-  font-weight: 500;
-  font-size: 12px;
+  color: var(--ss-navy-500);
+  font-weight: 600;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
 }
+.table tr:hover td { background: var(--ss-cream-50); }
 
-.table tr:hover td { background: #f8fafc; }
-
+/* ── Forms ──────────────────────────────────────────── */
 .form-group { margin-bottom: 16px; }
 
 .form-label {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ss-navy-700);
+  margin-bottom: 6px;
+  letter-spacing: 0.01em;
+}
+
+/* Required-field asterisk — visually distinct red, not blended with label. */
+.form-label-required::after {
+  content: ' *';
+  color: #dc2626;
+  font-weight: 700;
 }
 
 .form-input, .form-select, .form-textarea {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  padding: 9px 13px;
+  border: 1px solid var(--ss-navy-300);
+  border-radius: 10px;
   font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s;
   font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: #fff;
 }
-
 .form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  border-color: var(--ss-primary-500);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 }
-
 .form-textarea { min-height: 80px; resize: vertical; }
 
+/* ── Page-level states ──────────────────────────────── */
 .loading {
-  color: #94a3b8;
+  color: var(--ss-navy-500);
   padding: 40px;
   text-align: center;
   font-size: 14px;
 }
 
 .error-msg {
-  color: #dc2626;
+  color: #991b1b;
   background: #fef2f2;
   padding: 12px 16px;
-  border-radius: 6px;
+  border-radius: 12px;
   margin-bottom: 16px;
   font-size: 14px;
   border: 1px solid #fecaca;
@@ -250,23 +353,24 @@ body {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #94a3b8;
+  color: var(--ss-navy-500);
 }
 
+/* ── Score bar (used by Defense Readiness Score widget) — preserve, this is a "Win to Amplify" ── */
 .score-bar {
   height: 8px;
-  background: #e2e8f0;
-  border-radius: 4px;
+  background: var(--ss-navy-200);
+  border-radius: 9999px;
   overflow: hidden;
   margin-top: 4px;
 }
-
 .score-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 9999px;
   transition: width 0.3s;
 }
 
+/* ── Layout helpers ─────────────────────────────────── */
 .flex { display: flex; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .gap-2 { gap: 8px; }
@@ -275,7 +379,7 @@ body {
 .mt-4 { margin-top: 16px; }
 .mb-4 { margin-bottom: 16px; }
 .text-sm { font-size: 13px; }
-.text-muted { color: #64748b; }
+.text-muted { color: var(--ss-navy-500); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .animate-spin { animation: spin 0.8s linear infinite; }

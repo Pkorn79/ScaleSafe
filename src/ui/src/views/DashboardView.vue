@@ -1,32 +1,41 @@
 <template>
   <div>
-    <h1 class="page-title">Dashboard</h1>
+    <SectionHeader
+      eyebrow="Overview"
+      :title="['Your', 'dashboard.']"
+      description="Real-time view of active offers, clients, evidence captured, and chargeback defense activity."
+    />
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="loading" class="loading">Loading dashboard...</div>
 
     <div v-if="data" class="grid grid-4 mb-4">
-      <div class="card">
-        <div class="card-title">Active Offers</div>
-        <div class="card-value">{{ data.activeOffers }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Active Clients</div>
-        <div class="card-value">{{ data.activeClients }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Evidence Records</div>
-        <div class="card-value">{{ data.totalEvidenceRecords.toLocaleString() }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Total Value Saved</div>
-        <div class="card-value" style="color: #10b981">${{ data.totalValueSaved.toLocaleString() }}</div>
-      </div>
+      <Stat
+        label="Active Offers"
+        :value="data.activeOffers"
+        accent="emerald"
+      />
+      <Stat
+        label="Active Clients"
+        :value="data.activeClients"
+        accent="navy"
+      />
+      <Stat
+        label="Evidence Records"
+        :value="data.totalEvidenceRecords.toLocaleString()"
+        accent="teal"
+      />
+      <Stat
+        label="Total Value Saved"
+        :value="`$${data.totalValueSaved.toLocaleString()}`"
+        accent="emerald"
+        description="Lifetime"
+      />
     </div>
 
     <div class="grid grid-2">
       <div class="card" v-if="data">
-        <div class="card-title">Defense Activity</div>
+        <SectionHeader :title="['Defense', 'activity.']" />
         <div class="mt-2">
           <div class="flex-between mb-4">
             <span class="text-sm">Pending</span>
@@ -48,10 +57,11 @@
       </div>
 
       <div class="card">
-        <div class="flex-between mb-4">
-          <div class="card-title">At-Risk Clients</div>
-          <router-link to="/clients" class="btn btn-sm btn-secondary">View All</router-link>
-        </div>
+        <SectionHeader :title="['At-risk', 'clients.']">
+          <template #actions>
+            <router-link to="/clients" class="btn btn-sm btn-secondary">View All</router-link>
+          </template>
+        </SectionHeader>
         <div v-if="atRisk && atRisk.length > 0">
           <div v-for="client in atRisk.slice(0, 5)" :key="client.contactId" class="flex-between mb-4">
             <div>
@@ -61,7 +71,12 @@
             <span class="badge badge-red">Risk: {{ client.riskScore }}</span>
           </div>
         </div>
-        <div v-else class="text-sm text-muted mt-2">No at-risk clients detected</div>
+        <EmptyState
+          v-else
+          :icon="ShieldCheck"
+          title="No at-risk clients detected"
+          body="When chargeback signals appear, at-risk clients will surface here for follow-up."
+        />
       </div>
     </div>
   </div>
@@ -69,7 +84,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { ShieldCheck } from 'lucide-vue-next';
 import { useApi } from '../composables/useApi';
+import SectionHeader from '../components/SectionHeader.vue';
+import Stat from '../components/Stat.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const api = useApi();
 const { loading, error } = api;

@@ -68,7 +68,7 @@ export const STANDARD_CLAUSES = [
   {
     key: 'feedback_checkin',
     label: 'Feedback & Check-In',
-    text: 'I understand that I will receive immediate access to digital materials, program content, and/or coaching services upon enrollment.',
+    text: 'I understand that periodic check-ins, surveys, or progress reviews may be requested during the program to monitor my satisfaction and progress. I agree to respond to these check-ins in good faith and understand that the merchant may reference my responses as part of the program record.',
     recommended: false,
     ghlFieldId: '', // No separate I Field — uses same checkbox pattern
   },

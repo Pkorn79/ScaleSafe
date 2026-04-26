@@ -9,22 +9,10 @@
 
     <!-- Summary Cards -->
     <div v-if="summary" class="grid grid-4 mb-4">
-      <div class="card">
-        <div class="card-title">Total Cases</div>
-        <div class="card-value">{{ summary.total }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Won</div>
-        <div class="card-value" style="color:#10b981">{{ summary.won }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Win Rate</div>
-        <div class="card-value">{{ summary.winRate }}%</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Value Saved</div>
-        <div class="card-value" style="color:#10b981">${{ (summary.totalValueSaved || 0).toLocaleString() }}</div>
-      </div>
+      <Stat label="Total Cases" :value="summary.total" accent="navy" />
+      <Stat label="Won" :value="summary.won" accent="emerald" />
+      <Stat label="Win Rate" :value="`${summary.winRate}%`" accent="emerald" />
+      <Stat label="Value Saved" :value="`$${(summary.totalValueSaved || 0).toLocaleString()}`" accent="emerald" />
     </div>
 
     <!-- Filters -->
@@ -41,8 +29,14 @@
     </div>
 
     <!-- Packet Cards -->
-    <div v-if="filteredPackets.length === 0 && !loading" class="empty-state">
-      <p>No defense packets{{ activeFilter !== 'all' ? ' matching this filter' : '' }}.</p>
+    <div v-if="filteredPackets.length === 0 && !loading">
+      <EmptyState
+        :icon="ShieldCheck"
+        :title="activeFilter === 'all' ? 'No defense packets yet' : 'No matches'"
+        :body="emptyBody"
+        :cta-label="activeFilter === 'all' ? 'New Defense' : ''"
+        @cta-click="showCompile = true"
+      />
     </div>
 
     <div v-for="p in filteredPackets" :key="p.id" class="defense-card" @click="$router.push(`/defense/${p.id}`)">
@@ -50,24 +44,27 @@
         <div>
           <strong style="font-size:14px">{{ p.contactName || 'Unknown' }}</strong>
           <span class="badge" :class="lifecycleBadge(p.lifecycleStatus || p.lifecycle_status || 'pending_submission')" style="margin-left:8px">
-            {{ p.lifecycleStatus || p.lifecycle_status || 'pending_submission' }}
+            {{ humanizeEventType(p.lifecycleStatus || p.lifecycle_status || 'pending_submission') }}
           </span>
         </div>
-        <div class="text-sm text-muted">{{ formatDate(p.created_at) }}</div>
+        <div class="text-sm text-muted">{{ formatTimestamp(p.created_at, 'short') }}</div>
       </div>
       <div class="grid grid-4" style="gap:8px">
         <div class="text-sm"><strong>Amount:</strong> ${{ Number(p.dispute_amount || 0).toFixed(2) }}</div>
-        <div class="text-sm"><span class="badge badge-blue">{{ p.reason_code }}</span></div>
-        <div class="text-sm"><strong>Deadline:</strong> {{ formatDate(p.deadline) }}</div>
+        <div class="text-sm">
+          <span class="badge badge-blue">{{ p.reason_code }}</span>
+          <span class="text-muted" style="margin-left:6px">{{ humanizeReasonCode(p.reason_code) }}</span>
+        </div>
+        <div class="text-sm"><strong>Deadline:</strong> {{ formatTimestamp(p.deadline, 'short') }}</div>
         <div class="text-sm">
           <span v-if="p.outcome" class="badge" :class="p.outcome.outcome === 'won' ? 'badge-green' : 'badge-red'">
-            {{ p.outcome.outcome }}
+            {{ humanizeEventType(p.outcome.outcome) }}
           </span>
-          <span v-else-if="p.lifecycleStatus === 'submitted' || (p.lifecycle_status === 'submitted')" class="text-muted">Awaiting decision</span>
+          <span v-else-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted'" class="text-muted">Awaiting decision</span>
         </div>
       </div>
       <div v-if="daysUntil(p.deadline) !== null" class="text-sm mt-2"
-        :style="{ color: daysUntil(p.deadline)! <= 3 ? '#ef4444' : daysUntil(p.deadline)! <= 7 ? '#f59e0b' : '#6b7280' }">
+        :style="{ color: daysUntil(p.deadline)! <= 3 ? '#b91c1c' : daysUntil(p.deadline)! <= 7 ? '#b45309' : 'var(--ss-navy-500)' }">
         {{ daysUntil(p.deadline)! > 0 ? daysUntil(p.deadline) + ' days remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Overdue by ' + Math.abs(daysUntil(p.deadline)!) + ' days' }}
       </div>
     </div>
@@ -98,7 +95,7 @@
         <select v-else class="form-select" v-model="selectedTransactionId" @change="onTransactionSelected">
           <option value="">Manual entry (no specific transaction)</option>
           <option v-for="t in transactions" :key="t.id" :value="t.id">
-            {{ formatDate(t.date) }} — ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' — ' + t.offerName : '' }}{{ t.transactionId ? ' — ' + t.transactionId.slice(0, 12) : '' }}
+            {{ formatTimestamp(t.date, 'short') }} — ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' — ' + t.offerName : '' }}{{ t.transactionId ? ' — ' + maskTransactionId(t.transactionId) : '' }}
           </option>
         </select>
         <div v-if="transactions.length === 0 && !transactionsLoading && compileForm.contactId" class="text-sm text-muted mt-2">
@@ -157,8 +154,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { ShieldCheck } from 'lucide-vue-next';
 import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
+import Stat from '../components/Stat.vue';
+import EmptyState from '../components/EmptyState.vue';
+import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp } from '../utils/humanize';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -186,6 +187,12 @@ const filters = [
   { key: 'lost', label: 'Lost' },
   { key: 'withdrawn', label: 'Withdrawn' },
 ];
+
+const emptyBody = computed(() =>
+  activeFilter.value === 'all'
+    ? 'When a chargeback comes in, compile a defense packet here. ScaleSafe pulls evidence from the client timeline automatically.'
+    : 'No defense packets match this filter. Try clearing it or selecting a different status.',
+);
 
 const compileForm = ref({
   contactId: '',
@@ -334,17 +341,17 @@ async function compile() {
 <style scoped>
 .defense-card {
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border: 1px solid var(--ss-navy-200);
+  border-radius: 16px;
   padding: 16px 20px;
   margin-bottom: 10px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .defense-card:hover {
-  border-color: #3b82f6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
+  border-color: var(--ss-primary-500);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.10);
 }
 
 .customer-dropdown {

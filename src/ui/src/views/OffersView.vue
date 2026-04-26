@@ -10,9 +10,14 @@
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="loading" class="loading">Loading offers...</div>
 
-    <div v-if="offers.length === 0 && !loading" class="empty-state">
-      <Package :size="48" class="mx-auto mb-4 text-slate-300" style="display:block;margin:0 auto 16px" />
-      <p>No offers yet. Create your first offer to start enrolling clients.</p>
+    <div v-if="offers.length === 0 && !loading">
+      <EmptyState
+        :icon="Package"
+        title="No offers yet"
+        body="Create your first offer to start enrolling clients. Each offer carries its own price, payment terms, and consent flow."
+        cta-label="New Offer"
+        @cta-click="routerNav.push('/offers/new')"
+      />
     </div>
 
     <!-- Tab filter -->
@@ -113,10 +118,10 @@
         <label class="form-label">Send via:</label>
         <div class="flex gap-4" style="margin-top:4px">
           <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
-            <input type="checkbox" v-model="sendForm.sendEmail" style="width:16px;height:16px;accent-color:#3b82f6" /> Email
+            <input type="checkbox" v-model="sendForm.sendEmail" style="width:16px;height:16px;accent-color:#10b981" /> Email
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
-            <input type="checkbox" v-model="sendForm.sendSms" style="width:16px;height:16px;accent-color:#3b82f6" /> SMS
+            <input type="checkbox" v-model="sendForm.sendSms" style="width:16px;height:16px;accent-color:#10b981" /> SMS
           </label>
         </div>
       </div>
@@ -146,6 +151,7 @@ import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
 import Modal from '../components/Modal.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const api = useApi();
 const routerNav = useRouter();

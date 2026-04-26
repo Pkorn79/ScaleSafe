@@ -53,7 +53,7 @@
         <tbody>
           <tr v-for="c in clients" :key="c.contactId">
             <td>
-              <router-link :to="`/clients/${c.contactId}`" style="color:#3b82f6;text-decoration:none">
+              <router-link :to="`/clients/${c.contactId}`" style="color: var(--ss-primary-700); text-decoration: none">
                 <strong>{{ c.name }}</strong>
               </router-link>
               <div v-if="c.email" class="text-sm text-muted">{{ c.email }}</div>
@@ -83,10 +83,27 @@
       </table>
     </div>
 
-    <div v-if="clients.length === 0 && !loading" class="empty-state">
-      <p v-if="searchInput || statusFilter">No clients match your filters.</p>
-      <p v-else-if="statusGroup === 'archive'">No archived clients yet.</p>
-      <p v-else>No clients yet. Send an enrollment link to get started.</p>
+    <div v-if="clients.length === 0 && !loading">
+      <EmptyState
+        v-if="searchInput || statusFilter"
+        :icon="SearchX"
+        title="No matches"
+        body="No clients match your current filters. Try clearing the search or selecting a different status."
+      />
+      <EmptyState
+        v-else-if="statusGroup === 'archive'"
+        :icon="Archive"
+        title="No archived clients"
+        body="Archived clients appear here when you cancel a program. Active enrollments stay on the Active tab."
+      />
+      <EmptyState
+        v-else
+        :icon="Users"
+        title="No clients yet"
+        body="Send an enrollment link from any offer, or use Add Client for clients you've already onboarded outside ScaleSafe."
+        cta-label="Add Client"
+        @cta-click="showAddModal = true"
+      />
     </div>
 
     <!-- Pagination -->
@@ -126,8 +143,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { Users, SearchX, Archive } from 'lucide-vue-next';
 import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 const api = useApi();
 const { loading, error } = api;
@@ -234,10 +253,10 @@ onMounted(() => loadClients());
   transition: color 0.15s, border-color 0.15s;
 }
 .status-tab:hover {
-  color: #1e293b;
+  color: var(--ss-navy-900);
 }
 .status-tab.active {
-  color: #3b82f6;
-  border-bottom-color: #3b82f6;
+  color: var(--ss-teal-700);
+  border-bottom-color: var(--ss-teal-500);
 }
 </style>

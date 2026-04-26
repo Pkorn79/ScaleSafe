@@ -5,6 +5,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-26
+
+### Changed
+- **Mainline views rebranded (Phase 4a–4f of brand-systematization workstream).** Global utility CSS in `App.vue` repointed to brand tokens — `.btn-primary` blue → emerald (engagement CTA, pill shape), `.nav-active` blue → teal (sidebar active), `.form-input` focus blue → emerald, body bg slate → cream. This single edit propagates brand-correct buttons / badges / cards / tables / form inputs to every view that uses the global utility classes, without per-view template changes. Per-view component swaps where they add specific value: `DashboardView` uses `Stat` for the 4 KPIs (with accent stripes) and `SectionHeader` for two-tone section heads; `OffersView` and `ClientsView` use `EmptyState` (icon + brand-color + encouragement copy + CTA) instead of bare single-line empty messages; `DefenseView` swaps 4 KPIs to `Stat`, applies `humanizeEventType()` to lifecycle status (e.g. `pending_submission` → "Pending Submission"), `humanizeReasonCode()` to chargeback reason codes (e.g. `4855` → "Goods/Services Not Provided"), and `maskTransactionId()` to disputed-transaction IDs in the selector dropdown. `ClientsView` status tabs active state retoned to teal. `SettingsPayments` toggle and Stripe-callout color repointed to emerald.
+
+### Added
+- **Brand component primitives (Phase 2 of brand-systematization workstream).** Eight reusable components added under `src/ui/src/components/` so per-view rebuilds in Phase 4 are mechanical replacement work:
+  - `Button.vue` — variants `primary` (emerald, in-app engagement) / `funnel` (orange, top-of-funnel only) / `secondary` (emerald outline) / `tertiary` (text) / `destructive` (red ghost). Pill shape, `sm`/`md`/`lg` sizes, loading state with spinner, optional left/right Lucide icons.
+  - `Pill.vue` — replaces inline `.badge-*` classes. Tones: emerald, navy, teal, orange, red, amber, gray.
+  - `Stat.vue` — single sizing for KPI cards across the app. Optional left-border accent stripe (emerald/navy/teal/orange) and trend delta with up/down/flat arrows.
+  - `Tabs.vue` — generalizes `ProfileTabs.vue`. Variants: `underline` (default, teal active), `pill`, `segmented`. Optional count badge per tab.
+  - `EmptyState.vue` — branded icon-in-circle + Manrope title + body + CTA slot. Replaces bare single-line empty messages.
+  - `SectionHeader.vue` — implements brand pattern: small-caps emerald eyebrow → two-tone (navy + emerald) `<h2>` → optional description, with `actions` slot.
+  - `StickySaveBar.vue` — Teleport-to-body fixed bottom save bar with dirty-state pulse dot. Pairs with long forms (Edit Offer, Settings).
+  - `FormLayout.vue` — two-column form-left + `aside` slot right; collapses to single column under 1024px. Reclaims the unused viewport right of forms.
+- **`humanize.ts` utility (Phase 3).** New `src/ui/src/utils/humanize.ts` exports `humanizeEventType()` (curated slug→label map for 28 event types, title-case fallback for the rest), `formatTimestamp()` (relative / absolute / short modes), `humanizeReasonCode()` (Visa / Mastercard / Amex chargeback codes including `4855 → Goods/Services Not Provided`), and `maskTransactionId()` (first-4 + ellipsis + last-4). 26 unit tests in `tests/unit/humanize.test.ts`. No view files touched in this phase.
+
+### Changed
+- **Brand token foundation (Phase 1 of brand-systematization workstream).** `ss-primary` Tailwind palette repointed from blue (`#3b82f6` family) to emerald (`#10b981` family) — every existing `bg-ss-primary-*` / `text-ss-primary-*` usage now resolves to brand-correct emerald. New sibling palettes added: `ss-funnel` (orange, top-of-funnel CTAs only — enrollment funnel, customer checkout), `ss-navy` (slate-900 ramp for structural surfaces), `ss-teal` (secondary accent), `ss-cream` (page background). Manrope display font loaded alongside Inter; `h1`–`h4` use Manrope, body uses Inter, page bg is `--ss-cream-50` (`#fafaf7`). CSS custom properties added in `src/ui/src/style.css` as parallel source for raw-CSS use inside `<style>` blocks. Semantic risk colors (`ss-safe`/`-moderate`/`-elevated`/`-high`/`-critical`) preserved. Phase 4 (per-view application), Phase 5 (sidebar repaint), Phase 6 (regression sweep) follow.
+
+### Fixed
+- **Feedback & Check-In T&C clause body text.** Slot 9 (`feedback_checkin`) was rendering Slot 5's "Digital Access" body text — copy-paste error in `src/constants/standard-clauses.ts` and the duplicated `standardClauses` array in `src/ui/src/views/OfferFormView.vue`. Slot 9 now reads "I understand that periodic check-ins, surveys, or progress reviews may be requested during the program to monitor my satisfaction and progress. I agree to respond to these check-ins in good faith and understand that the merchant may reference my responses as part of the program record." Pre-production — no `compiled_tc_html` backfill; existing test offers will pick up the new text on next save.
+
+---
+
 ## 2026-04-18
 
 ### Changed

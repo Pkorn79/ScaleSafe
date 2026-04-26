@@ -98,7 +98,7 @@
 
         <div v-if="!stripeConnected">
           <p class="text-sm text-muted mb-4">Connect your existing Stripe account to enable payment processing and dispute defense.</p>
-          <p class="text-sm mb-4" style="color:#3b82f6">Connecting Stripe gives you instant access to your risk profile and defense tools.</p>
+          <p class="text-sm mb-4" style="color: var(--ss-primary-700)">Connecting Stripe gives you instant access to your risk profile and defense tools.</p>
           <button class="btn btn-primary" @click="connectStripe">
             Connect with Stripe
           </button>
@@ -339,7 +339,7 @@ async function saveAutoSubmit() {
 }
 
 .toggle-track.active {
-  background: #3b82f6;
+  background: var(--ss-primary-500);
 }
 
 .toggle-thumb {

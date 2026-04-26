@@ -349,7 +349,7 @@ const standardClauses = [
   { key: 'participation_responsibility', label: 'Participation Responsibility', text: 'I understand that access to coaching sessions, materials, or support may require my participation. Failure to attend or utilize the resources provided does not mean the service was not delivered.', recommended: false },
   { key: 'no_guaranteed_results', label: 'No Guaranteed Results', text: 'I understand that this program provides education, strategy, and support. Results vary and are not guaranteed.', recommended: false },
   { key: 'installment_billing', label: 'Installment Billing', text: 'I authorize the scheduled payments outlined above and understand that this payment plan represents the total program price divided into installments.', recommended: false },
-  { key: 'feedback_checkin', label: 'Feedback & Check-In', text: 'I understand that I will receive immediate access to digital materials, program content, and/or coaching services upon enrollment.', recommended: false },
+  { key: 'feedback_checkin', label: 'Feedback & Check-In', text: 'I understand that periodic check-ins, surveys, or progress reviews may be requested during the program to monitor my satisfaction and progress. I agree to respond to these check-ins in good faith and understand that the merchant may reference my responses as part of the program record.', recommended: false },
 ];
 
 const form = ref({

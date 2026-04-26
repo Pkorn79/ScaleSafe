@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+/*
+ * ScaleSafe brand tokens — parallel source for raw-CSS use inside <style> blocks.
+ * Tailwind utilities (bg-ss-primary-500 etc.) read from tailwind.config.js;
+ * these CSS variables let inline styles and component <style> blocks pick the same hex.
+ * Keep these in sync with tailwind.config.js. Single source of truth lives in the Tailwind config.
+ */
+:root {
+  /* Emerald primary — engagement CTAs */
+  --ss-primary-50:  #ecfdf5;
+  --ss-primary-100: #d1fae5;
+  --ss-primary-200: #a7f3d0;
+  --ss-primary-300: #6ee7b7;
+  --ss-primary-400: #34d399;
+  --ss-primary-500: #10b981;
+  --ss-primary-600: #059669;
+  --ss-primary-700: #047857;
+  --ss-primary-800: #065f46;
+  --ss-primary-900: #064e3b;
+
+  /* Funnel orange — top-of-funnel CTAs only */
+  --ss-funnel-50:  #fff7ed;
+  --ss-funnel-100: #ffedd5;
+  --ss-funnel-500: #f97316;
+  --ss-funnel-600: #ea580c;
+  --ss-funnel-700: #c2410c;
+
+  /* Navy structural */
+  --ss-navy-50:  #f8fafc;
+  --ss-navy-100: #f1f5f9;
+  --ss-navy-200: #e2e8f0;
+  --ss-navy-300: #cbd5e1;
+  --ss-navy-400: #94a3b8;
+  --ss-navy-500: #64748b;
+  --ss-navy-600: #475569;
+  --ss-navy-700: #334155;
+  --ss-navy-800: #1e293b;
+  --ss-navy-900: #0f172a;
+
+  /* Teal accent */
+  --ss-teal-50:  #f0fdfa;
+  --ss-teal-100: #ccfbf1;
+  --ss-teal-400: #2dd4bf;
+  --ss-teal-500: #14b8a6;
+  --ss-teal-600: #0d9488;
+  --ss-teal-700: #0f766e;
+
+  /* Cream / off-white */
+  --ss-cream-50:  #fafaf7;
+  --ss-cream-100: #f5f5ed;
+
+  /* Semantic risk colors — match tailwind.config.js */
+  --ss-safe:     #10b981;
+  --ss-moderate: #f59e0b;
+  --ss-elevated: #f97316;
+  --ss-high:     #ef4444;
+  --ss-critical: #7f1d1d;
+}
+
+/*
+ * Base layer — body uses Inter, headings use Manrope (geometric display sans).
+ * Page bg is cream; cards stay white for the "subtle lift" pattern from the brand reference.
+ */
+html {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--ss-cream-50);
+}
+
+body {
+  background-color: var(--ss-cream-50);
+  color: var(--ss-navy-800);
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
