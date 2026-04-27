@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Readiness score card -->
-    <div v-if="score" class="card mb-4">
+    <div v-if="score" class="card">
       <div class="flex-between">
         <div>
           <div class="card-title">Defense Readiness Score</div>
@@ -50,7 +50,7 @@
     </div>
 
     <!-- Recent activity (latest 5) -->
-    <div class="card mb-4">
+    <div class="card">
       <div class="card-title">Recent Activity</div>
       <div v-if="(recentActivity || []).length === 0" class="text-sm text-muted" style="margin-top:8px">
         No activity yet.
@@ -65,7 +65,7 @@
     </div>
 
     <!-- Most recent note -->
-    <div class="card mb-4">
+    <div class="card">
       <div class="card-title">Most Recent Note</div>
       <div v-if="recentNote" class="text-sm" style="margin-top:8px;white-space:pre-wrap">
         {{ recentNote.body }}

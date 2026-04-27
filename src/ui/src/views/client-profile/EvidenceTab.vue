@@ -6,7 +6,7 @@
     </div>
 
     <!-- Filters -->
-    <div class="card mb-4">
+    <div class="card">
       <div class="grid grid-3" style="gap:12px">
         <div>
           <label class="form-label">Type</label>

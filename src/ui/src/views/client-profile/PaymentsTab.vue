@@ -6,7 +6,7 @@
     </div>
 
     <!-- Card on file -->
-    <div class="card mb-4">
+    <div class="card">
       <div class="card-title">Card on File</div>
       <div v-if="enrollmentInfo?.cardOnFile" class="text-sm">
         <strong>{{ enrollmentInfo.cardOnFile.brand || 'Card' }}</strong>
@@ -20,7 +20,7 @@
     </div>
 
     <!-- Totals -->
-    <div class="card mb-4">
+    <div class="card">
       <div class="card-title">Totals</div>
       <div class="grid grid-3 mt-2">
         <div class="text-sm">
@@ -36,7 +36,7 @@
     </div>
 
     <!-- Per-program installment / subscription progress -->
-    <div v-if="activeRecurringEnrollments.length > 0" class="card mb-4">
+    <div v-if="activeRecurringEnrollments.length > 0" class="card">
       <div class="card-title">Program Payment Progress</div>
       <div
         v-for="enr in activeRecurringEnrollments"

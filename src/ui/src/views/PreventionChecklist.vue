@@ -10,7 +10,7 @@
 
     <template v-if="!pageLoading && !loadError">
       <!-- Risk Audit Scores -->
-      <div v-if="riskAudit" class="card mb-4">
+      <div v-if="riskAudit" class="card">
         <h3 class="section-title">Risk Audit Profile</h3>
         <p class="text-sm text-muted mb-4">
           Overall Risk: <strong :class="'risk-level-' + (riskAudit.overallRiskLevel || 'safe')">{{ (riskAudit.overallRiskLevel || 'unknown').toUpperCase() }}</strong>
@@ -30,7 +30,7 @@
       </div>
 
       <!-- Prevention Items -->
-      <div v-if="preventionItems.length > 0" class="card mb-4">
+      <div v-if="preventionItems.length > 0" class="card">
         <h3 class="section-title">Prevention Coverage</h3>
         <div v-for="item in preventionItems" :key="item.id" class="prevention-item">
           <div class="flex gap-2" style="align-items:flex-start">

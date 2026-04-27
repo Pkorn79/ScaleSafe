@@ -65,7 +65,7 @@
       </div>
 
       <!-- VAMP Status -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Network Monitoring Status</h3>
         <div class="grid grid-2">
           <div>
@@ -84,7 +84,7 @@
       </div>
 
       <!-- Reason Code Breakdown -->
-      <div v-if="hasReasonCodes" class="card mb-4">
+      <div v-if="hasReasonCodes" class="card">
         <h3 class="section-title">Dispute Reason Breakdown</h3>
         <div v-for="(count, reason) in healthSnapshot.reason_code_breakdown" :key="String(reason)" class="flex-between mb-4">
           <span class="text-sm">{{ formatReasonCode(String(reason)) }}</span>
@@ -93,7 +93,7 @@
       </div>
 
       <!-- Module Recommendations (from Risk Audit) -->
-      <div v-if="riskAudit?.moduleRecommendations?.length" class="card mb-4">
+      <div v-if="riskAudit?.moduleRecommendations?.length" class="card">
         <h3 class="section-title">Recommended Actions</h3>
         <div
           v-for="rec in riskAudit.moduleRecommendations"

@@ -17,7 +17,7 @@
       </div>
 
       <!-- Business Information -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Business Information</h3>
         <div class="grid grid-2">
           <div class="form-group">
@@ -114,7 +114,7 @@
       </div>
 
       <!-- Payment Processor -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Payment Processor</h3>
 
         <div v-if="stripeConnected" class="processor-status connected">
@@ -167,7 +167,7 @@
       </div>
 
       <!-- Evidence Module Toggles -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Evidence Modules</h3>
         <p class="text-sm text-muted mb-4">
           Enable or disable the evidence tracking modules for your account.
@@ -184,7 +184,7 @@
       </div>
 
       <!-- Dunning & Retry Settings -->
-      <div class="card mb-4" v-if="config">
+      <div class="card" v-if="config">
         <h3 class="section-title">Dunning & Payment Retry</h3>
         <p class="text-sm text-muted mb-4">
           When a recurring payment fails, ScaleSafe can automatically retry the charge. Configure the behavior below.
@@ -223,7 +223,7 @@
       </div>
 
       <!-- Disengagement Thresholds -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Disengagement Thresholds</h3>
         <div class="grid grid-2">
           <div class="form-group">
@@ -246,7 +246,7 @@
       </div>
 
       <!-- Admin Actions -->
-      <div class="card mb-4">
+      <div class="card">
         <h3 class="section-title">Admin Actions</h3>
         <div class="flex gap-2" style="flex-wrap:wrap">
           <button class="btn btn-secondary" @click="runReconciliation" :disabled="!!running">

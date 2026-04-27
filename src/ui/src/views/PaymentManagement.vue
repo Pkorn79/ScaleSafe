@@ -12,7 +12,7 @@
     <div v-if="actionError" class="error-msg">{{ actionError }}</div>
 
     <!-- Dunning Alert Banner -->
-    <div v-if="dunningEvent" class="card mb-4" :style="{ borderLeft: '4px solid ' + (dunningEvent.dunning_status === 'escalated' ? '#ef4444' : '#f59e0b') }">
+    <div v-if="dunningEvent" class="card" :style="{ borderLeft: '4px solid ' + (dunningEvent.dunning_status === 'escalated' ? '#ef4444' : '#f59e0b') }">
       <div class="flex-between">
         <div>
           <div class="card-title" style="display:flex;align-items:center;gap:8px">

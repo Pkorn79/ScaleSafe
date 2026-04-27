@@ -9,7 +9,7 @@
 
     <template v-else>
       <!-- Enrollment packets -->
-      <div class="card mb-4">
+      <div class="card">
         <div class="card-title">Enrollment Packets</div>
         <div v-if="packets.length === 0" class="text-sm text-muted" style="margin-top:8px">
           No enrollment packets yet.

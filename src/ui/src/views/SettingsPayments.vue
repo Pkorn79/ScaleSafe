@@ -11,7 +11,7 @@
 
     <template v-if="!pageLoading">
       <!-- Default Processor Toggle (only show if both connected) -->
-      <div v-if="nmiConnected && stripeConnected" class="card mb-4">
+      <div v-if="nmiConnected && stripeConnected" class="card">
         <h3 class="section-title">Default Processor</h3>
         <p class="text-sm text-muted mb-4">Choose which processor handles new payments by default. You can override this per offer.</p>
         <div class="flex gap-2">
@@ -33,7 +33,7 @@
       </div>
 
       <!-- NMI Connection -->
-      <div class="card mb-4">
+      <div class="card">
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">NMI</h3>
           <span v-if="nmiConnected" class="badge badge-green">Connected</span>
@@ -92,7 +92,7 @@
       </div>
 
       <!-- Stripe Connection -->
-      <div class="card mb-4">
+      <div class="card">
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">Stripe</h3>
           <span v-if="stripeConnected" class="badge badge-green">Connected</span>
@@ -121,7 +121,7 @@
       </div>
 
       <!-- Auto-Submit Toggle -->
-      <div v-if="stripeConnected" class="card mb-4">
+      <div v-if="stripeConnected" class="card">
         <h3 class="section-title">Dispute Auto-Submit</h3>
         <p class="text-sm text-muted mb-4">When enabled, ScaleSafe automatically submits evidence for disputes with strong evidence (score 60+). Disable to review each packet before submission.</p>
         <label class="toggle-switch-label">
