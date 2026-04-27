@@ -97,8 +97,8 @@ function select(key: string) {
 }
 
 .ss-profile-tab-active {
-  color: #3b82f6;
-  border-bottom-color: #3b82f6;
+  color: var(--ss-teal-700);
+  border-bottom-color: var(--ss-teal-500);
 }
 
 /* ── Mobile bottom-nav ──────────────────────────────────────── */
@@ -147,7 +147,7 @@ function select(key: string) {
   }
 
   .ss-profile-tab-mobile-active {
-    color: #3b82f6;
+    color: var(--ss-teal-700);
   }
 
   /* When bottom-nav is active, main content needs bottom padding so it isn't hidden */

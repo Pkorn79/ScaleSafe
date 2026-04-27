@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-27
 
+### Changed
+- **Tab standardization — Round 2 Phase 4 (`Tabs` component adopted across list views; `ProfileTabs` retoned).** `OffersView` (Active/Archived) and `ClientsView` (Active/Archive/All) now use the brand `Tabs` component in `segmented` variant — single rounded container with selected pill, replacing two different hand-rolled patterns (button-pair with primary/secondary toggle, custom `.status-tabs` underline). `DefenseView` filter chips moved to `pill` variant inside a `flex-between` row that keeps the sort dropdown anchored right. Active tab in `OffersView` now shows count badges via the `Tabs` `count` prop (was inline in label text). Removed the now-orphaned `.status-tabs/.status-tab` CSS from `ClientsView`. Bonus: `ProfileTabs` (used inside `ClientDetailView` + `DefenseDetailView`) had its active-state color hardcoded to pre-brand `#3b82f6` blue — repointed to brand teal tokens (`--ss-teal-500/700`) for visual consistency with `Tabs.vue` underline variant.
+
 ### Fixed
 - **Vertical rhythm sweep — Round 2 Phase 3 (eliminate doubled card margins).** `.card` already declares `margin-bottom: 16px`, but 24 call sites were stacking an additional `mb-4` on top, producing 32px gaps under those cards while bare `<div class="card">` got 16px. Result: visible inconsistency in any view that mixed both forms (Settings page especially — six stacked cards). Removed the redundant `mb-4` from `<div class="card mb-4">` across 9 files (`StripeRiskHealth`, `SettingsView` ×6, `SettingsPayments`, `PaymentManagement`, `PreventionChecklist`, `client-profile/{Overview,Payments,Evidence,Files}Tab`). Every card now uses the global 16px gap. No intentional 32px gaps were lost — these were all accidental doubles.
 

@@ -21,12 +21,9 @@
     </div>
 
     <!-- Filters -->
-    <div class="flex gap-2 mb-4" style="flex-wrap:wrap">
-      <button v-for="f in filters" :key="f.key" class="btn btn-sm"
-        :class="activeFilter === f.key ? 'btn-primary' : 'btn-secondary'" @click="activeFilter = f.key">
-        {{ f.label }}
-      </button>
-      <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px;margin-left:auto" v-model="sortBy">
+    <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
+      <Tabs v-model="activeFilter" :tabs="filters" variant="pill" />
+      <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" v-model="sortBy">
         <option value="deadline">Sort: Deadline (soonest)</option>
         <option value="created">Sort: Date Created</option>
         <option value="amount">Sort: Amount</option>
@@ -165,6 +162,7 @@ import Modal from '../components/Modal.vue';
 import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
+import Tabs from '../components/Tabs.vue';
 import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp } from '../utils/humanize';
 
 const api = useApi();

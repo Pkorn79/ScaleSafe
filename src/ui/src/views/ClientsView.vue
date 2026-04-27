@@ -11,11 +11,13 @@
     </SectionHeader>
 
     <!-- Active / Archive tabs -->
-    <div class="status-tabs mb-4">
-      <button class="status-tab" :class="{ active: statusGroup === 'active' }" @click="switchGroup('active')">Active</button>
-      <button class="status-tab" :class="{ active: statusGroup === 'archive' }" @click="switchGroup('archive')">Archive</button>
-      <button class="status-tab" :class="{ active: statusGroup === 'all' }" @click="switchGroup('all')">All</button>
-    </div>
+    <Tabs
+      :model-value="statusGroup"
+      @update:model-value="switchGroup"
+      :tabs="statusGroupTabs"
+      variant="segmented"
+      class="mb-4"
+    />
 
     <!-- Search + Filters -->
     <div class="flex gap-2 mb-4" style="flex-wrap:wrap">
@@ -153,6 +155,7 @@ import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
+import Tabs from '../components/Tabs.vue';
 
 const api = useApi();
 const { loading, error } = api;
@@ -174,6 +177,12 @@ const newClient = ref({ firstName: '', lastName: '', email: '', phone: '' });
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const totalPages = computed(() => Math.ceil(totalClients.value / limit.value) || 1);
+
+const statusGroupTabs = [
+  { key: 'active', label: 'Active' },
+  { key: 'archive', label: 'Archive' },
+  { key: 'all', label: 'All' },
+];
 
 function statusBadge(status: string): string {
   if (['enrolled', 'active'].includes(status)) return 'badge-green';
@@ -240,29 +249,3 @@ async function submitAddClient() {
 onMounted(() => loadClients());
 </script>
 
-<style scoped>
-.status-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 2px solid #e5e7eb;
-}
-.status-tab {
-  padding: 8px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #64748b;
-  background: none;
-  border: none;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  transition: color 0.15s, border-color 0.15s;
-}
-.status-tab:hover {
-  color: var(--ss-navy-900);
-}
-.status-tab.active {
-  color: var(--ss-teal-700);
-  border-bottom-color: var(--ss-teal-500);
-}
-</style>

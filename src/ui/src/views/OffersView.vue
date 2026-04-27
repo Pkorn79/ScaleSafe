@@ -26,14 +26,13 @@
     </div>
 
     <!-- Tab filter -->
-    <div v-if="offers.length > 0" class="flex gap-2 mb-4">
-      <button class="btn btn-sm" :class="tab === 'active' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'active'">
-        Active ({{ activeOffers.length }})
-      </button>
-      <button class="btn btn-sm" :class="tab === 'archived' ? 'btn-primary' : 'btn-secondary'" @click="tab = 'archived'">
-        Archived ({{ archivedOffers.length }})
-      </button>
-    </div>
+    <Tabs
+      v-if="offers.length > 0"
+      v-model="tab"
+      :tabs="offerTabs"
+      variant="segmented"
+      class="mb-4"
+    />
 
     <div class="card" v-if="filteredOffers.length > 0">
       <table class="table">
@@ -158,6 +157,7 @@ import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
+import Tabs from '../components/Tabs.vue';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -168,6 +168,10 @@ const tab = ref<'active' | 'archived'>('active');
 const activeOffers = computed(() => offers.value.filter(o => o.active));
 const archivedOffers = computed(() => offers.value.filter(o => !o.active));
 const filteredOffers = computed(() => tab.value === 'active' ? activeOffers.value : archivedOffers.value);
+const offerTabs = computed(() => [
+  { key: 'active', label: 'Active', count: activeOffers.value.length },
+  { key: 'archived', label: 'Archived', count: archivedOffers.value.length },
+]);
 
 // Send link modal state
 const showSendModal = ref(false);
