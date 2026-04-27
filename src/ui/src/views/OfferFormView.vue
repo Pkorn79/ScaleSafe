@@ -286,32 +286,35 @@
         </div>
       </div>
 
-      <!-- Milestones -->
+      <!-- Milestones (progressive disclosure: show filled rows + one blank, up to 8) -->
       <h3 class="mt-4 mb-4">Milestones</h3>
       <p class="text-sm text-muted mb-4">
-        Define up to 8 program milestones. Only fill in the milestones that apply.
+        Define up to 8 program milestones. Add one at a time — only the rows you fill in are saved.
       </p>
-      <div v-for="(m, i) in form.milestones" :key="i" class="grid grid-3 mb-4" style="align-items:end">
+      <div v-for="i in visibleMilestoneCount" :key="i - 1" class="grid grid-3 mb-4" style="align-items:end">
         <div class="form-group">
-          <label class="form-label">Milestone {{ i + 1 }} Name</label>
-          <input class="form-input" v-model="m.name" :placeholder="`Milestone ${i + 1}`" />
+          <label class="form-label">Milestone {{ i }} Name</label>
+          <input class="form-input" v-model="form.milestones[i - 1].name" :placeholder="`Milestone ${i}`" />
         </div>
         <div class="form-group">
           <label class="form-label">We Deliver</label>
-          <input class="form-input" v-model="m.delivers" />
+          <input class="form-input" v-model="form.milestones[i - 1].delivers" />
         </div>
         <div class="form-group">
           <label class="form-label">Client Responsibility</label>
-          <input class="form-input" v-model="m.clientDoes" />
+          <input class="form-input" v-model="form.milestones[i - 1].clientDoes" />
         </div>
       </div>
+      <button
+        v-if="visibleMilestoneCount < 8 && form.milestones[visibleMilestoneCount - 1]?.name"
+        type="button"
+        class="btn btn-sm btn-secondary mb-4"
+        @click="addMilestone"
+      >
+        + Add milestone
+      </button>
 
-      <div class="flex gap-2 mt-4">
-        <button type="submit" class="btn btn-primary" :disabled="loading">
-          {{ loading ? 'Saving...' : (isEdit ? 'Update Offer' : 'Create Offer') }}
-        </button>
-        <router-link to="/offers" class="btn btn-secondary">Cancel</router-link>
-      </div>
+      <!-- Save / Cancel handled by sticky save bar below — no inline buttons. -->
     </form>
 
     <StickySaveBar
@@ -395,6 +398,12 @@ const form = ref({
   quickCheckoutShowRefundPolicy: true,
 });
 
+const visibleMilestoneCount = ref(1);
+
+function addMilestone() {
+  if (visibleMilestoneCount.value < 8) visibleMilestoneCount.value += 1;
+}
+
 const calculatedInstallment = computed(() => {
   if (form.value.price && form.value.numPayments && form.value.numPayments > 0) {
     return (Math.round((form.value.price / form.value.numPayments) * 100) / 100).toFixed(2);
@@ -455,11 +464,14 @@ onMounted(async () => {
       form.value.customClause2Title = offer.clause_slot_11_title || '';
       form.value.customClause2Text = offer.clause_slot_11_text || '';
 
+      let lastFilled = 0;
       for (let i = 0; i < 8; i++) {
         form.value.milestones[i].name = offer[`m${i + 1}_name`] || '';
         form.value.milestones[i].delivers = offer[`m${i + 1}_delivers`] || '';
         form.value.milestones[i].clientDoes = offer[`m${i + 1}_client_does`] || '';
+        if (form.value.milestones[i].name) lastFilled = i + 1;
       }
+      visibleMilestoneCount.value = Math.min(8, Math.max(1, lastFilled + (lastFilled < 8 ? 1 : 0)));
 
       form.value.processorOverride = offer.processor_override || '';
       form.value.nmiProcessorId = offer.nmi_processor_id || '';

@@ -4,15 +4,20 @@
       <div class="card-title" style="margin-bottom:0">Communications</div>
       <div class="flex gap-2">
         <button class="btn btn-sm btn-secondary" @click="$emit('add-note')">Add Note</button>
-        <button class="btn btn-sm btn-secondary" @click="$emit('send-message')">Send Message</button>
+        <button class="btn btn-sm btn-primary" @click="$emit('send-message')">Send Message</button>
       </div>
     </div>
 
     <div v-if="loading && items.length === 0" class="loading">Loading communications...</div>
     <div v-else-if="error" class="error-msg">{{ error }}</div>
-    <div v-else-if="items.length === 0" class="empty-state">
-      <p>No messages or notes for this contact yet.</p>
-    </div>
+    <EmptyState
+      v-else-if="items.length === 0"
+      :icon="MessageSquare"
+      title="No communications yet"
+      body="Notes and messages between you and this client will appear here. Send a message or log a note to start the trail."
+      cta-label="Send Message"
+      @cta-click="$emit('send-message')"
+    />
 
     <div v-else class="card">
       <div v-for="(item, i) in items" :key="i" class="comm-row">
@@ -38,7 +43,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { MessageSquare } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
+import EmptyState from '../../components/EmptyState.vue';
 
 const props = defineProps<{
   contactId: string;
@@ -117,7 +124,7 @@ onMounted(() => fetchPage(0, false));
 <style scoped>
 .comm-row {
   padding: 10px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--ss-navy-100);
 }
 
 .comm-row:last-child {
@@ -134,7 +141,7 @@ onMounted(() => fetchPage(0, false));
 
 .comm-body {
   font-size: 13px;
-  color: #374151;
+  color: var(--ss-navy-800);
   white-space: pre-wrap;
   line-height: 1.5;
 }

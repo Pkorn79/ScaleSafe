@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-27
 
+### Fixed
+- **Per-page polish — Round 2 Phase 5.**
+  - **OfferFormView duplicate save buttons removed.** The form had both an inline `Save / Cancel` row at the bottom and the `StickySaveBar` introduced in Phase 4 brand close-out. The inline pair was redundant — sticky bar is always visible and handles both actions. Single source of save now.
+  - **OfferFormView milestones — progressive disclosure.** Was rendering all 8 milestone rows × 3 inputs = 24 fields, most empty, in front of the merchant. Now starts with 1 row; an `+ Add milestone` button reveals the next blank row only after the current one has a name. On edit, opens with `lastFilledMilestone + 1` rows visible. Caps at 8.
+  - **ProgramsTab pluralization + frequency abbreviation.** Was rendering `1 weeks` / `1 months` (no singular/plural handling) and `$50/monthly` (showing the raw enum value where the design wanted an abbreviation). Added `formatDuration(value, unit)` for grammatical pluralization (`1 week` / `2 months`) and `shortFrequency(freq)` for abbreviated billing cadence (`mo`, `wk`, `2wk`, `qtr`, `yr`).
+  - **CommunicationsTab — branded empty state + primary CTA.** Empty-state rendered as bare single line `<p>No messages or notes...</p>`. Replaced with `<EmptyState>` (icon + title + body + CTA). Made `Send Message` the primary action (`btn-primary`) since it's the dominant intent on this tab; `Add Note` stays secondary. Repointed inline `#374151` body color and `#f1f5f9` divider to brand `--ss-navy-800` / `--ss-navy-100` tokens.
+
 ### Changed
 - **Tab standardization — Round 2 Phase 4 (`Tabs` component adopted across list views; `ProfileTabs` retoned).** `OffersView` (Active/Archived) and `ClientsView` (Active/Archive/All) now use the brand `Tabs` component in `segmented` variant — single rounded container with selected pill, replacing two different hand-rolled patterns (button-pair with primary/secondary toggle, custom `.status-tabs` underline). `DefenseView` filter chips moved to `pill` variant inside a `flex-between` row that keeps the sort dropdown anchored right. Active tab in `OffersView` now shows count badges via the `Tabs` `count` prop (was inline in label text). Removed the now-orphaned `.status-tabs/.status-tab` CSS from `ClientsView`. Bonus: `ProfileTabs` (used inside `ClientDetailView` + `DefenseDetailView`) had its active-state color hardcoded to pre-brand `#3b82f6` blue — repointed to brand teal tokens (`--ss-teal-500/700`) for visual consistency with `Tabs.vue` underline variant.
 

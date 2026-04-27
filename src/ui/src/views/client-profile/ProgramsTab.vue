@@ -44,7 +44,7 @@
       <div class="grid grid-3 mt-2">
         <div class="text-sm">
           <strong>Enrolled:</strong> {{ enr.enrolledAt ? formatDateShort(enr.enrolledAt) : 'Pending' }}
-          <span v-if="enr.programDuration" class="text-muted"> ({{ enr.programDuration }} {{ enr.programDurationUnit || '' }})</span>
+          <span v-if="enr.programDuration" class="text-muted"> ({{ formatDuration(enr.programDuration, enr.programDurationUnit) }})</span>
           <div v-if="programEndDate(enr)" class="text-muted" style="font-size:12px">
             Ends: {{ programEndDate(enr) }}
           </div>
@@ -54,10 +54,10 @@
           <span v-if="enr.paymentType === 'one_time'">${{ Number(enr.paymentAmount || enr.offerPrice || 0).toFixed(2) }} PIF</span>
           <span v-else-if="enr.paymentType === 'installments' || enr.paymentType === 'installment'">
             {{ enr.paymentsMade || 0 }}/{{ enr.paymentsTotal || '?' }} payments
-            <span v-if="enr.installmentAmount" class="text-muted">(${{ Number(enr.installmentAmount).toFixed(2) }}/{{ enr.installmentFrequency || 'mo' }})</span>
+            <span v-if="enr.installmentAmount" class="text-muted">(${{ Number(enr.installmentAmount).toFixed(2) }}/{{ shortFrequency(enr.installmentFrequency) }})</span>
           </span>
           <span v-else-if="enr.paymentType === 'subscription'">
-            ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }}/{{ enr.installmentFrequency || 'mo' }}
+            ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }}/{{ shortFrequency(enr.installmentFrequency) }}
           </span>
           <span v-else>${{ Number(enr.paymentAmount || 0).toFixed(2) }}</span>
         </div>
@@ -225,6 +225,33 @@ function canCancel(enr: any): boolean {
 }
 function canComplete(enr: any): boolean {
   return ['enrolled', 'active'].includes(enr.status);
+}
+
+function formatDuration(value: number, unit?: string): string {
+  const u = (unit || 'months').toLowerCase();
+  const labels: Record<string, [string, string]> = {
+    weeks: ['week', 'weeks'],
+    week: ['week', 'weeks'],
+    months: ['month', 'months'],
+    month: ['month', 'months'],
+    days: ['day', 'days'],
+    day: ['day', 'days'],
+  };
+  const [singular, plural] = labels[u] || [u, u + 's'];
+  return `${value} ${value === 1 ? singular : plural}`;
+}
+
+function shortFrequency(freq?: string): string {
+  const map: Record<string, string> = {
+    weekly: 'wk',
+    bi_weekly: '2wk',
+    monthly: 'mo',
+    quarterly: 'qtr',
+    annual: 'yr',
+    annually: 'yr',
+  };
+  if (!freq) return 'mo';
+  return map[freq.toLowerCase()] || freq;
 }
 
 function programEndDate(enr: any): string {
