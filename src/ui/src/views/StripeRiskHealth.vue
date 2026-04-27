@@ -1,6 +1,10 @@
 <template>
   <div class="defense-dashboard">
-    <h1 class="page-title">Stripe Defense Dashboard</h1>
+    <SectionHeader
+      eyebrow="Defense"
+      :title="['Stripe', 'health.']"
+      description="Visibility into your dispute rate, evidence coverage, and account health."
+    />
 
     <!-- Loading state -->
     <div v-if="pageLoading" class="loading">Loading account health data...</div>
@@ -121,6 +125,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
+import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
 

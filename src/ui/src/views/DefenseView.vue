@@ -1,9 +1,14 @@
 <template>
   <div>
-    <div class="flex-between mb-4">
-      <h1 class="page-title">Defense Dashboard</h1>
-      <button class="btn btn-primary" @click="showCompile = true">New Defense</button>
-    </div>
+    <SectionHeader
+      eyebrow="Defense"
+      :title="['Chargeback', 'cases.']"
+      description="Track active disputes, win rate, and total revenue defended."
+    >
+      <template #actions>
+        <button class="btn btn-primary" @click="showCompile = true">New Defense</button>
+      </template>
+    </SectionHeader>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
 
@@ -159,6 +164,7 @@ import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
 import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
+import SectionHeader from '../components/SectionHeader.vue';
 import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp } from '../utils/humanize';
 
 const api = useApi();

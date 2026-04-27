@@ -1,9 +1,14 @@
 <template>
   <div>
-    <div class="flex-between mb-2">
-      <h1 class="page-title" style="margin-bottom:0">Clients</h1>
-      <button class="btn btn-primary btn-sm" @click="showAddModal = true">Add Client</button>
-    </div>
+    <SectionHeader
+      eyebrow="Clients"
+      :title="['Your', 'clients.']"
+      description="Active enrollments, payment status, and last activity at a glance."
+    >
+      <template #actions>
+        <button class="btn btn-primary btn-sm" @click="showAddModal = true">Add Client</button>
+      </template>
+    </SectionHeader>
 
     <!-- Active / Archive tabs -->
     <div class="status-tabs mb-4">
@@ -147,6 +152,7 @@ import { Users, SearchX, Archive } from 'lucide-vue-next';
 import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
+import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
 const { loading, error } = api;

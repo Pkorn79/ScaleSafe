@@ -1,7 +1,10 @@
 <template>
   <div class="settings-payments">
-    <h1 class="page-title">Payment Processing</h1>
-    <p class="text-sm text-muted mb-4">Connect your payment processor to enable checkout through ScaleSafe.</p>
+    <SectionHeader
+      eyebrow="Settings"
+      :title="['Payment', 'processing.']"
+      description="Connect your payment processor to enable checkout through ScaleSafe."
+    />
 
     <div v-if="loadError" class="error-msg">{{ loadError }}</div>
     <div v-if="pageLoading" class="loading">Loading processor status...</div>
@@ -138,6 +141,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
+import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
 

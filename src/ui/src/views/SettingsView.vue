@@ -1,6 +1,10 @@
 <template>
   <div>
-    <h1 class="page-title">Merchant Setup</h1>
+    <SectionHeader
+      eyebrow="Settings"
+      :title="['Merchant', 'setup.']"
+      description="Business information, T&amp;C clauses, and module toggles for this location."
+    />
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="saved" class="success-msg">Settings saved successfully.</div>
@@ -279,6 +283,7 @@
 import { ref, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
+import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
 const { loading, error } = api;

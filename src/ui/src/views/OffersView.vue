@@ -1,11 +1,16 @@
 <template>
   <div>
-    <div class="flex-between mb-4">
-      <h1 class="page-title">Offers</h1>
-      <router-link to="/offers/new" class="btn btn-primary">
-        <Plus :size="16" /> New Offer
-      </router-link>
-    </div>
+    <SectionHeader
+      eyebrow="Offers"
+      :title="['Your', 'offers.']"
+      description="Programs you sell. Each offer carries its own price, payment terms, and consent flow."
+    >
+      <template #actions>
+        <router-link to="/offers/new" class="btn btn-primary">
+          <Plus :size="16" /> New Offer
+        </router-link>
+      </template>
+    </SectionHeader>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="loading" class="loading">Loading offers...</div>
@@ -152,6 +157,7 @@ import { useApi } from '../composables/useApi';
 import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
 import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
+import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
 const routerNav = useRouter();
