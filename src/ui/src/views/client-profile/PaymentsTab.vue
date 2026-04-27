@@ -206,14 +206,14 @@ onMounted(async () => {
 }
 .progress-bar-wrapper {
   height: 6px;
-  background: #e5e7eb;
-  border-radius: 3px;
+  background: var(--ss-navy-200);
+  border-radius: 9999px;
   overflow: hidden;
 }
 .progress-bar {
   height: 100%;
-  background: #3b82f6;
-  border-radius: 3px;
+  background: var(--ss-primary-500);
+  border-radius: 9999px;
   transition: width 0.3s ease;
 }
 .text-xs {

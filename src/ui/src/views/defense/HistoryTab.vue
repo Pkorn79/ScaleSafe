@@ -16,10 +16,7 @@
         </div>
         <span class="text-sm text-muted">{{ formatDate(v.generated_at) }}</span>
       </div>
-      <div v-if="v.model_used" class="text-sm text-muted" style="margin-top:4px">
-        Model: {{ v.model_used }}
-        <span v-if="v.prompt_tokens_used"> · {{ v.prompt_tokens_used }} in / {{ v.response_tokens_used }} out</span>
-      </div>
+      <!-- Model name + token counts intentionally hidden from merchant view. Available via API for support diagnostics. -->
       <div v-if="expandedVersion === v.id" class="version-preview">
         {{ v.letter_text }}
       </div>

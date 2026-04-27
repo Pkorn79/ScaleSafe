@@ -522,7 +522,7 @@ async function submitRefund() {
 .checkbox-label input {
   width: 16px;
   height: 16px;
-  accent-color: #3b82f6;
+  accent-color: var(--ss-primary-500);
 }
 
 .form-textarea {

@@ -25,9 +25,8 @@
       ></textarea>
       <div v-else class="letter-readonly" v-html="renderMarkdown(letterText)"></div>
 
-      <div class="flex-between mt-2" style="color:#94a3b8;font-size:12px">
+      <div class="flex-between mt-2" style="color: var(--ss-navy-500); font-size: 12px">
         <span>{{ editableText.length.toLocaleString() }} characters · Version {{ versionNumber }}</span>
-        <span v-if="tokenInfo">{{ tokenInfo }}</span>
       </div>
     </div>
 
@@ -43,6 +42,8 @@ const props = defineProps<{
   status: string;
   lifecycleStatus: string;
   versionNumber: number;
+  // inputTokens / outputTokens kept on the prop signature for API compatibility,
+  // but no longer surfaced to the merchant — moved to support-only diagnostic view.
   inputTokens?: number;
   outputTokens?: number;
   regenerating: boolean;
@@ -62,11 +63,6 @@ const isLocked = computed(() => ['submitted', 'won', 'lost', 'withdrawn'].includ
 watch(() => props.letterText, (val) => {
   editableText.value = val || '';
   isDirty.value = false;
-});
-
-const tokenInfo = computed(() => {
-  if (!props.inputTokens && !props.outputTokens) return '';
-  return `Tokens: ${props.inputTokens || 0} in / ${props.outputTokens || 0} out`;
 });
 
 function save() {
@@ -99,8 +95,8 @@ function renderMarkdown(text: string): string {
 }
 
 .letter-editor:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--ss-primary-500);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 }
 
 .letter-readonly {

@@ -14,9 +14,14 @@
       <button class="btn btn-sm btn-primary" @click="$emit('send-offer')">Send Offer</button>
     </div>
 
-    <div v-if="enrollments.length === 0" class="empty-state">
-      <p class="text-sm text-muted">No enrollments yet. Send this client an offer to get started.</p>
-    </div>
+    <EmptyState
+      v-if="enrollments.length === 0"
+      :icon="GraduationCap"
+      title="No enrollments yet"
+      body="This client hasn't been enrolled in any program. Send them an offer to get started — the enrollment funnel handles consent capture and payment automatically."
+      cta-label="Send Offer"
+      @cta-click="$emit('send-offer')"
+    />
 
     <div v-for="enr in enrollments" :key="enr.id" class="enrollment-card">
       <div class="flex-between">
@@ -144,8 +149,10 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { GraduationCap } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
 import Modal from '../../components/Modal.vue';
+import EmptyState from '../../components/EmptyState.vue';
 
 const props = defineProps<{
   contactId: string;

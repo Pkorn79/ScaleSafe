@@ -313,6 +313,16 @@
         <router-link to="/offers" class="btn btn-secondary">Cancel</router-link>
       </div>
     </form>
+
+    <StickySaveBar
+      v-if="!merchantConfigLoading && onboardingComplete"
+      :dirty="true"
+      :loading="loading"
+      :save-label="isEdit ? 'Update Offer' : 'Create Offer'"
+      cancel-label="Cancel"
+      @save="save"
+      @cancel="routerNav.push('/offers')"
+    />
   </div>
 </template>
 
@@ -320,6 +330,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApi, ssoSession } from '../composables/useApi';
+import StickySaveBar from '../components/StickySaveBar.vue';
 
 const route = useRoute();
 const routerNav = useRouter();
@@ -539,23 +550,23 @@ async function save() {
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  accent-color: #3b82f6;
+  accent-color: var(--ss-primary-500);
   flex-shrink: 0;
 }
 
 .clause-toggle {
-  border-left: 3px solid #e5e7eb;
+  border-left: 3px solid var(--ss-navy-200);
   padding-left: 16px;
 }
 
 .clause-row {
-  border-left: 3px solid #dbeafe;
+  border-left: 3px solid var(--ss-primary-100);
   padding-left: 16px;
 }
 
 .readonly-field {
-  background: #f3f4f6 !important;
-  color: #6b7280 !important;
+  background: var(--ss-navy-100) !important;
+  color: var(--ss-navy-500) !important;
   cursor: not-allowed;
 }
 
@@ -570,31 +581,31 @@ async function save() {
   align-items: flex-start;
   gap: 10px;
   padding: 14px;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
+  border: 2px solid var(--ss-navy-200);
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .radio-card:hover {
-  border-color: #93c5fd;
+  border-color: var(--ss-primary-300);
 }
 
 .radio-card.active {
-  border-color: #3b82f6;
-  background: #eff6ff;
+  border-color: var(--ss-primary-500);
+  background: var(--ss-primary-50);
 }
 
 .radio-card input[type="radio"] {
   width: 18px;
   height: 18px;
   margin-top: 2px;
-  accent-color: #3b82f6;
+  accent-color: var(--ss-primary-500);
   flex-shrink: 0;
 }
 
 .quick-checkout-options {
-  border-left: 3px solid #3b82f6;
+  border-left: 3px solid var(--ss-primary-500);
   padding-left: 16px;
   margin-left: 8px;
 }

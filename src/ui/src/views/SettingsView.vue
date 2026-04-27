@@ -264,12 +264,21 @@
         </button>
       </div>
     </div>
+
+    <StickySaveBar
+      v-if="config"
+      :dirty="true"
+      :loading="saving"
+      save-label="Save Settings"
+      @save="saveSettings"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
+import StickySaveBar from '../components/StickySaveBar.vue';
 
 const api = useApi();
 const { loading, error } = api;
@@ -540,7 +549,7 @@ async function setDefaultProcessor(proc: string) {
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  accent-color: #3b82f6;
+  accent-color: var(--ss-primary-500);
   flex-shrink: 0;
 }
 
@@ -577,7 +586,7 @@ async function setDefaultProcessor(proc: string) {
 }
 
 .toggle-track.active {
-  background: #3b82f6;
+  background: var(--ss-primary-500);
 }
 
 .toggle-thumb {

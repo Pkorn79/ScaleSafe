@@ -14,7 +14,7 @@
               class="badge"
               :class="statusBadge(enrollmentInfo.status)"
             >
-              {{ enrollmentInfo.status }}
+              {{ humanizeEventType(enrollmentInfo.status) }}
             </span>
           </div>
           <div v-if="enrollmentInfo?.tags?.length" class="profile-tags">
@@ -240,6 +240,7 @@ import PaymentsTab from './client-profile/PaymentsTab.vue';
 import EvidenceTab from './client-profile/EvidenceTab.vue';
 import CommunicationsTab from './client-profile/CommunicationsTab.vue';
 import FilesTab from './client-profile/FilesTab.vue';
+import { humanizeEventType } from '../utils/humanize';
 
 const route = useRoute();
 const api = useApi();

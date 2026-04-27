@@ -28,9 +28,14 @@
 
     <div v-if="loading" class="loading">Loading evidence...</div>
     <div v-else-if="error" class="error-msg">{{ error }}</div>
-    <div v-else-if="timeline.length === 0" class="empty-state">
-      <p>No evidence matches your filters.</p>
-    </div>
+    <EmptyState
+      v-else-if="timeline.length === 0"
+      :icon="FileSearch"
+      :title="hasActiveFilters ? 'No matches' : 'No evidence yet'"
+      :body="hasActiveFilters
+        ? 'No evidence records match the selected type or date range. Clear the filters to see everything.'
+        : 'Evidence is captured automatically as the client progresses — consent, payments, sessions, milestones, and check-ins all land here.'"
+    />
 
     <div v-else class="card">
       <table class="table">
@@ -57,8 +62,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { FileSearch } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
+import EmptyState from '../../components/EmptyState.vue';
 
 const props = defineProps<{
   contactId: string;
@@ -77,6 +84,8 @@ const pageSize = 50;
 const filterType = ref('');
 const filterFrom = ref('');
 const filterTo = ref('');
+
+const hasActiveFilters = computed(() => Boolean(filterType.value || filterFrom.value || filterTo.value));
 
 const typeOptions = [
   { value: 'consent', label: 'Consent' },

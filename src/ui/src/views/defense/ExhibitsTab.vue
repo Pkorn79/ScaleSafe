@@ -71,7 +71,7 @@ function categoryBadge(cat: string): string {
 }
 
 .exhibit-letter {
-  background: #3b82f6;
+  background: var(--ss-primary-500);
   color: #fff;
   font-weight: 700;
   font-size: 12px;
