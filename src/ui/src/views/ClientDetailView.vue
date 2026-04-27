@@ -544,9 +544,9 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   z-index: 50;
   /* Pull through .page-shell padding so the sticky header spans gutter-to-gutter.
-     Values must match .page-shell padding (App.vue): 32px / 24px / 20px. */
-  margin: -32px -40px 0;
-  padding: 28px 40px 0;
+     Values must match .page-shell horizontal padding (App.vue): 32 / 24 / 16. */
+  margin: -32px -32px 0;
+  padding: 28px 32px 0;
 }
 @media (max-width: 1024px) {
   .profile-header {

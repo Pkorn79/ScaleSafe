@@ -106,11 +106,11 @@ h1, h2, h3, h4 {
   letter-spacing: -0.01em;
 }
 
-/* ── Page shell — content gutter + max-width ──────────── */
+/* ── Page shell — content gutter (no max-width cap) ──────────── */
+/* Padding stays small (~1/3 inch desktop) so content sits close to the sidebar
+   without touching it. No max-width: wide screens use the full available width. */
 .page-shell {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 32px 40px;
+  padding: 32px 32px;
 }
 @media (max-width: 1024px) {
   .page-shell { padding: 24px 24px; }
