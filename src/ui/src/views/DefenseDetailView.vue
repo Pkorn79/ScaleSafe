@@ -234,8 +234,22 @@ onMounted(async () => {
   top: 0;
   background: #f8fafc;
   z-index: 50;
-  margin: -24px -24px 0;
-  padding: 20px 24px 0;
+  /* Pull through .page-shell padding so the sticky header spans gutter-to-gutter.
+     Values must match .page-shell padding (App.vue): 32px / 24px / 20px. */
+  margin: -32px -40px 0;
+  padding: 28px 40px 0;
+}
+@media (max-width: 1024px) {
+  .defense-header {
+    margin: -24px -24px 0;
+    padding: 20px 24px 0;
+  }
+}
+@media (max-width: 640px) {
+  .defense-header {
+    margin: -20px -16px 0;
+    padding: 16px 16px 0;
+  }
 }
 
 .defense-header-main {

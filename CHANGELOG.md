@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-27
+
+### Changed
+- **Layout shell — Round 2 Phase 1 (page-shell wrapper + sticky-header pull-through).** `App.vue` now wraps `<router-view>` in a `.page-shell` container that gives every view a single content gutter — `max-width: 1280px`, padding `32/40px` desktop, `24/24px` at ≤1024px, `20/16px` at ≤640px. `<main>` keeps the scroll container; the page-shell only constrains content width. Sticky headers that previously pulled through hard-coded `-24/-24` margins (`ClientDetailView .profile-header`, `DefenseDetailView .defense-header`) now use breakpoint-matched negative margins (`-32/-40` → `-24/-24` → `-20/-16`) so they continue to span gutter-to-gutter under the new shell. `FormLayout` aside, `StickySaveBar` (Teleport + fixed), and per-view `max-width` cards (`OfferFormView`, `PaymentSearch`) verified safe under the new shell.
+
+---
+
 ## 2026-04-26
 
 ### Changed

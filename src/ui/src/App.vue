@@ -73,8 +73,10 @@ import {
         <ChevronRight :size="14" /> Payments
       </router-link>
     </nav>
-    <main class="flex-1 p-6 overflow-y-auto bg-slate-50">
-      <router-view />
+    <main class="flex-1 overflow-y-auto bg-slate-50">
+      <div class="page-shell">
+        <router-view />
+      </div>
     </main>
   </div>
 </template>
@@ -102,6 +104,19 @@ body {
 h1, h2, h3, h4 {
   font-family: 'Manrope', 'Inter', system-ui, sans-serif;
   letter-spacing: -0.01em;
+}
+
+/* ── Page shell — content gutter + max-width ──────────── */
+.page-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 40px;
+}
+@media (max-width: 1024px) {
+  .page-shell { padding: 24px 24px; }
+}
+@media (max-width: 640px) {
+  .page-shell { padding: 20px 16px; }
 }
 
 /* ── Sidebar nav ────────────────────────────────────── */

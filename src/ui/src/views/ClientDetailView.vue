@@ -542,10 +542,23 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 0;
   background: #f8fafc;
-  padding: 4px 0 0;
   z-index: 50;
-  margin: -24px -24px 0;
-  padding: 20px 24px 0;
+  /* Pull through .page-shell padding so the sticky header spans gutter-to-gutter.
+     Values must match .page-shell padding (App.vue): 32px / 24px / 20px. */
+  margin: -32px -40px 0;
+  padding: 28px 40px 0;
+}
+@media (max-width: 1024px) {
+  .profile-header {
+    margin: -24px -24px 0;
+    padding: 20px 24px 0;
+  }
+}
+@media (max-width: 640px) {
+  .profile-header {
+    margin: -20px -16px 0;
+    padding: 16px 16px 0;
+  }
 }
 
 .profile-header-main {
@@ -627,7 +640,7 @@ onBeforeUnmount(() => {
 }
 
 .tab-body {
-  padding-top: 4px;
+  padding: 16px 0 0;
 }
 
 .inline-check {
