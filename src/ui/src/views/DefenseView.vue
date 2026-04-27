@@ -67,7 +67,7 @@
       </div>
       <div v-if="daysUntil(p.deadline) !== null" class="text-sm mt-2"
         :style="{ color: daysUntil(p.deadline)! <= 3 ? '#b91c1c' : daysUntil(p.deadline)! <= 7 ? '#b45309' : 'var(--ss-navy-500)' }">
-        {{ daysUntil(p.deadline)! > 0 ? daysUntil(p.deadline) + ' days remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Overdue by ' + Math.abs(daysUntil(p.deadline)!) + ' days' }}
+        {{ daysUntil(p.deadline)! > 0 ? pluralize(daysUntil(p.deadline), 'day') + ' remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Overdue by ' + pluralize(Math.abs(daysUntil(p.deadline)!), 'day') }}
       </div>
     </div>
 
@@ -163,7 +163,7 @@ import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
-import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp } from '../utils/humanize';
+import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp, pluralize } from '../utils/humanize';
 
 const api = useApi();
 const routerNav = useRouter();

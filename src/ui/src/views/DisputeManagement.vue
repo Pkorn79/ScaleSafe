@@ -119,6 +119,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
+import { pluralize } from '../utils/humanize';
 
 const api = useApi();
 
@@ -200,8 +201,7 @@ function daysLeftLabel(deadline: string): string {
   const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diff < 0) return 'OVERDUE';
   if (diff === 0) return 'Due today';
-  if (diff === 1) return '1 day left';
-  return `${diff} days left`;
+  return `${pluralize(diff, 'day')} left`;
 }
 
 function daysLeftColor(deadline: string): string {

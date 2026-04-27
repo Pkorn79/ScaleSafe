@@ -44,7 +44,7 @@
       <div class="grid grid-3 mt-2">
         <div class="text-sm">
           <strong>Enrolled:</strong> {{ enr.enrolledAt ? formatDateShort(enr.enrolledAt) : 'Pending' }}
-          <span v-if="enr.programDuration" class="text-muted"> ({{ formatDuration(enr.programDuration, enr.programDurationUnit) }})</span>
+          <span v-if="enr.programDuration" class="text-muted"> ({{ pluralize(enr.programDuration, enr.programDurationUnit || 'months') }})</span>
           <div v-if="programEndDate(enr)" class="text-muted" style="font-size:12px">
             Ends: {{ programEndDate(enr) }}
           </div>
@@ -153,6 +153,7 @@ import { GraduationCap } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
 import Modal from '../../components/Modal.vue';
 import EmptyState from '../../components/EmptyState.vue';
+import { pluralize } from '../../utils/humanize';
 
 const props = defineProps<{
   contactId: string;
@@ -225,20 +226,6 @@ function canCancel(enr: any): boolean {
 }
 function canComplete(enr: any): boolean {
   return ['enrolled', 'active'].includes(enr.status);
-}
-
-function formatDuration(value: number, unit?: string): string {
-  const u = (unit || 'months').toLowerCase();
-  const labels: Record<string, [string, string]> = {
-    weeks: ['week', 'weeks'],
-    week: ['week', 'weeks'],
-    months: ['month', 'months'],
-    month: ['month', 'months'],
-    days: ['day', 'days'],
-    day: ['day', 'days'],
-  };
-  const [singular, plural] = labels[u] || [u, u + 's'];
-  return `${value} ${value === 1 ? singular : plural}`;
 }
 
 function shortFrequency(freq?: string): string {

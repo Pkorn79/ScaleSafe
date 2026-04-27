@@ -3,6 +3,7 @@ import {
   formatTimestamp,
   humanizeReasonCode,
   maskTransactionId,
+  pluralize,
 } from '../../src/ui/src/utils/humanize';
 
 describe('humanizeEventType', () => {
@@ -152,5 +153,66 @@ describe('maskTransactionId', () => {
 
   test('whitespace trimmed', () => {
     expect(maskTransactionId('  pi_3Q8aZxLkdIwHu7ix0aBcDeFg  ')).toBe('pi_3…DeFg');
+  });
+});
+
+describe('pluralize', () => {
+  test('singular for 1 / -1', () => {
+    expect(pluralize(1, 'day')).toBe('1 day');
+    expect(pluralize(1, 'week')).toBe('1 week');
+    expect(pluralize(-1, 'day')).toBe('-1 day');
+  });
+
+  test('plural for 0 (zero is plural in English)', () => {
+    expect(pluralize(0, 'day')).toBe('0 days');
+    expect(pluralize(0, 'week')).toBe('0 weeks');
+  });
+
+  test('plural for 2+', () => {
+    expect(pluralize(2, 'day')).toBe('2 days');
+    expect(pluralize(7, 'week')).toBe('7 weeks');
+    expect(pluralize(12, 'month')).toBe('12 months');
+  });
+
+  test('strips trailing s on plural-looking unit before deciding', () => {
+    expect(pluralize(1, 'days')).toBe('1 day');
+    expect(pluralize(3, 'weeks')).toBe('3 weeks');
+  });
+
+  test('-y → -ies for consonant-preceded y', () => {
+    expect(pluralize(2, 'story')).toBe('2 stories');
+    expect(pluralize(1, 'story')).toBe('1 story');
+  });
+
+  test('-y stays -ys for vowel-preceded y', () => {
+    expect(pluralize(2, 'day')).toBe('2 days');
+    expect(pluralize(3, 'key')).toBe('3 keys');
+  });
+
+  test('irregular plurals', () => {
+    expect(pluralize(2, 'child')).toBe('2 children');
+    expect(pluralize(1, 'child')).toBe('1 child');
+    expect(pluralize(5, 'person')).toBe('5 people');
+  });
+
+  test('null / undefined / empty count → empty string', () => {
+    expect(pluralize(null, 'day')).toBe('');
+    expect(pluralize(undefined, 'day')).toBe('');
+    expect(pluralize('', 'day')).toBe('');
+  });
+
+  test('non-numeric count → empty string', () => {
+    expect(pluralize('not-a-number', 'day')).toBe('');
+  });
+
+  test('numeric string count works', () => {
+    expect(pluralize('1', 'day')).toBe('1 day');
+    expect(pluralize('5', 'day')).toBe('5 days');
+  });
+
+  test('null / empty unit → just the count', () => {
+    expect(pluralize(5, null)).toBe('5');
+    expect(pluralize(5, '')).toBe('5');
+    expect(pluralize(5, '   ')).toBe('5');
   });
 });

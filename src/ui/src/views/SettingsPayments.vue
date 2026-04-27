@@ -131,7 +131,7 @@
               <span class="toggle-thumb" :class="{ active: autoSubmit }"></span>
             </span>
           </span>
-          <span class="text-sm">{{ autoSubmit ? 'Auto-submit enabled' : 'Manual review mode' }}</span>
+          <span class="text-sm">{{ autoSubmit ? 'Auto-submit enabled — strong evidence packets are submitted automatically' : 'Auto-submit disabled — review every packet before submission' }}</span>
         </label>
       </div>
     </template>

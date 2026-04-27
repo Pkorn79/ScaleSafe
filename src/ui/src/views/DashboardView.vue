@@ -4,10 +4,27 @@
       eyebrow="Overview"
       :title="['Your', 'dashboard.']"
       description="Real-time view of active offers, clients, evidence captured, and chargeback defense activity."
-    />
+    >
+      <template #actions>
+        <Pill v-if="isStale" tone="amber" :icon="AlertTriangle">Data may be stale</Pill>
+        <button
+          class="btn btn-sm btn-secondary"
+          :disabled="refreshing"
+          @click="loadData"
+          :title="lastUpdatedAt ? `Last updated ${formatTimestamp(lastUpdatedAt, 'relative', tickNow)}` : ''"
+        >
+          <RefreshCw :size="14" :class="{ 'spin': refreshing }" style="margin-right: 6px; vertical-align: -2px;" />
+          {{ refreshing ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </template>
+    </SectionHeader>
+
+    <div v-if="lastUpdatedAt" class="dashboard-updated-line">
+      Updated {{ formatTimestamp(lastUpdatedAt, 'relative', tickNow) }}
+    </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
-    <div v-if="loading" class="loading">Loading dashboard...</div>
+    <div v-if="loading && !data" class="loading">Loading dashboard...</div>
 
     <div v-if="data" class="grid grid-4 mb-4">
       <Stat
@@ -83,20 +100,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { ShieldCheck } from 'lucide-vue-next';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-vue-next';
 import { useApi } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
 import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
+import Pill from '../components/Pill.vue';
+import { formatTimestamp } from '../utils/humanize';
+
+const REFRESH_INTERVAL_MS = 60_000;
+const STALE_THRESHOLD_MS = 2 * 60_000;
+const TICK_INTERVAL_MS = 30_000;
 
 const api = useApi();
 const { loading, error } = api;
 
 const data = ref<any>(null);
 const atRisk = ref<any[]>([]);
+const lastUpdatedAt = ref<Date | null>(null);
+const refreshing = ref(false);
+const tickNow = ref(new Date());
 
-onMounted(async () => {
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+
+const isStale = computed(() => {
+  if (!lastUpdatedAt.value) return false;
+  return tickNow.value.getTime() - lastUpdatedAt.value.getTime() > STALE_THRESHOLD_MS;
+});
+
+async function loadData() {
+  if (refreshing.value) return;
+  refreshing.value = true;
   try {
     const [overview, risk] = await Promise.all([
       api.get<any>('/api/dashboard/overview'),
@@ -104,6 +140,65 @@ onMounted(async () => {
     ]);
     data.value = overview;
     atRisk.value = risk.clients || [];
-  } catch {}
+    lastUpdatedAt.value = new Date();
+    tickNow.value = new Date();
+  } catch {
+    // useApi already surfaces error.value; keep stale data on screen.
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  refreshTimer = setInterval(loadData, REFRESH_INTERVAL_MS);
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    // Refresh immediately on return so "stale" state doesn't linger after a long sleep.
+    loadData();
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+  }
+}
+
+onMounted(() => {
+  loadData();
+  startAutoRefresh();
+  tickTimer = setInterval(() => { tickNow.value = new Date(); }, TICK_INTERVAL_MS);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+});
+
+onBeforeUnmount(() => {
+  stopAutoRefresh();
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 </script>
+
+<style scoped>
+.dashboard-updated-line {
+  font-size: 12px;
+  color: var(--ss-navy-500);
+  margin: -8px 0 16px 0;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+</style>

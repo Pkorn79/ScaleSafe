@@ -183,3 +183,63 @@ export function maskTransactionId(txId: string | null | undefined): string {
   if (s.length < 12) return s;
   return `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/* Pluralization                                                             */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+const IRREGULAR_PLURALS: Record<string, string> = {
+  child: 'children',
+  person: 'people',
+};
+
+/**
+ * Pluralize a unit based on a count: "1 day" / "2 days" / "0 days".
+ *
+ * - Zero is plural in English ("0 days").
+ * - Handles common irregulars (child→children, person→people).
+ * - Handles -y → -ies (story → stories) when not preceded by a vowel.
+ * - Strips a leading "s" already present on the unit before deciding.
+ * - Nullish or empty count returns the empty string.
+ * - Nullish or empty unit just returns the count.
+ */
+export function pluralize(
+  count: number | string | null | undefined,
+  unit: string | null | undefined,
+): string {
+  if (count === null || count === undefined || count === '') return '';
+  const n = typeof count === 'number' ? count : Number(count);
+  if (!Number.isFinite(n)) return '';
+  if (!unit) return String(n);
+
+  const trimmed = String(unit).trim();
+  if (!trimmed) return String(n);
+
+  // Normalize: if the caller already passed a plural-looking unit ("days"), strip the trailing "s"
+  // so we can decide based on the count.
+  const singular = trimmed.toLowerCase().endsWith('s') && trimmed.length > 1
+    ? trimmed.slice(0, -1)
+    : trimmed;
+
+  if (n === 1 || n === -1) return `${n} ${singular}`;
+
+  const lower = singular.toLowerCase();
+  if (IRREGULAR_PLURALS[lower]) {
+    // Preserve original casing of first letter
+    const irregular = IRREGULAR_PLURALS[lower];
+    const cased = singular[0] === singular[0].toUpperCase()
+      ? irregular[0].toUpperCase() + irregular.slice(1)
+      : irregular;
+    return `${n} ${cased}`;
+  }
+
+  // -y → -ies when preceded by a consonant
+  if (singular.length > 1 && singular.toLowerCase().endsWith('y')) {
+    const prev = singular[singular.length - 2].toLowerCase();
+    if (!'aeiou'.includes(prev)) {
+      return `${n} ${singular.slice(0, -1)}ies`;
+    }
+  }
+
+  return `${n} ${singular}s`;
+}

@@ -34,7 +34,7 @@
           <strong>Response Deadline:</strong>
           {{ formatDate(packet.deadline) }}
           <span v-if="daysRemaining !== null" style="margin-left:8px">
-            ({{ daysRemaining > 0 ? daysRemaining + ' days remaining' : daysRemaining === 0 ? 'Due today' : 'Overdue by ' + Math.abs(daysRemaining) + ' days' }})
+            ({{ daysRemaining > 0 ? pluralize(daysRemaining, 'day') + ' remaining' : daysRemaining === 0 ? 'Due today' : 'Overdue by ' + pluralize(Math.abs(daysRemaining), 'day') }})
           </span>
         </div>
 
@@ -98,7 +98,7 @@ import LetterTab from './defense/LetterTab.vue';
 import ExhibitsTab from './defense/ExhibitsTab.vue';
 import HistoryTab from './defense/HistoryTab.vue';
 import OutcomeTab from './defense/OutcomeTab.vue';
-import { humanizeEventType, humanizeReasonCode } from '../utils/humanize';
+import { humanizeEventType, humanizeReasonCode, pluralize } from '../utils/humanize';
 
 const route = useRoute();
 const api = useApi();
