@@ -41,6 +41,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-26
 
+### Added
+- **Click-Wrap clause acceptance write-through to GHL.** When a client accepts T&C clauses on Page 3 of the enrollment funnel, every accepted standard clause now sets the corresponding `Click-Wrap: <Clause>` CHECKBOX field on the GHL contact. Resolves the architectural-debt note from the cleanup-batch PR — the 9 `ghlFieldId` values in `src/constants/standard-clauses.ts` are no longer registry-only. New `ghlFieldKey` field added to each `STANDARD_CLAUSES` entry (e.g., `contact.clickwrap_purchase_summary`), used as the runtime write target via the existing `customField → customFields` interceptor in `ghl.client.ts`. Write piggybacks on the existing post-enrollment GHL contact update in `phase2Enrollment.service.ts` (no extra API round-trip), runs for both paid and free-offer paths. The CHECKBOX field_value is a single constant (`CLICK_WRAP_CHECKED_VALUE = 'Yes'`) — easily flipped to `['Yes']` or `true` if E2E reveals GHL prefers a different format. New regression test `tests/unit/standard-clauses.test.ts` (8 cases) guards the fieldKey pattern, ID format, and clause→fieldKey mapping.
+
 ### Fixed
 - **SESSION.md cleanup batch (4 follow-up items from app sweep).**
   1. **Dashboard auto-refresh.** `DashboardView.vue` now auto-refreshes every 60s, pauses while the tab is in the background (via `visibilitychange`), and exposes a manual "Refresh" button in the section-header actions slot. Shows "Updated {relative}" beneath the title; an amber "Data may be stale" pill appears once the cache is older than 2 minutes (e.g., after a long sleep). No backend changes.

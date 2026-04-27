@@ -9,6 +9,13 @@ import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
 import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { STANDARD_CLAUSES } from '../constants/standard-clauses';
+
+// GHL CHECKBOX field_value for the single-option "Yes" Click-Wrap fields. Pulled to a
+// const so the manual E2E verification step (see CHANGELOG 2026-04-26) can swap in
+// `['Yes']` or `true` if GHL silently no-ops on plain string. Read-back data on
+// existing single-option checkbox fields stores them as the bare option label.
+const CLICK_WRAP_CHECKED_VALUE = 'Yes';
 
 interface CompleteEnrollmentParams {
   enrollmentId: string;
@@ -247,6 +254,38 @@ export const phase2EnrollmentService = {
               customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
               customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
             } catch {}
+          }
+
+          // Mirror Supabase enrollment.clauses_accepted into the per-clause
+          // "Click-Wrap: X" CHECKBOX contact fields (snapshot fixtures, written
+          // by stable fieldKey). Custom-clause keys silently skip via STANDARD_CLAUSES.find.
+          try {
+            const { getSupabase } = require('../clients/supabase.client');
+            const { data: enrollmentRow } = await getSupabase()
+              .from('enrollments')
+              .select('clauses_accepted')
+              .eq('id', bgEnrollmentId)
+              .maybeSingle();
+            const accepted: string[] = (enrollmentRow?.clauses_accepted as string[] | null) || [];
+            const clickWrapFieldsSet: string[] = [];
+            for (const clauseKey of accepted) {
+              const clause = STANDARD_CLAUSES.find((c) => c.key === clauseKey);
+              if (clause?.ghlFieldKey) {
+                customFields[clause.ghlFieldKey] = CLICK_WRAP_CHECKED_VALUE;
+                clickWrapFieldsSet.push(clause.ghlFieldKey);
+              }
+            }
+            if (clickWrapFieldsSet.length > 0) {
+              logger.debug(
+                { enrollmentId: bgEnrollmentId, clickWrapFieldsSet },
+                'BG: click-wrap clause fields queued for GHL',
+              );
+            }
+          } catch (clauseErr: any) {
+            logger.warn(
+              { err: clauseErr.message, enrollmentId: bgEnrollmentId },
+              'BG: click-wrap clause resolution failed',
+            );
           }
 
           await api.put(`/contacts/${bgContactId}`, { customField: customFields });
