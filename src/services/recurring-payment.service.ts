@@ -64,8 +64,11 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const amountDollars = amountCents / 100;
   const newPaymentsMade = (enr.payments_made || 0) + 1;
 
-  // 1. Log payment_events row
-  const { data: insertedEvent } = await supabase
+  // 1. Log payment_events row.
+  // The insert error must NOT be silently swallowed — earlier this function destructured
+  // only `data` and continued to step 2, which left enrollment.payments_made advancing
+  // (and even flipping to status='completed') while the ledger row was missing entirely.
+  const { data: insertedEvent, error: insertError } = await supabase
     .from('payment_events')
     .insert({
       merchant_id: enr.merchant_id,
@@ -82,6 +85,20 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     })
     .select('id')
     .single();
+
+  if (insertError) {
+    logger.error({
+      err: insertError.message,
+      code: insertError.code,
+      details: insertError.details,
+      enrollmentId: enr.id,
+      merchantId: enr.merchant_id,
+      processor: processorType,
+      transactionId,
+      amountCents,
+      source,
+    }, 'Recurring payment: payment_events insert failed — enrollment will still advance, ledger row missing');
+  }
 
   // 2. Advance enrollment state
   const updates: any = { payments_made: newPaymentsMade };
@@ -167,7 +184,7 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
 
-  const { data: failedEvent } = await supabase
+  const { data: failedEvent, error: failedInsertError } = await supabase
     .from('payment_events')
     .insert({
       merchant_id: enr.merchant_id,
@@ -184,6 +201,19 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
     })
     .select('id')
     .single();
+
+  if (failedInsertError) {
+    logger.error({
+      err: failedInsertError.message,
+      code: failedInsertError.code,
+      details: failedInsertError.details,
+      enrollmentId: enr.id,
+      merchantId: enr.merchant_id,
+      processor: processorType,
+      amountCents,
+      source,
+    }, 'Recurring failure: payment_events insert failed — dunning will not initiate');
+  }
 
   if (failedEvent?.id) {
     try {
