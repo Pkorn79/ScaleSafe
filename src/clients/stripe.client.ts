@@ -88,7 +88,11 @@ export class StripeClient implements ProcessorInterface {
         } else {
           console.log('[Stripe] No pmDetails from latest_charge — trying PM retrieve fallback');
           try {
-            const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
+            // Stripe Node SDK signature: retrieve(id, params, options).
+            // Calling retrieve(id, this.acct) with two args makes the SDK treat
+            // { stripeAccount } as `params`, and Stripe rejects with
+            // "Received unknown parameter: stripeAccount". Use the explicit 3-arg form.
+            const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, undefined, this.acct);
             result.vaultedCardLastFour = pm.card?.last4 || '****';
             result.vaultedCardBrand = pm.card?.brand || 'unknown';
             result.vaultedCardExpMonth = pm.card?.exp_month || 0;
@@ -98,6 +102,8 @@ export class StripeClient implements ProcessorInterface {
             console.warn('[Stripe] PM retrieve fallback failed:', pmErr.message);
             result.vaultedCardLastFour = '****';
             result.vaultedCardBrand = 'unknown';
+            result.vaultedCardExpMonth = 0;
+            result.vaultedCardExpYear = 0;
           }
         }
       }
@@ -150,7 +156,8 @@ export class StripeClient implements ProcessorInterface {
         this.acct,
       );
 
-      const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, this.acct);
+      // Stripe Node SDK signature: retrieve(id, params, options) — see Group E note in charge().
+      const pm = await this.stripe.paymentMethods.retrieve(request.paymentToken, undefined, this.acct);
 
       return {
         success: true,
