@@ -252,13 +252,30 @@ export class StripeClient implements ProcessorInterface {
         metadata: request.metadata,
       };
 
-      // Stripe doesn't have "stop after N" — use cancel_at timestamp
+      // Defer the first billing cycle to startDate (next_billing_date) instead of
+      // letting Stripe auto-bill a subscription_create invoice immediately at
+      // subscription creation time. Without billing_cycle_anchor, Stripe defaults
+      // to billing_cycle_anchor=now, which fires a full-amount subscription_create
+      // invoice on day 1 — duplicating the upfront processor.charge() call and
+      // double-billing the customer (PMG symptom: $1.00 charged on enrollment day
+      // for a $0.50/2-pay offer instead of $0.50). proration_behavior=none keeps
+      // the implicit gap from "now" to "billing_cycle_anchor" from being prorated.
+      const intervalSeconds = this.getIntervalSeconds(request.interval);
+      const startMs = request.startDate
+        ? new Date(request.startDate).getTime()
+        : Date.now();
+      const startSec = Math.floor(startMs / 1000);
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      if (startSec > nowSec + 60) {
+        subParams.billing_cycle_anchor = startSec;
+        subParams.proration_behavior = 'none';
+      }
+
+      // Stripe doesn't have "stop after N" — use cancel_at timestamp.
+      // cancel_at = first-cycle anchor + (N * interval) gives exactly N cycles.
       if (request.totalPayments > 0) {
-        const intervalSeconds = this.getIntervalSeconds(request.interval);
-        const startMs = request.startDate
-          ? new Date(request.startDate).getTime()
-          : Date.now();
-        subParams.cancel_at = Math.floor(startMs / 1000) + (request.totalPayments * intervalSeconds);
+        subParams.cancel_at = startSec + (request.totalPayments * intervalSeconds);
       }
 
       const subscription = await this.stripe.subscriptions.create(subParams, this.acct);
