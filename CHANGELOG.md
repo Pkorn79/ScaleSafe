@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-28
+
+### Fixed
+- **Stripe Connect routes — read `locationId` from `req.tenantContext` (set by `ssoAuth` middleware), not `req.locationId` (never set).** `src/routes/stripe-connect.routes.ts` POST `/api/stripe/disconnect` (L118), GET `/api/stripe/risk-audit` (L171), and POST `/api/stripe/risk-audit` (L193) all read from `(req as any).locationId`, but the `ssoAuth` middleware writes the resolved location to `req.tenantContext.locationId`. The fallback chain therefore always failed and threw `ValidationError('Missing locationId')` even when the SSO `x-location-id` header was correctly sent. User-visible symptom: clicking "Disconnect" on the Stripe card in Settings → Payments returned "Missing locationId". All three routes now read from `req.tenantContext?.locationId`, matching the rest of the codebase's tenant-scoped routes.
+
+---
+
 ## 2026-04-27
 
 ### Fixed
