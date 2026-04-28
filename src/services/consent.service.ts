@@ -32,8 +32,20 @@ export const consentService = {
       throw new ValidationError('Offer not found or inactive');
     }
 
-    // Look up merchant for this location
+    // Look up merchant for this location.
+    // If null here, the enrollment row gets `merchant_id = null` and any later
+    // payment_events insert (which has a NOT NULL constraint on merchant_id) will
+    // fail. phase2Enrollment.completeEnrollment now backfills merchant_id at
+    // checkout, but we still log a structured warning here for visibility — a
+    // null at consent time means either the merchant isn't provisioned yet or
+    // findByLocationId is failing transiently, both of which we want to see.
     const merchant = await merchantRepository.findByLocationId(params.locationId);
+    if (!merchant) {
+      logger.warn(
+        { locationId: params.locationId, offerId: params.offerId, contactId: params.contactId },
+        'Consent capture: merchantRepository.findByLocationId returned null — enrollment will be created with merchant_id=null. completeEnrollment is expected to backfill it.',
+      );
+    }
 
     // Generate consent token
     const consentToken = crypto.randomUUID();

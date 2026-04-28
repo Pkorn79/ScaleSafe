@@ -31,6 +31,34 @@ export const phase2EnrollmentService = {
   async completeEnrollment(params: CompleteEnrollmentParams): Promise<void> {
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
 
+    // Backfill merchant_id if it was null at consent capture time.
+    // consent.service.ts can write merchant_id=null when findByLocationId returns null
+    // (e.g., merchant not yet provisioned or transient lookup failure). At completion time
+    // the merchant MUST exist — the upstream charge succeeded, which means
+    // ProcessorFactory found a processor_config keyed off this merchant's location.
+    // Without this backfill, downstream payment_events inserts for recurring charges
+    // hit the merchant_id NOT NULL constraint and silently fail.
+    let backfillMerchantId: string | undefined;
+    if (!enrollment.merchant_id) {
+      try {
+        const merchant = await merchantRepository.findByLocationId(params.locationId);
+        if (merchant) {
+          backfillMerchantId = merchant.id;
+          logger.info(
+            { enrollmentId: params.enrollmentId, locationId: params.locationId, merchantId: merchant.id },
+            'completeEnrollment: backfilling merchant_id on consent-captured enrollment',
+          );
+        } else {
+          logger.error(
+            { enrollmentId: params.enrollmentId, locationId: params.locationId },
+            'completeEnrollment: merchant lookup returned null at completion time — recurring payment_events inserts will fail NOT NULL on merchant_id',
+          );
+        }
+      } catch (mErr: any) {
+        logger.error({ err: mErr.message, enrollmentId: params.enrollmentId }, 'completeEnrollment: merchant backfill lookup threw');
+      }
+    }
+
     // Fetch offer name for trigger payload
     let offerName = '';
     if (enrollment.offer_id) {
@@ -71,6 +99,7 @@ export const phase2EnrollmentService = {
       payments_total: params.paymentsTotal,
       enrolled_at: enrolledAt.toISOString(),
       ...(nextBilling ? { next_billing_date: nextBilling } : {}),
+      ...(backfillMerchantId ? { merchant_id: backfillMerchantId } : {}),
     } as any);
 
     // 2. Resolve GHL contact FIRST — evidence and payment records need the contactId
