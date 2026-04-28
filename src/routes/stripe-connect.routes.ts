@@ -117,7 +117,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
  */
 router.post('/disconnect', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = req.body.locationId || (req as any).locationId;
+    const locationId = req.body.locationId || req.tenantContext?.locationId;
     if (!locationId) throw new ValidationError('Missing locationId');
 
     const merchant = await merchantRepository.findByLocationId(locationId);
@@ -170,7 +170,7 @@ router.post('/disconnect', ssoAuth, async (req: Request, res: Response, next: Ne
  */
 router.get('/risk-audit', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId;
+    const locationId = req.tenantContext?.locationId;
     if (!locationId) throw new ValidationError('Missing locationId');
 
     const merchant = await merchantRepository.findByLocationId(locationId);
@@ -192,7 +192,7 @@ router.get('/risk-audit', ssoAuth, async (req: Request, res: Response, next: Nex
  */
 router.post('/risk-audit', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId || req.body.locationId;
+    const locationId = req.tenantContext?.locationId || req.body.locationId;
     if (!locationId) throw new ValidationError('Missing locationId');
 
     const merchant = await merchantRepository.findByLocationId(locationId);
