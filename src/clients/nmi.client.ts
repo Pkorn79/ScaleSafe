@@ -155,8 +155,17 @@ export class NmiClient implements ProcessorInterface {
 
     const vaultId = nmi.customer_vault_id;
 
-    // NMI doesn't return card details on vault add — query for them
-    const cardInfo = await this.queryVaultCard(vaultId);
+    // NMI doesn't return card details on vault add — query for them.
+    // queryVaultCard now throws on empty/failure (so charge() can chain to a
+    // transact-response fallback). saveCard has no charge response to fall
+    // back to, so we substitute placeholders here and continue — the card was
+    // saved successfully, only the display metadata is missing.
+    let cardInfo = { lastFour: '****', brand: 'unknown', expMonth: 0, expYear: 0 };
+    try {
+      cardInfo = await this.queryVaultCard(vaultId);
+    } catch (vaultErr: any) {
+      logger.warn({ vaultId, err: vaultErr.message }, 'saveCard: vault query failed — returning placeholder card metadata');
+    }
 
     return {
       success: true,
@@ -466,6 +475,10 @@ export class NmiClient implements ProcessorInterface {
 
   /**
    * Query the vault to get card display info after a vault add.
+   * Throws when the query fails OR when the parser returns zero records —
+   * callers that have a secondary fallback (e.g. charge()'s transact-response
+   * fields) can catch and use that. Callers without one (saveCard) should
+   * catch and substitute placeholder values themselves.
    */
   private async queryVaultCard(vaultId: string): Promise<{
     lastFour: string;
@@ -473,31 +486,32 @@ export class NmiClient implements ProcessorInterface {
     expMonth: number;
     expYear: number;
   }> {
-    try {
-      const params = new URLSearchParams();
-      params.set('security_key', this.securityKey);
-      params.set('customer_vault_id', vaultId);
+    const params = new URLSearchParams();
+    params.set('security_key', this.securityKey);
+    params.set('customer_vault_id', vaultId);
 
-      const xml = await this.postQuery(params);
-      console.log('[NMI] Vault query XML length:', xml.length, 'first 200 chars:', xml.substring(0, 200));
-      const records = parseNmiVaultRecords(xml);
-      console.log('[NMI] Parsed vault records:', records.length, records.length > 0 ? { ccNumber: records[0].ccNumber, ccType: records[0].ccType, ccExp: records[0].ccExp } : 'none');
+    const xml = await this.postQuery(params);
+    logger.info({ vaultId, xmlLen: xml.length, xmlPreview: xml.substring(0, 200) }, '[NMI] Vault query response');
+    const records = parseNmiVaultRecords(xml);
 
-      if (records.length > 0) {
-        const r = records[0];
-        const exp = parseNmiExpiry(r.ccExp);
-        return {
-          lastFour: extractLastFour(r.ccNumber),
-          brand: r.ccType.toLowerCase(),
-          expMonth: exp.month,
-          expYear: exp.year,
-        };
-      }
-    } catch (err) {
-      logger.warn({ vaultId }, 'Failed to query vault card details after add');
+    if (records.length === 0) {
+      logger.warn({ vaultId, xmlPreview: xml.substring(0, 400) }, '[NMI] Vault query parsed zero records — XML structure may not match expected <customer_vault><customer><billing>');
+      throw new ProcessorError(
+        'NMI vault query returned no records',
+        'nmi',
+        'VAULT_EMPTY',
+        false,
+      );
     }
 
-    // Fallback if query fails — return unknowns
-    return { lastFour: '****', brand: 'unknown', expMonth: 0, expYear: 0 };
+    const r = records[0];
+    const exp = parseNmiExpiry(r.ccExp);
+    logger.info({ vaultId, ccType: r.ccType, ccExp: r.ccExp, ccNumber: r.ccNumber }, '[NMI] Vault card metadata extracted');
+    return {
+      lastFour: extractLastFour(r.ccNumber),
+      brand: r.ccType.toLowerCase(),
+      expMonth: exp.month,
+      expYear: exp.year,
+    };
   }
 }
