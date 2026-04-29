@@ -166,17 +166,6 @@ const nmiForm = ref({
 
 onMounted(async () => {
   await loadProcessorStatus();
-
-  // Check for Stripe callback result in URL
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('stripe_connected') === 'true') {
-    stripeConnected.value = true;
-    loadError.value = null;
-    window.history.replaceState({}, '', window.location.pathname);
-  } else if (urlParams.get('stripe_error')) {
-    loadError.value = 'Stripe connection failed: ' + (urlParams.get('stripe_error') || 'unknown error');
-    window.history.replaceState({}, '', window.location.pathname);
-  }
 });
 
 async function loadProcessorStatus() {
@@ -251,7 +240,17 @@ async function testNmiConnection() {
   testing.value = false;
 }
 
+let stripeMessageHandler: ((event: MessageEvent) => void) | null = null;
+let stripePopup: Window | null = null;
+
 async function connectStripe() {
+  // Cleanup any prior attempt
+  if (stripeMessageHandler) {
+    window.removeEventListener('message', stripeMessageHandler);
+    stripeMessageHandler = null;
+  }
+  if (stripePopup && !stripePopup.closed) stripePopup.close();
+
   try {
     const config = await api.get<any>('/api/merchants/config');
     const locationId = config?.locationId;
@@ -259,9 +258,33 @@ async function connectStripe() {
       loadError.value = 'Location ID not found. Please refresh and try again.';
       return;
     }
-    // Navigate to Stripe OAuth — this is a redirect, not an AJAX call
-    // Must break out of GHL iframe — Stripe blocks being loaded in iframes
-    (window.top || window).location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+
+    // Open Stripe OAuth in a popup — Stripe refuses to load inside an iframe,
+    // so the SPA stays inside GHL (preserving SSO) and the popup handles OAuth.
+    // The /auth/stripe/callback endpoint renders a page that postMessages the
+    // result back here and self-closes.
+    const url = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+    stripePopup = window.open(url, 'scalesafe_stripe_oauth', 'width=600,height=750');
+    if (!stripePopup) {
+      loadError.value = 'Popup blocked. Please allow popups for this site and try again.';
+      return;
+    }
+
+    stripeMessageHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'stripe_connect_result') return;
+      window.removeEventListener('message', stripeMessageHandler!);
+      stripeMessageHandler = null;
+      stripePopup = null;
+
+      if (event.data.success) {
+        loadError.value = null;
+        loadProcessorStatus();
+      } else {
+        loadError.value = 'Stripe connection failed: ' + (event.data.error || 'unknown error');
+      }
+    };
+    window.addEventListener('message', stripeMessageHandler);
   } catch (err: any) {
     loadError.value = err.message || 'Failed to initiate Stripe connection';
   }

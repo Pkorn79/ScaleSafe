@@ -338,19 +338,6 @@ onMounted(async () => {
     }
     defaultProcessor.value = config.value.defaultProcessor || '';
 
-    // Check for Stripe callback result in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('stripe_connected') === 'true') {
-      stripeSuccess.value = true;
-      stripeConnected.value = true;
-      setTimeout(() => { stripeSuccess.value = false; }, 5000);
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (urlParams.get('stripe_error')) {
-      stripeError.value = 'Stripe connection failed: ' + (urlParams.get('stripe_error') || 'unknown error');
-      setTimeout(() => { stripeError.value = ''; }, 8000);
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-
     // Auto-retry provisioning if failed or pending
     if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending' || config.value.snapshotStatus === 'partial')) {
       retryProvision();
@@ -472,9 +459,19 @@ async function cleanupKeys() {
   running.value = false;
 }
 
+let stripeMessageHandler: ((event: MessageEvent) => void) | null = null;
+let stripePopup: Window | null = null;
+
 async function connectStripe() {
   stripeConnecting.value = true;
   stripeError.value = '';
+
+  if (stripeMessageHandler) {
+    window.removeEventListener('message', stripeMessageHandler);
+    stripeMessageHandler = null;
+  }
+  if (stripePopup && !stripePopup.closed) stripePopup.close();
+
   try {
     const locationId = config.value?.locationId;
     if (!locationId) {
@@ -482,8 +479,40 @@ async function connectStripe() {
       stripeConnecting.value = false;
       return;
     }
-    // Must break out of GHL iframe — Stripe blocks being loaded in iframes
-    (window.top || window).location.href = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+
+    // Open Stripe OAuth in a popup — Stripe refuses to load inside an iframe,
+    // so the SPA stays inside GHL (preserving SSO) and the popup handles OAuth.
+    const url = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+    stripePopup = window.open(url, 'scalesafe_stripe_oauth', 'width=600,height=750');
+    if (!stripePopup) {
+      stripeError.value = 'Popup blocked. Please allow popups for this site and try again.';
+      stripeConnecting.value = false;
+      return;
+    }
+
+    stripeMessageHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'stripe_connect_result') return;
+      window.removeEventListener('message', stripeMessageHandler!);
+      stripeMessageHandler = null;
+      stripePopup = null;
+      stripeConnecting.value = false;
+
+      if (event.data.success) {
+        stripeError.value = '';
+        stripeConnected.value = true;
+        stripeSuccess.value = true;
+        setTimeout(() => { stripeSuccess.value = false; }, 5000);
+        // Refresh full config so stripeAccountId / nmi / default fields update
+        api.get<any>('/api/merchants/config').then((cfg) => {
+          config.value = cfg;
+          if (cfg.stripeUserId) stripeAccountId.value = cfg.stripeUserId;
+        }).catch(() => {});
+      } else {
+        stripeError.value = 'Stripe connection failed: ' + (event.data.error || 'unknown error');
+      }
+    };
+    window.addEventListener('message', stripeMessageHandler);
   } catch {
     stripeError.value = 'Failed to start Stripe connection. Please try again.';
     stripeConnecting.value = false;

@@ -31,6 +31,11 @@ router.get('/connect', async (req: Request, res: Response, next: NextFunction) =
 /**
  * GET /auth/stripe/callback
  * Handles the redirect from Stripe after merchant authorizes.
+ *
+ * The merchant launches OAuth from a popup window opened by the SPA (which
+ * stays inside the GHL iframe with SSO intact). This endpoint always renders
+ * an HTML page that posts the result back to `window.opener` and self-closes,
+ * so the iframe never has to be navigated.
  */
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -40,7 +45,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     if (error) {
       logger.warn({ error, state }, 'Stripe OAuth denied by merchant');
-      res.redirect('/?stripe_error=denied');
+      sendPopupResult(res, false, 'denied');
       return;
     }
 
@@ -54,7 +59,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       result = await stripeConnectService.handleCallback(code, state);
     } catch (err: any) {
       logger.error({ err: err.message, code: err.code, state }, 'Stripe OAuth token exchange failed');
-      res.redirect('/?stripe_error=' + encodeURIComponent('Token exchange failed: ' + (err.message || 'unknown')));
+      sendPopupResult(res, false, 'Token exchange failed: ' + (err.message || 'unknown'));
       return;
     }
 
@@ -62,7 +67,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     const merchant = await merchantRepository.findByLocationId(state);
     if (!merchant) {
       logger.error({ locationId: state }, 'Stripe callback: merchant not found');
-      res.redirect('/?stripe_error=merchant_not_found');
+      sendPopupResult(res, false, 'merchant_not_found');
       return;
     }
 
@@ -87,7 +92,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       );
     } catch (err: any) {
       logger.error({ err: err.message }, 'Failed to save Stripe connection');
-      res.redirect('/?stripe_error=' + encodeURIComponent('Save failed: ' + (err.message || 'unknown')));
+      sendPopupResult(res, false, 'Save failed: ' + (err.message || 'unknown'));
       return;
     }
 
@@ -105,11 +110,57 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       }
     });
 
-    res.redirect('/?stripe_connected=true');
+    sendPopupResult(res, true);
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * Render the popup-result page. Posts a `stripe_connect_result` message to
+ * `window.opener` (the SPA still running inside GHL) and self-closes. If
+ * there is no opener (direct visit, etc.) the user sees a status line.
+ */
+function sendPopupResult(res: Response, success: boolean, error?: string): void {
+  const payload = JSON.stringify({
+    type: 'stripe_connect_result',
+    success,
+    error: error || null,
+  }).replace(/</g, '\\u003c');
+
+  const status = success
+    ? 'Stripe connected. You can close this window.'
+    : 'Stripe connection failed: ' + (error || 'unknown') + '. You can close this window.';
+  const safeStatus = status.replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c] as string));
+
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Stripe Connect</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #334155; text-align: center; padding: 60px 24px; background: #f8fafc; }
+  p { font-size: 14px; }
+</style>
+</head>
+<body>
+<p>${safeStatus}</p>
+<script>
+(function () {
+  try {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage(${payload}, window.location.origin);
+    }
+  } catch (e) {}
+  setTimeout(function () { try { window.close(); } catch (e) {} }, 800);
+})();
+</script>
+</body>
+</html>`);
+}
 
 /**
  * POST /api/stripe/disconnect
