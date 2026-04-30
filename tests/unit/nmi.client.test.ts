@@ -338,6 +338,27 @@ describe('NmiClient', () => {
       expect(addParams.get('first_name')).toBe('Jane');
       expect(addParams.get('last_name')).toBe('Smith');
     });
+
+    it('uses transact response card metadata when vault query fails', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: 'response=1&responsetext=Customer Added&customer_vault_id=VAULT999&cc_number=4xxxxxxxxxxx1111&cc_exp=1027&cc_type=visa',
+      });
+
+      mockedAxios.post.mockRejectedValueOnce(new Error('query unavailable'));
+
+      const result = await client.saveCard({
+        paymentToken: NMI_TEST_TOKEN,
+        contactId: 'contact_123',
+        customerEmail: 'jane@test.com',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.paymentMethodId).toBe('VAULT999');
+      expect(result.cardLastFour).toBe('1111');
+      expect(result.cardBrand).toBe('visa');
+      expect(result.cardExpMonth).toBe(10);
+      expect(result.cardExpYear).toBe(2027);
+    });
   });
 
   describe('error handling', () => {

@@ -9,6 +9,25 @@ function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
 }
 
+function cleanCardDisplay(card: {
+  card_last_four?: string | null;
+  card_brand?: string | null;
+  card_exp_month?: number | null;
+  card_exp_year?: number | null;
+}) {
+  const last4 = String(card.card_last_four || '').trim();
+  const brand = String(card.card_brand || '').trim();
+  const expMonth = Number(card.card_exp_month || 0);
+  const expYear = Number(card.card_exp_year || 0);
+
+  return {
+    last4: /^\d{4}$/.test(last4) ? last4 : '',
+    brand: brand && brand.toLowerCase() !== 'unknown' ? brand : '',
+    expMonth: expMonth > 0 ? expMonth : null,
+    expYear: expYear > 0 ? expYear : null,
+  };
+}
+
 async function resolveMerchantId(locationId: string): Promise<string> {
   const supabase = getSupabase();
   const { data } = await supabase
@@ -284,17 +303,17 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
 
     if (error) throw error;
 
-    const result = (methods || []).map(m => ({
-      id: m.id,
-      last4: m.card_last_four,
-      brand: m.card_brand,
-      expMonth: m.card_exp_month,
-      expYear: m.card_exp_year,
-      isDefault: m.is_default,
-      processorType: m.processor_type,
-      customerId: m.nmi_customer_vault_id || m.stripe_customer_id,
-      paymentMethodId: m.stripe_payment_method_id,
-    }));
+    const result = (methods || []).map(m => {
+      const display = cleanCardDisplay(m);
+      return {
+        id: m.id,
+        ...display,
+        isDefault: m.is_default,
+        processorType: m.processor_type,
+        customerId: m.nmi_customer_vault_id || m.stripe_customer_id,
+        paymentMethodId: m.stripe_payment_method_id,
+      };
+    });
 
     res.json({ methods: result });
   } catch (err) { next(err); }

@@ -9,9 +9,9 @@
     <div class="card">
       <div class="card-title">Card on File</div>
       <div v-if="enrollmentInfo?.cardOnFile" class="text-sm">
-        <strong>{{ enrollmentInfo.cardOnFile.brand || 'Card' }}</strong>
-        ending in {{ enrollmentInfo.cardOnFile.last4 }}
-        <span class="text-muted">(exp {{ enrollmentInfo.cardOnFile.expMonth }}/{{ enrollmentInfo.cardOnFile.expYear }})</span>
+        <strong>{{ cardLabel(enrollmentInfo.cardOnFile) }}</strong>
+        <span v-if="enrollmentInfo.cardOnFile.last4"> ending in {{ enrollmentInfo.cardOnFile.last4 }}</span>
+        <span v-if="hasExpiry(enrollmentInfo.cardOnFile)" class="text-muted">(exp {{ enrollmentInfo.cardOnFile.expMonth }}/{{ enrollmentInfo.cardOnFile.expYear }})</span>
       </div>
       <div v-else class="text-sm text-muted">No card on file</div>
       <div v-if="enrollmentInfo?.dunningActive" class="text-sm mt-2" style="color:#ef4444;font-weight:500">
@@ -118,6 +118,14 @@ const props = defineProps<{
   enrollmentInfo: any;
   enrollments?: any[];
 }>();
+
+function cardLabel(card: any) {
+  return card?.brand || 'Card on file';
+}
+
+function hasExpiry(card: any) {
+  return Number(card?.expMonth || 0) > 0 && Number(card?.expYear || 0) > 0;
+}
 
 const api = useApi();
 

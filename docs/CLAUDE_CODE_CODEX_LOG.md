@@ -28,6 +28,36 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: NMI Card-On-File Display Cleanup (Codex)
+
+Files changed:
+
+- `src/clients/nmi.client.ts`
+- `src/controllers/payment-management.controller.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/ui/src/views/PaymentManagement.vue`
+- `src/ui/src/views/client-profile/PaymentsTab.vue`
+- `tests/unit/nmi.client.test.ts`
+- `CHANGELOG.md`
+
+Summary:
+
+- `NmiClient.saveCard()` now seeds card display metadata from NMI's successful vault-add transaction response (`cc_number`, `cc_type`, `cc_exp`) before attempting the vault query. If the query fails, new saved NMI cards can still persist useful last4/brand/expiry instead of `****`, `unknown`, `0/0`.
+- Payment Management and dashboard client-info APIs sanitize legacy placeholder card metadata before returning it to the Vue UI.
+- Payment Management and Client Profile card displays no longer render `unknown ending in **** (exp 0/0)`. If metadata is missing, the UI shows a clean "NMI card on file" or "Card on file" label and only shows last4/expiry when real values exist.
+- Dashboard/defense wording was checked; the dashboard stat label is already "Total Value Recovered".
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/nmi.client.test.ts --runInBand` passed (35/35).
+- `npm.cmd test -- --runInBand` passed (48 suites, 519 tests).
+- `npm.cmd run build-ui` passed. `src/ui/package-lock.json` was restored afterward because `npm install` rewrites lock metadata on this host.
+
+Recommended next code step:
+
+- Continue with the open custom/workflow webhook shared-secret audit and implementation plan, or run a live NMI add-card test to confirm the gateway includes `cc_number`/`cc_type`/`cc_exp` on the exact sandbox path.
+
 ### 2026-04-29: Step 1 - Gate Debug Routes
 
 Files changed:

@@ -24,6 +24,25 @@ function buildMilestoneList(offer: any): Array<{ number: number; name: string; d
   return milestones;
 }
 
+function cleanCardDisplay(card: {
+  card_last_four?: string | null;
+  card_brand?: string | null;
+  card_exp_month?: number | null;
+  card_exp_year?: number | null;
+}) {
+  const last4 = String(card.card_last_four || '').trim();
+  const brand = String(card.card_brand || '').trim();
+  const expMonth = Number(card.card_exp_month || 0);
+  const expYear = Number(card.card_exp_year || 0);
+
+  return {
+    last4: /^\d{4}$/.test(last4) ? last4 : '',
+    brand: brand && brand.toLowerCase() !== 'unknown' ? brand : '',
+    expMonth: expMonth > 0 ? expMonth : null,
+    expYear: expYear > 0 ? expYear : null,
+  };
+}
+
 export const dashboardController = {
   /** GET /api/dashboard/overview — merchant dashboard summary */
   async overview(req: Request, res: Response, next: NextFunction) {
@@ -399,7 +418,7 @@ export const dashboardController = {
         offerName: offer?.offer_name || '',
         signature: enrollment?.digital_signature || '',
         // Payment enrichment
-        cardOnFile: card ? { last4: card.card_last_four, brand: card.card_brand, expMonth: card.card_exp_month, expYear: card.card_exp_year } : null,
+        cardOnFile: card ? cleanCardDisplay(card) : null,
         totalCharged,
         totalRefunded,
         totalPayments: paymentEvents.filter((e: any) => e.event_type === 'sale').length,

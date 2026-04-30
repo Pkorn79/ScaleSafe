@@ -55,15 +55,16 @@
       <div v-if="methods.length === 0" class="text-sm text-muted">No saved payment methods.</div>
       <div v-for="m in methods" :key="m.id" class="flex-between" style="padding:8px 0;border-bottom:1px solid #f3f4f6">
         <div>
-          <strong>{{ m.brand || 'Card' }}</strong> ending in {{ m.last4 }}
-          <span class="text-sm text-muted">(exp {{ m.expMonth }}/{{ m.expYear }})</span>
+          <strong>{{ cardLabel(m) }}</strong>
+          <span v-if="m.last4"> ending in {{ m.last4 }}</span>
+          <span v-if="hasExpiry(m)" class="text-sm text-muted">(exp {{ m.expMonth }}/{{ m.expYear }})</span>
           <span v-if="m.isDefault" class="badge badge-blue" style="margin-left:6px">Default</span>
         </div>
         <div class="flex gap-2">
           <button v-if="!m.isDefault" class="btn btn-sm btn-secondary" @click="setDefaultCard(m.id)" :disabled="cardActionLoading">
             Set Default
           </button>
-          <button class="btn btn-sm btn-secondary" style="color:#ef4444" @click="removeCard(m.id, m.last4)" :disabled="cardActionLoading">
+          <button class="btn btn-sm btn-secondary" style="color:#ef4444" @click="removeCard(m)" :disabled="cardActionLoading">
             Remove
           </button>
         </div>
@@ -153,7 +154,7 @@
         <label class="form-label">Payment Method</label>
         <select class="form-select" v-model="chargeForm.methodId">
           <option v-for="m in methods" :key="m.id" :value="m.id">
-            {{ m.brand }} ending in {{ m.last4 }}
+            {{ cardOptionLabel(m) }}
           </option>
         </select>
       </div>
@@ -292,6 +293,19 @@ const showRefundModal = ref(false);
 const refundLoading = ref(false);
 const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reason: '' });
 
+function cardLabel(method: any) {
+  return method?.brand || (method?.processorType === 'nmi' ? 'NMI card on file' : 'Card on file');
+}
+
+function hasExpiry(method: any) {
+  return Number(method?.expMonth || 0) > 0 && Number(method?.expYear || 0) > 0;
+}
+
+function cardOptionLabel(method: any) {
+  const label = cardLabel(method);
+  return method?.last4 ? `${label} ending in ${method.last4}` : label;
+}
+
 const subscriptionBadge = computed(() => {
   const s = subscriptionStatus.value;
   if (s === 'enrolled' || s === 'active') return 'badge-green';
@@ -391,8 +405,10 @@ async function setDefaultCard(cardId: string) {
   cardActionLoading.value = false;
 }
 
-async function removeCard(cardId: string, last4: string) {
-  if (!confirm(`Remove card ending in ${last4}? This cannot be undone.`)) return;
+async function removeCard(method: any) {
+  const cardId = method.id;
+  const label = cardOptionLabel(method).toLowerCase();
+  if (!confirm(`Remove ${label}? This cannot be undone.`)) return;
   cardActionLoading.value = true;
   actionError.value = '';
   try {

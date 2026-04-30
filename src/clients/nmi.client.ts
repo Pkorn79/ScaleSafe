@@ -155,12 +155,10 @@ export class NmiClient implements ProcessorInterface {
 
     const vaultId = nmi.customer_vault_id;
 
-    // NMI doesn't return card details on vault add — query for them.
-    // queryVaultCard now throws on empty/failure (so charge() can chain to a
-    // transact-response fallback). saveCard has no charge response to fall
-    // back to, so we substitute placeholders here and continue — the card was
-    // saved successfully, only the display metadata is missing.
-    let cardInfo = { lastFour: '****', brand: 'unknown', expMonth: 0, expYear: 0 };
+    // Query the vault for canonical display data, but seed from the transact
+    // response so NMI test-mode cards can still show real details if the query
+    // endpoint is unavailable or returns an unexpected XML shape.
+    let cardInfo = this.extractCardInfoFromTransactResponse(nmi);
     try {
       cardInfo = await this.queryVaultCard(vaultId);
     } catch (vaultErr: any) {
@@ -470,6 +468,21 @@ export class NmiClient implements ProcessorInterface {
       avsResponse: nmi.avsresponse,
       cvvResponse: nmi.cvvresponse,
       rawResponse: nmi,
+    };
+  }
+
+  private extractCardInfoFromTransactResponse(nmi: Record<string, string>): {
+    lastFour: string;
+    brand: string;
+    expMonth: number;
+    expYear: number;
+  } {
+    const exp = nmi.cc_exp ? parseNmiExpiry(nmi.cc_exp) : { month: 0, year: 0 };
+    return {
+      lastFour: extractLastFour(nmi.cc_number || ''),
+      brand: (nmi.cc_type || 'unknown').toLowerCase(),
+      expMonth: exp.month,
+      expYear: exp.year,
     };
   }
 
