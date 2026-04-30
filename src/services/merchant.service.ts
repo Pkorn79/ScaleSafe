@@ -99,6 +99,21 @@ export interface MerchantConfigUpdate {
   config?: Record<string, unknown>;
 }
 
+export interface ProvisioningHealthItem {
+  key: string;
+  label: string;
+  status: 'pass' | 'warn' | 'fail';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ProvisioningHealthReport {
+  locationId: string;
+  overallStatus: 'pass' | 'warn' | 'fail';
+  checkedAt: string;
+  items: ProvisioningHealthItem[];
+}
+
 // ─── Provisioning constants ──────────────────────────────────────────
 
 const SS_FIELDS_TO_CREATE = [
@@ -107,6 +122,7 @@ const SS_FIELDS_TO_CREATE = [
   { name: 'SS Last Evidence Date', fieldKey: 'ss_last_evidence_date', dataType: 'TEXT' },
   { name: 'SS Chargeback Status',  fieldKey: 'ss_chargeback_status',  dataType: 'TEXT' },
   { name: 'SS Defense Status',     fieldKey: 'ss_defense_status',     dataType: 'TEXT' },
+  { name: 'SS Engagement Status',  fieldKey: 'ss_engagement_status',  dataType: 'TEXT' },
 ];
 
 const OFFER_FIELDS_TO_CREATE = [
@@ -189,6 +205,174 @@ export const merchantService = {
         logger.error({ locationId, attempts: merchant.snapshot_attempts }, 'Provisioning failed after max retries');
       }
     }
+  },
+
+  async getProvisioningHealth(locationId: string): Promise<ProvisioningHealthReport> {
+    const checkedAt = new Date().toISOString();
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const items: ProvisioningHealthItem[] = [];
+
+    const add = (item: ProvisioningHealthItem) => items.push(item);
+
+    add({
+      key: 'merchant_record',
+      label: 'Merchant record',
+      status: merchant.status === 'active' ? 'pass' : 'warn',
+      message: `Merchant status is ${merchant.status || 'unknown'}.`,
+      details: {
+        onboardingComplete: merchant.onboarding_complete,
+        snapshotStatus: merchant.snapshot_status,
+        snapshotAttempts: merchant.snapshot_attempts,
+      },
+    });
+
+    add({
+      key: 'webhook_secret',
+      label: 'Workflow webhook secret',
+      status: merchant.webhook_secret ? 'pass' : 'fail',
+      message: merchant.webhook_secret
+        ? 'Webhook secret is present.'
+        : 'Webhook secret is missing; run provisioning/backfill before enabling webhook enforcement.',
+      details: {
+        headerName: 'x-scalesafe-webhook-secret',
+        enforcementEnabled: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+      },
+    });
+
+    add({
+      key: 'payment_provider',
+      label: 'GHL custom payment provider',
+      status: merchant.payment_provider_registered && merchant.provider_api_key ? 'pass' : 'warn',
+      message: merchant.payment_provider_registered && merchant.provider_api_key
+        ? 'Payment provider registration and API key are present.'
+        : 'Payment provider registration or API key is missing; retry provisioning if this is a fresh install.',
+      details: {
+        registered: merchant.payment_provider_registered,
+        hasApiKey: Boolean(merchant.provider_api_key),
+        hasPublishableKey: Boolean(merchant.provider_publishable_key),
+      },
+    });
+
+    add({
+      key: 'processor_config',
+      label: 'Processor configuration',
+      status: merchant.default_processor || merchant.stripe_connected ? 'pass' : 'warn',
+      message: merchant.default_processor || merchant.stripe_connected
+        ? `Default processor is ${merchant.default_processor || 'stripe'}.`
+        : 'No default processor is configured yet.',
+      details: {
+        defaultProcessor: merchant.default_processor,
+        stripeConnected: merchant.stripe_connected,
+      },
+    });
+
+    try {
+      const api = await ghlApi(locationId);
+
+      const [pipelineRes, fieldsRes, valuesRes] = await Promise.allSettled([
+        api.get('/opportunities/pipelines', { params: { locationId } }),
+        api.get(`/locations/${locationId}/customFields`),
+        api.get(`/locations/${locationId}/customValues`),
+      ]);
+
+      if (pipelineRes.status === 'fulfilled') {
+        const pipelines = pipelineRes.value.data.pipelines || pipelineRes.value.data || [];
+        const pipeline = pipelines.find((p: any) => p.name === 'Client Milestones');
+        add({
+          key: 'client_milestones_pipeline',
+          label: 'Client Milestones pipeline',
+          status: pipeline ? 'pass' : 'warn',
+          message: pipeline
+            ? 'Client Milestones pipeline found.'
+            : 'Client Milestones pipeline was not found; verify Snapshot installed the pipeline.',
+          details: {
+            pipelineId: pipeline?.id || null,
+            totalPipelines: Array.isArray(pipelines) ? pipelines.length : null,
+          },
+        });
+      } else {
+        add({
+          key: 'client_milestones_pipeline',
+          label: 'Client Milestones pipeline',
+          status: 'warn',
+          message: 'Could not query GHL pipelines.',
+          details: { error: pipelineRes.reason?.message || String(pipelineRes.reason) },
+        });
+      }
+
+      if (fieldsRes.status === 'fulfilled') {
+        const fields = fieldsRes.value.data.customFields || fieldsRes.value.data || [];
+        const keys = new Set(fields.map((f: any) => f.fieldKey || f.field_key || ''));
+        const expected = [...SS_FIELDS_TO_CREATE, ...OFFER_FIELDS_TO_CREATE].map((f) => `contact.${f.fieldKey}`);
+        const missing = expected.filter((key) => !keys.has(key));
+        add({
+          key: 'custom_fields',
+          label: 'ScaleSafe contact fields',
+          status: missing.length === 0 ? 'pass' : 'warn',
+          message: missing.length === 0
+            ? `All ${expected.length} expected ScaleSafe contact fields are present.`
+            : `${missing.length}/${expected.length} expected ScaleSafe contact fields are missing.`,
+          details: {
+            expectedCount: expected.length,
+            missing,
+          },
+        });
+      } else {
+        add({
+          key: 'custom_fields',
+          label: 'ScaleSafe contact fields',
+          status: 'warn',
+          message: 'Could not query GHL custom fields.',
+          details: { error: fieldsRes.reason?.message || String(fieldsRes.reason) },
+        });
+      }
+
+      if (valuesRes.status === 'fulfilled') {
+        const values = valuesRes.value.data.customValues || valuesRes.value.data || [];
+        const discoveredKeys = merchant.custom_value_ids || {};
+        const missing = CUSTOM_VALUE_REGISTRY
+          .filter((def) => !discoveredKeys[def.key])
+          .map((def) => def.key);
+        add({
+          key: 'custom_values',
+          label: 'ScaleSafe custom values',
+          status: missing.length === 0 ? 'pass' : 'warn',
+          message: missing.length === 0
+            ? `All ${CUSTOM_VALUE_REGISTRY.length} expected custom values are mapped.`
+            : `${missing.length}/${CUSTOM_VALUE_REGISTRY.length} expected custom values are not mapped in ScaleSafe.`,
+          details: {
+            expectedCount: CUSTOM_VALUE_REGISTRY.length,
+            mappedCount: Object.keys(discoveredKeys).length,
+            totalGhlCustomValues: Array.isArray(values) ? values.length : null,
+            missing,
+          },
+        });
+      } else {
+        add({
+          key: 'custom_values',
+          label: 'ScaleSafe custom values',
+          status: 'warn',
+          message: 'Could not query GHL custom values.',
+          details: { error: valuesRes.reason?.message || String(valuesRes.reason) },
+        });
+      }
+    } catch (err: any) {
+      add({
+        key: 'ghl_api',
+        label: 'GHL API access',
+        status: 'warn',
+        message: 'Could not create a GHL API client for this tenant.',
+        details: { error: err.message },
+      });
+    }
+
+    const overallStatus = items.some((item) => item.status === 'fail')
+      ? 'fail'
+      : items.some((item) => item.status === 'warn')
+        ? 'warn'
+        : 'pass';
+
+    return { locationId, overallStatus, checkedAt, items };
   },
 
   /**

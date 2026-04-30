@@ -45,6 +45,17 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** GET /api/merchants/provisioning-health - fresh-install diagnostic */
+  async getProvisioningHealth(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const report = await merchantService.getProvisioningHealth(locationId);
+      res.json(report);
+    } catch (err) { next(err); }
+  },
+
   /** GET /api/merchants/webhook-secret - return this merchant's workflow webhook secret */
   async getWebhookSecret(req: Request, res: Response, next: NextFunction) {
     try {

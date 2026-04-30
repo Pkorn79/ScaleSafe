@@ -29,6 +29,51 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: Fresh-Install Provisioning Health Endpoint (Codex)
+
+Files changed:
+
+- `src/services/merchant.service.ts`
+- `src/controllers/merchant.controller.ts`
+- `src/routes/merchant.routes.ts`
+- `tests/unit/merchant.service.test.ts`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `CHANGELOG.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added SSO-protected `GET /api/merchants/provisioning-health`.
+- The report checks merchant record status, webhook secret presence, payment provider registration/API key, processor config, GHL `Client Milestones` pipeline, expected ScaleSafe contact fields, and ScaleSafe custom value mapping.
+- The response returns `overallStatus` plus pass/warn/fail items without exposing secrets.
+- While wiring the report, Codex found merchant provisioning still created only the original 5 SS contact fields. Added `SS Engagement Status` / `ss_engagement_status` so fresh installs match the current 6-field workflow/constant set.
+- Updated the Snapshot plan to mark this code assist shipped.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+- `npm.cmd run build` passed end-to-end on Windows.
+
+### 2026-04-30: GHL Beta Snapshot Execution Plan (Codex)
+
+Files changed:
+
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `CHANGELOG.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Created a current beta Snapshot execution checklist that supersedes older snapshot docs where they conflict with current V2 code, Codex security hardening, or Philip's no-Make direction.
+- Clarified what the app already provisions on install versus what the GHL Snapshot must package.
+- Captured manual GHL checklist items for forms, workflows, webhook URL/header setup, clean sandbox install, and E2E pass.
+- Recommended the next code assist: a provisioning health report/diagnostic to make fresh-install testing fast and unambiguous.
+
+Verification:
+
+- Docs-only change; tests not run.
+
 ### 2026-04-30: Cross-Platform Build Packaging Script (Codex)
 
 Files changed:

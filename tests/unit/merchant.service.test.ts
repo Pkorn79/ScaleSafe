@@ -91,10 +91,9 @@ describe('Pipeline Lookup', () => {
     expect(pipelineId).toBeNull();
   });
 });
-
 describe('Custom Fields Creation', () => {
   test('creates only missing fields via v2 endpoint', async () => {
-    // Existing fields — 3 of 5 SS fields exist
+    // Existing fields — 3 of 6 SS fields exist
     mockGet.mockResolvedValueOnce({
       data: {
         customFields: [
@@ -109,9 +108,9 @@ describe('Custom Fields Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomFields(api, 'loc_1');
 
-    // 2 missing SS fields + 45 offer fields = 47
+    // 3 missing SS fields + 45 offer fields = 48
     const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customFields');
-    expect(createCalls.length).toBe(47);
+    expect(createCalls.length).toBe(48);
     expect(createCalls[0][1]).toMatchObject({ dataType: expect.any(String) });
   });
 
@@ -119,7 +118,7 @@ describe('Custom Fields Creation', () => {
     const allKeys = [
       'contact.ss_enrollment_status', 'contact.ss_evidence_score',
       'contact.ss_last_evidence_date', 'contact.ss_chargeback_status',
-      'contact.ss_defense_status',
+      'contact.ss_defense_status', 'contact.ss_engagement_status',
       'contact.offer_business_name', 'contact.offer_name', 'contact.offer_price',
       'contact.offer_payment_type', 'contact.offer_installment_amount',
       'contact.offer_installment_frequency', 'contact.offer_num_payments',

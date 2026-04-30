@@ -15,6 +15,7 @@ router.put('/config', merchantController.updateConfig);
 router.get('/webhook-secret', merchantController.getWebhookSecret);
 router.post('/webhook-secret/rotate', merchantController.rotateWebhookSecret);
 router.get('/onboarding-status', merchantController.getOnboardingStatus);
+router.get('/provisioning-health', merchantController.getProvisioningHealth);
 router.post('/provision', merchantController.provision);
 router.post('/logo', upload.single('logo'), merchantController.uploadLogo);
 
