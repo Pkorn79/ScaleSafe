@@ -185,7 +185,8 @@ router.post('/send-card-update', async (req: Request, res: Response, next: NextF
     const { contactId } = req.body;
     if (!contactId) throw new ValidationError('contactId required');
 
-    const result = await paymentLifecycleService.sendCardUpdateRequest(locationId, contactId);
+    const sendTrigger = req.body.sendTrigger !== false;
+    const result = await paymentLifecycleService.sendCardUpdateRequest(locationId, contactId, { sendTrigger });
     res.json(result);
   } catch (err) { next(err); }
 });

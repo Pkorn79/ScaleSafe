@@ -5,6 +5,7 @@ import { triggerService } from './trigger.service';
 import { evidenceService } from './evidence.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
+import { createPublicActionToken } from '../utils/public-action-token';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
@@ -801,32 +802,35 @@ export const paymentLifecycleService = {
    * with action: card_update_requested so the merchant's GHL workflow
    * can send the link via email/SMS.
    */
-  async sendCardUpdateRequest(locationId: string, contactId: string): Promise<{ success: boolean; link: string }> {
+  async sendCardUpdateRequest(locationId: string, contactId: string, options: { sendTrigger?: boolean } = {}): Promise<{ success: boolean; link: string }> {
     const { config: appConfig } = require('../config');
     const baseUrl = appConfig.appUrl;
-    const link = `${baseUrl}/payment-update?contactId=${encodeURIComponent(contactId)}&locationId=${encodeURIComponent(locationId)}`;
+    const actionToken = createPublicActionToken({ action: 'payment_update', contactId, locationId });
+    const link = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
 
-    // Write URL to GHL contact custom field so workflow can use it
-    try {
-      const api = await ghlApi(locationId);
-      await api.put(`/contacts/${contactId}`, {
-        customField: {
-          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
-        },
-      });
-    } catch { /* non-blocking */ }
+    if (options.sendTrigger !== false) {
+      // Write URL to GHL contact custom field so workflow can use it
+      try {
+        const api = await ghlApi(locationId);
+        await api.put(`/contacts/${contactId}`, {
+          customField: {
+            [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+          },
+        });
+      } catch { /* non-blocking */ }
 
-    // Fire trigger for GHL workflow to send the link
-    try {
-      await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
-        contact_id: contactId,
-        amount: 0,
-        failure_reason: 'card_update_requested',
-        attempt_count: 0,
-        next_retry_date: 'none',
-      });
-    } catch (err: any) {
-      logger.warn({ err: err.message, contactId }, 'Card update request trigger failed');
+      // Fire trigger for GHL workflow to send the link
+      try {
+        await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
+          contact_id: contactId,
+          amount: 0,
+          failure_reason: 'card_update_requested',
+          attempt_count: 0,
+          next_retry_date: 'none',
+        });
+      } catch (err: any) {
+        logger.warn({ err: err.message, contactId }, 'Card update request trigger failed');
+      }
     }
 
     logger.info({ contactId, locationId, link }, 'Card update request sent');

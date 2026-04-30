@@ -4,6 +4,11 @@ import { ghlApi } from '../clients/ghl.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
+import {
+  legacyPublicActionLinksAllowed,
+  PublicActionType,
+  verifyPublicActionToken,
+} from '../utils/public-action-token';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -12,18 +17,54 @@ function getClientIp(req: Request): string {
     || '';
 }
 
+interface PublicActionContext {
+  contactId: string;
+  locationId: string;
+  milestoneNumber?: number;
+}
+
+function readPublicActionContext(req: Request, action: PublicActionType | PublicActionType[]): PublicActionContext {
+  const actionToken = (req.query.actionToken || req.query.token || req.body?.actionToken) as string | undefined;
+  if (actionToken) {
+    const payload = verifyPublicActionToken(actionToken);
+    const allowedActions = Array.isArray(action) ? action : [action];
+    if (!allowedActions.includes(payload.action)) {
+      throw new Error('Action token cannot be used for this request');
+    }
+    return {
+      contactId: payload.contactId,
+      locationId: payload.locationId,
+      milestoneNumber: payload.milestoneNumber,
+    };
+  }
+
+  if (!legacyPublicActionLinksAllowed()) {
+    throw new Error('Valid action token required');
+  }
+
+  const contactId = (req.query.contactId || req.body?.contactId) as string | undefined;
+  const locationId = (req.query.locationId || req.body?.locationId) as string | undefined;
+  const rawMilestoneNumber = (req.query.milestoneNumber || req.body?.milestoneNumber) as string | number | undefined;
+  const milestoneNumber = rawMilestoneNumber ? parseInt(rawMilestoneNumber.toString(), 10) : undefined;
+
+  if (!contactId || !locationId) {
+    throw new Error('Valid action token required');
+  }
+
+  return { contactId, locationId, milestoneNumber };
+}
+
+function isPublicActionTokenError(err: unknown): boolean {
+  return err instanceof Error && err.message.toLowerCase().includes('action token');
+}
+
 /**
  * GET /api/payment-update/config?contactId=X&locationId=Y
  * Public endpoint — called by the payment-update widget to get processor config.
  */
 export async function getPaymentUpdateConfig(req: Request, res: Response, next: NextFunction) {
   try {
-    const contactId = req.query.contactId as string;
-    const locationId = req.query.locationId as string;
-    if (!contactId || !locationId) {
-      res.status(400).json({ error: 'contactId and locationId are required' });
-      return;
-    }
+    const { contactId, locationId } = readPublicActionContext(req, ['payment_update', 'subscription_cancel']);
 
     const merchant = await merchantRepository.findByLocationId(locationId);
     if (!merchant) {
@@ -94,7 +135,13 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
       contactName,
       contactEmail,
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ error: (err as Error).message, processorType: 'none' });
+      return;
+    }
+    next(err);
+  }
 }
 
 /**
@@ -103,9 +150,10 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
  */
 export async function updatePaymentMethod(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId, token, processorType } = req.body;
-    if (!contactId || !locationId || !token || !processorType) {
-      res.status(400).json({ success: false, error: 'contactId, locationId, token, and processorType are required' });
+    const { contactId, locationId } = readPublicActionContext(req, 'payment_update');
+    const { token, processorType } = req.body;
+    if (!token || !processorType) {
+      res.status(400).json({ success: false, error: 'token and processorType are required' });
       return;
     }
 
@@ -219,6 +267,10 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
       brand: result.cardBrand,
     });
   } catch (err: any) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ success: false, error: err.message });
+      return;
+    }
     logger.error({ err: err.message, stack: err.stack }, 'Payment method update failed');
     res.status(500).json({ success: false, error: err.message || 'Payment method update failed' });
   }
@@ -230,9 +282,10 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
  */
 export async function cancelSubscriptionPublic(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId, reason } = req.body;
-    if (!contactId || !locationId || !reason) {
-      res.status(400).json({ success: false, error: 'contactId, locationId, and reason are required' });
+    const { contactId, locationId } = readPublicActionContext(req, 'subscription_cancel');
+    const { reason } = req.body;
+    if (!reason) {
+      res.status(400).json({ success: false, error: 'reason is required' });
       return;
     }
 
@@ -291,6 +344,10 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
     logger.info({ contactId, locationId, reason }, 'Client-initiated subscription cancellation');
     res.json({ success: true });
   } catch (err: any) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ success: false, error: err.message });
+      return;
+    }
     logger.error({ err: err.message, stack: err.stack }, 'Client subscription cancel failed');
     res.status(500).json({ success: false, error: err.message || 'Cancellation failed' });
   }
@@ -301,11 +358,9 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
  */
 export async function getMilestoneConfig(req: Request, res: Response, next: NextFunction) {
   try {
-    const contactId = req.query.contactId as string;
-    const locationId = req.query.locationId as string;
-    const milestoneNumber = parseInt(req.query.milestoneNumber as string);
-    if (!contactId || !locationId || !milestoneNumber) {
-      res.status(400).json({ error: 'contactId, locationId, milestoneNumber required' });
+    const { contactId, locationId, milestoneNumber } = readPublicActionContext(req, 'milestone_signoff');
+    if (!milestoneNumber) {
+      res.status(400).json({ error: 'milestoneNumber required' });
       return;
     }
 
@@ -334,7 +389,13 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
       merchantName: merchant?.business_name || '',
       milestoneNumber,
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ error: (err as Error).message });
+      return;
+    }
+    next(err);
+  }
 }
 
 /**
@@ -342,9 +403,13 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
  */
 export async function submitMilestoneSignoff(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId, milestoneNumber, signature } = req.body;
-    if (!contactId || !locationId || !milestoneNumber || !signature) {
-      res.status(400).json({ success: false, error: 'contactId, locationId, milestoneNumber, signature required' });
+    const actionContext = readPublicActionContext(req, 'milestone_signoff');
+    const contactId = actionContext.contactId;
+    const locationId = actionContext.locationId;
+    const milestoneNumber = actionContext.milestoneNumber || parseInt(req.body.milestoneNumber, 10);
+    const { signature } = req.body;
+    if (!milestoneNumber || !signature) {
+      res.status(400).json({ success: false, error: 'milestoneNumber and signature required' });
       return;
     }
 
@@ -426,6 +491,10 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     logger.info({ contactId, milestoneNumber, milestoneName }, 'Milestone signed off by client');
     res.json({ success: true });
   } catch (err: any) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ success: false, error: err.message });
+      return;
+    }
     logger.error({ err: err.message }, 'Milestone signoff failed');
     res.status(500).json({ success: false, error: err.message || 'Sign-off failed' });
   }

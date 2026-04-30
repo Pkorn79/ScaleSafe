@@ -244,7 +244,8 @@ Next security item:
 - P1 fixed: dashboard `totalValueSaved` overview tenant filtering.
 - P2 fixed: pre-existing test drift in 6 unit/integration suites. Full Jest suite now passes.
 - P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
-- P1 open: public client-service links should be tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
+- P1 fixed: public client-service links tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
+- P2 open: top-level `npm.cmd run build` uses Unix packaging commands (`mkdir -p`, `cp -r`) and fails under Windows `cmd` after TypeScript/Vite compilation succeeds.
 
 ### 2026-04-30: Tracking Reconciliation Rule (Codex)
 
@@ -300,6 +301,44 @@ Summary:
 Note:
 
 - These are planning/post-beta docket items, not current beta execution tasks unless Philip explicitly promotes one.
+
+### 2026-04-30: Signed Public Client Action Links (Codex)
+
+Files changed:
+
+- `.env.example`
+- `CHANGELOG.md`
+- `src/controllers/payment-update.controller.ts`
+- `src/routes/payment-lifecycle.routes.ts`
+- `src/routes/payment-update.routes.ts`
+- `src/services/payment-lifecycle.service.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/ui/src/views/PaymentManagement.vue`
+- `src/utils/public-action-token.ts`
+- `tests/unit/public-action-token.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added HMAC-signed public action tokens for client-facing actions: `payment_update`, `subscription_cancel`, and `milestone_signoff`.
+- New generated payment update links use `/payment-update?actionToken=...` instead of exposing raw `contactId` and `locationId`.
+- Public payment update, cancellation, and milestone signoff endpoints now resolve tenant/contact context from the signed token before returning config data or accepting mutations.
+- Legacy raw `contactId`/`locationId` links are allowed only outside production or when `ALLOW_LEGACY_PUBLIC_ACTION_LINKS=true` is explicitly set.
+- Added optional `PUBLIC_ACTION_TOKEN_SECRET`; if unset, tokens use `GHL_APP_SSO_KEY`.
+- Updated Payment Management's "copy card update link" path to request a signed backend-generated link with `sendTrigger: false`, so copying a link does not also fire the GHL workflow.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=public-action-token` passed: 1 suite, 5 tests.
+- `npm.cmd test -- --runInBand` passed: 46 suites, 511 tests.
+- `npm.cmd run build` got through TypeScript and Vite UI compilation, then failed at the existing Windows-incompatible packaging step (`mkdir -p` / `cp -r` under `cmd`). Treat as a follow-up build-script portability issue, not a code compile failure.
+
+Next queue:
+
+1. Public endpoint/webhook security validation pass.
+2. Dashboard performance profiling and optimization.
+3. NMI card-on-file metadata display fix.
 
 ## Current Working Tree Notes
 

@@ -8,6 +8,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
+import { createPublicActionToken } from '../utils/public-action-token';
 import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 
@@ -518,7 +519,12 @@ export const phase2EnrollmentService = {
     // Build enriched payload for GHL workflow
     const { config: appConfig } = require('../config');
     const baseUrl = appConfig.appUrl;
-    const cardUpdateLink = `${baseUrl}/payment-update?contactId=${encodeURIComponent(params.contactId)}&locationId=${encodeURIComponent(params.locationId)}`;
+    const actionToken = createPublicActionToken({
+      action: 'payment_update',
+      contactId: params.contactId,
+      locationId: params.locationId,
+    });
+    const cardUpdateLink = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
 
     await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
       contact_id: params.contactId,

@@ -105,6 +105,7 @@ var API_BASE = window.location.origin;
 console.log('RAW search:', window.location.search);
 console.log('RAW href:', window.location.href);
 var params = new URLSearchParams(window.location.search);
+var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 console.log('Parsed contactId:', contactId, 'locationId:', locationId);
@@ -115,6 +116,7 @@ var state = {
   stripe: null,
   cardElement: null,
   submitting: false,
+  actionToken: actionToken,
 };
 
 function el(id) { return document.getElementById(id); }
@@ -126,14 +128,17 @@ function showError(msg) {
 
 // Load config on page load
 (async function init() {
-  if (!contactId || !locationId) {
+  if (!actionToken && (!contactId || !locationId)) {
     el('loading').classList.add('hidden');
-    showError('Missing contactId or locationId in URL parameters.');
+    showError('Invalid payment update link.');
     return;
   }
 
   try {
-    var res = await fetch(API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId));
+    var configUrl = actionToken
+      ? API_BASE + '/api/payment-update/config?actionToken=' + encodeURIComponent(actionToken)
+      : API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId);
+    var res = await fetch(configUrl);
     var data = await res.json();
     console.log('Payment update config:', JSON.stringify(data));
     state.config = data;
@@ -265,6 +270,7 @@ async function doSubmit(token, processorType) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        actionToken: state.actionToken,
         contactId: contactId,
         locationId: locationId,
         token: token,
@@ -371,11 +377,12 @@ function subscriptionCancelHtml(): string {
 <script>
 var API_BASE = window.location.origin;
 var params = new URLSearchParams(window.location.search);
+var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 
 (async function init() {
-  if (!contactId || !locationId) {
+  if (!actionToken && (!contactId || !locationId)) {
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('error-msg').textContent = 'Invalid link. Please use the cancellation link provided by your provider.';
     document.getElementById('error-msg').classList.remove('hidden');
@@ -383,7 +390,10 @@ var locationId = params.get('locationId') || '';
   }
 
   try {
-    var res = await fetch(API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId));
+    var configUrl = actionToken
+      ? API_BASE + '/api/payment-update/config?actionToken=' + encodeURIComponent(actionToken)
+      : API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId);
+    var res = await fetch(configUrl);
     var data = await res.json();
 
     document.getElementById('loading').classList.add('hidden');
@@ -419,7 +429,7 @@ async function submitCancel() {
     var res = await fetch(API_BASE + '/api/payment-update/cancel-subscription', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contactId: contactId, locationId: locationId, reason: reason })
+      body: JSON.stringify({ actionToken: actionToken, contactId: contactId, locationId: locationId, reason: reason })
     });
     var data = await res.json();
     if (!data.success) throw new Error(data.error || 'Cancellation failed');
@@ -503,21 +513,26 @@ function milestoneSignoffHtml(): string {
 <script>
 var API_BASE = window.location.origin;
 var params = new URLSearchParams(window.location.search);
+var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 var milestoneNumber = params.get('milestoneNumber') || '';
 (async function() {
-  if (!contactId || !locationId || !milestoneNumber) {
+  if ((!actionToken && (!contactId || !locationId)) || (!actionToken && !milestoneNumber)) {
     document.getElementById('loading').classList.add('hidden');
     document.getElementById('error-msg').textContent = 'Invalid link.';
     document.getElementById('error-msg').classList.remove('hidden');
     return;
   }
   try {
-    var res = await fetch(API_BASE + '/api/milestone-signoff/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId) + '&milestoneNumber=' + milestoneNumber);
+    var configUrl = actionToken
+      ? API_BASE + '/api/milestone-signoff/config?actionToken=' + encodeURIComponent(actionToken)
+      : API_BASE + '/api/milestone-signoff/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId) + '&milestoneNumber=' + milestoneNumber;
+    var res = await fetch(configUrl);
     var data = await res.json();
     document.getElementById('loading').classList.add('hidden');
     if (data.error) { document.getElementById('error-msg').textContent = data.error; document.getElementById('error-msg').classList.remove('hidden'); return; }
+    milestoneNumber = data.milestoneNumber || milestoneNumber;
     document.getElementById('merchant-name').textContent = data.merchantName || '';
     document.getElementById('milestone-title').textContent = 'Milestone ' + milestoneNumber + ': ' + data.milestoneName;
     if (data.delivers) document.getElementById('delivers').innerHTML = '<strong>Deliverables:</strong> ' + data.delivers;
@@ -541,7 +556,7 @@ async function submitSignoff() {
   try {
     var res = await fetch(API_BASE + '/api/milestone-signoff/submit', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ contactId: contactId, locationId: locationId, milestoneNumber: parseInt(milestoneNumber), signature: document.getElementById('signature').value.trim() })
+      body: JSON.stringify({ actionToken: actionToken, contactId: contactId, locationId: locationId, milestoneNumber: parseInt(milestoneNumber), signature: document.getElementById('signature').value.trim() })
     });
     var data = await res.json();
     if (!data.success) throw new Error(data.error || 'Failed');

@@ -358,7 +358,7 @@ async function sendCardUpdateRequest() {
   cardUpdateResult.value = '';
   actionError.value = '';
   try {
-    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId });
+    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId, sendTrigger: false });
     cardUpdateResult.value = 'Card update request sent! Link: ' + (result.link || '').split('?')[0] + '...';
     setTimeout(() => { cardUpdateResult.value = ''; }, 6000);
   } catch (e: any) { actionError.value = e.message || 'Failed to send card update request'; }
@@ -366,14 +366,19 @@ async function sendCardUpdateRequest() {
 }
 
 async function copyCardUpdateLink() {
-  const link = `${window.location.origin}/payment-update?contactId=${encodeURIComponent(contactId)}&locationId=${encodeURIComponent(sessionStorage.getItem('ss_location_id') || '')}`;
+  cardUpdateSending.value = true;
+  cardUpdateResult.value = '';
+  actionError.value = '';
   try {
+    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId });
+    const link = result.link || '';
     await navigator.clipboard.writeText(link);
     cardUpdateResult.value = 'Link copied to clipboard!';
     setTimeout(() => { cardUpdateResult.value = ''; }, 3000);
-  } catch {
-    cardUpdateResult.value = link; // Fallback: show the link
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to create card update link';
   }
+  cardUpdateSending.value = false;
 }
 
 async function setDefaultCard(cardId: string) {
