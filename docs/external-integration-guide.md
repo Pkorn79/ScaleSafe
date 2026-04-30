@@ -1,6 +1,8 @@
-# External Integration Guide for ScaleSafe
+﻿# External Integration Guide for ScaleSafe
 
 ## Overview
+
+**Current V2 direction:** ScaleSafe will not use Make.com for current or future external integration architecture. This guide describes direct/app-native webhook integrations that post to the ScaleSafe app endpoint. Older Make.com references in historical or archived docs are V1 artifacts and must not be used for new work.
 
 External integrations allow ScaleSafe to automatically capture and synchronize data from various learning management systems, payment platforms, scheduling tools, and other third-party services. These integrations use webhooks to send structured event data to ScaleSafe, enabling real-time tracking of session attendance, module completion, milestone milestones, payment updates, and participant feedback.
 
@@ -13,16 +15,16 @@ By connecting external platforms to ScaleSafe, you can maintain a unified view o
 All external events should be sent to:
 
 ```
-https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
+https://scalesafe-production.up.railway.app/webhooks/external
 ```
 
-**Note:** This Make.com webhook URL will be replaced by a Node.js application endpoint in production. When migration occurs, update all platform integrations to point to the new URL.
+Use the ScaleSafe app endpoint directly. Do not route new external integrations through Make.com.
 
 ### Required Fields
 
 ### Required ScaleSafe Header
 
-When the Make.com scenario posts transformed events to ScaleSafe, include this HTTP header:
+When an external platform or direct integration adapter posts events to ScaleSafe, include this HTTP header:
 
 | Header | Value |
 |--------|-------|
@@ -247,43 +249,43 @@ Fired when a payment is made, refunded, or when payment terms are updated.
 ### Calendly Integration
 
 1. Log into your Calendly account
-2. Navigate to **Integrations** → **Webhooks**
+2. Navigate to **Integrations** â†’ **Webhooks**
 3. Click **Add Webhook**
-4. Set the webhook URL to: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+4. Set the webhook URL to: `https://scalesafe-production.up.railway.app/webhooks/external`
 5. Select the events you want to track:
-   - **Invitee Created** → maps to `session_completed` (once confirmed)
-   - **Invitee Cancelled** → maps to `no_show`
+   - **Invitee Created** â†’ maps to `session_completed` (once confirmed)
+   - **Invitee Cancelled** â†’ maps to `no_show`
 6. For each webhook event, Calendly will send participant details automatically
-7. Transform the Calendly payload to match the ScaleSafe schema using Make.com or Zapier
+7. Transform the Calendly payload to match the ScaleSafe schema using a direct adapter or Zapier
 
 ### Teachable / Kajabi / Thinkific Integration
 
 1. Log into your learning platform
 2. Navigate to **Integrations** or **Webhooks** settings
-3. Create a new webhook with URL: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+3. Create a new webhook with URL: `https://scalesafe-production.up.railway.app/webhooks/external`
 4. Select the events to track:
-   - **Course Completed** → maps to `module_completed`
-   - **Lesson Completed** → maps to `module_completed`
-   - **Quiz Passed** → can map to `module_completed` with score data
+   - **Course Completed** â†’ maps to `module_completed`
+   - **Lesson Completed** â†’ maps to `module_completed`
+   - **Quiz Passed** â†’ can map to `module_completed` with score data
 5. Ensure the webhook includes:
    - Student email address
    - Student name
    - Course/module name
    - Completion date
    - Score (if available)
-6. Set up a middleware (Make.com scenario) to normalize the payload to ScaleSafe format
+6. Set up a middleware (direct integration adapter) to normalize the payload to ScaleSafe format
 
 ### Zoom Integration
 
 1. Log into Zoom with admin credentials
-2. Go to **App Marketplace** → **Webhooks**
+2. Go to **App Marketplace** â†’ **Webhooks**
 3. Create a new webhook application
-4. Set webhook URL to: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+4. Set webhook URL to: `https://scalesafe-production.up.railway.app/webhooks/external`
 5. Subscribe to the following events:
-   - **Webinar Ended** → triggers `session_completed`
-   - **Meeting Ended** → triggers `session_completed`
+   - **Webinar Ended** â†’ triggers `session_completed`
+   - **Meeting Ended** â†’ triggers `session_completed`
 6. Zoom will send participant attendance data
-7. Use Make.com to:
+7. Use your direct integration adapter to:
    - Extract attendee email and name from Zoom payload
    - Map meeting/webinar details to `session_type`, `group_name`, `topics`
    - Calculate `duration` from meeting start/end times
@@ -298,19 +300,19 @@ Zapier can connect virtually any platform to ScaleSafe:
    - Select the event type (form submission, payment received, etc.)
 
 2. **Action Setup:**
-   - Select **Webhooks by Zapier** → **POST**
-   - Set URL: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+   - Select **Webhooks by Zapier** â†’ **POST**
+   - Set URL: `https://scalesafe-production.up.railway.app/webhooks/external`
    - Set method: POST
    - Set Content Type: application/json
 
 3. **Payload Mapping:**
    - Map source fields to ScaleSafe required fields:
-     - `source` → hardcode the app name (e.g., "google_forms")
-     - `event_type` → set based on the action type
-     - `contact_email` → map from source contact email field
-     - `contact_name` → map from source name field
-     - `location_id` → hardcode "274dtgl30b7x2HG8hn69"
-     - `data` → map event-specific fields
+     - `source` â†’ hardcode the app name (e.g., "google_forms")
+     - `event_type` â†’ set based on the action type
+     - `contact_email` â†’ map from source contact email field
+     - `contact_name` â†’ map from source name field
+     - `location_id` â†’ hardcode "274dtgl30b7x2HG8hn69"
+     - `data` â†’ map event-specific fields
 
 4. **Test and Activate:**
    - Send a test event
@@ -322,15 +324,17 @@ Zapier can connect virtually any platform to ScaleSafe:
 If you're building a custom application:
 
 1. **Prepare your payload** according to the schema above
-2. **Send a POST request** to: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+2. **Send a POST request** to: `https://scalesafe-production.up.railway.app/webhooks/external`
 3. **Headers:**
    ```
    Content-Type: application/json
+   x-scalesafe-webhook-secret: <merchant webhook secret>
    ```
 4. **Example cURL:**
    ```bash
-   curl -X POST https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e \
+   curl -X POST https://scalesafe-production.up.railway.app/webhooks/external \
      -H "Content-Type: application/json" \
+     -H "x-scalesafe-webhook-secret: <merchant webhook secret>" \
      -d '{
        "source": "custom_app",
        "event_type": "session_completed",
@@ -364,7 +368,7 @@ S13 Service Access Tracking monitors participant engagement with digital learnin
 
 **Webhook URL:**
 ```
-https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
+https://scalesafe-production.up.railway.app/webhooks/external
 ```
 
 **Required Fields for S13 Access Events:**
@@ -385,8 +389,8 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 #### Kajabi
 
 1. Log into Kajabi admin dashboard
-2. Go to **Settings** → **Integrations** → **Webhooks**
-3. Add webhook URL: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+2. Go to **Settings** â†’ **Integrations** â†’ **Webhooks**
+3. Add webhook URL: `https://scalesafe-production.up.railway.app/webhooks/external`
 4. Enable events:
    - Course Enrollment
    - Lesson Started
@@ -398,9 +402,9 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 #### Skool
 
 1. Log into Skool community dashboard
-2. Navigate to **Settings** → **API & Integrations**
+2. Navigate to **Settings** â†’ **API & Integrations**
 3. Create a new webhook
-4. Set URL: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+4. Set URL: `https://scalesafe-production.up.railway.app/webhooks/external`
 5. Subscribe to:
    - Member joined course
    - Member completed lesson
@@ -412,8 +416,8 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 
 1. In GHL account, navigate to **Memberships**
 2. Select the membership site
-3. Go to **Settings** → **Integrations**
-4. Add webhook: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+3. Go to **Settings** â†’ **Integrations**
+4. Add webhook: `https://scalesafe-production.up.railway.app/webhooks/external`
 5. Enable events:
    - Member Access
    - Course Progress Updated
@@ -424,8 +428,8 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 #### Teachable
 
 1. Log into Teachable
-2. Go to **Settings** → **Webhooks**
-3. Add endpoint: `https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e`
+2. Go to **Settings** â†’ **Webhooks**
+3. Add endpoint: `https://scalesafe-production.up.railway.app/webhooks/external`
 4. Select events:
    - User Enrolled in Course
    - User Completed Course
@@ -444,8 +448,8 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 1. Verify the webhook URL is exactly correct in the external platform settings
 2. Check that you've subscribed to the correct event types in the source platform
 3. Ensure the event you're testing actually occurs in the external platform (e.g., meeting actually ended for Zoom)
-4. Check network firewall/proxy settings aren't blocking outbound requests to make.com
-5. Review Make.com scenario logs to see if the webhook is being triggered
+4. Check network firewall/proxy settings aren't blocking outbound requests to the ScaleSafe app endpoint
+5. Review direct integration adapter logs to see if the webhook is being triggered
 
 ### Payload Validation Errors
 
@@ -475,23 +479,23 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 **Problem:** Webhook accepted but event data not visible in ScaleSafe.
 
 **Solutions:**
-1. Check that the Make.com scenario has a handler for the incoming webhook (trigger configured)
-2. Verify the Make.com scenario is activated and not disabled
+1. Check that the direct integration adapter has a handler for the incoming webhook (trigger configured)
+2. Verify the direct integration adapter is activated and not disabled
 3. Ensure the downstream GHL custom object or data store is configured to receive the data
 4. Allow 5-10 minutes for data propagation through the system
 5. Check GHL custom object records or data store to see if the record exists
-6. Review Make.com execution history to trace the complete data flow
+6. Review integration execution history to trace the complete data flow
 
 ### Email or Name Mismatch
 
 **Problem:** Participant information appears but with incorrect email or name.
 
 **Solutions:**
-1. Verify the email and name mapping in your middleware (Zapier/Make.com scenario)
+1. Verify the email and name mapping in your middleware (Zapier/direct integration adapter)
 2. Check the source platform to see what data it's actually sending in the webhook
 3. Ensure custom fields in the source platform contain the correct data
 4. Test with a known participant to debug the mapping
-5. Update the Zapier/Make.com scenario if the source platform changed field names
+5. Update the Zapier/direct integration adapter if the source platform changed field names
 
 ### Rate Limiting
 
@@ -499,6 +503,6 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 
 **Solutions:**
 1. The webhook URL is shared across multiple integrations; consider implementing exponential backoff in retries
-2. Make.com has rate limits; ensure the scenario doesn't have unnecessary delays
+2. The sending platform may have rate limits; ensure retries use reasonable backoff
 3. Batch process bulk events if sending many webhooks in a short timeframe
-4. Monitor Make.com execution metrics for bottlenecks
+4. Monitor integration execution metrics for bottlenecks

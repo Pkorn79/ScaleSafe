@@ -324,7 +324,7 @@ These already exist in the test GHL location from the Make.com era. They need to
 | Offers Custom Object | Exists | Package into Snapshot. Verify schema matches v2.1 spec |
 | SS- prefix contact fields (352 total in location) | Exists (many) | Reduce to 5 key fields for Snapshot. Legacy fields stay but aren't app-managed |
 | Offer- prefix contact fields | Exists | Package into Snapshot for enrollment copy |
-| Forms SYS2-07 through SYS2-11 | Exists | Update webhook URLs from Make.com to app endpoints. Package into Snapshot |
+| Forms SYS2-07 through SYS2-11 | Exists | Ensure webhook URLs point directly to app endpoints and include `x-scalesafe-webhook-secret` where supported. Package into Snapshot |
 | WF-01 No-Show Logger | Exists | Update webhook URL. Package into Snapshot |
 | WF-02 Module Progress Logger | Exists | Update webhook URL. Package into Snapshot |
 | WF-D1 Client Onboarding Prep | Needs verification | May need rebuild for v2.1 enrollment flow |

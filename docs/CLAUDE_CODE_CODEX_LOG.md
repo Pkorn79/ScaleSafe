@@ -25,8 +25,32 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 - Stack: Express + TypeScript backend, Vue 3 + Vite UI, Supabase, Railway, GHL OAuth/SSO, NMI test mode, Stripe sandbox/connect testing.
 - Treat historical real test data as sensitive.
 - Current priority: security hardening before feature expansion.
+- Philip clarified on 2026-04-30 that Make.com is not current architecture and is not a future option. Treat any Make.com references in older plans, archived docs, or historical V1 material as stale unless Philip explicitly says otherwise.
 
 ## Codex Changes
+
+### 2026-04-30: Correct External Integration Architecture Docs (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+- `docs/CLAUDE_CODE_SESSION_PROMPT.md`
+- `docs/external-integration-guide.md`
+- `docs/GHL_AUTOMATION_COMPANION.md`
+- Cowork `CLAUDE_COWORK_CODEX_LOG.md`
+- Cowork `docs/FEATURE_LEDGER.md`
+
+Summary:
+
+- Philip clarified that Make.com is not current architecture and is not a future option.
+- Updated active repo/Cowork handoff docs so agents treat Make.com references as V1/history only.
+- Rewrote the active external integration guide around direct/app-native posts to the ScaleSafe app endpoint with `x-scalesafe-webhook-secret`.
+- No runtime code changed.
+
+Verification:
+
+- Docs-only change; tests not run.
 
 ### 2026-04-30: Daily Health Snapshot Processor Fix (Codex)
 
@@ -67,7 +91,7 @@ Summary:
 - `/webhooks/external` now uses `requireMerchantWebhookSecret`, the same observe/enforce middleware used by `/webhooks/ghl/forms`.
 - While `REQUIRE_WEBHOOK_SECRET=false`, external posts without the `x-scalesafe-webhook-secret` header are logged but still allowed. When enforcement is enabled, missing/invalid secrets return `401` and location mismatches return `403`.
 - External webhook idempotency now uses a stable SHA-256 hash of source, event type, contact identifier, and sorted payload data instead of `Date.now()`. Identical replays now generate the same event ID and can actually dedupe.
-- Updated the external integration guide to instruct Make.com scenarios to send `x-scalesafe-webhook-secret`.
+- Updated the external integration guide to instruct direct/app-native external integrations to send `x-scalesafe-webhook-secret`.
 
 Verification:
 

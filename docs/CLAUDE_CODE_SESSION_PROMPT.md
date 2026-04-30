@@ -31,6 +31,7 @@ The codebase previously ran with real test data, so treat data paths, debug rout
 ## Important Boundaries
 
 - Do not trust V1 Make/GHL/Accept.blue architecture as current unless Philip explicitly says it applies.
+- Make.com is not current architecture and is not a future option for ScaleSafe. Do not propose it, route through it, or treat historical Make docs as an active plan.
 - Current code, migrations, `CLAUDE.md`, and `docs\CLAUDE_CODE_CODEX_LOG.md` override older planning docs.
 - Do not revert Codex security hardening unless Philip explicitly asks.
 - Never commit `.env`, credentials, tokens, database strings, or copied customer/client data.
