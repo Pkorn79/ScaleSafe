@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-04-30
+
+### Added
+- **Click-wrap write-through E2E verification report.** `tests/integration/clickwrap-write-through-verification-2026-04-30.md` documents the partial verification run: both PRs (`031cc99` sweep-cleanup, `739514b` write-through) confirmed merged; all 9 PMG Click-Wrap CHECKBOX fields confirmed present in GHL with correct `fieldKey` and matching `ghlFieldId` registry values. Contact-level inspection (Steps 3–5) deferred pending `scripts/pmg-test-contact-id.txt`.
+
+---
+
 ## 2026-04-29
 
 ### Security
