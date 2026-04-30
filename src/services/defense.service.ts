@@ -471,7 +471,7 @@ LETTER STRUCTURE:
 
     // 1. Write defense_outcomes row
     const amountRecovered = outcome === 'won' ? (opts?.amountRecovered ?? packet.chargeback_amount ?? 0) : 0;
-    await defenseRepository.recordOutcome(defenseId, outcome, amountRecovered, opts?.notes);
+    await defenseRepository.recordOutcome(defenseId, packet.location_id, outcome, amountRecovered, opts?.notes);
 
     // 2. Update lifecycle_status on the packet
     await supabase.from('defense_packets')

@@ -137,13 +137,14 @@ export const defenseRepository = {
     return data;
   },
 
-  async recordOutcome(defensePacketId: string, outcome: 'won' | 'lost' | 'withdrawn', amountSaved: number, notes?: string): Promise<void> {
+  async recordOutcome(defensePacketId: string, locationId: string, outcome: 'won' | 'lost' | 'withdrawn', amountRecovered: number, notes?: string): Promise<void> {
     const { error } = await getSupabase()
       .from('defense_outcomes')
       .insert({
         defense_packet_id: defensePacketId,
+        location_id: locationId,
         outcome,
-        amount_saved: outcome === 'won' ? amountSaved : 0,
+        amount_recovered: outcome === 'won' ? amountRecovered : 0,
         notes,
       });
 

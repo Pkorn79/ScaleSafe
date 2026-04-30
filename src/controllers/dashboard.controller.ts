@@ -42,13 +42,13 @@ export const dashboardController = {
       ] = await Promise.all([
         supabase.from('offers_mirror').select('id', { count: 'exact' }).eq('location_id', locationId).eq('active', true),
         supabase.from('defense_packets').select('id, status', { count: 'exact' }).eq('location_id', locationId),
-        supabase.from('defense_outcomes').select('outcome, amount_saved').eq('location_id', locationId).eq('outcome', 'won'),
+        supabase.from('defense_outcomes').select('outcome, amount_recovered').eq('location_id', locationId).eq('outcome', 'won'),
         supabase.from('evidence_timeline').select('contact_id', { count: 'exact' }).eq('location_id', locationId),
       ]);
 
       // Calculate Total Value Saved
       const totalValueSaved = (outcomesResult.data || [])
-        .reduce((sum, o) => sum + (o.amount_saved || 0), 0);
+        .reduce((sum, o) => sum + (o.amount_recovered || 0), 0);
 
       // Defense stats
       const defensePackets = defenseResult.data || [];
@@ -241,7 +241,7 @@ export const dashboardController = {
       const packetIds = (packets || []).map(p => p.id);
       const { data: outcomes } = await supabase
         .from('defense_outcomes')
-        .select('defense_packet_id, outcome, amount_saved, notes')
+        .select('defense_packet_id, outcome, amount_recovered, notes')
         .in('defense_packet_id', packetIds.length > 0 ? packetIds : ['_none_']);
 
       const outcomeMap = new Map((outcomes || []).map(o => [o.defense_packet_id, o]));
@@ -292,7 +292,7 @@ export const dashboardController = {
           won: won.length,
           lost: lost.length,
           pending: history.filter(h => !h.outcome && h.status === 'complete').length,
-          totalValueSaved: won.reduce((s, o) => s + (o.amount_saved || 0), 0),
+          totalValueSaved: won.reduce((s, o) => s + (o.amount_recovered || 0), 0),
           winRate: won.length + lost.length > 0
             ? Math.round((won.length / (won.length + lost.length)) * 100)
             : 0,

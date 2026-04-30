@@ -142,6 +142,27 @@ Verification:
 - `npm.cmd run typecheck` passed.
 - Philip approved commit/push.
 
+### 2026-04-30: Fix Dashboard Value Saved Column Mismatch (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `src/controllers/dashboard.controller.ts`
+- `src/repositories/defense.repository.ts`
+- `src/services/defense.service.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Replaced stale `amount_saved` references with the schema-backed `amount_recovered` column.
+- Dashboard overview and defense history totals now sum `amount_recovered`.
+- Defense outcome recording now inserts `location_id` and `amount_recovered`, matching `supabase/migrations/002_defense_tables.sql`.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- Search confirmed no remaining `amount_saved` references in `src/**/*.ts` or `tests/**/*.ts`.
+
 ## Open Technical Findings
 
 - P0 fixed: unauthenticated debug route exposure (Codex Step 1).
@@ -150,7 +171,7 @@ Verification:
 - P0 fixed: EFW routes IDOR — now require matching tenant.
 - P1 fixed: dashboard `totalValueSaved` overview tenant filtering.
 - P2 still open: pre-existing test drift in 6 unit/integration suites (see Verification above) — not introduced by security work, but worth a sweep.
-- P2 still open: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch — `totalValueSaved` always returns 0 until reconciled.
+- P2 fixed locally: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
 
 ## Current Working Tree Notes
 
