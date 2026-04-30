@@ -28,6 +28,29 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: Daily Health Snapshot Processor Fix (Codex)
+
+Files changed:
+
+- `src/services/stripe-health.service.ts`
+- `src/types/stripe-defense.types.ts`
+- `src/jobs/daily-health-check.ts`
+- `tests/unit/stripe-health.service.test.ts`
+- `CHANGELOG.md`
+
+Summary:
+
+- Railway production logs showed the daily health job failing with `null value in column "processor" of relation "account_health_snapshots" violates not-null constraint`.
+- `StripeHealthService.computeHealthSnapshot()` now inserts `processor: 'stripe'` on Stripe health snapshots.
+- `AccountHealthSnapshot` type now includes the processor discriminator.
+- Ratio threshold history lookup in `daily-health-check.ts` now filters by `processor`, so Stripe/NMI snapshot histories do not mix.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/stripe-health.service.test.ts --runInBand` passed (25/25).
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+
 ### 2026-04-30: External Webhook Observe-Mode Secret + Stable Idempotency (Codex)
 
 Files changed:

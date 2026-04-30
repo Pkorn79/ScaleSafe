@@ -5,6 +5,8 @@
  * risk level determination, and upgrade suggestion logic.
  */
 
+const mockSupabaseInsert = jest.fn().mockResolvedValue({ error: null });
+
 // Mock Stripe
 jest.mock('stripe', () => jest.fn(() => ({
   disputes: {
@@ -44,7 +46,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
           }),
         }),
       }),
-      insert: jest.fn().mockResolvedValue({ error: null }),
+      insert: mockSupabaseInsert,
     }),
   }),
 }));
@@ -64,6 +66,8 @@ describe('StripeHealthService', () => {
   let service: StripeHealthService;
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    mockSupabaseInsert.mockResolvedValue({ error: null });
     service = new StripeHealthService();
   });
 
@@ -168,6 +172,20 @@ describe('StripeHealthService', () => {
 
     it('suggests upgrade at exactly 0.66% and 69%', () => {
       expect(service.shouldSuggestUpgrade(0.0066, 69)).toBe(true);
+    });
+  });
+
+  describe('computeHealthSnapshot', () => {
+    it('persists stripe as the processor discriminator', async () => {
+      await service.computeHealthSnapshot('merchant_1', 'loc_1');
+
+      expect(mockSupabaseInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          merchant_id: 'merchant_1',
+          location_id: 'loc_1',
+          processor: 'stripe',
+        }),
+      );
     });
   });
 });

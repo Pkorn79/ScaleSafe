@@ -121,6 +121,7 @@ export class StripeHealthService {
     const snapshot: AccountHealthSnapshot = {
       merchant_id: merchantId,
       location_id: locationId,
+      processor: 'stripe',
       computed_at: new Date().toISOString(),
       period_days: 30,
       total_charges: totalCharges,

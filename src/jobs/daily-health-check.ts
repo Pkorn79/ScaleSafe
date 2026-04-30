@@ -82,6 +82,7 @@ async function checkRatioThresholds(locationId: string, processor: string, snaps
     .from('account_health_snapshots')
     .select('dispute_rate')
     .eq('location_id', locationId)
+    .eq('processor', processor)
     .order('created_at', { ascending: false })
     .limit(2);
 
