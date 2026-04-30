@@ -28,6 +28,21 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: Webhook Secret Migration Applied + Backfilled (Codex Ops)
+
+Summary:
+
+- Philip applied migration `052_merchant_webhook_secret.sql` in Supabase SQL Editor.
+- Codex ran `railway run node scripts/backfill-webhook-secrets.js`.
+- Backfill created webhook secrets for 2 existing merchants.
+- Read-only verification through Railway confirmed 2 total merchants, 2 with secrets, 0 missing secrets.
+- Railway `REQUIRE_WEBHOOK_SECRET` is currently unset, so `/webhooks/ghl/forms` remains in observe mode.
+
+Next operational step:
+
+- Update existing GHL workflow Custom Webhook actions to include `x-scalesafe-webhook-secret` with the merchant-specific value from Settings > Workflow Webhooks.
+- Keep `REQUIRE_WEBHOOK_SECRET` unset/false until observe logs show active workflow posts are signed.
+
 ### 2026-04-30: GHL Workflow Webhook Shared-Secret Rollout - Observe Mode (Codex)
 
 Files changed:
