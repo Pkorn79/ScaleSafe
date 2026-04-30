@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-04-29
 
 ### Documentation
+- **Post-beta feature and strategy docket added to Cowork feature ledger.** Added future roadmap items for multiple Stripe/NMI accounts per merchant, offer-level multi-MID routing, compliant surcharging/dual pricing, financing/BNPL, standalone non-GHL direction, and mobile/PWA direction. Added strategy-session topics for product positioning, ICP pain, marketplace strategy, fast iteration path, standalone path, mobile path, and defense-output review.
 - **Tracking source-of-truth reconciled.** Cowork `docs/FEATURE_LEDGER.md` is now the product/status source of truth, repo `docs/CLAUDE_CODE_CODEX_LOG.md` remains the technical change log, and `CLAUDE_COWORK_CODEX_LOG.md` remains Cowork's plain-English awareness log. Session prompts now tell agents not to create new roadmap/status tracker systems unless Philip explicitly asks.
 
 ### Security

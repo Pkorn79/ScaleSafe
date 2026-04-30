@@ -271,6 +271,36 @@ Next queue for planning:
 3. Dashboard performance profiling and optimization.
 4. NMI card-on-file metadata fix.
 
+### 2026-04-30: Post-Beta Feature + Strategy Docket Added (Codex)
+
+Files changed:
+
+- Cowork folder: `docs/FEATURE_LEDGER.md`
+- Cowork folder: `CLAUDE_COWORK_CODEX_LOG.md`
+- Repo: `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added future/post-beta roadmap items to the existing Cowork feature ledger rather than creating a new tracker:
+  - More Stripe accounts per merchant.
+  - More NMI accounts per merchant.
+  - Multi-MID routing by offer.
+  - Compliant surcharging and dual pricing.
+  - Financing / BNPL options.
+  - Standalone non-GHL version.
+  - Mobile/PWA direction.
+- Added a `Strategy Sessions Needed` section to the Cowork feature ledger:
+  - Product direction and positioning.
+  - ICP pain and marketplace strategy.
+  - Fast iteration path.
+  - Standalone non-GHL path.
+  - Mobile/PWA path.
+  - Optional defense output review using Philip's generated-letter example.
+
+Note:
+
+- These are planning/post-beta docket items, not current beta execution tasks unless Philip explicitly promotes one.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.
