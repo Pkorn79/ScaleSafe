@@ -36,14 +36,20 @@ export const dashboardController = {
       // Parallel queries for dashboard data
       const [
         offersResult,
+        activeClientsResult,
         defenseResult,
         outcomesResult,
         evidenceCountResult,
       ] = await Promise.all([
-        supabase.from('offers_mirror').select('id', { count: 'exact' }).eq('location_id', locationId).eq('active', true),
+        supabase.from('offers_mirror').select('id', { count: 'exact', head: true }).eq('location_id', locationId).eq('active', true),
+        supabase
+          .from('client_list_view')
+          .select('contact_id', { count: 'exact', head: true })
+          .eq('location_id', locationId)
+          .in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused', 'manual_add']),
         supabase.from('defense_packets').select('id, status', { count: 'exact' }).eq('location_id', locationId),
         supabase.from('defense_outcomes').select('outcome, amount_recovered').eq('location_id', locationId).eq('outcome', 'won'),
-        supabase.from('evidence_timeline').select('contact_id', { count: 'exact' }).eq('location_id', locationId),
+        supabase.from('evidence_timeline').select('contact_id', { count: 'exact', head: true }).eq('location_id', locationId),
       ]);
 
       // Calculate total value recovered from won outcomes.
@@ -60,12 +66,9 @@ export const dashboardController = {
         failed: defensePackets.filter(d => d.status === 'failed').length,
       };
 
-      // Unique active clients (distinct contact_ids with evidence)
-      const uniqueContacts = new Set((evidenceCountResult.data || []).map(e => e.contact_id));
-
       res.json({
         activeOffers: offersResult.count || 0,
-        activeClients: uniqueContacts.size,
+        activeClients: activeClientsResult.count || 0,
         totalEvidenceRecords: evidenceCountResult.count || 0,
         defenseStats,
         totalValueSaved,

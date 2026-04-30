@@ -133,17 +133,27 @@ const isStale = computed(() => {
 async function loadData() {
   if (refreshing.value) return;
   refreshing.value = true;
+  const overviewPromise = api.get<any>('/api/dashboard/overview');
+  const riskPromise = api.get<any>('/api/dashboard/at-risk')
+    .then((risk) => ({ ok: true, risk }))
+    .catch(() => ({ ok: false, risk: null }));
+
   try {
-    const [overview, risk] = await Promise.all([
-      api.get<any>('/api/dashboard/overview'),
-      api.get<any>('/api/dashboard/at-risk'),
-    ]);
+    const overview = await overviewPromise;
     data.value = overview;
-    atRisk.value = risk.clients || [];
     lastUpdatedAt.value = new Date();
     tickNow.value = new Date();
   } catch {
     // useApi already surfaces error.value; keep stale data on screen.
+  }
+
+  try {
+    const riskResult = await riskPromise;
+    if (riskResult.ok) {
+      atRisk.value = riskResult.risk.clients || [];
+    }
+  } catch {
+    // Keep the dashboard stats visible if the risk scan fails.
   } finally {
     refreshing.value = false;
   }

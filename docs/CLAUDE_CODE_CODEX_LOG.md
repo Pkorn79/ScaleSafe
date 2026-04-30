@@ -377,6 +377,32 @@ Open security follow-up:
 
 - `/webhooks/ghl/forms` and `/webhooks/external` appear to be workflow/custom integration receivers rather than official signed marketplace webhooks. They still need a coordinated shared-secret/header design with GHL workflow updates before enforcement, so evidence capture is not silently broken.
 
+### 2026-04-30: Dashboard Overview Load Optimization (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `src/controllers/dashboard.controller.ts`
+- `src/ui/src/views/DashboardView.vue`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- `dashboard.controller.ts` overview no longer fetches all `evidence_timeline.contact_id` rows just to count total evidence and dedupe active clients.
+- Active offers, active clients, and evidence totals now use count-only Supabase queries (`head: true`) where response row bodies are not needed.
+- Active clients now count from `client_list_view` using the same active-status group as the Clients page.
+- `DashboardView.vue` no longer blocks stat-card rendering on `/api/dashboard/at-risk`; overview and at-risk requests are launched together, overview renders as soon as it returns, and at-risk fills in independently.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed: 48 suites, 518 tests.
+- `npm.cmd run build-ui` passed; Vite built the Vue app successfully.
+
+Residual risk:
+
+- If dashboard still feels slow in production, the remaining likely source is `disengagementService.checkAllClients()` behind `/api/dashboard/at-risk`, which does sequential per-client scoring plus possible GHL field writes for flagged clients. That should become a cached/background risk snapshot rather than a page-load scan.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.
