@@ -222,6 +222,38 @@
         </div>
       </div>
 
+      <!-- Workflow Webhook Secret -->
+      <div class="card">
+        <h3 class="section-title">Workflow Webhooks</h3>
+        <p class="text-sm text-muted mb-4">
+          Add this header to GHL workflow Custom Webhook actions that post evidence to ScaleSafe.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Header Name</label>
+          <input class="form-input" :value="webhookHeaderName" readonly />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Header Value</label>
+          <div class="flex gap-2">
+            <input class="form-input" :type="showWebhookSecret ? 'text' : 'password'" :value="webhookSecret || 'Loading...'" readonly />
+            <button class="btn btn-secondary" @click="showWebhookSecret = !showWebhookSecret">
+              {{ showWebhookSecret ? 'Hide' : 'Show' }}
+            </button>
+            <button class="btn btn-secondary" @click="copyWebhookSecret" :disabled="!webhookSecret">
+              Copy
+            </button>
+          </div>
+          <div class="text-sm text-muted mt-2">
+            Enforcement is currently {{ webhookEnforced ? 'on' : 'in observe mode' }}.
+          </div>
+          <div v-if="webhookSecretSaved" class="success-msg mt-2">{{ webhookSecretSaved }}</div>
+          <div v-if="webhookSecretError" class="error-msg mt-2">{{ webhookSecretError }}</div>
+        </div>
+        <button class="btn btn-secondary" style="color:#ef4444" @click="rotateWebhookSecret" :disabled="webhookSecretLoading">
+          {{ webhookSecretLoading ? 'Working...' : 'Rotate Secret' }}
+        </button>
+      </div>
+
       <!-- Disengagement Thresholds -->
       <div class="card">
         <h3 class="section-title">Disengagement Thresholds</h3>
@@ -312,6 +344,13 @@ const stripeSuccess = ref(false);
 const nmiConnected = ref(false);
 const defaultProcessor = ref('');
 const defaultProcessorSaved = ref(false);
+const webhookSecret = ref('');
+const webhookHeaderName = ref('x-scalesafe-webhook-secret');
+const webhookEnforced = ref(false);
+const webhookSecretLoading = ref(false);
+const showWebhookSecret = ref(false);
+const webhookSecretSaved = ref('');
+const webhookSecretError = ref('');
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -324,6 +363,7 @@ const moduleLabels: Record<string, string> = {
 onMounted(async () => {
   try {
     config.value = await api.get<any>('/api/merchants/config');
+    loadWebhookSecret();
     if (config.value.config?.disengagement_thresholds) {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
@@ -344,6 +384,50 @@ onMounted(async () => {
     }
   } catch {}
 });
+
+async function loadWebhookSecret() {
+  webhookSecretLoading.value = true;
+  webhookSecretError.value = '';
+  try {
+    const result = await api.get<any>('/api/merchants/webhook-secret');
+    webhookSecret.value = result.secret || '';
+    webhookHeaderName.value = result.headerName || 'x-scalesafe-webhook-secret';
+    webhookEnforced.value = !!result.enforceRequired;
+  } catch (err: any) {
+    webhookSecretError.value = err.message || 'Failed to load webhook secret';
+  }
+  webhookSecretLoading.value = false;
+}
+
+async function copyWebhookSecret() {
+  webhookSecretSaved.value = '';
+  webhookSecretError.value = '';
+  try {
+    await navigator.clipboard.writeText(webhookSecret.value);
+    webhookSecretSaved.value = 'Webhook secret copied.';
+    setTimeout(() => { webhookSecretSaved.value = ''; }, 3000);
+  } catch {
+    webhookSecretError.value = 'Failed to copy webhook secret.';
+  }
+}
+
+async function rotateWebhookSecret() {
+  if (!confirm('Rotate this webhook secret? Existing GHL workflow webhook headers must be updated after rotation.')) return;
+  webhookSecretLoading.value = true;
+  webhookSecretSaved.value = '';
+  webhookSecretError.value = '';
+  try {
+    const result = await api.post<any>('/api/merchants/webhook-secret/rotate');
+    webhookSecret.value = result.secret || '';
+    webhookHeaderName.value = result.headerName || 'x-scalesafe-webhook-secret';
+    webhookEnforced.value = !!result.enforceRequired;
+    showWebhookSecret.value = true;
+    webhookSecretSaved.value = 'Webhook secret rotated. Update existing GHL workflow headers with the new value.';
+  } catch (err: any) {
+    webhookSecretError.value = err.message || 'Failed to rotate webhook secret';
+  }
+  webhookSecretLoading.value = false;
+}
 
 async function handleLogoUpload(event: Event) {
   const input = event.target as HTMLInputElement;

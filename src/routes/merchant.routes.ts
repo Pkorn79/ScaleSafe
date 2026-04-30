@@ -12,6 +12,8 @@ router.use(ssoAuth, requireTenant);
 
 router.get('/config', merchantController.getConfig);
 router.put('/config', merchantController.updateConfig);
+router.get('/webhook-secret', merchantController.getWebhookSecret);
+router.post('/webhook-secret/rotate', merchantController.rotateWebhookSecret);
 router.get('/onboarding-status', merchantController.getOnboardingStatus);
 router.post('/provision', merchantController.provision);
 router.post('/logo', upload.single('logo'), merchantController.uploadLogo);

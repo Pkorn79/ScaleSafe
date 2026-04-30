@@ -79,6 +79,16 @@ These get copied from the Offers Custom Object to the contact record when a clie
 
 ### 1E. Evidence Collection Forms
 
+GHL workflow Custom Webhook actions that post evidence events to ScaleSafe should include this static request header:
+
+| Header | Value |
+|--------|-------|
+| `x-scalesafe-webhook-secret` | Merchant-specific secret from ScaleSafe Settings > Workflow Webhooks |
+
+**Rollout state:** The app currently runs this validation in observe mode unless `REQUIRE_WEBHOOK_SECRET=true` is set in the backend environment. Observe mode logs missing, invalid, and tenant-mismatched webhook secrets without blocking existing workflows. Enforcement should only be enabled after active merchant workflows have been updated.
+
+**Why it matters:** `/webhooks/ghl/forms` receives workflow/form evidence posts that include `locationId` and `contactId`. The shared secret binds each workflow post to the merchant that owns that `locationId`, preventing a third party from fabricating evidence for another tenant once enforcement is enabled.
+
 These forms are filled out by merchants (or auto-submitted by workflows) to log evidence. Each form submission fires a webhook to the ScaleSafe app.
 
 | Form ID | Name | Submitted By | Data Captured | Evidence Type |

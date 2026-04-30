@@ -28,6 +28,46 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: GHL Workflow Webhook Shared-Secret Rollout - Observe Mode (Codex)
+
+Files changed:
+
+- `.env.example`
+- `supabase/migrations/052_merchant_webhook_secret.sql`
+- `scripts/backfill-webhook-secrets.js`
+- `src/repositories/merchant.repository.ts`
+- `src/services/merchant.service.ts`
+- `src/middleware/merchantWebhookSecret.ts`
+- `src/routes/webhook.routes.ts`
+- `src/routes/merchant.routes.ts`
+- `src/controllers/merchant.controller.ts`
+- `src/ui/src/views/SettingsView.vue`
+- `tests/unit/merchantWebhookSecret.middleware.test.ts`
+- `docs/GHL_AUTOMATION_COMPANION.md`
+- `CHANGELOG.md`
+
+Summary:
+
+- Added per-merchant `webhook_secret` support for GHL workflow Custom Webhook posts to `/webhooks/ghl/forms`.
+- Added observe-mode middleware. With `REQUIRE_WEBHOOK_SECRET=false` (default), missing/invalid/mismatched secrets are logged but not blocked so existing GHL workflows keep working. With `REQUIRE_WEBHOOK_SECRET=true`, missing/invalid secrets return `401` and tenant mismatches return `403`.
+- Added SSO-protected merchant endpoints to fetch and rotate the workflow webhook secret, plus a Settings > Workflow Webhooks card with show/copy/rotate controls.
+- Added a one-shot `scripts/backfill-webhook-secrets.js` for existing merchants after migration 052 is applied.
+- Provisioning now tries to ensure a webhook secret for new installs/retries and logs a warning instead of failing if the DB migration has not been applied yet.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/merchantWebhookSecret.middleware.test.ts --runInBand` passed (5/5).
+- `npm.cmd test -- --runInBand` passed (49 suites, 524 tests).
+- `npm.cmd run build-ui` passed. `src/ui/package-lock.json` was restored afterward because `npm install` rewrites lock metadata on this host.
+
+Operational next steps:
+
+- Apply Supabase migration `052_merchant_webhook_secret.sql`.
+- Run `node scripts/backfill-webhook-secrets.js` in an environment with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
+- Keep `REQUIRE_WEBHOOK_SECRET=false` while updating existing GHL workflow Custom Webhook actions to send `x-scalesafe-webhook-secret`.
+- Flip `REQUIRE_WEBHOOK_SECRET=true` only after observe logs show active workflows are signed.
+
 ### 2026-04-30: NMI Card-On-File Display Cleanup (Codex)
 
 Files changed:

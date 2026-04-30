@@ -45,6 +45,37 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** GET /api/merchants/webhook-secret - return this merchant's workflow webhook secret */
+  async getWebhookSecret(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const secret = await merchantRepository.ensureWebhookSecret(locationId);
+      res.json({
+        secret,
+        headerName: 'x-scalesafe-webhook-secret',
+        enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+      });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/merchants/webhook-secret/rotate - rotate this merchant's workflow webhook secret */
+  async rotateWebhookSecret(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const secret = await merchantRepository.rotateWebhookSecret(locationId);
+      logger.warn({ locationId }, 'Merchant workflow webhook secret rotated');
+      res.json({
+        secret,
+        headerName: 'x-scalesafe-webhook-secret',
+        enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+      });
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/merchants/provision — manually trigger provisioning */
   async provision(req: Request, res: Response, next: NextFunction) {
     try {

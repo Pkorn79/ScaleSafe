@@ -140,6 +140,12 @@ export const merchantService = {
     await merchantRepository.updateSnapshotStatus(locationId, 'installing');
 
     try {
+      try {
+        await merchantRepository.ensureWebhookSecret(locationId);
+      } catch (err: any) {
+        logger.warn({ locationId, err: err.message }, 'Webhook secret provisioning skipped - migration may not be applied yet');
+      }
+
       const api = await ghlApi(locationId);
 
       const [pipelineId] = await Promise.all([

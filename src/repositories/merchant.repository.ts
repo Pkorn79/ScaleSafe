@@ -1,5 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { NotFoundError } from '../utils/errors';
+import crypto from 'crypto';
 
 export interface MerchantRecord {
   id: string;
@@ -27,6 +28,7 @@ export interface MerchantRecord {
   snapshot_status: string;
   snapshot_attempts: number;
   trigger_ids: Record<string, string>;
+  webhook_secret: string | null;
   // Payment infrastructure (Phase A/D)
   default_processor: string | null;
   stripe_connected: boolean;
@@ -62,6 +64,18 @@ export const merchantRepository = {
       .from('merchants')
       .select('*')
       .eq('company_id', companyId)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async findByWebhookSecret(secret: string): Promise<MerchantRecord | null> {
+    const { data, error } = await getSupabase()
+      .from('merchants')
+      .select('*')
+      .eq('webhook_secret', secret)
       .limit(1)
       .single();
 
@@ -156,6 +170,39 @@ export const merchantRepository = {
       .eq('location_id', locationId);
 
     if (error) throw error;
+  },
+
+  generateWebhookSecret(): string {
+    return crypto.randomBytes(32).toString('hex');
+  },
+
+  async ensureWebhookSecret(locationId: string): Promise<string | null> {
+    const merchant = await this.getByLocationId(locationId);
+    if (merchant.webhook_secret) return merchant.webhook_secret;
+
+    const secret = this.generateWebhookSecret();
+    const { data, error } = await getSupabase()
+      .from('merchants')
+      .update({ webhook_secret: secret })
+      .eq('location_id', locationId)
+      .select('webhook_secret')
+      .single();
+
+    if (error) throw error;
+    return data?.webhook_secret || secret;
+  },
+
+  async rotateWebhookSecret(locationId: string): Promise<string> {
+    const secret = this.generateWebhookSecret();
+    const { data, error } = await getSupabase()
+      .from('merchants')
+      .update({ webhook_secret: secret })
+      .eq('location_id', locationId)
+      .select('webhook_secret')
+      .single();
+
+    if (error) throw error;
+    return data?.webhook_secret || secret;
   },
 
   async getConfig(locationId: string): Promise<Record<string, unknown>> {
