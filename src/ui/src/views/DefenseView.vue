@@ -17,7 +17,7 @@
       <Stat label="Total Cases" :value="summary.total" accent="navy" />
       <Stat label="Won" :value="summary.won" accent="emerald" />
       <Stat label="Win Rate" :value="`${summary.winRate}%`" accent="emerald" />
-      <Stat label="Value Saved" :value="`$${(summary.totalValueSaved || 0).toLocaleString()}`" accent="emerald" />
+      <Stat label="Value Recovered" :value="`$${(summary.totalValueSaved || 0).toLocaleString()}`" accent="emerald" />
     </div>
 
     <!-- Filters -->

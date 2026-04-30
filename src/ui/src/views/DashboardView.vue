@@ -43,7 +43,7 @@
         accent="teal"
       />
       <Stat
-        label="Total Value Saved"
+        label="Total Value Recovered"
         :value="`$${data.totalValueSaved.toLocaleString()}`"
         accent="emerald"
         description="Lifetime"

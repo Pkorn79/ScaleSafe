@@ -46,7 +46,7 @@ export const dashboardController = {
         supabase.from('evidence_timeline').select('contact_id', { count: 'exact' }).eq('location_id', locationId),
       ]);
 
-      // Calculate Total Value Saved
+      // Calculate total value recovered from won outcomes.
       const totalValueSaved = (outcomesResult.data || [])
         .reduce((sum, o) => sum + (o.amount_recovered || 0), 0);
 

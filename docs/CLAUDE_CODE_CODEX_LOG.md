@@ -142,7 +142,7 @@ Verification:
 - `npm.cmd run typecheck` passed.
 - Philip approved commit/push.
 
-### 2026-04-30: Fix Dashboard Value Saved Column Mismatch (Codex)
+### 2026-04-30: Fix Dashboard Value Recovered Column Mismatch (Codex)
 
 Files changed:
 
@@ -157,6 +157,7 @@ Summary:
 - Replaced stale `amount_saved` references with the schema-backed `amount_recovered` column.
 - Dashboard overview and defense history totals now sum `amount_recovered`.
 - Defense outcome recording now inserts `location_id` and `amount_recovered`, matching `supabase/migrations/002_defense_tables.sql`.
+- Dashboard and Defense UI labels now say "Value Recovered" instead of "Value Saved."
 
 Verification:
 
