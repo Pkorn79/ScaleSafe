@@ -246,6 +246,31 @@ Next security item:
 - P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
 - P1 open: public client-service links should be tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
 
+### 2026-04-30: Tracking Reconciliation Rule (Codex)
+
+Files changed:
+
+- Repo: `docs/CLAUDE_CODE_SESSION_PROMPT.md`
+- Cowork folder: `CLAUDE_COWORK_SESSION_PROMPT.md`
+- Cowork folder: `docs/FEATURE_LEDGER.md`
+- Cowork folder: `CLAUDE_COWORK_CODEX_LOG.md`
+- Repo: `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Reconciled the tracking system so `docs/FEATURE_LEDGER.md` in the Cowork folder is the product/status source of truth.
+- Kept this repo log as the technical change/handoff log for Codex and Claude Code.
+- Kept `CLAUDE_COWORK_CODEX_LOG.md` as the plain-English awareness log for Cowork.
+- Updated both session prompts to say agents should not create new roadmap/status tracker systems unless Philip explicitly asks.
+- Updated the Cowork feature ledger to reflect current Codex status: full backend suite green, Codex security hardening shipped, public client action links tokenization still open, dashboard performance bug logged, and NMI card metadata display bug logged.
+
+Next queue for planning:
+
+1. Signed short-lived public action links for payment update, subscription cancellation, and milestone signoff.
+2. Public endpoint/webhook security validation pass.
+3. Dashboard performance profiling and optimization.
+4. NMI card-on-file metadata fix.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.

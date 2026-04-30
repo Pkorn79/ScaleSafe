@@ -7,6 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-04-29
 
+### Documentation
+- **Tracking source-of-truth reconciled.** Cowork `docs/FEATURE_LEDGER.md` is now the product/status source of truth, repo `docs/CLAUDE_CODE_CODEX_LOG.md` remains the technical change log, and `CLAUDE_COWORK_CODEX_LOG.md` remains Cowork's plain-English awareness log. Session prompts now tell agents not to create new roadmap/status tracker systems unless Philip explicitly asks.
+
 ### Security
 - **Legacy enrollment prep/offer endpoints now SSO-gated.** `src/routes/enrollment.routes.ts` had comments marking `/prep` and `/offer/:id` as SSO-gated, but the handlers were mounted without `ssoAuth`/`requireTenant`. Added both middlewares to those legacy merchant-facing endpoints. Public funnel endpoints remain public: `/device-capture`, `/offer/:offerId/public`, `/consent`, `/consent-lookup/:consentToken`, and the public enrollment page.
 - **Dispute/EFW route compatibility hotfix.** The new tenant guard added in `f45c092` correctly required authenticated tenant ownership but only accepted the internal merchant UUID in the URL. Existing Vue screens call dispute routes with the GHL `locationId`. `src/routes/dispute.routes.ts` and `src/routes/efw.routes.ts` now accept either the authenticated tenant's merchant UUID or `location_id`, then normalize all queries/service calls to the verified merchant UUID. This preserves the security fix without breaking existing UI route calls.

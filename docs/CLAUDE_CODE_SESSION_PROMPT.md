@@ -14,6 +14,12 @@ You are working in the active ScaleSafe V2 codebase. Before changing anything, r
 
 Treat `docs\CLAUDE_CODE_CODEX_LOG.md` as the latest Codex technical handoff for code work. Continue from its open findings and verification notes.
 
+For product/status questions, the source of truth lives outside this repo in the Cowork folder:
+
+`C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe\docs\FEATURE_LEDGER.md`
+
+Do not create a new roadmap, ledger, status tracker, or planning system unless Philip explicitly asks. If product status changes because of code work, ask Philip whether to update the Cowork feature ledger or provide a Cowork-ready note for him to paste.
+
 Important: reading these files is for awareness. Do not begin implementation, run broad refactors, stage files, commit, push, or deploy unless Philip explicitly asks you to take action in the current session.
 
 ## Current Context
@@ -32,18 +38,18 @@ The codebase previously ran with real test data, so treat data paths, debug rout
 
 ## Current Codex Security Work
 
-Codex has locally applied:
+Completed and pushed by Codex/Claude Code:
 
 - `/api/debug/*` routes are gated by `DEBUG_ADMIN_TOKEN` or `ADMIN_DEBUG_TOKEN`.
-- `x-location-id` is no longer normal auth; it only works when `NODE_ENV !== production` and `ALLOW_DEV_LOCATION_AUTH=true`.
-- The Vue API layer no longer sends `x-location-id` as fallback auth.
+- `x-location-id` is no longer normal production auth; it only works in explicit dev/test mode.
+- Dispute and EFW routes require SSO, tenant context, and verified merchant ownership.
+- Dashboard recovered-value totals are tenant-scoped and use `amount_recovered`.
+- Legacy enrollment `/prep` and `/offer/:id` routes now require SSO and tenant context.
+- Full Jest suite is green: 45 suites / 506 tests at last Codex verification.
 
-Open findings to continue:
+Open security item:
 
-- Add SSO/tenant protection to dispute routes.
-- Add SSO/tenant protection to EFW routes.
-- Fix dashboard `totalValueSaved` tenant filtering.
-- Clean up existing test drift after security work.
+- Public client-service links for payment update, subscription cancellation, and milestone signoff should move from `locationId + contactId` query params to signed, short-lived action tokens.
 
 ## Verification Expectations
 
