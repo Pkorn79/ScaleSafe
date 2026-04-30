@@ -212,6 +212,29 @@ Verification:
 - `npm.cmd run typecheck` passed.
 - `npm.cmd test -- --runInBand` passed: 45 suites, 506 tests.
 
+### 2026-04-30: Gate Legacy Enrollment Prep Routes (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `src/routes/enrollment.routes.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Found stale route protection on `src/routes/enrollment.routes.ts`: comments marked legacy `/prep` and `/offer/:id` routes as SSO-gated, but the route definitions did not apply `ssoAuth` or `requireTenant`.
+- Added `ssoAuth, requireTenant` to `router.post('/prep', ...)` and `router.get('/offer/:id', ...)`.
+- Left intentionally public funnel/client endpoints public: `/device-capture`, `/offer/:offerId/public`, `/consent`, `/consent-lookup/:consentToken`, and the public enrollment page.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed: 45 suites, 506 tests.
+
+Next security item:
+
+- Public client-service links currently use `locationId + contactId` query params for payment update, subscription cancellation, and milestone signoff. They should move to signed short-lived action tokens so guessed IDs cannot fetch client display data, save a card, cancel an enrollment, or submit signoff evidence.
+
 ## Open Technical Findings
 
 - P0 fixed: unauthenticated debug route exposure (Codex Step 1).
@@ -221,6 +244,7 @@ Verification:
 - P1 fixed: dashboard `totalValueSaved` overview tenant filtering.
 - P2 fixed: pre-existing test drift in 6 unit/integration suites. Full Jest suite now passes.
 - P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
+- P1 open: public client-service links should be tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
 
 ## Current Working Tree Notes
 

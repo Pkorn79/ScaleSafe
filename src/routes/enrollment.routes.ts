@@ -29,10 +29,10 @@ router.post('/send-link', ssoAuth, requireTenant, sendEnrollmentLink);
 // ─── Original API Endpoints ─────────────────────────────────────────
 
 // Page 1: Create/update GHL contact (SSO-gated)
-router.post('/prep', enrollmentController.prep);
+router.post('/prep', ssoAuth, requireTenant, enrollmentController.prep);
 
 // Page 2: Fetch offer details (SSO-gated)
-router.get('/offer/:id', enrollmentController.getOffer);
+router.get('/offer/:id', ssoAuth, requireTenant, enrollmentController.getOffer);
 
 // ─── Public Enrollment Preview Page ─────────────────────────────────
 
