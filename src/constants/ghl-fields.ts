@@ -88,6 +88,8 @@ export const CUSTOM_VALUE_REGISTRY: readonly CustomValueDef[] = [
   { key: 'MODULE_PULSE',      defaultName: 'Module Pulse Check',        fieldKeyMatch: 'module_pulse_check' },
   { key: 'MODULE_PAYMENTS',   defaultName: 'Module Payment Tracking',   fieldKeyMatch: 'module_payment_tracking' },
   { key: 'MODULE_COURSE',     defaultName: 'Module Course Progress',    fieldKeyMatch: 'module_course_progress' },
+  // Workflow security
+  { key: 'WEBHOOK_SECRET',     defaultName: 'ScaleSafe Webhook Secret',  fieldKeyMatch: 'scalesafe_webhook_secret' },
 ] as const;
 
 /**

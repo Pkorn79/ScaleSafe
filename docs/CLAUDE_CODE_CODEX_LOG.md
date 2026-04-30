@@ -29,6 +29,34 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: Scalable Workflow Webhook Secret + Settings Health Panel (Codex)
+
+Files changed:
+
+- `src/constants/ghl-fields.ts`
+- `src/controllers/merchant.controller.ts`
+- `src/services/merchant.service.ts`
+- `src/ui/src/views/SettingsView.vue`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `CHANGELOG.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added `ScaleSafe Webhook Secret` to `CUSTOM_VALUE_REGISTRY` with merge field `{{ custom_values.scalesafe_webhook_secret }}`.
+- Merchant provisioning now creates/maps that GHL custom value and syncs the per-merchant `merchants.webhook_secret` into it. Secret rotation also syncs the GHL custom value.
+- `GET /api/merchants/webhook-secret` now returns the merge field so the UI/Snapshot can use the scalable value, not a manual pasted raw secret.
+- Settings > Workflow Webhooks now tells Snapshot builders to use `x-scalesafe-webhook-secret: {{ custom_values.scalesafe_webhook_secret }}`.
+- Settings now includes a Provisioning Health panel that calls `GET /api/merchants/provisioning-health` and displays pass/warn/fail install checks in-app.
+- Snapshot execution plan updated: new clients should not require manual per-workflow secret paste; the Snapshot should use the merge field and ScaleSafe fills it per merchant.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/merchant.service.test.ts --runInBand` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+- `npm.cmd run build` passed end-to-end on Windows.
+
 ### 2026-04-30: Fresh-Install Provisioning Health Endpoint (Codex)
 
 Files changed:

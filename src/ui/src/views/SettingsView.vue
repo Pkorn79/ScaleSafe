@@ -226,14 +226,21 @@
       <div class="card">
         <h3 class="section-title">Workflow Webhooks</h3>
         <p class="text-sm text-muted mb-4">
-          Add this header to GHL workflow Custom Webhook actions that post evidence to ScaleSafe.
+          Snapshot workflows should include this header once. New locations receive their own value automatically through the GHL custom value below.
         </p>
         <div class="form-group">
           <label class="form-label">Header Name</label>
           <input class="form-input" :value="webhookHeaderName" readonly />
         </div>
         <div class="form-group">
-          <label class="form-label">Header Value</label>
+          <label class="form-label">Header Value for Snapshot Workflows</label>
+          <input class="form-input" :value="webhookMergeField" readonly />
+          <div class="text-sm text-muted mt-2">
+            Use this merge field in GHL workflow Custom Webhook headers so each merchant's secret is inserted automatically.
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Raw Secret</label>
           <div class="flex gap-2">
             <input class="form-input" :type="showWebhookSecret ? 'text' : 'password'" :value="webhookSecret || 'Loading...'" readonly />
             <button class="btn btn-secondary" @click="showWebhookSecret = !showWebhookSecret">
@@ -252,6 +259,34 @@
         <button class="btn btn-secondary" style="color:#ef4444" @click="rotateWebhookSecret" :disabled="webhookSecretLoading">
           {{ webhookSecretLoading ? 'Working...' : 'Rotate Secret' }}
         </button>
+      </div>
+
+      <!-- Provisioning Health -->
+      <div class="card">
+        <div class="flex-between mb-4">
+          <h3 class="section-title" style="margin-bottom:0">Provisioning Health</h3>
+          <button class="btn btn-secondary btn-sm" @click="loadProvisioningHealth" :disabled="provisioningHealthLoading">
+            {{ provisioningHealthLoading ? 'Checking...' : 'Run Check' }}
+          </button>
+        </div>
+        <div v-if="provisioningHealth" class="health-summary" :class="`health-${provisioningHealth.overallStatus}`">
+          <span class="status-dot" :class="provisioningHealth.overallStatus === 'pass' ? 'green' : provisioningHealth.overallStatus === 'fail' ? 'red' : 'yellow'"></span>
+          <span>{{ healthStatusLabel(provisioningHealth.overallStatus) }}</span>
+          <span class="text-sm text-muted">Checked {{ formatCheckedAt(provisioningHealth.checkedAt) }}</span>
+        </div>
+        <div v-if="provisioningHealthError" class="error-msg mt-2">{{ provisioningHealthError }}</div>
+        <div v-if="provisioningHealth" class="health-list">
+          <div v-for="item in provisioningHealth.items" :key="item.key" class="health-row">
+            <span class="status-dot" :class="item.status === 'pass' ? 'green' : item.status === 'fail' ? 'red' : 'yellow'"></span>
+            <div>
+              <div class="health-label">{{ item.label }}</div>
+              <div class="text-sm text-muted">{{ item.message }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-sm text-muted">
+          Run this after a fresh sandbox install to verify the app, Snapshot, GHL fields, custom values, processor setup, and webhook secret are wired correctly.
+        </div>
       </div>
 
       <!-- Disengagement Thresholds -->
@@ -346,11 +381,15 @@ const defaultProcessor = ref('');
 const defaultProcessorSaved = ref(false);
 const webhookSecret = ref('');
 const webhookHeaderName = ref('x-scalesafe-webhook-secret');
+const webhookMergeField = ref('{{ custom_values.scalesafe_webhook_secret }}');
 const webhookEnforced = ref(false);
 const webhookSecretLoading = ref(false);
 const showWebhookSecret = ref(false);
 const webhookSecretSaved = ref('');
 const webhookSecretError = ref('');
+const provisioningHealth = ref<any>(null);
+const provisioningHealthLoading = ref(false);
+const provisioningHealthError = ref('');
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -364,6 +403,7 @@ onMounted(async () => {
   try {
     config.value = await api.get<any>('/api/merchants/config');
     loadWebhookSecret();
+    loadProvisioningHealth();
     if (config.value.config?.disengagement_thresholds) {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
@@ -392,6 +432,7 @@ async function loadWebhookSecret() {
     const result = await api.get<any>('/api/merchants/webhook-secret');
     webhookSecret.value = result.secret || '';
     webhookHeaderName.value = result.headerName || 'x-scalesafe-webhook-secret';
+    webhookMergeField.value = result.mergeField || '{{ custom_values.scalesafe_webhook_secret }}';
     webhookEnforced.value = !!result.enforceRequired;
   } catch (err: any) {
     webhookSecretError.value = err.message || 'Failed to load webhook secret';
@@ -420,13 +461,36 @@ async function rotateWebhookSecret() {
     const result = await api.post<any>('/api/merchants/webhook-secret/rotate');
     webhookSecret.value = result.secret || '';
     webhookHeaderName.value = result.headerName || 'x-scalesafe-webhook-secret';
+    webhookMergeField.value = result.mergeField || '{{ custom_values.scalesafe_webhook_secret }}';
     webhookEnforced.value = !!result.enforceRequired;
     showWebhookSecret.value = true;
-    webhookSecretSaved.value = 'Webhook secret rotated. Update existing GHL workflow headers with the new value.';
+    webhookSecretSaved.value = 'Webhook secret rotated and synced to the GHL custom value. Snapshot workflows using the merge field do not need manual edits.';
   } catch (err: any) {
     webhookSecretError.value = err.message || 'Failed to rotate webhook secret';
   }
   webhookSecretLoading.value = false;
+}
+
+async function loadProvisioningHealth() {
+  provisioningHealthLoading.value = true;
+  provisioningHealthError.value = '';
+  try {
+    provisioningHealth.value = await api.get<any>('/api/merchants/provisioning-health');
+  } catch (err: any) {
+    provisioningHealthError.value = err.message || 'Failed to load provisioning health';
+  }
+  provisioningHealthLoading.value = false;
+}
+
+function healthStatusLabel(status: string) {
+  if (status === 'pass') return 'Install health looks good';
+  if (status === 'fail') return 'Install needs attention';
+  return 'Install has warnings';
+}
+
+function formatCheckedAt(value: string) {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 async function handleLogoUpload(event: Event) {
@@ -793,6 +857,14 @@ async function setDefaultProcessor(proc: string) {
   background: #22c55e;
 }
 
+.status-dot.yellow {
+  background: #f59e0b;
+}
+
+.status-dot.red {
+  background: #ef4444;
+}
+
 .status-text {
   font-weight: 600;
   font-size: 15px;
@@ -801,5 +873,59 @@ async function setDefaultProcessor(proc: string) {
 
 .status-details {
   margin-left: 18px;
+}
+
+.health-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+.health-pass {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.health-warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.health-fail {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.health-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.health-row:last-child {
+  border-bottom: 0;
+}
+
+.health-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
 }
 </style>

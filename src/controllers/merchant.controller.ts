@@ -62,10 +62,11 @@ export const merchantController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const secret = await merchantRepository.ensureWebhookSecret(locationId);
+      const secret = await merchantService.ensureWorkflowWebhookSecret(locationId);
       res.json({
         secret,
         headerName: 'x-scalesafe-webhook-secret',
+        mergeField: '{{ custom_values.scalesafe_webhook_secret }}',
         enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
       });
     } catch (err) { next(err); }
@@ -77,11 +78,12 @@ export const merchantController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const secret = await merchantRepository.rotateWebhookSecret(locationId);
+      const secret = await merchantService.rotateWorkflowWebhookSecret(locationId);
       logger.warn({ locationId }, 'Merchant workflow webhook secret rotated');
       res.json({
         secret,
         headerName: 'x-scalesafe-webhook-secret',
+        mergeField: '{{ custom_values.scalesafe_webhook_secret }}',
         enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
       });
     } catch (err) { next(err); }

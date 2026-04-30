@@ -8,7 +8,7 @@
 - ScaleSafe V2 does not use Make.com. Treat Make.com references in older docs as V1/history only.
 - Snapshot packaging is the next beta gate after the security/build hardening pass.
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
-- Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret`, but backend enforcement should stay off until active workflows are confirmed signed.
+- Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
 
 ## App-Provisioned On Install
 
@@ -17,11 +17,11 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | Component | Current Source | Notes |
 |---|---|---|
 | Merchant DB record/config | App/Supabase | OAuth install path. |
-| Per-merchant webhook secret | App/Supabase | `merchants.webhook_secret`; backfilled for existing merchants. |
+| Per-merchant webhook secret | App/Supabase + GHL custom value | `merchants.webhook_secret`; backfilled for existing merchants and synced to `{{ custom_values.scalesafe_webhook_secret }}`. |
 | Payment provider registration/API key | App | `merchantService.registerPaymentProvider()`. |
 | SS contact fields | App | `SS Enrollment Status`, `SS Evidence Score`, `SS Last Evidence Date`, `SS Chargeback Status`, `SS Defense Status`, `SS Engagement Status`. |
 | Offer-prefix contact fields | App | Offer bridge fields copied at enrollment. App creates these if missing. |
-| Core custom values | App | See `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`. |
+| Core custom values | App | See `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`, including `ScaleSafe Webhook Secret`. |
 | Pipeline ID capture | App | App looks for `Client Milestones` after Snapshot install and stores the ID. |
 | GHL products/prices | App | Created when offers are created/updated. |
 | Trigger subscriptions | GHL marketplace | GHL posts subscription lifecycle to `/webhooks/ghl/triggers`; app stores subscriptions and fires to those URLs. |
@@ -32,7 +32,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 |---|---|---|
 | `Client Milestones` pipeline | Exists in PMG | Package into Snapshot. App detects by name. |
 | Offers Custom Object schema | Exists in PMG | Package full current schema. Verify it matches `docs/ghl-offers-custom-object-schema.md`. |
-| Evidence forms SYS2-07 through SYS2-11 | Exists/partially verified | Package forms. Ensure any workflow/custom webhook action posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms` or the current production app URL, with `x-scalesafe-webhook-secret`. |
+| Evidence forms SYS2-07 through SYS2-11 | Exists/partially verified | Package forms. Ensure any workflow/custom webhook action posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms` or the current production app URL, with header `x-scalesafe-webhook-secret: {{ custom_values.scalesafe_webhook_secret }}`. |
 | Notification workflows | Built/published per Cowork workflow reference | Package active V2 workflows. Do not include obsolete V1 duplicates. |
 | Evidence form workflows | WF-01/WF-02 published | Package after webhook URL/header check. |
 | Pulse cadence workflow | Published | Package if still intended for beta. Confirm it does not depend on V1 fields. |
@@ -61,7 +61,8 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 4. Confirm forms SYS2-07 through SYS2-11 are included.
 5. For each evidence workflow/custom webhook action, confirm:
    - URL posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms`.
-   - Header includes `x-scalesafe-webhook-secret`.
+   - Header name is `x-scalesafe-webhook-secret`.
+   - Header value is `{{ custom_values.scalesafe_webhook_secret }}`.
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
 6. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes.
 7. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
@@ -74,11 +75,11 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 
 | Priority | Task | Why |
 |---|---|---|
-| P1 | Add a snapshot/provisioning health endpoint or admin diagnostic view | Shipped as `GET /api/merchants/provisioning-health`. Makes fresh install testing faster: pipeline found, fields found/created, custom values found/created, webhook secret present, payment provider registered. |
+| P1 | Add a snapshot/provisioning health endpoint or admin diagnostic view | Shipped as `GET /api/merchants/provisioning-health` plus a Settings panel. Makes fresh install testing faster: pipeline found, fields found/created, custom values found/created, webhook secret present, payment provider registered. |
 | P1 | Reconcile repo `GHL_AUTOMATION_COMPANION.md` with current Cowork workflow reference | Repo doc is stale on workflow counts, trigger counts, and Make references. |
 | P1 | Copy or mirror current E2E protocol into repo docs | The feature ledger references `docs/E2E_TEST_PROTOCOL.md`, but it currently lives only in Cowork. |
 | P2 | Add an install smoke script | Read-only verification for a fresh location once OAuth/install is complete. |
 
 ## Next Recommended Step
 
-Use `GET /api/merchants/provisioning-health` after the next fresh sandbox install, then manually package/test the Snapshot with the checklist above.
+Use the Settings > Provisioning Health panel after the next fresh sandbox install, then manually package/test the Snapshot with the checklist above.

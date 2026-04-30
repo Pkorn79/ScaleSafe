@@ -114,6 +114,9 @@ export interface ProvisioningHealthReport {
   items: ProvisioningHealthItem[];
 }
 
+const WEBHOOK_SECRET_CUSTOM_VALUE_KEY = 'WEBHOOK_SECRET';
+const WEBHOOK_SECRET_MERGE_FIELD = '{{ custom_values.scalesafe_webhook_secret }}';
+
 // ─── Provisioning constants ──────────────────────────────────────────
 
 const SS_FIELDS_TO_CREATE = [
@@ -235,6 +238,7 @@ export const merchantService = {
         : 'Webhook secret is missing; run provisioning/backfill before enabling webhook enforcement.',
       details: {
         headerName: 'x-scalesafe-webhook-secret',
+        mergeField: WEBHOOK_SECRET_MERGE_FIELD,
         enforcementEnabled: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
       },
     });
@@ -333,6 +337,7 @@ export const merchantService = {
         const missing = CUSTOM_VALUE_REGISTRY
           .filter((def) => !discoveredKeys[def.key])
           .map((def) => def.key);
+        const webhookSecretMapped = Boolean(discoveredKeys[WEBHOOK_SECRET_CUSTOM_VALUE_KEY]);
         add({
           key: 'custom_values',
           label: 'ScaleSafe custom values',
@@ -344,6 +349,8 @@ export const merchantService = {
             expectedCount: CUSTOM_VALUE_REGISTRY.length,
             mappedCount: Object.keys(discoveredKeys).length,
             totalGhlCustomValues: Array.isArray(values) ? values.length : null,
+            webhookSecretMapped,
+            webhookSecretMergeField: WEBHOOK_SECRET_MERGE_FIELD,
             missing,
           },
         });
@@ -384,6 +391,24 @@ export const merchantService = {
     await paymentProviderService.registerProvider(locationId);
     await paymentProviderService.generateProviderApiKey(locationId);
     logger.info({ locationId }, 'Payment provider registered and API keys generated');
+  },
+
+  async ensureWorkflowWebhookSecret(locationId: string): Promise<string | null> {
+    const secret = await merchantRepository.ensureWebhookSecret(locationId);
+    if (secret) {
+      await this.syncWebhookSecretCustomValue(locationId, secret).catch((err: any) => {
+        logger.warn({ err, locationId }, 'Failed to sync workflow webhook secret custom value');
+      });
+    }
+    return secret;
+  },
+
+  async rotateWorkflowWebhookSecret(locationId: string): Promise<string> {
+    const secret = await merchantRepository.rotateWebhookSecret(locationId);
+    await this.syncWebhookSecretCustomValue(locationId, secret).catch((err: any) => {
+      logger.warn({ err, locationId }, 'Failed to sync rotated workflow webhook secret custom value');
+    });
+    return secret;
   },
 
   async findPipeline(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<string | null> {
@@ -470,7 +495,7 @@ export const merchantService = {
   },
 
   /**
-   * Discover or create all 23 ScaleSafe custom values for a location.
+   * Discover or create all ScaleSafe custom values for a location.
    * Matches existing values by fieldKey pattern (not name — names vary between locations).
    * Stores the per-merchant ID map in merchants.custom_value_ids.
    * Partial success is saved — only failed values need retry.
@@ -523,7 +548,7 @@ export const merchantService = {
       try {
         const res = await api.post(`/locations/${locationId}/customValues`, {
           name: entry.defaultName,
-          value: '',
+          value: this.defaultCustomValue(entry.key, merchant),
         });
         const newId = res.data?.customValue?.id || res.data?.id || '';
         if (newId) {
@@ -553,6 +578,17 @@ export const merchantService = {
     // 4. Save discovered IDs to Supabase (even if partial)
     await merchantRepository.update(locationId, { custom_value_ids: storedIds } as any);
 
+    if (storedIds[WEBHOOK_SECRET_CUSTOM_VALUE_KEY] && merchant.webhook_secret) {
+      await this.writeGhlCustomValue(
+        api,
+        locationId,
+        storedIds[WEBHOOK_SECRET_CUSTOM_VALUE_KEY],
+        'ScaleSafe Webhook Secret',
+        merchant.webhook_secret,
+        WEBHOOK_SECRET_CUSTOM_VALUE_KEY,
+      );
+    }
+
     const total = CUSTOM_VALUE_REGISTRY.length;
     const succeeded = Object.keys(storedIds).length;
     logger.info({ locationId, total, found, created, failures, succeeded, failedKeys }, 'Custom values provisioning complete');
@@ -560,6 +596,44 @@ export const merchantService = {
     // 5. If more than half failed, throw (systemic issue like auth failure)
     if (failures > Math.floor(total / 2)) {
       throw new Error(`Too many custom value failures (${failures}/${total}) — likely a systemic issue. Failed: ${failedKeys.join(', ')}`);
+    }
+  },
+
+  defaultCustomValue(key: string, merchant: MerchantRecord): string {
+    if (key === WEBHOOK_SECRET_CUSTOM_VALUE_KEY) return merchant.webhook_secret || '';
+    return '';
+  },
+
+  async syncWebhookSecretCustomValue(locationId: string, secret: string): Promise<void> {
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const cvIds = merchant.custom_value_ids || {};
+    const id = cvIds[WEBHOOK_SECRET_CUSTOM_VALUE_KEY];
+    if (!id) return;
+
+    const api = await ghlApi(locationId);
+    await this.writeGhlCustomValue(
+      api,
+      locationId,
+      id,
+      'ScaleSafe Webhook Secret',
+      secret,
+      WEBHOOK_SECRET_CUSTOM_VALUE_KEY,
+    );
+  },
+
+  async writeGhlCustomValue(
+    api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never,
+    locationId: string,
+    id: string,
+    name: string,
+    value: string,
+    key: string,
+  ): Promise<void> {
+    try {
+      await api.put(`/locations/${locationId}/customValues/${id}`, { name, value });
+    } catch (err) {
+      logger.warn({ err, locationId, key, customValueId: id }, 'Failed to update GHL custom value');
+      throw err;
     }
   },
 
@@ -901,11 +975,10 @@ export const merchantService = {
       const batch = toSync.slice(i, i + 5);
       await Promise.all(batch.map(async ({ key, id, name, value }) => {
         try {
-          await api.put(`/locations/${locationId}/customValues/${id}`, { name, value });
+          await this.writeGhlCustomValue(api, locationId, id, name, value, key);
           synced++;
         } catch (err) {
           skipped++;
-          logger.warn({ err, locationId, key, customValueId: id }, 'Failed to update GHL custom value');
         }
       }));
     }
