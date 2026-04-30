@@ -65,11 +65,6 @@ const baseMerchant = {
     SHORT_DESCRIPTION: CV.CV_SHORT_DESCRIPTION,
     TC_HAS_OWN: CV.CV_TC_HAS_OWN,
     TC_DOCUMENT_URL: CV.CV_TC_DOCUMENT_URL,
-    COMPILED_TERMS_HTML: CV.CV_COMPILED_TERMS_HTML,
-    CUSTOM_CLAUSE_1_TITLE: CV.CV_CUSTOM_CLAUSE_1_TITLE,
-    CUSTOM_CLAUSE_1_TEXT: CV.CV_CUSTOM_CLAUSE_1_TEXT,
-    CUSTOM_CLAUSE_2_TITLE: CV.CV_CUSTOM_CLAUSE_2_TITLE,
-    CUSTOM_CLAUSE_2_TEXT: CV.CV_CUSTOM_CLAUSE_2_TEXT,
     MODULE_SESSIONS: CV.CV_MODULE_SESSIONS,
     MODULE_MILESTONES: CV.CV_MODULE_MILESTONES,
     MODULE_PULSE: CV.CV_MODULE_PULSE,
@@ -97,11 +92,6 @@ const ghlCustomValues = [
   { id: CV.CV_SUPPORT_EMAIL, fieldKey: 'custom_values.merchant_support_email', value: 'test@biz.com' },
   { id: CV.CV_TC_HAS_OWN, fieldKey: 'custom_values.tc_has_own', value: 'false' },
   { id: CV.CV_TC_DOCUMENT_URL, fieldKey: 'custom_values.tc_document_url', value: '' },
-  { id: CV.CV_COMPILED_TERMS_HTML, fieldKey: 'custom_values.compiled_terms_html', value: '' },
-  { id: CV.CV_CUSTOM_CLAUSE_1_TITLE, fieldKey: 'custom_values.custom_clause_1_title', value: '' },
-  { id: CV.CV_CUSTOM_CLAUSE_1_TEXT, fieldKey: 'custom_values.custom_clause_1_text', value: '' },
-  { id: CV.CV_CUSTOM_CLAUSE_2_TITLE, fieldKey: 'custom_values.custom_clause_2_title', value: '' },
-  { id: CV.CV_CUSTOM_CLAUSE_2_TEXT, fieldKey: 'custom_values.custom_clause_2_text', value: '' },
   { id: CV.CV_MODULE_SESSIONS, fieldKey: 'custom_values.module_session_tracking', value: 'Enabled' },
   { id: CV.CV_DBA_BRAND_NAME, fieldKey: 'custom_values.dba__brand_name', value: '' },
   { id: CV.CV_DESCRIPTOR, fieldKey: 'custom_values.merchant_descriptor', value: 'TEST BIZ' },
@@ -202,7 +192,6 @@ describe('merchantService.updateFullConfig', () => {
     expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_BUSINESS_NAME}`);
     expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_SUPPORT_EMAIL}`);
     expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_BUSINESS_WEBSITE}`);
-    expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_COMPILED_TERMS_HTML}`);
   });
 
   it('sets onboarding_complete when business name + email present', async () => {
@@ -259,25 +248,24 @@ describe('merchantService.updateFullConfig', () => {
       (c: any[]) => c[0] === `/locations/loc-123/customValues/${CV.CV_MODULE_SESSIONS}`
     );
     expect(sessionCall).toBeDefined();
-    expect(sessionCall![1]).toEqual({ value: 'Disabled' });
+    expect(sessionCall![1]).toEqual(expect.objectContaining({ value: 'Disabled' }));
 
     const pulseCall = mockGhlPut.mock.calls.find(
       (c: any[]) => c[0] === `/locations/loc-123/customValues/${CV.CV_MODULE_PULSE}`
     );
     expect(pulseCall).toBeDefined();
-    expect(pulseCall![1]).toEqual({ value: 'Enabled' });
+    expect(pulseCall![1]).toEqual(expect.objectContaining({ value: 'Enabled' }));
   });
 
-  it('syncs compiled T&C HTML to GHL', async () => {
+  it('keeps compiled T&C HTML out of location-level GHL custom values', async () => {
     await merchantService.updateFullConfig('loc-123', {
       standardClauses: { purchase_summary: true },
     });
 
-    const htmlCall = mockGhlPut.mock.calls.find(
-      (c: any[]) => c[0] === `/locations/loc-123/customValues/${CV.CV_COMPILED_TERMS_HTML}`
+    const htmlCall = mockGhlPut.mock.calls.find((c: any[]) =>
+      String(c[0]).includes('compiled_terms_html')
     );
-    expect(htmlCall).toBeDefined();
-    expect(htmlCall![1].value).toContain('purchasing the program');
+    expect(htmlCall).toBeUndefined();
   });
 });
 

@@ -185,6 +185,33 @@ Verification:
 - `npm.cmd test -- tests/unit/trigger-keys.test.ts tests/unit/ghl-fields.test.ts --runInBand` passed: 2 suites, 11 tests.
 - `npm.cmd run typecheck` passed.
 
+### 2026-04-30: Clear Remaining Jest Test Drift (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `tests/unit/merchant-config.test.ts`
+- `tests/unit/defense.service.test.ts`
+- `tests/unit/send-enrollment-link.test.ts`
+- `tests/unit/checkout.controller.test.ts`
+- `tests/integration/enrollment.integration.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- `merchant-config.test.ts`: removed expectations for deleted location-level T&C custom value IDs. V2 stores custom clauses/compiled terms per offer, not as merchant custom values. Updated module-toggle GHL PUT assertions to allow the current `{ name, value }` payload.
+- `defense.service.test.ts`: updated reason-code assertions to the current `reason_code_category` column and changed prompt-building tests to pass the production `ExhibitList` shape.
+- `send-enrollment-link.test.ts`: updated trigger payload assertions from camelCase to snake_case workflow fields.
+- `checkout.controller.test.ts`: mocked `resolveProcessor` directly because checkout config now uses the shared processor-resolution path.
+- `enrollment.integration.test.ts`: mocked GHL, enrollment packet generation, and evidence chain verification, and awaited queued trigger work so the test checks the enrollment/trigger lifecycle without leaking background jobs after Jest teardown.
+
+Verification:
+
+- `npm.cmd test -- tests/unit/merchant-config.test.ts tests/unit/defense.service.test.ts --runInBand` passed: 2 suites, 26 tests.
+- `npm.cmd test -- tests/unit/send-enrollment-link.test.ts tests/unit/checkout.controller.test.ts tests/integration/enrollment.integration.test.ts --runInBand` passed: 3 suites, 19 tests.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed: 45 suites, 506 tests.
+
 ## Open Technical Findings
 
 - P0 fixed: unauthenticated debug route exposure (Codex Step 1).
@@ -192,8 +219,8 @@ Verification:
 - P0 fixed: dispute routes IDOR — now require matching tenant.
 - P0 fixed: EFW routes IDOR — now require matching tenant.
 - P1 fixed: dashboard `totalValueSaved` overview tenant filtering.
-- P2 still open: pre-existing test drift in 6 unit/integration suites (see Verification above) — not introduced by security work, but worth a sweep.
-- P2 fixed locally: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
+- P2 fixed: pre-existing test drift in 6 unit/integration suites. Full Jest suite now passes.
+- P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
 
 ## Current Working Tree Notes
 

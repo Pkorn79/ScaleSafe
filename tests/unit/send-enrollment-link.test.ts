@@ -113,8 +113,8 @@ describe('Send Enrollment Link', () => {
 
     // Verify trigger fired
     expect(mockFireTrigger).toHaveBeenCalledWith('loc-1', 'ss_send_enrollment_link', expect.objectContaining({
-      contactId: 'contact-123',
-      offerId: 'offer-1',
+      contact_id: 'contact-123',
+      offer_id: 'offer-1',
     }));
   });
 

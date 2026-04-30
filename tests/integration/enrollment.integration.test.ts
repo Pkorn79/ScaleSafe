@@ -8,6 +8,26 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn().mockResolvedValue({
+    post: jest.fn().mockResolvedValue({ data: {} }),
+    put: jest.fn().mockResolvedValue({ data: {} }),
+    get: jest.fn().mockResolvedValue({ data: {} }),
+  }),
+}));
+
+jest.mock('../../src/services/enrollment-packet.service', () => ({
+  enrollmentPacketService: {
+    generateAndStore: jest.fn().mockResolvedValue('https://files.test/enrollment.pdf'),
+  },
+}));
+
+jest.mock('../../src/services/evidence-chain.service', () => ({
+  evidenceChainService: {
+    verifyChain: jest.fn().mockResolvedValue({ chainStrength: 100, complete: true }),
+  },
+}));
+
 // In-memory stores
 const enrollmentStore: Record<string, any> = {};
 const evidenceStore: any[] = [];
@@ -219,6 +239,7 @@ jest.mock('../../src/repositories/offer.repository', () => ({
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     findByLocationId: jest.fn().mockResolvedValue({ id: 'merchant_1' }),
+    getByLocationId: jest.fn().mockResolvedValue({ id: 'merchant_1', business_name: 'Test Merchant', config: {} }),
   },
 }));
 
@@ -279,6 +300,7 @@ describe('Enrollment Integration — full lifecycle', () => {
       transactionId: 'txn_123',
       paymentsTotal: null,
     });
+    await new Promise(resolve => setImmediate(resolve));
 
     // Verify enrollment updated to enrolled
     expect(enrollmentStore[enrollmentId].status).toBe('enrolled');
@@ -350,6 +372,7 @@ describe('Enrollment Integration — full lifecycle', () => {
       paymentNumber: 2,
       paymentsRemaining: 4,
     });
+    await new Promise(resolve => setImmediate(resolve));
 
     // Verify ss_payment_received trigger fired
     expect(mockedAxios.post).toHaveBeenCalledWith(

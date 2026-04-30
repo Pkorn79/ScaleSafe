@@ -113,6 +113,13 @@ describe('Checkout Controller', () => {
         is_default: true,
         nmi_tokenization_key: 'tok_xxx',
       }]);
+      mockResolveProcessor.mockResolvedValue({
+        processorType: 'nmi',
+        config: {
+          processor_type: 'nmi',
+          nmi_tokenization_key: 'tok_xxx',
+        },
+      });
 
       const req = mockReq({}, { publishableKey: 'pk_test' });
       const res = mockRes();
@@ -140,6 +147,13 @@ describe('Checkout Controller', () => {
         is_default: true,
         stripe_user_id: 'acct_test1',
       }]);
+      mockResolveProcessor.mockResolvedValue({
+        processorType: 'stripe',
+        config: {
+          processor_type: 'stripe',
+          stripe_user_id: 'acct_test1',
+        },
+      });
 
       const req = mockReq({}, { publishableKey: 'pk_test' });
       const res = mockRes();
