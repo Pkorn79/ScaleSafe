@@ -28,6 +28,35 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: External Webhook Observe-Mode Secret + Stable Idempotency (Codex)
+
+Files changed:
+
+- `src/routes/webhook.routes.ts`
+- `src/controllers/webhook.controller.ts`
+- `tests/unit/webhook.controller.test.ts`
+- `docs/external-integration-guide.md`
+- `CHANGELOG.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- `/webhooks/external` now uses `requireMerchantWebhookSecret`, the same observe/enforce middleware used by `/webhooks/ghl/forms`.
+- While `REQUIRE_WEBHOOK_SECRET=false`, external posts without the `x-scalesafe-webhook-secret` header are logged but still allowed. When enforcement is enabled, missing/invalid secrets return `401` and location mismatches return `403`.
+- External webhook idempotency now uses a stable SHA-256 hash of source, event type, contact identifier, and sorted payload data instead of `Date.now()`. Identical replays now generate the same event ID and can actually dedupe.
+- Updated the external integration guide to instruct Make.com scenarios to send `x-scalesafe-webhook-secret`.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/webhook.controller.test.ts --runInBand` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 526 tests).
+- `npm.cmd run build-ui` passed. `src/ui/package-lock.json` was restored afterward because `npm install` rewrites lock metadata on this host.
+
+Next:
+
+- Keep Claude Code read-only. It can audit docs or workflow setup, but Codex owns implementation sequencing.
+
 ### 2026-04-30: Webhook Secret Migration Applied + Backfilled (Codex Ops)
 
 Summary:

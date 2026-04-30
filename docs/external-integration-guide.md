@@ -20,6 +20,16 @@ https://hook.us1.make.com/vdtvikuqvjrgj4hqry2a9bv5vrbnhe0e
 
 ### Required Fields
 
+### Required ScaleSafe Header
+
+When the Make.com scenario posts transformed events to ScaleSafe, include this HTTP header:
+
+| Header | Value |
+|--------|-------|
+| `x-scalesafe-webhook-secret` | Merchant-specific secret from ScaleSafe Settings > Workflow Webhooks |
+
+ScaleSafe currently accepts unsigned external posts only while `REQUIRE_WEBHOOK_SECRET=false` during rollout. Once enforcement is enabled, missing or invalid headers return `401`, and a valid secret for a different `location_id` returns `403`.
+
 Every webhook payload must include the following top-level fields:
 
 | Field | Type | Description |

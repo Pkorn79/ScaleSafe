@@ -8,6 +8,7 @@ const mockHandleRecurring = jest.fn();
 const mockHandleFailed = jest.fn();
 const mockHandleRefund = jest.fn();
 const mockSupabaseFrom = jest.fn();
+const mockIdempotencyIsDuplicate = jest.fn().mockResolvedValue(false);
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -17,7 +18,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
 
 jest.mock('../../src/repositories/idempotency.repository', () => ({
   idempotencyRepository: {
-    isDuplicate: jest.fn().mockResolvedValue(false),
+    isDuplicate: (...args: any[]) => mockIdempotencyIsDuplicate(...args),
   },
 }));
 
@@ -77,6 +78,7 @@ function mockReqRes(body: Record<string, unknown>) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockIdempotencyIsDuplicate.mockResolvedValue(false);
   mockPaymentEventFindByTxn.mockResolvedValue(null);
   mockPaymentEventCreate.mockResolvedValue({ id: 'pe_1' });
   mockOfferListByLocation.mockResolvedValue([]);
@@ -238,5 +240,50 @@ describe('Webhook Controller - ghlPayment', () => {
     await webhookController.ghlPayment(req, res, jest.fn());
 
     expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true });
+  });
+});
+
+describe('Webhook Controller - external', () => {
+  test('uses stable event id for identical payloads', async () => {
+    const { evidenceService } = await import('../../src/services/evidence.service');
+    (evidenceService.handleExternalEvent as jest.Mock).mockResolvedValue('external_session');
+
+    const body = {
+      source: 'calendly',
+      event_type: 'session_completed',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      data: { session_date: '2026-04-30', duration: 60, topics: ['A', 'B'] },
+    };
+    const first = mockReqRes(body);
+    const second = mockReqRes({ ...body, data: { duration: 60, topics: ['A', 'B'], session_date: '2026-04-30' } });
+
+    await webhookController.external(first.req, first.res, first.next);
+    await webhookController.external(second.req, second.res, second.next);
+
+    const firstEventId = mockIdempotencyIsDuplicate.mock.calls[0][0];
+    const secondEventId = mockIdempotencyIsDuplicate.mock.calls[1][0];
+    expect(firstEventId).toBe(secondEventId);
+    expect(firstEventId).toMatch(/^ext_calendly_session_completed_contact_1_[a-f0-9]{24}$/);
+    expect(evidenceService.handleExternalEvent).toHaveBeenCalledTimes(2);
+  });
+
+  test('returns duplicate when stable external event id has already been seen', async () => {
+    mockIdempotencyIsDuplicate.mockResolvedValue(true);
+
+    const { req, res, next } = mockReqRes({
+      source: 'zoom',
+      event_type: 'session_completed',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      data: { session_date: '2026-04-30' },
+    });
+
+    await webhookController.external(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'duplicate',
+      eventId: expect.stringMatching(/^ext_zoom_session_completed_contact_1_[a-f0-9]{24}$/),
+    });
   });
 });

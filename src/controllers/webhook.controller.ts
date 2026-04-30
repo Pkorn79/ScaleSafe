@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
@@ -123,7 +124,7 @@ export const webhookController = {
         throw new ValidationError('contact_id or contact_email required');
       }
 
-      const eventId = `ext_${source}_${event_type}_${contactId || contact_email}_${Date.now()}`;
+      const eventId = stableExternalEventId(source, event_type, contactId || contact_email, data || {});
       if (await idempotencyRepository.isDuplicate(eventId, 'external', location_id)) {
         res.json({ status: 'duplicate', eventId });
         return;
@@ -156,6 +157,33 @@ export const webhookController = {
     } catch (err) { next(err); }
   },
 };
+
+function stableExternalEventId(source: string, eventType: string, contactIdentifier: string, data: unknown): string {
+  const hash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      source,
+      eventType,
+      contactIdentifier,
+      data: stableSort(data),
+    }))
+    .digest('hex')
+    .slice(0, 24);
+
+  return `ext_${source}_${eventType}_${contactIdentifier}_${hash}`;
+}
+
+function stableSort(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableSort);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.keys(value as Record<string, unknown>)
+    .sort()
+    .reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = stableSort((value as Record<string, unknown>)[key]);
+      return acc;
+    }, {});
+}
 
 // --- Internal handler functions ---
 
