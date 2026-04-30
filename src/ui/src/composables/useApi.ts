@@ -132,16 +132,6 @@ function authHeaders(): Record<string, string> {
   const payload = sessionStorage.getItem('ss_sso_payload');
   if (payload) {
     headers['x-sso-payload'] = payload;
-  } else {
-    // Fallback: send cached locationId
-    const locationId = ssoSession.locationId || sessionStorage.getItem('ss_location_id') || '';
-    if (locationId) {
-      headers['x-location-id'] = locationId;
-      const companyId = sessionStorage.getItem('ss_company_id');
-      const userId = sessionStorage.getItem('ss_user_id');
-      if (companyId) headers['x-company-id'] = companyId;
-      if (userId) headers['x-user-id'] = userId;
-    }
   }
 
   return headers;

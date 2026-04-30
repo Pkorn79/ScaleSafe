@@ -27,7 +27,7 @@ const authHeaders = { 'x-location-id': 'loc_integration_1' };
 describe('GET /api/evidence/:contactId', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetTimeline.mockResolvedValue([]);
+    mockGetTimeline.mockResolvedValue({ rows: [], total: 0 });
   });
 
   it('returns 401 without SSO context', async () => {
@@ -36,19 +36,23 @@ describe('GET /api/evidence/:contactId', () => {
     expect(res.body.error).toBe('AUTHENTICATION_ERROR');
   });
 
-  it('returns timeline JSON and forwards location + contact to repository', async () => {
+  it('returns timeline JSON and forwards location + contact + filters to repository', async () => {
     const rows = [
       { evidence_type: 'consent', event_date: '2026-01-01', contact_id: 'c1', location_id: 'loc_integration_1' },
     ];
-    mockGetTimeline.mockResolvedValue(rows);
+    mockGetTimeline.mockResolvedValue({ rows, total: 1 });
 
     const res = await request(app)
       .get('/api/evidence/c1')
       .set(authHeaders);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(rows);
-    expect(mockGetTimeline).toHaveBeenCalledWith('loc_integration_1', 'c1');
+    expect(res.body).toEqual({ rows, total: 1 });
+    expect(mockGetTimeline).toHaveBeenCalledWith(
+      'loc_integration_1',
+      'c1',
+      { limit: 100, offset: 0, type: undefined, from: undefined, to: undefined },
+    );
   });
 
   it('returns 500 when timeline repository fails', async () => {

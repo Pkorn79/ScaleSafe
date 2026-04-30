@@ -359,13 +359,6 @@ async function handleLogoUpload(event: Event) {
     const ssoPayload = sessionStorage.getItem('ss_sso_payload');
     if (ssoPayload) {
       headers['x-sso-payload'] = ssoPayload;
-    } else {
-      const locId = sessionStorage.getItem('ss_location_id');
-      if (locId) headers['x-location-id'] = locId;
-      const compId = sessionStorage.getItem('ss_company_id');
-      if (compId) headers['x-company-id'] = compId;
-      const userId = sessionStorage.getItem('ss_user_id');
-      if (userId) headers['x-user-id'] = userId;
     }
 
     const resp = await fetch('/api/merchants/logo', {

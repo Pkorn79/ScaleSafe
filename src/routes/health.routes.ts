@@ -7,6 +7,26 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+function requireDebugToken(req: Request, res: Response, next: () => void): void {
+  const expected = process.env.DEBUG_ADMIN_TOKEN || process.env.ADMIN_DEBUG_TOKEN;
+  const suppliedHeader = req.headers['x-admin-debug-token'];
+  const supplied = Array.isArray(suppliedHeader) ? suppliedHeader[0] : suppliedHeader;
+  const auth = req.headers.authorization || '';
+  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+
+  if (!expected) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+
+  if (supplied !== expected && bearer !== expected) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  next();
+}
+
 router.get('/health', async (_req: Request, res: Response) => {
   const checks: Record<string, string> = { app: 'ok' };
 
@@ -22,6 +42,8 @@ router.get('/health', async (_req: Request, res: Response) => {
 });
 
 // ─── Debug: enrollment diagnostic ──────────────────────────────
+router.use('/api/debug', requireDebugToken);
+
 router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res: Response) => {
   try {
     const { consentToken } = req.params;

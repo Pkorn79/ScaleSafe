@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 /**
  * GHL SSO middleware.
  *
- * Two authentication paths:
+ * Authentication paths:
  * 1. x-sso-payload header — encrypted SSO token from the GHL postMessage handshake.
  *    The Vue frontend obtains this via window.postMessage and sends it on every request.
  *    Backend decrypts it each time to extract tenant context.
@@ -38,7 +38,9 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
 
   // Path 2: locationId from validated SSO session
   const locationId = req.headers['x-location-id'] as string | undefined;
-  if (locationId) {
+  // Development/test shortcut only. Production must use encrypted GHL SSO payloads.
+  const allowDevLocationAuth = config.nodeEnv !== 'production' && process.env.ALLOW_DEV_LOCATION_AUTH === 'true';
+  if (locationId && allowDevLocationAuth) {
     req.tenantContext = {
       locationId,
       companyId: (req.headers['x-company-id'] as string) || '',

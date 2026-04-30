@@ -15,6 +15,7 @@ const defaults: Record<string, string> = {
   GHL_APP_CLIENT_SECRET: 'test_ghl_app_client_secret_456',
   GHL_APP_SSO_KEY: 'test_ghl_app_sso_key_789',
   STRIPE_SECRET_KEY: 'sk_test_51MockedScaleSafeStripeKey1234567890',
+  ALLOW_DEV_LOCATION_AUTH: 'true',
 };
 
 for (const [key, value] of Object.entries(defaults)) {

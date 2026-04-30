@@ -42,7 +42,7 @@ export const dashboardController = {
       ] = await Promise.all([
         supabase.from('offers_mirror').select('id', { count: 'exact' }).eq('location_id', locationId).eq('active', true),
         supabase.from('defense_packets').select('id, status', { count: 'exact' }).eq('location_id', locationId),
-        supabase.from('defense_outcomes').select('outcome, amount_saved').eq('outcome', 'won'),
+        supabase.from('defense_outcomes').select('outcome, amount_saved').eq('location_id', locationId).eq('outcome', 'won'),
         supabase.from('evidence_timeline').select('contact_id', { count: 'exact' }).eq('location_id', locationId),
       ]);
 
