@@ -4,7 +4,8 @@
   "description": "ScaleSafe — Evidence-powered chargeback defense for high-ticket service businesses. GHL Marketplace app.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && npm run build-ui && mkdir -p ./dist/ui && cp -r ./src/ui/dist ./dist/ui/dist && mkdir -p ./dist/widgets && cp -r ./src/widgets/* ./dist/widgets/",
+    "build": "tsc && npm run build-ui && npm run copy-build-assets",
+    "copy-build-assets": "node scripts/copy-build-assets.js",
     "build-ui": "cd src/ui && npm install && npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

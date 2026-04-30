@@ -29,6 +29,24 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-04-30: Cross-Platform Build Packaging Script (Codex)
+
+Files changed:
+
+- `package.json`
+- `scripts/copy-build-assets.js`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Replaced the Unix-only `mkdir -p` / `cp -r` tail of `npm run build` with `npm run copy-build-assets`.
+- Added `scripts/copy-build-assets.js`, which uses Node's filesystem APIs to copy `src/ui/dist` into `dist/ui/dist` and `src/widgets` into `dist/widgets`.
+- Updated stale open findings so webhook shared-secret work is marked in-flight/operational instead of design-open.
+
+Verification:
+
+- `npm.cmd run build` passed end-to-end on Windows.
+
 ### 2026-04-30: Correct External Integration Architecture Docs (Codex)
 
 Files changed:
@@ -406,10 +424,10 @@ Next security item:
 - P2 fixed: pre-existing test drift in 6 unit/integration suites. Full Jest suite now passes.
 - P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
 - P1 fixed: public client-service links tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
-- P2 open: top-level `npm.cmd run build` uses Unix packaging commands (`mkdir -p`, `cp -r`) and fails under Windows `cmd` after TypeScript/Vite compilation succeeds.
+- P2 fixed: top-level `npm.cmd run build` now uses a cross-platform Node asset-copy script instead of Unix packaging commands (`mkdir -p`, `cp -r`).
 - P1 fixed: official GHL marketplace webhook signature verification added for `/webhooks/ghl/triggers` and `/webhooks/ghl/payment`.
 - P1 fixed: NMI Silent Post no longer processes approved transaction posts when processor verification throws or fails.
-- P1 open: custom/workflow webhook receivers (`/webhooks/ghl/forms`, `/webhooks/external`) need a shared-secret/header design and GHL workflow coordination.
+- P1 in-flight: custom/workflow webhook receivers (`/webhooks/ghl/forms`, `/webhooks/external`) now have per-merchant shared-secret observe-mode validation, Settings UI, migration, and backfill. Remaining work is operational: add `x-scalesafe-webhook-secret` to active GHL workflow Custom Webhook actions, observe signed traffic, then enable `REQUIRE_WEBHOOK_SECRET=true`.
 
 ### 2026-04-30: Tracking Reconciliation Rule (Codex)
 
