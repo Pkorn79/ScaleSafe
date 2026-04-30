@@ -246,6 +246,9 @@ Next security item:
 - P2 fixed: `defense_outcomes.amount_saved` vs. `amount_recovered` column name mismatch.
 - P1 fixed: public client-service links tokenized (`payment-update`, `subscription-cancel`, `milestone-signoff`).
 - P2 open: top-level `npm.cmd run build` uses Unix packaging commands (`mkdir -p`, `cp -r`) and fails under Windows `cmd` after TypeScript/Vite compilation succeeds.
+- P1 fixed: official GHL marketplace webhook signature verification added for `/webhooks/ghl/triggers` and `/webhooks/ghl/payment`.
+- P1 fixed: NMI Silent Post no longer processes approved transaction posts when processor verification throws or fails.
+- P1 open: custom/workflow webhook receivers (`/webhooks/ghl/forms`, `/webhooks/external`) need a shared-secret/header design and GHL workflow coordination.
 
 ### 2026-04-30: Tracking Reconciliation Rule (Codex)
 
@@ -339,6 +342,40 @@ Next queue:
 1. Public endpoint/webhook security validation pass.
 2. Dashboard performance profiling and optimization.
 3. NMI card-on-file metadata display fix.
+
+### 2026-04-30: Webhook Verification Hardening (Codex)
+
+Files changed:
+
+- `.env.example`
+- `CHANGELOG.md`
+- `src/controllers/nmi-silent-post.controller.ts`
+- `src/middleware/ghlWebhookSignature.ts`
+- `src/routes/webhook.routes.ts`
+- `tests/unit/ghl-webhook-signature.test.ts`
+- `tests/unit/nmi-silent-post.controller.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added `requireGhlWebhookSignature` middleware for official GHL marketplace webhook routes:
+  - `/webhooks/ghl/triggers`
+  - `/webhooks/ghl/payment`
+- Middleware verifies `X-GHL-Signature` with the Ed25519 public key from current HighLevel docs and falls back to legacy `X-WH-Signature` RSA verification during the transition window.
+- Production rejects missing/invalid GHL marketplace webhook signatures by default.
+- Non-production allows missing signatures for tests/local development, but malformed signatures are rejected everywhere.
+- Added emergency compatibility env `ALLOW_UNSIGNED_GHL_WEBHOOKS=false`.
+- NMI Silent Post now fails closed when an approved transaction-bearing post cannot be verified with the processor. Previous behavior processed anyway if verification threw, which could allow a spoofed post to advance recurring payment state if a subscription ID was known/guessed.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- tests/unit/nmi-silent-post.controller.test.ts tests/unit/ghl-webhook-signature.test.ts --runInBand` passed: 2 suites, 7 tests.
+- `npm.cmd test -- --runInBand` passed: 48 suites, 518 tests.
+
+Open security follow-up:
+
+- `/webhooks/ghl/forms` and `/webhooks/external` appear to be workflow/custom integration receivers rather than official signed marketplace webhooks. They still need a coordinated shared-secret/header design with GHL workflow updates before enforcement, so evidence capture is not silently broken.
 
 ## Current Working Tree Notes
 

@@ -86,8 +86,9 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
           return;
         }
       } catch (verifyErr: any) {
-        logger.warn({ err: verifyErr.message, transactionId }, 'NMI Silent Post: verification threw — processing anyway');
-        // Continue processing: the alternative is missing a legitimate payment
+        logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
+        res.status(200).json({ received: true });
+        return;
       }
     }
 
