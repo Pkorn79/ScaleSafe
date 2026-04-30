@@ -14,6 +14,8 @@ You are working in the active ScaleSafe V2 codebase. Before changing anything, r
 
 Treat `docs\CLAUDE_CODE_CODEX_LOG.md` as the latest Codex technical handoff for code work. Continue from its open findings and verification notes.
 
+Important: reading these files is for awareness. Do not begin implementation, run broad refactors, stage files, commit, push, or deploy unless Philip explicitly asks you to take action in the current session.
+
 ## Current Context
 
 ScaleSafe V2 is a GHL Marketplace app for evidence-powered chargeback defense. The current stack is Express + TypeScript, Vue 3 + Vite, Supabase, Railway, GHL OAuth/SSO, NMI test mode, and Stripe sandbox/connect testing.
@@ -56,7 +58,7 @@ If a targeted test fails, distinguish new regression from known drift documented
 
 ## End-Of-Session Rule
 
-Before ending a meaningful Claude Code session, update:
+Before ending a meaningful Claude Code session where Philip explicitly asked you to make changes, update:
 
 `docs\CLAUDE_CODE_CODEX_LOG.md`
 

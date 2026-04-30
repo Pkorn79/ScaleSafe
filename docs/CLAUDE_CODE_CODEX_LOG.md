@@ -120,6 +120,28 @@ Side observation (not fixed, flagging for the next pass):
 
 - `src/controllers/dashboard.controller.ts:50` reads `o.amount_saved`, but `defense_outcomes` actually has `amount_recovered` (per `supabase/migrations/002_defense_tables.sql:140`). The same column name appears at line 244 (`defenseHistory`) and line 295. No migration in `supabase/migrations/` adds `amount_saved`. Net effect: `totalValueSaved` always evaluates to 0 regardless of how many won outcomes exist. Out of scope for the tenant-filter fix, but the metric won't actually populate until the column reference (or the schema) is reconciled.
 
+### 2026-04-29: Step 3 Follow-Up - Preserve LocationId URL Compatibility (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `src/routes/dispute.routes.ts`
+- `src/routes/efw.routes.ts`
+- `docs/CLAUDE_CODE_SESSION_PROMPT.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Reviewed Claude Code's pushed Step 3 security patch and found a route contract mismatch: the Vue app calls `/api/disputes/${ssoSession.locationId}`, while the new route guard accepted only the merchant UUID in `:merchantId`.
+- Updated dispute and EFW route guards so the URL identifier may be either the authenticated tenant's `merchant.id` or `merchant.location_id`.
+- After verification, route handlers query/service-call with the verified merchant UUID, not the raw URL param.
+- Updated `CLAUDE_CODE_SESSION_PROMPT.md` to make clear that reading the prompt/log is for awareness only and Claude Code should not implement, commit, push, or deploy unless Philip explicitly asks for action in that session.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- Philip approved commit/push.
+
 ## Open Technical Findings
 
 - P0 fixed: unauthenticated debug route exposure (Codex Step 1).

@@ -11,7 +11,9 @@ const router = Router();
 router.use(ssoAuth, requireTenant);
 
 /**
- * Verify the :merchantId in the URL belongs to the SSO-authenticated tenant.
+ * Verify the URL tenant identifier belongs to the SSO-authenticated tenant.
+ * Existing UI paths may pass locationId, while Stripe services use merchant UUIDs.
+ * Returns the verified merchant UUID.
  */
 async function requireMatchingMerchant(req: Request, res: Response): Promise<string | null> {
   const locationId = req.tenantContext?.locationId;
@@ -24,9 +26,9 @@ async function requireMatchingMerchant(req: Request, res: Response): Promise<str
     res.status(404).json({ error: 'Merchant not found for tenant' });
     return null;
   }
-  if (merchant.id !== req.params.merchantId) {
+  if (merchant.id !== req.params.merchantId && merchant.location_id !== req.params.merchantId) {
     logger.warn(
-      { tenantMerchantId: merchant.id, urlMerchantId: req.params.merchantId, locationId },
+      { tenantMerchantId: merchant.id, tenantLocationId: merchant.location_id, urlMerchantId: req.params.merchantId, locationId },
       'EFW route tenant mismatch',
     );
     res.status(403).json({ error: 'Tenant mismatch' });
@@ -37,12 +39,13 @@ async function requireMatchingMerchant(req: Request, res: Response): Promise<str
 
 // GET /api/efws/:merchantId — list EFWs
 router.get('/:merchantId', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const { data: efws } = await getSupabase()
       .from('efw_events')
       .select('*')
-      .eq('merchant_id', req.params.merchantId)
+      .eq('merchant_id', merchantId)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -55,7 +58,8 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
 
 // POST /api/efws/:merchantId/:efwId/respond — respond to EFW
 router.post('/:merchantId/:efwId/respond', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const { action } = req.body;
 
@@ -66,7 +70,7 @@ router.post('/:merchantId/:efwId/respond', async (req: Request, res: Response) =
 
     const result = await stripeEfwService.respondToEfw({
       efwId: req.params.efwId,
-      merchantId: req.params.merchantId,
+      merchantId,
       action,
     });
 

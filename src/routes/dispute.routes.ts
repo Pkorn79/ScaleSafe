@@ -16,8 +16,9 @@ const router = Router();
 router.use(ssoAuth, requireTenant);
 
 /**
- * Verify the :merchantId in the URL belongs to the SSO-authenticated tenant.
- * Returns the verified merchantId on success, or sends 403/404 and returns null.
+ * Verify the URL tenant identifier belongs to the SSO-authenticated tenant.
+ * Existing UI paths pass locationId, while Stripe services use merchant UUIDs.
+ * Returns the verified merchant UUID on success, or sends 403/404 and returns null.
  */
 async function requireMatchingMerchant(req: Request, res: Response): Promise<string | null> {
   const locationId = req.tenantContext?.locationId;
@@ -30,9 +31,9 @@ async function requireMatchingMerchant(req: Request, res: Response): Promise<str
     res.status(404).json({ error: 'Merchant not found for tenant' });
     return null;
   }
-  if (merchant.id !== req.params.merchantId) {
+  if (merchant.id !== req.params.merchantId && merchant.location_id !== req.params.merchantId) {
     logger.warn(
-      { tenantMerchantId: merchant.id, urlMerchantId: req.params.merchantId, locationId },
+      { tenantMerchantId: merchant.id, tenantLocationId: merchant.location_id, urlMerchantId: req.params.merchantId, locationId },
       'Dispute route tenant mismatch',
     );
     res.status(403).json({ error: 'Tenant mismatch' });
@@ -45,12 +46,13 @@ async function requireMatchingMerchant(req: Request, res: Response): Promise<str
 
 // GET /api/disputes/:merchantId — list active disputes
 router.get('/:merchantId', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const { data: disputes } = await getSupabase()
       .from('dispute_events')
       .select('*')
-      .eq('merchant_id', req.params.merchantId)
+      .eq('merchant_id', merchantId)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -63,12 +65,13 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
 
 // GET /api/disputes/:merchantId/:disputeId — get single dispute with evidence packet
 router.get('/:merchantId/:disputeId', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const { data: dispute } = await getSupabase()
       .from('dispute_events')
       .select('*')
-      .eq('merchant_id', req.params.merchantId)
+      .eq('merchant_id', merchantId)
       .eq('id', req.params.disputeId)
       .single();
 
@@ -79,7 +82,7 @@ router.get('/:merchantId/:disputeId', async (req: Request, res: Response) => {
 
     const packet = await stripeDisputeService.assembleEvidencePacket(
       dispute.stripe_dispute_id,
-      req.params.merchantId,
+      merchantId,
     );
 
     res.json({ dispute, evidencePacket: packet });
@@ -91,7 +94,8 @@ router.get('/:merchantId/:disputeId', async (req: Request, res: Response) => {
 
 // POST /api/disputes/:merchantId/:disputeId/submit — submit evidence
 router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const { autoSubmit } = req.body;
     const supabase = getSupabase();
@@ -99,7 +103,7 @@ router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response
     const { data: dispute } = await supabase
       .from('dispute_events')
       .select('*')
-      .eq('merchant_id', req.params.merchantId)
+      .eq('merchant_id', merchantId)
       .eq('id', req.params.disputeId)
       .single();
 
@@ -110,12 +114,12 @@ router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response
 
     const packet = await stripeDisputeService.assembleEvidencePacket(
       dispute.stripe_dispute_id,
-      req.params.merchantId,
+      merchantId,
     );
 
     const result = await stripeDisputeService.submitEvidence({
       stripeDisputeId: dispute.stripe_dispute_id,
-      merchantId: req.params.merchantId,
+      merchantId,
       evidence: packet.evidence,
       autoSubmit: autoSubmit !== false,
     });
@@ -129,14 +133,15 @@ router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response
 
 // POST /api/disputes/:merchantId/:disputeId/accept — accept (don't fight)
 router.post('/:merchantId/:disputeId/accept', async (req: Request, res: Response) => {
-  if (!(await requireMatchingMerchant(req, res))) return;
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
   try {
     const supabase = getSupabase();
 
     const { data: dispute } = await supabase
       .from('dispute_events')
       .select('*')
-      .eq('merchant_id', req.params.merchantId)
+      .eq('merchant_id', merchantId)
       .eq('id', req.params.disputeId)
       .single();
 
@@ -148,7 +153,7 @@ router.post('/:merchantId/:disputeId/accept', async (req: Request, res: Response
     const { data: merchant } = await supabase
       .from('merchants')
       .select('stripe_user_id')
-      .eq('id', req.params.merchantId)
+      .eq('id', merchantId)
       .single();
 
     if (!merchant?.stripe_user_id) {
@@ -166,7 +171,7 @@ router.post('/:merchantId/:disputeId/accept', async (req: Request, res: Response
       .from('dispute_events')
       .update({ outcome: 'accepted' })
       .eq('id', req.params.disputeId)
-      .eq('merchant_id', req.params.merchantId);
+      .eq('merchant_id', merchantId);
 
     res.json({ success: true, action: 'accepted' });
   } catch (err: any) {
