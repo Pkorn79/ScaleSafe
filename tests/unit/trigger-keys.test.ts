@@ -1,8 +1,8 @@
 import { VALID_TRIGGER_KEYS, isValidTriggerKey } from '../../src/constants/trigger-keys';
 
 describe('Trigger Keys', () => {
-  test('has 18 trigger keys', () => {
-    expect(VALID_TRIGGER_KEYS).toHaveLength(18);
+  test('has 20 trigger keys', () => {
+    expect(VALID_TRIGGER_KEYS).toHaveLength(20);
   });
 
   test('enrollment_complete is valid (no ss_ prefix)', () => {

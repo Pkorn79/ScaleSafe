@@ -1,8 +1,8 @@
 import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS, OFFER_CLAUSE_FIELDS, OFFER_MILESTONE_FIELDS, CUSTOM_TRIGGERS } from '../../src/constants/ghl-fields';
 
 describe('GHL Fields Constants', () => {
-  test('should have exactly 5 SS contact fields', () => {
-    expect(Object.keys(SS_CONTACT_FIELDS).length).toBe(5);
+  test('should have exactly 6 SS contact fields', () => {
+    expect(Object.keys(SS_CONTACT_FIELDS).length).toBe(6);
   });
 
   test('SS fields should use contact. prefix', () => {

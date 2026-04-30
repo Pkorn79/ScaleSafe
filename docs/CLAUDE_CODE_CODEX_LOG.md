@@ -164,6 +164,27 @@ Verification:
 - `npm.cmd run typecheck` passed.
 - Search confirmed no remaining `amount_saved` references in `src/**/*.ts` or `tests/**/*.ts`.
 
+### 2026-04-30: Align Constants Tests With Current V2 Code (Codex)
+
+Files changed:
+
+- `CHANGELOG.md`
+- `CLAUDE.md`
+- `tests/unit/trigger-keys.test.ts`
+- `tests/unit/ghl-fields.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Updated trigger key test expectation from 18 to 20 to match `VALID_TRIGGER_KEYS`.
+- Updated GHL fields test expectation from 5 to 6 to match current `SS_CONTACT_FIELDS`, including `ENGAGEMENT_STATUS`.
+- Updated `CLAUDE.md` architecture constraint text from "5 SS contact fields" to "6 SS contact fields" so the repo rule matches the current V2 implementation.
+
+Verification:
+
+- `npm.cmd test -- tests/unit/trigger-keys.test.ts tests/unit/ghl-fields.test.ts --runInBand` passed: 2 suites, 11 tests.
+- `npm.cmd run typecheck` passed.
+
 ## Open Technical Findings
 
 - P0 fixed: unauthenticated debug route exposure (Codex Step 1).

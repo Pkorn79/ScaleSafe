@@ -23,7 +23,7 @@ ScaleSafe is a GHL Marketplace app that helps coaches and service providers defe
 5. **Every database query filters by `location_id`** — multi-tenant from day one.
 6. **Services never send communications** — they fire GHL custom workflow triggers; GHL workflows handle comms.
 7. **Payment architecture:** ScaleSafe processes payments through merchant's connected NMI or Stripe accounts via GHL Custom Payment Provider. ScaleSafe never holds funds — transactions settle directly to the merchant's processor account. NMI is the processing rail. Stripe is the defense + optional processing rail (connected via Stripe Connect OAuth with direct charges).
-8. **The 5 SS contact fields** the app manages are in `SS_CONTACT_FIELDS` in `ghl-fields.ts`. Do not add more without explicit approval.
+8. **The 6 SS contact fields** the app manages are in `SS_CONTACT_FIELDS` in `ghl-fields.ts`. Do not add more without explicit approval.
 9. **Offers Custom Object** key is `custom_objects.offers`. Schema is in `docs/ghl-offers-custom-object-schema.md`.
 
 ## Never Do
