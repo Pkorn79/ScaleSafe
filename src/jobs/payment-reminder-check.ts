@@ -65,16 +65,34 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         amount = offer?.installment_amount || offer?.price || 0;
       }
 
-      const paymentsRemaining = (enr.payments_total || 0) - (enr.payments_made || 0);
+      const paymentsMade = enr.payments_made || 0;
+      const paymentsTotal = enr.payments_total || 0;
+      const nextPaymentNumber = paymentsMade + 1;
+      const paymentsRemaining = Math.max(0, paymentsTotal - paymentsMade);
 
       await triggerService.fireTrigger(enr.location_id, 'ss_upcoming_payment_reminder', {
         contact_id: enr.contact_id,
         amount,
+        installment_amount: amount,
         next_billing_date: enr.next_billing_date,
+        next_payment_number: nextPaymentNumber,
+        payments_made: paymentsMade,
+        payments_total: paymentsTotal,
         days_until_payment: daysUntilPayment,
         reminder_window: daysUntilPayment === 3 ? 'three_day' : 'one_day',
-        payments_remaining: paymentsRemaining > 0 ? paymentsRemaining : 0,
+        payments_remaining: paymentsRemaining,
         offer_name: offerName,
+        offer: {
+          name: offerName,
+          installment_amount: amount,
+        },
+        subscription: {
+          next_billing_date: enr.next_billing_date,
+          next_payment_number: nextPaymentNumber,
+          payments_made: paymentsMade,
+          payments_total: paymentsTotal,
+          payments_remaining: paymentsRemaining,
+        },
       });
       sent++;
     } catch (err: any) {

@@ -29,6 +29,24 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-01: Payment Reminder Trigger Payload Aliases (Codex)
+
+Files changed:
+
+- `src/jobs/payment-reminder-check.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Expanded the `ss_upcoming_payment_reminder` payload so the GHL workflow has both flat fields and nested aliases.
+- Flat fields now include `installment_amount`, `offer_name`, `next_billing_date`, `next_payment_number`, `payments_made`, `payments_total`, `payments_remaining`, `days_until_payment`, and `reminder_window`.
+- Nested aliases now include `offer.name`, `offer.installment_amount`, and `subscription.next_billing_date` / `subscription.next_payment_number` / `subscription.payments_total` / `subscription.payments_made` / `subscription.payments_remaining`.
+- Purpose: avoid ambiguity when building the GHL workflow. GHL can use whichever merge fields its custom trigger UI exposes from the sample event.
+
+Philip/GHL action:
+
+- Build the `ss_upcoming_payment_reminder` workflow. The app controls timing. GHL only needs to send the message from trigger fields and can optionally branch on `reminder_window` (`three_day` vs `one_day`).
+
 ### 2026-05-01: Restore 3-Day + Add 1-Day Payment Reminders (Codex)
 
 Files changed:
