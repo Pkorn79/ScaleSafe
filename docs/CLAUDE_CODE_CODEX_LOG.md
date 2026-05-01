@@ -29,6 +29,46 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-01: Pre-Snapshot Beta Lock Implementation (Codex)
+
+Files changed:
+
+- `supabase/migrations/053_pulse_cadence.sql`
+- `src/services/merchant.service.ts`
+- `src/controllers/merchant.controller.ts`
+- `src/routes/merchant.routes.ts`
+- `src/services/offer.service.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/services/recurring-payment.service.ts`
+- `src/services/evidence.service.ts`
+- `src/controllers/webhook.controller.ts`
+- `src/jobs/payment-reminder-check.ts`
+- `src/jobs/pulse-cadence-check.ts`
+- `src/index.ts`
+- `src/ui/src/views/OfferFormView.vue`
+- `src/ui/src/views/SettingsView.vue`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+
+Summary:
+
+- Added installed-tenant repair action for PMG: `POST /api/merchants/provisioning-health/repair-webhook-secret` re-runs GHL custom value discovery/creation, maps `WEBHOOK_SECRET`, and pushes the existing per-merchant `merchants.webhook_secret` into `{{ custom_values.scalesafe_webhook_secret }}` even when `snapshot_status = installed`. Settings > Provisioning Health now has a Repair Webhook Secret button.
+- Changed the payment reminder job from 3 days before billing to 1 day before billing. Existing successful recurring paths already fire `ss_payment_received`; final recurring completion now also disables future pulse cadence.
+- Added app-owned pulse cadence: migration 053 adds offer/enrollment cadence fields and `evidence_pulse_checkins.enrollment_id`; Offer form exposes pulse enable/cadence; post-payment enrollment completion initializes `next_pulse_due_at`; a daily pulse job posts due enrollments to the configured GHL inbound-webhook workflow; SYS2-09 form webhooks carry `enrollment_id` into pulse evidence.
+- Deferred GHL drift for beta: Offer Custom Object sync was disabled/removed from offer create/update; GHL Product/Price creation stays active. Provisioning and health no longer require the `Client Milestones` pipeline; app-native `enrollments.current_milestone` remains the beta source of truth.
+- Snapshot execution plan updated: exclude Make.com, Accept.blue, Offers CO, Client Milestones pipeline, and old tag-driven pulse cadence; include the new `SS - Pulse Check Due` workflow.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+- `npm.cmd run build` passed end-to-end on Windows.
+- Functional beta gates are still manual/outstanding: Stripe sandbox 2-pay weekly E2E, NMI live tiny-charge E2E, PMG webhook-secret repair button, pulse due-send webhook, and SYS2-09 evidence capture.
+
+Open technical risks:
+
+- The pulse due job needs the GHL inbound webhook URL and pulse form URL configured per merchant, preferably through the newly added `ScaleSafe Pulse Workflow Webhook URL` and `ScaleSafe Pulse Form URL` custom values.
+- Manual PMG/GHL beta gates still need to be run before Snapshot export; local code gates are clean.
+
 ### 2026-04-30: Scalable Workflow Webhook Secret + Settings Health Panel (Codex)
 
 Files changed:

@@ -6,7 +6,7 @@
 ## Current Direction
 
 - ScaleSafe V2 does not use Make.com. Treat Make.com references in older docs as V1/history only.
-- Snapshot packaging is the next beta gate after the security/build hardening pass.
+- Snapshot packaging is blocked until beta scope is frozen, installment billing is functionally proven, pulse cadence is tested, and PMG's webhook-secret custom value repair/sync is verified.
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
 - Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
 
@@ -22,7 +22,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | SS contact fields | App | `SS Enrollment Status`, `SS Evidence Score`, `SS Last Evidence Date`, `SS Chargeback Status`, `SS Defense Status`, `SS Engagement Status`. |
 | Offer-prefix contact fields | App | Offer bridge fields copied at enrollment. App creates these if missing. |
 | Core custom values | App | See `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`, including `ScaleSafe Webhook Secret`. |
-| Pipeline ID capture | App | App looks for `Client Milestones` after Snapshot install and stores the ID. |
+| Pulse cadence timing | App | Offers choose cadence; enrollments store next due/last sent; daily app job posts to the GHL pulse workflow. |
 | GHL products/prices | App | Created when offers are created/updated. |
 | Trigger subscriptions | GHL marketplace | GHL posts subscription lifecycle to `/webhooks/ghl/triggers`; app stores subscriptions and fires to those URLs. |
 
@@ -30,12 +30,12 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 
 | Component | Status | Beta Action |
 |---|---|---|
-| `Client Milestones` pipeline | Exists in PMG | Package into Snapshot. App detects by name. |
-| Offers Custom Object schema | Exists in PMG | Package full current schema. Verify it matches `docs/ghl-offers-custom-object-schema.md`. |
+| `Client Milestones` pipeline | Deferred | Exclude from beta Snapshot. App-native `enrollments.current_milestone` remains the beta source of truth. |
+| Offers Custom Object schema | Deferred | Exclude from beta Snapshot. Offer sync to GHL Custom Objects is disabled; GHL Product/Price creation remains active for checkout/payment provider flow. |
 | Evidence forms SYS2-07 through SYS2-11 | Exists/partially verified | Package forms. Ensure any workflow/custom webhook action posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms` or the current production app URL, with header `x-scalesafe-webhook-secret: {{ custom_values.scalesafe_webhook_secret }}`. |
 | Notification workflows | Built/published per Cowork workflow reference | Package active V2 workflows. Do not include obsolete V1 duplicates. |
 | Evidence form workflows | WF-01/WF-02 published | Package after webhook URL/header check. |
-| Pulse cadence workflow | Published | Package if still intended for beta. Confirm it does not depend on V1 fields. |
+| `SS - Pulse Check Due` workflow | Required for beta | Package the inbound-webhook workflow that sends pulse email/SMS. The app owns cadence and posts `enrollment_id`, `contact_id`, `offer_name`, `form_url`, and cadence details. Exclude the old tag-driven pulse workflow. |
 | Enrollment funnel | Not started/currently biggest unknown | Build/package current V2 flow or explicitly defer if the app-hosted enrollment/Quick Pay path fully replaces it for beta. |
 
 ## Do Not Package
@@ -44,6 +44,9 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 - Accept.blue fields, custom values, or payment workflows.
 - Google Sheets/Drive evidence export flows.
 - Old model-specific onboarding forms/workflows.
+- Old tag-driven pulse cadence workflow.
+- Offers Custom Object.
+- Client Milestones pipeline.
 - Any duplicate workflow that conflicts with the app's processor-native payment handling.
 
 ## Decisions Already Corrected
@@ -56,30 +59,33 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 ## Manual GHL Checklist
 
 1. Open PMG GHL location and create/refresh the beta Snapshot from a clean V2 baseline.
-2. Confirm `Client Milestones` pipeline exists and is included.
-3. Confirm Offers Custom Object exists and all required fields/associations are included.
+2. Confirm `Client Milestones` pipeline is excluded for beta.
+3. Confirm Offers Custom Object is excluded for beta.
 4. Confirm forms SYS2-07 through SYS2-11 are included.
 5. For each evidence workflow/custom webhook action, confirm:
    - URL posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms`.
    - Header name is `x-scalesafe-webhook-secret`.
    - Header value is `{{ custom_values.scalesafe_webhook_secret }}`.
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
-6. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes.
-7. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
-8. Install the Snapshot into a fresh sandbox location.
-9. Install ScaleSafe into that fresh location.
-10. Verify app provisioning marks the merchant `installed` or a known acceptable `partial` state with clear missing items.
-11. Run the E2E test protocol from the Cowork folder against the fresh install.
+6. Confirm `SS - Pulse Check Due` exists, accepts app inbound webhook payloads, and the old tag-driven pulse cadence workflow is excluded.
+7. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_upcoming_payment_reminder` one day before billing and `ss_payment_received` after installments.
+8. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
+9. Install the Snapshot into a fresh sandbox location.
+10. Install ScaleSafe into that fresh location.
+11. Verify app provisioning marks the merchant `installed` or a known acceptable `partial` state with clear missing items.
+12. Run the E2E test protocol from the Cowork folder against the fresh install.
 
 ## Codex/Code Follow-Ups
 
 | Priority | Task | Why |
 |---|---|---|
-| P1 | Add a snapshot/provisioning health endpoint or admin diagnostic view | Shipped as `GET /api/merchants/provisioning-health` plus a Settings panel. Makes fresh install testing faster: pipeline found, fields found/created, custom values found/created, webhook secret present, payment provider registered. |
+| P1 | Add a snapshot/provisioning health endpoint or admin diagnostic view | Shipped as `GET /api/merchants/provisioning-health` plus a Settings panel. It no longer treats the deferred Client Milestones pipeline as beta-required. |
+| P1 | Add installed-tenant webhook secret repair | Shipped as `POST /api/merchants/provisioning-health/repair-webhook-secret` plus a Settings button. Use it for PMG after creating `ScaleSafe Webhook Secret` in GHL. |
+| P1 | Build app-owned pulse cadence | Shipped in code: migration 053, offer cadence settings, enrollment due fields, daily pulse job, and SYS2-09 enrollment linkage. Needs functional GHL workflow smoke before Snapshot export. |
 | P1 | Reconcile repo `GHL_AUTOMATION_COMPANION.md` with current Cowork workflow reference | Repo doc is stale on workflow counts, trigger counts, and Make references. |
 | P1 | Copy or mirror current E2E protocol into repo docs | The feature ledger references `docs/E2E_TEST_PROTOCOL.md`, but it currently lives only in Cowork. |
 | P2 | Add an install smoke script | Read-only verification for a fresh location once OAuth/install is complete. |
 
 ## Next Recommended Step
 
-Use the Settings > Provisioning Health panel after the next fresh sandbox install, then manually package/test the Snapshot with the checklist above.
+Before export, run Settings > Provisioning Health and Repair Webhook Secret in PMG, complete Stripe/NMI installment E2E, smoke the pulse due-send/SYS2-09 evidence loop, then package the Snapshot with the checklist above.

@@ -31,6 +31,8 @@ interface CreateOfferInput {
   // Per-offer processor selection
   processorOverride?: 'nmi' | 'stripe' | null;
   nmiProcessorId?: string | null;
+  pulseCadenceEnabled?: boolean;
+  pulseFrequencyDays?: number;
 }
 
 function extractId(data: any, objectKey?: string): string {
@@ -97,6 +99,12 @@ function buildRefundText(type?: string, days?: number, customText?: string): str
     case 'custom': return customText || '';
     default: return customText || '';
   }
+}
+
+function normalizePulseFrequency(days?: number): number {
+  const parsed = Number(days || 30);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(365, Math.max(1, Math.round(parsed)));
 }
 
 export const offerService = {
@@ -195,6 +203,8 @@ export const offerService = {
       quick_checkout_show_refund_policy: input.quickCheckoutShowRefundPolicy ?? true,
       processor_override: input.processorOverride || null,
       nmi_processor_id: input.nmiProcessorId || null,
+      pulse_cadence_enabled: input.pulseCadenceEnabled ?? (input.checkoutMode !== 'quick_checkout'),
+      pulse_frequency_days: normalizePulseFrequency(input.pulseFrequencyDays),
     };
 
     // Map clause slots 1-11 directly
@@ -220,13 +230,6 @@ export const offerService = {
 
     // 6. Save to Supabase
     const offer = await offerRepository.create(record as any);
-
-    // 7. Sync to GHL Custom Object (best-effort)
-    try {
-      await this.syncToGHLCustomObject(locationId, offer);
-    } catch (err) {
-      logger.warn({ err, offerId: offer.id }, 'Failed to sync offer to GHL Custom Object');
-    }
 
     logger.info({ offerId: offer.id, ghlProductId, locationId }, 'Offer created');
     return offer;
@@ -267,6 +270,8 @@ export const offerService = {
     if (updates.quickCheckoutShowRefundPolicy !== undefined) dbUpdates.quick_checkout_show_refund_policy = updates.quickCheckoutShowRefundPolicy;
     if (updates.processorOverride !== undefined) dbUpdates.processor_override = updates.processorOverride || null;
     if (updates.nmiProcessorId !== undefined) dbUpdates.nmi_processor_id = updates.nmiProcessorId || null;
+    if (updates.pulseCadenceEnabled !== undefined) dbUpdates.pulse_cadence_enabled = updates.pulseCadenceEnabled;
+    if (updates.pulseFrequencyDays !== undefined) dbUpdates.pulse_frequency_days = normalizePulseFrequency(updates.pulseFrequencyDays);
 
     // Refund text
     if (updates.refundPolicyType !== undefined) {
@@ -303,13 +308,6 @@ export const offerService = {
     }
 
     const offer = await offerRepository.update(offerId, dbUpdates as any);
-
-    try {
-      await this.syncToGHLCustomObject(existing.location_id, offer);
-    } catch (err) {
-      logger.warn({ err, offerId }, 'Failed to sync offer update to GHL Custom Object');
-    }
-
     return offer;
   },
 
@@ -323,48 +321,6 @@ export const offerService = {
 
   async delete(offerId: string): Promise<void> {
     return offerRepository.delete(offerId);
-  },
-
-  async syncToGHLCustomObject(locationId: string, offer: OfferRecord): Promise<void> {
-    const api = await ghlApi(locationId);
-    const fields: Record<string, unknown> = {
-      program_name: offer.offer_name,
-      price: offer.price,
-      payment_type: offer.payment_type === 'one_time' ? 'One-Time' : 'Installments',
-      installment_amount: offer.installment_amount,
-      number_of_payments: offer.num_payments,
-      pif_price: offer.pif_price,
-      program_description: offer.program_description,
-      delivery_method: offer.delivery_method,
-      compiled_tc_html: offer.compiled_tc_html,
-      refund_window_text: offer.refund_window_text,
-      active: offer.active ? 'Yes' : 'No',
-      checkout_mode: (offer as any).checkout_mode || 'full_enrollment',
-    };
-
-    for (let i = 1; i <= 11; i++) {
-      const title = (offer as any)[`clause_slot_${i}_title`];
-      const text = (offer as any)[`clause_slot_${i}_text`];
-      if (title) fields[`clause_slot_${i}_title`] = title;
-      if (text) fields[`clause_slot_${i}_text`] = text;
-    }
-
-    for (let i = 1; i <= 8; i++) {
-      const name = (offer as any)[`m${i}_name`];
-      const delivers = (offer as any)[`m${i}_delivers`];
-      const clientDoes = (offer as any)[`m${i}_client_does`];
-      if (name) fields[`m${i}_name`] = name;
-      if (delivers) fields[`m${i}_delivers`] = delivers;
-      if (clientDoes) fields[`m${i}_client_does`] = clientDoes;
-    }
-
-    if (offer.ghl_custom_object_id) {
-      await api.put(`/custom-objects/offers/records/${offer.ghl_custom_object_id}`, fields);
-    } else {
-      const res = await api.post('/custom-objects/offers/records', fields);
-      const coId = res.data.record?.id || res.data.id;
-      await offerRepository.update(offer.id, { ghl_custom_object_id: coId } as any);
-    }
   },
 
   generateEnrollmentLink(offerId: string, appBaseUrl: string, checkoutMode?: string, funnelBaseUrl?: string): string {

@@ -56,6 +56,17 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** POST /api/merchants/provisioning-health/repair-webhook-secret - discover/sync webhook secret CV */
+  async repairWebhookSecretCustomValue(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const report = await merchantService.repairWorkflowWebhookSecretCustomValue(locationId);
+      res.json(report);
+    } catch (err) { next(err); }
+  },
+
   /** GET /api/merchants/webhook-secret - return this merchant's workflow webhook secret */
   async getWebhookSecret(req: Request, res: Response, next: NextFunction) {
     try {

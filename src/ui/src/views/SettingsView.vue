@@ -265,9 +265,14 @@
       <div class="card">
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">Provisioning Health</h3>
-          <button class="btn btn-secondary btn-sm" @click="loadProvisioningHealth" :disabled="provisioningHealthLoading">
-            {{ provisioningHealthLoading ? 'Checking...' : 'Run Check' }}
-          </button>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" @click="repairWebhookSecretCustomValue" :disabled="provisioningHealthLoading">
+              {{ provisioningHealthLoading ? 'Working...' : 'Repair Webhook Secret' }}
+            </button>
+            <button class="btn btn-secondary btn-sm" @click="loadProvisioningHealth" :disabled="provisioningHealthLoading">
+              {{ provisioningHealthLoading ? 'Checking...' : 'Run Check' }}
+            </button>
+          </div>
         </div>
         <div v-if="provisioningHealth" class="health-summary" :class="`health-${provisioningHealth.overallStatus}`">
           <span class="status-dot" :class="provisioningHealth.overallStatus === 'pass' ? 'green' : provisioningHealth.overallStatus === 'fail' ? 'red' : 'yellow'"></span>
@@ -478,6 +483,18 @@ async function loadProvisioningHealth() {
     provisioningHealth.value = await api.get<any>('/api/merchants/provisioning-health');
   } catch (err: any) {
     provisioningHealthError.value = err.message || 'Failed to load provisioning health';
+  }
+  provisioningHealthLoading.value = false;
+}
+
+async function repairWebhookSecretCustomValue() {
+  provisioningHealthLoading.value = true;
+  provisioningHealthError.value = '';
+  try {
+    provisioningHealth.value = await api.post<any>('/api/merchants/provisioning-health/repair-webhook-secret');
+    await loadWebhookSecret();
+  } catch (err: any) {
+    provisioningHealthError.value = err.message || 'Failed to repair webhook secret custom value';
   }
   provisioningHealthLoading.value = false;
 }

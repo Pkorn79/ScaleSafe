@@ -26,6 +26,8 @@ export interface OfferRecord {
   tc_clause_overrides: Record<string, boolean>;
   processor_override: string | null;
   nmi_processor_id: string | null;
+  pulse_cadence_enabled: boolean;
+  pulse_frequency_days: number | null;
   redirect_slug: string | null;
   price_display: string | null;
   active: boolean;

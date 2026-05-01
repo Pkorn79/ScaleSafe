@@ -26,6 +26,11 @@ export interface EnrollmentRecord {
   enrolled_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  next_billing_date: string | null;
+  pulse_cadence_enabled: boolean;
+  pulse_frequency_days: number | null;
+  next_pulse_due_at: string | null;
+  last_pulse_sent_at: string | null;
   created_at: string;
   updated_at: string;
 }

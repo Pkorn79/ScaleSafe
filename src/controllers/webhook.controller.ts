@@ -89,7 +89,7 @@ export const webhookController = {
    */
   async ghlForms(req: Request, res: Response, next: NextFunction) {
     try {
-      const { formId, locationId, contactId, data } = req.body;
+      const { formId, locationId, contactId, data, enrollment_id, enrollmentId } = req.body;
       if (!formId || !locationId || !contactId) {
         throw new ValidationError('formId, locationId, contactId required');
       }
@@ -101,7 +101,7 @@ export const webhookController = {
       }
 
       const evidenceType = await evidenceService.handleFormSubmission(
-        formId, locationId, contactId, data || {},
+        formId, locationId, contactId, { ...(data || {}), enrollment_id: enrollment_id || enrollmentId || data?.enrollment_id || data?.enrollmentId },
       );
 
       res.json({ status: 'ok', eventId, evidenceType });

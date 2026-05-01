@@ -201,6 +201,28 @@
         </div>
       </div>
 
+      <!-- Pulse Cadence -->
+      <h3 class="mt-4 mb-4">Pulse Check-Ins</h3>
+      <div class="grid grid-2">
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="form.pulseCadenceEnabled" />
+            Send scheduled pulse check-ins for this offer
+          </label>
+          <p class="text-sm text-muted mt-2">ScaleSafe owns timing; the GHL workflow only sends the message.</p>
+        </div>
+        <div v-if="form.pulseCadenceEnabled" class="form-group">
+          <label class="form-label">Cadence</label>
+          <select class="form-select" v-model.number="form.pulseFrequencyDays">
+            <option :value="7">Weekly</option>
+            <option :value="14">Every 2 weeks</option>
+            <option :value="30">Monthly</option>
+            <option :value="60">Every 60 days</option>
+            <option :value="90">Quarterly</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Terms & Conditions -->
       <h3 class="mt-4 mb-4">Terms & Conditions</h3>
 
@@ -330,7 +352,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApi, ssoSession } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
@@ -396,6 +418,8 @@ const form = ref({
   quickCheckoutConsentText: '',
   quickCheckoutShowDescription: true,
   quickCheckoutShowRefundPolicy: true,
+  pulseCadenceEnabled: true,
+  pulseFrequencyDays: 30,
 });
 
 const visibleMilestoneCount = ref(1);
@@ -479,7 +503,15 @@ onMounted(async () => {
       form.value.quickCheckoutConsentText = offer.quick_checkout_consent_text || '';
       form.value.quickCheckoutShowDescription = offer.quick_checkout_show_description ?? true;
       form.value.quickCheckoutShowRefundPolicy = offer.quick_checkout_show_refund_policy ?? true;
+      form.value.pulseCadenceEnabled = offer.pulse_cadence_enabled ?? true;
+      form.value.pulseFrequencyDays = offer.pulse_frequency_days || 30;
     } catch {}
+  }
+});
+
+watch(() => form.value.checkoutMode, (mode) => {
+  if (!isEdit.value) {
+    form.value.pulseCadenceEnabled = mode !== 'quick_checkout';
   }
 });
 
@@ -521,6 +553,8 @@ async function save() {
     quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
     quickCheckoutShowDescription: form.value.quickCheckoutShowDescription,
     quickCheckoutShowRefundPolicy: form.value.quickCheckoutShowRefundPolicy,
+    pulseCadenceEnabled: form.value.pulseCadenceEnabled,
+    pulseFrequencyDays: form.value.pulseFrequencyDays,
   };
 
   try {

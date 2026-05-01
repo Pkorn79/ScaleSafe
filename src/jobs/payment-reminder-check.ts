@@ -4,14 +4,14 @@ import { logger } from '../utils/logger';
 
 /**
  * Daily job: scan enrollments for upcoming installment/subscription payments
- * due in 3 days. Fires ss_upcoming_payment_reminder for each.
+ * due tomorrow. Fires ss_upcoming_payment_reminder for each.
  */
 export async function runPaymentReminderCheck(): Promise<void> {
   const supabase = getSupabase();
 
-  // Target date = today + 3 days
+  // Target date = tomorrow
   const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + 3);
+  targetDate.setDate(targetDate.getDate() + 1);
   const targetDateStr = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
   try {
@@ -23,7 +23,7 @@ export async function runPaymentReminderCheck(): Promise<void> {
       .in('payment_type', ['installments', 'installment', 'subscription']);
 
     if (error) { logger.error({ err: error.message }, 'Payment reminder query failed'); return; }
-    if (!enrollments || enrollments.length === 0) { logger.info('No upcoming payments in 3 days'); return; }
+    if (!enrollments || enrollments.length === 0) { logger.info('No upcoming payments tomorrow'); return; }
 
     let sent = 0;
     for (const enr of enrollments) {

@@ -134,6 +134,7 @@ export const evidenceService = {
           feedback_text: d.feedback_text || d.feedback,
           follow_up_needed: d.follow_up_flag || d.followup_needed || false,
           follow_up_action: d.follow_up_action,
+          enrollment_id: d.enrollment_id || d.enrollmentId || null,
           raw_payload: d,
         }),
       },

@@ -167,15 +167,12 @@ export const merchantService = {
 
       const api = await ghlApi(locationId);
 
-      const [pipelineId] = await Promise.all([
-        this.findPipeline(api, locationId),
+      await Promise.all([
         this.createCustomFields(api, locationId),
         this.createCustomValues(api, locationId),
       ]);
 
       const merchant = await merchantRepository.getByLocationId(locationId);
-      const updatedConfig = { ...merchant.config, pipelineId: pipelineId || null };
-      await merchantRepository.update(locationId, { config: updatedConfig } as any);
 
       // Check if all custom values were captured
       const cvIds = merchant.custom_value_ids || {};
@@ -188,7 +185,7 @@ export const merchantService = {
         logger.warn({ locationId, actualCount, expectedCount }, 'Provisioning partial — some custom values missing');
       } else {
         await merchantRepository.updateSnapshotStatus(locationId, 'installed');
-        logger.info({ locationId, pipelineId }, 'Merchant provisioning complete');
+        logger.info({ locationId }, 'Merchant provisioning complete');
       }
 
       // Register as custom payment provider + generate API keys (non-blocking)
@@ -273,36 +270,10 @@ export const merchantService = {
     try {
       const api = await ghlApi(locationId);
 
-      const [pipelineRes, fieldsRes, valuesRes] = await Promise.allSettled([
-        api.get('/opportunities/pipelines', { params: { locationId } }),
+      const [fieldsRes, valuesRes] = await Promise.allSettled([
         api.get(`/locations/${locationId}/customFields`),
         api.get(`/locations/${locationId}/customValues`),
       ]);
-
-      if (pipelineRes.status === 'fulfilled') {
-        const pipelines = pipelineRes.value.data.pipelines || pipelineRes.value.data || [];
-        const pipeline = pipelines.find((p: any) => p.name === 'Client Milestones');
-        add({
-          key: 'client_milestones_pipeline',
-          label: 'Client Milestones pipeline',
-          status: pipeline ? 'pass' : 'warn',
-          message: pipeline
-            ? 'Client Milestones pipeline found.'
-            : 'Client Milestones pipeline was not found; verify Snapshot installed the pipeline.',
-          details: {
-            pipelineId: pipeline?.id || null,
-            totalPipelines: Array.isArray(pipelines) ? pipelines.length : null,
-          },
-        });
-      } else {
-        add({
-          key: 'client_milestones_pipeline',
-          label: 'Client Milestones pipeline',
-          status: 'warn',
-          message: 'Could not query GHL pipelines.',
-          details: { error: pipelineRes.reason?.message || String(pipelineRes.reason) },
-        });
-      }
 
       if (fieldsRes.status === 'fulfilled') {
         const fields = fieldsRes.value.data.customFields || fieldsRes.value.data || [];
@@ -401,6 +372,17 @@ export const merchantService = {
       });
     }
     return secret;
+  },
+
+  async repairWorkflowWebhookSecretCustomValue(locationId: string): Promise<ProvisioningHealthReport> {
+    const secret = await merchantRepository.ensureWebhookSecret(locationId);
+    const api = await ghlApi(locationId);
+    await this.createCustomValues(api, locationId);
+    if (secret) {
+      await this.syncWebhookSecretCustomValue(locationId, secret);
+    }
+    logger.info({ locationId }, 'Workflow webhook secret custom value repaired');
+    return this.getProvisioningHealth(locationId);
   },
 
   async rotateWorkflowWebhookSecret(locationId: string): Promise<string> {

@@ -233,11 +233,13 @@ export const phase2EnrollmentService = {
         logger.warn({ err: triggerErr.message, enrollmentId: bgEnrollmentId }, 'BG: trigger fire failed');
       }
 
-      // 7. Update GHL contact fields + create pipeline opportunity
+      // 7. Update GHL contact fields and initialize app-owned pulse cadence.
       if (bgLocationId && bgContactId) {
         try {
           const api = await ghlApi(bgLocationId);
           const merchant = await merchantRepository.getByLocationId(bgLocationId);
+          let pulseCadenceEnabled = false;
+          let pulseFrequencyDays = 30;
 
           const customFields: Record<string, unknown> = {
             [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
@@ -254,6 +256,8 @@ export const phase2EnrollmentService = {
               customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
               customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
               customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
+              pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
+              pulseFrequencyDays = Math.min(365, Math.max(1, Number(offer.pulse_frequency_days || 30)));
             } catch {}
           }
 
@@ -290,21 +294,22 @@ export const phase2EnrollmentService = {
           }
 
           await api.put(`/contacts/${bgContactId}`, { customField: customFields });
-
-          const pipelineId = (merchant.config as any)?.milestones_pipeline_id || (merchant.config as any)?.pipelineId;
-          const stageId = (merchant.config as any)?.enrolled_stage_id;
-          if (pipelineId) {
-            await api.post('/opportunities/', {
-              locationId: bgLocationId,
-              contactId: bgContactId,
-              pipelineId,
-              stageId: stageId || '',
-              name: `${offerName || 'Program'} — Enrollment`,
-              monetaryValue: bgPaymentAmount,
-            });
+          if (pulseCadenceEnabled) {
+            const nextPulseDue = new Date();
+            nextPulseDue.setDate(nextPulseDue.getDate() + pulseFrequencyDays);
+            const { getSupabase } = require('../clients/supabase.client');
+            await getSupabase()
+              .from('enrollments')
+              .update({
+                pulse_cadence_enabled: true,
+                pulse_frequency_days: pulseFrequencyDays,
+                next_pulse_due_at: nextPulseDue.toISOString(),
+                last_pulse_sent_at: null,
+              })
+              .eq('id', bgEnrollmentId);
           }
 
-          logger.info({ contactId: bgContactId }, 'BG: GHL contact updated + opportunity created');
+          logger.info({ contactId: bgContactId, pulseCadenceEnabled, pulseFrequencyDays }, 'BG: GHL contact updated');
         } catch (err: any) {
           logger.error({ err: err.message, enrollmentId: bgEnrollmentId }, 'BG: GHL sync after enrollment failed');
         }
@@ -413,6 +418,8 @@ export const phase2EnrollmentService = {
         // Update enrollment to completed
         await enrollmentRepository.updateStatus(params.enrollmentId, 'completed', {
           completed_at: new Date().toISOString(),
+          pulse_cadence_enabled: false,
+          next_pulse_due_at: null,
         } as any);
 
         // Log completion evidence

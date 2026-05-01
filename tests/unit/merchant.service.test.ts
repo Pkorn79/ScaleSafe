@@ -179,8 +179,6 @@ describe('Custom Values Creation', () => {
 
 describe('Full Provisioning', () => {
   test('provisionMerchant orchestrates all steps and marks installed', async () => {
-    // Pipeline list — found
-    mockGet.mockResolvedValueOnce({ data: { pipelines: [{ id: 'pipe_1', name: 'Client Milestones' }] } });
     // Custom fields — none exist
     mockGet.mockResolvedValueOnce({ data: { customFields: [] } });
     // Custom values — none exist (will be created and IDs stored)
@@ -194,9 +192,9 @@ describe('Full Provisioning', () => {
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installing');
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installed');
 
-    // Should have stored pipeline ID in config
+    // Client Milestones pipeline is beta-deferred; provisioning stores custom value IDs only.
     expect(mockUpdate).toHaveBeenCalledWith('loc_1', expect.objectContaining({
-      config: expect.objectContaining({ pipelineId: 'pipe_1' }),
+      custom_value_ids: expect.objectContaining({ WEBHOOK_SECRET: 'new_id' }),
     }));
   });
 

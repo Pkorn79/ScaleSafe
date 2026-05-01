@@ -108,6 +108,8 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     updates.next_billing_date = null;
     updates.status = 'completed';
     updates.completed_at = new Date().toISOString();
+    updates.pulse_cadence_enabled = false;
+    updates.next_pulse_due_at = null;
   } else {
     const next = new Date();
     const freq = (installmentFrequency || 'monthly').toLowerCase();

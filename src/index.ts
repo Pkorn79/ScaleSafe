@@ -6,6 +6,7 @@ import { runDailyHealthCheck } from './jobs/daily-health-check';
 import { runPaymentReminderCheck } from './jobs/payment-reminder-check';
 import { runRecurringBilling } from './jobs/recurring-billing';
 import { runPifCompletionCheck } from './jobs/pif-completion-check';
+import { runPulseCadenceCheck } from './jobs/pulse-cadence-check';
 
 const app = createApp();
 
@@ -51,9 +52,11 @@ app.listen(config.port, () => {
     runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed'));
     runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed'));
     runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed'));
+    runPulseCadenceCheck().catch(err => logger.error({ err }, 'Pulse cadence check failed'));
     setInterval(() => runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed')), DAY_MS);
     setInterval(() => runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed')), DAY_MS);
     setInterval(() => runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed')), DAY_MS);
+    setInterval(() => runPulseCadenceCheck().catch(err => logger.error({ err }, 'Pulse cadence check failed')), DAY_MS);
     runPifCompletionCheck().catch(err => logger.error({ err }, 'PIF completion check failed'));
     setInterval(() => runPifCompletionCheck().catch(err => logger.error({ err }, 'PIF completion check failed')), DAY_MS);
   }, 5 * 60 * 1000);
