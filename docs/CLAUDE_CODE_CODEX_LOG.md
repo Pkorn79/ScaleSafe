@@ -29,6 +29,34 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-01: Daily Billing Frequency For Test Enrollments (Codex)
+
+Files changed:
+
+- `src/ui/src/views/OfferFormView.vue`
+- `src/services/offer.service.ts`
+- `src/types/processor.types.ts`
+- `src/clients/stripe.client.ts`
+- `src/clients/nmi.client.ts`
+- `src/controllers/checkout.controller.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/services/recurring-payment.service.ts`
+- `src/services/payment-lifecycle.service.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added `Daily (Testing)` as an offer billing frequency for installments/subscriptions so Stripe sandbox and NMI tiny-charge recurring tests can complete without waiting a week/month.
+- Wired `daily` through processor subscription creation: Stripe uses `interval: day`; NMI uses `day_frequency=1`.
+- Wired `daily` through app-side next billing date calculations after enrollment completion, recurring success, and subscription resume.
+- Also corrected related frequency pass-throughs in touched paths so quarterly/annual do not collapse to monthly in resume/subscription plumbing.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+- `npm.cmd run build` passed.
+
 ### 2026-05-01: Payment Reminder Trigger Payload Aliases (Codex)
 
 Files changed:

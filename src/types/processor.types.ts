@@ -93,7 +93,7 @@ export interface CreateSubscriptionRequest {
   paymentMethodId: string;
   customerId: string;
   planAmount: number; // in cents
-  interval: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual';
+  interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual';
   totalPayments: number;
   startDate?: string; // ISO date
   description?: string;
@@ -105,7 +105,7 @@ export interface ResumeSubscriptionRequest {
   paymentMethodId: string;       // NMI vault ID or Stripe payment method ID
   customerId: string;            // NMI vault ID or Stripe customer ID
   planAmount: number;            // in cents
-  interval: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual';
+  interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual';
   remainingPayments: number;     // how many payments left
   startDate?: string;            // ISO date for next charge
   description?: string;

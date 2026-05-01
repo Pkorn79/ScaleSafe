@@ -113,7 +113,8 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   } else {
     const next = new Date();
     const freq = (installmentFrequency || 'monthly').toLowerCase();
-    if (freq === 'weekly') next.setDate(next.getDate() + 7);
+    if (freq === 'daily') next.setDate(next.getDate() + 1);
+    else if (freq === 'weekly') next.setDate(next.getDate() + 7);
     else if (freq === 'bi_weekly' || freq === 'biweekly') next.setDate(next.getDate() + 14);
     else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
     else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);

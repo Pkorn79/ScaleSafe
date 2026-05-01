@@ -635,7 +635,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   if (subOffer?.installment_amount) {
                     const subAmountCents = Math.round(Number(subOffer.installment_amount) * 100);
                     const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
-                    const subInterval: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
+                    const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
+                      freq === 'daily' ? 'daily' :
                       freq === 'weekly' ? 'weekly' :
                       freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' :
                       freq === 'quarterly' ? 'quarterly' :

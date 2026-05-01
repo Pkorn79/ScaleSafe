@@ -233,6 +233,9 @@ export class NmiClient implements ProcessorInterface {
 
     // Interval mapping
     switch (request.interval) {
+      case 'daily':
+        params.set('day_frequency', '1');
+        break;
       case 'weekly':
         params.set('day_frequency', '7');
         break;

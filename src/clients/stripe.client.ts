@@ -237,7 +237,7 @@ export class StripeClient implements ProcessorInterface {
           unit_amount: request.planAmount,
           currency: 'usd',
           recurring: {
-            interval: request.interval === 'weekly' ? 'week' : request.interval === 'annual' ? 'year' : 'month',
+            interval: request.interval === 'daily' ? 'day' : request.interval === 'weekly' ? 'week' : request.interval === 'annual' ? 'year' : 'month',
             interval_count: request.interval === 'biweekly' ? 2 : request.interval === 'quarterly' ? 3 : 1,
           },
           product_data: { name: request.description || 'ScaleSafe Subscription' },
@@ -505,8 +505,9 @@ export class StripeClient implements ProcessorInterface {
     return new ProcessorError(err.message, 'stripe', 'UNKNOWN');
   }
 
-  private getIntervalSeconds(interval: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual'): number {
+  private getIntervalSeconds(interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual'): number {
     switch (interval) {
+      case 'daily': return 86400;
       case 'weekly': return 7 * 86400;
       case 'biweekly': return 14 * 86400;
       case 'monthly': return 30 * 86400;

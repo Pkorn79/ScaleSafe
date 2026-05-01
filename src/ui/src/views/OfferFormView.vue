@@ -79,6 +79,7 @@
           <div class="form-group">
             <label class="form-label">Billing Frequency</label>
             <select class="form-select" v-model="form.installmentFrequency">
+              <option value="daily">Daily (Testing)</option>
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
@@ -106,6 +107,7 @@
           <div class="form-group">
             <label class="form-label">Frequency</label>
             <select class="form-select" v-model="form.installmentFrequency">
+              <option value="daily">Daily (Testing)</option>
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
@@ -393,7 +395,7 @@ const form = ref({
   programDescription: '',
   deliveryMethod: '',
   price: 0,
-  paymentType: 'one_time' as 'one_time' | 'installments',
+  paymentType: 'one_time' as 'one_time' | 'installments' | 'subscription',
   installmentFrequency: 'monthly',
   numPayments: 0,
   pifPrice: 0,

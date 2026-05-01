@@ -321,7 +321,7 @@ export const paymentLifecycleService = {
           .eq('processor_subscription_id', params.processorSubscriptionId)
           .maybeSingle();
 
-        let interval: 'weekly' | 'biweekly' | 'monthly' = 'monthly';
+        let interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' = 'monthly';
         let planAmount = 0;
         let remaining = 0;
         let description = '';
@@ -331,7 +331,12 @@ export const paymentLifecycleService = {
             .eq('id', enr.offer_id).single();
           if (ofr) {
             const freq = (ofr.installment_frequency || 'monthly').toLowerCase();
-            interval = freq === 'weekly' ? 'weekly' : freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' : 'monthly';
+            interval =
+              freq === 'daily' ? 'daily' :
+              freq === 'weekly' ? 'weekly' :
+              freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' :
+              freq === 'quarterly' ? 'quarterly' :
+              freq === 'annual' ? 'annual' : 'monthly';
             planAmount = Math.round(Number(ofr.installment_amount || 0) * 100);
             description = ofr.offer_name || '';
           }
@@ -348,8 +353,11 @@ export const paymentLifecycleService = {
 
         // Calculate next billing date
         const nextDate = new Date();
-        if (interval === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+        if (interval === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+        else if (interval === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
         else if (interval === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
+        else if (interval === 'quarterly') nextDate.setMonth(nextDate.getMonth() + 3);
+        else if (interval === 'annual') nextDate.setFullYear(nextDate.getFullYear() + 1);
         else nextDate.setMonth(nextDate.getMonth() + 1);
 
         if (remaining > 0 && planAmount > 0 && customerId) {

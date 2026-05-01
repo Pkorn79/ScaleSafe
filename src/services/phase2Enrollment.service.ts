@@ -89,7 +89,8 @@ export const phase2EnrollmentService = {
           if (ofr) {
             const freq = ofr.installment_frequency || 'monthly';
             const next = new Date(enrolledAt);
-            if (freq === 'weekly') next.setDate(next.getDate() + 7);
+            if (freq === 'daily') next.setDate(next.getDate() + 1);
+            else if (freq === 'weekly') next.setDate(next.getDate() + 7);
             else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
             else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
             else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
@@ -376,8 +377,11 @@ export const phase2EnrollmentService = {
         if (ofr) {
           const freq = ofr.installment_frequency || 'monthly';
           const next = new Date();
-          if (freq === 'weekly') next.setDate(next.getDate() + 7);
+          if (freq === 'daily') next.setDate(next.getDate() + 1);
+          else if (freq === 'weekly') next.setDate(next.getDate() + 7);
           else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
+          else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
+          else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
           else next.setMonth(next.getMonth() + 1);
           await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, {
             next_billing_date: next.toISOString().split('T')[0],

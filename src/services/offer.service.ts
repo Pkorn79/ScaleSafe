@@ -8,9 +8,9 @@ interface CreateOfferInput {
   programDescription?: string;
   deliveryMethod?: string;
   price?: number;
-  paymentType?: 'one_time' | 'installments';
+  paymentType?: 'one_time' | 'installments' | 'subscription';
   installmentAmount?: number;
-  installmentFrequency?: 'weekly' | 'bi_weekly' | 'monthly';
+  installmentFrequency?: 'daily' | 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly' | 'annual';
   numPayments?: number;
   pifPrice?: number;
   pifDiscountEnabled?: boolean;
@@ -149,8 +149,22 @@ export const offerService = {
     }
 
     if (input.paymentType === 'installments' && input.installmentAmount && input.numPayments) {
-      const intervalMap: Record<string, string> = { weekly: 'week', bi_weekly: 'week', monthly: 'month' };
-      const intervalCountMap: Record<string, number> = { weekly: 1, bi_weekly: 2, monthly: 1 };
+      const intervalMap: Record<string, string> = {
+        daily: 'day',
+        weekly: 'week',
+        bi_weekly: 'week',
+        monthly: 'month',
+        quarterly: 'month',
+        annual: 'year',
+      };
+      const intervalCountMap: Record<string, number> = {
+        daily: 1,
+        weekly: 1,
+        bi_weekly: 2,
+        monthly: 1,
+        quarterly: 3,
+        annual: 1,
+      };
       const freq = input.installmentFrequency || 'monthly';
 
       const priceRes = await api.post(`/products/${ghlProductId}/price`, {
