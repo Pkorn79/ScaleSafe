@@ -29,6 +29,23 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-01: Restore 3-Day + Add 1-Day Payment Reminders (Codex)
+
+Files changed:
+
+- `src/jobs/payment-reminder-check.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Corrected the beta reminder behavior from "1-day only" to the standard two-touch sequence: 3 days before and 1 day before the next installment/subscription payment.
+- Reused the existing `ss_upcoming_payment_reminder` trigger to avoid new GHL trigger subscriptions.
+- Added payload fields `days_until_payment` (`3` or `1`) and `reminder_window` (`three_day` or `one_day`) so GHL can branch or use correct copy.
+
+Philip/GHL action:
+
+- Confirm the existing upcoming payment reminder workflow either uses dynamic copy from `days_until_payment` or branches on `reminder_window`.
+
 ### 2026-05-01: Pre-Snapshot Beta Lock Implementation (Codex)
 
 Files changed:
