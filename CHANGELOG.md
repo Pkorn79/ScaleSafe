@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-05-03
+
+### Fixed
+- **Test suite confirmed fully passing (527/527).** Triaged pre-existing test failures; all tests pass cleanly with no TypeScript errors. `package-lock.json` updated to reflect current installed dependency metadata (peer-flag normalization only).
+
+---
+
 ## 2026-04-29
 
 ### Security
