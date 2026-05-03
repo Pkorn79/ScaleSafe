@@ -98,6 +98,11 @@ beforeEach(() => {
 describe('Checkout Controller', () => {
   describe('getCheckoutConfig', () => {
     it('returns NMI config with tokenization key', async () => {
+      // getCheckoutConfig uses resolveProcessor (not listConfigs); mock the full procConfig
+      mockResolveProcessor.mockResolvedValue({
+        processorType: 'nmi',
+        config: { processor_type: 'nmi', nmi_tokenization_key: 'tok_xxx' },
+      });
       mockFrom.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -106,19 +111,6 @@ describe('Checkout Controller', () => {
             }),
           }),
         }),
-      });
-      mockListConfigs.mockResolvedValue([{
-        processor_type: 'nmi',
-        is_active: true,
-        is_default: true,
-        nmi_tokenization_key: 'tok_xxx',
-      }]);
-      mockResolveProcessor.mockResolvedValue({
-        processorType: 'nmi',
-        config: {
-          processor_type: 'nmi',
-          nmi_tokenization_key: 'tok_xxx',
-        },
       });
 
       const req = mockReq({}, { publishableKey: 'pk_test' });
@@ -132,6 +124,11 @@ describe('Checkout Controller', () => {
     });
 
     it('returns Stripe config with account ID and publishable key', async () => {
+      // getCheckoutConfig uses resolveProcessor (not listConfigs); mock Stripe procConfig
+      mockResolveProcessor.mockResolvedValue({
+        processorType: 'stripe',
+        config: { processor_type: 'stripe', stripe_user_id: 'acct_test1' },
+      });
       mockFrom.mockReturnValue({
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
@@ -140,19 +137,6 @@ describe('Checkout Controller', () => {
             }),
           }),
         }),
-      });
-      mockListConfigs.mockResolvedValue([{
-        processor_type: 'stripe',
-        is_active: true,
-        is_default: true,
-        stripe_user_id: 'acct_test1',
-      }]);
-      mockResolveProcessor.mockResolvedValue({
-        processorType: 'stripe',
-        config: {
-          processor_type: 'stripe',
-          stripe_user_id: 'acct_test1',
-        },
       });
 
       const req = mockReq({}, { publishableKey: 'pk_test' });

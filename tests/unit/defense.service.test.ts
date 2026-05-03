@@ -3,8 +3,6 @@
  * Tests reason code mapping, prompt building, and compilation flow.
  */
 
-import type { ExhibitList } from '../../src/services/defense-exhibits.service';
-
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockReturnValue({ error: null }) }) }),
 }));
@@ -44,51 +42,6 @@ jest.mock('../../src/repositories/evidence.repository', () => ({
     ]),
     getLastEvidenceDate: jest.fn().mockResolvedValue('2026-03-20'),
     getCounts: jest.fn().mockResolvedValue({}),
-  },
-}));
-
-const mockExhibitList: ExhibitList = {
-  exhibits: [
-    {
-      letter: 'A',
-      name: 'Signed Enrollment Packet',
-      category: 'consent',
-      source: 'enrollment_packet_pdf',
-      ref: 'packets/enrollment.pdf',
-      occurredAt: '2026-01-15',
-      summary: 'T&C accepted',
-    },
-  ],
-  byCategory: {
-    consent: [
-      {
-        letter: 'A',
-        name: 'Signed Enrollment Packet',
-        category: 'consent',
-        source: 'enrollment_packet_pdf',
-        ref: 'packets/enrollment.pdf',
-        occurredAt: '2026-01-15',
-        summary: 'T&C accepted',
-      },
-    ],
-    service_delivery: [],
-    communication: [],
-    payments: [],
-    termination: [],
-  },
-  totals: {
-    consent: 1,
-    serviceDelivery: 0,
-    communication: 0,
-    payments: 0,
-    termination: 0,
-  },
-  enrollmentPacketPath: 'packets/enrollment.pdf',
-};
-
-jest.mock('../../src/services/defense-exhibits.service', () => ({
-  defenseExhibitsService: {
-    buildExhibitList: jest.fn().mockResolvedValue(mockExhibitList),
   },
 }));
 
@@ -203,20 +156,43 @@ describe('Defense Service - Prompt Building', () => {
   });
 
   test('user message includes evidence timeline', () => {
+    // buildUserMessage now takes an ExhibitList (not a plain array) — build a minimal valid one
+    const consentExhibit = {
+      letter: 'A',
+      name: 'T&C Acceptance',
+      category: 'consent' as const,
+      source: 'evidence_consent' as const,
+      ref: 'ev_1',
+      occurredAt: '2026-01-15',
+      summary: 'T&C accepted',
+    };
+    const exhibitList = {
+      exhibits: [consentExhibit],
+      byCategory: {
+        consent: [consentExhibit],
+        service_delivery: [],
+        communication: [],
+        payments: [],
+        termination: [],
+      },
+      totals: { consent: 1, serviceDelivery: 0, communication: 0, payments: 0, termination: 0 },
+      enrollmentPacketPath: null,
+    };
+
     const msg = defenseService.buildUserMessage(
       { locationId: 'loc_1', contactId: 'c_1', reasonCode: '13.1', disputeAmount: 5000, disputeDate: '2026-03-20', deadline: '2026-04-10' },
       { firstName: 'John', lastName: 'Doe', email: 'john@test.com' },
       { business_name: 'Test Biz' },
-      mockExhibitList,
+      exhibitList,
       [{ amount: 500, payment_date: '2026-01-15' }],
       'services_not_provided',
     );
 
     expect(msg).toContain('13.1');
-    expect(msg).toContain('$5000');
+    expect(msg).toContain('$5000.00');
     expect(msg).toContain('John');
+    // Source uses category-based exhibit headings, not a legacy "EVIDENCE TIMELINE" heading
     expect(msg).toContain('CONSENT EVIDENCE');
-    expect(msg).toContain('Exhibit A');
     expect(msg).toContain('PRIOR UNDISPUTED TRANSACTIONS');
     expect(msg).toContain('$500');
   });

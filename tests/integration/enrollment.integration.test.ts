@@ -302,6 +302,10 @@ describe('Enrollment Integration — full lifecycle', () => {
     });
     await new Promise(resolve => setImmediate(resolve));
 
+    // completeEnrollment fires the trigger in a background Promise.resolve().then(...)
+    // Drain the microtask queue + one event-loop tick so the async background work completes.
+    await new Promise(resolve => setImmediate(resolve));
+
     // Verify enrollment updated to enrolled
     expect(enrollmentStore[enrollmentId].status).toBe('enrolled');
     expect(enrollmentStore[enrollmentId].payment_amount).toBe(2997);
