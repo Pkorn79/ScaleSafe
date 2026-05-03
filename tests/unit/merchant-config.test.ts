@@ -65,6 +65,7 @@ const baseMerchant = {
     SHORT_DESCRIPTION: CV.CV_SHORT_DESCRIPTION,
     TC_HAS_OWN: CV.CV_TC_HAS_OWN,
     TC_DOCUMENT_URL: CV.CV_TC_DOCUMENT_URL,
+    // COMPILED_TERMS_HTML + CUSTOM_CLAUSE_1/2 removed — moved to per-offer (offers_mirror)
     MODULE_SESSIONS: CV.CV_MODULE_SESSIONS,
     MODULE_MILESTONES: CV.CV_MODULE_MILESTONES,
     MODULE_PULSE: CV.CV_MODULE_PULSE,
@@ -87,6 +88,8 @@ const baseMerchant = {
 
 // GHL custom values returned by GET /locations/:id/customValues
 // The id field is what we use for PUT requests
+// Note: CV_COMPILED_TERMS_HTML and CV_CUSTOM_CLAUSE_1/2_TITLE/TEXT were removed —
+// custom clauses and compiled T&C HTML moved to per-offer (offers_mirror table).
 const ghlCustomValues = [
   { id: CV.CV_BUSINESS_NAME, fieldKey: 'custom_values.merchant_business_name', value: 'Test Biz' },
   { id: CV.CV_SUPPORT_EMAIL, fieldKey: 'custom_values.merchant_support_email', value: 'test@biz.com' },
@@ -188,6 +191,7 @@ describe('merchantService.updateFullConfig', () => {
     }));
 
     // GHL custom value syncs using exact IDs
+    // Note: COMPILED_TERMS_HTML is no longer synced to GHL (moved to per-offer)
     const putCalls = mockGhlPut.mock.calls.map((c: any[]) => c[0]);
     expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_BUSINESS_NAME}`);
     expect(putCalls).toContain(`/locations/loc-123/customValues/${CV.CV_SUPPORT_EMAIL}`);
@@ -248,24 +252,31 @@ describe('merchantService.updateFullConfig', () => {
       (c: any[]) => c[0] === `/locations/loc-123/customValues/${CV.CV_MODULE_SESSIONS}`
     );
     expect(sessionCall).toBeDefined();
-    expect(sessionCall![1]).toEqual(expect.objectContaining({ value: 'Disabled' }));
+    // syncConfigToGHL sends { name, value } — both are required by the GHL PUT endpoint
+    expect(sessionCall![1]).toMatchObject({ value: 'Disabled' });
 
     const pulseCall = mockGhlPut.mock.calls.find(
       (c: any[]) => c[0] === `/locations/loc-123/customValues/${CV.CV_MODULE_PULSE}`
     );
     expect(pulseCall).toBeDefined();
-    expect(pulseCall![1]).toEqual(expect.objectContaining({ value: 'Enabled' }));
+    expect(pulseCall![1]).toMatchObject({ value: 'Enabled' });
   });
 
-  it('keeps compiled T&C HTML out of location-level GHL custom values', async () => {
+  it('stores clause toggles and does NOT sync compiled T&C HTML to GHL (per-offer now)', async () => {
+    // Compiled T&C HTML was removed from location-level GHL custom values in v2.1 —
+    // it is now stored per-offer in offers_mirror. The GHL PUT for COMPILED_TERMS_HTML
+    // should NOT appear; clause toggle changes only touch tc_clause_toggles in Supabase.
     await merchantService.updateFullConfig('loc-123', {
       standardClauses: { purchase_summary: true },
     });
 
-    const htmlCall = mockGhlPut.mock.calls.find((c: any[]) =>
-      String(c[0]).includes('compiled_terms_html')
-    );
-    expect(htmlCall).toBeUndefined();
+    expect(mockUpdate).toHaveBeenCalledWith('loc-123', expect.objectContaining({
+      tc_clause_toggles: expect.objectContaining({ purchase_summary: true }),
+    }));
+
+    const putCalls = mockGhlPut.mock.calls.map((c: any[]) => c[0]);
+    // No PUT to a compiled_terms_html custom value should appear
+    expect(putCalls.some((p: string) => p.includes('COMPILED') || p.includes('compiled'))).toBe(false);
   });
 });
 

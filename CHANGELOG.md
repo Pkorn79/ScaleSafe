@@ -8,7 +8,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## 2026-05-03
 
 ### Fixed
-- **Test suite confirmed fully passing (527/527).** Triaged pre-existing test failures; all tests pass cleanly with no TypeScript errors. `package-lock.json` updated to reflect current installed dependency metadata (peer-flag normalization only).
+- **`ghl-fields.test.ts` — SS contact field count updated to 6.** Test asserted 5 fields; `SS_CONTACT_FIELDS` gained `ENGAGEMENT_STATUS` in v2.1. Updated assertion to `toBe(6)`.
+- **`trigger-keys.test.ts` — trigger count updated to 20.** Test asserted 18 keys; `VALID_TRIGGER_KEYS` gained `ss_subscription_paused`, `ss_subscription_resumed`, and `ss_upcoming_payment_reminder` in v2.1. Updated assertion to `toHaveLength(20)`.
+- **`send-enrollment-link.test.ts` — trigger payload field name drift.** Test expected `contactId` / `offerId` (camelCase) but source fires trigger with `contact_id` / `offer_id` (snake_case per GHL webhook doc contract). Updated assertion.
+- **`checkout.controller.test.ts` — getCheckoutConfig now uses resolveProcessor not listConfigs.** Two `getCheckoutConfig` tests mocked `listConfigs` to control processor type/config but the source changed to call `resolveProcessor` directly. Updated per-test `mockResolveProcessor` calls to supply the full `procConfig` (`nmi_tokenization_key` for NMI, `stripe_user_id` for Stripe).
+- **`defense.service.test.ts` — field renamed and ExhibitList type drift.** Source renamed `reason_category` to `reason_code_category` in the defense packet insert. `buildUserMessage` signature changed from a plain evidence array to an `ExhibitList` object; the legacy `EVIDENCE TIMELINE` heading was replaced with category-based exhibit headings. Updated all five reason-code assertions, constructed a minimal valid `ExhibitList`, and updated the heading assertion to `CONSENT EVIDENCE`.
+- **`merchant-config.test.ts` — removed CV constants and non-existent GHL sync.** `CV_COMPILED_TERMS_HTML`, `CV_CUSTOM_CLAUSE_1/2_TITLE/TEXT` were deleted from `ghl-custom-value-ids.ts` (moved to per-offer). Removed those entries from `baseMerchant.custom_value_ids` and `ghlCustomValues`. Updated `updateFullConfig` sync assertion (no longer checks for a COMPILED_TERMS_HTML PUT call). Updated module-toggle assertion to use `toMatchObject` since `syncConfigToGHL` now sends `{ name, value }` not just `{ value }`.
+- **`enrollment.integration.test.ts` — background trigger not awaited.** `completeEnrollment` fires the `enrollment_complete` trigger in a detached `Promise.resolve().then(...)` (fire-and-forget for checkout latency). The test asserted on `axios.post` before the background work completed. Added `await new Promise(resolve => setImmediate(resolve))` after `completeEnrollment` to drain the microtask queue before asserting.
+- **Test suite confirmed fully passing (506/506, 45 suites).** All pre-existing failures resolved; 0 TypeScript errors.
 
 ---
 

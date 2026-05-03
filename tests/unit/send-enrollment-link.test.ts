@@ -111,7 +111,7 @@ describe('Send Enrollment Link', () => {
       }),
     }));
 
-    // Verify trigger fired
+    // Verify trigger fired (source uses snake_case per GHL webhook doc contract)
     expect(mockFireTrigger).toHaveBeenCalledWith('loc-1', 'ss_send_enrollment_link', expect.objectContaining({
       contact_id: 'contact-123',
       offer_id: 'offer-1',
