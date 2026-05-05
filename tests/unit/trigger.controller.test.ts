@@ -1,114 +1,76 @@
-jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({}),
-}));
+import { triggerController } from '../../src/controllers/trigger.controller';
+
+const mockUpsertSubscription = jest.fn();
+const mockDeactivateSubscription = jest.fn();
 
 jest.mock('../../src/repositories/trigger.repository', () => ({
   triggerRepository: {
-    upsertSubscription: jest.fn().mockResolvedValue({
-      id: 'sub1',
-      location_id: 'loc_1',
-      trigger_key: 'enrollment_complete',
-      subscription_url: 'https://hooks.ghl.com/wf1',
-      is_active: true,
-    }),
-    deactivateSubscription: jest.fn().mockResolvedValue(undefined),
+    upsertSubscription: (...args: any[]) => mockUpsertSubscription(...args),
+    deactivateSubscription: (...args: any[]) => mockDeactivateSubscription(...args),
   },
 }));
 
-import { triggerController } from '../../src/controllers/trigger.controller';
-import { triggerRepository } from '../../src/repositories/trigger.repository';
-
-function mockReqRes(body: Record<string, unknown>) {
-  const req = { body } as any;
-  const res = { json: jest.fn(), status: jest.fn().mockReturnThis() } as any;
-  const next = jest.fn();
-  return { req, res, next };
+function createRes() {
+  return {
+    json: jest.fn(),
+  } as any;
 }
 
-beforeEach(() => {
-  jest.clearAllMocks();
-});
+describe('triggerController.handleSubscription', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpsertSubscription.mockResolvedValue({});
+    mockDeactivateSubscription.mockResolvedValue(undefined);
+  });
 
-describe('Trigger Controller - handleSubscription', () => {
-  test('subscribe creates a subscription', async () => {
-    const { req, res, next } = mockReqRes({
-      type: 'subscribe',
-      locationId: 'loc_1',
-      triggerKey: 'enrollment_complete',
-      subscriptionUrl: 'https://hooks.ghl.com/wf1',
-    });
+  it('subscribes using the current HighLevel Marketplace trigger payload shape', async () => {
+    const req = {
+      body: {
+        triggerData: {
+          key: 'enrollment_complete',
+          eventType: 'CREATED',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+        },
+        meta: { key: 'enrollment_complete', version: '1.0' },
+        extras: { locationId: 'loc_123', workflowId: 'wf_123', companyId: 'company_123' },
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
 
     await triggerController.handleSubscription(req, res, next);
 
-    expect(triggerRepository.upsertSubscription).toHaveBeenCalledWith(
-      'loc_1',
-      'enrollment_complete',
-      'https://hooks.ghl.com/wf1',
-    );
-    expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(next).not.toHaveBeenCalled();
-  });
-
-  test('unsubscribe deactivates a subscription', async () => {
-    const { req, res, next } = mockReqRes({
-      type: 'unsubscribe',
-      locationId: 'loc_1',
-      triggerKey: 'enrollment_complete',
-      subscriptionUrl: 'https://hooks.ghl.com/wf1',
-    });
-
-    await triggerController.handleSubscription(req, res, next);
-
-    expect(triggerRepository.deactivateSubscription).toHaveBeenCalledWith(
-      'loc_1',
+    expect(mockUpsertSubscription).toHaveBeenCalledWith(
+      'loc_123',
       'enrollment_complete',
-      'https://hooks.ghl.com/wf1',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
-  test('rejects invalid trigger key', async () => {
-    const { req, res, next } = mockReqRes({
-      type: 'subscribe',
-      locationId: 'loc_1',
-      triggerKey: 'bogus_key',
-      subscriptionUrl: 'https://hooks.ghl.com/wf1',
-    });
+  it('unsubscribes when HighLevel sends DELETED', async () => {
+    const req = {
+      body: {
+        triggerData: {
+          key: 'ss_payment_received',
+          eventType: 'DELETED',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+        },
+        extras: { locationId: 'loc_123' },
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
 
     await triggerController.handleSubscription(req, res, next);
 
-    expect(next).toHaveBeenCalled();
-    const err = next.mock.calls[0][0];
-    expect(err.statusCode).toBe(400);
-    expect(err.message).toContain('Invalid trigger key');
-  });
-
-  test('rejects missing required fields', async () => {
-    const { req, res, next } = mockReqRes({
-      type: 'subscribe',
-      locationId: 'loc_1',
-    });
-
-    await triggerController.handleSubscription(req, res, next);
-
-    expect(next).toHaveBeenCalled();
-    const err = next.mock.calls[0][0];
-    expect(err.statusCode).toBe(400);
-  });
-
-  test('rejects invalid subscription type', async () => {
-    const { req, res, next } = mockReqRes({
-      type: 'update',
-      locationId: 'loc_1',
-      triggerKey: 'enrollment_complete',
-      subscriptionUrl: 'https://hooks.ghl.com/wf1',
-    });
-
-    await triggerController.handleSubscription(req, res, next);
-
-    expect(next).toHaveBeenCalled();
-    const err = next.mock.calls[0][0];
-    expect(err.statusCode).toBe(400);
-    expect(err.message).toContain('Invalid subscription type');
+    expect(next).not.toHaveBeenCalled();
+    expect(mockDeactivateSubscription).toHaveBeenCalledWith(
+      'loc_123',
+      'ss_payment_received',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 });

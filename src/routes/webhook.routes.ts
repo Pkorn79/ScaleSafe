@@ -8,8 +8,12 @@ import { requireMerchantWebhookSecret } from '../middleware/merchantWebhookSecre
 
 const router = Router();
 
-// All webhook routes are unauthenticated (validated by idempotency + source-specific verification)
-router.post('/ghl/triggers', requireGhlWebhookSignature, triggerController.handleSubscription);
+// Marketplace workflow trigger subscription lifecycle. HighLevel sends the
+// target workflow execution URL here when a workflow using one of our custom
+// triggers is created/updated/deleted.
+router.post('/ghl/triggers', triggerController.handleSubscription);
+
+// Official GHL marketplace/payment webhooks are signed by HighLevel.
 router.post('/ghl/payment', requireGhlWebhookSignature, webhookController.ghlPayment);
 router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlForms);
 router.post('/external', requireMerchantWebhookSecret, webhookController.external);

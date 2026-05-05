@@ -29,6 +29,27 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-05: GHL Marketplace Trigger Subscription Payload Fix (Codex)
+
+Files changed:
+
+- `src/controllers/trigger.controller.ts`
+- `src/routes/webhook.routes.ts`
+- `tests/unit/trigger.controller.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip created the missing `trigger_subscriptions` table, but re-saving/publishing a GHL workflow using `enrollment_complete` still produced no subscription rows.
+- Root cause found against current HighLevel Marketplace Trigger docs: the subscription URL payload is not the older/simple `{ type, locationId, triggerKey, subscriptionUrl }` shape. Current payload sends `triggerData.eventType` (`CREATED` / `UPDATED` / `DELETED`), `triggerData.key`, `triggerData.targetUrl`, and `extras.locationId`.
+- Updated `triggerController.handleSubscription` to normalize both shapes.
+- Removed official GHL webhook signature middleware from `/webhooks/ghl/triggers`. This route is the Marketplace workflow-trigger subscription lifecycle endpoint, not the official signed payment/platform webhook stream. `/webhooks/ghl/payment` remains signed.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=trigger.controller` passed: 1 suite, 2 tests.
+
 ### 2026-05-05: Offer Save Compatibility For Daily/Pulse Test Fields (Codex)
 
 Files changed:
