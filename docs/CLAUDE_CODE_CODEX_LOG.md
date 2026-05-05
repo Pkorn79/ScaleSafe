@@ -29,6 +29,25 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-05: Daily Test Billing Railway Build Flag Fix (Codex)
+
+Files changed:
+
+- `Dockerfile`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip set `VITE_ENABLE_DAILY_TEST_BILLING=true`, pushed/reloaded, and `Daily (Testing)` still did not appear.
+- Local verification proved the Vue/Vite gate works when the env var is present during `npm.cmd run build-ui`.
+- Root cause: the Docker build ran `cd src/ui && npx vite build` without declaring/passing the Vite build-time flag, so Railway produced a frontend bundle with daily billing still compiled out.
+- Added Docker `ARG VITE_ENABLE_DAILY_TEST_BILLING=false` and matching `ENV` before the Vite build step. Railway must have `VITE_ENABLE_DAILY_TEST_BILLING=true` set on the app service/environment before redeploying for the selector to show.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- Local `build-ui` with `$env:VITE_ENABLE_DAILY_TEST_BILLING='true'` includes `Daily (Testing)` in the compiled OfferForm chunk.
+
 ### 2026-05-05: Daily Test Billing Save Fix + Durable Offer Link Policy (Codex)
 
 Files changed:

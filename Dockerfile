@@ -14,6 +14,11 @@ RUN cd src/ui && npm install
 COPY tsconfig.json ./
 COPY src/ src/
 
+# Frontend build flags. Vite only reads VITE_* values at build time,
+# so Docker must make Railway's build env available before vite build.
+ARG VITE_ENABLE_DAILY_TEST_BILLING=false
+ENV VITE_ENABLE_DAILY_TEST_BILLING=$VITE_ENABLE_DAILY_TEST_BILLING
+
 # Build backend
 RUN npx tsc
 
