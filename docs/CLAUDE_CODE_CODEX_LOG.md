@@ -29,6 +29,24 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-05: Offer Save Compatibility For Daily/Pulse Test Fields (Codex)
+
+Files changed:
+
+- `src/services/offer.service.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip reported that after `Daily (Testing)` appeared, editing Stripe/NMI offers and creating a new offer all returned "An unexpected error occurred."
+- Added a compatibility retry for offer create/update when Supabase reports missing pulse cadence columns (`pulse_cadence_enabled` / `pulse_frequency_days`). The retry strips those fields so offer saves are not fully blocked while migration 053 is being applied.
+- Kept the daily frequency database protection explicit: if migration 054 is missing, daily saves return a `ValidationError` message telling the operator to apply the latest daily billing test migration.
+- For daily test offers only, if GHL rejects creation of a daily recurring Product price, ScaleSafe logs a warning and still saves the offer. ScaleSafe checkout/recurring billing uses the offer record and processor subscription logic, not the GHL Product price, so this keeps test cadence unblocked.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+
 ### 2026-05-05: Daily Test Billing Railway Build Flag Fix (Codex)
 
 Files changed:

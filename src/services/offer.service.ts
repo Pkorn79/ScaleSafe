@@ -113,6 +113,27 @@ function isOfferConstraintError(err: any): boolean {
     && String(err?.message || '').includes('offers_mirror_installment_frequency_check');
 }
 
+function isMissingPulseCadenceColumnError(err: any): boolean {
+  const message = String(err?.message || '');
+  return err?.code === '42703'
+    && (message.includes('pulse_cadence_enabled') || message.includes('pulse_frequency_days'));
+}
+
+function stripPulseCadenceFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  delete next.pulse_cadence_enabled;
+  delete next.pulse_frequency_days;
+  return next;
+}
+
+function isDailyGhlRecurringPriceError(err: any): boolean {
+  const message = String(err?.message || err?.response?.data?.message || '');
+  const details = JSON.stringify(err?.response?.data || err?.data || {});
+  return message.toLowerCase().includes('ghl api error')
+    || details.toLowerCase().includes('interval')
+    || details.toLowerCase().includes('recurring');
+}
+
 export const offerService = {
   async create(input: CreateOfferInput): Promise<OfferRecord> {
     const { locationId } = input;
@@ -173,19 +194,30 @@ export const offerService = {
       };
       const freq = input.installmentFrequency || 'monthly';
 
-      const priceRes = await api.post(`/products/${ghlProductId}/price`, {
-        name: `${input.offerName} - Installments`,
-        type: 'recurring',
-        currency: 'USD',
-        amount: Math.round(input.installmentAmount * 100),
-        locationId,
-        recurring: {
-          interval: intervalMap[freq],
-          intervalCount: intervalCountMap[freq],
-          totalCycles: input.numPayments,
-        },
-      });
-      priceIds.recurring = extractId(priceRes.data, 'price');
+      try {
+        const priceRes = await api.post(`/products/${ghlProductId}/price`, {
+          name: `${input.offerName} - Installments`,
+          type: 'recurring',
+          currency: 'USD',
+          amount: Math.round(input.installmentAmount * 100),
+          locationId,
+          recurring: {
+            interval: intervalMap[freq],
+            intervalCount: intervalCountMap[freq],
+            totalCycles: input.numPayments,
+          },
+        });
+        priceIds.recurring = extractId(priceRes.data, 'price');
+      } catch (err: any) {
+        if (freq === 'daily' && isDailyGhlRecurringPriceError(err)) {
+          logger.warn(
+            { locationId, ghlProductId, offerName: input.offerName, err: err?.message },
+            'Skipping GHL recurring price for daily test offer; ScaleSafe checkout uses the offer record',
+          );
+        } else {
+          throw err;
+        }
+      }
     }
 
     // 3. Compile T&C HTML
@@ -257,7 +289,20 @@ export const offerService = {
         logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      throw err;
+      if (isMissingPulseCadenceColumnError(err)) {
+        logger.warn({ locationId }, 'Offer create retried without pulse cadence fields; apply migration 053');
+        try {
+          offer = await offerRepository.create(stripPulseCadenceFields(record) as any);
+        } catch (retryErr: any) {
+          if (isOfferConstraintError(retryErr)) {
+            logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create retry rejected by installment frequency constraint');
+            throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+          }
+          throw retryErr;
+        }
+      } else {
+        throw err;
+      }
     }
 
     logger.info({ offerId: offer.id, ghlProductId, locationId }, 'Offer created');
@@ -344,7 +389,20 @@ export const offerService = {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      throw err;
+      if (isMissingPulseCadenceColumnError(err)) {
+        logger.warn({ offerId }, 'Offer update retried without pulse cadence fields; apply migration 053');
+        try {
+          offer = await offerRepository.update(offerId, stripPulseCadenceFields(dbUpdates) as any);
+        } catch (retryErr: any) {
+          if (isOfferConstraintError(retryErr)) {
+            logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update retry rejected by installment frequency constraint');
+            throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+          }
+          throw retryErr;
+        }
+      } else {
+        throw err;
+      }
     }
     return offer;
   },
