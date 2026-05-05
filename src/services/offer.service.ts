@@ -1,6 +1,7 @@
 import { ghlApi } from '../clients/ghl.client';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
+import { ValidationError } from '../utils/errors';
 
 interface CreateOfferInput {
   locationId: string;
@@ -105,6 +106,11 @@ function normalizePulseFrequency(days?: number): number {
   const parsed = Number(days || 30);
   if (!Number.isFinite(parsed)) return 30;
   return Math.min(365, Math.max(1, Math.round(parsed)));
+}
+
+function isOfferConstraintError(err: any): boolean {
+  return err?.code === '23514'
+    && String(err?.message || '').includes('offers_mirror_installment_frequency_check');
 }
 
 export const offerService = {
@@ -243,7 +249,16 @@ export const offerService = {
     }
 
     // 6. Save to Supabase
-    const offer = await offerRepository.create(record as any);
+    let offer: OfferRecord;
+    try {
+      offer = await offerRepository.create(record as any);
+    } catch (err: any) {
+      if (isOfferConstraintError(err)) {
+        logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create rejected by installment frequency constraint');
+        throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+      }
+      throw err;
+    }
 
     logger.info({ offerId: offer.id, ghlProductId, locationId }, 'Offer created');
     return offer;
@@ -321,7 +336,16 @@ export const offerService = {
       });
     }
 
-    const offer = await offerRepository.update(offerId, dbUpdates as any);
+    let offer: OfferRecord;
+    try {
+      offer = await offerRepository.update(offerId, dbUpdates as any);
+    } catch (err: any) {
+      if (isOfferConstraintError(err)) {
+        logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
+        throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+      }
+      throw err;
+    }
     return offer;
   },
 

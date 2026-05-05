@@ -79,7 +79,7 @@
           <div class="form-group">
             <label class="form-label">Billing Frequency</label>
             <select class="form-select" v-model="form.installmentFrequency">
-              <option value="daily">Daily (Testing)</option>
+              <option v-if="enableDailyTestBilling" value="daily">Daily (Testing)</option>
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
@@ -107,7 +107,7 @@
           <div class="form-group">
             <label class="form-label">Frequency</label>
             <select class="form-select" v-model="form.installmentFrequency">
-              <option value="daily">Daily (Testing)</option>
+              <option v-if="enableDailyTestBilling" value="daily">Daily (Testing)</option>
               <option value="weekly">Weekly</option>
               <option value="bi_weekly">Bi-Weekly</option>
               <option value="monthly">Monthly</option>
@@ -368,6 +368,7 @@ const isEdit = computed(() => !!route.params.id);
 
 const merchantConfigLoading = ref(true);
 const onboardingComplete = ref(false);
+const enableDailyTestBilling = import.meta.env.VITE_ENABLE_DAILY_TEST_BILLING === 'true';
 
 // Processor override state
 const defaultProcessor = ref('');

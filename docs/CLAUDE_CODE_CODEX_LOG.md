@@ -29,6 +29,30 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-05: Daily Test Billing Save Fix + Durable Offer Link Policy (Codex)
+
+Files changed:
+
+- `supabase/migrations/054_daily_test_billing_frequency.sql`
+- `.env.example`
+- `src/ui/src/views/OfferFormView.vue`
+- `src/services/offer.service.ts`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added migration 054 so `offers_mirror.installment_frequency` accepts `daily`. The daily save failure was caused by the DB CHECK constraint from migration 051 allowing quarterly/annual but not daily.
+- Gated `Daily (Testing)` behind `VITE_ENABLE_DAILY_TEST_BILLING=true` so normal beta builds do not expose the testing cadence.
+- Improved offer create/update error handling for the installment-frequency constraint: the API now returns a validation message instead of only a generic 500 if the migration is missing.
+- Documented durable public offer-link policy: quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) must not expire by default. The signed 14-day tokens apply only to sensitive client action links (`payment_update`, `subscription_cancel`, `milestone_signoff`), not offer checkout/enrollment links.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand` passed (49 suites, 527 tests).
+- `npm.cmd run build` passed.
+
 ### 2026-05-01: Daily Billing Frequency For Test Enrollments (Codex)
 
 Files changed:

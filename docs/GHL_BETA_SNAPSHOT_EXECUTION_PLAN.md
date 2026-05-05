@@ -9,6 +9,7 @@
 - Snapshot packaging is blocked until beta scope is frozen, installment billing is functionally proven, pulse cadence is tested, and PMG's webhook-secret custom value repair/sync is verified.
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
 - Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
+- Offer checkout/enrollment links are durable public links and must not expire by default. Quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) may be used in funnels, automations, emails, ads, or client follow-ups. Signed 14-day public action tokens are only for sensitive client actions such as payment update, subscription cancellation, and milestone signoff.
 
 ## App-Provisioned On Install
 
