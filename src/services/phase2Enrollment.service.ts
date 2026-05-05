@@ -244,6 +244,7 @@ export const phase2EnrollmentService = {
 
           const customFields: Record<string, unknown> = {
             [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+            [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active',
             [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
           };
 

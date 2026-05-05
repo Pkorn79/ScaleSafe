@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-05-05
+
+### Fixed
+- **Standard enrollment now seeds `ss_engagement_status='Active'`.** `phase2EnrollmentService.completeEnrollment` was writing `ss_enrollment_status='enrolled'` but leaving `ss_engagement_status` blank, so the `SS - Client Re-Engage` workflow's Contact Field Changed trigger had no baseline value to fire from on later re-engagement. Standard consent-token enrollments now write the same `'Active'` baseline that the Quick Pay path already wrote at `src/controllers/checkout.controller.ts:506`.
+
+---
+
 ## 2026-04-29
 
 ### Security
