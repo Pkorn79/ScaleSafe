@@ -1,6 +1,7 @@
 import { getSupabase } from '../clients/supabase.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
+import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 
 const DEFAULT_PULSE_FREQUENCY_DAYS = 30;
@@ -32,9 +33,9 @@ export async function runPulseCadenceCheck(): Promise<void> {
     try {
       const merchant = await merchantRepository.getByLocationId(enrollment.location_id);
       const pulseConfig = await resolvePulseConfig(enrollment.location_id, merchant);
-      if (!pulseConfig.workflowWebhookUrl) {
+      if (!pulseConfig.formUrl) {
         skipped++;
-        logger.warn({ locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse due but workflow webhook URL is not configured');
+        logger.warn({ locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse due but pulse form URL is not configured');
         continue;
       }
 
@@ -50,24 +51,32 @@ export async function runPulseCadenceCheck(): Promise<void> {
       const nextDue = new Date(now);
       nextDue.setDate(nextDue.getDate() + frequencyDays);
 
-      const response = await fetch(pulseConfig.workflowWebhookUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          location_id: enrollment.location_id,
-          contact_id: enrollment.contact_id,
-          enrollment_id: enrollment.id,
-          offer_id: enrollment.offer_id,
-          offer_name: offer?.offer_name || '',
-          form_url: pulseConfig.formUrl || '',
-          pulse_frequency_days: frequencyDays,
-          pulse_due_at: enrollment.next_pulse_due_at,
-        }),
+      const triggerResult = await triggerService.fireTrigger(enrollment.location_id, 'ss_app_event', {
+        event_type: 'pulse_check_due',
+        eventType: 'pulse_check_due',
+        location_id: enrollment.location_id,
+        locationId: enrollment.location_id,
+        contact_id: enrollment.contact_id,
+        contactId: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        enrollmentId: enrollment.id,
+        offer_id: enrollment.offer_id,
+        offerId: enrollment.offer_id,
+        offer_name: offer?.offer_name || '',
+        offerName: offer?.offer_name || '',
+        form_url: pulseConfig.formUrl,
+        formUrl: pulseConfig.formUrl,
+        pulse_frequency_days: frequencyDays,
+        pulseFrequencyDays: frequencyDays,
+        pulse_due_at: enrollment.next_pulse_due_at,
+        pulseDueAt: enrollment.next_pulse_due_at,
+        sent_at: now.toISOString(),
+        sentAt: now.toISOString(),
       });
 
-      if (!response.ok) {
+      if (triggerResult.sent === 0) {
         skipped++;
-        logger.warn({ status: response.status, locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse workflow webhook rejected request');
+        logger.warn({ locationId: enrollment.location_id, enrollmentId: enrollment.id, failed: triggerResult.failed }, 'Pulse app-event trigger had no successful deliveries');
         continue;
       }
 
@@ -95,13 +104,12 @@ async function resolvePulseConfig(
   merchant: { config?: Record<string, unknown>; custom_value_ids?: Record<string, string> },
 ): Promise<{ workflowWebhookUrl: string; formUrl: string }> {
   const config = merchant.config || {};
-  let workflowWebhookUrl = String(config.pulse_workflow_webhook_url || process.env.PULSE_WORKFLOW_WEBHOOK_URL || '');
+  const workflowWebhookUrl = String(config.pulse_workflow_webhook_url || process.env.PULSE_WORKFLOW_WEBHOOK_URL || '');
   let formUrl = String(config.pulse_form_url || process.env.PULSE_FORM_URL || '');
 
   const cvIds = merchant.custom_value_ids || {};
-  if ((!workflowWebhookUrl && cvIds.PULSE_WORKFLOW_WEBHOOK_URL) || (!formUrl && cvIds.PULSE_FORM_URL)) {
+  if (!formUrl && cvIds.PULSE_FORM_URL) {
     const values = await merchantService.readGhlCustomValues(locationId);
-    workflowWebhookUrl ||= values[cvIds.PULSE_WORKFLOW_WEBHOOK_URL] || '';
     formUrl ||= values[cvIds.PULSE_FORM_URL] || '';
   }
 

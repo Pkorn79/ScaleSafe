@@ -29,6 +29,42 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-06: Shared Marketplace App Event Trigger Created Manually (Philip)
+
+GHL Marketplace setup completed manually by Philip:
+
+- New shared trigger: `ss_app_event` / ScaleSafe App Event.
+- Subscription URL: `https://dashboard.scalesafe.app/webhooks/ghl/triggers`.
+- Filter created:
+  - Name: Event Type
+  - Type: Select
+  - Required: Yes
+  - Reference: `event_type`
+  - Option type: Constants
+- Constants published:
+  - Pulse Check Due = `pulse_check_due`
+  - Upcoming Payment Reminder = `upcoming_payment_reminder`
+  - Client At Risk = `client_at_risk`
+  - Card Update Needed = `card_update_needed`
+  - Client Reengaged = `client_reengaged`
+  - Evidence Milestone = `evidence_milestone`
+  - Chargeback Ratio Warning = `chargeback_ratio_warning`
+  - Chargeback Ratio Critical = `chargeback_ratio_critical`
+  - Defense Ready = `defense_ready`
+  - Program Completed = `program_completed`
+
+Purpose:
+
+- Preserve scarce Marketplace trigger slots by using one generic trigger as a multi-event bus.
+- Immediate beta use is pulse cadence: `SS - Pulse Check Due` should listen to `ss_app_event` with filter `Event Type = Pulse Check Due`.
+- Future consolidation can move other app-driven notification events onto this trigger by filtering on `event_type`.
+
+Code still needed:
+
+- Add `ss_app_event` to `src/constants/trigger-keys.ts`.
+- Change `src/jobs/pulse-cadence-check.ts` to call `triggerService.fireTrigger(locationId, 'ss_app_event', payload)` instead of requiring a per-location inbound webhook URL.
+- Remove/defer reliance on `ScaleSafe Pulse Workflow Webhook URL` for beta pulse sends.
+
 ### 2026-05-05: GHL Marketplace Trigger Subscription Payload Fix (Codex)
 
 Files changed:
@@ -839,6 +875,39 @@ Verification:
 Residual risk:
 
 - If dashboard still feels slow in production, the remaining likely source is `disengagementService.checkAllClients()` behind `/api/dashboard/at-risk`, which does sequential per-client scoring plus possible GHL field writes for flagged clients. That should become a cached/background risk snapshot rather than a page-load scan.
+
+### 2026-05-06: Trigger Delivery Logging + Shared App Event Pulse Wiring (Codex)
+
+Files changed:
+
+- `supabase/migrations/055_trigger_delivery_logs.sql`
+- `src/services/trigger.service.ts`
+- `src/constants/trigger-keys.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/jobs/payment-reminder-check.ts`
+- `src/jobs/pulse-cadence-check.ts`
+- `tests/unit/trigger-keys.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+
+Summary:
+
+- Added `trigger_delivery_logs` so Marketplace trigger delivery is persisted in Supabase, not only Railway logs. Each active subscription POST now records trigger key, target URL, sent/failed status, HTTP status, attempt count, error message, and the payload sent.
+- Added `ss_app_event` to valid trigger keys. Philip created this as the shared multi-event GHL Marketplace trigger with required `event_type` filter constants.
+- Rewired the pulse cadence job away from direct workflow webhook URLs. App-owned pulse cadence now fires `ss_app_event` with `event_type = pulse_check_due`; GHL workflows should filter on that event type.
+- Enriched `enrollment_complete`, `ss_payment_received`, and `ss_upcoming_payment_reminder` payloads with both snake_case and camelCase aliases (`contact_id`/`contactId`, `enrollment_id`/`enrollmentId`, etc.) so GHL workflows have easier access to contact and event data.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=trigger.service` passed: 1 suite, 3 tests.
+- `npm.cmd test -- --runInBand --testPathPatterns=trigger-keys` passed: 1 suite, 5 tests.
+- `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment.service` passed: 1 suite, 9 tests.
+
+Manual follow-up:
+
+- Apply migration 055 in Supabase production before relying on the delivery log table.
+- After deploy, run a new enrollment or wait for the next daily installment/reminder, then query `trigger_delivery_logs` to see whether ScaleSafe sent to GHL and how GHL responded.
 
 ## Current Working Tree Notes
 

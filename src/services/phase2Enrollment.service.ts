@@ -222,11 +222,22 @@ export const phase2EnrollmentService = {
       // 6. Fire enrollment_complete trigger
       try {
         await triggerService.fireTrigger(bgLocationId, 'enrollment_complete', {
+          event_type: 'enrollment_complete',
+          location_id: bgLocationId,
+          locationId: bgLocationId,
           contact_id: bgContactId,
+          contactId: bgContactId,
+          contact_email: params.contactEmail || (enrollment as any).email || '',
+          contactEmail: params.contactEmail || (enrollment as any).email || '',
+          enrollment_id: bgEnrollmentId,
+          enrollmentId: bgEnrollmentId,
           offer_id: bgOfferId,
+          offerId: bgOfferId,
           offer_name: offerName,
+          offerName,
           amount: bgPaymentAmount,
           payment_type: bgPaymentType,
+          paymentType: bgPaymentType,
           bump_1_accepted: false,
           bump_2_accepted: false,
         });
@@ -414,12 +425,22 @@ export const phase2EnrollmentService = {
     const runningTotal = (enrollment.payments_made) * params.amount;
     const paymentKind: 'installment' | 'subscription' = enrollment.payment_type === 'subscription' ? 'subscription' : 'installment';
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
+      event_type: 'payment_received',
+      location_id: params.locationId,
+      locationId: params.locationId,
       contact_id: params.contactId,
+      contactId: params.contactId,
+      enrollment_id: params.enrollmentId,
+      enrollmentId: params.enrollmentId,
       amount: params.amount,
       transaction_id: params.transactionId,
+      transactionId: params.transactionId,
       payments_remaining: params.paymentsRemaining,
+      paymentsRemaining: params.paymentsRemaining,
       running_total: runningTotal,
+      runningTotal,
       payment_kind: paymentKind,
+      paymentKind,
     });
 
     // Final installment detection — all payments complete
