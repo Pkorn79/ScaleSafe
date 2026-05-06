@@ -18,3 +18,5 @@ CREATE INDEX IF NOT EXISTS idx_trigger_delivery_logs_location_key_created
 
 CREATE INDEX IF NOT EXISTS idx_trigger_delivery_logs_status_created
   ON trigger_delivery_logs (status, created_at DESC);
+
+ALTER TABLE trigger_delivery_logs ENABLE ROW LEVEL SECURITY;
