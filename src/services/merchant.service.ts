@@ -57,6 +57,8 @@ export interface MerchantFullConfig {
   dunningEnabled: boolean;
   dunningMaxRetries: number;
 
+  engagementEnabled: boolean;
+
   config: Record<string, unknown>;
 }
 
@@ -95,6 +97,8 @@ export interface MerchantConfigUpdate {
 
   dunningEnabled?: boolean;
   dunningMaxRetries?: number;
+
+  engagementEnabled?: boolean;
 
   config?: Record<string, unknown>;
 }
@@ -743,6 +747,8 @@ export const merchantService = {
       dunningEnabled: (merchant as any).dunning_enabled ?? true,
       dunningMaxRetries: (merchant as any).dunning_max_retries ?? 3,
 
+      engagementEnabled: (merchant as any).engagement_enabled ?? true,
+
       config: cfg,
     };
   },
@@ -773,6 +779,9 @@ export const merchantService = {
     // Dunning settings
     if (updates.dunningEnabled !== undefined) dbUpdates.dunning_enabled = updates.dunningEnabled;
     if (updates.dunningMaxRetries !== undefined) dbUpdates.dunning_max_retries = updates.dunningMaxRetries;
+
+    // Engagement tracking master toggle
+    if (updates.engagementEnabled !== undefined) dbUpdates.engagement_enabled = updates.engagementEnabled;
 
     // 2. Store T&C clause toggles in dedicated JSONB column
     if (updates.standardClauses) {

@@ -196,7 +196,10 @@ export const paymentLifecycleService = {
 
   /**
    * Escalate dunning after max retries reached.
-   * Fires at-risk trigger, updates contact status to delinquent.
+   * Marks the payment_event as escalated and the GHL contact as delinquent.
+   * SS - Payment Failed workflow handles merchant/client comms via the standard
+   * payment_failed trigger path; engagement-status is intentionally NOT touched
+   * here — it belongs to the multi-factor disengagement scorer, not raw payment state.
    */
   async escalateDunning(locationId: string, contactId: string, paymentEventId: string): Promise<void> {
     const supabase = getSupabase();
@@ -211,13 +214,12 @@ export const paymentLifecycleService = {
       { action: 'dunning_escalated', reason: 'Max retries reached', timestamp: new Date().toISOString() },
     );
 
-    // Update GHL contact — set engagement status + enrollment status
+    // Update GHL contact — enrollment status only. Engagement is decoupled from dunning.
     try {
       const api = await ghlApi(locationId);
       await api.put(`/contacts/${contactId}`, {
         customField: {
           [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'delinquent',
-          [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'At Risk',
         },
       });
     } catch { /* non-blocking */ }

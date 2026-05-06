@@ -499,12 +499,15 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           if (resolvedQuickPayContact) finalContactId = resolvedQuickPayContact;
           logger.info({ contactId: resolvedQuickPayContact, quickPayEmail }, 'Quick Pay: GHL contact upserted');
 
-          // Set engagement status baseline for new contacts
+          // Set engagement status baseline for new contacts (gated on merchant toggle).
           if (resolvedQuickPayContact) {
             try {
-              await api.put(`/contacts/${resolvedQuickPayContact}`, {
-                customField: { 'contact.ss_engagement_status': 'Active' },
-              });
+              const merchantRow = await merchantRepository.findByLocationId(merchant.locationId);
+              if ((merchantRow as any)?.engagement_enabled ?? true) {
+                await api.put(`/contacts/${resolvedQuickPayContact}`, {
+                  customField: { 'contact.ss_engagement_status': 'Active' },
+                });
+              }
             } catch {}
           }
 

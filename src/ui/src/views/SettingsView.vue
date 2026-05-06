@@ -183,6 +183,32 @@
         </div>
       </div>
 
+      <!-- Engagement Tracking -->
+      <div class="card" v-if="config">
+        <h3 class="section-title">Engagement Tracking</h3>
+        <p class="text-sm text-muted mb-4">
+          When enabled, ScaleSafe scores each client's engagement risk and writes "At Risk" or "Active" to the
+          <code>SS Engagement Status</code> contact field. The <strong>SS - Client Re-Engage</strong> and
+          <strong>SS - Re-Engagement Outreach</strong> workflows fire from those changes. Turn this off if you
+          don't want re-engagement automations running for this account.
+        </p>
+        <div class="flex-between mb-4">
+          <div>
+            <span class="text-sm" style="font-weight:500">Enable engagement tracking</span>
+            <div class="text-sm text-muted">When off, the app skips all engagement-status writes and the workflows never fire.</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="config.engagementEnabled" />
+            <span class="toggle-track" :class="{ active: config.engagementEnabled }">
+              <span class="toggle-thumb" :class="{ active: config.engagementEnabled }"></span>
+            </span>
+          </label>
+        </div>
+        <div v-if="!config.engagementEnabled" class="text-sm text-muted" style="background:#fef2f2;padding:8px 12px;border-radius:6px;color:#991b1b">
+          Engagement tracking is disabled. Existing engagement-status values are not cleared, but no new "At Risk" or "Active" writes will fire.
+        </div>
+      </div>
+
       <!-- Dunning & Retry Settings -->
       <div class="card" v-if="config">
         <h3 class="section-title">Dunning & Payment Retry</h3>
@@ -578,6 +604,7 @@ async function saveSettings() {
       modules: config.value.modules,
       dunningEnabled: config.value.dunningEnabled,
       dunningMaxRetries: config.value.dunningMaxRetries,
+      engagementEnabled: config.value.engagementEnabled,
       config: { disengagement_thresholds: thresholds.value },
     });
     config.value = result;

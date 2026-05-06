@@ -70,12 +70,18 @@ export const evidenceService = {
       );
 
       if (wasAtRisk && ['session_delivery', 'module_completion', 'pulse_checkin', 'payment_confirmation', 'enrollment_payment', 'milestone_completion'].includes(evidenceType)) {
-        // Set engagement status back to "Active" — GHL Contact Field Changed trigger drives workflow
-        const api = await ghlApi(locationId);
-        await api.put(`/contacts/${contactId}`, {
-          customField: { [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active' },
-        });
-        logger.info({ contactId, evidenceType }, 'Client re-engaged — engagement status set to Active');
+        // Gate the engagement-status write on the merchant's master toggle so re-engagement
+        // workflows stay silent for merchants who have engagement tracking disabled.
+        const { merchantRepository } = await import('../repositories/merchant.repository');
+        const merchant = await merchantRepository.getByLocationId(locationId).catch(() => null);
+        if ((merchant as any)?.engagement_enabled ?? true) {
+          // Set engagement status back to "Active" — GHL Contact Field Changed trigger drives workflow
+          const api = await ghlApi(locationId);
+          await api.put(`/contacts/${contactId}`, {
+            customField: { [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active' },
+          });
+          logger.info({ contactId, evidenceType }, 'Client re-engaged — engagement status set to Active');
+        }
       }
     } catch { /* re-engagement detection is non-blocking */ }
 

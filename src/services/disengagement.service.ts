@@ -171,6 +171,8 @@ export const disengagementService = {
   /**
    * Run disengagement check across all active clients for a merchant.
    * Returns list of newly flagged at-risk clients.
+   * Risk scoring runs unconditionally so the dashboard can still display risk;
+   * the GHL engagement-status write is gated on `merchants.engagement_enabled`.
    */
   async checkAllClients(locationId: string): Promise<RiskAssessment[]> {
     const supabase = getSupabase();
@@ -186,20 +188,25 @@ export const disengagementService = {
     const uniqueContactIds = [...new Set((contacts || []).map((c) => c.contact_id))];
     const flaggedClients: RiskAssessment[] = [];
 
+    const merchant = await merchantRepository.getByLocationId(locationId);
+    const engagementEnabled = (merchant as any).engagement_enabled ?? true;
+
     for (const contactId of uniqueContactIds) {
       try {
         const assessment = await this.scoreClient(locationId, contactId);
         if (assessment.flagged) {
           flaggedClients.push(assessment);
-          // Set engagement status to "At Risk" — GHL Contact Field Changed trigger drives the workflow
-          try {
-            const { ghlApi: getApi } = require('../clients/ghl.client');
-            const { SS_CONTACT_FIELDS: fields } = require('../constants/ghl-fields');
-            const api = await getApi(locationId);
-            await api.put(`/contacts/${contactId}`, {
-              customField: { [fields.ENGAGEMENT_STATUS]: 'At Risk' },
-            });
-          } catch { /* non-blocking */ }
+          if (engagementEnabled) {
+            // Set engagement status to "At Risk" — GHL Contact Field Changed trigger drives the workflow
+            try {
+              const { ghlApi: getApi } = require('../clients/ghl.client');
+              const { SS_CONTACT_FIELDS: fields } = require('../constants/ghl-fields');
+              const api = await getApi(locationId);
+              await api.put(`/contacts/${contactId}`, {
+                customField: { [fields.ENGAGEMENT_STATUS]: 'At Risk' },
+              });
+            } catch { /* non-blocking */ }
+          }
         }
       } catch (err) {
         logger.warn({ err, contactId, locationId }, 'Error scoring client engagement');

@@ -244,9 +244,12 @@ export const phase2EnrollmentService = {
 
           const customFields: Record<string, unknown> = {
             [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
-            [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active',
             [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
           };
+          // Engagement-status baseline only if the merchant has engagement tracking enabled.
+          if ((merchant as any)?.engagement_enabled ?? true) {
+            customFields[SS_CONTACT_FIELDS.ENGAGEMENT_STATUS] = 'Active';
+          }
 
           if (bgOfferId) {
             try {

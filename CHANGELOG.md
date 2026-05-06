@@ -7,8 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## 2026-05-05
 
+### Added
+- **Merchant-facing master toggle for engagement tracking.** New `engagement_enabled` boolean column on `merchants` (migration `055_engagement_enabled.sql`, default `true` to preserve current behavior). Settings now exposes an "Engagement Tracking" card between Evidence Modules and Dunning. When the toggle is OFF, the app skips every write to `ss_engagement_status` (`disengagement.service.ts checkAllClients`, `evidence.service.ts` re-engagement detector, `phase2Enrollment.service.ts` enrollment baseline, and the `checkout.controller.ts` Quick Pay baseline), so the `SS - Client Re-Engage` and `SS - Re-Engagement Outreach` workflows never fire. Risk scoring still runs so the at-risk dashboard remains accurate.
+
+### Changed
+- **Dunning escalation no longer writes `ss_engagement_status='At Risk'`.** Engagement state is now driven only by the multi-factor disengagement scorer, not raw payment failures. `paymentLifecycleService.escalateDunning` continues to set `ss_enrollment_status='delinquent'` and the `SS - Payment Failed` workflow continues to handle dunning comms unchanged. Payment failures still influence engagement risk through factor #5 of the scorer (recent failed payments contribute +15 risk), so a merchant with both signals firing still flags the contact via the proper aggregation path.
+
 ### Fixed
-- **Standard enrollment now seeds `ss_engagement_status='Active'`.** `phase2EnrollmentService.completeEnrollment` was writing `ss_enrollment_status='enrolled'` but leaving `ss_engagement_status` blank, so the `SS - Client Re-Engage` workflow's Contact Field Changed trigger had no baseline value to fire from on later re-engagement. Standard consent-token enrollments now write the same `'Active'` baseline that the Quick Pay path already wrote at `src/controllers/checkout.controller.ts:506`.
+- **Standard enrollment now seeds `ss_engagement_status='Active'`.** `phase2EnrollmentService.completeEnrollment` was writing `ss_enrollment_status='enrolled'` but leaving `ss_engagement_status` blank, so the `SS - Client Re-Engage` workflow's Contact Field Changed trigger had no baseline value to fire from on later re-engagement. Standard consent-token enrollments now write the same `'Active'` baseline that the Quick Pay path already wrote at `src/controllers/checkout.controller.ts:506` (suppressed when the new engagement-tracking toggle is off).
 
 ---
 
