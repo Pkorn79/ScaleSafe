@@ -146,12 +146,14 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
 
   // 4. Fire ss_payment_received trigger (non-blocking)
   try {
+    const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
     await triggerService.fireTrigger(enr.location_id, 'ss_payment_received', {
       contact_id: enr.contact_id,
       amount: amountDollars,
       transaction_id: transactionId,
       payments_remaining: Math.max(0, (enr.payments_total || 0) - newPaymentsMade),
       running_total: amountDollars * newPaymentsMade,
+      payment_kind: paymentKind,
     });
   } catch (trigErr: any) {
     logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');

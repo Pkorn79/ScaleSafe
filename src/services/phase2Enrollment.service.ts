@@ -409,15 +409,17 @@ export const phase2EnrollmentService = {
       },
     });
 
-    // Fire trigger — flat doc contract: contact_id, amount, transaction_id, payments_remaining, running_total
+    // Fire trigger — flat doc contract: contact_id, amount, transaction_id, payments_remaining, running_total, payment_kind
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
     const runningTotal = (enrollment.payments_made) * params.amount;
+    const paymentKind: 'installment' | 'subscription' = enrollment.payment_type === 'subscription' ? 'subscription' : 'installment';
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
       contact_id: params.contactId,
       amount: params.amount,
       transaction_id: params.transactionId,
       payments_remaining: params.paymentsRemaining,
       running_total: runningTotal,
+      payment_kind: paymentKind,
     });
 
     // Final installment detection — all payments complete

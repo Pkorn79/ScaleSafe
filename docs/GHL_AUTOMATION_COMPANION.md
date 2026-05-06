@@ -153,7 +153,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **PAYMENT (3):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Payment Received | `ss_payment_received` | Successful payment | contact_id, amount, transaction_id, payments_remaining, running_total |
+| Payment Received | `ss_payment_received` | Successful payment | contact_id, amount, transaction_id, payments_remaining, running_total, payment_kind (`one_off` \| `installment` \| `subscription` \| `dunning_recovery`) |
 | Payment Failed | `ss_payment_failed` | Payment attempt fails | contact_id, amount, failure_reason, attempt_count, next_retry_date |
 | Refund Processed | `ss_refund_processed` | Refund issued | contact_id, amount, refund_type, reason |
 

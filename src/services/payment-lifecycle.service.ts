@@ -156,6 +156,7 @@ export const paymentLifecycleService = {
           await triggerService.fireTrigger(locationId, 'ss_payment_received', {
             contact_id: contactId, amount: originalEvent.amount,
             transaction_id: result.transactionId, action: 'dunning_resolved',
+            payment_kind: 'dunning_recovery',
           });
         } catch { /* non-blocking */ }
 

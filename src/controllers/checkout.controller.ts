@@ -7,7 +7,22 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
+import { triggerService } from '../services/trigger.service';
 import { ghlApi } from '../clients/ghl.client';
+
+/** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
+function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
+  const next = new Date(from);
+  switch (installmentFrequency) {
+    case 'daily': next.setDate(next.getDate() + 1); break;
+    case 'weekly': next.setDate(next.getDate() + 7); break;
+    case 'bi_weekly': next.setDate(next.getDate() + 14); break;
+    case 'quarterly': next.setMonth(next.getMonth() + 3); break;
+    case 'annual': next.setFullYear(next.getFullYear() + 1); break;
+    default: next.setMonth(next.getMonth() + 1); // monthly default
+  }
+  return next.toISOString().split('T')[0];
+}
 
 /** Normalize payment choice from checkout page ('installments' → 'installment', default 'pif') */
 function normalizePaymentType(choice?: string): string {
@@ -523,6 +538,78 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         }
       }
 
+      // ─── Quick Pay enrollment + receipt ──────────────────────────
+      // For installment/subscription Quick Pay offers, create a synthetic enrollment
+      // row so the existing recurring-billing cron and payment-reminder cron pick it up.
+      // Both crons key off the enrollments table; no other wiring needed.
+      let quickPayEnrollmentId: string | null = null;
+      let quickPayPaymentKind: 'one_off' | 'installment' | 'subscription' = 'one_off';
+      let quickPayPaymentsTotal: number | null = null;
+      let quickPayPaymentsRemaining = 0;
+
+      if (offerId) {
+        try {
+          const offer = await offerRepository.findById(offerId);
+          const offerPaymentType = (offer as any)?.payment_type || 'one_time';
+          if (offerPaymentType === 'installment' || offerPaymentType === 'installments' || offerPaymentType === 'subscription') {
+            quickPayPaymentKind = offerPaymentType === 'subscription' ? 'subscription' : 'installment';
+            quickPayPaymentsTotal = offerPaymentType === 'subscription' ? null : ((offer as any)?.num_payments || null);
+            quickPayPaymentsRemaining = quickPayPaymentsTotal ? Math.max(0, quickPayPaymentsTotal - 1) : 0;
+
+            if (resolvedQuickPayContact) {
+              // Idempotency: skip if an enrollment already exists for this transaction.
+              const { data: existingEnr } = await supabase
+                .from('enrollments')
+                .select('id')
+                .eq('payment_transaction_id', result.transactionId)
+                .maybeSingle();
+
+              if (existingEnr?.id) {
+                quickPayEnrollmentId = existingEnr.id;
+              } else {
+                const nextBilling = computeNextBillingDate((offer as any)?.installment_frequency);
+                const enrolledAt = new Date().toISOString();
+                const { data: insertedEnr, error: enrInsertErr } = await supabase
+                  .from('enrollments')
+                  .insert({
+                    location_id: merchant.locationId,
+                    merchant_id: merchant.merchantId,
+                    contact_id: resolvedQuickPayContact,
+                    offer_id: offerId,
+                    email: quickPayEmail || null,
+                    status: 'enrolled',
+                    payment_amount: amount / 100,
+                    payment_type: quickPayPaymentKind,
+                    payment_transaction_id: result.transactionId,
+                    payments_made: 1,
+                    payments_total: quickPayPaymentsTotal,
+                    next_billing_date: nextBilling,
+                    enrolled_at: enrolledAt,
+                  } as any)
+                  .select('id')
+                  .single();
+                if (enrInsertErr) {
+                  logger.warn({ err: enrInsertErr.message, offerId, contactId: resolvedQuickPayContact }, 'Quick Pay: enrollment insert failed — recurring billing will not run');
+                } else {
+                  quickPayEnrollmentId = insertedEnr?.id || null;
+                  // Backfill enrollment_id on the payment_events row inserted earlier.
+                  if (quickPayEnrollmentId) {
+                    await supabase.from('payment_events')
+                      .update({ enrollment_id: quickPayEnrollmentId })
+                      .eq('processor_transaction_id', result.transactionId);
+                  }
+                  logger.info({ enrollmentId: quickPayEnrollmentId, contactId: resolvedQuickPayContact, offerId, paymentKind: quickPayPaymentKind, nextBilling }, 'Quick Pay: synthetic enrollment created for recurring billing');
+                }
+              }
+            } else {
+              logger.warn({ offerId }, 'Quick Pay: installment/subscription offer but no resolvable contactId — skipping enrollment creation');
+            }
+          }
+        } catch (offerErr: any) {
+          logger.warn({ err: offerErr.message, offerId }, 'Quick Pay: offer lookup failed — defaulting to one-off receipt');
+        }
+      }
+
       // Insert payment_customer_map
       if (offerId) {
         try {
@@ -537,6 +624,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           });
         } catch (mapErr: any) {
           logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map — non-blocking');
+        }
+      }
+
+      // Fire Quick Pay receipt — ss_payment_received with payment_kind so the
+      // PMG Recurring Payment Receipt workflow can branch on one-off vs installment copy.
+      if (resolvedQuickPayContact) {
+        try {
+          await triggerService.fireTrigger(merchant.locationId, 'ss_payment_received', {
+            contact_id: resolvedQuickPayContact,
+            amount: amount / 100,
+            transaction_id: result.transactionId,
+            payments_remaining: quickPayPaymentsRemaining,
+            running_total: amount / 100,
+            payment_kind: quickPayPaymentKind,
+          });
+        } catch (trigErr: any) {
+          logger.warn({ err: trigErr.message, contactId: resolvedQuickPayContact }, 'Quick Pay: ss_payment_received trigger fire failed (non-fatal)');
         }
       }
     }
