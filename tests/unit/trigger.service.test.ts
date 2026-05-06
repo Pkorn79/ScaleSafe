@@ -3,6 +3,10 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn(),
+}));
+
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({}),
 }));
@@ -15,14 +19,17 @@ jest.mock('../../src/repositories/trigger.repository', () => ({
 
 import { triggerService } from '../../src/services/trigger.service';
 import { triggerRepository } from '../../src/repositories/trigger.repository';
+import { ghlApi } from '../../src/clients/ghl.client';
 
 const mockGetActive = triggerRepository.getActiveSubscriptions as jest.MockedFunction<
   typeof triggerRepository.getActiveSubscriptions
 >;
+const mockGhlApi = ghlApi as jest.MockedFunction<typeof ghlApi>;
 
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
+  mockGhlApi.mockResolvedValue({ post: mockedAxios.post } as any);
 });
 
 afterEach(() => {
@@ -71,12 +78,57 @@ describe('Trigger Service - fireTrigger', () => {
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://hooks.ghl.com/wf1',
-      payload,
+      expect.objectContaining({
+        ...payload,
+        event_type: 'payment_received',
+        location_id: 'loc_1',
+        locationId: 'loc_1',
+        contactId: 'c1',
+      }),
       { timeout: 10000 },
     );
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://hooks.ghl.com/wf2',
-      payload,
+      expect.objectContaining({
+        ...payload,
+        event_type: 'payment_received',
+        location_id: 'loc_1',
+        locationId: 'loc_1',
+        contactId: 'c1',
+      }),
+      { timeout: 10000 },
+    );
+  });
+
+  test('uses GHL auth client for marketplace trigger execution URLs and normalizes aliases', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'enrollment_complete',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/abc',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+
+    const result = await triggerService.fireTrigger('loc_1', 'enrollment_complete', {
+      contact_id: 'c1',
+    });
+
+    expect(result).toEqual({ sent: 1, failed: 0 });
+    expect(mockGhlApi).toHaveBeenCalledWith('loc_1');
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/abc',
+      expect.objectContaining({
+        event_type: 'enrollment_complete',
+        location_id: 'loc_1',
+        locationId: 'loc_1',
+        contact_id: 'c1',
+        contactId: 'c1',
+      }),
       { timeout: 10000 },
     );
   });

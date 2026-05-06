@@ -909,6 +909,34 @@ Manual follow-up:
 - Apply migration 055 in Supabase production before relying on the delivery log table.
 - After deploy, run a new enrollment or wait for the next daily installment/reminder, then query `trigger_delivery_logs` to see whether ScaleSafe sent to GHL and how GHL responded.
 
+### 2026-05-06: GHL Trigger Execute 401 Fix (Codex)
+
+Files changed:
+
+- `src/services/trigger.service.ts`
+- `tests/unit/trigger.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip ran two new enrollments and `trigger_delivery_logs` showed `enrollment_complete` payloads were built correctly, including contact IDs, but GHL returned `401` for the `workflows-marketplace/triggers/execute/...` subscription URLs.
+- Updated `trigger.service.ts` so GHL Marketplace trigger execution URLs are posted through the token-aware `ghlApi(locationId)` client instead of unauthenticated `axios.post`.
+- Added centralized trigger payload normalization for all trigger fires:
+  - Ensures `event_type`, `location_id`, and `locationId`.
+  - Mirrors `contact_id` <-> `contactId`.
+  - Mirrors `enrollment_id` <-> `enrollmentId`.
+  - Mirrors `offer_id` <-> `offerId`.
+- Improved failed-delivery status capture so rejected Axios responses preserve HTTP status in `trigger_delivery_logs`.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=trigger.service` passed: 1 suite, 4 tests.
+
+Next manual check:
+
+- After Railway deploys this commit, run one more enrollment and query `trigger_delivery_logs`. Expected result is no longer `401`; either `sent`/2xx or a more specific GHL workflow/trigger error.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.

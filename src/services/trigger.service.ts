@@ -1,9 +1,11 @@
 import axios from 'axios';
+import { ghlApi } from '../clients/ghl.client';
 import { getSupabase } from '../clients/supabase.client';
 import { triggerRepository } from '../repositories/trigger.repository';
 import { logger } from '../utils/logger';
 
 const RETRY_DELAYS = [1000, 5000, 30000]; // 1s, 5s, 30s
+const GHL_TRIGGER_EXECUTE_URL = 'services.leadconnectorhq.com/workflows-marketplace/triggers/execute';
 
 interface TriggerDeliveryResult {
   success: boolean;
@@ -12,22 +14,78 @@ interface TriggerDeliveryResult {
   errorMessage?: string;
 }
 
-async function postWithRetry(url: string, payload: Record<string, unknown>): Promise<TriggerDeliveryResult> {
+function normalizeTriggerPayload(
+  locationId: string,
+  triggerKey: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    event_type: String(payload.event_type || payload.eventType || triggerKey.replace(/^ss_/, '')),
+    location_id: locationId,
+    locationId,
+    ...payload,
+  };
+
+  if (normalized.contact_id && !normalized.contactId) {
+    normalized.contactId = normalized.contact_id;
+  }
+  if (normalized.contactId && !normalized.contact_id) {
+    normalized.contact_id = normalized.contactId;
+  }
+  if (normalized.enrollment_id && !normalized.enrollmentId) {
+    normalized.enrollmentId = normalized.enrollment_id;
+  }
+  if (normalized.enrollmentId && !normalized.enrollment_id) {
+    normalized.enrollment_id = normalized.enrollmentId;
+  }
+  if (normalized.offer_id && !normalized.offerId) {
+    normalized.offerId = normalized.offer_id;
+  }
+  if (normalized.offerId && !normalized.offer_id) {
+    normalized.offer_id = normalized.offerId;
+  }
+
+  return normalized;
+}
+
+function isGhlTriggerExecuteUrl(url: string): boolean {
+  return url.includes(GHL_TRIGGER_EXECUTE_URL);
+}
+
+async function postTriggerUrl(
+  locationId: string,
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<{ status: number }> {
+  if (isGhlTriggerExecuteUrl(url)) {
+    const api = await ghlApi(locationId);
+    return api.post(url, payload, { timeout: 10000 });
+  }
+
+  return axios.post(url, payload, { timeout: 10000 });
+}
+
+async function postWithRetry(
+  locationId: string,
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<TriggerDeliveryResult> {
   let lastStatus: number | undefined;
   let lastError: string | undefined;
 
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     try {
-      const response = await axios.post(url, payload, { timeout: 10000 });
+      const response = await postTriggerUrl(locationId, url, payload);
       lastStatus = response.status;
       if (response.status >= 200 && response.status < 300) {
         return { success: true, httpStatus: response.status, attemptCount: attempt + 1 };
       }
       logger.warn({ url, status: response.status, attempt }, 'Trigger POST non-2xx');
-    } catch (err: unknown) {
+    } catch (err: any) {
+      if (err?.response?.status) lastStatus = err.response.status;
       const message = err instanceof Error ? err.message : String(err);
       lastError = message;
-      logger.warn({ url, attempt, error: message }, 'Trigger POST failed');
+      logger.warn({ url, attempt, status: lastStatus, error: message }, 'Trigger POST failed');
     }
     if (attempt < RETRY_DELAYS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS[attempt]));
@@ -81,6 +139,7 @@ export const triggerService = {
     payload: Record<string, unknown>,
   ): Promise<{ sent: number; failed: number }> {
     const subscriptions = await triggerRepository.getActiveSubscriptions(locationId, triggerKey);
+    const normalizedPayload = normalizeTriggerPayload(locationId, triggerKey, payload);
 
     if (subscriptions.length === 0) {
       logger.debug({ locationId, triggerKey }, 'No active subscriptions for trigger');
@@ -92,13 +151,13 @@ export const triggerService = {
 
     const results = await Promise.allSettled(
       subscriptions.map(async (sub) => {
-        const result = await postWithRetry(sub.subscription_url, payload);
+        const result = await postWithRetry(locationId, sub.subscription_url, normalizedPayload);
         await recordTriggerDelivery({
           locationId,
           triggerKey,
           subscriptionUrl: sub.subscription_url,
           result,
-          payload,
+          payload: normalizedPayload,
         });
 
         if (result.success) {
