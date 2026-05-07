@@ -10,6 +10,7 @@
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
 - Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
 - Offer checkout/enrollment links are durable public links and must not expire by default. Quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) may be used in funnels, automations, emails, ads, or client follow-ups. Signed 14-day public action tokens are only for sensitive client actions such as payment update, subscription cancellation, and milestone signoff.
+- Workflow email/SMS templates must use the canonical app-owned field contract in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`. Do not create duplicate alias fields such as `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, or `contact.offer_support_email`.
 
 ## App-Provisioned On Install
 
@@ -69,12 +70,13 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
    - Header value is `{{ custom_values.scalesafe_webhook_secret }}`.
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
 6. Confirm `SS - Pulse Check Due` exists, uses the shared Marketplace trigger `ss_app_event`, filters `Event Type = Pulse Check Due`, and the old tag-driven pulse cadence workflow is excluded.
-7. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_upcoming_payment_reminder` one day before billing and `ss_payment_received` after installments.
-8. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
-9. Install the Snapshot into a fresh sandbox location.
-10. Install ScaleSafe into that fresh location.
-11. Verify app provisioning marks the merchant `installed` or a known acceptable `partial` state with clear missing items.
-12. Run the E2E test protocol from the Cowork folder against the fresh install.
+7. Confirm all active notification workflow email/SMS bodies use the canonical field replacements in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
+8. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_upcoming_payment_reminder` one day before billing and `ss_payment_received` after installments.
+9. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
+10. Install the Snapshot into a fresh sandbox location.
+11. Install ScaleSafe into that fresh location.
+12. Verify app provisioning marks the merchant `installed` or a known acceptable `partial` state with clear missing items.
+13. Run the E2E test protocol from the Cowork folder against the fresh install.
 
 ## Codex/Code Follow-Ups
 
@@ -87,6 +89,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | P1 | Copy or mirror current E2E protocol into repo docs | The feature ledger references `docs/E2E_TEST_PROTOCOL.md`, but it currently lives only in Cowork. |
 | P1 | Wire pulse cadence to `ss_app_event` | Shipped. Marketplace trigger/filter created manually by Philip; code now fires `triggerService.fireTrigger(locationId, 'ss_app_event', { event_type: 'pulse_check_due', ... })` from `pulse-cadence-check.ts`. Needs functional GHL workflow smoke. |
 | P1 | Add trigger delivery observability | Shipped in migration 055 and `trigger.service.ts`. Apply migration 055 in Supabase production, then use `trigger_delivery_logs` to verify whether enrollment/payment/reminder/pulse trigger deliveries reached GHL. |
+| P1 | Reconcile workflow merge-field contract | In progress. `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` now defines canonical fields and stale-field replacements. PMG workflow bodies still need manual GHL UI edits before snapshot export. |
 | P2 | Add an install smoke script | Read-only verification for a fresh location once OAuth/install is complete. |
 
 ## Next Recommended Step

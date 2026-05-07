@@ -29,6 +29,35 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-07: Workflow Field Contract Audit + Canonical Cleanup (Codex)
+
+Files changed:
+
+- `src/services/phase2Enrollment.service.ts`
+- `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `docs/GHL_AUTOMATION_COMPANION.md`
+- `docs/ghl-custom-fields-reference.md`
+- `tests/integration/trigger.integration.test.ts`
+- Cowork docs/logs in `C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe`
+
+Summary:
+
+- Live PMG GHL audit returned 118 custom fields and 22 custom values. The old workflow DOCX guide used merge fields that do not exist in live PMG: `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`.
+- Canonical beta decision: app-owned fields win. Workflow templates should use `contact.offer_name`, `contact.offer_price`, `contact.offer_num_payments`, and `{{ custom_values.merchant_support_email }}` rather than creating duplicate alias fields.
+- Added `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` with canonical field mapping, immediate PMG workflow template edits, review fields, and snapshot gate.
+- Removed the temporary alias writes from `phase2Enrollment.service.ts` while keeping the useful timing fix: canonical GHL contact fields still sync before workflow triggers can fire.
+- Updated the trigger integration test to expect the current normalized trigger payload (`event_type`, `location_id/locationId`, and camel/snake aliases), and to accept `trigger_delivery_logs` inserts in its Supabase mock.
+- Updated snapshot/provisioning docs and Cowork tracking so future agents do not revive the alias fields or create more duplicate PMG custom fields.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment` passed: 2 suites, 16 tests.
+- `npm.cmd test -- --runInBand` passed: 49 suites, 526 tests.
+- `npm.cmd run build` passed.
+- Manual GHL still required: update PMG workflow email/SMS templates using the matrix before snapshot export.
+
 ### 2026-05-06: Shared Marketplace App Event Trigger Created Manually (Philip)
 
 GHL Marketplace setup completed manually by Philip:
@@ -1004,16 +1033,11 @@ Files changed:
 Summary:
 
 - Philip received a GHL payment receipt email where the workflow fired, but contact merge fields such as `{{contact.offer_program_name}}`, `{{contact.offer_price_display}}`, `{{contact.offer_number_of_payments}}`, and `{{contact.offer_support_email}}` rendered blank.
-- Root causes found:
-  - The app was writing canonical fields like `contact.offer_name`, `contact.offer_price`, and `contact.offer_num_payments`, while the PMG workflow template reads friendlier aliases like `contact.offer_program_name`, `contact.offer_price_display`, and `contact.offer_number_of_payments`.
+- Initial root causes found:
+  - The PMG workflow template used friendlier aliases while the app wrote canonical fields like `contact.offer_name`, `contact.offer_price`, and `contact.offer_num_payments`.
   - The app fired workflow triggers before the GHL contact field update ran in the background, so immediate email/SMS workflows could send before contact merge fields were populated.
-- Added a shared offer-contact-field helper that writes both canonical fields and PMG workflow aliases:
-  - `contact.offer_name` and `contact.offer_program_name`
-  - `contact.offer_price` and `contact.offer_price_display`
-  - `contact.offer_num_payments` and `contact.offer_number_of_payments`
-  - `contact.offer_support_email`
-  - formatted payment type, billing amount, frequency, and business name.
-- Moved the important GHL contact field sync ahead of workflow-trigger timing in `completeEnrollment`, so receipt/welcome workflows have contact fields available before they send.
+- First patch moved the important GHL contact field sync ahead of workflow-trigger timing in `completeEnrollment`, so receipt/welcome workflows have contact fields available before they send.
+- Superseded by the later Workflow Field Contract Audit: live PMG does not contain the alias fields. Current direction is canonical fields only; do not create duplicate aliases. PMG workflow templates must be updated using `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
 
 Verification:
 

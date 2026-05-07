@@ -6,6 +6,8 @@
 
 **Rule:** If it lives in GHL, it's documented here. If it lives in the app, it's in the blueprint.
 
+> **2026-05-07 beta snapshot override:** this companion contains older V2 planning language. For current snapshot decisions, use `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md` and `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` first. Client Milestones pipeline and Offers Custom Object are deferred/excluded for beta. Workflow templates must use canonical app-owned contact fields (`contact.offer_name`, `contact.offer_price`, `contact.offer_num_payments`, etc.), not stale aliases such as `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, or `contact.offer_support_email`.
+
 ---
 
 ## 1. Snapshot Package (Auto-Installed on Merchant Install)
@@ -45,9 +47,9 @@ Stores program/offer definitions. Already exists in the test location.
 
 **App interaction:** App writes to this Custom Object when merchant creates/edits an offer. App reads from it during enrollment to populate funnel pages and create GHL Products.
 
-### 1C. Contact Custom Fields (5 Key Fields — v2.1)
+### 1C. Contact Custom Fields (6 Key Fields - v2.1)
 
-These are the ONLY contact-level fields the app actively maintains. All other data lives in Supabase.
+These are the core SS contact-level fields the app actively maintains. Offer bridge fields are listed separately below. All other data lives in Supabase unless a current workflow explicitly needs the GHL field.
 
 | Field Key | Display Name | Type | Updated By | Purpose |
 |-----------|-------------|------|-----------|---------|
@@ -56,12 +58,13 @@ These are the ONLY contact-level fields the app actively maintains. All other da
 | contact.ss_last_evidence_date | SS Last Evidence Date | TEXT | App | Date of most recent evidence logged |
 | contact.ss_chargeback_status | SS Chargeback Status | TEXT | App | Chargeback state (none, disputed, defending, won, lost) |
 | contact.ss_defense_status | SS Defense Status | TEXT | App | Defense packet state (none, preparing, ready, submitted) |
+| contact.ss_engagement_status | SS Engagement Status | SINGLE_OPTIONS | App | Active/At Risk engagement state for re-engagement workflows |
 
-**NOTE:** The test location has ~352 custom fields including many SS- and Offer- prefix fields from the original Make.com build. For v2.1, we're reducing to just these 5 app-managed fields. The Offer- prefix fields on contacts are still populated at enrollment time (offer name, price, terms copied to contact), but are written once and not actively maintained.
+**NOTE:** Older PMG docs mention ~352 custom fields including many SS- and Offer-prefix fields from earlier Make.com/GHL iterations. Live PMG returned 118 custom fields on 2026-05-07. Use the field contract matrix before deleting or adding fields.
 
 ### 1D. Offer-Prefix Contact Fields (Written Once at Enrollment)
 
-These get copied from the Offers Custom Object to the contact record when a client enrolls. Written once, not updated.
+These get copied from the ScaleSafe app's offer record to the contact record when a client enrolls. Written once, not updated. For beta, this does not depend on the deferred GHL Offers Custom Object.
 
 | Field Key Pattern | Purpose |
 |-------------------|---------|
@@ -76,6 +79,13 @@ These get copied from the Offers Custom Object to the contact record when a clie
 | contact.offer_clause_slot_[1-11]_text | Custom clause text |
 | contact.offer_milestone_[1-8]_name | Milestone names |
 | contact.offer_milestone_[1-8]_description | Milestone descriptions |
+
+Do **not** use or create these stale workflow aliases for beta:
+
+- `contact.offer_program_name` - use `contact.offer_name`
+- `contact.offer_price_display` - use `contact.offer_price`
+- `contact.offer_number_of_payments` - use `contact.offer_num_payments`
+- `contact.offer_support_email` - use `{{ custom_values.merchant_support_email }}`
 
 ### 1E. Evidence Collection Forms
 

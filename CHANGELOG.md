@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## 2026-05-07
+
+### Changed
+- **Workflow field contract cleaned for beta Snapshot.** Added `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` after auditing live PMG custom fields/custom values, app-written fields, and the original Claude/Oke workflow DOCX instructions. Canonical app fields now win: workflow templates should use `contact.offer_name`, `contact.offer_price`, `contact.offer_num_payments`, and `{{ custom_values.merchant_support_email }}` instead of stale/nonexistent aliases like `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`.
+- **Enrollment contact sync stays ahead of workflow triggers without alias writes.** `phase2Enrollment.service.ts` keeps the useful pre-trigger GHL contact field sync, but no longer attempts to write the stale alias fields that do not exist in live PMG.
+- **Trigger integration test aligned with normalized payloads.** The test now expects the current trigger payload contract (`event_type`, location aliases, and contact aliases) and mocks `trigger_delivery_logs`, keeping the full suite green.
+
+### Documentation
+- **Snapshot docs now block duplicate field drift.** Updated snapshot/provisioning docs and Cowork references so PMG workflow bodies must be corrected to canonical fields before beta Snapshot export, and older field references are marked historical.
+
+---
+
 ## 2026-05-05
 
 ### Added

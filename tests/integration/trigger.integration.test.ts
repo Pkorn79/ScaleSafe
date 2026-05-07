@@ -13,6 +13,11 @@ function storeKey(locationId: string, triggerKey: string) {
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
     from: (table: string) => {
+      if (table === 'trigger_delivery_logs') {
+        return {
+          insert: () => ({ error: null }),
+        };
+      }
       if (table !== 'trigger_subscriptions') throw new Error(`Unexpected table: ${table}`);
       return {
         upsert: (data: any, _opts: any) => ({
@@ -98,7 +103,13 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     expect(mockedAxios.post).toHaveBeenCalledTimes(1);
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://hooks.ghl.com/workflow-abc',
-      payload,
+      expect.objectContaining({
+        ...payload,
+        contactId: 'contact_123',
+        event_type: 'payment_received',
+        location_id: 'loc_1',
+        locationId: 'loc_1',
+      }),
       { timeout: 10000 },
     );
   });

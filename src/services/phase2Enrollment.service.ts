@@ -54,7 +54,6 @@ function applyOfferContactFields(
   merchant: any,
 ): void {
   const businessName = merchant?.dba_name || merchant?.business_name || '';
-  const supportEmail = merchant?.support_email || '';
   const priceDisplay = formatMoney(offer.price);
   const billingAmount = offer.installment_amount ?? offer.price;
   const billingAmountDisplay = formatMoney(billingAmount);
@@ -69,12 +68,6 @@ function applyOfferContactFields(
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
   customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
-
-  // Workflow-friendly aliases used by current PMG email templates.
-  customFields['contact.offer_program_name'] = offer.offer_name || '';
-  customFields['contact.offer_price_display'] = priceDisplay;
-  customFields['contact.offer_number_of_payments'] = numPayments;
-  customFields['contact.offer_support_email'] = supportEmail;
 }
 
 interface CompleteEnrollmentParams {
