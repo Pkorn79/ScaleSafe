@@ -964,6 +964,29 @@ Notes:
 - Philip reported the full funnel browser tab title says "Welcome to your coaching program." That exact string is not in the repo; it appears to be on the GHL `/welcome` funnel page/snapshot and should be changed there to neutral copy such as "Welcome" or "Enrollment".
 - Philip reported `enrollment_complete` should fire multiple workflows. ScaleSafe now fires all active subscription URLs stored in `trigger_subscriptions`; if only one workflow runs, verify every GHL workflow using that trigger is published/resaved after the `workflows.readonly` scope reauthorization and has an active row in `trigger_subscriptions`.
 
+### 2026-05-07: Subscription Offer Amount Guardrails (Codex)
+
+Files changed:
+
+- `src/services/offer.service.ts`
+- `src/routes/checkout.routes.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip retested a subscription enrollment and still saw `$0.00` on the full enrollment checkout payment page.
+- Added backend validation so subscription offers cannot be created or updated without a positive `installmentAmount` / `installment_amount`.
+- Added checkout-page guardrail: if a subscription offer somehow reaches checkout without a positive billing amount, the page shows an unavailable/error message instead of displaying or submitting `$0.00`.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=offer.service` passed: 1 suite, 12 tests.
+
+Manual diagnostic:
+
+- Query production `offers_mirror` for active subscription offers and inspect `price`, `installment_amount`, `installment_frequency`, and `checkout_mode`. Existing malformed offers may need a resave after this deploy or direct data correction.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.
