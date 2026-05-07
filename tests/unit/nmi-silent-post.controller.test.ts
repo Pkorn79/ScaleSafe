@@ -103,6 +103,31 @@ describe('NMI Silent Post webhook', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('uses NMI reference_id as the recurring subscription id when subscription_id is absent', async () => {
+    const { req, res } = createReqRes({
+      reference_id: '12034762268',
+      response: '1',
+      id: '12036110931',
+      amount: '0.50',
+    });
+
+    await handleNmiSilentPost(req, res);
+
+    const enrollmentBuilder = mockSupabaseFrom.mock.results.find(
+      (result) => result.value.eq.mock.calls.some((call: any[]) => call[0] === 'processor_subscription_id'),
+    )?.value;
+
+    expect(enrollmentBuilder.eq).toHaveBeenCalledWith('processor_subscription_id', '12034762268');
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        processorType: 'nmi',
+        transactionId: '12036110931',
+        amountCents: 50,
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('does not process approved posts when processor verification throws', async () => {
     mockCreateProcessorClient.mockReturnValue({
       verifyTransaction: jest.fn().mockRejectedValue(new Error('query api unavailable')),

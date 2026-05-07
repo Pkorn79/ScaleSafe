@@ -994,6 +994,30 @@ Correction:
 
 ## Current Working Tree Notes
 
+### 2026-05-07: NMI Recurring Silent Post Reference ID Fix (Codex)
+
+Files changed:
+
+- `src/controllers/nmi-silent-post.controller.ts`
+- `tests/unit/nmi-silent-post.controller.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip compared ScaleSafe payment records against an NMI transaction export and found Stripe recurring payments were posting back to ScaleSafe, but NMI recurring payments were not.
+- The NMI export showed successful recurring charges using `reference_id` as the recurring subscription id (`12030251307`, `12034706411`, `12034762268`, etc.), while the app only read `subscription_id` from Silent Post payloads.
+- Updated the NMI Silent Post handler to accept NMI's alternate recurring identifiers: `subscription_id`, `subscriptionid`, `reference_id`, `referenceid`, `recurring_id`, and `recurringid`.
+- Also accepts alternate transaction id fields (`transactionid`, `transaction_id`, `transactionId`, `id`) so the NMI charge id can still be used for idempotency if the payload follows the export naming.
+
+Verification:
+
+- `npm.cmd test -- --runInBand --testPathPatterns=nmi-silent-post.controller` passed: 1 suite, 4 tests.
+- Added a regression test using the exact production-like NMI shape: `reference_id = 12034762268`, `id = 12036110931`, `amount = 0.50`.
+
+Operational note:
+
+- This is a forward fix for future NMI recurring Silent Posts. Already-missed NMI recurring transactions will not automatically backfill unless NMI retries them; they should be reconciled/backfilled from the NMI export or a future reconciliation job.
+
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.
 - Codex did not modify that file.
 - Git emits warnings about `C:\Users\p_kor_e1dk2i3\.config\git\ignore` permission denied; this appears environmental, not project-specific.

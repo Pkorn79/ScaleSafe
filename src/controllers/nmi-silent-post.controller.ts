@@ -26,11 +26,28 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
   // Always return 200 to prevent NMI from retrying
   try {
     const body = req.body || {};
-    const subscriptionId = body.subscription_id;
-    const nmiResponse = body.response; // "1"=approved, "2"=declined, "3"=error
-    const transactionId = body.transactionid;
-    const amountStr = body.amount;
-    const responseText = body.responsetext || '';
+    const readBodyValue = (...keys: string[]): string => {
+      for (const key of keys) {
+        const value = body[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+      return '';
+    };
+
+    const subscriptionId = readBodyValue(
+      'subscription_id',
+      'subscriptionid',
+      'reference_id',
+      'referenceid',
+      'recurring_id',
+      'recurringid',
+    );
+    const nmiResponse = readBodyValue('response', 'response_code'); // "1"=approved, "2"=declined, "3"=error
+    const transactionId = readBodyValue('transactionid', 'transaction_id', 'transactionId', 'id');
+    const amountStr = readBodyValue('amount');
+    const responseText = readBodyValue('responsetext', 'response_text', 'responseText');
 
     if (!subscriptionId) {
       logger.debug({ body: Object.keys(body) }, 'NMI Silent Post: no subscription_id — ignoring');
