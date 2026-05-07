@@ -18,6 +18,65 @@ import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 // existing single-option checkbox fields stores them as the bare option label.
 const CLICK_WRAP_CHECKED_VALUE = 'Yes';
 
+function formatMoney(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value);
+}
+
+function formatPaymentType(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw === 'pif') return 'Paid in full';
+  if (raw === 'installment' || raw === 'installments') return 'Installment';
+  if (raw === 'subscription') return 'Subscription';
+  if (raw === 'free') return 'Free';
+  return raw.replace(/_/g, ' ');
+}
+
+function formatFrequency(value: unknown): string {
+  const raw = String(value || '').trim();
+  const labels: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    bi_weekly: 'Bi-weekly',
+    biweekly: 'Bi-weekly',
+    monthly: 'Monthly',
+    quarterly: 'Quarterly',
+    annual: 'Annual',
+  };
+  return labels[raw] || raw.replace(/_/g, ' ');
+}
+
+function applyOfferContactFields(
+  customFields: Record<string, unknown>,
+  offer: any,
+  merchant: any,
+): void {
+  const businessName = merchant?.dba_name || merchant?.business_name || '';
+  const supportEmail = merchant?.support_email || '';
+  const priceDisplay = formatMoney(offer.price);
+  const billingAmount = offer.installment_amount ?? offer.price;
+  const billingAmountDisplay = formatMoney(billingAmount);
+  const paymentTypeDisplay = formatPaymentType(offer.payment_type);
+  const frequencyDisplay = formatFrequency(offer.installment_frequency);
+  const numPayments = offer.num_payments ?? '';
+
+  customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
+  customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
+  customFields[OFFER_CONTACT_FIELDS.PRICE] = priceDisplay;
+  customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = paymentTypeDisplay;
+  customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
+  customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
+  customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
+
+  // Workflow-friendly aliases used by current PMG email templates.
+  customFields['contact.offer_program_name'] = offer.offer_name || '';
+  customFields['contact.offer_price_display'] = priceDisplay;
+  customFields['contact.offer_number_of_payments'] = numPayments;
+  customFields['contact.offer_support_email'] = supportEmail;
+}
+
 interface CompleteEnrollmentParams {
   enrollmentId: string;
   locationId: string;
@@ -67,12 +126,13 @@ export const phase2EnrollmentService = {
       }
     }
 
-    // Fetch offer name for trigger payload
+    // Fetch offer for trigger payload and contact-field sync.
     let offerName = '';
+    let enrollmentOffer: any = null;
     if (enrollment.offer_id) {
       try {
-        const offer = await offerRepository.getById(enrollment.offer_id);
-        offerName = offer.offer_name;
+        enrollmentOffer = await offerRepository.getById(enrollment.offer_id);
+        offerName = enrollmentOffer.offer_name;
       } catch {
         logger.warn({ offerId: enrollment.offer_id }, 'Could not fetch offer for trigger payload');
       }
@@ -152,6 +212,27 @@ export const phase2EnrollmentService = {
     }
 
     // 3-5. Log consent evidence, payment evidence, and payment event — all in parallel
+    if (params.locationId && resolvedContactId) {
+      try {
+        const api = await ghlApi(params.locationId);
+        const merchant = await merchantRepository.getByLocationId(params.locationId);
+        const customFields: Record<string, unknown> = {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
+        };
+        if ((merchant as any)?.engagement_enabled ?? true) {
+          customFields[SS_CONTACT_FIELDS.ENGAGEMENT_STATUS] = 'Active';
+        }
+        if (enrollmentOffer) {
+          applyOfferContactFields(customFields, enrollmentOffer, merchant);
+        }
+        await api.put(`/contacts/${resolvedContactId}`, { customField: customFields });
+        logger.info({ contactId: resolvedContactId, enrollmentId: params.enrollmentId }, 'GHL contact fields synced before workflow triggers');
+      } catch (ghlSyncErr: any) {
+        logger.error({ err: ghlSyncErr.message, enrollmentId: params.enrollmentId }, 'GHL contact field sync before workflow triggers failed');
+      }
+    }
+
     await Promise.allSettled([
       phase2EvidenceRepository.create({
         location_id: params.locationId,
@@ -265,13 +346,7 @@ export const phase2EnrollmentService = {
           if (bgOfferId) {
             try {
               const offer = await offerRepository.getById(bgOfferId);
-              customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchant.business_name || '';
-              customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
-              customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price;
-              customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
-              customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
-              customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
-              customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
+              applyOfferContactFields(customFields, offer, merchant);
               pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
               pulseFrequencyDays = Math.min(365, Math.max(1, Number(offer.pulse_frequency_days || 30)));
             } catch {}

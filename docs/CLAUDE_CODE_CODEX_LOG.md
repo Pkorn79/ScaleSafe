@@ -994,6 +994,32 @@ Correction:
 
 ## Current Working Tree Notes
 
+### 2026-05-07: Enrollment Receipt Merge Field Fix (Codex)
+
+Files changed:
+
+- `src/services/phase2Enrollment.service.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip received a GHL payment receipt email where the workflow fired, but contact merge fields such as `{{contact.offer_program_name}}`, `{{contact.offer_price_display}}`, `{{contact.offer_number_of_payments}}`, and `{{contact.offer_support_email}}` rendered blank.
+- Root causes found:
+  - The app was writing canonical fields like `contact.offer_name`, `contact.offer_price`, and `contact.offer_num_payments`, while the PMG workflow template reads friendlier aliases like `contact.offer_program_name`, `contact.offer_price_display`, and `contact.offer_number_of_payments`.
+  - The app fired workflow triggers before the GHL contact field update ran in the background, so immediate email/SMS workflows could send before contact merge fields were populated.
+- Added a shared offer-contact-field helper that writes both canonical fields and PMG workflow aliases:
+  - `contact.offer_name` and `contact.offer_program_name`
+  - `contact.offer_price` and `contact.offer_price_display`
+  - `contact.offer_num_payments` and `contact.offer_number_of_payments`
+  - `contact.offer_support_email`
+  - formatted payment type, billing amount, frequency, and business name.
+- Moved the important GHL contact field sync ahead of workflow-trigger timing in `completeEnrollment`, so receipt/welcome workflows have contact fields available before they send.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment` passed: 2 suites, 16 tests.
+
 ### 2026-05-07: NMI Recurring Silent Post Reference ID Fix (Codex)
 
 Files changed:
