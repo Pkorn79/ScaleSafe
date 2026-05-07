@@ -211,7 +211,7 @@
             <input type="checkbox" v-model="form.pulseCadenceEnabled" />
             Send scheduled pulse check-ins for this offer
           </label>
-          <p class="text-sm text-muted mt-2">ScaleSafe owns timing; the GHL workflow only sends the message.</p>
+          <p class="text-sm text-muted mt-2">Check in with clients automatically during active enrollments.</p>
         </div>
         <div v-if="form.pulseCadenceEnabled" class="form-group">
           <label class="form-label">Cadence</label>
@@ -397,6 +397,7 @@ const form = ref({
   deliveryMethod: '',
   price: 0,
   paymentType: 'one_time' as 'one_time' | 'installments' | 'subscription',
+  installmentAmount: 0,
   installmentFrequency: 'monthly',
   numPayments: 0,
   pifPrice: 0,
@@ -469,6 +470,7 @@ onMounted(async () => {
       form.value.deliveryMethod = offer.delivery_method || '';
       form.value.price = offer.price || 0;
       form.value.paymentType = offer.payment_type || 'one_time';
+      form.value.installmentAmount = offer.installment_amount || 0;
       form.value.installmentFrequency = offer.installment_frequency || 'monthly';
       form.value.numPayments = offer.num_payments || 0;
       form.value.pifPrice = offer.pif_price || 0;
@@ -538,6 +540,9 @@ async function save() {
     deliveryMethod: form.value.deliveryMethod,
     price: form.value.price,
     paymentType: form.value.paymentType,
+    installmentAmount: form.value.paymentType === 'subscription'
+      ? form.value.installmentAmount
+      : undefined,
     installmentFrequency: form.value.installmentFrequency,
     numPayments: form.value.numPayments,
     pifPrice: form.value.pifDiscountEnabled ? form.value.pifPrice : 0,

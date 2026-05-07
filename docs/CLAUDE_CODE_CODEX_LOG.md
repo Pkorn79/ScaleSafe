@@ -937,6 +937,33 @@ Next manual check:
 
 - After Railway deploys this commit, run one more enrollment and query `trigger_delivery_logs`. Expected result is no longer `401`; either `sent`/2xx or a more specific GHL workflow/trigger error.
 
+### 2026-05-06: Subscription Checkout Amount + Offer UI Polish (Codex)
+
+Files changed:
+
+- `src/routes/checkout.routes.ts`
+- `src/services/offer.service.ts`
+- `src/ui/src/views/OfferFormView.vue`
+- `src/ui/src/views/OffersView.vue`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Fixed full enrollment checkout subscription amount handling. The standalone checkout page now charges `installmentAmount` when `paymentChoice === 'subscription'`, matching the quick checkout path and displayed subscription price.
+- Fixed offer form subscription persistence. `OfferFormView.vue` now loads and saves `installmentAmount` for subscription offers, and `offer.service.ts` persists explicit subscription recurring amount updates.
+- Removed implementation-language UI copy from the Pulse Check-Ins section. The Pulse helper now says clients can be checked in automatically during active enrollments.
+- Improved offer link copy UX by showing `Copying...` and disabling the specific copy button until the clipboard write finishes, reducing the chance Philip/users paste the previous clipboard value during the brief async link lookup.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build-ui` passed.
+
+Notes:
+
+- Philip reported the full funnel browser tab title says "Welcome to your coaching program." That exact string is not in the repo; it appears to be on the GHL `/welcome` funnel page/snapshot and should be changed there to neutral copy such as "Welcome" or "Enrollment".
+- Philip reported `enrollment_complete` should fire multiple workflows. ScaleSafe now fires all active subscription URLs stored in `trigger_subscriptions`; if only one workflow runs, verify every GHL workflow using that trigger is published/resaved after the `workflows.readonly` scope reauthorization and has an active row in `trigger_subscriptions`.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.

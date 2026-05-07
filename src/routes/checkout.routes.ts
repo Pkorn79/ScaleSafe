@@ -990,6 +990,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         chargePrice = offerData.pifPrice;
       } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
         chargePrice = offerData.installmentAmount;
+      } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
+        chargePrice = offerData.installmentAmount;
       }
       // Validate customer fields. Phone is only required on Quick Pay (no consent token);
       // on the full funnel path the contact already exists in GHL with phone from Page 1.

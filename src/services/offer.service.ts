@@ -330,6 +330,9 @@ export const offerService = {
     if (updates.price !== undefined) dbUpdates.price = updates.price;
     if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType || null;
     if (updates.installmentFrequency !== undefined) dbUpdates.installment_frequency = updates.installmentFrequency || null;
+    if (updates.installmentAmount !== undefined && effectivePaymentType === 'subscription') {
+      dbUpdates.installment_amount = updates.installmentAmount;
+    }
     if (updates.numPayments !== undefined) dbUpdates.num_payments = updates.numPayments;
     if (updates.pifPrice !== undefined) dbUpdates.pif_price = updates.pifPrice;
     if (updates.pifDiscountEnabled !== undefined) dbUpdates.pif_discount_enabled = updates.pifDiscountEnabled;

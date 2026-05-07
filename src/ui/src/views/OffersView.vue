@@ -71,8 +71,8 @@
               <span v-if="offer.checkout_mode === 'quick_checkout'" class="badge badge-blue" style="margin-left:4px">Quick</span>
             </td>
             <td>
-              <button class="btn btn-sm btn-secondary" @click="copyLink(offer.id)">
-                <Link2 :size="12" /> Copy
+              <button class="btn btn-sm btn-secondary" @click="copyLink(offer.id)" :disabled="copyingOfferId === offer.id">
+                <Link2 :size="12" /> {{ copyingOfferId === offer.id ? 'Copying...' : 'Copy' }}
               </button>
               <button class="btn btn-sm btn-secondary" style="margin-left:4px" @click="openSendLink(offer)">
                 <Send :size="12" /> Send
@@ -164,6 +164,7 @@ const routerNav = useRouter();
 const { loading, error } = api;
 const offers = ref<any[]>([]);
 const toast = ref('');
+const copyingOfferId = ref('');
 const tab = ref<'active' | 'archived'>('active');
 const activeOffers = computed(() => offers.value.filter(o => o.active));
 const archivedOffers = computed(() => offers.value.filter(o => !o.active));
@@ -200,6 +201,7 @@ function showToast(msg: string) {
 }
 
 async function copyLink(offerId: string) {
+  copyingOfferId.value = offerId;
   try {
     const result = await api.get<{ link: string; funnelConfigured: boolean }>(`/api/offers/${offerId}/enrollment-link`);
     await navigator.clipboard.writeText(result.link);
@@ -209,6 +211,7 @@ async function copyLink(offerId: string) {
       showToast('Enrollment link copied!');
     }
   } catch {}
+  copyingOfferId.value = '';
 }
 
 async function cloneOffer(offer: any) {
@@ -289,4 +292,3 @@ async function unarchiveOffer(offer: any) {
 // TODO: Phase L+ — Add bulk send capability
 // Select multiple contacts from GHL → send enrollment link to all
 </script>
-
