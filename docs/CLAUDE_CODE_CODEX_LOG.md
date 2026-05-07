@@ -987,6 +987,11 @@ Manual diagnostic:
 
 - Query production `offers_mirror` for active subscription offers and inspect `price`, `installment_amount`, `installment_frequency`, and `checkout_mode`. Existing malformed offers may need a resave after this deploy or direct data correction.
 
+Correction:
+
+- Philip clarified that `$0` offers/subscriptions are an intentional supported product path, and the reported bug was not "missing amount on the offer." Codex removed the broad positive-amount validation and checkout block. The remaining investigation should compare the offer row/API response against the full enrollment checkout page's selected `paymentChoice`.
+- Philip's SQL confirmed the real issue: subscription offers had `price = 1.00` but `installment_amount = null`. Codex patched subscription create/update to default `installment_amount` to `price` when a separate recurring amount is not supplied, and patched full enrollment checkout to fall back to `price` for subscription display/charge if an older offer still has `installment_amount = null`. This preserves legitimate `$0` subscriptions because it does not require a positive amount.
+
 ## Current Working Tree Notes
 
 - Existing untracked file observed before Codex edits: `scripts/backfill-merchant-id.js`.

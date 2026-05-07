@@ -837,16 +837,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     } else if (offerData.paymentType === 'installments' && offerData.installmentAmount) {
       // Installment-only (no PIF discount) — force installments
       paymentChoice = 'installments';
-    } else if (offerData.paymentType === 'subscription' && offerData.installmentAmount) {
+    } else if (offerData.paymentType === 'subscription') {
+      if (offerData.installmentAmount == null) {
+        offerData.installmentAmount = offerData.price;
+      }
       paymentChoice = 'subscription';
-    }
-
-    if (offerData.paymentType === 'subscription' && !validMoney(offerData.installmentAmount)) {
-      el('error-msg').textContent = 'This subscription offer is missing its billing amount. Please contact the provider for an updated link.';
-      el('error-msg').style.display = 'block';
-      el('pay-btn').disabled = true;
-      el('pay-btn').textContent = 'Unavailable';
-      return;
     }
 
     updatePricingDisplay();
@@ -908,11 +903,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   function formatCurrency(val) {
     if (val == null) return '';
     return '$' + Number(val).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
-
-  function validMoney(val) {
-    var n = Number(val);
-    return isFinite(n) && n > 0;
   }
 
   // Consent checkbox + pay button gate
@@ -1003,11 +993,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         chargePrice = offerData.pifPrice;
       } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
         chargePrice = offerData.installmentAmount;
-      } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
-        chargePrice = offerData.installmentAmount;
-      }
-      if (offerData.paymentType === 'subscription' && !validMoney(chargePrice)) {
-        throw new Error('This subscription offer is missing its billing amount. Please contact the provider for an updated link.');
+      } else if (paymentChoice === 'subscription') {
+        chargePrice = offerData.installmentAmount != null ? offerData.installmentAmount : offerData.price;
       }
       // Validate customer fields. Phone is only required on Quick Pay (no consent token);
       // on the full funnel path the contact already exists in GHL with phone from Page 1.

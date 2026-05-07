@@ -134,14 +134,6 @@ function isDailyGhlRecurringPriceError(err: any): boolean {
     || details.toLowerCase().includes('recurring');
 }
 
-function validateSubscriptionAmount(paymentType?: string | null, installmentAmount?: number | null): void {
-  if (paymentType !== 'subscription') return;
-  const amount = Number(installmentAmount || 0);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new ValidationError('Subscription offers require an amount per billing period.');
-  }
-}
-
 export const offerService = {
   async create(input: CreateOfferInput): Promise<OfferRecord> {
     const { locationId } = input;
@@ -149,8 +141,9 @@ export const offerService = {
     // Auto-calculate installment amount
     if (input.paymentType === 'installments') {
       input.installmentAmount = calcInstallmentAmount(input.price, input.numPayments, input.installmentAmount);
+    } else if (input.paymentType === 'subscription' && input.installmentAmount === undefined) {
+      input.installmentAmount = input.price;
     }
-    validateSubscriptionAmount(input.paymentType, input.installmentAmount);
 
     // 1. Create GHL Product
     const api = await ghlApi(locationId);
@@ -339,14 +332,12 @@ export const offerService = {
     if (updates.price !== undefined) dbUpdates.price = updates.price;
     if (updates.paymentType !== undefined) dbUpdates.payment_type = updates.paymentType || null;
     if (updates.installmentFrequency !== undefined) dbUpdates.installment_frequency = updates.installmentFrequency || null;
-    if (updates.installmentAmount !== undefined && effectivePaymentType === 'subscription') {
-      dbUpdates.installment_amount = updates.installmentAmount;
-    }
-    if (updates.paymentType === 'subscription' || updates.installmentAmount !== undefined) {
-      validateSubscriptionAmount(
-        effectivePaymentType,
-        (dbUpdates.installment_amount as number | undefined) ?? existing.installment_amount,
-      );
+    if (effectivePaymentType === 'subscription') {
+      if (updates.installmentAmount !== undefined) {
+        dbUpdates.installment_amount = updates.installmentAmount;
+      } else if (updates.price !== undefined && !existing.installment_amount) {
+        dbUpdates.installment_amount = updates.price;
+      }
     }
     if (updates.numPayments !== undefined) dbUpdates.num_payments = updates.numPayments;
     if (updates.pifPrice !== undefined) dbUpdates.pif_price = updates.pifPrice;
