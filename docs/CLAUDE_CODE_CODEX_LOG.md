@@ -29,6 +29,31 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: GHL Contact Field Updates Must Use Field IDs (Codex)
+
+Files changed:
+
+- `src/clients/ghl.client.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip confirmed the live Welcome/Receipt emails were still blank even though triggers sent successfully.
+- Direct GHL inspection showed PMG's fields exist but the test contact still had empty values. A direct GHL test confirmed `customFields: [{ id, field_value }]` populates the field, while the app's key-based update shape could return success without writing values.
+- Updated the shared GHL API client so every existing `api.put('/contacts/:id', { customField: ... })` call resolves `contact.*` field keys to GHL custom-field IDs and sends `{ id, field_value }`.
+- This fixes the field-write layer globally for enrollment, recurring payment, failed payment, refund, defense, and other contact custom-field sync paths that use the shared client.
+
+Verification:
+
+- Direct GHL API proof on PMG test contact: writing by custom-field ID populated `Offer Program Name`.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment` passed.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, run a fresh enrollment. The contact fields should populate before `enrollment_complete` fires, and Welcome/Receipt emails should no longer render blank merge fields.
+
 ### 2026-05-08: Stale Inactive GHL Trigger Subscriptions Auto-Deactivate (Codex)
 
 Files changed:

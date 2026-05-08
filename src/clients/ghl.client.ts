@@ -5,6 +5,12 @@ import { GHLApiError } from '../utils/errors';
 import { getSupabase } from './supabase.client';
 
 const TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
+const CUSTOM_FIELD_ID_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const customFieldIdCache = new Map<string, {
+  expiresAt: number;
+  map: Map<string, string>;
+}>();
 
 interface TokenPair {
   accessToken: string;
@@ -18,6 +24,42 @@ interface TokenResponse extends TokenPair {
   userId: string;
   scopes: string[];
   _debug?: Record<string, unknown>;
+}
+
+function normalizeContactFieldKey(key: string): string {
+  const trimmed = key.trim();
+  return trimmed.startsWith('contact.') ? trimmed : `contact.${trimmed}`;
+}
+
+async function getContactCustomFieldIdMap(
+  api: AxiosInstance,
+  locationId: string,
+): Promise<Map<string, string>> {
+  const cached = customFieldIdCache.get(locationId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.map;
+  }
+
+  const res = await api.get(`/locations/${locationId}/customFields`);
+  const fields = res.data?.customFields || res.data?.fields || (Array.isArray(res.data) ? res.data : []);
+  const map = new Map<string, string>();
+
+  for (const field of fields) {
+    const id = field?.id;
+    const rawKey = field?.fieldKey || field?.key;
+    if (!id || !rawKey) continue;
+
+    const contactKey = normalizeContactFieldKey(String(rawKey));
+    const bareKey = contactKey.replace(/^contact\./, '');
+    map.set(contactKey, id);
+    map.set(bareKey, id);
+  }
+
+  customFieldIdCache.set(locationId, {
+    expiresAt: Date.now() + CUSTOM_FIELD_ID_CACHE_TTL_MS,
+    map,
+  });
+  return map;
 }
 
 /**
@@ -331,15 +373,29 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     timeout: 30000,
   });
 
-  // Intercept request: auto-transform customField (singular object) → customFields (plural array)
-  // GHL V2 API requires customFields as an array, not customField as an object.
-  instance.interceptors.request.use((reqConfig) => {
+  // Intercept request: auto-transform customField (singular object) to customFields (plural array).
+  // GHL V2 accepts custom-field IDs reliably; key-based updates can 200 without populating values.
+  instance.interceptors.request.use(async (reqConfig) => {
     if (reqConfig.data && typeof reqConfig.data === 'object' && reqConfig.data.customField && !reqConfig.data.customFields) {
       const cf = reqConfig.data.customField;
-      reqConfig.data.customFields = Object.entries(cf).map(([key, value]) => ({
-        key,
-        field_value: value,
-      }));
+      let fieldIdMap: Map<string, string> | null = null;
+      try {
+        fieldIdMap = await getContactCustomFieldIdMap(instance, locationId);
+      } catch (err: any) {
+        logger.warn(
+          { locationId, err: err?.message || String(err) },
+          'Failed to load GHL custom field id map; falling back to key-based contact field update',
+        );
+      }
+
+      reqConfig.data.customFields = Object.entries(cf).map(([key, value]) => {
+        const normalizedKey = normalizeContactFieldKey(key);
+        const bareKey = normalizedKey.replace(/^contact\./, '');
+        const id = fieldIdMap?.get(normalizedKey) || fieldIdMap?.get(bareKey);
+        return id
+          ? { id, field_value: value }
+          : { key: normalizedKey, field_value: value };
+      });
       delete reqConfig.data.customField;
     }
     return reqConfig;
