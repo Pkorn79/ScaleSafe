@@ -4,11 +4,13 @@
 **Location audited:** PMG / `274dtgl30b7x2HG8hn69`  
 **Purpose:** Pre-snapshot source of truth for the field contract between ScaleSafe, GHL workflow templates, and PMG custom fields.
 
+For the concrete workflow-by-workflow repair list extracted from the Claude/Oke DOCX files, see `docs/GHL_WORKFLOW_TEMPLATE_REPAIR_PLAN.md`.
+
 ## Decision
 
-Canonical app fields win for beta. Do **not** create duplicate workflow alias fields just to satisfy older Claude/Oke instruction docs.
+Current workflows win for beta. Instead of making Philip manually rebuild every GHL workflow email/SMS before snapshot, the app now provisions and writes the workflow-compatible fields the current templates already expect.
 
-The app should write fields that exist in PMG and are provisioned by ScaleSafe. GHL workflow email/SMS templates should be edited to use those canonical fields before snapshot export.
+The app writes both canonical fields and compatibility aliases before the relevant workflow trigger fires. Custom values are separate from custom fields and are not part of the custom-field cleanup/delete pass.
 
 ## Sources Compared
 
@@ -35,26 +37,26 @@ These exist in PMG and are written by the app at enrollment time.
 | `{{contact.offer_installment_frequency}}` | Exists | Formatted billing frequency. |
 | `{{contact.offer_num_payments}}` | Exists | Total number of installment payments where applicable. |
 
-Use `{{custom_values.merchant_support_email}}` for merchant support email. Do not create a per-contact `offer_support_email` duplicate for beta.
+The app also writes workflow-compatible aliases such as `{{contact.offer_program_name}}`, `{{contact.offer_price_display}}`, `{{contact.offer_number_of_payments}}`, and `{{contact.offer_support_email}}` so existing PMG templates render without a manual rewrite pass.
 
-## Stale Workflow Fields To Replace
+## Workflow Compatibility Aliases
 
-These appear in the original workflow build guide but do not exist in live PMG. They should be removed from workflow templates before snapshot export.
+These appeared in the original workflow build guide and are now intentionally provisioned/written by the app for beta.
 
-| Stale field in workflow docs | Replacement |
+| Workflow field | App value |
 |---|---|
-| `{{contact.offer_program_name}}` | `{{contact.offer_name}}` |
-| `{{contact.offer_price_display}}` | `{{contact.offer_price}}` |
-| `{{contact.offer_number_of_payments}}` | `{{contact.offer_num_payments}}` |
-| `{{contact.offer_support_email}}` | `{{custom_values.merchant_support_email}}` |
-| `{{contact.offer_refund_policy}}` | Use generic support copy or app-generated terms link. Do not create a duplicate field. |
-| `{{contact.offer_tc_document_url}}` | Use `{{custom_values.tc_document_url}}` only where a location-level T&C URL is intentionally acceptable; otherwise use support copy. |
+| `{{contact.offer_program_name}}` | Same as `{{contact.offer_name}}`. |
+| `{{contact.offer_price_display}}` | Same formatted value as `{{contact.offer_price}}`. |
+| `{{contact.offer_number_of_payments}}` | Same as `{{contact.offer_num_payments}}`. |
+| `{{contact.offer_support_email}}` | Merchant support email copied from merchant config. |
+| `{{contact.offer_refund_policy}}` | Offer refund policy/terms when available. |
+| `{{contact.offer_tc_document_url}}` | Merchant/location terms URL when available. |
 
 `{{contact.first_name}}`, `{{contact.last_name}}`, `{{contact.email}}`, and `{{contact.phone}}` are native contact fields, not custom fields. They are valid even though they are not in the custom-field inventory.
 
-## Immediate PMG Workflow Template Edits
+## Optional Future Workflow Template Edits
 
-Apply these in GHL before beta snapshot export:
+The following copy is still a cleaner long-term direction, but it is no longer a beta blocker because the app now writes the compatibility aliases.
 
 ### SS - Welcome Sequence
 
@@ -212,8 +214,8 @@ The GHL API can read workflow metadata but does not expose full email/SMS action
 
 Before exporting the beta snapshot:
 
-1. GHL workflow bodies must use canonical fields only.
-2. No new alias custom fields should be created for `offer_program_name`, `offer_price_display`, `offer_number_of_payments`, or `offer_support_email`.
+1. Workflow-compatible custom fields must exist and render in PMG.
+2. Run Settings > Provisioning Health > Repair Fields in PMG and in a fresh sandbox install so missing workflow-compatible custom fields are created.
 3. Run free, installment, and subscription enrollments.
 4. Confirm `trigger_delivery_logs` shows `sent`/2xx for Welcome and Payment Receipt subscriptions.
 5. Confirm rendered emails show offer name, payment type, amount, installment amount/frequency, payment count, business name, and support email.

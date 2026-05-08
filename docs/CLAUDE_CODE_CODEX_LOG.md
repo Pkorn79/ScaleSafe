@@ -29,7 +29,67 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
-### 2026-05-07: Workflow Field Contract Audit + Canonical Cleanup (Codex)
+### 2026-05-08: Workflow-Compatible GHL Field Registry + Repair Path (Codex)
+
+Files changed:
+
+- `src/constants/ghl-fields.ts`
+- `src/services/merchant.service.ts`
+- `src/controllers/merchant.controller.ts`
+- `src/routes/merchant.routes.ts`
+- `src/ui/src/views/SettingsView.vue`
+- `src/services/phase2Enrollment.service.ts`
+- `src/services/enrollment.service.ts`
+- `src/services/recurring-payment.service.ts`
+- `src/services/payment-lifecycle.service.ts`
+- `tests/unit/merchant.service.test.ts`
+- `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`
+- `docs/GHL_WORKFLOW_TEMPLATE_REPAIR_PLAN.md`
+- `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md`
+- `docs/GHL_AUTOMATION_COMPANION.md`
+- `docs/ghl-custom-fields-reference.md`
+
+Summary:
+
+- Superseded the 2026-05-07 "canonical fields only" direction. For beta, Philip decided the current GHL workflows win so he does not have to manually rebuild every email/SMS template before snapshot.
+- Added a beta custom-field registry in `src/constants/ghl-fields.ts` that includes canonical app fields plus workflow-compatible aliases such as `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`.
+- Updated merchant provisioning/custom-field repair to create missing approved beta fields, report already-existing fields, and return ScaleSafe-owned delete candidates as a dry run. Custom values are not part of this cleanup pass.
+- Added protected endpoints and a Settings > Provisioning Health "Repair Fields" action so PMG and fresh installs can create missing workflow-compatible fields without changing `snapshot_status`.
+- Updated enrollment, recurring payment, failed payment, refund, and payment lifecycle paths to sync the workflow-compatible contact fields before GHL workflow triggers fire.
+- No GHL fields are deleted automatically. The cleanup endpoint only deletes candidates when explicitly called with `confirmDelete: true`; the UI exposes repair, not delete.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=ghl-fields` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=merchant.service` passed.
+- `npm.cmd test -- --runInBand` passed: 49 suites, 526 tests.
+- `npm.cmd run build` passed.
+
+Next manual beta check:
+
+- After deploy, run Settings > Provisioning Health > Repair Fields in PMG, then run free/installment/subscription enrollments and confirm Welcome, Enrollment Payment Receipt, and Recurring Payment Receipt render values.
+
+### 2026-05-07: Workflow Template Repair Plan Expanded From Source DOCX (Codex)
+
+Files changed:
+
+- `docs/GHL_WORKFLOW_TEMPLATE_REPAIR_PLAN.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+- Cowork log / feature ledger notes in `C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe`
+
+Summary:
+
+- Codex extracted merge fields from the actual Claude/Oke DOCX workflow sources instead of asking Philip to manually audit every workflow.
+- Added a concrete workflow-by-workflow repair list showing which fields are stale, which app fields are written before triggers, and which `contact.ss_*` fields are not safe because the current app sends event payloads but does not write those GHL contact fields.
+- Key correction: Welcome and Enrollment Payment Receipt can be fixed cleanly with canonical offer fields. Recurring receipt, failed payment, refund, milestone, and defense workflows need either trigger-variable templates or app-side contact field sync before those workflows can be considered beta-clean.
+- HighLevel's Marketplace trigger docs confirm trigger payload data can be configured as workflow custom variables, but GHL API access available here still does not expose/edit the live email/SMS action bodies. Remaining GHL UI work is execution only: paste the repaired template fields/copy, not manual analysis.
+
+Verification:
+
+- Docs-only update; no code/tests run.
+
+### 2026-05-07: Workflow Field Contract Audit + Canonical Cleanup (Superseded 2026-05-08)
 
 Files changed:
 
@@ -44,7 +104,7 @@ Files changed:
 Summary:
 
 - Live PMG GHL audit returned 118 custom fields and 22 custom values. The old workflow DOCX guide used merge fields that do not exist in live PMG: `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`.
-- Canonical beta decision: app-owned fields win. Workflow templates should use `contact.offer_name`, `contact.offer_price`, `contact.offer_num_payments`, and `{{ custom_values.merchant_support_email }}` rather than creating duplicate alias fields.
+- Superseded on 2026-05-08: beta direction changed to current workflows win. The app now provisions and writes workflow-compatible alias fields instead of requiring Philip to manually rebuild every workflow body before snapshot.
 - Added `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` with canonical field mapping, immediate PMG workflow template edits, review fields, and snapshot gate.
 - Removed the temporary alias writes from `phase2Enrollment.service.ts` while keeping the useful timing fix: canonical GHL contact fields still sync before workflow triggers can fire.
 - Updated the trigger integration test to expect the current normalized trigger payload (`event_type`, `location_id/locationId`, and camel/snake aliases), and to accept `trigger_delivery_logs` inserts in its Supabase mock.
@@ -56,7 +116,7 @@ Verification:
 - `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment` passed: 2 suites, 16 tests.
 - `npm.cmd test -- --runInBand` passed: 49 suites, 526 tests.
 - `npm.cmd run build` passed.
-- Manual GHL still required: update PMG workflow email/SMS templates using the matrix before snapshot export.
+- Manual GHL template rewrite is no longer the beta path. Run the Repair Fields action, then validate rendered emails/SMS with live enrollments.
 
 ### 2026-05-06: Shared Marketplace App Event Trigger Created Manually (Philip)
 
@@ -1037,7 +1097,7 @@ Summary:
   - The PMG workflow template used friendlier aliases while the app wrote canonical fields like `contact.offer_name`, `contact.offer_price`, and `contact.offer_num_payments`.
   - The app fired workflow triggers before the GHL contact field update ran in the background, so immediate email/SMS workflows could send before contact merge fields were populated.
 - First patch moved the important GHL contact field sync ahead of workflow-trigger timing in `completeEnrollment`, so receipt/welcome workflows have contact fields available before they send.
-- Superseded by the later Workflow Field Contract Audit: live PMG does not contain the alias fields. Current direction is canonical fields only; do not create duplicate aliases. PMG workflow templates must be updated using `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
+- Superseded again on 2026-05-08 by the Workflow-Compatible Field Registry: for beta, the current GHL workflows win. The app now creates and writes the alias fields the templates expect so Philip does not need to manually rebuild every email/SMS body before snapshot.
 
 Verification:
 

@@ -2,7 +2,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository, MerchantRecord } from '../repositories/merchant.repository';
 import { paymentProviderService } from './payment-provider.service';
 import { logger } from '../utils/logger';
-import { CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
+import { BETA_CUSTOM_FIELD_REGISTRY, CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
 import { getSupabase } from '../clients/supabase.client';
 
@@ -123,32 +123,68 @@ const WEBHOOK_SECRET_MERGE_FIELD = '{{ custom_values.scalesafe_webhook_secret }}
 
 // ─── Provisioning constants ──────────────────────────────────────────
 
-const SS_FIELDS_TO_CREATE = [
-  { name: 'SS Enrollment Status',  fieldKey: 'ss_enrollment_status',  dataType: 'TEXT' },
-  { name: 'SS Evidence Score',     fieldKey: 'ss_evidence_score',     dataType: 'NUMERICAL' },
-  { name: 'SS Last Evidence Date', fieldKey: 'ss_last_evidence_date', dataType: 'TEXT' },
-  { name: 'SS Chargeback Status',  fieldKey: 'ss_chargeback_status',  dataType: 'TEXT' },
-  { name: 'SS Defense Status',     fieldKey: 'ss_defense_status',     dataType: 'TEXT' },
-  { name: 'SS Engagement Status',  fieldKey: 'ss_engagement_status',  dataType: 'TEXT' },
+const BETA_FIELDS_TO_CREATE = BETA_CUSTOM_FIELD_REGISTRY;
+const BETA_ALLOWED_CUSTOM_FIELD_KEYS = new Set([
+  ...BETA_CUSTOM_FIELD_REGISTRY.map((field) => `contact.${field.fieldKey}`),
+  ...STANDARD_CLAUSES.map((clause) => clause.ghlFieldKey),
+]);
+const SCALESAFE_FIELD_PREFIXES = [
+  'contact.ss_',
+  'contact.offer_',
+  'contact.clickwrap_',
 ];
 
-const OFFER_FIELDS_TO_CREATE = [
-  { name: 'Offer Business Name',        fieldKey: 'offer_business_name',        dataType: 'TEXT' },
-  { name: 'Offer Name',                 fieldKey: 'offer_name',                 dataType: 'TEXT' },
-  { name: 'Offer Price',                fieldKey: 'offer_price',                dataType: 'TEXT' },
-  { name: 'Offer Payment Type',         fieldKey: 'offer_payment_type',         dataType: 'TEXT' },
-  { name: 'Offer Installment Amount',   fieldKey: 'offer_installment_amount',   dataType: 'TEXT' },
-  { name: 'Offer Installment Frequency',fieldKey: 'offer_installment_frequency',dataType: 'TEXT' },
-  { name: 'Offer Num Payments',         fieldKey: 'offer_num_payments',         dataType: 'TEXT' },
-  ...Array.from({ length: 11 }, (_, i) => [
-    { name: `Offer Clause ${i + 1} Title`, fieldKey: `offer_clause_slot_${i + 1}_title`, dataType: 'TEXT' },
-    { name: `Offer Clause ${i + 1} Text`,  fieldKey: `offer_clause_slot_${i + 1}_text`,  dataType: 'TEXT' },
-  ]).flat(),
-  ...Array.from({ length: 8 }, (_, i) => [
-    { name: `Offer Milestone ${i + 1} Name`,        fieldKey: `offer_milestone_${i + 1}_name`,        dataType: 'TEXT' },
-    { name: `Offer Milestone ${i + 1} Description`,  fieldKey: `offer_milestone_${i + 1}_description`, dataType: 'TEXT' },
-  ]).flat(),
-];
+interface GhlCustomField {
+  id?: string;
+  name?: string;
+  fieldKey?: string;
+  field_key?: string;
+  dataType?: string;
+  data_type?: string;
+}
+
+interface CustomFieldRepairReport {
+  expectedCount: number;
+  alreadyExisted: string[];
+  created: string[];
+  failed: string[];
+  deleteCandidates: Array<{ id: string; name: string; fieldKey: string }>;
+}
+
+interface CustomFieldCleanupReport {
+  dryRun: boolean;
+  deleted: Array<{ id: string; name: string; fieldKey: string }>;
+  failed: Array<{ id: string; name: string; fieldKey: string; error: string }>;
+  candidates: Array<{ id: string; name: string; fieldKey: string }>;
+}
+
+function normalizeCustomFields(data: any): GhlCustomField[] {
+  return data?.customFields || data?.fields || (Array.isArray(data) ? data : []);
+}
+
+function customFieldKey(field: GhlCustomField): string {
+  return field.fieldKey || field.field_key || '';
+}
+
+function customFieldName(field: GhlCustomField): string {
+  return field.name || customFieldKey(field) || field.id || 'Unknown field';
+}
+
+function isScaleSafeOwnedField(field: GhlCustomField): boolean {
+  const key = customFieldKey(field);
+  return SCALESAFE_FIELD_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+function makeDeleteCandidates(fields: GhlCustomField[]): Array<{ id: string; name: string; fieldKey: string }> {
+  return fields
+    .filter((field) => field.id && isScaleSafeOwnedField(field) && !BETA_ALLOWED_CUSTOM_FIELD_KEYS.has(customFieldKey(field)))
+    .map((field) => ({
+      id: field.id!,
+      name: customFieldName(field),
+      fieldKey: customFieldKey(field),
+    }))
+    .sort((a, b) => a.fieldKey.localeCompare(b.fieldKey));
+}
 
 // ─── Service ─────────────────────────────────────────────────────────
 
@@ -280,20 +316,24 @@ export const merchantService = {
       ]);
 
       if (fieldsRes.status === 'fulfilled') {
-        const fields = fieldsRes.value.data.customFields || fieldsRes.value.data || [];
-        const keys = new Set(fields.map((f: any) => f.fieldKey || f.field_key || ''));
-        const expected = [...SS_FIELDS_TO_CREATE, ...OFFER_FIELDS_TO_CREATE].map((f) => `contact.${f.fieldKey}`);
+        const fields = normalizeCustomFields(fieldsRes.value.data);
+        const keys = new Set(fields.map(customFieldKey));
+        const expected = BETA_FIELDS_TO_CREATE.map((f) => `contact.${f.fieldKey}`);
         const missing = expected.filter((key) => !keys.has(key));
+        const deleteCandidates = makeDeleteCandidates(fields);
         add({
           key: 'custom_fields',
           label: 'ScaleSafe contact fields',
           status: missing.length === 0 ? 'pass' : 'warn',
           message: missing.length === 0
-            ? `All ${expected.length} expected ScaleSafe contact fields are present.`
-            : `${missing.length}/${expected.length} expected ScaleSafe contact fields are missing.`,
+            ? `All ${expected.length} beta ScaleSafe contact fields are present.`
+            : `${missing.length}/${expected.length} beta ScaleSafe contact fields are missing.`,
           details: {
             expectedCount: expected.length,
+            totalGhlCustomFields: fields.length,
             missing,
+            deleteCandidateCount: deleteCandidates.length,
+            deleteCandidates,
           },
         });
       } else {
@@ -389,6 +429,46 @@ export const merchantService = {
     return this.getProvisioningHealth(locationId);
   },
 
+  async repairWorkflowCompatibleCustomFields(locationId: string): Promise<ProvisioningHealthReport> {
+    const api = await ghlApi(locationId);
+    const report = await this.createCustomFields(api, locationId);
+    logger.info(
+      {
+        locationId,
+        expectedCount: report.expectedCount,
+        createdCount: report.created.length,
+        failedCount: report.failed.length,
+        deleteCandidateCount: report.deleteCandidates.length,
+      },
+      'Workflow-compatible custom fields repaired',
+    );
+    return this.getProvisioningHealth(locationId);
+  },
+
+  async cleanupWorkflowCustomFieldCandidates(locationId: string, confirmDelete = false): Promise<CustomFieldCleanupReport> {
+    const api = await ghlApi(locationId);
+    const res = await api.get(`/locations/${locationId}/customFields`);
+    const candidates = makeDeleteCandidates(normalizeCustomFields(res.data));
+
+    if (!confirmDelete) {
+      return { dryRun: true, deleted: [], failed: [], candidates };
+    }
+
+    const deleted: CustomFieldCleanupReport['deleted'] = [];
+    const failed: CustomFieldCleanupReport['failed'] = [];
+    for (const candidate of candidates) {
+      try {
+        await api.delete(`/locations/${locationId}/customFields/${candidate.id}`);
+        deleted.push(candidate);
+      } catch (err: any) {
+        failed.push({ ...candidate, error: err.message || String(err) });
+      }
+    }
+
+    logger.warn({ locationId, deletedCount: deleted.length, failedCount: failed.length }, 'Workflow custom field cleanup executed');
+    return { dryRun: false, deleted, failed, candidates };
+  },
+
   async rotateWorkflowWebhookSecret(locationId: string): Promise<string> {
     const secret = await merchantRepository.rotateWebhookSecret(locationId);
     await this.syncWebhookSecretCustomValue(locationId, secret).catch((err: any) => {
@@ -414,22 +494,31 @@ export const merchantService = {
     }
   },
 
-  async createCustomFields(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<void> {
+  async createCustomFields(api: ReturnType<typeof ghlApi> extends Promise<infer T> ? T : never, locationId: string): Promise<CustomFieldRepairReport> {
+    let existingFields: GhlCustomField[] = [];
     let existingKeys = new Set<string>();
     try {
       const res = await api.get(`/locations/${locationId}/customFields`);
-      const fields = res.data.customFields || res.data || [];
-      existingKeys = new Set(fields.map((f: any) => f.fieldKey || f.field_key || ''));
+      existingFields = normalizeCustomFields(res.data);
+      existingKeys = new Set(existingFields.map(customFieldKey));
     } catch (err) {
       logger.warn({ err, locationId }, 'Could not fetch existing custom fields');
     }
 
-    const allFields = [...SS_FIELDS_TO_CREATE, ...OFFER_FIELDS_TO_CREATE];
+    const allFields = [...BETA_FIELDS_TO_CREATE];
     const toCreate = allFields.filter(f => !existingKeys.has(`contact.${f.fieldKey}`));
+    const created: string[] = [];
+    const failed: string[] = [];
 
     if (toCreate.length === 0) {
       logger.info({ locationId }, 'All custom fields already exist');
-      return;
+      return {
+        expectedCount: allFields.length,
+        alreadyExisted: allFields.map((field) => `contact.${field.fieldKey}`),
+        created,
+        failed,
+        deleteCandidates: makeDeleteCandidates(existingFields),
+      };
     }
 
     logger.info({ locationId, total: allFields.length, creating: toCreate.length }, 'Creating custom fields');
@@ -450,17 +539,21 @@ export const merchantService = {
             name: field.name,
             dataType: field.dataType,
           });
+          created.push(`contact.${field.fieldKey}`);
         } catch (err: any) {
           const status = err.ghlStatus || err.status;
           if (status === 422 || status === 409) {
             logger.debug({ field: field.name, locationId }, 'Custom field already exists (conflict)');
+            created.push(`contact.${field.fieldKey}`);
           } else if (status === 401 || status === 403 || (err.message && err.message.includes('authClass'))) {
             authFailures++;
+            failed.push(`contact.${field.fieldKey}`);
             if (authFailures === 1) {
               logger.warn({ locationId, status, message: err.message?.slice(0, 200) }, 'Custom field auth/scope failure — token may be Company-scoped. Custom fields should be created by Snapshot instead.');
             }
           } else {
             failures++;
+            failed.push(`contact.${field.fieldKey}`);
             logger.warn({ err, field: field.name, locationId }, 'Failed to create custom field (non-fatal)');
           }
         }
@@ -469,8 +562,15 @@ export const merchantService = {
 
     // Auth failures are NOT fatal — fields may exist from Snapshot or can be created manually
     if (authFailures > 0) {
-      logger.info({ locationId, authFailures, toCreate: toCreate.length }, 'Skipped custom field creation due to auth/scope — fields should be present from GHL Snapshot');
-      return; // Don't throw — this is expected for Company-scoped tokens
+      return {
+        expectedCount: allFields.length,
+        alreadyExisted: allFields
+          .filter((field) => existingKeys.has(`contact.${field.fieldKey}`))
+          .map((field) => `contact.${field.fieldKey}`),
+        created,
+        failed,
+        deleteCandidates: makeDeleteCandidates(existingFields),
+      };
     }
 
     if (failures > Math.floor(toCreate.length / 2)) {
@@ -478,6 +578,25 @@ export const merchantService = {
     }
 
     logger.info({ locationId, created: toCreate.length - failures, failures }, 'Custom fields created');
+    let refreshedFields = existingFields;
+    try {
+      const refreshed = await api.get(`/locations/${locationId}/customFields`);
+      if (refreshed?.data) {
+        refreshedFields = normalizeCustomFields(refreshed.data);
+        existingKeys = new Set(refreshedFields.map(customFieldKey));
+      }
+    } catch (err) {
+      logger.warn({ err, locationId }, 'Could not refresh custom fields after repair');
+    }
+    return {
+      expectedCount: allFields.length,
+      alreadyExisted: allFields
+        .filter((field) => existingKeys.has(`contact.${field.fieldKey}`) && !created.includes(`contact.${field.fieldKey}`))
+        .map((field) => `contact.${field.fieldKey}`),
+      created,
+      failed,
+      deleteCandidates: makeDeleteCandidates(refreshedFields),
+    };
   },
 
   /**

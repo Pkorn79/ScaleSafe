@@ -10,7 +10,7 @@
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
 - Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
 - Offer checkout/enrollment links are durable public links and must not expire by default. Quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) may be used in funnels, automations, emails, ads, or client follow-ups. Signed 14-day public action tokens are only for sensitive client actions such as payment update, subscription cancellation, and milestone signoff.
-- Workflow email/SMS templates must use the canonical app-owned field contract in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`. Do not create duplicate alias fields such as `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, or `contact.offer_support_email`.
+- Current workflow email/SMS templates are accepted as the beta source of truth. The app now creates/writes the workflow-compatible contact fields they expect, including `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`. Run Settings > Provisioning Health > Repair Fields before snapshot export and after fresh install.
 
 ## App-Provisioned On Install
 
@@ -21,8 +21,8 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | Merchant DB record/config | App/Supabase | OAuth install path. |
 | Per-merchant webhook secret | App/Supabase + GHL custom value | `merchants.webhook_secret`; backfilled for existing merchants and synced to `{{ custom_values.scalesafe_webhook_secret }}`. |
 | Payment provider registration/API key | App | `merchantService.registerPaymentProvider()`. |
-| SS contact fields | App | `SS Enrollment Status`, `SS Evidence Score`, `SS Last Evidence Date`, `SS Chargeback Status`, `SS Defense Status`, `SS Engagement Status`. |
-| Offer-prefix contact fields | App | Offer bridge fields copied at enrollment. App creates these if missing. |
+| SS contact fields | App | Enrollment, evidence, chargeback, defense, engagement, payment, refund, milestone, and workflow-compatible beta fields are created from `BETA_CUSTOM_FIELD_REGISTRY`. |
+| Offer-prefix contact fields | App | Canonical offer bridge fields plus workflow-compatible aliases are copied at enrollment. App creates these if missing. |
 | Core custom values | App | See `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`, including `ScaleSafe Webhook Secret`. |
 | Pulse cadence timing | App | Offers choose cadence; enrollments store next due/last sent; daily app job fires the shared `ss_app_event` trigger with `event_type = pulse_check_due`. |
 | GHL products/prices | App | Created when offers are created/updated. |

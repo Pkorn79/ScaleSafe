@@ -292,6 +292,9 @@
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">Provisioning Health</h3>
           <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" @click="repairWorkflowCustomFields" :disabled="provisioningHealthLoading">
+              {{ provisioningHealthLoading ? 'Working...' : 'Repair Fields' }}
+            </button>
             <button class="btn btn-secondary btn-sm" @click="repairWebhookSecretCustomValue" :disabled="provisioningHealthLoading">
               {{ provisioningHealthLoading ? 'Working...' : 'Repair Webhook Secret' }}
             </button>
@@ -312,6 +315,9 @@
             <div>
               <div class="health-label">{{ item.label }}</div>
               <div class="text-sm text-muted">{{ item.message }}</div>
+              <div v-if="item.details?.deleteCandidateCount" class="text-sm text-muted">
+                {{ item.details.deleteCandidateCount }} cleanup candidates found. Review dry-run before deleting anything.
+              </div>
             </div>
           </div>
         </div>
@@ -521,6 +527,17 @@ async function repairWebhookSecretCustomValue() {
     await loadWebhookSecret();
   } catch (err: any) {
     provisioningHealthError.value = err.message || 'Failed to repair webhook secret custom value';
+  }
+  provisioningHealthLoading.value = false;
+}
+
+async function repairWorkflowCustomFields() {
+  provisioningHealthLoading.value = true;
+  provisioningHealthError.value = '';
+  try {
+    provisioningHealth.value = await api.post<any>('/api/merchants/provisioning-health/repair-custom-fields');
+  } catch (err: any) {
+    provisioningHealthError.value = err.message || 'Failed to repair workflow fields';
   }
   provisioningHealthLoading.value = false;
 }

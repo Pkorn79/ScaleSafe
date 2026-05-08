@@ -5,8 +5,25 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import { sha256 } from '../utils/crypto';
 import { ValidationError } from '../utils/errors';
-import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS, OFFER_CLAUSE_FIELDS, OFFER_MILESTONE_FIELDS } from '../constants/ghl-fields';
+import {
+  SS_CONTACT_FIELDS,
+  OFFER_CONTACT_FIELDS,
+  OFFER_CLAUSE_FIELDS,
+  OFFER_MILESTONE_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import crypto from 'crypto';
+
+function formatMoney(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value);
+}
+
+function formatDate(value: Date = new Date()): string {
+  return value.toISOString().split('T')[0];
+}
 
 interface PrepEnrollmentInput {
   locationId: string;
@@ -498,13 +515,29 @@ export const enrollmentService = {
     };
 
     // 2. Copy offer fields to contact (written once)
-    customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = merchant.business_name || '';
+    const businessName = merchant.dba_name || merchant.business_name || '';
+    const supportEmail = merchant.support_email || (merchant as any).email || '';
+    const priceDisplay = formatMoney(offer.price);
+    const billingAmountDisplay = formatMoney((offer as any).installment_amount ?? offer.price);
+    const numPayments = offer.num_payments ?? '';
+
+    customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
     customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
-    customFields[OFFER_CONTACT_FIELDS.PRICE] = offer.price;
+    customFields[OFFER_CONTACT_FIELDS.PRICE] = priceDisplay;
     customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
-    customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = offer.installment_amount;
+    customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
     customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
-    customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = offer.num_payments;
+    customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = priceDisplay;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = supportEmail;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = (merchant as any).tc_document_url || '';
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = (offer as any).refund_policy || (offer as any).refund_terms || '';
+    customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT] = billingAmountDisplay;
+    customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE] = formatDate();
+    customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE] = 1;
+    customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING] = offer.num_payments ? Math.max(0, Number(offer.num_payments) - 1) : '';
 
     // Copy clause slots
     for (let i = 0; i < 11; i++) {

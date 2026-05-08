@@ -25,6 +25,66 @@ export const OFFER_CONTACT_FIELDS = {
   NUM_PAYMENTS:           'contact.offer_num_payments',
 } as const;
 
+/**
+ * Workflow-compatible offer fields.
+ *
+ * These duplicate some canonical offer values because the current PMG workflow
+ * email/SMS templates were built from older instruction docs that use these
+ * names. For beta, workflows win: the app writes both canonical fields and
+ * these aliases before the workflow trigger fires.
+ */
+export const WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS = {
+  PROGRAM_NAME:       'contact.offer_program_name',
+  PRICE_DISPLAY:      'contact.offer_price_display',
+  NUMBER_OF_PAYMENTS: 'contact.offer_number_of_payments',
+  SUPPORT_EMAIL:      'contact.offer_support_email',
+  REFUND_POLICY:      'contact.offer_refund_policy',
+  TC_DOCUMENT_URL:    'contact.offer_tc_document_url',
+} as const;
+
+/**
+ * Payment/refund fields used by existing workflow copy.
+ */
+export const WORKFLOW_PAYMENT_CONTACT_FIELDS = {
+  BILLING_FREQUENCY:         'contact.ss_billing_frequency',
+  PAYMENT_STATUS:            'contact.ss_payment_status',
+  LAST_PAYMENT_AMOUNT:       'contact.ss_last_payment_amount',
+  LAST_PAYMENT_DATE:         'contact.ss_last_payment_date',
+  NEXT_PAYMENT_DATE:         'contact.ss_next_payment_date',
+  PAYMENTS_MADE:             'contact.ss_payments_made',
+  PAYMENTS_REMAINING:        'contact.ss_payments_remaining',
+  PAYMENT_GRACE_PERIOD_END:  'contact.ss_payment_grace_period_end',
+  REFUND_AMOUNT:             'contact.ss_refund_amount',
+  REFUND_DATE:               'contact.ss_refund_date',
+  REFUND_TRANSACTION_ID:     'contact.ss_refund_transaction_id',
+  REMAINING_BALANCE:         'contact.ss_remaining_balance',
+  SUBSCRIPTION_START:        'contact.ss_subscription_start',
+  SUCCESSFUL_PAYMENT_COUNT:  'contact.ss_successful_payment_count',
+  TOTAL_CONTRACT_VALUE:      'contact.ss_total_contract_value',
+  TOTAL_PAID:                'contact.ss_total_paid',
+  FAILED_PAYMENT_COUNT:      'contact.ss_failed_payment_count',
+  LAST_FAILED_PAYMENT_DATE:  'contact.ss_last_failed_payment_date',
+} as const;
+
+export const WORKFLOW_MILESTONE_CONTACT_FIELDS = {
+  CURRENT_MILESTONE_NAME:     'contact.ss_current_milestone_name',
+  SIGNOFF_MILESTONE_NAME:     'contact.ss_signoff_milestone_name',
+  SIGNOFF_MILESTONE_NUMBER:   'contact.ss_signoff_milestone_number',
+  SIGNOFF_WORK_SUMMARY:       'contact.ss_signoff_work_summary',
+} as const;
+
+export const WORKFLOW_DEFENSE_CONTACT_FIELDS = {
+  CHARGEBACK_REASON_CODE: 'contact.ss_chargeback_reason_code',
+  DEFENSE_PACKET_URL:    'contact.ss_defense_packet_url',
+  DEFENSE_PDF_URL:       'contact.ss_defense_pdf_url',
+} as const;
+
+export const WORKFLOW_EVIDENCE_CONTACT_FIELDS = {
+  LAST_SESSION_DURATION: 'contact.ss_last_session_duration',
+  LAST_SESSION_TOPIC:    'contact.ss_last_session_topic',
+  NO_SHOW_COUNT:         'contact.ss_no_show_count',
+} as const;
+
 // Clause slots 1-11
 export const OFFER_CLAUSE_FIELDS = Array.from({ length: 11 }, (_, i) => ({
   title: `contact.offer_clause_slot_${i + 1}_title`,
@@ -36,6 +96,93 @@ export const OFFER_MILESTONE_FIELDS = Array.from({ length: 8 }, (_, i) => ({
   name:        `contact.offer_milestone_${i + 1}_name`,
   description: `contact.offer_milestone_${i + 1}_description`,
 }));
+
+export interface CustomFieldDef {
+  name: string;
+  fieldKey: string;
+  dataType: 'TEXT' | 'LARGE_TEXT' | 'NUMERICAL';
+}
+
+function keyWithoutContactPrefix(field: string): string {
+  return field.replace(/^contact\./, '');
+}
+
+function textField(name: string, field: string): CustomFieldDef {
+  return { name, fieldKey: keyWithoutContactPrefix(field), dataType: 'TEXT' };
+}
+
+function largeTextField(name: string, field: string): CustomFieldDef {
+  return { name, fieldKey: keyWithoutContactPrefix(field), dataType: 'LARGE_TEXT' };
+}
+
+function numberField(name: string, field: string): CustomFieldDef {
+  return { name, fieldKey: keyWithoutContactPrefix(field), dataType: 'NUMERICAL' };
+}
+
+export const BETA_CUSTOM_FIELD_REGISTRY: readonly CustomFieldDef[] = [
+  textField('SS Enrollment Status', SS_CONTACT_FIELDS.ENROLLMENT_STATUS),
+  numberField('SS Evidence Score', SS_CONTACT_FIELDS.EVIDENCE_SCORE),
+  textField('SS Last Evidence Date', SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE),
+  textField('SS Chargeback Status', SS_CONTACT_FIELDS.CHARGEBACK_STATUS),
+  textField('SS Defense Status', SS_CONTACT_FIELDS.DEFENSE_STATUS),
+  textField('SS Engagement Status', SS_CONTACT_FIELDS.ENGAGEMENT_STATUS),
+
+  textField('Offer Business Name', OFFER_CONTACT_FIELDS.BUSINESS_NAME),
+  textField('Offer Name', OFFER_CONTACT_FIELDS.OFFER_NAME),
+  textField('Offer Price', OFFER_CONTACT_FIELDS.PRICE),
+  textField('Offer Payment Type', OFFER_CONTACT_FIELDS.PAYMENT_TYPE),
+  textField('Offer Installment Amount', OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT),
+  textField('Offer Installment Frequency', OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY),
+  textField('Offer Num Payments', OFFER_CONTACT_FIELDS.NUM_PAYMENTS),
+
+  textField('Offer Program Name', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME),
+  textField('Offer Price Display', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY),
+  textField('Offer Number of Payments', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS),
+  textField('Offer Support Email', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL),
+  largeTextField('Offer Refund Policy', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY),
+  textField('Offer TC Document URL', WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL),
+
+  textField('SS Billing Frequency', WORKFLOW_PAYMENT_CONTACT_FIELDS.BILLING_FREQUENCY),
+  textField('SS Payment Status', WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS),
+  textField('SS Last Payment Amount', WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT),
+  textField('SS Last Payment Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE),
+  textField('SS Next Payment Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.NEXT_PAYMENT_DATE),
+  numberField('SS Payments Made', WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE),
+  numberField('SS Payments Remaining', WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING),
+  textField('SS Payment Grace Period End', WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_GRACE_PERIOD_END),
+  textField('SS Refund Amount', WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_AMOUNT),
+  textField('SS Refund Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_DATE),
+  textField('SS Refund Transaction ID', WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_TRANSACTION_ID),
+  textField('SS Remaining Balance', WORKFLOW_PAYMENT_CONTACT_FIELDS.REMAINING_BALANCE),
+  textField('SS Subscription Start', WORKFLOW_PAYMENT_CONTACT_FIELDS.SUBSCRIPTION_START),
+  numberField('SS Successful Payment Count', WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT),
+  textField('SS Total Contract Value', WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_CONTRACT_VALUE),
+  textField('SS Total Paid', WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID),
+  numberField('SS Failed Payment Count', WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT),
+  textField('SS Last Failed Payment Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE),
+
+  textField('SS Current Milestone Name', WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME),
+  textField('SS Sign-Off Milestone Name', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME),
+  textField('SS Sign-Off Milestone Number', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER),
+  largeTextField('SS Sign-Off Work Summary', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY),
+
+  textField('SS Chargeback Reason Code', WORKFLOW_DEFENSE_CONTACT_FIELDS.CHARGEBACK_REASON_CODE),
+  textField('SS Defense Packet URL', WORKFLOW_DEFENSE_CONTACT_FIELDS.DEFENSE_PACKET_URL),
+  textField('SS Defense PDF URL', WORKFLOW_DEFENSE_CONTACT_FIELDS.DEFENSE_PDF_URL),
+
+  textField('SS Last Session Duration', WORKFLOW_EVIDENCE_CONTACT_FIELDS.LAST_SESSION_DURATION),
+  textField('SS Last Session Topic', WORKFLOW_EVIDENCE_CONTACT_FIELDS.LAST_SESSION_TOPIC),
+  numberField('SS No Show Count', WORKFLOW_EVIDENCE_CONTACT_FIELDS.NO_SHOW_COUNT),
+
+  ...OFFER_CLAUSE_FIELDS.flatMap((slot, i) => [
+    textField(`Offer Clause ${i + 1} Title`, slot.title),
+    largeTextField(`Offer Clause ${i + 1} Text`, slot.text),
+  ]),
+  ...OFFER_MILESTONE_FIELDS.flatMap((slot, i) => [
+    textField(`Offer Milestone ${i + 1} Name`, slot.name),
+    largeTextField(`Offer Milestone ${i + 1} Description`, slot.description),
+  ]),
+] as const;
 
 /**
  * Custom workflow trigger names registered on install.

@@ -9,7 +9,12 @@ import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
 import { createPublicActionToken } from '../utils/public-action-token';
-import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS } from '../constants/ghl-fields';
+import {
+  SS_CONTACT_FIELDS,
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 
 // GHL CHECKBOX field_value for the single-option "Yes" Click-Wrap fields. Pulled to a
@@ -22,6 +27,10 @@ function formatMoney(value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
   const amount = Number(value);
   return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value);
+}
+
+function formatDate(value: Date = new Date()): string {
+  return value.toISOString().split('T')[0];
 }
 
 function formatPaymentType(value: unknown): string {
@@ -48,6 +57,28 @@ function formatFrequency(value: unknown): string {
   return labels[raw] || raw.replace(/_/g, ' ');
 }
 
+function merchantSupportEmail(merchant: any): string {
+  return merchant?.support_email || merchant?.email || '';
+}
+
+function applyPaymentContactFields(
+  customFields: Record<string, unknown>,
+  amount: number,
+  paymentsMade: number | null | undefined,
+  paymentsTotal: number | null | undefined,
+  transactionDate = new Date(),
+): void {
+  const made = Number(paymentsMade || 0);
+  const total = paymentsTotal == null ? null : Number(paymentsTotal);
+  const remaining = total == null ? '' : Math.max(0, total - made);
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT] = formatMoney(amount);
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE] = formatDate(transactionDate);
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE] = made;
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING] = remaining;
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT] = made;
+  customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID] = formatMoney(amount * made);
+}
+
 function applyOfferContactFields(
   customFields: Record<string, unknown>,
   offer: any,
@@ -68,6 +99,12 @@ function applyOfferContactFields(
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
   customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name || '';
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = priceDisplay;
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = merchantSupportEmail(merchant);
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = merchant?.tc_document_url || '';
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = offer.refund_policy || offer.refund_terms || '';
 }
 
 interface CompleteEnrollmentParams {
@@ -219,6 +256,7 @@ export const phase2EnrollmentService = {
         if (enrollmentOffer) {
           applyOfferContactFields(customFields, enrollmentOffer, merchant);
         }
+        applyPaymentContactFields(customFields, params.paymentAmount, 1, params.paymentsTotal, enrolledAt);
         await api.put(`/contacts/${resolvedContactId}`, { customField: customFields });
         logger.info({ contactId: resolvedContactId, enrollmentId: params.enrollmentId }, 'GHL contact fields synced before workflow triggers');
       } catch (ghlSyncErr: any) {
@@ -340,6 +378,7 @@ export const phase2EnrollmentService = {
             try {
               const offer = await offerRepository.getById(bgOfferId);
               applyOfferContactFields(customFields, offer, merchant);
+              applyPaymentContactFields(customFields, bgPaymentAmount, 1, params.paymentsTotal, enrolledAt);
               pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
               pulseFrequencyDays = Math.min(365, Math.max(1, Number(offer.pulse_frequency_days || 30)));
             } catch {}
@@ -492,6 +531,14 @@ export const phase2EnrollmentService = {
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
     const runningTotal = (enrollment.payments_made) * params.amount;
     const paymentKind: 'installment' | 'subscription' = enrollment.payment_type === 'subscription' ? 'subscription' : 'installment';
+    try {
+      const api = await ghlApi(params.locationId);
+      const paymentFields: Record<string, unknown> = {};
+      applyPaymentContactFields(paymentFields, params.amount, enrollment.payments_made, enrollment.payments_total);
+      await api.put(`/contacts/${params.contactId}`, { customField: paymentFields });
+    } catch (err: any) {
+      logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Recurring payment contact field sync failed');
+    }
     await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
       event_type: 'payment_received',
       location_id: params.locationId,
@@ -632,6 +679,20 @@ export const phase2EnrollmentService = {
     });
     const cardUpdateLink = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
 
+    try {
+      const api = await ghlApi(params.locationId);
+      await api.put(`/contacts/${params.contactId}`, {
+        customField: {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'past_due',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT]: params.attemptCount || 1,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE]: formatDate(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(params.amount),
+        },
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Failed payment contact field sync failed');
+    }
+
     await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
       contact_id: params.contactId,
       amount: params.amount,
@@ -707,6 +768,19 @@ export const phase2EnrollmentService = {
           timestamp: new Date().toISOString(),
         },
       });
+    }
+
+    try {
+      const api = await ghlApi(params.locationId);
+      await api.put(`/contacts/${params.contactId}`, {
+        customField: {
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_AMOUNT]: formatMoney(params.amount),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_DATE]: formatDate(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_TRANSACTION_ID]: params.transactionId || '',
+        },
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Refund contact field sync failed');
     }
 
     await triggerService.fireTrigger(params.locationId, 'ss_refund_processed', {

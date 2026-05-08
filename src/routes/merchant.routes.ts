@@ -17,6 +17,8 @@ router.post('/webhook-secret/rotate', merchantController.rotateWebhookSecret);
 router.get('/onboarding-status', merchantController.getOnboardingStatus);
 router.get('/provisioning-health', merchantController.getProvisioningHealth);
 router.post('/provisioning-health/repair-webhook-secret', merchantController.repairWebhookSecretCustomValue);
+router.post('/provisioning-health/repair-custom-fields', merchantController.repairWorkflowCustomFields);
+router.post('/provisioning-health/custom-field-cleanup', merchantController.cleanupWorkflowCustomFields);
 router.post('/provision', merchantController.provision);
 router.post('/logo', upload.single('logo'), merchantController.uploadLogo);
 

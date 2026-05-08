@@ -67,6 +67,28 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** POST /api/merchants/provisioning-health/repair-custom-fields - create missing beta workflow fields */
+  async repairWorkflowCustomFields(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const report = await merchantService.repairWorkflowCompatibleCustomFields(locationId);
+      res.json(report);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/merchants/provisioning-health/custom-field-cleanup - dry run by default; deletes only with confirmDelete=true */
+  async cleanupWorkflowCustomFields(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const report = await merchantService.cleanupWorkflowCustomFieldCandidates(locationId, req.body?.confirmDelete === true);
+      res.json(report);
+    } catch (err) { next(err); }
+  },
+
   /** GET /api/merchants/webhook-secret - return this merchant's workflow webhook secret */
   async getWebhookSecret(req: Request, res: Response, next: NextFunction) {
     try {

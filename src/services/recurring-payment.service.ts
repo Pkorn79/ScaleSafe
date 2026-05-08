@@ -1,8 +1,10 @@
 import { getSupabase } from '../clients/supabase.client';
+import { ghlApi } from '../clients/ghl.client';
 import { paymentLifecycleService } from './payment-lifecycle.service';
 import { triggerService } from './trigger.service';
 import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
+import { WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { logger } from '../utils/logger';
 
 /**
@@ -46,6 +48,15 @@ interface RecurringFailureParams {
   errorMessage: string;
   errorCode?: string;
   source: string;
+}
+
+function formatMoney(value: unknown): string {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value || '');
+}
+
+function today(): string {
+  return new Date().toISOString().split('T')[0];
 }
 
 /**
@@ -147,12 +158,30 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   // 4. Fire ss_payment_received trigger (non-blocking)
   try {
     const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
+    const paymentsRemaining = Math.max(0, (enr.payments_total || 0) - newPaymentsMade);
+    const runningTotal = amountDollars * newPaymentsMade;
+    try {
+      const api = await ghlApi(enr.location_id);
+      await api.put(`/contacts/${enr.contact_id}`, {
+        customField: {
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: isFinal ? 'Completed' : 'Current',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amountDollars),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: newPaymentsMade,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: paymentsRemaining,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT]: newPaymentsMade,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID]: formatMoney(runningTotal),
+        },
+      });
+    } catch (syncErr: any) {
+      logger.warn({ err: syncErr.message, enrollmentId: enr.id }, 'Recurring payment contact field sync failed (non-fatal)');
+    }
     await triggerService.fireTrigger(enr.location_id, 'ss_payment_received', {
       contact_id: enr.contact_id,
       amount: amountDollars,
       transaction_id: transactionId,
-      payments_remaining: Math.max(0, (enr.payments_total || 0) - newPaymentsMade),
-      running_total: amountDollars * newPaymentsMade,
+      payments_remaining: paymentsRemaining,
+      running_total: runningTotal,
       payment_kind: paymentKind,
     });
   } catch (trigErr: any) {

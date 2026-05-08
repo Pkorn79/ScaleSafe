@@ -40,7 +40,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
 }));
 
 import { merchantService } from '../../src/services/merchant.service';
-import { CUSTOM_VALUE_REGISTRY } from '../../src/constants/ghl-fields';
+import { BETA_CUSTOM_FIELD_REGISTRY, CUSTOM_VALUE_REGISTRY } from '../../src/constants/ghl-fields';
 
 let merchantState: any;
 
@@ -108,29 +108,14 @@ describe('Custom Fields Creation', () => {
     const api = { post: mockPost, get: mockGet, put: mockPut } as any;
     await merchantService.createCustomFields(api, 'loc_1');
 
-    // 3 missing SS fields + 45 offer fields = 48
+    // 3 existing fields are present; every other approved beta field should be created.
     const createCalls = mockPost.mock.calls.filter(c => c[0] === '/locations/loc_1/customFields');
-    expect(createCalls.length).toBe(48);
+    expect(createCalls.length).toBe(BETA_CUSTOM_FIELD_REGISTRY.length - 3);
     expect(createCalls[0][1]).toMatchObject({ dataType: expect.any(String) });
   });
 
   test('skips all if every field exists', async () => {
-    const allKeys = [
-      'contact.ss_enrollment_status', 'contact.ss_evidence_score',
-      'contact.ss_last_evidence_date', 'contact.ss_chargeback_status',
-      'contact.ss_defense_status', 'contact.ss_engagement_status',
-      'contact.offer_business_name', 'contact.offer_name', 'contact.offer_price',
-      'contact.offer_payment_type', 'contact.offer_installment_amount',
-      'contact.offer_installment_frequency', 'contact.offer_num_payments',
-      ...Array.from({ length: 11 }, (_, i) => [
-        `contact.offer_clause_slot_${i + 1}_title`,
-        `contact.offer_clause_slot_${i + 1}_text`,
-      ]).flat(),
-      ...Array.from({ length: 8 }, (_, i) => [
-        `contact.offer_milestone_${i + 1}_name`,
-        `contact.offer_milestone_${i + 1}_description`,
-      ]).flat(),
-    ];
+    const allKeys = BETA_CUSTOM_FIELD_REGISTRY.map((field) => `contact.${field.fieldKey}`);
 
     mockGet.mockResolvedValueOnce({
       data: { customFields: allKeys.map(k => ({ fieldKey: k })) },

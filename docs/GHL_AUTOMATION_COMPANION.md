@@ -6,7 +6,7 @@
 
 **Rule:** If it lives in GHL, it's documented here. If it lives in the app, it's in the blueprint.
 
-> **2026-05-07 beta snapshot override:** this companion contains older V2 planning language. For current snapshot decisions, use `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md` and `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` first. Client Milestones pipeline and Offers Custom Object are deferred/excluded for beta. Workflow templates must use canonical app-owned contact fields (`contact.offer_name`, `contact.offer_price`, `contact.offer_num_payments`, etc.), not stale aliases such as `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, or `contact.offer_support_email`.
+> **2026-05-08 beta snapshot override:** this companion contains older V2 planning language. For current snapshot decisions, use `docs/GHL_BETA_SNAPSHOT_EXECUTION_PLAN.md` and `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` first. Client Milestones pipeline and Offers Custom Object are deferred/excluded for beta. Current workflows win for beta: the app now creates/writes the workflow-compatible fields used by the existing templates, including `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`.
 
 ---
 

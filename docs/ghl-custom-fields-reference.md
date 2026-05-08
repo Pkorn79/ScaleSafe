@@ -7,7 +7,7 @@ This is the complete list of GHL custom fields for the PMG test location (ScaleS
 **Total Custom Fields:** 352
 **Total Categories:** 27
 
-> **2026-05-07 audit note:** this reference is historical and no longer matches live PMG one-for-one. A live GHL API read returned 118 custom fields. For beta snapshot cleanup, use `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` as the current workflow/app field contract. In particular, the older alias fields `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email` were **not present** in live PMG and should not be recreated for beta.
+> **2026-05-08 audit note:** this reference is historical and no longer matches live PMG one-for-one. A live GHL API read returned 118 custom fields. For beta snapshot cleanup, use `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` as the current workflow/app field contract. Current workflows win for beta, so the app now creates/writes the older alias fields `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email` instead of requiring a full manual workflow rewrite.
 
 ---
 

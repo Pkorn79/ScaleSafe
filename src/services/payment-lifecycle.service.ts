@@ -7,9 +7,18 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import { createPublicActionToken } from '../utils/public-action-token';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
-import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { SS_CONTACT_FIELDS, WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
 import type { StoredCard } from '../types/processor.types';
+
+function formatMoney(value: unknown): string {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value || '');
+}
+
+function today(): string {
+  return new Date().toISOString().split('T')[0];
+}
 
 export const paymentLifecycleService = {
 
@@ -49,13 +58,29 @@ export const paymentLifecycleService = {
       dunning_started_at: new Date().toISOString(),
     }).eq('id', params.paymentEventId);
 
+    const failedPaymentCount = Math.max(1, params.attemptCount || 1);
+    try {
+      const api = await ghlApi(params.locationId);
+      await api.put(`/contacts/${params.contactId}`, {
+        customField: {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'past_due',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: 'Past Due',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT]: failedPaymentCount,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(params.amountCents / 100),
+        },
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, contactId: params.contactId }, 'Dunning contact field sync failed');
+    }
+
     // Fire trigger for GHL dunning workflow
     try {
       await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
         contact_id: params.contactId,
         amount: params.amountCents / 100,
         failure_reason: params.failureReason,
-        attempt_count: params.attemptCount,
+        attempt_count: failedPaymentCount,
         next_retry_date: nextRetryDate || 'none',
       });
     } catch (err: any) {
@@ -753,6 +778,16 @@ export const paymentLifecycleService = {
     amount: number; transactionId: string; paymentsRemaining?: number; runningTotal?: number; action?: string;
   }): Promise<void> {
     try {
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: 'Current',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(data.amount),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: data.paymentsRemaining ?? 0,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID]: formatMoney(data.runningTotal ?? data.amount),
+        },
+      });
       await triggerService.fireTrigger(locationId, 'ss_payment_received', {
         contact_id: contactId,
         amount: data.amount,
@@ -773,6 +808,16 @@ export const paymentLifecycleService = {
     amount: number; failureReason: string; attemptCount?: number; nextRetryDate?: string;
   }): Promise<void> {
     try {
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'past_due',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: 'Past Due',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT]: data.attemptCount || 1,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(data.amount),
+        },
+      });
       await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
         contact_id: contactId,
         amount: data.amount,
@@ -792,6 +837,13 @@ export const paymentLifecycleService = {
     amount: number; refundType: string; reason: string;
   }): Promise<void> {
     try {
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_AMOUNT]: formatMoney(data.amount),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_DATE]: today(),
+        },
+      });
       await triggerService.fireTrigger(locationId, 'ss_refund_processed', {
         contact_id: contactId,
         amount: data.amount,
