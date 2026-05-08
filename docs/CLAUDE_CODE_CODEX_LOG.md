@@ -29,6 +29,28 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: Stripe Agent Toolkit Research Pointer (Codex)
+
+Files changed:
+
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+External Cowork docs changed:
+
+- `C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe\docs\STRIPE_AGENT_TOOLKIT_RESEARCH.md`
+- `C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe\docs\FEATURE_LEDGER.md`
+- `C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe\CLAUDE_COWORK_CODEX_LOG.md`
+
+Summary:
+
+- Researched Stripe Agent Toolkit / Stripe MCP from primary Stripe docs and Stripe's `stripe/ai` repository.
+- Saved the strategy note in the Cowork roadmap docs as a future product lane, not beta scope.
+- Recommendation: use Stripe Toolkit/MCP as a Stripe adapter behind ScaleSafe-controlled backend tools for internal ops, sandbox testing, and future merchant command flows. Do not expose broad Stripe tools directly to merchant prompts.
+
+Verification:
+
+- Docs-only update; no code tests run.
+
 ### 2026-05-08: GHL Contact Field Updates Must Use Field IDs (Codex)
 
 Files changed:
