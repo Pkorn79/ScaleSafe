@@ -29,6 +29,17 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: PMG Repair Fields Succeeded (Philip Manual Validation)
+
+Summary:
+
+- Philip ran the new Provisioning Health field repair in PMG and reported that it appears to have worked.
+- Next proof is live workflow rendering, not more field creation: run free, installment, and subscription enrollments and confirm Welcome, Enrollment Payment Receipt, and Recurring Payment Receipt emails render the repaired contact fields.
+
+Recommended next step:
+
+- Query/inspect `trigger_delivery_logs` after each enrollment and compare against the received email/SMS body.
+
 ### 2026-05-08: Provisioning Health Repair Fields Visibility Fix (Codex)
 
 Files changed:
