@@ -291,7 +291,7 @@
       <div class="card">
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">Provisioning Health</h3>
-          <div class="flex gap-2">
+          <div class="flex gap-2" style="flex-wrap:wrap;justify-content:flex-end">
             <button class="btn btn-secondary btn-sm" @click="repairWorkflowCustomFields" :disabled="provisioningHealthLoading">
               {{ provisioningHealthLoading ? 'Working...' : 'Repair Fields' }}
             </button>
@@ -312,13 +312,21 @@
         <div v-if="provisioningHealth" class="health-list">
           <div v-for="item in provisioningHealth.items" :key="item.key" class="health-row">
             <span class="status-dot" :class="item.status === 'pass' ? 'green' : item.status === 'fail' ? 'red' : 'yellow'"></span>
-            <div>
+            <div class="health-row-content">
               <div class="health-label">{{ item.label }}</div>
               <div class="text-sm text-muted">{{ item.message }}</div>
               <div v-if="item.details?.deleteCandidateCount" class="text-sm text-muted">
                 {{ item.details.deleteCandidateCount }} cleanup candidates found. Review dry-run before deleting anything.
               </div>
             </div>
+            <button
+              v-if="item.key === 'custom_fields' && item.status !== 'pass'"
+              class="btn btn-secondary btn-sm"
+              @click="repairWorkflowCustomFields"
+              :disabled="provisioningHealthLoading"
+            >
+              {{ provisioningHealthLoading ? 'Working...' : 'Repair Fields' }}
+            </button>
           </div>
         </div>
         <div v-else class="text-sm text-muted">
@@ -973,11 +981,15 @@ async function setDefaultProcessor(proc: string) {
 
 .health-row {
   display: grid;
-  grid-template-columns: 12px 1fr;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   padding: 10px 0;
   border-bottom: 1px solid #f3f4f6;
+}
+
+.health-row-content {
+  min-width: 0;
 }
 
 .health-row:last-child {

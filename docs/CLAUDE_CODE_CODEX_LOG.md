@@ -29,6 +29,23 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: Provisioning Health Repair Fields Visibility Fix (Codex)
+
+Files changed:
+
+- `src/ui/src/views/SettingsView.vue`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip's PMG screenshot showed the new backend field-health check (`6/85 beta ScaleSafe contact fields are missing`) but did not show the new top-level `Repair Fields` button in the GHL iframe.
+- Kept the header button and added a second `Repair Fields` button directly on the `ScaleSafe contact fields` warning row. The header button group now wraps instead of clipping.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
 ### 2026-05-08: Workflow-Compatible GHL Field Registry + Repair Path (Codex)
 
 Files changed:
