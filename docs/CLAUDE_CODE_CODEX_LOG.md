@@ -29,6 +29,26 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: Stale Inactive GHL Trigger Subscriptions Auto-Deactivate (Codex)
+
+Files changed:
+
+- `src/services/trigger.service.ts`
+- `tests/unit/trigger.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip's trigger delivery log showed successful current `enrollment_complete` sends, plus an old GHL Marketplace trigger execution URL failing with `Trigger with id: BshBp7eq3VuKjlecHdsT is inactive. Skipping execution`.
+- Updated trigger delivery so when GHL reports a Marketplace trigger execution URL as inactive, ScaleSafe stops retrying that dead URL and marks the matching `trigger_subscriptions` row inactive locally.
+- Result: future workflow logs should stay cleaner and stale GHL trigger URLs should not keep producing repeated failed attempts.
+
+Verification:
+
+- `npm.cmd test -- --runInBand --testPathPatterns=trigger.service` passed.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
 ### 2026-05-08: PMG Repair Fields Succeeded (Philip Manual Validation)
 
 Summary:

@@ -14,6 +14,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
 jest.mock('../../src/repositories/trigger.repository', () => ({
   triggerRepository: {
     getActiveSubscriptions: jest.fn(),
+    deactivateSubscription: jest.fn(),
   },
 }));
 
@@ -23,6 +24,9 @@ import { ghlApi } from '../../src/clients/ghl.client';
 
 const mockGetActive = triggerRepository.getActiveSubscriptions as jest.MockedFunction<
   typeof triggerRepository.getActiveSubscriptions
+>;
+const mockDeactivate = triggerRepository.deactivateSubscription as jest.MockedFunction<
+  typeof triggerRepository.deactivateSubscription
 >;
 const mockGhlApi = ghlApi as jest.MockedFunction<typeof ghlApi>;
 
@@ -163,5 +167,34 @@ describe('Trigger Service - fireTrigger', () => {
     expect(result).toEqual({ sent: 0, failed: 1 });
     // 1 initial + 3 retries = 4 attempts
     expect(mockedAxios.post).toHaveBeenCalledTimes(4);
+  });
+
+  test('deactivates stale GHL marketplace trigger subscription when GHL reports it inactive', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'enrollment_complete',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/stale',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockRejectedValue(
+      new Error('GHL API error: Trigger with id: stale is inactive. Skipping execution'),
+    );
+
+    const result = await triggerService.fireTrigger('loc_1', 'enrollment_complete', {
+      contact_id: 'c1',
+    });
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    expect(mockDeactivate).toHaveBeenCalledWith(
+      'loc_1',
+      'enrollment_complete',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/stale',
+    );
   });
 });

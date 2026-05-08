@@ -52,6 +52,10 @@ function isGhlTriggerExecuteUrl(url: string): boolean {
   return url.includes(GHL_TRIGGER_EXECUTE_URL);
 }
 
+function isInactiveGhlTriggerError(message?: string): boolean {
+  return Boolean(message && /trigger with id: .*inactive/i.test(message));
+}
+
 async function postTriggerUrl(
   locationId: string,
   url: string,
@@ -86,6 +90,14 @@ async function postWithRetry(
       const message = err instanceof Error ? err.message : String(err);
       lastError = message;
       logger.warn({ url, attempt, status: lastStatus, error: message }, 'Trigger POST failed');
+      if (isInactiveGhlTriggerError(message)) {
+        return {
+          success: false,
+          httpStatus: lastStatus,
+          attemptCount: attempt + 1,
+          errorMessage: message,
+        };
+      }
     }
     if (attempt < RETRY_DELAYS.length) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS[attempt]));
@@ -164,6 +176,25 @@ export const triggerService = {
           sent++;
         } else {
           failed++;
+          if (isInactiveGhlTriggerError(result.errorMessage)) {
+            try {
+              await triggerRepository.deactivateSubscription(locationId, triggerKey, sub.subscription_url);
+              logger.warn(
+                { locationId, triggerKey, subscriptionUrl: sub.subscription_url },
+                'Deactivated stale inactive GHL trigger subscription',
+              );
+            } catch (err: any) {
+              logger.warn(
+                {
+                  locationId,
+                  triggerKey,
+                  subscriptionUrl: sub.subscription_url,
+                  err: err?.message || String(err),
+                },
+                'Failed to deactivate stale inactive GHL trigger subscription',
+              );
+            }
+          }
           logger.error(
             {
               locationId,
