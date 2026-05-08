@@ -256,6 +256,7 @@
   }
 
   var emailParam = new URLSearchParams(window.location.search).get('email') || '';
+  var paymentChoiceParam = new URLSearchParams(window.location.search).get('paymentChoice') || '';
 
   if (!offerId) {
     root.innerHTML = '<div class="ss-error-msg">Terms not available. Please contact the provider.</div>';
@@ -321,6 +322,18 @@
 
   function renderForm(offer) {
     var html = '';
+    var paymentChoice = paymentChoiceParam;
+    if (!paymentChoice) {
+      try {
+        paymentChoice = sessionStorage.getItem('ss_payment_choice_' + offerId) || sessionStorage.getItem('ss_payment_choice') || '';
+      } catch (e) {}
+    }
+    var hasBothPaymentOptions = offer.pifDiscountEnabled && offer.pifPrice != null && offer.installmentAmount != null && offer.installmentCount;
+    if (!paymentChoice && hasBothPaymentOptions) paymentChoice = 'pif';
+    var hideInstallmentClause = paymentChoice === 'pif';
+    var visibleClauses = (offer.clauses || []).filter(function(clause) {
+      return !(hideInstallmentClause && clause.id === 'installment_billing');
+    });
 
     // Merchant logo + name
     if (offer.merchantLogoUrl) {
@@ -346,11 +359,11 @@
     html += '</div>';
 
     // Section 2: Additional Selected Clauses (clickwrap)
-    if (offer.clauses && offer.clauses.length > 0) {
+    if (visibleClauses.length > 0) {
       html += '<div style="margin-bottom:24px;">';
       html += '<p style="font-size:15px;font-weight:600;margin-bottom:12px;">Additional Acknowledgments</p>';
       html += '<div class="ss-clauses">';
-      offer.clauses.forEach(function(clause) {
+      visibleClauses.forEach(function(clause) {
         html += '<div class="ss-clause">';
         html += '<input type="checkbox" id="cb-' + esc(clause.id) + '" data-clause-id="' + esc(clause.id) + '" class="ss-clause-cb">';
         html += '<div class="ss-clause-content">';

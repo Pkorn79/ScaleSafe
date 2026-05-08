@@ -69,7 +69,18 @@ export const evidenceService = {
         (e: any) => e.data?.event_type === 'disengagement_flagged' || e.data?.action === 'dunning_escalated'
       );
 
-      if (wasAtRisk && ['session_delivery', 'module_completion', 'pulse_checkin', 'payment_confirmation', 'enrollment_payment', 'milestone_completion'].includes(evidenceType)) {
+      const participationEvidenceTypes: EvidenceType[] = [
+        EVIDENCE_TYPES.SESSION_DELIVERY,
+        EVIDENCE_TYPES.MODULE_COMPLETION,
+        EVIDENCE_TYPES.PULSE_CHECKIN,
+        EVIDENCE_TYPES.MILESTONE_COMPLETION,
+        EVIDENCE_TYPES.SERVICE_ACCESS,
+        EVIDENCE_TYPES.EXTERNAL_SESSION,
+        EVIDENCE_TYPES.COURSE_COMPLETION,
+        EVIDENCE_TYPES.ASSIGNMENT_SUBMISSION,
+      ];
+
+      if (wasAtRisk && participationEvidenceTypes.includes(evidenceType)) {
         // Gate the engagement-status write on the merchant's master toggle so re-engagement
         // workflows stay silent for merchants who have engagement tracking disabled.
         const { merchantRepository } = await import('../repositories/merchant.repository');

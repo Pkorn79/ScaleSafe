@@ -388,6 +388,10 @@
       // Payment choice toggle
       window.selectPayment = function(choice) {
         selectedPayment = choice;
+        try {
+          sessionStorage.setItem('ss_payment_choice_' + offerId, choice);
+          sessionStorage.setItem('ss_payment_choice', choice);
+        } catch(e) {}
         var pifCard = document.getElementById('ss-pif-card');
         var instCard = document.getElementById('ss-inst-card');
         if (pifCard && instCard) {
@@ -426,6 +430,8 @@
         continueBtn.addEventListener('click', function() {
           if (!continueBtn.disabled) {
             try {
+              sessionStorage.setItem('ss_payment_choice_' + offerId, selectedPayment);
+              sessionStorage.setItem('ss_payment_choice', selectedPayment);
               window.parent.postMessage({ type: 'ssMilestonesComplete', paymentChoice: selectedPayment }, '*');
             } catch(e) {}
           }

@@ -29,6 +29,36 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-08: Suppress Checkout-Triggered Re-Engagement + PIF Installment Clause (Codex)
+
+Files changed:
+
+- `src/services/phase2Enrollment.service.ts`
+- `src/services/evidence.service.ts`
+- `src/widgets/offer-review/index.html`
+- `src/widgets/consent-capture/index.html`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip's paid Stripe test proved workflow fields now render, but also sent the "welcome back" re-engagement email during a normal checkout.
+- Root cause: normal enrollment completion was writing `ss_engagement_status = Active`, and evidence re-engagement logic also treated payment/enrollment evidence as re-engagement. That can fire GHL Contact Field Changed workflows even though the client did not actually re-engage through participation.
+- Removed the normal enrollment-completion write to `ss_engagement_status`.
+- Narrowed re-engagement to participation-style evidence only: session delivery, module completion, pulse check-in, milestone completion, service access, external session, course completion, and assignment submission. Payment/enrollment evidence no longer flips re-engagement.
+- Offer review now stores the selected PIF/installment choice in app-origin session storage.
+- Consent capture now reads that payment choice and hides the `installment_billing` clickwrap clause when the client chose PIF. If the client chooses installments, the installment clause still appears.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand --testPathPatterns=evidence.service` passed: 1 suite, 16 tests.
+- `npm.cmd test -- --runInBand --testPathPatterns=phase2Enrollment` passed: 2 suites, 16 tests.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, run a fresh paid PIF enrollment. Expected: Welcome/Receipt fields render, no "welcome back" email, and the terms step should not show the installment-billing acknowledgement for PIF.
+
 ### 2026-05-08: Stripe Agent Toolkit Research Pointer (Codex)
 
 Files changed:
