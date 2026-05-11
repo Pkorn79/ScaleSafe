@@ -57,6 +57,35 @@ Next proof:
 
 - After deploy, reload Payments > All Payments. Expected: ledger rows load instead of "unexpected error"; date filters should narrow the visible rows.
 
+### 2026-05-11: Align Payment Ledger With Live `payment_events` Schema (Codex)
+
+Files changed:
+
+- `src/services/payment-ledger.service.ts`
+- `src/repositories/paymentEvent.repository.ts`
+- `src/services/recurring-payment.service.ts`
+- `tests/unit/payment-ledger.service.test.ts`
+- `tests/unit/recurring-payment.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip's live Supabase column inventory showed `payment_events` has `payment_number` and `payments_total`, but not `payments_remaining`.
+- Updated the ledger to select `payments_total` and compute `paymentsRemaining = payments_total - payment_number` in application code.
+- Updated recurring payment event writes to store `payments_total` instead of trying to insert the missing `payments_remaining` column.
+- Updated the shared payment event repository so older callers that still pass `payments_remaining` are translated into `payments_total` when `payment_number` is available.
+- Workflow/evidence payloads still include `payments_remaining`; only the DB storage shape changed.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/payment-ledger.service.test.ts tests/unit/recurring-payment.service.test.ts` passed: 2 suites, 5 tests.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, Payments > All Payments should load without needing the minimal fallback. New recurring payment event rows should insert cleanly against the live PMG schema.
+
 ### 2026-05-10: Phase 1 Payment Truth + Recurring Lifecycle Correctness (Codex)
 
 Files changed:

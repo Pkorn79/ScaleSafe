@@ -100,7 +100,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       amount: amountDollars,
       currency: 'usd',
       payment_number: newPaymentsMade,
-      payments_remaining: paymentsRemaining,
+      payments_total: isFiniteInstallment ? Number(enr.payments_total) : null,
       source,
       is_recurring: true,
     })

@@ -70,7 +70,7 @@ const PAYMENT_EVENT_COLUMNS = [
   'amount',
   'currency',
   'payment_number',
-  'payments_remaining',
+  'payments_total',
   'failure_reason',
   'source',
   'is_recurring',
@@ -92,7 +92,7 @@ const BASE_PAYMENT_EVENT_COLUMNS = [
   'amount',
   'currency',
   'payment_number',
-  'payments_remaining',
+  'payments_total',
   'failure_reason',
   'raw_webhook_payload',
   'created_at',
@@ -105,6 +105,7 @@ const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
   is_recurring: false,
   customer_email: null,
   payment_number: null,
+  payments_total: null,
   payments_remaining: null,
   dunning_status: null,
   dunning_retry_count: 0,
@@ -122,6 +123,8 @@ const MINIMAL_PAYMENT_EVENT_COLUMNS = [
   'processor_subscription_id',
   'amount',
   'currency',
+  'payment_number',
+  'payments_total',
   'failure_reason',
   'created_at',
 ].join(', ');
@@ -461,7 +464,12 @@ function buildRow(event: any, enrollment: any, offer: any): PaymentLedgerRow {
   const processor = String(event.processor || enrollment?.processor_type || 'unknown').toLowerCase();
   const programName = offer?.offer_name || 'Unassigned payment';
   const paymentNumber = event.payment_number == null ? null : Number(event.payment_number);
-  const paymentsRemaining = event.payments_remaining == null ? null : Number(event.payments_remaining);
+  const eventPaymentsTotal = event.payments_total == null ? null : Number(event.payments_total);
+  const enrollmentPaymentsTotal = enrollment?.payments_total == null ? null : Number(enrollment.payments_total);
+  const paymentsTotal = Number.isFinite(eventPaymentsTotal) ? eventPaymentsTotal : enrollmentPaymentsTotal;
+  const paymentsRemaining = event.payments_remaining == null
+    ? (paymentNumber != null && paymentsTotal != null ? Math.max(0, paymentsTotal - paymentNumber) : null)
+    : Number(event.payments_remaining);
   const recurring = Boolean(event.is_recurring);
   const typeLabel = eventTypeLabel(event.event_type);
 

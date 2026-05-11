@@ -12,6 +12,7 @@ export interface PaymentEventRecord {
   amount: number;
   currency: string;
   payment_number: number | null;
+  payments_total: number | null;
   payments_remaining: number | null;
   failure_reason: string | null;
   attempt_count: number;
@@ -32,6 +33,7 @@ export interface PaymentEventInsert {
   amount: number;
   currency?: string;
   payment_number?: number;
+  payments_total?: number | null;
   payments_remaining?: number;
   failure_reason?: string;
   attempt_count?: number;
@@ -42,7 +44,12 @@ export interface PaymentEventInsert {
 
 export const paymentEventRepository = {
   async create(data: PaymentEventInsert): Promise<PaymentEventRecord> {
-    const record = { processor: 'ghl', currency: 'usd', ...data };
+    const { payments_remaining: paymentsRemaining, ...rest } = data;
+    const record: Record<string, unknown> = { processor: 'ghl', currency: 'usd', ...rest };
+    if (record.payments_total === undefined && record.payment_number != null && paymentsRemaining != null) {
+      record.payments_total = Number(record.payment_number) + Number(paymentsRemaining);
+    }
+
     const { data: result, error } = await getSupabase()
       .from('payment_events')
       .insert(record)

@@ -98,7 +98,7 @@ describe('recurring payment lifecycle', () => {
       processor: 'stripe',
       processor_subscription_id: 'sub_1',
       payment_number: 2,
-      payments_remaining: 0,
+      payments_total: 2,
       source: 'stripe_webhook',
       is_recurring: true,
     }));

@@ -136,7 +136,7 @@ describe('paymentLedgerService', () => {
         amount: 0.5,
         currency: 'usd',
         payment_number: 2,
-        payments_remaining: 0,
+        payments_total: 2,
         failure_reason: null,
         source: 'stripe_webhook',
         is_recurring: true,
@@ -208,8 +208,8 @@ describe('paymentLedgerService', () => {
     expect(subscription.payments).toHaveLength(0);
   });
 
-  it('falls back to minimal payment columns when optional ledger columns are not deployed yet', async () => {
-    mockMissingColumns.payment_events = ['customer_email', 'payments_remaining'];
+  it('falls back to base payment columns when optional ledger columns are not deployed yet', async () => {
+    mockMissingColumns.payment_events = ['customer_email'];
 
     const result = await paymentLedgerService.list('loc_1');
 
@@ -218,7 +218,8 @@ describe('paymentLedgerService', () => {
       processor: 'stripe',
       programName: 'Maui Trip',
       status: 'paid',
-      paymentsRemaining: null,
+      paymentNumber: 2,
+      paymentsRemaining: 0,
     }));
   });
 });
