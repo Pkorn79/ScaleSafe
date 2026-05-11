@@ -92,6 +92,10 @@ describe('NMI Silent Post webhook', () => {
 
     await handleNmiSilentPost(req, res);
 
+    expect(mockResolveProcessor).toHaveBeenCalledWith('merch_1', 'loc_1', {
+      processor_override: 'nmi',
+      nmi_processor_id: null,
+    });
     expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(
       expect.objectContaining({
         enrollment: expect.objectContaining({ id: 'enr_1' }),

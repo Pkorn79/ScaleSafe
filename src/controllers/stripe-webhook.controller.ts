@@ -312,7 +312,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
   // Look up enrollment by processor_subscription_id
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type')
+    .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
     .single();
 
@@ -383,7 +383,7 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
   const supabase = getSupabase();
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id')
+    .select('id, merchant_id, location_id, contact_id, offer_id, processor_subscription_id')
     .eq('processor_subscription_id', subscriptionId)
     .single();
 
@@ -416,15 +416,19 @@ async function handleSubscriptionDeleted(event: any, merchant: any): Promise<voi
   const supabase = getSupabase();
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, status')
+    .select('id, status, payments_made, payments_total, payment_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
     .single();
 
   if (!enrollment) return;
 
-  // If already completed, this is the expected auto-cancel after final payment
-  if (enrollment.status === 'completed') {
-    logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Subscription deleted after completion — expected');
+  // Stripe finite installments may auto-delete the subscription after the paid-off cycle.
+  const paidOffFiniteInstallment = enrollment.payment_type !== 'subscription'
+    && enrollment.payments_total != null
+    && (enrollment.payments_made || 0) >= enrollment.payments_total;
+
+  if (enrollment.billing_completed_at || paidOffFiniteInstallment) {
+    logger.info({ enrollmentId: enrollment.id, subscriptionId }, 'Stripe subscription deleted after billing completion; expected cleanup');
     return;
   }
 

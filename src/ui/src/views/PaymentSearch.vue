@@ -1,56 +1,293 @@
 <template>
   <div>
-    <h1 class="page-title">Payment Management</h1>
-
-    <div class="card" style="max-width:600px">
-      <div class="flex gap-2 mb-4">
-        <input class="form-input" v-model="searchQuery" placeholder="Search by name or contact ID..."
-          @keyup.enter="search" style="flex:1" />
-        <button class="btn btn-primary" @click="search" :disabled="loading">Search</button>
+    <div class="flex-between mb-4">
+      <div>
+        <h1 class="page-title" style="margin-bottom:4px">Payments</h1>
+        <p class="text-sm text-muted">Review charges, refunds, failures, processors, and program attribution.</p>
       </div>
     </div>
 
-    <div v-if="error" class="error-msg">{{ error }}</div>
-    <div v-if="loading" class="loading">Searching...</div>
-
-    <div v-if="customers.length === 0 && searched && !loading" class="empty-state">
-      <p>No customers with payment history found.</p>
+    <div class="payment-tabs mb-4">
+      <button class="tab-btn" :class="{ active: activeTab === 'ledger' }" @click="activeTab = 'ledger'">
+        All Payments
+      </button>
+      <button class="tab-btn" :class="{ active: activeTab === 'clients' }" @click="activeTab = 'clients'">
+        Clients
+      </button>
     </div>
 
-    <div v-for="c in customers" :key="c.contactId" class="card" style="max-width:600px">
-      <div class="flex-between">
-        <div>
-          <strong>{{ c.name || c.email || c.contactId.slice(0, 12) + '...' }}</strong>
-          <div v-if="c.email && c.name" class="text-sm text-muted">{{ c.email }}</div>
-          <div v-if="c.programName" class="text-sm text-muted">{{ c.programName }}</div>
-          <div class="text-sm text-muted">
-            ${{ c.totalCharged.toFixed(2) }} charged
-            <span v-if="c.totalRefunded > 0"> &middot; ${{ c.totalRefunded.toFixed(2) }} refunded</span>
-            <span v-if="c.lastPaymentDate"> &middot; Last: {{ formatDate(c.lastPaymentDate) }}</span>
+    <section v-if="activeTab === 'ledger'">
+      <div class="card">
+        <div class="ledger-filters">
+          <div class="filter-wide">
+            <label class="form-label">Search</label>
+            <input
+              class="form-input"
+              v-model="ledgerFilters.search"
+              placeholder="Client, email, contact ID, or program"
+              @keyup.enter="applyLedgerFilters"
+            />
+          </div>
+          <div>
+            <label class="form-label">Processor</label>
+            <select class="form-select" v-model="ledgerFilters.processor" @change="applyLedgerFilters">
+              <option value="">All</option>
+              <option value="stripe">Stripe</option>
+              <option value="nmi">NMI</option>
+              <option value="ghl">GHL</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Billing</label>
+            <select class="form-select" v-model="ledgerFilters.paymentType" @change="applyLedgerFilters">
+              <option value="">All</option>
+              <option value="pif">PIF</option>
+              <option value="installment">Installment</option>
+              <option value="subscription">Subscription</option>
+              <option value="free">Free</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Status</label>
+            <select class="form-select" v-model="ledgerFilters.status" @change="applyLedgerFilters">
+              <option value="">All</option>
+              <option value="paid">Paid</option>
+              <option value="failed">Failed</option>
+              <option value="refunded">Refunded</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <button class="btn btn-primary" @click="applyLedgerFilters" :disabled="ledgerLoading">
+              {{ ledgerLoading ? 'Loading...' : 'Apply' }}
+            </button>
+            <button class="btn btn-secondary" @click="resetLedgerFilters" :disabled="ledgerLoading">Reset</button>
           </div>
         </div>
-        <router-link :to="`/payments/${c.contactId}`" class="btn btn-sm btn-primary">
-          Manage Payments
-        </router-link>
       </div>
-    </div>
+
+      <div v-if="ledgerError" class="error-msg">{{ ledgerError }}</div>
+
+      <div class="grid grid-3 mb-4">
+        <div class="card metric-card">
+          <div class="card-title">Visible Charges</div>
+          <div class="card-value">${{ Number(ledgerSummary.totalCharged || 0).toFixed(2) }}</div>
+        </div>
+        <div class="card metric-card">
+          <div class="card-title">Visible Refunds</div>
+          <div class="card-value">${{ Number(ledgerSummary.totalRefunded || 0).toFixed(2) }}</div>
+        </div>
+        <div class="card metric-card">
+          <div class="card-title">Visible Failed</div>
+          <div class="card-value">${{ Number(ledgerSummary.failedAmount || 0).toFixed(2) }}</div>
+        </div>
+      </div>
+
+      <div class="card ledger-card">
+        <div class="flex-between mb-4">
+          <div class="card-title" style="margin-bottom:0">Payment Ledger</div>
+          <div class="text-sm text-muted">{{ ledgerTotal }} result{{ ledgerTotal === 1 ? '' : 's' }}</div>
+        </div>
+        <div v-if="ledgerLoading" class="loading">Loading payments...</div>
+        <div v-else-if="ledgerRows.length === 0" class="empty-state">
+          <p>No payments match these filters.</p>
+        </div>
+        <div v-else class="table-scroll">
+          <table class="table ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Program</th>
+                <th>Billing</th>
+                <th>Processor</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Source</th>
+                <th>Transaction</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in ledgerRows" :key="row.id">
+                <td class="nowrap">{{ formatDate(row.date) }}</td>
+                <td>
+                  <router-link v-if="row.contactId" :to="`/payments/${row.contactId}`" class="client-link">
+                    {{ row.customerName || row.customerEmail || row.contactId }}
+                  </router-link>
+                  <span v-else>{{ row.customerName || 'Unknown' }}</span>
+                  <div v-if="row.customerEmail" class="text-xs text-muted">{{ row.customerEmail }}</div>
+                </td>
+                <td>
+                  {{ row.programName }}
+                  <div v-if="row.paymentNumber" class="text-xs text-muted">
+                    Payment {{ row.paymentNumber }}<span v-if="row.paymentsRemaining === 0">, final</span>
+                  </div>
+                </td>
+                <td><span class="badge badge-gray">{{ row.paymentTypeLabel }}</span></td>
+                <td><span class="badge" :class="processorBadge(row.processor)">{{ processorLabel(row.processor) }}</span></td>
+                <td class="nowrap">${{ Number(row.amount || 0).toFixed(2) }}</td>
+                <td><span class="badge" :class="statusBadge(row.status)">{{ row.statusLabel }}</span></td>
+                <td class="text-sm">{{ sourceLabel(row.source, row.isRecurring) }}</td>
+                <td class="txn-cell">{{ row.processorTransactionId || row.processorSubscriptionId || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="ledgerRows.length > 0" class="flex-between mt-4">
+          <button class="btn btn-secondary" @click="prevLedgerPage" :disabled="ledgerLoading || ledgerOffset === 0">Previous</button>
+          <div class="text-sm text-muted">Showing {{ ledgerOffset + 1 }}-{{ Math.min(ledgerOffset + ledgerRows.length, ledgerTotal) }}</div>
+          <button class="btn btn-secondary" @click="nextLedgerPage" :disabled="ledgerLoading || ledgerOffset + ledgerLimit >= ledgerTotal">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <section v-else>
+      <div class="card" style="max-width:720px">
+        <div class="flex gap-2 mb-4">
+          <input class="form-input" v-model="searchQuery" placeholder="Search by name, email, or contact ID..."
+            @keyup.enter="search" style="flex:1" />
+          <button class="btn btn-primary" @click="search" :disabled="loading">Search</button>
+        </div>
+      </div>
+
+      <div v-if="error" class="error-msg">{{ error }}</div>
+      <div v-if="loading" class="loading">Searching...</div>
+
+      <div v-if="customers.length === 0 && searched && !loading" class="empty-state">
+        <p>No customers with payment history found.</p>
+      </div>
+
+      <div v-for="c in customers" :key="c.contactId" class="card customer-card">
+        <div class="flex-between">
+          <div>
+            <strong>{{ c.name || c.email || c.contactId.slice(0, 12) + '...' }}</strong>
+            <div v-if="c.email && c.name" class="text-sm text-muted">{{ c.email }}</div>
+            <div v-if="c.programName" class="text-sm text-muted">{{ c.programName }}</div>
+            <div class="text-sm text-muted">
+              ${{ c.totalCharged.toFixed(2) }} charged
+              <span v-if="c.totalRefunded > 0"> &middot; ${{ c.totalRefunded.toFixed(2) }} refunded</span>
+              <span v-if="c.lastPaymentDate"> &middot; Last: {{ formatDateShort(c.lastPaymentDate) }}</span>
+            </div>
+          </div>
+          <router-link :to="`/payments/${c.contactId}`" class="btn btn-sm btn-primary">
+            Manage Payments
+          </router-link>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useApi } from '../composables/useApi';
 
 const api = useApi();
 const { loading, error } = api;
+
+const activeTab = ref<'ledger' | 'clients'>('ledger');
+
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
 const searched = ref(false);
 
-onMounted(() => search());
+const ledgerRows = ref<any[]>([]);
+const ledgerSummary = ref<any>({ totalCharged: 0, totalRefunded: 0, failedAmount: 0 });
+const ledgerTotal = ref(0);
+const ledgerLimit = 50;
+const ledgerOffset = ref(0);
+const ledgerLoading = ref(false);
+const ledgerError = ref('');
+const ledgerFilters = ref({
+  search: '',
+  processor: '',
+  paymentType: '',
+  status: '',
+});
+
+onMounted(async () => {
+  await loadLedger();
+});
+
+watch(activeTab, async (tab) => {
+  if (tab === 'clients' && !searched.value) await search();
+});
 
 function formatDate(d: string) {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDateShort(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function processorLabel(proc: string): string {
+  if (proc === 'nmi') return 'NMI';
+  if (proc === 'stripe') return 'Stripe';
+  if (proc === 'ghl') return 'GHL';
+  return proc || 'Unknown';
+}
+
+function processorBadge(proc: string): string {
+  if (proc === 'nmi') return 'badge-blue';
+  if (proc === 'stripe') return 'badge-gray';
+  if (proc === 'ghl') return 'badge-yellow';
+  return 'badge-gray';
+}
+
+function statusBadge(status: string): string {
+  if (status === 'paid' || status === 'created') return 'badge-green';
+  if (status === 'failed' || status === 'cancelled') return 'badge-red';
+  if (status === 'refunded') return 'badge-yellow';
+  return 'badge-gray';
+}
+
+function sourceLabel(source: string, recurring: boolean): string {
+  const value = source || (recurring ? 'recurring' : 'checkout');
+  return value.replace(/_/g, ' ');
+}
+
+async function loadLedger() {
+  ledgerLoading.value = true;
+  ledgerError.value = '';
+  try {
+    const params = new URLSearchParams();
+    params.set('limit', String(ledgerLimit));
+    params.set('offset', String(ledgerOffset.value));
+    for (const [key, value] of Object.entries(ledgerFilters.value)) {
+      if (value) params.set(key, value);
+    }
+    const result = await api.get<any>(`/api/payments/manage/ledger?${params.toString()}`);
+    ledgerRows.value = result?.payments || [];
+    ledgerSummary.value = result?.summary || { totalCharged: 0, totalRefunded: 0, failedAmount: 0 };
+    ledgerTotal.value = result?.total || ledgerRows.value.length;
+  } catch (e: any) {
+    ledgerError.value = e.message || 'Failed to load payment ledger';
+  } finally {
+    ledgerLoading.value = false;
+  }
+}
+
+async function applyLedgerFilters() {
+  ledgerOffset.value = 0;
+  await loadLedger();
+}
+
+async function resetLedgerFilters() {
+  ledgerFilters.value = { search: '', processor: '', paymentType: '', status: '' };
+  ledgerOffset.value = 0;
+  await loadLedger();
+}
+
+async function nextLedgerPage() {
+  ledgerOffset.value += ledgerLimit;
+  await loadLedger();
+}
+
+async function prevLedgerPage() {
+  ledgerOffset.value = Math.max(0, ledgerOffset.value - ledgerLimit);
+  await loadLedger();
 }
 
 async function search() {
@@ -62,3 +299,100 @@ async function search() {
   } catch {}
 }
 </script>
+
+<style scoped>
+.payment-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--ss-navy-200);
+  border-radius: 10px;
+}
+
+.tab-btn {
+  border: 0;
+  background: transparent;
+  color: var(--ss-navy-600);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: var(--ss-primary-50);
+  color: var(--ss-primary-800);
+}
+
+.ledger-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(140px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.metric-card {
+  margin-bottom: 0;
+}
+
+.ledger-card {
+  overflow: hidden;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ledger-table {
+  min-width: 1120px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.client-link {
+  color: var(--ss-primary-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.client-link:hover {
+  text-decoration: underline;
+}
+
+.txn-cell {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.customer-card {
+  max-width: 720px;
+}
+
+.text-xs {
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .ledger-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .filter-wide,
+  .filter-actions {
+    grid-column: 1 / -1;
+  }
+}
+</style>

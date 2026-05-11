@@ -49,6 +49,12 @@
           </div>
         </div>
       </div>
+      <div v-if="form.programDurationValue" class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="form.autoCompleteOnDurationEnd" />
+          Mark program complete when duration ends
+        </label>
+      </div>
 
       <!-- Pricing -->
       <h3 class="mt-4 mb-4">Pricing</h3>
@@ -404,6 +410,7 @@ const form = ref({
   pifDiscountEnabled: false,
   programDurationValue: null as number | null,
   programDurationUnit: 'weeks' as 'weeks' | 'months',
+  autoCompleteOnDurationEnd: false,
   refundPolicyType: '' as string,
   refundPolicyDays: 30,
   refundWindowText: '',
@@ -477,6 +484,7 @@ onMounted(async () => {
       form.value.pifDiscountEnabled = offer.pif_discount_enabled || false;
       form.value.programDurationValue = offer.program_duration_value || null;
       form.value.programDurationUnit = offer.program_duration_unit || 'weeks';
+      form.value.autoCompleteOnDurationEnd = offer.auto_complete_on_duration_end ?? false;
       form.value.refundPolicyType = offer.refund_policy_type || '';
       form.value.refundPolicyDays = offer.refund_policy_days || 30;
       form.value.refundWindowText = offer.refund_window_text || '';
@@ -549,6 +557,7 @@ async function save() {
     pifDiscountEnabled: form.value.pifDiscountEnabled,
     programDurationValue: form.value.programDurationValue,
     programDurationUnit: form.value.programDurationUnit,
+    autoCompleteOnDurationEnd: Boolean(form.value.programDurationValue && form.value.autoCompleteOnDurationEnd),
     refundPolicyType: form.value.refundPolicyType,
     refundPolicyDays: form.value.refundPolicyDays,
     refundWindowText: form.value.refundWindowText,

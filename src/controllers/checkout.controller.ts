@@ -359,7 +359,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     // Log payment event
     const enrollmentLookup = consentToken
-      ? await supabase.from('enrollments').select('id').eq('consent_token', consentToken).single()
+      ? await supabase.from('enrollments').select('id, offer_id').eq('consent_token', consentToken).single()
       : null;
 
     await supabase.from('payment_events').insert({
@@ -367,16 +367,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       location_id: merchant.locationId,
       contact_id: contactId || '',
       enrollment_id: enrollmentLookup?.data?.id || null,
+      offer_id: enrollmentLookup?.data?.offer_id || offerId || null,
       event_type: result.success ? 'sale' : 'payment_failed',
       processor: procConfig.processor_type,
       processor_transaction_id: result.transactionId,
       amount: amount / 100, // store in dollars in DB
       currency: (currency || 'usd').toLowerCase(),
+      customer_email: contactEmail || null,
       consent_token: consentToken || null,
       failure_reason: result.errorMessage || null,
       ip_address: clientIp,
       device_info: deviceFingerprint || null,
       browser_info: browserInfo || null,
+      source: 'checkout',
+      is_recurring: false,
     });
 
     // ─── Complete enrollment + create GHL records ──────
@@ -414,6 +418,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             paymentType: resolvedPaymentType,
             transactionId: result.transactionId || result.chargeId || '',
             paymentsTotal,
+            processorType: procConfig.processor_type,
           });
 
           // Re-query enrollment to get the contactId that completeEnrollment resolved.
@@ -567,7 +572,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               if (existingEnr?.id) {
                 quickPayEnrollmentId = existingEnr.id;
               } else {
-                const nextBilling = computeNextBillingDate((offer as any)?.installment_frequency);
+                const quickPayBillingComplete = quickPayPaymentKind === 'installment'
+                  && quickPayPaymentsTotal != null
+                  && quickPayPaymentsTotal <= 1;
+                const nextBilling = quickPayBillingComplete
+                  ? null
+                  : computeNextBillingDate((offer as any)?.installment_frequency);
                 const enrolledAt = new Date().toISOString();
                 const { data: insertedEnr, error: enrInsertErr } = await supabase
                   .from('enrollments')
@@ -581,9 +591,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     payment_amount: amount / 100,
                     payment_type: quickPayPaymentKind,
                     payment_transaction_id: result.transactionId,
+                    processor_type: procConfig.processor_type,
                     payments_made: 1,
                     payments_total: quickPayPaymentsTotal,
                     next_billing_date: nextBilling,
+                    ...(quickPayBillingComplete ? { billing_completed_at: enrolledAt } : {}),
                     enrolled_at: enrolledAt,
                   } as any)
                   .select('id')
@@ -769,7 +781,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
                       if (subResult.success && subResult.subscriptionId) {
                         await bgSupabase.from('enrollments')
-                          .update({ processor_subscription_id: subResult.subscriptionId })
+                          .update({ processor_subscription_id: subResult.subscriptionId, processor_type: bgProcType })
                           .eq('id', bgEnrId);
                         logger.info({
                           enrollmentId: bgEnrId,

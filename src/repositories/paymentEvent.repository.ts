@@ -8,6 +8,7 @@ export interface PaymentEventRecord {
   event_type: string;
   processor: string;
   processor_transaction_id: string | null;
+  processor_subscription_id: string | null;
   amount: number;
   currency: string;
   payment_number: number | null;
@@ -15,6 +16,8 @@ export interface PaymentEventRecord {
   failure_reason: string | null;
   attempt_count: number;
   raw_webhook_payload: Record<string, unknown> | null;
+  source: string | null;
+  is_recurring: boolean | null;
   created_at: string;
 }
 
@@ -25,6 +28,7 @@ export interface PaymentEventInsert {
   event_type: string;
   processor?: string;
   processor_transaction_id?: string;
+  processor_subscription_id?: string | null;
   amount: number;
   currency?: string;
   payment_number?: number;
@@ -32,6 +36,8 @@ export interface PaymentEventInsert {
   failure_reason?: string;
   attempt_count?: number;
   raw_webhook_payload?: Record<string, unknown>;
+  source?: string;
+  is_recurring?: boolean;
 }
 
 export const paymentEventRepository = {

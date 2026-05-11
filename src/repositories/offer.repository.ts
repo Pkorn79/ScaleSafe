@@ -23,6 +23,7 @@ export interface OfferRecord {
   refund_policy_days: number | null;
   program_duration_value: number | null;
   program_duration_unit: string | null;
+  auto_complete_on_duration_end: boolean;
   tc_clause_overrides: Record<string, boolean>;
   processor_override: string | null;
   nmi_processor_id: string | null;

@@ -1,5 +1,4 @@
 import { enrollmentRepository, EnrollmentRecord } from '../repositories/enrollment.repository';
-import { evidenceRepository } from '../repositories/evidence.repository';
 import { phase2EvidenceRepository, EvidenceRecord } from '../repositories/phase2Evidence.repository';
 import { paymentEventRepository, PaymentEventRecord } from '../repositories/paymentEvent.repository';
 import { offerRepository } from '../repositories/offer.repository';
@@ -116,6 +115,7 @@ interface CompleteEnrollmentParams {
   paymentType: string;
   transactionId: string;
   paymentsTotal: number | null;
+  processorType?: string;
 }
 
 export interface EnrollmentWithEvidence {
@@ -190,12 +190,20 @@ export const phase2EnrollmentService = {
         }
       } catch { /* non-blocking */ }
     }
+    const finiteBillingComplete = params.paymentType !== 'subscription'
+      && params.paymentsTotal != null
+      && params.paymentsTotal <= 1;
+    if (finiteBillingComplete) {
+      nextBilling = null;
+    }
     await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
       payment_amount: params.paymentAmount,
       payment_type: params.paymentType,
       payment_transaction_id: params.transactionId,
+      processor_type: params.processorType || null,
       payments_made: 1,
       payments_total: params.paymentsTotal,
+      ...(finiteBillingComplete ? { billing_completed_at: enrolledAt.toISOString() } : {}),
       enrolled_at: enrolledAt.toISOString(),
       ...(nextBilling ? { next_billing_date: nextBilling } : {}),
       ...(backfillMerchantId ? { merchant_id: backfillMerchantId } : {}),
@@ -295,11 +303,13 @@ export const phase2EnrollmentService = {
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
         event_type: 'payment_success',
-        processor: 'ghl',
+        processor: params.processorType || 'ghl',
         processor_transaction_id: params.transactionId,
         amount: params.paymentAmount,
         payment_number: 1,
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
+        source: 'checkout',
+        is_recurring: false,
       }),
     ]).then(results => {
       results.forEach((r, i) => {
@@ -482,24 +492,32 @@ export const phase2EnrollmentService = {
       raw_webhook_payload: params.rawPayload,
     });
 
-    // Increment payments_made + advance next_billing_date
+    // Increment payments_made + advance or finish billing.
     await enrollmentRepository.incrementPaymentsMade(params.enrollmentId);
     try {
       const enr = await enrollmentRepository.getById(params.enrollmentId);
       if (enr.offer_id) {
         const ofr = await offerRepository.findById(enr.offer_id);
         if (ofr) {
-          const freq = ofr.installment_frequency || 'monthly';
-          const next = new Date();
-          if (freq === 'daily') next.setDate(next.getDate() + 1);
-          else if (freq === 'weekly') next.setDate(next.getDate() + 7);
-          else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
-          else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
-          else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
-          else next.setMonth(next.getMonth() + 1);
-          await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, {
-            next_billing_date: next.toISOString().split('T')[0],
-          } as any);
+          const isFinalInstallment = enr.payment_type !== 'subscription'
+            && enr.payments_total != null
+            && enr.payments_made >= enr.payments_total;
+          const updates: Record<string, unknown> = {};
+          if (isFinalInstallment) {
+            updates.next_billing_date = null;
+            updates.billing_completed_at = new Date().toISOString();
+          } else {
+            const freq = ofr.installment_frequency || 'monthly';
+            const next = new Date();
+            if (freq === 'daily') next.setDate(next.getDate() + 1);
+            else if (freq === 'weekly') next.setDate(next.getDate() + 7);
+            else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
+            else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
+            else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
+            else next.setMonth(next.getMonth() + 1);
+            updates.next_billing_date = next.toISOString().split('T')[0];
+          }
+          await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, updates as any);
         }
       }
     } catch { /* non-blocking */ }
@@ -550,71 +568,9 @@ export const phase2EnrollmentService = {
       paymentKind,
     });
 
-    // Final installment detection — all payments complete
-    if (enrollment.payments_total && enrollment.payments_made >= enrollment.payments_total) {
-      try {
-        // Update enrollment to completed
-        await enrollmentRepository.updateStatus(params.enrollmentId, 'completed', {
-          completed_at: new Date().toISOString(),
-          pulse_cadence_enabled: false,
-          next_pulse_due_at: null,
-        } as any);
-
-        // Log completion evidence
-        await phase2EvidenceRepository.create({
-          location_id: params.locationId,
-          contact_id: params.contactId,
-          enrollment_id: params.enrollmentId,
-          evidence_type: 'custom_event',
-          data: {
-            event_type: 'program_completed',
-            total_payments: enrollment.payments_total,
-            total_amount: runningTotal,
-            completion_date: new Date().toISOString(),
-          },
-        });
-
-        // Fire program completed trigger
-        let offerName = '';
-        if (enrollment.offer_id) {
-          try {
-            const offer = await offerRepository.getById(enrollment.offer_id);
-            offerName = offer.offer_name;
-          } catch { /* non-blocking */ }
-        }
-        // Get evidence counts for session/milestone totals
-        let totalSessions = 0;
-        let totalMilestones = 0;
-        try {
-          const counts = await evidenceRepository.getCounts(params.locationId, params.contactId);
-          totalSessions = (counts['session_delivery'] || 0) + (counts['external_session'] || 0);
-          totalMilestones = (counts['milestone_completion'] || 0) + (counts['milestone_signoff'] || 0);
-        } catch {}
-
-        await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
-          contact_id: params.contactId,
-          offer_id: enrollment.offer_id || '',
-          offer_name: offerName,
-          total_sessions: totalSessions,
-          total_milestones: totalMilestones,
-          total_payments: enrollment.payments_total,
-          total_amount: runningTotal,
-          enrollment_date: enrollment.enrolled_at || '',
-          completion_date: new Date().toISOString(),
-        });
-
-        // Update GHL contact status
-        try {
-          const api = await ghlApi(params.locationId);
-          await api.put(`/contacts/${params.contactId}`, {
-            customField: { 'contact.ss_enrollment_status': 'completed' },
-          });
-        } catch { /* non-blocking */ }
-
-        logger.info({ enrollmentId: params.enrollmentId, paymentsMade: enrollment.payments_made, paymentsTotal: enrollment.payments_total }, 'Final installment — program completed');
-      } catch (completionErr: any) {
-        logger.error({ err: completionErr.message, enrollmentId: params.enrollmentId }, 'Program completion handling failed (non-blocking)');
-      }
+    // Final installment billing marker.
+    if (enrollment.payment_type !== 'subscription' && enrollment.payments_total && enrollment.payments_made >= enrollment.payments_total) {
+      logger.info({ enrollmentId: params.enrollmentId, paymentsMade: enrollment.payments_made, paymentsTotal: enrollment.payments_total }, 'Recurring payment: billing complete; program remains active');
     }
 
     logger.info(

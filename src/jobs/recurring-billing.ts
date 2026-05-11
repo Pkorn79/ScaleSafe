@@ -29,7 +29,7 @@ export async function runRecurringBilling(): Promise<void> {
   try {
     const { data, error } = await supabase
       .from('enrollments')
-      .select('id, location_id, merchant_id, contact_id, offer_id, payment_type, payments_made, payments_total, next_billing_date, status, email')
+      .select('id, location_id, merchant_id, contact_id, offer_id, payment_type, payments_made, payments_total, next_billing_date, status, email, processor_type, processor_subscription_id')
       .lte('next_billing_date', today)
       .in('status', ['enrolled', 'active'])
       .in('payment_type', ['installments', 'installment', 'subscription'])
@@ -83,7 +83,7 @@ export async function runRecurringBilling(): Promise<void> {
       // 2. Resolve offer for amount + frequency + name
       const { data: offer } = await supabase
         .from('offers_mirror')
-        .select('id, offer_name, installment_amount, installment_frequency')
+        .select('id, offer_name, installment_amount, installment_frequency, processor_override, nmi_processor_id')
         .eq('id', enr.offer_id)
         .single();
 
@@ -96,8 +96,17 @@ export async function runRecurringBilling(): Promise<void> {
       const amountCents = Math.round(Number(offer.installment_amount) * 100);
       const amountDollars = Number(offer.installment_amount);
 
-      // 3. Resolve processor
-      const { config: procConfig } = await resolveProcessor(enr.merchant_id, enr.location_id);
+      // 3. Resolve the processor that owns the saved card.
+      const savedCardProcessor = (pm.processor_type || enr.processor_type) as 'nmi' | 'stripe' | undefined;
+      if (!savedCardProcessor || !['nmi', 'stripe'].includes(savedCardProcessor)) {
+        logger.warn({ enrollmentId: enr.id, contactId: enr.contact_id }, 'Recurring billing: saved card has no processor_type - skipping');
+        skipped++;
+        continue;
+      }
+      const { config: procConfig } = await resolveProcessor(enr.merchant_id, enr.location_id, {
+        processor_override: savedCardProcessor,
+        nmi_processor_id: savedCardProcessor === 'nmi' ? (offer.nmi_processor_id || null) : null,
+      });
       const processor = createProcessorClient(procConfig);
 
       const customerId = pm.nmi_customer_vault_id || pm.stripe_customer_id || '';

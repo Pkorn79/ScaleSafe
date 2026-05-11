@@ -336,7 +336,7 @@ export const dashboardController = {
       // (matches the client_list_view logic from migration 050: active > paused > pending > completed > cancelled)
       const { data: allEnrollments } = await supabase
         .from('enrollments')
-        .select('id, email, status, payment_amount, payment_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date, created_at')
+        .select('id, email, status, payment_amount, payment_type, processor_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date, created_at')
         .eq('location_id', locationId)
         .eq('contact_id', contactId);
 
@@ -382,7 +382,7 @@ export const dashboardController = {
         enrollment?.offer_id
           ? supabase.from('offers_mirror').select('offer_name, payment_type, num_payments, installment_amount, installment_frequency').eq('id', enrollment.offer_id).single()
           : Promise.resolve({ data: null }),
-        supabase.from('payment_methods').select('card_last_four, card_brand, card_exp_month, card_exp_year, is_default')
+        supabase.from('payment_methods').select('card_last_four, card_brand, card_exp_month, card_exp_year, is_default, processor_type')
           .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
         supabase.from('payment_events').select('amount, event_type, created_at')
           .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null),
@@ -414,11 +414,12 @@ export const dashboardController = {
         status: enrollment?.status || 'unknown',
         paymentAmount: enrollment?.payment_amount || 0,
         paymentType: enrollment?.payment_type || '',
+        processorType: enrollment?.processor_type || '',
         enrolledAt: enrollment?.enrolled_at || null,
         offerName: offer?.offer_name || '',
         signature: enrollment?.digital_signature || '',
         // Payment enrichment
-        cardOnFile: card ? cleanCardDisplay(card) : null,
+        cardOnFile: card ? { ...cleanCardDisplay(card), processorType: card.processor_type || '' } : null,
         totalCharged,
         totalRefunded,
         totalPayments: paymentEvents.filter((e: any) => e.event_type === 'sale').length,
@@ -451,7 +452,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -479,6 +480,7 @@ export const dashboardController = {
           offerName: offer?.offer_name || 'Unknown Program',
           offerPrice: offer?.price || e.payment_amount || 0,
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
+          processorType: e.processor_type || null,
           paymentAmount: e.payment_amount || 0,
           enrolledAt: e.enrolled_at,
           cancelledAt: e.cancelled_at,
@@ -486,6 +488,7 @@ export const dashboardController = {
           createdAt: e.created_at,
           paymentsMade: e.payments_made || 0,
           paymentsTotal: e.payments_total || offer?.num_payments || null,
+          billingCompletedAt: e.billing_completed_at || null,
           installmentAmount: offer?.installment_amount || null,
           installmentFrequency: offer?.installment_frequency || null,
           programDuration: offer?.program_duration_value || null,

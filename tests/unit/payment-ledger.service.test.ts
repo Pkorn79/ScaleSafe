@@ -1,0 +1,183 @@
+const mockTables: Record<string, any[]> = {
+  payment_events: [],
+  enrollments: [],
+  offers_mirror: [],
+};
+
+class MockQuery {
+  private rows: any[];
+  private count = false;
+  private rangeStart: number | null = null;
+  private rangeEnd: number | null = null;
+  private limitValue: number | null = null;
+
+  constructor(private table: string) {
+    this.rows = [...(mockTables[table] || [])];
+  }
+
+  select(_columns?: string, options?: { count?: string }) {
+    this.count = options?.count === 'exact';
+    return this;
+  }
+
+  eq(column: string, value: any) {
+    this.rows = this.rows.filter(row => row[column] === value);
+    return this;
+  }
+
+  in(column: string, values: any[]) {
+    this.rows = this.rows.filter(row => values.includes(row[column]));
+    return this;
+  }
+
+  ilike(column: string, pattern: string) {
+    const needle = pattern.replace(/%/g, '').toLowerCase();
+    this.rows = this.rows.filter(row => String(row[column] || '').toLowerCase().includes(needle));
+    return this;
+  }
+
+  or(expression: string) {
+    const terms = expression.split(',').map(part => {
+      const [column, _op, ...rest] = part.split('.');
+      return { column, needle: rest.join('.').replace(/%/g, '').toLowerCase() };
+    });
+    this.rows = this.rows.filter(row => terms.some(term => String(row[term.column] || '').toLowerCase().includes(term.needle)));
+    return this;
+  }
+
+  gte(column: string, value: string) {
+    this.rows = this.rows.filter(row => String(row[column] || '') >= value);
+    return this;
+  }
+
+  lte(column: string, value: string) {
+    this.rows = this.rows.filter(row => String(row[column] || '') <= value);
+    return this;
+  }
+
+  order(column: string, options?: { ascending?: boolean }) {
+    const asc = options?.ascending === true;
+    this.rows = [...this.rows].sort((a, b) => {
+      const av = String(a[column] || '');
+      const bv = String(b[column] || '');
+      return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    return this;
+  }
+
+  limit(value: number) {
+    this.limitValue = value;
+    return this;
+  }
+
+  range(start: number, end: number) {
+    this.rangeStart = start;
+    this.rangeEnd = end;
+    return this;
+  }
+
+  then(resolve: any, reject: any) {
+    const total = this.rows.length;
+    let rows = [...this.rows];
+    if (this.rangeStart != null && this.rangeEnd != null) rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
+    if (this.limitValue != null) rows = rows.slice(0, this.limitValue);
+    return Promise.resolve({ data: rows, error: null, count: this.count ? total : null }).then(resolve, reject);
+  }
+}
+
+jest.mock('../../src/clients/supabase.client', () => ({
+  getSupabase: () => ({
+    from: (table: string) => new MockQuery(table),
+  }),
+}));
+
+import { paymentLedgerService } from '../../src/services/payment-ledger.service';
+
+describe('paymentLedgerService', () => {
+  beforeEach(() => {
+    mockTables.payment_events = [
+      {
+        id: 'pay_1',
+        location_id: 'loc_1',
+        contact_id: 'contact_1',
+        enrollment_id: 'enr_1',
+        offer_id: null,
+        event_type: 'sale',
+        processor: 'stripe',
+        processor_transaction_id: 'pi_1',
+        processor_subscription_id: 'sub_1',
+        amount: 0.5,
+        currency: 'usd',
+        payment_number: 2,
+        payments_remaining: 0,
+        failure_reason: null,
+        source: 'stripe_webhook',
+        is_recurring: true,
+        customer_email: null,
+        dunning_status: null,
+        dunning_retry_count: 0,
+        dunning_next_retry: null,
+        created_at: '2026-05-08T01:00:00.000Z',
+      },
+    ];
+    mockTables.enrollments = [
+      {
+        id: 'enr_1',
+        location_id: 'loc_1',
+        contact_id: 'contact_1',
+        offer_id: 'offer_1',
+        email: 'phil@example.com',
+        first_name: 'Philip',
+        last_name: 'Korniotes',
+        digital_signature: '',
+        payment_type: 'installment',
+        payment_amount: 0.5,
+        processor_type: 'stripe',
+        processor_subscription_id: 'sub_1',
+        payments_made: 2,
+        payments_total: 2,
+        billing_completed_at: '2026-05-08T01:00:00.000Z',
+        status: 'enrolled',
+        created_at: '2026-05-07T01:00:00.000Z',
+      },
+    ];
+    mockTables.offers_mirror = [
+      {
+        id: 'offer_1',
+        location_id: 'loc_1',
+        offer_name: 'Maui Trip',
+        payment_type: 'installments',
+        price: 1,
+        installment_amount: 0.5,
+        installment_frequency: 'daily',
+        num_payments: 2,
+      },
+    ];
+  });
+
+  it('returns enriched payment rows with program, processor, and final installment context', async () => {
+    const result = await paymentLedgerService.list('loc_1');
+
+    expect(result.payments).toHaveLength(1);
+    expect(result.payments[0]).toEqual(expect.objectContaining({
+      customerName: 'Philip Korniotes',
+      customerEmail: 'phil@example.com',
+      programName: 'Maui Trip',
+      processor: 'stripe',
+      paymentType: 'installment',
+      paymentTypeLabel: 'Installment',
+      paymentNumber: 2,
+      paymentsRemaining: 0,
+      status: 'paid',
+    }));
+    expect(result.summary.totalCharged).toBe(0.5);
+  });
+
+  it('uses enrollment prefiltering for payment type searches', async () => {
+    const installment = await paymentLedgerService.list('loc_1', { paymentType: 'installment' });
+    const subscription = await paymentLedgerService.list('loc_1', { paymentType: 'subscription' });
+
+    expect(installment.payments).toHaveLength(1);
+    expect(subscription.payments).toHaveLength(0);
+  });
+});

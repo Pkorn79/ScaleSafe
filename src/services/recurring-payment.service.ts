@@ -26,6 +26,7 @@ interface RecurringPaymentParams {
     payments_made: number;
     payments_total: number | null;
     payment_type: string;
+    processor_subscription_id?: string | null;
   };
   processorType: 'nmi' | 'stripe';
   transactionId: string;
@@ -42,6 +43,7 @@ interface RecurringFailureParams {
     location_id: string;
     contact_id: string;
     offer_id: string | null;
+    processor_subscription_id?: string | null;
   };
   processorType: 'nmi' | 'stripe';
   amountCents: number;
@@ -74,6 +76,11 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
   const newPaymentsMade = (enr.payments_made || 0) + 1;
+  const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
+  const paymentsRemaining = isFiniteInstallment
+    ? Math.max(0, Number(enr.payments_total) - newPaymentsMade)
+    : null;
+  const isFinal = isFiniteInstallment && paymentsRemaining === 0;
 
   // 1. Log payment_events row.
   // The insert error must NOT be silently swallowed — earlier this function destructured
@@ -89,8 +96,11 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       event_type: 'sale',
       processor: processorType,
       processor_transaction_id: transactionId,
+      processor_subscription_id: enr.processor_subscription_id || null,
       amount: amountDollars,
       currency: 'usd',
+      payment_number: newPaymentsMade,
+      payments_remaining: paymentsRemaining,
       source,
       is_recurring: true,
     })
@@ -113,14 +123,10 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
 
   // 2. Advance enrollment state
   const updates: any = { payments_made: newPaymentsMade };
-  const isFinal = enr.payments_total != null && newPaymentsMade >= enr.payments_total;
 
   if (isFinal) {
     updates.next_billing_date = null;
-    updates.status = 'completed';
-    updates.completed_at = new Date().toISOString();
-    updates.pulse_cadence_enabled = false;
-    updates.next_pulse_due_at = null;
+    updates.billing_completed_at = new Date().toISOString();
   } else {
     const next = new Date();
     const freq = (installmentFrequency || 'monthly').toLowerCase();
@@ -146,7 +152,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
         amount: amountDollars,
         transaction_id: transactionId,
         payment_number: newPaymentsMade,
-        payments_remaining: Math.max(0, (enr.payments_total || 0) - newPaymentsMade),
+        payments_remaining: paymentsRemaining,
         processor: processorType,
         timestamp: new Date().toISOString(),
       },
@@ -158,7 +164,6 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   // 4. Fire ss_payment_received trigger (non-blocking)
   try {
     const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
-    const paymentsRemaining = Math.max(0, (enr.payments_total || 0) - newPaymentsMade);
     const runningTotal = amountDollars * newPaymentsMade;
     try {
       const api = await ghlApi(enr.location_id);
@@ -188,19 +193,9 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');
   }
 
-  // 5. Final-installment detection
+  // 5. Final-installment billing marker
   if (isFinal) {
-    try {
-      await triggerService.fireTrigger(enr.location_id, 'ss_program_completed', {
-        contact_id: enr.contact_id,
-        offer_id: enr.offer_id || '',
-        total_paid: amountDollars * newPaymentsMade,
-        completed_at: new Date().toISOString(),
-      });
-    } catch (trigErr: any) {
-      logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Program completed trigger failed (non-fatal)');
-    }
-    logger.info({ enrollmentId: enr.id, totalPayments: newPaymentsMade }, 'Recurring payment: final installment — enrollment completed');
+    logger.info({ enrollmentId: enr.id, totalPayments: newPaymentsMade }, 'Recurring payment: final installment collected; billing marked complete');
   }
 
   return { paymentEventId: insertedEvent?.id || null, isFinal, newPaymentsMade };
@@ -227,6 +222,7 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
       enrollment_id: enr.id,
       event_type: 'payment_failed',
       processor: processorType,
+      processor_subscription_id: enr.processor_subscription_id || null,
       amount: amountDollars,
       currency: 'usd',
       failure_reason: errorMessage || 'Unknown failure',

@@ -17,6 +17,7 @@ interface CreateOfferInput {
   pifDiscountEnabled?: boolean;
   programDurationValue?: number;
   programDurationUnit?: 'weeks' | 'months';
+  autoCompleteOnDurationEnd?: boolean;
   refundPolicyType?: 'no_refunds' | 'full_refund' | 'prorated' | 'custom';
   refundPolicyDays?: number;
   refundWindowText?: string;
@@ -246,6 +247,7 @@ export const offerService = {
       pif_discount_enabled: input.pifDiscountEnabled || false,
       program_duration_value: input.programDurationValue || null,
       program_duration_unit: input.programDurationUnit || null,
+      auto_complete_on_duration_end: input.autoCompleteOnDurationEnd ?? false,
       refund_policy_type: input.refundPolicyType || null,
       refund_policy_days: input.refundPolicyDays || null,
       refund_window_text: refundText,
@@ -344,6 +346,7 @@ export const offerService = {
     if (updates.pifDiscountEnabled !== undefined) dbUpdates.pif_discount_enabled = updates.pifDiscountEnabled;
     if (updates.programDurationValue !== undefined) dbUpdates.program_duration_value = updates.programDurationValue;
     if (updates.programDurationUnit !== undefined) dbUpdates.program_duration_unit = updates.programDurationUnit;
+    if (updates.autoCompleteOnDurationEnd !== undefined) dbUpdates.auto_complete_on_duration_end = updates.autoCompleteOnDurationEnd;
     if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = updates.refundPolicyType;
     if (updates.refundPolicyDays !== undefined) dbUpdates.refund_policy_days = updates.refundPolicyDays;
     if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl || null;

@@ -29,6 +29,85 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-10: Phase 1 Payment Truth + Recurring Lifecycle Correctness (Codex)
+
+Files changed:
+
+- `supabase/migrations/056_payment_truth_fields.sql`
+- `src/services/recurring-payment.service.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/controllers/stripe-webhook.controller.ts`
+- `src/controllers/nmi-silent-post.controller.ts`
+- `src/jobs/recurring-billing.ts`
+- `src/jobs/pif-completion-check.ts`
+- `src/controllers/checkout.controller.ts`
+- `src/controllers/query-url.controller.ts`
+- `src/services/payment-lifecycle.service.ts`
+- `src/routes/payment-lifecycle.routes.ts`
+- `src/services/offer.service.ts`
+- `src/ui/src/views/OfferFormView.vue`
+- Repository/type files and focused tests.
+
+Summary:
+
+- Added explicit payment truth fields: `enrollments.processor_type`, `enrollments.billing_completed_at`, and `offers_mirror.auto_complete_on_duration_end`.
+- Final finite installment payments now mark billing complete, clear `next_billing_date`, and keep the program/enrollment active. They no longer set `status = completed`, no longer set `completed_at`, no longer disable pulse cadence, and no longer fire `ss_program_completed`.
+- `ss_payment_received` still fires on final installment with `payments_remaining: 0`.
+- Stripe `customer.subscription.deleted` after a paid-off finite installment is treated as expected processor cleanup, not a cancellation.
+- Checkout, Quick Pay, processor-native recurring handlers, fallback cron, dunning retry, and lifecycle controls now preserve/use processor attribution instead of falling back blindly to merchant default.
+- NMI Silent Post verification now forces NMI processor resolution and uses the offer NMI processor id when present.
+- Duration-based program completion is now opt-in via offer setting `Mark program complete when duration ends`; default is unchecked.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/recurring-payment.service.test.ts tests/unit/nmi-silent-post.controller.test.ts` passed: 2 suites, 6 tests.
+- `npm.cmd run build` passed.
+- `npm.cmd test -- --runInBand` passed: 50 suites, 529 tests.
+
+Next proof:
+
+- Apply migration `056_payment_truth_fields.sql` in Supabase/Railway.
+- Let the current daily Stripe and NMI installment tests run their second payments. Expected: `payments_made = 2`, `billing_completed_at` set, `next_billing_date = null`, program remains enrolled/active with milestones intact, and no `ss_program_completed` trigger from billing payoff.
+
+### 2026-05-11: Phase 2 Payment Ledger + Reporting Visibility (Codex)
+
+Files changed:
+
+- `src/services/payment-ledger.service.ts`
+- `src/controllers/payment-management.controller.ts`
+- `src/routes/payment-management.routes.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/controllers/checkout.controller.ts`
+- `src/ui/src/views/PaymentSearch.vue`
+- `src/ui/src/views/PaymentManagement.vue`
+- `src/ui/src/views/client-profile/PaymentsTab.vue`
+- `tests/unit/payment-ledger.service.test.ts`
+
+Summary:
+
+- Added a tenant-scoped payment ledger service and SSO-gated endpoint: `GET /api/payments/manage/ledger`.
+- Ledger rows now enrich `payment_events` with client name/email, offer/program, billing type, processor, source, recurring/final-payment context, transaction id, and subscription id.
+- Rebuilt the Payments page into two tabs:
+  - `All Payments`: date-ordered ledger with search, processor, billing type, status filters, summary totals, pagination, and links into per-client payment management.
+  - `Clients`: existing client payment search, preserved.
+- Updated per-client payment history and client profile Payments tab to show program, billing type, processor, and final installment context instead of only generic "Charge".
+- Card-on-file labels now include processor context, e.g. Stripe Visa or NMI card on file. The per-client payment page also states that card update links replace the current default card.
+- Initial checkout payment events now store `offer_id`, `customer_email`, `source = checkout`, and `is_recurring = false` when available so new ledger rows attribute more cleanly.
+- Manual stored-card charges now use the selected card's processor rather than merchant default. Manual refunds now use the original payment event's processor and carry through enrollment/offer/source metadata.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/payment-ledger.service.test.ts tests/unit/nmi-silent-post.controller.test.ts tests/unit/recurring-payment.service.test.ts` passed: 3 suites, 8 tests.
+- `npm.cmd run build` passed.
+- `npm.cmd test -- --runInBand` passed: 51 suites, 531 tests.
+
+Next proof:
+
+- After deploy, open `Payments > All Payments` in PMG and confirm recent Stripe/NMI PIF, installment, subscription, refund, and failed-payment rows show the correct program and processor.
+- Let the current daily NMI/Stripe installment tests post again, then verify the ledger and the client Payments tab show second-payment/final-payment context while the program remains active.
+
 ### 2026-05-08: Suppress Checkout-Triggered Re-Engagement + PIF Installment Clause (Codex)
 
 Files changed:

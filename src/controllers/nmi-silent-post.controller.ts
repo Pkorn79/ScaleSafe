@@ -67,7 +67,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
     // Look up enrollment by processor_subscription_id
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type')
+      .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
       .eq('processor_subscription_id', subscriptionId)
       .single();
 
@@ -91,10 +91,30 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       }
     }
 
+    // Resolve offer before verification so NMI verification uses the intended NMI MID.
+    let installmentFrequency = 'monthly';
+    let offerName = '';
+    let offerNmiProcessorId: string | null = null;
+    if (enrollment.offer_id) {
+      const { data: offer } = await supabase
+        .from('offers_mirror')
+        .select('offer_name, installment_frequency, nmi_processor_id')
+        .eq('id', enrollment.offer_id)
+        .single();
+      if (offer) {
+        installmentFrequency = offer.installment_frequency || 'monthly';
+        offerName = offer.offer_name || '';
+        offerNmiProcessorId = offer.nmi_processor_id || null;
+      }
+    }
+
     // Verify transaction with processor to prevent spoofing
     if (transactionId && nmiResponse === '1') {
       try {
-        const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id);
+        const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
+          processor_override: 'nmi',
+          nmi_processor_id: offerNmiProcessorId,
+        });
         const processor = createProcessorClient(procConfig);
         const verification = await processor.verifyTransaction(transactionId);
         if (!verification.success) {
@@ -106,21 +126,6 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
         res.status(200).json({ received: true });
         return;
-      }
-    }
-
-    // Resolve offer for installment details
-    let installmentFrequency = 'monthly';
-    let offerName = '';
-    if (enrollment.offer_id) {
-      const { data: offer } = await supabase
-        .from('offers_mirror')
-        .select('offer_name, installment_frequency')
-        .eq('id', enrollment.offer_id)
-        .single();
-      if (offer) {
-        installmentFrequency = offer.installment_frequency || 'monthly';
-        offerName = offer.offer_name || '';
       }
     }
 

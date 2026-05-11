@@ -22,6 +22,7 @@ export interface SubscriptionParams {
   reason: string;
   enrollmentId?: string;
   processorSubscriptionId?: string;
+  processorType?: ProcessorType;
 }
 
 export interface CardManagementParams {

@@ -198,7 +198,10 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
 
   const customerId = pm.nmi_customer_vault_id || pm.stripe_customer_id || '';
 
-  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId, {
+    processor_override: pm.processor_type as 'nmi' | 'stripe',
+    nmi_processor_id: null,
+  });
   const processor = createProcessorClient(config);
 
   const result = await processor.chargeStoredCard(customerId, paymentMethodId, {
@@ -282,7 +285,10 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
   }
 
   const customerId = pm.nmi_customer_vault_id || pm.stripe_customer_id || '';
-  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId, {
+    processor_override: pm.processor_type as 'nmi' | 'stripe',
+    nmi_processor_id: null,
+  });
   const processor = createProcessorClient(config);
 
   const subResult = await processor.createSubscription({

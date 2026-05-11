@@ -76,7 +76,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
     // Look up enrollment for processor subscription ID and offer ID
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, processor_subscription_id, offer_id, status')
+      .select('id, processor_subscription_id, processor_type, offer_id, status')
       .eq('id', enrollmentId)
       .eq('location_id', locationId)
       .single();
@@ -91,6 +91,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
       reason: reason || `Merchant-initiated ${action}`,
       enrollmentId,
       processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorType: enrollment.processor_type || undefined,
     };
 
     switch (action) {

@@ -137,7 +137,10 @@ export const paymentLifecycleService = {
 
     // Attempt charge
     try {
-      const { config: procConfig } = await resolveProcessor(merchantId, locationId);
+      const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
+        processor_override: method.processor_type || null,
+        nmi_processor_id: null,
+      });
       const processor = createProcessorClient(procConfig);
       const token = method.nmi_customer_vault_id || method.stripe_payment_method_id || '';
       const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
@@ -264,7 +267,10 @@ export const paymentLifecycleService = {
     // Pause via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
       try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
+          processor_override: params.processorType || null,
+          nmi_processor_id: null,
+        });
         const processor = createProcessorClient(procConfig);
         await processor.pauseSubscription(params.processorSubscriptionId);
       } catch (err: any) {
@@ -339,7 +345,10 @@ export const paymentLifecycleService = {
     if (params.processorSubscriptionId) {
       try {
         const supabase = getSupabase();
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
+          processor_override: params.processorType || null,
+          nmi_processor_id: null,
+        });
         const processor = createProcessorClient(procConfig);
 
         // Fetch enrollment + offer for remaining payments and frequency
@@ -484,7 +493,10 @@ export const paymentLifecycleService = {
     // Cancel via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
       try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
+          processor_override: params.processorType || null,
+          nmi_processor_id: null,
+        });
         const processor = createProcessorClient(procConfig);
         await processor.cancelSubscription(params.processorSubscriptionId);
       } catch (err: any) {
@@ -636,7 +648,10 @@ export const paymentLifecycleService = {
     // Cancel processor subscription if one exists
     if (params.processorSubscriptionId) {
       try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId);
+        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
+          processor_override: params.processorType || null,
+          nmi_processor_id: null,
+        });
         const processor = createProcessorClient(procConfig);
         await processor.cancelSubscription(params.processorSubscriptionId);
       } catch (err: any) {

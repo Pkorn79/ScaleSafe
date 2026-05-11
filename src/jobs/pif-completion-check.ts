@@ -8,13 +8,13 @@ import { logger } from '../utils/logger';
 
 /**
  * Daily job: check if any PIF (paid-in-full / one_time) enrollments have
- * exceeded their program duration and should be marked as completed.
+ * exceeded their program duration and opted into automatic program completion.
  *
  * PIF clients pay everything on day 1 but remain "enrolled" forever because
  * there's no installment counter to trigger completion. This job uses the
- * offer's program_duration_value + program_duration_unit to calculate when
- * the program period ends (enrolled_at + duration) and transitions the
- * enrollment to "completed" when that date has passed.
+ * offer's program_duration_value + program_duration_unit + auto-complete flag to
+ * calculate when the program period ends (enrolled_at + duration) and transitions
+ * the enrollment to "completed" when that date has passed.
  *
  * Offers without program_duration_value are skipped — those PIF enrollments
  * stay "enrolled" until manually completed by the merchant.
@@ -26,7 +26,7 @@ export async function runPifCompletionCheck(): Promise<void> {
   // Fetch all PIF enrollments that are still enrolled
   const { data: enrollments, error } = await supabase
     .from('enrollments')
-    .select('id, location_id, merchant_id, contact_id, offer_id, enrolled_at, email')
+    .select('id, location_id, merchant_id, contact_id, offer_id, enrolled_at, email, next_billing_date')
     .in('payment_type', ['one_time', 'pif'])
     .eq('status', 'enrolled')
     .not('enrolled_at', 'is', null)
@@ -46,7 +46,7 @@ export async function runPifCompletionCheck(): Promise<void> {
   const offerIds = [...new Set(enrollments.map(e => e.offer_id).filter(Boolean))];
   const { data: offers } = await supabase
     .from('offers_mirror')
-    .select('id, offer_name, program_duration_value, program_duration_unit')
+    .select('id, offer_name, program_duration_value, program_duration_unit, auto_complete_on_duration_end')
     .in('id', offerIds);
 
   const offerMap = new Map((offers || []).map(o => [o.id, o]));
@@ -56,7 +56,7 @@ export async function runPifCompletionCheck(): Promise<void> {
 
   for (const enr of enrollments) {
     const offer = offerMap.get(enr.offer_id);
-    if (!offer?.program_duration_value) {
+    if (!offer?.auto_complete_on_duration_end || !offer?.program_duration_value || enr.next_billing_date) {
       skipped++;
       continue;
     }

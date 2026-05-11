@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
+import { paymentLedgerService } from '../services/payment-ledger.service';
 import { logger } from '../utils/logger';
 
 function getMerchantId(req: Request): string {
@@ -26,6 +27,13 @@ function cleanCardDisplay(card: {
     expMonth: expMonth > 0 ? expMonth : null,
     expYear: expYear > 0 ? expYear : null,
   };
+}
+
+function processorLabel(processor?: string | null): string {
+  if (processor === 'nmi') return 'NMI';
+  if (processor === 'stripe') return 'Stripe';
+  if (processor === 'ghl') return 'GHL';
+  return processor || 'Unknown';
 }
 
 async function resolveMerchantId(locationId: string): Promise<string> {
@@ -118,15 +126,15 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     // Also check payment_events for contact emails
     const { data: emailEvents } = await supabase
       .from('payment_events')
-      .select('contact_id, contact_email')
+      .select('contact_id, customer_email')
       .eq('location_id', locationId)
       .in('contact_id', contactIds)
-      .not('contact_email', 'is', null);
+      .not('customer_email', 'is', null);
 
     for (const ev of (emailEvents || [])) {
-      if (ev.contact_id && (ev as any).contact_email && !enrollmentMap[ev.contact_id]?.email) {
+      if (ev.contact_id && (ev as any).customer_email && !enrollmentMap[ev.contact_id]?.email) {
         if (!enrollmentMap[ev.contact_id]) enrollmentMap[ev.contact_id] = { name: '', email: '' };
-        enrollmentMap[ev.contact_id].email = (ev as any).contact_email;
+        enrollmentMap[ev.contact_id].email = (ev as any).customer_email;
       }
     }
 
@@ -239,50 +247,53 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
   } catch (err) { next(err); }
 }
 
+// ─── GET /api/payments/manage/ledger ────────────────────────────
+
+export async function listPaymentLedger(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const result = await paymentLedgerService.list(locationId, {
+      search: (req.query.search as string) || '',
+      processor: (req.query.processor as string) || '',
+      paymentType: (req.query.paymentType as string) || '',
+      eventType: (req.query.eventType as string) || '',
+      status: (req.query.status as string) || '',
+      from: (req.query.from as string) || '',
+      to: (req.query.to as string) || '',
+      limit: Number(req.query.limit || 50),
+      offset: Number(req.query.offset || 0),
+    });
+
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
 // ─── GET /api/payments/customer/:contactId ──────────────────────
 
 export async function getPaymentHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
     const { contactId } = req.params;
-    const supabase = getSupabase();
-
-    const { data: events, error } = await supabase
-      .from('payment_events')
-      .select('*')
-      .eq('location_id', locationId)
-      .eq('contact_id', contactId)
-      .not('enrollment_id', 'is', null)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    let totalCharged = 0;
-    let totalRefunded = 0;
-
-    const payments = (events || []).map(ev => {
-      const amount = Number(ev.amount) || 0;
-      if (ev.event_type === 'refund') totalRefunded += amount;
-      else if (ev.event_type === 'sale') totalCharged += amount;
-
-      return {
-        id: ev.id,
-        date: ev.created_at,
-        amount,
-        type: ev.event_type,
-        status: ev.failure_reason ? 'failed' : 'success',
-        processor: ev.processor,
-        last4: ev.device_info || '',
-        description: ev.event_type === 'refund' ? 'Refund' : 'Payment',
-        transactionId: ev.processor_transaction_id,
-        refundable: ev.event_type === 'sale' && !ev.failure_reason,
-        dunningStatus: ev.dunning_status || null,
-        dunningRetryCount: ev.dunning_retry_count || 0,
-        dunningNextRetry: ev.dunning_next_retry || null,
-      };
+    const result = await paymentLedgerService.list(locationId, {
+      contactId,
+      limit: 200,
+      offset: 0,
     });
 
-    res.json({ payments, totalCharged, totalRefunded });
+    const payments = result.payments.map(payment => ({
+      ...payment,
+      status: payment.status === 'failed' ? 'failed' : 'success',
+      transactionId: payment.processorTransactionId,
+      dunningStatus: payment.dunningStatus || null,
+      dunningRetryCount: payment.dunningRetryCount || 0,
+      dunningNextRetry: payment.dunningNextRetry || null,
+    }));
+
+    res.json({
+      payments,
+      totalCharged: result.summary.totalCharged,
+      totalRefunded: result.summary.totalRefunded,
+    });
   } catch (err) { next(err); }
 }
 
@@ -310,6 +321,7 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
         ...display,
         isDefault: m.is_default,
         processorType: m.processor_type,
+        processorLabel: processorLabel(m.processor_type),
         customerId: m.nmi_customer_vault_id || m.stripe_customer_id,
         paymentMethodId: m.stripe_payment_method_id,
       };
@@ -352,7 +364,10 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
       return;
     }
 
-    const { config: procConfig } = await resolveProcessor(merchantId, locationId);
+    const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
+      processor_override: method.processor_type || null,
+      nmi_processor_id: null,
+    });
     const processor = createProcessorClient(procConfig);
 
     const token = method.nmi_customer_vault_id || method.stripe_payment_method_id || '';
@@ -375,6 +390,8 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
       amount,
       currency: 'usd',
       failure_reason: result.errorMessage || null,
+      source: 'manual_charge',
+      is_recurring: false,
     });
 
     logger.info({ contactId, amount, success: result.success }, 'Manual charge processed');
@@ -420,7 +437,10 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const { config: procConfig } = await resolveProcessor(merchantId, locationId);
+    const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
+      processor_override: originalEvent.processor || null,
+      nmi_processor_id: null,
+    });
     const processor = createProcessorClient(procConfig);
 
     const result = await processor.refund({
@@ -438,6 +458,10 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       processor_transaction_id: result.refundId || originalEvent.processor_transaction_id,
       amount,
       currency: 'usd',
+      enrollment_id: originalEvent.enrollment_id || null,
+      offer_id: originalEvent.offer_id || null,
+      source: 'manual_refund',
+      is_recurring: false,
     });
 
     logger.info({ paymentEventId, amount, reason }, 'Refund processed');

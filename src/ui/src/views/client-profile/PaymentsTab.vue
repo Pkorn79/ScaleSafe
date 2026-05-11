@@ -78,16 +78,20 @@
       <div v-else-if="recentPayments.length === 0" class="text-sm text-muted">No payments yet.</div>
       <table v-else class="table">
         <thead>
-          <tr><th>Date</th><th>Amount</th><th>Type</th><th>Processor</th><th>Status</th></tr>
+          <tr><th>Date</th><th>Program</th><th>Amount</th><th>Billing</th><th>Processor</th><th>Status</th></tr>
         </thead>
         <tbody>
           <tr v-for="p in recentPayments" :key="p.id">
             <td class="text-sm">{{ formatDate(p.date) }}</td>
+            <td class="text-sm">
+              {{ p.programName || 'Unassigned payment' }}
+              <div v-if="p.paymentNumber" class="text-xs text-muted">
+                Payment {{ p.paymentNumber }}<span v-if="p.paymentsRemaining === 0">, final</span>
+              </div>
+            </td>
             <td class="text-sm">${{ Number(p.amount).toFixed(2) }}</td>
             <td>
-              <span class="badge" :class="p.type === 'refund' ? 'badge-red' : 'badge-green'">
-                {{ p.type === 'refund' ? 'Refund' : 'Charge' }}
-              </span>
+              <span class="badge badge-gray">{{ p.paymentTypeLabel || p.type }}</span>
             </td>
             <td>
               <span class="badge" :class="processorBadge(p.processor)">
@@ -95,8 +99,8 @@
               </span>
             </td>
             <td>
-              <span class="badge" :class="p.status === 'success' ? 'badge-green' : 'badge-red'">
-                {{ p.status === 'success' ? 'Paid' : 'Failed' }}
+              <span class="badge" :class="paymentStatusBadge(p)">
+                {{ p.statusLabel || (p.status === 'success' ? 'Paid' : 'Failed') }}
               </span>
             </td>
           </tr>
@@ -120,7 +124,9 @@ const props = defineProps<{
 }>();
 
 function cardLabel(card: any) {
-  return card?.brand || 'Card on file';
+  const processor = processorLabel(card?.processorType);
+  const brand = card?.brand || 'Card on file';
+  return `${processor} ${brand}`.trim();
 }
 
 function hasExpiry(card: any) {
@@ -175,6 +181,12 @@ function processorBadge(proc: string): string {
   if (proc === 'stripe') return 'badge-purple';
   if (proc === 'ghl') return 'badge-gray';
   return 'badge-gray';
+}
+
+function paymentStatusBadge(payment: any): string {
+  if (payment?.type === 'refund') return 'badge-yellow';
+  if (payment?.status === 'failed') return 'badge-red';
+  return 'badge-green';
 }
 
 function formatDate(d: string) {

@@ -17,8 +17,11 @@ export interface EnrollmentRecord {
   payment_amount: number | null;
   payment_type: string | null;
   payment_transaction_id: string | null;
+  processor_type: string | null;
+  processor_subscription_id: string | null;
   payments_made: number;
   payments_total: number | null;
+  billing_completed_at: string | null;
   pipeline_opportunity_id: string | null;
   current_milestone: number;
   defense_readiness_score: number;
