@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 export interface PaymentLedgerFilters {
   contactId?: string;
   search?: string;
+  trackingId?: string;
   processor?: string;
   paymentType?: string;
   eventType?: string;
@@ -175,6 +176,10 @@ function cleanLike(value: string): string {
   return value.replace(/[%_,]/g, ' ').trim();
 }
 
+function cleanTrackingLike(value: string): string {
+  return value.replace(/[%]/g, '').trim();
+}
+
 function isColumnCompatibilityError(error: any): boolean {
   const text = [
     error?.code,
@@ -265,11 +270,12 @@ function displayName(enrollment: any, fallbackEmail: string, contactId: string):
 
 async function findMatchingEnrollmentIds(
   locationId: string,
-  filters: Pick<PaymentLedgerFilters, 'search' | 'paymentType'>,
+  filters: Pick<PaymentLedgerFilters, 'search' | 'trackingId' | 'paymentType'>,
 ): Promise<string[] | null> {
   const search = String(filters.search || '').trim();
+  const trackingId = String((filters as PaymentLedgerFilters).trackingId || '').trim();
   const paymentType = normalizePaymentType(filters.paymentType);
-  const needsPreFilter = !!search || (paymentType && paymentType !== 'unknown');
+  const needsPreFilter = !!search || !!trackingId || (paymentType && paymentType !== 'unknown');
   if (!needsPreFilter) return null;
 
   const supabase = getSupabase();
@@ -290,6 +296,22 @@ async function findMatchingEnrollmentIds(
     const { data, error } = await query.limit(500);
     if (error) throw error;
     for (const row of data || []) ids.add(row.id);
+  }
+
+  async function findOffersByTrackingId(value: string): Promise<string[]> {
+    const escaped = cleanTrackingLike(value);
+    let response = await supabase
+      .from('offers_mirror')
+      .select('id')
+      .eq('location_id', locationId)
+      .ilike('tracking_id', `%${escaped}%`)
+      .limit(500);
+
+    if (response.error && isColumnCompatibilityError(response.error)) {
+      return [];
+    }
+    if (response.error) throw response.error;
+    return (response.data || []).map((o: any) => o.id).filter(Boolean);
   }
 
   if (search) {
@@ -324,7 +346,14 @@ async function findMatchingEnrollmentIds(
     if (offerIds.length > 0) {
       await runEnrollmentQuery((query) => query.in('offer_id', offerIds));
     }
-  } else {
+  }
+
+  if (trackingId) {
+    const offerIds = await findOffersByTrackingId(trackingId);
+    if (offerIds.length > 0) {
+      await runEnrollmentQuery((query) => query.in('offer_id', offerIds));
+    }
+  } else if (!search) {
     await runEnrollmentQuery();
   }
 

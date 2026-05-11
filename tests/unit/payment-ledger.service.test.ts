@@ -210,6 +210,18 @@ describe('paymentLedgerService', () => {
     expect(subscription.payments).toHaveLength(0);
   });
 
+  it('filters payment rows by offer tracking ID', async () => {
+    const matching = await paymentLedgerService.list('loc_1', { trackingId: 'REP-PHIL' });
+    const missing = await paymentLedgerService.list('loc_1', { trackingId: 'REP-OTHER' });
+
+    expect(matching.payments).toHaveLength(1);
+    expect(matching.payments[0]).toEqual(expect.objectContaining({
+      programName: 'Maui Trip',
+      offerTrackingId: 'REP-PHIL',
+    }));
+    expect(missing.payments).toHaveLength(0);
+  });
+
   it('falls back to base payment columns when optional ledger columns are not deployed yet', async () => {
     mockMissingColumns.payment_events = ['customer_email'];
 

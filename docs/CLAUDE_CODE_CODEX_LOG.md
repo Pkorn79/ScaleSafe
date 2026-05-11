@@ -29,6 +29,31 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-11: Tracking ID First-Class Ledger Filter (Codex)
+
+Files changed:
+
+- `src/controllers/payment-management.controller.ts`
+- `src/services/payment-ledger.service.ts`
+- `src/ui/src/views/PaymentSearch.vue`
+- `tests/unit/payment-ledger.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Promoted offer Tracking ID from a small sublabel under Program to its own All Payments ledger column.
+- Added a dedicated Tracking ID filter on Payments > All Payments so merchants can report by salesperson, campaign, source, or internal reference without mixing it into the broad client/program search box.
+- The backend now accepts `trackingId` on the payment ledger endpoint and prefilters by matching `offers_mirror.tracking_id`.
+- Added unit coverage proving a ledger query filtered by Tracking ID returns the matching payment row and excludes nonmatching tracking IDs.
+
+Verification:
+
+- `npm.cmd test -- --runInBand tests/unit/payment-ledger.service.test.ts` passed: 1 suite, 5 tests.
+
+Roadmap note:
+
+- Added "Stripe monetization / connected-account revenue" to the Cowork roadmap as strategy-needed, post-beta direction. This is not beta scope.
+
 ### 2026-05-11: Phase 4B Payment Display Truth + Tracking ID (Codex)
 
 Files changed:

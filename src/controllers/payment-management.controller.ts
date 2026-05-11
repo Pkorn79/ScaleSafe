@@ -274,6 +274,7 @@ export async function listPaymentLedger(req: Request, res: Response, next: NextF
     const locationId = resolveLocationId(req);
     const result = await paymentLedgerService.list(locationId, {
       search: (req.query.search as string) || '',
+      trackingId: (req.query.trackingId as string) || '',
       processor: (req.query.processor as string) || '',
       paymentType: (req.query.paymentType as string) || '',
       eventType: (req.query.eventType as string) || '',

@@ -27,7 +27,16 @@
               <input
               class="form-input"
               v-model="ledgerFilters.search"
-              placeholder="Client, email, contact ID, program, or tracking ID"
+              placeholder="Client, email, contact ID, or program"
+              @keyup.enter="applyLedgerFilters"
+            />
+          </div>
+          <div>
+            <label class="form-label">Tracking ID</label>
+            <input
+              class="form-input"
+              v-model="ledgerFilters.trackingId"
+              placeholder="Rep, campaign, source"
               @keyup.enter="applyLedgerFilters"
             />
           </div>
@@ -110,6 +119,7 @@
                 <th>Date</th>
                 <th>Client</th>
                 <th>Program</th>
+                <th>Tracking ID</th>
                 <th>Billing</th>
                 <th>Processor</th>
                 <th>Amount</th>
@@ -130,11 +140,11 @@
                 </td>
                 <td>
                   {{ row.programName }}
-                  <div v-if="row.offerTrackingId" class="text-xs text-muted">Tracking ID: {{ row.offerTrackingId }}</div>
                   <div v-if="row.paymentNumber" class="text-xs text-muted">
                     Payment {{ row.paymentNumber }}<span v-if="row.paymentsRemaining === 0">, final</span>
                   </div>
                 </td>
+                <td class="tracking-cell">{{ row.offerTrackingId || '-' }}</td>
                 <td><span class="badge badge-gray">{{ row.paymentTypeLabel }}</span></td>
                 <td><span class="badge" :class="processorBadge(row.processor)">{{ processorLabel(row.processor) }}</span></td>
                 <td class="nowrap">${{ Number(row.amount || 0).toFixed(2) }}</td>
@@ -308,6 +318,7 @@ const ledgerLoading = ref(false);
 const ledgerError = ref('');
 const ledgerFilters = ref({
   search: '',
+  trackingId: '',
   processor: '',
   paymentType: '',
   status: '',
@@ -407,7 +418,7 @@ async function applyLedgerFilters() {
 }
 
 async function resetLedgerFilters() {
-  ledgerFilters.value = { search: '', processor: '', paymentType: '', status: '', from: '', to: '' };
+  ledgerFilters.value = { search: '', trackingId: '', processor: '', paymentType: '', status: '', from: '', to: '' };
   ledgerOffset.value = 0;
   await loadLedger();
 }
@@ -475,7 +486,7 @@ async function loadReconciliation() {
 
 .ledger-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(5, minmax(130px, 1fr)) auto;
+  grid-template-columns: minmax(260px, 2fr) repeat(6, minmax(130px, 1fr)) auto;
   gap: 12px;
   align-items: end;
 }
@@ -505,7 +516,7 @@ async function loadReconciliation() {
 }
 
 .ledger-table {
-  min-width: 1120px;
+  min-width: 1240px;
 }
 
 .reconcile-table {
@@ -533,6 +544,13 @@ async function loadReconciliation() {
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+}
+
+.tracking-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .customer-card {
