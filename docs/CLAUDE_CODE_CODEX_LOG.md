@@ -42,9 +42,10 @@ Files changed:
 Summary:
 
 - Fixed the live Payments > All Payments blank/error path by making the ledger service fall back to the older stable `payment_events` and `enrollments` column sets if Supabase/PostgREST reports a missing optional column from the newer reporting metadata.
+- Follow-up same day: production PMG also lacked `payment_events.payments_remaining`, so the ledger now has a third minimal `payment_events` fallback that omits payment-counter columns and still loads rows with `paymentsRemaining = null`.
 - Ledger endpoint now logs the root error and returns a clearer load message instead of only surfacing the global generic "unexpected error" message.
 - Added `From` and `To` date filters to the All Payments ledger UI. The frontend sends local start/end-of-day ISO timestamps to the existing backend `from`/`to` filters.
-- Added a unit test proving the ledger still returns rows when an optional ledger column such as `customer_email` is not deployed yet.
+- Added a unit test proving the ledger still returns rows when optional ledger columns such as `customer_email` and `payments_remaining` are not deployed yet.
 
 Verification:
 

@@ -12,6 +12,7 @@ class MockQuery {
   private rangeEnd: number | null = null;
   private limitValue: number | null = null;
   private selectError: any = null;
+  private selectedColumns: string[] | null = null;
 
   constructor(private table: string) {
     this.rows = [...(mockTables[table] || [])];
@@ -19,6 +20,9 @@ class MockQuery {
 
   select(columns?: string, options?: { count?: string }) {
     this.count = options?.count === 'exact';
+    this.selectedColumns = columns && columns !== '*'
+      ? columns.split(',').map(column => column.trim()).filter(Boolean)
+      : null;
     const missing = mockMissingColumns[this.table] || [];
     const selected = columns || '';
     const missingColumn = missing.find(column => selected.includes(column));
@@ -95,6 +99,13 @@ class MockQuery {
     let rows = [...this.rows];
     if (this.rangeStart != null && this.rangeEnd != null) rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
     if (this.limitValue != null) rows = rows.slice(0, this.limitValue);
+    if (this.selectedColumns) {
+      rows = rows.map(row => Object.fromEntries(
+        this.selectedColumns!
+          .filter(column => Object.prototype.hasOwnProperty.call(row, column))
+          .map(column => [column, row[column]]),
+      ));
+    }
     return Promise.resolve({ data: rows, error: null, count: this.count ? total : null }).then(resolve, reject);
   }
 }
@@ -197,8 +208,8 @@ describe('paymentLedgerService', () => {
     expect(subscription.payments).toHaveLength(0);
   });
 
-  it('falls back to base payment columns when optional ledger columns are not deployed yet', async () => {
-    mockMissingColumns.payment_events = ['customer_email'];
+  it('falls back to minimal payment columns when optional ledger columns are not deployed yet', async () => {
+    mockMissingColumns.payment_events = ['customer_email', 'payments_remaining'];
 
     const result = await paymentLedgerService.list('loc_1');
 
@@ -207,6 +218,7 @@ describe('paymentLedgerService', () => {
       processor: 'stripe',
       programName: 'Maui Trip',
       status: 'paid',
+      paymentsRemaining: null,
     }));
   });
 });

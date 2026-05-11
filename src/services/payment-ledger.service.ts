@@ -104,10 +104,27 @@ const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
   source: null,
   is_recurring: false,
   customer_email: null,
+  payment_number: null,
+  payments_remaining: null,
   dunning_status: null,
   dunning_retry_count: 0,
   dunning_next_retry: null,
 };
+
+const MINIMAL_PAYMENT_EVENT_COLUMNS = [
+  'id',
+  'location_id',
+  'contact_id',
+  'enrollment_id',
+  'event_type',
+  'processor',
+  'processor_transaction_id',
+  'processor_subscription_id',
+  'amount',
+  'currency',
+  'failure_reason',
+  'created_at',
+].join(', ');
 
 const ENROLLMENT_COLUMNS = [
   'id',
@@ -333,14 +350,20 @@ async function fetchPaymentEvents(
   limit: number,
   offset: number,
 ) {
-  let response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, PAYMENT_EVENT_COLUMNS)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const columnSets = [
+    PAYMENT_EVENT_COLUMNS,
+    BASE_PAYMENT_EVENT_COLUMNS,
+    MINIMAL_PAYMENT_EVENT_COLUMNS,
+  ];
 
-  if (response.error && isColumnCompatibilityError(response.error)) {
-    response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, BASE_PAYMENT_EVENT_COLUMNS)
+  for (let index = 0; index < columnSets.length; index += 1) {
+    const response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, columnSets[index])
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (response.error && isColumnCompatibilityError(response.error) && index < columnSets.length - 1) {
+      continue;
+    }
 
     if (response.error) throw response.error;
     return {
@@ -349,8 +372,7 @@ async function fetchPaymentEvents(
     };
   }
 
-  if (response.error) throw response.error;
-  return { events: response.data || [], count: response.count };
+  return { events: [], count: 0 };
 }
 
 async function selectEnrollments(
