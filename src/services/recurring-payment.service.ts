@@ -182,12 +182,30 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       logger.warn({ err: syncErr.message, enrollmentId: enr.id }, 'Recurring payment contact field sync failed (non-fatal)');
     }
     await triggerService.fireTrigger(enr.location_id, 'ss_payment_received', {
+      event_type: 'payment_received',
+      location_id: enr.location_id,
+      locationId: enr.location_id,
       contact_id: enr.contact_id,
+      contactId: enr.contact_id,
+      enrollment_id: enr.id,
+      enrollmentId: enr.id,
+      offer_id: enr.offer_id,
+      offerId: enr.offer_id,
+      processor: processorType,
+      source,
       amount: amountDollars,
       transaction_id: transactionId,
+      transactionId,
+      payment_number: newPaymentsMade,
+      paymentNumber: newPaymentsMade,
+      payments_total: isFiniteInstallment ? Number(enr.payments_total) : null,
+      paymentsTotal: isFiniteInstallment ? Number(enr.payments_total) : null,
       payments_remaining: paymentsRemaining,
+      paymentsRemaining,
       running_total: runningTotal,
+      runningTotal,
       payment_kind: paymentKind,
+      paymentKind,
     });
   } catch (trigErr: any) {
     logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');

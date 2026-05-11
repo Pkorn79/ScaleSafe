@@ -8,6 +8,7 @@ import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
 import { createPublicActionToken } from '../utils/public-action-token';
+import { formatMoney, getPaidInFullDisplayPrice } from '../utils/offer-display';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -21,12 +22,6 @@ import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 // `['Yes']` or `true` if GHL silently no-ops on plain string. Read-back data on
 // existing single-option checkbox fields stores them as the bare option label.
 const CLICK_WRAP_CHECKED_VALUE = 'Yes';
-
-function formatMoney(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '';
-  const amount = Number(value);
-  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value);
-}
 
 function formatDate(value: Date = new Date()): string {
   return value.toISOString().split('T')[0];
@@ -84,7 +79,8 @@ function applyOfferContactFields(
   merchant: any,
 ): void {
   const businessName = merchant?.dba_name || merchant?.business_name || '';
-  const priceDisplay = formatMoney(offer.price);
+  const fullPriceDisplay = formatMoney(offer.price);
+  const pifPriceDisplay = formatMoney(getPaidInFullDisplayPrice(offer));
   const billingAmount = offer.installment_amount ?? offer.price;
   const billingAmountDisplay = formatMoney(billingAmount);
   const paymentTypeDisplay = formatPaymentType(offer.payment_type);
@@ -93,13 +89,13 @@ function applyOfferContactFields(
 
   customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
   customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
-  customFields[OFFER_CONTACT_FIELDS.PRICE] = priceDisplay;
+  customFields[OFFER_CONTACT_FIELDS.PRICE] = fullPriceDisplay;
   customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = paymentTypeDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
   customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name || '';
-  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = priceDisplay;
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = pifPriceDisplay;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = merchantSupportEmail(merchant);
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = merchant?.tc_document_url || '';

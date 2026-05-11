@@ -103,6 +103,17 @@ describe('recurring payment lifecycle', () => {
       is_recurring: true,
     }));
     expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.objectContaining({
+      event_type: 'payment_received',
+      contact_id: 'contact_1',
+      contactId: 'contact_1',
+      enrollment_id: 'enr_1',
+      enrollmentId: 'enr_1',
+      offer_id: 'offer_1',
+      offerId: 'offer_1',
+      processor: 'stripe',
+      source: 'stripe_webhook',
+      payment_number: 2,
+      payments_total: 2,
       payments_remaining: 0,
       payment_kind: 'installment',
     }));

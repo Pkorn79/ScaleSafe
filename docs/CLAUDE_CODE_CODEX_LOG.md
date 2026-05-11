@@ -1481,6 +1481,32 @@ Next proof:
 
 ## Current Working Tree Notes
 
+### 2026-05-11: Phase 5 Payment Workflow Field/Trigger Tightening (Codex)
+
+Files changed:
+
+- `src/utils/offer-display.ts`
+- `src/services/phase2Enrollment.service.ts`
+- `src/services/enrollment.service.ts`
+- `src/services/recurring-payment.service.ts`
+- `tests/unit/offer-display.test.ts`
+- `tests/unit/recurring-payment.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip confirmed Welcome fires for all tested enrollment types and Enrollment Payment Receipt now renders fields.
+- New issue found: an installment receipt path was showing the paid-in-full display price as the full offer price instead of the discounted PIF price.
+- Added a shared offer display helper so `contact.offer_price` remains the full program price, while workflow-compatible `contact.offer_price_display` uses the discounted PIF price when `pif_discount_enabled` and `pif_price` are present.
+- Tightened the recurring `ss_payment_received` trigger payload so subsequent Stripe/NMI recurring payments send the same useful identifiers as enrollment triggers: `location_id/locationId`, `contact_id/contactId`, `enrollment_id/enrollmentId`, `offer_id/offerId`, `processor`, `source`, `payment_number`, `payments_total`, `payments_remaining`, `running_total`, and `payment_kind`.
+- This is a forward fix. The next proof is the next Stripe/NMI recurring transaction plus `trigger_delivery_logs` for `ss_payment_received`.
+
+Verification:
+
+- `npm.cmd test -- --runInBand tests/unit/offer-display.test.ts tests/unit/recurring-payment.service.test.ts tests/unit/phase2Enrollment.service.test.ts` passed.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
 ### 2026-05-07: Enrollment Receipt Merge Field Fix (Codex)
 
 Files changed:

@@ -5,6 +5,7 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import { sha256 } from '../utils/crypto';
 import { ValidationError } from '../utils/errors';
+import { formatMoney, getPaidInFullDisplayPrice } from '../utils/offer-display';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -14,12 +15,6 @@ import {
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
 import crypto from 'crypto';
-
-function formatMoney(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '';
-  const amount = Number(value);
-  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value);
-}
 
 function formatDate(value: Date = new Date()): string {
   return value.toISOString().split('T')[0];
@@ -517,19 +512,20 @@ export const enrollmentService = {
     // 2. Copy offer fields to contact (written once)
     const businessName = merchant.dba_name || merchant.business_name || '';
     const supportEmail = merchant.support_email || (merchant as any).email || '';
-    const priceDisplay = formatMoney(offer.price);
+    const fullPriceDisplay = formatMoney(offer.price);
+    const pifPriceDisplay = formatMoney(getPaidInFullDisplayPrice(offer));
     const billingAmountDisplay = formatMoney((offer as any).installment_amount ?? offer.price);
     const numPayments = offer.num_payments ?? '';
 
     customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
     customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name;
-    customFields[OFFER_CONTACT_FIELDS.PRICE] = priceDisplay;
+    customFields[OFFER_CONTACT_FIELDS.PRICE] = fullPriceDisplay;
     customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = offer.payment_type;
     customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
     customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = offer.installment_frequency;
     customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
     customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name;
-    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = priceDisplay;
+    customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = pifPriceDisplay;
     customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
     customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = supportEmail;
     customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = (merchant as any).tc_document_url || '';
