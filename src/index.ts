@@ -46,15 +46,17 @@ app.listen(config.port, () => {
     }
   })();
 
-  // Schedule daily jobs (first run 5 min after startup, then every 24 hours)
+  // Schedule jobs (first run 5 min after startup). Payment reminders run hourly
+  // with idempotency so same-window reminders are not duplicated.
   const DAY_MS = 24 * 60 * 60 * 1000;
+  const HOUR_MS = 60 * 60 * 1000;
   setTimeout(() => {
     runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed'));
     runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed'));
     runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed'));
     runPulseCadenceCheck().catch(err => logger.error({ err }, 'Pulse cadence check failed'));
     setInterval(() => runDailyHealthCheck().catch(err => logger.error({ err }, 'Daily health check failed')), DAY_MS);
-    setInterval(() => runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed')), DAY_MS);
+    setInterval(() => runPaymentReminderCheck().catch(err => logger.error({ err }, 'Payment reminder check failed')), HOUR_MS);
     setInterval(() => runRecurringBilling().catch(err => logger.error({ err }, 'Recurring billing failed')), DAY_MS);
     setInterval(() => runPulseCadenceCheck().catch(err => logger.error({ err }, 'Pulse cadence check failed')), DAY_MS);
     runPifCompletionCheck().catch(err => logger.error({ err }, 'PIF completion check failed'));

@@ -1,6 +1,26 @@
 import { getSupabase } from '../clients/supabase.client';
 
 export const idempotencyRepository = {
+  async exists(eventId: string, source: string): Promise<boolean> {
+    const { data, error } = await getSupabase()
+      .from('idempotency_keys')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('source', source)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return Boolean(data?.id);
+  },
+
+  async record(eventId: string, source: string, locationId: string, result?: Record<string, unknown>): Promise<void> {
+    const { error } = await getSupabase()
+      .from('idempotency_keys')
+      .insert({ event_id: eventId, source, location_id: locationId, result: result || null });
+
+    if (error && error.code !== '23505') throw error;
+  },
+
   /**
    * Check if an event has already been processed.
    * If not, insert and return false. If already exists, return true.

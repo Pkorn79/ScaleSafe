@@ -1481,6 +1481,31 @@ Next proof:
 
 ## Current Working Tree Notes
 
+### 2026-05-11: Phase 5 Payment Reminder Scheduler Fix (Codex)
+
+Files changed:
+
+- `src/jobs/payment-reminder-check.ts`
+- `src/repositories/idempotency.repository.ts`
+- `src/index.ts`
+- `tests/unit/payment-reminder-check.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip reported no upcoming-payment reminders during daily billing tests.
+- Root cause found: `runPaymentReminderCheck` ran 5 minutes after deploy/startup and then every 24 hours. If a daily test enrollment was created after that day's scan, the next run would already be looking at the following day and the 1-day reminder could be missed entirely.
+- Changed payment reminders to run hourly.
+- Added reminder idempotency using the existing `idempotency_keys` table, keyed by location + enrollment + next billing date + reminder window (`3d` or `1d`), so hourly scans do not duplicate 3-day or 1-day reminders.
+- The reminder job now returns/logs totals for scanned, sent, and skipped reminders.
+- No new SQL is required; this reuses the existing `idempotency_keys` table.
+
+Verification:
+
+- `npm.cmd test -- --runInBand tests/unit/payment-reminder-check.test.ts tests/unit/offer-display.test.ts tests/unit/recurring-payment.service.test.ts` passed.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
 ### 2026-05-11: Phase 5 Payment Workflow Field/Trigger Tightening (Codex)
 
 Files changed:
