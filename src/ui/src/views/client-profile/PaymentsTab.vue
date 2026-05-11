@@ -67,6 +67,12 @@
         <div v-if="enr.processorSubscriptionId" class="text-muted text-xs" style="margin-top:2px">
           Subscription ID: {{ enr.processorSubscriptionId }}
         </div>
+        <div v-if="enr.cardOnFile" class="text-muted text-xs" style="margin-top:2px">
+          Card: {{ enr.cardOnFile.displayLabel }}
+        </div>
+        <div v-else class="text-muted text-xs" style="margin-top:2px">
+          Card: not linked to this processor
+        </div>
         <!-- Progress bar for installments -->
         <div v-if="enr.paymentType !== 'subscription' && enr.paymentsTotal" class="progress-bar-wrapper mt-1">
           <div class="progress-bar" :style="{ width: progressPct(enr) + '%' }"></div>
@@ -89,6 +95,7 @@
             <td class="text-sm">{{ formatDate(p.date) }}</td>
             <td class="text-sm">
               {{ p.programName || 'Unassigned payment' }}
+              <div v-if="p.offerTrackingId" class="text-xs text-muted">Tracking ID: {{ p.offerTrackingId }}</div>
               <div v-if="p.paymentNumber" class="text-xs text-muted">
                 Payment {{ p.paymentNumber }}<span v-if="p.paymentsRemaining === 0">, final</span>
               </div>

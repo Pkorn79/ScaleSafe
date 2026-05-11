@@ -24,10 +24,10 @@
         <div class="ledger-filters">
           <div class="filter-wide">
             <label class="form-label">Search</label>
-            <input
+              <input
               class="form-input"
               v-model="ledgerFilters.search"
-              placeholder="Client, email, contact ID, or program"
+              placeholder="Client, email, contact ID, program, or tracking ID"
               @keyup.enter="applyLedgerFilters"
             />
           </div>
@@ -130,6 +130,7 @@
                 </td>
                 <td>
                   {{ row.programName }}
+                  <div v-if="row.offerTrackingId" class="text-xs text-muted">Tracking ID: {{ row.offerTrackingId }}</div>
                   <div v-if="row.paymentNumber" class="text-xs text-muted">
                     Payment {{ row.paymentNumber }}<span v-if="row.paymentsRemaining === 0">, final</span>
                   </div>

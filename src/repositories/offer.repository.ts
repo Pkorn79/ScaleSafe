@@ -8,6 +8,7 @@ export interface OfferRecord {
   ghl_price_ids: Record<string, string>;
   ghl_custom_object_id: string | null;
   offer_name: string;
+  tracking_id: string | null;
   program_description: string | null;
   delivery_method: string | null;
   price: number | null;

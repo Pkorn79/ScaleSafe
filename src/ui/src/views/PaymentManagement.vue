@@ -89,6 +89,14 @@
             <span v-else>No processor subscription ID on file</span>
           </div>
           <div class="text-sm text-muted mt-1">
+            <span v-if="enr.cardOnFile">Card: {{ enr.cardOnFile.displayLabel }}</span>
+            <span v-else>Card: not linked to this processor</span>
+            <span v-if="enr.cardOnFile?.detailLabel"> - {{ enr.cardOnFile.detailLabel }}</span>
+          </div>
+          <div v-if="!enr.controlVerified" class="text-xs control-warning mt-1">
+            Subscription ID missing; billing controls may only update ScaleSafe.
+          </div>
+          <div class="text-sm text-muted mt-1">
             <span v-if="enr.paymentType !== 'subscription'">
               {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} payments made
               <span v-if="paymentsRemaining(enr) !== null"> - {{ paymentsRemaining(enr) }} remaining</span>
@@ -707,5 +715,9 @@ async function submitRefund() {
 
 .text-xs {
   font-size: 12px;
+}
+
+.control-warning {
+  color: #b45309;
 }
 </style>

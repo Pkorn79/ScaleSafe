@@ -18,6 +18,12 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">Tracking ID</label>
+        <input class="form-input" v-model="form.trackingId" placeholder="Sales rep, campaign, or internal code" />
+        <p class="text-sm text-muted mt-2">Optional. Useful for reporting and internal attribution.</p>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Description</label>
         <textarea class="form-textarea" v-model="form.programDescription"></textarea>
       </div>
@@ -399,6 +405,7 @@ const standardClauses = [
 
 const form = ref({
   offerName: '',
+  trackingId: '',
   programDescription: '',
   deliveryMethod: '',
   price: 0,
@@ -473,6 +480,7 @@ onMounted(async () => {
     try {
       const offer = await api.get<any>(`/api/offers/${route.params.id}`);
       form.value.offerName = offer.offer_name || '';
+      form.value.trackingId = offer.tracking_id || '';
       form.value.programDescription = offer.program_description || '';
       form.value.deliveryMethod = offer.delivery_method || '';
       form.value.price = offer.price || 0;
@@ -544,6 +552,7 @@ async function save() {
 
   const payload: any = {
     offerName: form.value.offerName,
+    trackingId: form.value.trackingId,
     programDescription: form.value.programDescription,
     deliveryMethod: form.value.deliveryMethod,
     price: form.value.price,

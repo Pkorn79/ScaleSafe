@@ -43,6 +43,43 @@ function cleanCardDisplay(card: {
   };
 }
 
+function processorLabel(processor?: string | null): string {
+  const value = String(processor || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
+  return processor || 'Unknown';
+}
+
+function cardSummary(method: any) {
+  if (!method) return null;
+  const display = cleanCardDisplay(method);
+  const processor = processorLabel(method.processor_type);
+  const brand = display.brand || 'card on file';
+  const ending = display.last4 ? ` ending in ${display.last4}` : '';
+  const detailParts: string[] = [];
+  if (display.expMonth && display.expYear) detailParts.push(`exp ${display.expMonth}/${display.expYear}`);
+  if (method.processor_type === 'nmi' && method.nmi_customer_vault_id) detailParts.push(`NMI vault ${method.nmi_customer_vault_id}`);
+  if (method.processor_type === 'stripe' && method.stripe_payment_method_id) detailParts.push(`Stripe PM ${method.stripe_payment_method_id}`);
+  else if (method.processor_type === 'stripe' && method.stripe_customer_id) detailParts.push(`Stripe customer ${method.stripe_customer_id}`);
+
+  return {
+    id: method.id || null,
+    processorType: method.processor_type || '',
+    displayLabel: `${processor} ${brand}${ending}`.trim(),
+    detailLabel: detailParts.join(' - '),
+    isDefault: Boolean(method.is_default),
+    ...display,
+  };
+}
+
+function selectProcessorCard(methods: any[], processor?: string | null) {
+  const value = String(processor || '').toLowerCase();
+  if (!value) return null;
+  const matches = methods.filter(method => String(method.processor_type || '').toLowerCase() === value);
+  return matches.find(method => method.is_default) || matches[0] || null;
+}
+
 export const dashboardController = {
   /** GET /api/dashboard/overview — merchant dashboard summary */
   async overview(req: Request, res: Response, next: NextFunction) {
@@ -472,8 +509,16 @@ export const dashboardController = {
         }
       }
 
+      const { data: paymentMethods } = await supabase
+        .from('payment_methods')
+        .select('id, processor_type, nmi_customer_vault_id, stripe_customer_id, stripe_payment_method_id, card_last_four, card_brand, card_exp_month, card_exp_year, is_default, created_at')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false });
+
       const result = (enrollments || []).map(e => {
         const offer = e.offer_id ? offerMap[e.offer_id] : null;
+        const matchedCard = selectProcessorCard(paymentMethods || [], e.processor_type);
         return {
           id: e.id,
           status: e.status,
@@ -482,6 +527,8 @@ export const dashboardController = {
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
           processorType: e.processor_type || null,
           processorSubscriptionId: e.processor_subscription_id || null,
+          cardOnFile: cardSummary(matchedCard),
+          controlVerified: Boolean(e.processor_subscription_id),
           paymentAmount: e.payment_amount || 0,
           enrolledAt: e.enrolled_at,
           cancelledAt: e.cancelled_at,

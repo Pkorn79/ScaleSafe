@@ -29,6 +29,54 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-11: Phase 4B Payment Display Truth + Tracking ID (Codex)
+
+Files changed:
+
+- `supabase/migrations/057_offer_tracking_id.sql`
+- `src/services/payment-ledger.service.ts`
+- `src/services/payment-reconciliation.service.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/repositories/offer.repository.ts`
+- `src/services/offer.service.ts`
+- `src/jobs/recurring-billing.ts`
+- `src/ui/src/views/OfferFormView.vue`
+- `src/ui/src/views/OffersView.vue`
+- `src/ui/src/views/PaymentSearch.vue`
+- `src/ui/src/views/PaymentManagement.vue`
+- `src/ui/src/views/client-profile/PaymentsTab.vue`
+- `tests/unit/payment-ledger.service.test.ts`
+- `tests/unit/payment-reconciliation.service.test.ts`
+- `tests/unit/offer.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Completed Phase 4B cleanup so payment reporting does not pretend an unlinked payment belongs to the newest client program.
+- Payment ledger rows now only show a program when the payment event is directly tied by `enrollment_id` or `offer_id`; otherwise they show `Unassigned payment` while still using the contact enrollment only for customer name/email display.
+- Payment reconciliation now follows the same rule for unassigned payment issues, duplicate transaction issues, missing transaction IDs, and recent failures.
+- Added optional `offers_mirror.tracking_id` for internal salesperson/campaign/reference tracking. Offer create/edit/list screens support it, and ledger search/results can use/display it.
+- Improved recurring plan cards in Payment Management and client profile Payments so they show processor, subscription ID, status, matching card/vault when known, and a warning when controls cannot be fully verified because the processor subscription ID is missing.
+- Confirmed current code paths for upcoming payment reminders and pulse cadence: reminders run for 3-day and 1-day windows; pulse cadence fires the shared `ss_app_event` trigger with `event_type = pulse_check_due`.
+
+Verification:
+
+- `npm.cmd test -- --runInBand tests/unit/payment-ledger.service.test.ts tests/unit/payment-reconciliation.service.test.ts tests/unit/offer.service.test.ts` passed: 3 suites, 19 tests.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+- `npm.cmd test -- --runInBand` passed: 52 suites, 536 tests.
+
+Deployment note:
+
+- Apply migration `057_offer_tracking_id.sql` before relying on the new Tracking ID field in production. The app has compatibility fallbacks so offer saves should still work before the migration, but the field will not persist until the column exists.
+
+Next proof:
+
+- After deploy and migration, create/edit an offer with a Tracking ID and confirm it appears in Offers and Payments > All Payments.
+- In PMG live testing, confirm unlinked/manual/noise payment events show as `Unassigned payment` rather than borrowing a program.
+- Continue Phase 5 live workflow proof: Welcome, Enrollment Payment Receipt, Recurring Payment Receipt, failed payment, NMI second installment, Stripe final installment keeping program active, and upcoming payment reminder delivery.
+- Continue Phase 6 pulse proof: force a due pulse, confirm `ss_app_event` delivery, and submit SYS2-09 with `enrollment_id` to confirm `pulse_checkin` evidence links to the enrollment.
+
 ### 2026-05-11: Payment Ledger Load Guard + Date Filters (Codex)
 
 Files changed:

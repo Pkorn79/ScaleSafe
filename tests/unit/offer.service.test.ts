@@ -22,7 +22,8 @@ jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { compileTcHtml, calcInstallmentAmount, buildRefundText } from '../../src/services/offer.service';
+import { compileTcHtml, calcInstallmentAmount, buildRefundText, offerService } from '../../src/services/offer.service';
+import { offerRepository } from '../../src/repositories/offer.repository';
 
 describe('calcInstallmentAmount', () => {
   it('calculates price / numPayments rounded to 2 decimals', () => {
@@ -112,5 +113,35 @@ describe('buildRefundText', () => {
 
   it('uses custom text for custom type', () => {
     expect(buildRefundText('custom', undefined, 'My custom policy.')).toBe('My custom policy.');
+  });
+});
+
+describe('offer tracking ID', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('stores optional tracking ID on offer create', async () => {
+    await offerService.create({
+      locationId: 'loc-1',
+      offerName: 'Test Offer',
+      trackingId: 'REP-42',
+      price: 100,
+      paymentType: 'one_time',
+    });
+
+    expect(offerRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      tracking_id: 'REP-42',
+    }));
+  });
+
+  it('stores optional tracking ID on offer update', async () => {
+    await offerService.update('offer-1', {
+      trackingId: 'CAMPAIGN-A',
+    });
+
+    expect(offerRepository.update).toHaveBeenCalledWith('offer-1', expect.objectContaining({
+      tracking_id: 'CAMPAIGN-A',
+    }));
   });
 });

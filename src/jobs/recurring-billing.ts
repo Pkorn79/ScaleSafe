@@ -15,8 +15,8 @@ import { logger } from '../utils/logger';
  * Without a row with is_default=true, the enrollment is logged + skipped.
  *
  * On success: logs payment_events ('sale'), advances next_billing_date,
- * increments payments_made, fires ss_payment_received, runs final-installment
- * detection → ss_program_completed.
+ * increments payments_made, fires ss_payment_received, and marks finite
+ * installment billing complete without completing the client program.
  *
  * On failure: logs payment_events ('payment_failed') and hands off to
  * paymentLifecycleService.initiateDunning() which has its own retry schedule.

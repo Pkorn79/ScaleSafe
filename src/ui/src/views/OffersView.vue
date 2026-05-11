@@ -39,6 +39,7 @@
         <thead>
           <tr>
             <th>Offer Name</th>
+            <th>Tracking ID</th>
             <th>Price</th>
             <th>Payment</th>
             <th>Processor</th>
@@ -52,6 +53,10 @@
             <td>
               <strong>{{ offer.offer_name }}</strong>
               <div class="text-sm text-muted">{{ offer.delivery_method || 'Not set' }}</div>
+            </td>
+            <td>
+              <span v-if="offer.tracking_id" class="tracking-id">{{ offer.tracking_id }}</span>
+              <span v-else class="text-sm text-muted">-</span>
             </td>
             <td>${{ offer.price || 0 }}</td>
             <td>
@@ -292,3 +297,11 @@ async function unarchiveOffer(offer: any) {
 // TODO: Phase L+ — Add bulk send capability
 // Select multiple contacts from GHL → send enrollment link to all
 </script>
+
+<style scoped>
+.tracking-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ss-navy-700);
+}
+</style>

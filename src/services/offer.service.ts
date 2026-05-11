@@ -6,6 +6,7 @@ import { ValidationError } from '../utils/errors';
 interface CreateOfferInput {
   locationId: string;
   offerName: string;
+  trackingId?: string;
   programDescription?: string;
   deliveryMethod?: string;
   price?: number;
@@ -120,10 +121,29 @@ function isMissingPulseCadenceColumnError(err: any): boolean {
     && (message.includes('pulse_cadence_enabled') || message.includes('pulse_frequency_days'));
 }
 
+function isMissingTrackingColumnError(err: any): boolean {
+  const message = String(err?.message || '');
+  return (err?.code === '42703' || err?.code === 'PGRST204')
+    && message.includes('tracking_id');
+}
+
 function stripPulseCadenceFields(record: Record<string, unknown>): Record<string, unknown> {
   const next = { ...record };
   delete next.pulse_cadence_enabled;
   delete next.pulse_frequency_days;
+  return next;
+}
+
+function stripTrackingFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  delete next.tracking_id;
+  return next;
+}
+
+function stripCompatibilityFields(record: Record<string, unknown>, err: any): Record<string, unknown> {
+  let next = record;
+  if (isMissingPulseCadenceColumnError(err)) next = stripPulseCadenceFields(next);
+  if (isMissingTrackingColumnError(err)) next = stripTrackingFields(next);
   return next;
 }
 
@@ -236,6 +256,7 @@ export const offerService = {
       ghl_product_id: ghlProductId,
       ghl_price_ids: priceIds,
       offer_name: input.offerName,
+      tracking_id: input.trackingId?.trim() || null,
       program_description: input.programDescription,
       delivery_method: input.deliveryMethod,
       price: input.price,
@@ -293,10 +314,10 @@ export const offerService = {
         logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err)) {
-        logger.warn({ locationId }, 'Offer create retried without pulse cadence fields; apply migration 053');
+      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err)) {
+        logger.warn({ locationId, err: err?.message }, 'Offer create retried without optional offer fields; apply latest migrations');
         try {
-          offer = await offerRepository.create(stripPulseCadenceFields(record) as any);
+          offer = await offerRepository.create(stripCompatibilityFields(record, err) as any);
         } catch (retryErr: any) {
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create retry rejected by installment frequency constraint');
@@ -329,6 +350,7 @@ export const offerService = {
 
     if ((updates as any).active !== undefined) dbUpdates.active = (updates as any).active;
     if (updates.offerName !== undefined) dbUpdates.offer_name = updates.offerName;
+    if (updates.trackingId !== undefined) dbUpdates.tracking_id = updates.trackingId?.trim() || null;
     if (updates.programDescription !== undefined) dbUpdates.program_description = updates.programDescription;
     if (updates.deliveryMethod !== undefined) dbUpdates.delivery_method = updates.deliveryMethod;
     if (updates.price !== undefined) dbUpdates.price = updates.price;
@@ -401,10 +423,10 @@ export const offerService = {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err)) {
-        logger.warn({ offerId }, 'Offer update retried without pulse cadence fields; apply migration 053');
+      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err)) {
+        logger.warn({ offerId, err: err?.message }, 'Offer update retried without optional offer fields; apply latest migrations');
         try {
-          offer = await offerRepository.update(offerId, stripPulseCadenceFields(dbUpdates) as any);
+          offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any);
         } catch (retryErr: any) {
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update retry rejected by installment frequency constraint');

@@ -21,6 +21,7 @@ export interface PaymentLedgerRow {
   customerEmail: string;
   enrollmentId: string | null;
   offerId: string | null;
+  offerTrackingId: string | null;
   programName: string;
   amount: number;
   currency: string;
@@ -301,15 +302,25 @@ async function findMatchingEnrollmentIds(
       `digital_signature.ilike.%${escaped}%`,
     ].join(',')));
 
-    const { data: offers, error: offerError } = await supabase
+    let offerResponse = await supabase
       .from('offers_mirror')
       .select('id')
       .eq('location_id', locationId)
-      .ilike('offer_name', `%${escaped}%`)
+      .or(`offer_name.ilike.%${escaped}%,tracking_id.ilike.%${escaped}%`)
       .limit(100);
-    if (offerError) throw offerError;
 
-    const offerIds = (offers || []).map((o: any) => o.id).filter(Boolean);
+    if (offerResponse.error && isColumnCompatibilityError(offerResponse.error)) {
+      offerResponse = await supabase
+        .from('offers_mirror')
+        .select('id')
+        .eq('location_id', locationId)
+        .ilike('offer_name', `%${escaped}%`)
+        .limit(100);
+    }
+
+    if (offerResponse.error) throw offerResponse.error;
+
+    const offerIds = (offerResponse.data || []).map((o: any) => o.id).filter(Boolean);
     if (offerIds.length > 0) {
       await runEnrollmentQuery((query) => query.in('offer_id', offerIds));
     }
@@ -446,26 +457,34 @@ async function fetchOfferMap(locationId: string, events: any[], enrollments: Map
 
   if (offerIds.size === 0) return new Map<string, any>();
 
-  const { data, error } = await getSupabase()
+  let response: any = await getSupabase()
     .from('offers_mirror')
-    .select('id, offer_name, payment_type, price, installment_amount, installment_frequency, num_payments')
+    .select('id, offer_name, tracking_id, payment_type, price, installment_amount, installment_frequency, num_payments')
     .eq('location_id', locationId)
     .in('id', [...offerIds]);
 
-  if (error) throw error;
-  return new Map((data || []).map((offer: any) => [offer.id, offer]));
+  if (response.error && isColumnCompatibilityError(response.error)) {
+    response = await getSupabase()
+      .from('offers_mirror')
+      .select('id, offer_name, payment_type, price, installment_amount, installment_frequency, num_payments')
+      .eq('location_id', locationId)
+      .in('id', [...offerIds]);
+  }
+
+  if (response.error) throw response.error;
+  return new Map((response.data || []).map((offer: any) => [offer.id, { tracking_id: null, ...offer }]));
 }
 
-function buildRow(event: any, enrollment: any, offer: any): PaymentLedgerRow {
+function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, offer: any): PaymentLedgerRow {
   const amount = Number(event.amount || 0);
   const status = eventStatus(event);
-  const paymentType = normalizePaymentType(enrollment?.payment_type || offer?.payment_type);
-  const customerEmail = String(enrollment?.email || event.customer_email || '').trim();
-  const processor = String(event.processor || enrollment?.processor_type || 'unknown').toLowerCase();
+  const paymentType = normalizePaymentType(linkedEnrollment?.payment_type || offer?.payment_type);
+  const customerEmail = String(linkedEnrollment?.email || contactEnrollment?.email || event.customer_email || '').trim();
+  const processor = String(event.processor || linkedEnrollment?.processor_type || 'unknown').toLowerCase();
   const programName = offer?.offer_name || 'Unassigned payment';
   const paymentNumber = event.payment_number == null ? null : Number(event.payment_number);
   const eventPaymentsTotal = event.payments_total == null ? null : Number(event.payments_total);
-  const enrollmentPaymentsTotal = enrollment?.payments_total == null ? null : Number(enrollment.payments_total);
+  const enrollmentPaymentsTotal = linkedEnrollment?.payments_total == null ? null : Number(linkedEnrollment.payments_total);
   const paymentsTotal = Number.isFinite(eventPaymentsTotal) ? eventPaymentsTotal : enrollmentPaymentsTotal;
   const paymentsRemaining = event.payments_remaining == null
     ? (paymentNumber != null && paymentsTotal != null ? Math.max(0, paymentsTotal - paymentNumber) : null)
@@ -480,11 +499,12 @@ function buildRow(event: any, enrollment: any, offer: any): PaymentLedgerRow {
   return {
     id: event.id,
     date: event.created_at,
-    contactId: event.contact_id || enrollment?.contact_id || '',
-    customerName: displayName(enrollment, customerEmail, event.contact_id || ''),
+    contactId: event.contact_id || linkedEnrollment?.contact_id || contactEnrollment?.contact_id || '',
+    customerName: displayName(contactEnrollment || linkedEnrollment, customerEmail, event.contact_id || ''),
     customerEmail,
-    enrollmentId: event.enrollment_id || enrollment?.id || null,
-    offerId: offer?.id || enrollment?.offer_id || event.offer_id || null,
+    enrollmentId: event.enrollment_id || linkedEnrollment?.id || null,
+    offerId: offer?.id || linkedEnrollment?.offer_id || event.offer_id || null,
+    offerTrackingId: offer?.tracking_id || null,
     programName,
     amount,
     currency: event.currency || 'usd',
@@ -500,7 +520,7 @@ function buildRow(event: any, enrollment: any, offer: any): PaymentLedgerRow {
     paymentNumber,
     paymentsRemaining,
     processorTransactionId: event.processor_transaction_id || null,
-    processorSubscriptionId: event.processor_subscription_id || enrollment?.processor_subscription_id || null,
+    processorSubscriptionId: event.processor_subscription_id || linkedEnrollment?.processor_subscription_id || null,
     description: `${programName} - ${typeLabel}${progress}`,
     refundable: ['sale', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
     dunningStatus: event.dunning_status || null,
@@ -534,12 +554,13 @@ export const paymentLedgerService = {
     const offerMap = await fetchOfferMap(locationId, rows, allEnrollmentRows);
 
     const payments = rows.map((event: any) => {
-      const enrollment = event.enrollment_id
+      const linkedEnrollment = event.enrollment_id
         ? enrollmentMaps.byId.get(event.enrollment_id)
-        : enrollmentMaps.byContact.get(event.contact_id);
-      const offerId = event.offer_id || enrollment?.offer_id;
+        : null;
+      const contactEnrollment = linkedEnrollment || enrollmentMaps.byContact.get(event.contact_id);
+      const offerId = event.offer_id || linkedEnrollment?.offer_id;
       const offer = offerId ? offerMap.get(offerId) : null;
-      return buildRow(event, enrollment, offer);
+      return buildRow(event, linkedEnrollment, contactEnrollment, offer);
     });
 
     const summary = payments.reduce(

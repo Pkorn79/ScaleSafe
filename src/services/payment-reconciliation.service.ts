@@ -146,20 +146,23 @@ function issueBase(
   enrollment: any | null,
   offer: any | null,
   event: any | null = null,
+  contextEnrollment: any | null = null,
 ): ReconciliationIssue {
+  const displayEnrollment = enrollment || contextEnrollment;
   const processor = normalizeProcessor(event?.processor || enrollment?.processor_type);
+  const eventIsUnlinked = Boolean(event) && !enrollment;
   return {
     id: `${type}:${event?.id || enrollment?.id || event?.processor_transaction_id || Math.random().toString(36).slice(2)}`,
     priority,
     type,
     title,
     detail,
-    contactId: event?.contact_id || enrollment?.contact_id || null,
-    customerName: enrollment ? displayName(enrollment) : 'Unknown client',
-    customerEmail: String(enrollment?.email || '').trim(),
+    contactId: event?.contact_id || displayEnrollment?.contact_id || null,
+    customerName: displayEnrollment ? displayName(displayEnrollment) : 'Unknown client',
+    customerEmail: String(displayEnrollment?.email || '').trim(),
     enrollmentId: event?.enrollment_id || enrollment?.id || null,
     offerId: event?.offer_id || enrollment?.offer_id || offer?.id || null,
-    programName: offer?.offer_name || 'Unassigned program',
+    programName: offer?.offer_name || (eventIsUnlinked ? 'Unassigned payment' : 'Unassigned program'),
     processor,
     paymentType: normalizePaymentType(enrollment?.payment_type || offer?.payment_type),
     amount: event?.amount == null ? null : Number(event.amount),
@@ -308,10 +311,12 @@ export const paymentReconciliationService = {
 
     const transactionGroups = new Map<string, any[]>();
     for (const event of events) {
-      const enrollment = event.enrollment_id ? enrollmentMap.get(event.enrollment_id) : contactEnrollmentMap.get(event.contact_id);
-      const offer = (event.offer_id ? offerMap.get(event.offer_id) : null) || (enrollment?.offer_id ? offerMap.get(enrollment.offer_id) : null);
+      const linkedEnrollment = event.enrollment_id ? enrollmentMap.get(event.enrollment_id) : null;
+      const contactEnrollment = !linkedEnrollment && event.contact_id ? contactEnrollmentMap.get(event.contact_id) : null;
+      const offer = (event.offer_id ? offerMap.get(event.offer_id) : null)
+        || (linkedEnrollment?.offer_id ? offerMap.get(linkedEnrollment.offer_id) : null);
       const eventProcessor = normalizeProcessor(event.processor);
-      const enrollmentProcessor = normalizeProcessor(enrollment?.processor_type);
+      const enrollmentProcessor = normalizeProcessor(linkedEnrollment?.processor_type);
 
       if (eventProcessor !== 'unknown') processors[eventProcessor] = (processors[eventProcessor] || 0) + 1;
 
@@ -322,13 +327,13 @@ export const paymentReconciliationService = {
         transactionGroups.set(key, group);
       }
 
-      if (event.enrollment_id && enrollment && eventProcessor !== 'unknown' && enrollmentProcessor !== 'unknown' && eventProcessor !== enrollmentProcessor) {
+      if (event.enrollment_id && linkedEnrollment && eventProcessor !== 'unknown' && enrollmentProcessor !== 'unknown' && eventProcessor !== enrollmentProcessor) {
         issues.push(issueBase(
           'processor_mismatch',
           'high',
           'Payment processor does not match enrollment processor',
           `Payment event processor is ${eventProcessor}, but the enrollment processor is ${enrollmentProcessor}.`,
-          enrollment,
+          linkedEnrollment,
           offer,
           event,
         ));
@@ -340,9 +345,10 @@ export const paymentReconciliationService = {
           'medium',
           'Payment event is not tied to an enrollment',
           'This payment exists in ScaleSafe but is not connected to a specific program enrollment.',
-          enrollment || null,
+          null,
           offer,
           event,
+          contactEnrollment || null,
         ));
       }
 
@@ -352,9 +358,10 @@ export const paymentReconciliationService = {
           'medium',
           'Paid event missing processor transaction ID',
           'This payment is marked paid but has no processor transaction id, making processor reconciliation difficult.',
-          enrollment || null,
+          linkedEnrollment || null,
           offer,
           event,
+          contactEnrollment || null,
         ));
       }
 
@@ -364,9 +371,10 @@ export const paymentReconciliationService = {
           event.is_recurring ? 'high' : 'medium',
           'Recent failed payment',
           event.failure_reason || 'A recent payment_failed event was recorded.',
-          enrollment || null,
+          linkedEnrollment || null,
           offer,
           event,
+          contactEnrollment || null,
         ));
       }
     }
@@ -374,16 +382,19 @@ export const paymentReconciliationService = {
     for (const [key, group] of transactionGroups.entries()) {
       if (group.length <= 1) continue;
       const first = group[0];
-      const enrollment = first.enrollment_id ? enrollmentMap.get(first.enrollment_id) : contactEnrollmentMap.get(first.contact_id);
-      const offer = (first.offer_id ? offerMap.get(first.offer_id) : null) || (enrollment?.offer_id ? offerMap.get(enrollment.offer_id) : null);
+      const linkedEnrollment = first.enrollment_id ? enrollmentMap.get(first.enrollment_id) : null;
+      const contactEnrollment = !linkedEnrollment && first.contact_id ? contactEnrollmentMap.get(first.contact_id) : null;
+      const offer = (first.offer_id ? offerMap.get(first.offer_id) : null)
+        || (linkedEnrollment?.offer_id ? offerMap.get(linkedEnrollment.offer_id) : null);
       issues.push(issueBase(
         'duplicate_transaction_id',
         'high',
         'Duplicate processor transaction ID',
         `${group.length} payment_events rows share ${key}. This can inflate reporting or double-fire workflows.`,
-        enrollment || null,
+        linkedEnrollment || null,
         offer,
         first,
+        contactEnrollment || null,
       ));
     }
 

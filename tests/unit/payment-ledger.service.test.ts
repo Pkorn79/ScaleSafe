@@ -173,6 +173,7 @@ describe('paymentLedgerService', () => {
         id: 'offer_1',
         location_id: 'loc_1',
         offer_name: 'Maui Trip',
+        tracking_id: 'REP-PHIL',
         payment_type: 'installments',
         price: 1,
         installment_amount: 0.5,
@@ -190,6 +191,7 @@ describe('paymentLedgerService', () => {
       customerName: 'Philip Korniotes',
       customerEmail: 'phil@example.com',
       programName: 'Maui Trip',
+      offerTrackingId: 'REP-PHIL',
       processor: 'stripe',
       paymentType: 'installment',
       paymentTypeLabel: 'Installment',
@@ -220,6 +222,47 @@ describe('paymentLedgerService', () => {
       status: 'paid',
       paymentNumber: 2,
       paymentsRemaining: 0,
+    }));
+  });
+
+  it('does not borrow program attribution from a contact enrollment when a payment is unlinked', async () => {
+    mockTables.payment_events = [
+      {
+        id: 'pay_unlinked',
+        location_id: 'loc_1',
+        contact_id: 'contact_1',
+        enrollment_id: null,
+        offer_id: null,
+        event_type: 'sale',
+        processor: 'nmi',
+        processor_transaction_id: 'txn_unlinked',
+        processor_subscription_id: null,
+        amount: 1,
+        currency: 'usd',
+        payment_number: null,
+        payments_total: null,
+        failure_reason: null,
+        source: 'nmi_silent_post',
+        is_recurring: true,
+        customer_email: 'phil@example.com',
+        dunning_status: null,
+        dunning_retry_count: 0,
+        dunning_next_retry: null,
+        created_at: '2026-05-09T01:00:00.000Z',
+      },
+    ];
+
+    const result = await paymentLedgerService.list('loc_1');
+
+    expect(result.payments).toHaveLength(1);
+    expect(result.payments[0]).toEqual(expect.objectContaining({
+      customerName: 'Philip Korniotes',
+      customerEmail: 'phil@example.com',
+      enrollmentId: null,
+      offerId: null,
+      programName: 'Unassigned payment',
+      paymentType: 'unknown',
+      processorSubscriptionId: null,
     }));
   });
 });
