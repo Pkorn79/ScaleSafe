@@ -59,9 +59,8 @@
       <div v-for="m in methods" :key="m.id" class="flex-between" style="padding:8px 0;border-bottom:1px solid #f3f4f6">
         <div>
           <strong>{{ cardLabel(m) }}</strong>
-          <span v-if="m.last4"> ending in {{ m.last4 }}</span>
-          <span v-if="hasExpiry(m)" class="text-sm text-muted">(exp {{ m.expMonth }}/{{ m.expYear }})</span>
           <span v-if="m.isDefault" class="badge badge-blue" style="margin-left:6px">Default</span>
+          <div v-if="m.detailLabel" class="text-xs text-muted">{{ m.detailLabel }}</div>
         </div>
         <div class="flex gap-2">
           <button v-if="!m.isDefault" class="btn btn-sm btn-secondary" @click="setDefaultCard(m.id)" :disabled="cardActionLoading">
@@ -75,20 +74,37 @@
     </div>
 
     <!-- Subscription Status (recurring plans only — installments + subscriptions) -->
-    <div v-if="subscriptionStatus && isRecurring" class="card">
-      <div class="flex-between">
-        <div class="card-title" style="display:flex;align-items:center;gap:8px">
-          Subscription
-          <span class="badge" :class="subscriptionBadge">{{ subscriptionStatus }}</span>
+    <div v-if="recurringEnrollments.length > 0" class="card">
+      <div class="card-title">Recurring Plans</div>
+      <div v-for="enr in recurringEnrollments" :key="enr.id" class="recurring-plan">
+        <div>
+          <div class="recurring-title">
+            <strong>{{ enr.offerName || 'Program' }}</strong>
+            <span class="badge badge-gray">{{ paymentTypeLabel(enr.paymentType) }}</span>
+            <span class="badge" :class="processorBadge(enr.processorType)">{{ processorLabel(enr.processorType) }}</span>
+            <span class="badge" :class="statusBadge(enr.status)">{{ enr.status }}</span>
+          </div>
+          <div class="text-sm text-muted mt-1">
+            <span v-if="enr.processorSubscriptionId">Subscription ID: {{ enr.processorSubscriptionId }}</span>
+            <span v-else>No processor subscription ID on file</span>
+          </div>
+          <div class="text-sm text-muted mt-1">
+            <span v-if="enr.paymentType !== 'subscription'">
+              {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} payments made
+              <span v-if="paymentsRemaining(enr) !== null"> - {{ paymentsRemaining(enr) }} remaining</span>
+            </span>
+            <span v-else>Ongoing subscription</span>
+            <span v-if="enr.nextBillingDate"> - Next billing {{ formatDateShort(enr.nextBillingDate) }}</span>
+          </div>
         </div>
         <div class="flex gap-2">
-          <button v-if="subscriptionStatus === 'enrolled' || subscriptionStatus === 'active'" class="btn btn-sm btn-secondary" @click="showPauseModal = true">
+          <button v-if="canPause(enr)" class="btn btn-sm btn-secondary" @click="openPause(enr)">
             Pause
           </button>
-          <button v-if="subscriptionStatus === 'paused'" class="btn btn-sm btn-primary" @click="resumeSubscription" :disabled="subLoading">
+          <button v-if="canResume(enr)" class="btn btn-sm btn-primary" @click="resumeEnrollment(enr)" :disabled="subLoading">
             {{ subLoading ? 'Resuming...' : 'Resume' }}
           </button>
-          <button v-if="subscriptionStatus !== 'cancelled'" class="btn btn-sm btn-danger" @click="showCancelModal = true">
+          <button v-if="canCancel(enr)" class="btn btn-sm btn-danger" @click="openCancel(enr)">
             Cancel
           </button>
         </div>
@@ -216,23 +232,27 @@
     </Modal>
 
     <!-- Pause Subscription Modal -->
-    <Modal v-model:open="showPauseModal" title="Pause Subscription">
-      <p class="text-sm text-muted mb-4" style="margin-top:-4px">Pausing will stop future billing until resumed. This is logged as evidence.</p>
+    <Modal v-model:open="showPauseModal" :title="`Pause ${selectedEnrollment?.offerName || 'Plan'}`">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">
+        Pausing will use the {{ processorLabel(selectedEnrollment?.processorType) }} subscription tied to this program and stop future billing until resumed.
+      </p>
       <div class="form-group">
         <label class="form-label">Reason for pausing</label>
         <textarea class="form-textarea" v-model="pauseReason" rows="3" placeholder="e.g., Client requested temporary hold"></textarea>
       </div>
       <template #footer>
         <button class="btn btn-secondary" @click="showPauseModal = false">Cancel</button>
-        <button class="btn btn-primary" @click="pauseSubscription" :disabled="subLoading || !pauseReason.trim()">
-          {{ subLoading ? 'Pausing...' : 'Pause Subscription' }}
+        <button class="btn btn-primary" @click="pauseEnrollment" :disabled="subLoading || !pauseReason.trim()">
+          {{ subLoading ? 'Pausing...' : 'Pause Plan' }}
         </button>
       </template>
     </Modal>
 
     <!-- Cancel Subscription Modal -->
-    <Modal v-model:open="showCancelModal" title="Cancel Subscription">
-      <p class="text-sm text-muted mb-4" style="margin-top:-4px">This will permanently cancel the subscription and stop all future billing. This action is logged as evidence for chargeback defense.</p>
+    <Modal v-model:open="showCancelModal" :title="`Cancel ${selectedEnrollment?.offerName || 'Plan'}`">
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">
+        This will permanently cancel the {{ processorLabel(selectedEnrollment?.processorType) }} subscription tied to this program and stop all future billing.
+      </p>
       <div class="form-group">
         <label class="form-label">Reason for cancellation</label>
         <textarea class="form-textarea" v-model="cancelReason" rows="3" placeholder="e.g., Client completed program, financial hardship"></textarea>
@@ -245,8 +265,8 @@
       </div>
       <template #footer>
         <button class="btn btn-secondary" @click="showCancelModal = false">Cancel</button>
-        <button class="btn btn-danger" @click="cancelSubscription" :disabled="subLoading || !cancelReason.trim() || !cancelConfirmed">
-          {{ subLoading ? 'Cancelling...' : 'Cancel Subscription' }}
+        <button class="btn btn-danger" @click="cancelEnrollment" :disabled="subLoading || !cancelReason.trim() || !cancelConfirmed">
+          {{ subLoading ? 'Cancelling...' : 'Cancel Plan' }}
         </button>
       </template>
     </Modal>
@@ -267,15 +287,13 @@ const contactId = route.params.contactId as string;
 
 const payments = ref<any[]>([]);
 const methods = ref<any[]>([]);
+const enrollments = ref<any[]>([]);
 const totalCharged = ref(0);
 const totalRefunded = ref(0);
 
 // Client info
 const clientLabel = ref('Payment Management');
 const clientEmail = ref('');
-const subscriptionStatus = ref('');
-const paymentType = ref('');
-const isRecurring = computed(() => paymentType.value === 'installment' || paymentType.value === 'installments' || paymentType.value === 'subscription');
 const actionError = ref('');
 const defaultMethodLabel = computed(() => {
   const method = methods.value.find((m: any) => m.isDefault) || methods.value[0];
@@ -300,6 +318,7 @@ const showCancelModal = ref(false);
 const pauseReason = ref('');
 const cancelReason = ref('');
 const cancelConfirmed = ref(false);
+const selectedEnrollment = ref<any | null>(null);
 
 // Charge modal
 const showChargeModal = ref(false);
@@ -312,31 +331,30 @@ const refundLoading = ref(false);
 const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reason: '' });
 
 function cardLabel(method: any) {
+  if (method?.displayLabel) return method.displayLabel;
   const processor = method?.processorLabel || processorLabel(method?.processorType);
   const brand = method?.brand || 'Card on file';
-  return `${processor} ${brand}`.trim();
-}
-
-function hasExpiry(method: any) {
-  return Number(method?.expMonth || 0) > 0 && Number(method?.expYear || 0) > 0;
+  const ending = method?.last4 ? ` ending in ${method.last4}` : '';
+  return `${processor} ${brand}${ending}`.trim();
 }
 
 function cardOptionLabel(method: any) {
-  const label = cardLabel(method);
-  return method?.last4 ? `${label} ending in ${method.last4}` : label;
+  return method?.displayLabel || cardLabel(method);
 }
 
-function processorLabel(proc: string): string {
-  if (proc === 'nmi') return 'NMI';
-  if (proc === 'stripe') return 'Stripe';
-  if (proc === 'ghl') return 'GHL';
+function processorLabel(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
   return proc || 'Unknown';
 }
 
-function processorBadge(proc: string): string {
-  if (proc === 'nmi') return 'badge-blue';
-  if (proc === 'stripe') return 'badge-gray';
-  if (proc === 'ghl') return 'badge-yellow';
+function processorBadge(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'badge-blue';
+  if (value === 'stripe') return 'badge-gray';
+  if (value === 'ghl') return 'badge-yellow';
   return 'badge-gray';
 }
 
@@ -346,16 +364,61 @@ function paymentStatusBadge(payment: any): string {
   return 'badge-green';
 }
 
-const subscriptionBadge = computed(() => {
-  const s = subscriptionStatus.value;
-  if (s === 'enrolled' || s === 'active') return 'badge-green';
-  if (s === 'paused') return 'badge-yellow';
-  if (s === 'cancelled' || s === 'delinquent') return 'badge-red';
-  return 'badge-gray';
+const recurringEnrollments = computed(() => {
+  return enrollments.value.filter((e: any) => isRecurringEnrollment(e));
 });
 
+function isRecurringEnrollment(enrollment: any): boolean {
+  const type = String(enrollment?.paymentType || '').toLowerCase();
+  const status = String(enrollment?.status || '').toLowerCase();
+  return ['installment', 'installments', 'subscription'].includes(type) && !['cancelled', 'completed'].includes(status);
+}
+
+function paymentTypeLabel(type?: string | null): string {
+  const value = String(type || '').toLowerCase();
+  if (value === 'subscription') return 'Subscription';
+  if (value === 'installment' || value === 'installments') return 'Installments';
+  if (value === 'pif') return 'Paid in full';
+  if (value === 'free') return 'Free';
+  return type || 'Unknown';
+}
+
+function statusBadge(status?: string | null): string {
+  const value = String(status || '').toLowerCase();
+  if (value === 'enrolled' || value === 'active') return 'badge-green';
+  if (value === 'paused') return 'badge-yellow';
+  if (value === 'cancelled' || value === 'delinquent') return 'badge-red';
+  return 'badge-gray';
+}
+
+function paymentsRemaining(enrollment: any): number | null {
+  const type = String(enrollment?.paymentType || '').toLowerCase();
+  if (type === 'subscription') return null;
+  const total = Number(enrollment?.paymentsTotal || 0);
+  if (!total) return null;
+  return Math.max(0, total - Number(enrollment?.paymentsMade || 0));
+}
+
+function canPause(enrollment: any): boolean {
+  const status = String(enrollment?.status || '').toLowerCase();
+  if (!['enrolled', 'active'].includes(status)) return false;
+  const type = String(enrollment?.paymentType || '').toLowerCase();
+  if (type === 'subscription') return true;
+  const remaining = paymentsRemaining(enrollment);
+  return remaining === null || remaining > 0 || Boolean(enrollment?.nextBillingDate);
+}
+
+function canResume(enrollment: any): boolean {
+  return String(enrollment?.status || '').toLowerCase() === 'paused';
+}
+
+function canCancel(enrollment: any): boolean {
+  const status = String(enrollment?.status || '').toLowerCase();
+  return !['cancelled', 'completed'].includes(status);
+}
+
 onMounted(async () => {
-  await Promise.all([loadHistory(), loadMethods(), loadClientInfo()]);
+  await Promise.all([loadHistory(), loadMethods(), loadClientInfo(), loadEnrollments()]);
 });
 
 async function loadHistory() {
@@ -392,17 +455,29 @@ async function loadClientInfo() {
     if (info) {
       clientLabel.value = info.name || info.email || 'Payment Management';
       clientEmail.value = info.email || '';
-      subscriptionStatus.value = info.status || '';
-      paymentType.value = info.paymentType || '';
     }
   } catch (e: any) {
     actionError.value = e.message || 'Failed to load client info';
   }
 }
 
+async function loadEnrollments() {
+  try {
+    const data = await api.get<any>(`/api/dashboard/client-enrollments/${contactId}`);
+    enrollments.value = data?.enrollments || [];
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to load recurring plans';
+  }
+}
+
 function formatDate(d: string) {
   if (!d) return '-';
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDateShort(d: string) {
+  if (!d) return '-';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // ─── Card Management ────────────────────────────────────
@@ -460,49 +535,59 @@ async function removeCard(method: any) {
 
 // ─── Subscription Management ────────────────────────────
 
-async function pauseSubscription() {
+function openPause(enrollment: any) {
+  selectedEnrollment.value = enrollment;
+  pauseReason.value = '';
+  showPauseModal.value = true;
+}
+
+function openCancel(enrollment: any) {
+  selectedEnrollment.value = enrollment;
+  cancelReason.value = '';
+  cancelConfirmed.value = false;
+  showCancelModal.value = true;
+}
+
+async function runEnrollmentAction(enrollment: any, action: 'pause' | 'resume' | 'cancel', reason?: string) {
   subLoading.value = true;
   actionError.value = '';
   try {
-    await api.post('/api/payments/lifecycle/subscription/pause', {
-      contactId, reason: pauseReason.value,
+    await api.post('/api/payments/lifecycle/enrollment/status', {
+      enrollmentId: enrollment.id,
+      contactId,
+      action,
+      reason,
     });
-    showPauseModal.value = false;
-    pauseReason.value = '';
-    subResult.value = 'Subscription paused.';
-    subscriptionStatus.value = 'paused';
+    await Promise.all([loadEnrollments(), loadClientInfo(), loadHistory()]);
+    const name = enrollment.offerName || 'Plan';
+    const resultLabel = action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'resumed';
+    subResult.value = `${name} ${resultLabel}.`;
     setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch (e: any) { actionError.value = e.message || 'Failed to pause subscription'; }
+  } catch (e: any) {
+    actionError.value = e.message || `Failed to ${action} plan`;
+  }
   subLoading.value = false;
 }
 
-async function resumeSubscription() {
-  subLoading.value = true;
-  actionError.value = '';
-  try {
-    await api.post('/api/payments/lifecycle/subscription/resume', { contactId });
-    subResult.value = 'Subscription resumed.';
-    subscriptionStatus.value = 'enrolled';
-    setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch (e: any) { actionError.value = e.message || 'Failed to resume subscription'; }
-  subLoading.value = false;
+async function pauseEnrollment() {
+  if (!selectedEnrollment.value) return;
+  await runEnrollmentAction(selectedEnrollment.value, 'pause', pauseReason.value);
+  showPauseModal.value = false;
+  pauseReason.value = '';
+  selectedEnrollment.value = null;
 }
 
-async function cancelSubscription() {
-  subLoading.value = true;
-  actionError.value = '';
-  try {
-    await api.post('/api/payments/lifecycle/subscription/cancel', {
-      contactId, reason: cancelReason.value,
-    });
-    showCancelModal.value = false;
-    cancelReason.value = '';
-    cancelConfirmed.value = false;
-    subResult.value = 'Subscription cancelled.';
-    subscriptionStatus.value = 'cancelled';
-    setTimeout(() => { subResult.value = ''; }, 4000);
-  } catch (e: any) { actionError.value = e.message || 'Failed to cancel subscription'; }
-  subLoading.value = false;
+async function resumeEnrollment(enrollment: any) {
+  await runEnrollmentAction(enrollment, 'resume');
+}
+
+async function cancelEnrollment() {
+  if (!selectedEnrollment.value) return;
+  await runEnrollmentAction(selectedEnrollment.value, 'cancel', cancelReason.value);
+  showCancelModal.value = false;
+  cancelReason.value = '';
+  cancelConfirmed.value = false;
+  selectedEnrollment.value = null;
 }
 
 // ─── Dunning ────────────────────────────────────────────
@@ -599,5 +684,28 @@ async function submitRefund() {
   border-color: #3b82f6;
   outline: none;
   box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+}
+
+.recurring-plan {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.recurring-plan:last-child {
+  border-bottom: none;
+}
+
+.recurring-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-xs {
+  font-size: 12px;
 }
 </style>

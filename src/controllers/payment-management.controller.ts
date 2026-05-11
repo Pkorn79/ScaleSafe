@@ -30,10 +30,29 @@ function cleanCardDisplay(card: {
 }
 
 function processorLabel(processor?: string | null): string {
-  if (processor === 'nmi') return 'NMI';
-  if (processor === 'stripe') return 'Stripe';
-  if (processor === 'ghl') return 'GHL';
+  const value = String(processor || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
   return processor || 'Unknown';
+}
+
+function paymentMethodLabel(method: any) {
+  const display = cleanCardDisplay(method);
+  const processor = processorLabel(method.processor_type);
+  const brand = display.brand || 'card on file';
+  const ending = display.last4 ? ` ending in ${display.last4}` : '';
+  return `${processor} ${brand}${ending}`.trim();
+}
+
+function paymentMethodDetail(method: any) {
+  const display = cleanCardDisplay(method);
+  const pieces: string[] = [];
+  if (display.expMonth && display.expYear) pieces.push(`exp ${display.expMonth}/${display.expYear}`);
+  if (method.processor_type === 'nmi' && method.nmi_customer_vault_id) pieces.push(`NMI vault ${method.nmi_customer_vault_id}`);
+  if (method.processor_type === 'stripe' && method.stripe_payment_method_id) pieces.push(`Stripe PM ${method.stripe_payment_method_id}`);
+  else if (method.processor_type === 'stripe' && method.stripe_customer_id) pieces.push(`Stripe customer ${method.stripe_customer_id}`);
+  return pieces.join(' - ');
 }
 
 async function resolveMerchantId(locationId: string): Promise<string> {
@@ -327,6 +346,9 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
         isDefault: m.is_default,
         processorType: m.processor_type,
         processorLabel: processorLabel(m.processor_type),
+        displayLabel: paymentMethodLabel(m),
+        detailLabel: paymentMethodDetail(m),
+        processorReference: m.nmi_customer_vault_id || m.stripe_payment_method_id || m.stripe_customer_id || '',
         customerId: m.nmi_customer_vault_id || m.stripe_customer_id,
         paymentMethodId: m.stripe_payment_method_id,
       };

@@ -452,7 +452,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -481,6 +481,7 @@ export const dashboardController = {
           offerPrice: offer?.price || e.payment_amount || 0,
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
           processorType: e.processor_type || null,
+          processorSubscriptionId: e.processor_subscription_id || null,
           paymentAmount: e.payment_amount || 0,
           enrolledAt: e.enrolled_at,
           cancelledAt: e.cancelled_at,

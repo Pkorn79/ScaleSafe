@@ -1342,6 +1342,34 @@ Correction:
 - Philip clarified that `$0` offers/subscriptions are an intentional supported product path, and the reported bug was not "missing amount on the offer." Codex removed the broad positive-amount validation and checkout block. The remaining investigation should compare the offer row/API response against the full enrollment checkout page's selected `paymentChoice`.
 - Philip's SQL confirmed the real issue: subscription offers had `price = 1.00` but `installment_amount = null`. Codex patched subscription create/update to default `installment_amount` to `price` when a separate recurring amount is not supplied, and patched full enrollment checkout to fall back to `price` for subscription display/charge if an older offer still has `installment_amount = null`. This preserves legitimate `$0` subscriptions because it does not require a positive amount.
 
+### 2026-05-11: Phase 3 Payment Processor Clarity (Codex)
+
+Files changed:
+
+- `src/controllers/payment-management.controller.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/ui/src/views/PaymentManagement.vue`
+- `src/ui/src/views/client-profile/PaymentsTab.vue`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Philip paused recurring payments to verify lifecycle controls and raised the concern that Stripe/NMI subscriptions looked crossed in the UI.
+- The app already stores processor identity on enrollments; the UI was too contact-level/default-processor oriented, which made multiple recurring plans for the same client hard to reason about.
+- Payment methods now return processor-aware display/detail labels. NMI cards no longer render as "unknown ending in ****"; Stripe/NMI labels identify the processor and show only known card/vault details.
+- The full payment-management page now shows a per-enrollment Recurring Plans section with program name, billing type, processor, status, processor subscription id, next billing date, and remaining payment count.
+- Pause/resume/cancel now uses `/api/payments/lifecycle/enrollment/status` with the selected enrollment id, so the action targets the specific Stripe or NMI plan rather than a generic client subscription.
+- Client profile Payments tab now shows processor badges and processor subscription ids for active installment/subscription programs.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, retest the paused Stripe/NMI subscriptions from the UI and confirm the selected recurring plan changes status without affecting the other plan for the same contact.
+
 ## Current Working Tree Notes
 
 ### 2026-05-07: Enrollment Receipt Merge Field Fix (Codex)

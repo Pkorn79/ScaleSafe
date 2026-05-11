@@ -46,6 +46,7 @@
         <div class="program-progress-header">
           <strong class="text-sm">{{ enr.offerName }}</strong>
           <span class="badge badge-blue text-xs">{{ enr.paymentType === 'subscription' ? 'Subscription' : 'Installments' }}</span>
+          <span class="badge text-xs" :class="processorBadge(enr.processorType)">{{ processorLabel(enr.processorType) }}</span>
         </div>
         <div v-if="enr.paymentType !== 'subscription'" class="text-sm mt-1">
           {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} paid
@@ -62,6 +63,9 @@
         </div>
         <div v-if="enr.nextBillingDate" class="text-muted text-xs" style="margin-top:2px">
           Next: {{ formatDateShort(enr.nextBillingDate) }}
+        </div>
+        <div v-if="enr.processorSubscriptionId" class="text-muted text-xs" style="margin-top:2px">
+          Subscription ID: {{ enr.processorSubscriptionId }}
         </div>
         <!-- Progress bar for installments -->
         <div v-if="enr.paymentType !== 'subscription' && enr.paymentsTotal" class="progress-bar-wrapper mt-1">
@@ -169,17 +173,19 @@ function progressPct(enr: any): number {
   return Math.min(100, Math.round((made / total) * 100));
 }
 
-function processorLabel(proc: string): string {
-  if (proc === 'nmi') return 'NMI';
-  if (proc === 'stripe') return 'Stripe';
-  if (proc === 'ghl') return 'GHL';
+function processorLabel(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
   return proc || 'Unknown';
 }
 
-function processorBadge(proc: string): string {
-  if (proc === 'nmi') return 'badge-blue';
-  if (proc === 'stripe') return 'badge-purple';
-  if (proc === 'ghl') return 'badge-gray';
+function processorBadge(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'badge-blue';
+  if (value === 'stripe') return 'badge-purple';
+  if (value === 'ghl') return 'badge-gray';
   return 'badge-gray';
 }
 
