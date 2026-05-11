@@ -4,6 +4,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentLedgerService } from '../services/payment-ledger.service';
+import { paymentReconciliationService } from '../services/payment-reconciliation.service';
 import { logger } from '../utils/logger';
 
 function getMerchantId(req: Request): string {
@@ -288,6 +289,24 @@ export async function listPaymentLedger(req: Request, res: Response, next: NextF
     logger.error({ err: err?.message, code: err?.code }, 'Payment ledger failed');
     res.status(500).json({
       message: err?.message ? `Unable to load payment ledger: ${err.message}` : 'Unable to load payment ledger',
+    });
+  }
+}
+
+// ─── GET /api/payments/manage/reconciliation ─────────────────────
+
+export async function getPaymentReconciliation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const result = await paymentReconciliationService.report(locationId, {
+      lookbackDays: Number(req.query.days || 30),
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err: err?.message, code: err?.code }, 'Payment reconciliation failed');
+    res.status(500).json({
+      message: err?.message ? `Unable to load payment reconciliation: ${err.message}` : 'Unable to load payment reconciliation',
     });
   }
 }

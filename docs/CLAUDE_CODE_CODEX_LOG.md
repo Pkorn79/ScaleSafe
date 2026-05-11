@@ -1370,6 +1370,42 @@ Next proof:
 
 - After deploy, retest the paused Stripe/NMI subscriptions from the UI and confirm the selected recurring plan changes status without affecting the other plan for the same contact.
 
+### 2026-05-11: Phase 4 Payment Reconciliation Report (Codex)
+
+Files changed:
+
+- `src/services/payment-reconciliation.service.ts`
+- `src/controllers/payment-management.controller.ts`
+- `src/routes/payment-management.routes.ts`
+- `src/ui/src/views/PaymentSearch.vue`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Added a tenant-scoped reconciliation API at `GET /api/payments/manage/reconciliation?days=30`.
+- Added a Payments > Reconciliation tab beside All Payments and Clients.
+- The first reconciliation pass compares ScaleSafe records against ScaleSafe's own payment truth tables and flags records that make processor proof hard:
+  - recurring enrollments missing `processor_type`
+  - active recurring enrollments missing `processor_subscription_id`
+  - payment event processor mismatches against the enrollment processor
+  - payment events not tied to an enrollment
+  - paid events without processor transaction ids
+  - recent failed payments
+  - duplicate processor transaction ids
+  - overdue `next_billing_date` values
+  - installment payoffs not marked with `billing_completed_at`
+  - historical rows where billing payoff appears to have completed the program
+- This is not yet a live Stripe/NMI transaction-list reconciliation job. It is the in-app consistency/reporting layer needed before we add processor-export or processor-API comparison.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, open Payments > Reconciliation and run 30/90-day checks against PMG. Use the issue list to verify the known NMI/Stripe daily tests, paused subscriptions, duplicate NMI test attempts, and any historical rows affected by earlier final-installment completion behavior.
+
 ## Current Working Tree Notes
 
 ### 2026-05-07: Enrollment Receipt Merge Field Fix (Codex)

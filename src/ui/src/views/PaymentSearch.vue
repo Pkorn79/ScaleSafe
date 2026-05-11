@@ -14,6 +14,9 @@
       <button class="tab-btn" :class="{ active: activeTab === 'clients' }" @click="activeTab = 'clients'">
         Clients
       </button>
+      <button class="tab-btn" :class="{ active: activeTab === 'reconciliation' }" @click="activeTab = 'reconciliation'">
+        Reconciliation
+      </button>
     </div>
 
     <section v-if="activeTab === 'ledger'">
@@ -149,7 +152,7 @@
       </div>
     </section>
 
-    <section v-else>
+    <section v-else-if="activeTab === 'clients'">
       <div class="card" style="max-width:720px">
         <div class="flex gap-2 mb-4">
           <input class="form-input" v-model="searchQuery" placeholder="Search by name, email, or contact ID..."
@@ -183,6 +186,102 @@
         </div>
       </div>
     </section>
+
+    <section v-else>
+      <div class="card">
+        <div class="flex-between">
+          <div>
+            <div class="card-title" style="margin-bottom:4px">Payment Reconciliation</div>
+            <p class="text-sm text-muted">
+              Flags records that make processor truth hard to prove: missing subscription IDs, processor mismatches, overdue billing, duplicates, unassigned payments, and recent failures.
+            </p>
+          </div>
+          <div class="reconcile-actions">
+            <select class="form-select" v-model="reconciliationDays" @change="loadReconciliation">
+              <option :value="7">7 days</option>
+              <option :value="30">30 days</option>
+              <option :value="90">90 days</option>
+              <option :value="365">365 days</option>
+            </select>
+            <button class="btn btn-primary" @click="loadReconciliation" :disabled="reconciliationLoading">
+              {{ reconciliationLoading ? 'Checking...' : 'Run Check' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="reconciliationError" class="error-msg">{{ reconciliationError }}</div>
+
+      <div class="grid grid-4 mb-4">
+        <div class="card metric-card">
+          <div class="card-title">Open Issues</div>
+          <div class="card-value">{{ reconciliationSummary.issueCount || 0 }}</div>
+        </div>
+        <div class="card metric-card">
+          <div class="card-title">High Priority</div>
+          <div class="card-value">{{ reconciliationSummary.high || 0 }}</div>
+        </div>
+        <div class="card metric-card">
+          <div class="card-title">Active Recurring</div>
+          <div class="card-value">{{ reconciliationSummary.activeRecurringEnrollments || 0 }}</div>
+        </div>
+        <div class="card metric-card">
+          <div class="card-title">Events Scanned</div>
+          <div class="card-value">{{ reconciliationSummary.paymentEventsScanned || 0 }}</div>
+        </div>
+      </div>
+
+      <div class="card ledger-card">
+        <div class="flex-between mb-4">
+          <div class="card-title" style="margin-bottom:0">Reconciliation Issues</div>
+          <div class="text-sm text-muted">
+            Checked {{ reconciliationReport?.checkedAt ? formatDate(reconciliationReport.checkedAt) : '-' }}
+          </div>
+        </div>
+        <div v-if="reconciliationLoading" class="loading">Checking payment records...</div>
+        <div v-else-if="reconciliationIssues.length === 0" class="empty-state">
+          <p>No reconciliation issues found for this window.</p>
+        </div>
+        <div v-else class="table-scroll">
+          <table class="table reconcile-table">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Issue</th>
+                <th>Client</th>
+                <th>Program</th>
+                <th>Processor</th>
+                <th>Amount</th>
+                <th>Reference</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="issue in reconciliationIssues" :key="issue.id">
+                <td><span class="badge" :class="priorityBadge(issue.priority)">{{ issue.priority }}</span></td>
+                <td>
+                  <strong>{{ issue.title }}</strong>
+                  <div class="text-xs text-muted">{{ issue.detail }}</div>
+                </td>
+                <td>
+                  <router-link v-if="issue.contactId" :to="`/payments/${issue.contactId}`" class="client-link">
+                    {{ issue.customerName || issue.customerEmail || issue.contactId }}
+                  </router-link>
+                  <span v-else>{{ issue.customerName || 'Unknown' }}</span>
+                  <div v-if="issue.customerEmail" class="text-xs text-muted">{{ issue.customerEmail }}</div>
+                </td>
+                <td>
+                  {{ issue.programName || 'Unassigned' }}
+                  <div v-if="issue.paymentType" class="text-xs text-muted">{{ issue.paymentType }}</div>
+                </td>
+                <td><span class="badge" :class="processorBadge(issue.processor)">{{ processorLabel(issue.processor) }}</span></td>
+                <td class="nowrap">{{ issue.amount == null ? '-' : `$${Number(issue.amount || 0).toFixed(2)}` }}</td>
+                <td class="txn-cell">{{ issue.transactionId || issue.subscriptionId || issue.enrollmentId || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -193,7 +292,7 @@ import { useApi } from '../composables/useApi';
 const api = useApi();
 const { loading, error } = api;
 
-const activeTab = ref<'ledger' | 'clients'>('ledger');
+const activeTab = ref<'ledger' | 'clients' | 'reconciliation'>('ledger');
 
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
@@ -215,12 +314,20 @@ const ledgerFilters = ref({
   to: '',
 });
 
+const reconciliationReport = ref<any | null>(null);
+const reconciliationSummary = ref<any>({ issueCount: 0, high: 0, medium: 0, low: 0, activeRecurringEnrollments: 0, paymentEventsScanned: 0 });
+const reconciliationIssues = ref<any[]>([]);
+const reconciliationLoading = ref(false);
+const reconciliationError = ref('');
+const reconciliationDays = ref(30);
+
 onMounted(async () => {
   await loadLedger();
 });
 
 watch(activeTab, async (tab) => {
   if (tab === 'clients' && !searched.value) await search();
+  if (tab === 'reconciliation' && !reconciliationReport.value) await loadReconciliation();
 });
 
 function formatDate(d: string) {
@@ -250,6 +357,12 @@ function statusBadge(status: string): string {
   if (status === 'paid' || status === 'created') return 'badge-green';
   if (status === 'failed' || status === 'cancelled') return 'badge-red';
   if (status === 'refunded') return 'badge-yellow';
+  return 'badge-gray';
+}
+
+function priorityBadge(priority: string): string {
+  if (priority === 'high') return 'badge-red';
+  if (priority === 'medium') return 'badge-yellow';
   return 'badge-gray';
 }
 
@@ -316,6 +429,21 @@ async function search() {
     customers.value = result?.customers || [];
   } catch {}
 }
+
+async function loadReconciliation() {
+  reconciliationLoading.value = true;
+  reconciliationError.value = '';
+  try {
+    const result = await api.get<any>(`/api/payments/manage/reconciliation?days=${reconciliationDays.value}`);
+    reconciliationReport.value = result || null;
+    reconciliationSummary.value = result?.summary || { issueCount: 0, high: 0, medium: 0, low: 0, activeRecurringEnrollments: 0, paymentEventsScanned: 0 };
+    reconciliationIssues.value = result?.issues || [];
+  } catch (e: any) {
+    reconciliationError.value = e.message || 'Failed to load payment reconciliation';
+  } finally {
+    reconciliationLoading.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -356,6 +484,12 @@ async function search() {
   gap: 8px;
 }
 
+.reconcile-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
 .metric-card {
   margin-bottom: 0;
 }
@@ -371,6 +505,10 @@ async function search() {
 
 .ledger-table {
   min-width: 1120px;
+}
+
+.reconcile-table {
+  min-width: 1180px;
 }
 
 .nowrap {
@@ -411,6 +549,12 @@ async function search() {
   .filter-wide,
   .filter-actions {
     grid-column: 1 / -1;
+  }
+
+  .reconcile-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 </style>

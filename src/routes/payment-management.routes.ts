@@ -4,6 +4,7 @@ import { requireTenant } from '../middleware/tenantContext';
 import {
   searchCustomers,
   listPaymentLedger,
+  getPaymentReconciliation,
   getPaymentHistory,
   getPaymentMethods,
   chargeStoredCard,
@@ -16,6 +17,7 @@ const router = Router();
 router.use(ssoAuth, requireTenant);
 
 router.get('/ledger', listPaymentLedger);
+router.get('/reconciliation', getPaymentReconciliation);
 router.get('/customers', searchCustomers);
 router.get('/customer/:contactId', getPaymentHistory);
 router.get('/customer/:contactId/methods', getPaymentMethods);
