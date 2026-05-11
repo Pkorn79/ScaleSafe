@@ -3,6 +3,7 @@ const mockTables: Record<string, any[]> = {
   enrollments: [],
   offers_mirror: [],
 };
+const mockMissingColumns: Record<string, string[]> = {};
 
 class MockQuery {
   private rows: any[];
@@ -10,13 +11,23 @@ class MockQuery {
   private rangeStart: number | null = null;
   private rangeEnd: number | null = null;
   private limitValue: number | null = null;
+  private selectError: any = null;
 
   constructor(private table: string) {
     this.rows = [...(mockTables[table] || [])];
   }
 
-  select(_columns?: string, options?: { count?: string }) {
+  select(columns?: string, options?: { count?: string }) {
     this.count = options?.count === 'exact';
+    const missing = mockMissingColumns[this.table] || [];
+    const selected = columns || '';
+    const missingColumn = missing.find(column => selected.includes(column));
+    if (missingColumn) {
+      this.selectError = {
+        code: 'PGRST204',
+        message: `Could not find the '${missingColumn}' column of '${this.table}' in the schema cache`,
+      };
+    }
     return this;
   }
 
@@ -77,6 +88,9 @@ class MockQuery {
   }
 
   then(resolve: any, reject: any) {
+    if (this.selectError) {
+      return Promise.resolve({ data: null, error: this.selectError, count: null }).then(resolve, reject);
+    }
     const total = this.rows.length;
     let rows = [...this.rows];
     if (this.rangeStart != null && this.rangeEnd != null) rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
@@ -95,6 +109,8 @@ import { paymentLedgerService } from '../../src/services/payment-ledger.service'
 
 describe('paymentLedgerService', () => {
   beforeEach(() => {
+    mockMissingColumns.payment_events = [];
+    mockMissingColumns.enrollments = [];
     mockTables.payment_events = [
       {
         id: 'pay_1',
@@ -179,5 +195,18 @@ describe('paymentLedgerService', () => {
 
     expect(installment.payments).toHaveLength(1);
     expect(subscription.payments).toHaveLength(0);
+  });
+
+  it('falls back to base payment columns when optional ledger columns are not deployed yet', async () => {
+    mockMissingColumns.payment_events = ['customer_email'];
+
+    const result = await paymentLedgerService.list('loc_1');
+
+    expect(result.payments).toHaveLength(1);
+    expect(result.payments[0]).toEqual(expect.objectContaining({
+      processor: 'stripe',
+      programName: 'Maui Trip',
+      status: 'paid',
+    }));
   });
 });

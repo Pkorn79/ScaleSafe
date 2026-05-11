@@ -57,6 +57,14 @@
               <option value="refunded">Refunded</option>
             </select>
           </div>
+          <div>
+            <label class="form-label">From</label>
+            <input class="form-input" type="date" v-model="ledgerFilters.from" @change="applyLedgerFilters" />
+          </div>
+          <div>
+            <label class="form-label">To</label>
+            <input class="form-input" type="date" v-model="ledgerFilters.to" @change="applyLedgerFilters" />
+          </div>
           <div class="filter-actions">
             <button class="btn btn-primary" @click="applyLedgerFilters" :disabled="ledgerLoading">
               {{ ledgerLoading ? 'Loading...' : 'Apply' }}
@@ -203,6 +211,8 @@ const ledgerFilters = ref({
   processor: '',
   paymentType: '',
   status: '',
+  from: '',
+  to: '',
 });
 
 onMounted(async () => {
@@ -248,6 +258,11 @@ function sourceLabel(source: string, recurring: boolean): string {
   return value.replace(/_/g, ' ');
 }
 
+function dateBoundary(value: string, endOfDay = false): string {
+  const time = endOfDay ? 'T23:59:59.999' : 'T00:00:00.000';
+  return new Date(`${value}${time}`).toISOString();
+}
+
 async function loadLedger() {
   ledgerLoading.value = true;
   ledgerError.value = '';
@@ -256,7 +271,10 @@ async function loadLedger() {
     params.set('limit', String(ledgerLimit));
     params.set('offset', String(ledgerOffset.value));
     for (const [key, value] of Object.entries(ledgerFilters.value)) {
-      if (value) params.set(key, value);
+      if (!value) continue;
+      if (key === 'from') params.set(key, dateBoundary(value));
+      else if (key === 'to') params.set(key, dateBoundary(value, true));
+      else params.set(key, value);
     }
     const result = await api.get<any>(`/api/payments/manage/ledger?${params.toString()}`);
     ledgerRows.value = result?.payments || [];
@@ -275,7 +293,7 @@ async function applyLedgerFilters() {
 }
 
 async function resetLedgerFilters() {
-  ledgerFilters.value = { search: '', processor: '', paymentType: '', status: '' };
+  ledgerFilters.value = { search: '', processor: '', paymentType: '', status: '', from: '', to: '' };
   ledgerOffset.value = 0;
   await loadLedger();
 }
@@ -328,7 +346,7 @@ async function search() {
 
 .ledger-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(140px, 1fr)) auto;
+  grid-template-columns: minmax(260px, 2fr) repeat(5, minmax(130px, 1fr)) auto;
   gap: 12px;
   align-items: end;
 }

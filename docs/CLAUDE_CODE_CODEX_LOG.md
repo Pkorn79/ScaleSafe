@@ -29,6 +29,33 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-11: Payment Ledger Load Guard + Date Filters (Codex)
+
+Files changed:
+
+- `src/services/payment-ledger.service.ts`
+- `src/controllers/payment-management.controller.ts`
+- `src/ui/src/views/PaymentSearch.vue`
+- `tests/unit/payment-ledger.service.test.ts`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Fixed the live Payments > All Payments blank/error path by making the ledger service fall back to the older stable `payment_events` and `enrollments` column sets if Supabase/PostgREST reports a missing optional column from the newer reporting metadata.
+- Ledger endpoint now logs the root error and returns a clearer load message instead of only surfacing the global generic "unexpected error" message.
+- Added `From` and `To` date filters to the All Payments ledger UI. The frontend sends local start/end-of-day ISO timestamps to the existing backend `from`/`to` filters.
+- Added a unit test proving the ledger still returns rows when an optional ledger column such as `customer_email` is not deployed yet.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/payment-ledger.service.test.ts` passed: 1 suite, 3 tests.
+- `npm.cmd run build` passed.
+
+Next proof:
+
+- After deploy, reload Payments > All Payments. Expected: ledger rows load instead of "unexpected error"; date filters should narrow the visible rows.
+
 ### 2026-05-10: Phase 1 Payment Truth + Recurring Lifecycle Correctness (Codex)
 
 Files changed:

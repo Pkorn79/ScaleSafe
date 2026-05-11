@@ -81,6 +81,34 @@ const PAYMENT_EVENT_COLUMNS = [
   'created_at',
 ].join(', ');
 
+const BASE_PAYMENT_EVENT_COLUMNS = [
+  'id',
+  'location_id',
+  'contact_id',
+  'enrollment_id',
+  'event_type',
+  'processor',
+  'processor_transaction_id',
+  'amount',
+  'currency',
+  'payment_number',
+  'payments_remaining',
+  'failure_reason',
+  'raw_webhook_payload',
+  'created_at',
+].join(', ');
+
+const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
+  offer_id: null,
+  processor_subscription_id: null,
+  source: null,
+  is_recurring: false,
+  customer_email: null,
+  dunning_status: null,
+  dunning_retry_count: 0,
+  dunning_next_retry: null,
+};
+
 const ENROLLMENT_COLUMNS = [
   'id',
   'contact_id',
@@ -100,8 +128,44 @@ const ENROLLMENT_COLUMNS = [
   'created_at',
 ].join(', ');
 
+const BASE_ENROLLMENT_COLUMNS = [
+  'id',
+  'contact_id',
+  'offer_id',
+  'payment_type',
+  'payment_amount',
+  'payments_made',
+  'payments_total',
+  'status',
+  'created_at',
+].join(', ');
+
+const ENROLLMENT_FALLBACK_DEFAULTS = {
+  email: null,
+  first_name: null,
+  last_name: null,
+  digital_signature: null,
+  processor_type: null,
+  processor_subscription_id: null,
+  billing_completed_at: null,
+};
+
 function cleanLike(value: string): string {
   return value.replace(/[%_,]/g, ' ').trim();
+}
+
+function isColumnCompatibilityError(error: any): boolean {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return text.includes('pgrst204')
+    || text.includes('schema cache')
+    || text.includes('could not find')
+    || (text.includes('column') && text.includes('does not exist'));
 }
 
 function clampLimit(value: unknown): number {
@@ -236,8 +300,91 @@ async function findMatchingEnrollmentIds(
   return [...ids];
 }
 
+function buildPaymentEventsQuery(
+  locationId: string,
+  filters: PaymentLedgerFilters,
+  enrollmentFilterIds: string[] | null,
+  columns: string,
+) {
+  let query: any = getSupabase()
+    .from('payment_events')
+    .select(columns, { count: 'exact' })
+    .eq('location_id', locationId);
+
+  if (filters.contactId) query = query.eq('contact_id', filters.contactId);
+  if (filters.processor) query = query.eq('processor', String(filters.processor).toLowerCase());
+  if (filters.eventType) query = query.eq('event_type', filters.eventType);
+  if (filters.from) query = query.gte('created_at', filters.from);
+  if (filters.to) query = query.lte('created_at', filters.to);
+  if (enrollmentFilterIds) query = query.in('enrollment_id', enrollmentFilterIds.slice(0, 500));
+
+  const status = String(filters.status || '').toLowerCase();
+  if (status === 'failed') query = query.eq('event_type', 'payment_failed');
+  if (status === 'refunded') query = query.eq('event_type', 'refund');
+  if (status === 'paid') query = query.in('event_type', ['sale', 'subscription_payment', 'capture']);
+
+  return query;
+}
+
+async function fetchPaymentEvents(
+  locationId: string,
+  filters: PaymentLedgerFilters,
+  enrollmentFilterIds: string[] | null,
+  limit: number,
+  offset: number,
+) {
+  let response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, PAYMENT_EVENT_COLUMNS)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (response.error && isColumnCompatibilityError(response.error)) {
+    response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, BASE_PAYMENT_EVENT_COLUMNS)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (response.error) throw response.error;
+    return {
+      events: (response.data || []).map((row: any) => ({ ...PAYMENT_EVENT_FALLBACK_DEFAULTS, ...row })),
+      count: response.count,
+    };
+  }
+
+  if (response.error) throw response.error;
+  return { events: response.data || [], count: response.count };
+}
+
+async function selectEnrollments(
+  locationId: string,
+  column: 'id' | 'contact_id',
+  values: string[],
+  options: { newestFirst?: boolean; limit?: number } = {},
+) {
+  if (values.length === 0) return [];
+
+  function baseQuery(columns: string) {
+    let query: any = getSupabase()
+      .from('enrollments')
+      .select(columns)
+      .eq('location_id', locationId)
+      .in(column, values);
+
+    if (options.newestFirst) query = query.order('created_at', { ascending: false });
+    if (options.limit) query = query.limit(options.limit);
+    return query;
+  }
+
+  let response = await baseQuery(ENROLLMENT_COLUMNS);
+  if (response.error && isColumnCompatibilityError(response.error)) {
+    response = await baseQuery(BASE_ENROLLMENT_COLUMNS);
+    if (response.error) throw response.error;
+    return (response.data || []).map((row: any) => ({ ...ENROLLMENT_FALLBACK_DEFAULTS, ...row }));
+  }
+
+  if (response.error) throw response.error;
+  return response.data || [];
+}
+
 async function fetchEnrollmentMaps(locationId: string, events: any[]) {
-  const supabase = getSupabase();
   const enrollmentIds = [...new Set(events.map(e => e.enrollment_id).filter(Boolean))];
   const contactIds = [...new Set(events.map(e => e.contact_id).filter(Boolean))];
 
@@ -245,13 +392,8 @@ async function fetchEnrollmentMaps(locationId: string, events: any[]) {
   const byContact = new Map<string, any>();
 
   if (enrollmentIds.length > 0) {
-    const { data, error } = await supabase
-      .from('enrollments')
-      .select(ENROLLMENT_COLUMNS)
-      .eq('location_id', locationId)
-      .in('id', enrollmentIds);
-    if (error) throw error;
-    for (const row of ((data || []) as any[])) {
+    const rows = await selectEnrollments(locationId, 'id', enrollmentIds);
+    for (const row of (rows as any[])) {
       byId.set(row.id, row);
       if (row.contact_id && !byContact.has(row.contact_id)) byContact.set(row.contact_id, row);
     }
@@ -259,15 +401,8 @@ async function fetchEnrollmentMaps(locationId: string, events: any[]) {
 
   const missingContactIds = contactIds.filter(cid => !byContact.has(cid));
   if (missingContactIds.length > 0) {
-    const { data, error } = await supabase
-      .from('enrollments')
-      .select(ENROLLMENT_COLUMNS)
-      .eq('location_id', locationId)
-      .in('contact_id', missingContactIds)
-      .order('created_at', { ascending: false })
-      .limit(500);
-    if (error) throw error;
-    for (const row of ((data || []) as any[])) {
+    const rows = await selectEnrollments(locationId, 'contact_id', missingContactIds, { newestFirst: true, limit: 500 });
+    for (const row of (rows as any[])) {
       if (row.contact_id && !byContact.has(row.contact_id)) byContact.set(row.contact_id, row);
       if (row.id && !byId.has(row.id)) byId.set(row.id, row);
     }
@@ -360,30 +495,7 @@ export const paymentLedgerService = {
       };
     }
 
-    let query: any = getSupabase()
-      .from('payment_events')
-      .select(PAYMENT_EVENT_COLUMNS, { count: 'exact' })
-      .eq('location_id', locationId);
-
-    if (filters.contactId) query = query.eq('contact_id', filters.contactId);
-    if (filters.processor) query = query.eq('processor', String(filters.processor).toLowerCase());
-    if (filters.eventType) query = query.eq('event_type', filters.eventType);
-    if (filters.from) query = query.gte('created_at', filters.from);
-    if (filters.to) query = query.lte('created_at', filters.to);
-    if (enrollmentFilterIds) query = query.in('enrollment_id', enrollmentFilterIds.slice(0, 500));
-
-    const status = String(filters.status || '').toLowerCase();
-    if (status === 'failed') query = query.eq('event_type', 'payment_failed');
-    if (status === 'refunded') query = query.eq('event_type', 'refund');
-    if (status === 'paid') query = query.in('event_type', ['sale', 'subscription_payment', 'capture']);
-
-    const { data: events, error, count } = await query
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) throw error;
-
-    const rows = events || [];
+    const { events: rows, count } = await fetchPaymentEvents(locationId, filters, enrollmentFilterIds, limit, offset);
     const enrollmentMaps = await fetchEnrollmentMaps(locationId, rows);
     const allEnrollmentRows = new Map<string, any>([
       ...enrollmentMaps.byId,

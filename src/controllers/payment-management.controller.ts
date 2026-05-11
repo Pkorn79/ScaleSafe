@@ -265,7 +265,12 @@ export async function listPaymentLedger(req: Request, res: Response, next: NextF
     });
 
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    logger.error({ err: err?.message, code: err?.code }, 'Payment ledger failed');
+    res.status(500).json({
+      message: err?.message ? `Unable to load payment ledger: ${err.message}` : 'Unable to load payment ledger',
+    });
+  }
 }
 
 // ─── GET /api/payments/customer/:contactId ──────────────────────
