@@ -5,10 +5,10 @@ import { defenseRepository } from '../repositories/defense.repository';
 import { evidenceRepository } from '../repositories/evidence.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { paymentService } from './payment.service';
-import { notificationService } from './notification.service';
+import { triggerService } from './trigger.service';
 import { defenseExhibitsService, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { logger } from '../utils/logger';
-import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 /**
  * Reason code → category mapping.
@@ -143,25 +143,41 @@ export const defenseService = {
       enrollment_id: input.enrollmentId || null,
     } as any);
 
-    // Fire chargeback detected notification
-    notificationService.fireChargebackDetected(input.locationId, input.contactId, {
-      amount: input.disputeAmount,
-      reasonCode: input.reasonCode,
-      disputeDate: input.disputeDate,
-    });
-
-    // Update GHL contact
+    // Update GHL contact before firing the workflow trigger so templates can
+    // safely use either trigger payload variables or contact-field fallbacks.
     try {
       const api = await ghlApi(input.locationId);
       await api.put(`/contacts/${input.contactId}`, {
         customField: {
           [SS_CONTACT_FIELDS.CHARGEBACK_STATUS]: 'disputed',
           [SS_CONTACT_FIELDS.DEFENSE_STATUS]: 'preparing',
+          [WORKFLOW_DEFENSE_CONTACT_FIELDS.CHARGEBACK_REASON_CODE]: input.reasonCode,
         },
       });
     } catch (err) {
       logger.warn({ err, contactId: input.contactId }, 'Failed to update chargeback status');
     }
+
+    // Fire chargeback detected workflow through the Marketplace trigger path.
+    await triggerService.fireTrigger(input.locationId, 'ss_chargeback_detected', {
+      event_type: 'chargeback_detected',
+      location_id: input.locationId,
+      locationId: input.locationId,
+      contact_id: input.contactId,
+      contactId: input.contactId,
+      offer_id: input.offerId || '',
+      offerId: input.offerId || '',
+      amount: input.disputeAmount,
+      reason_code: input.reasonCode,
+      reasonCode: input.reasonCode,
+      dispute_date: input.disputeDate,
+      disputeDate: input.disputeDate,
+      processor,
+      defense_id: packet.id,
+      defenseId: packet.id,
+    }).catch((trigErr: any) => {
+      logger.warn({ err: trigErr.message, defenseId: packet.id }, 'Chargeback detected trigger fire failed (non-fatal)');
+    });
 
     // Run compilation async
     this.runCompilation(packet.id, input, category).catch((err) => {
@@ -248,9 +264,10 @@ export const defenseService = {
     });
 
     // 10. Generate bundled PDF (fire-and-forget — don't block the status update)
+    let defensePacketUrl = '';
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId);
+      defensePacketUrl = await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId);
     } catch (pdfErr: any) {
       logger.warn({ err: pdfErr.message, defenseId }, 'Bundled PDF generation failed (non-fatal — letter text is available inline)');
     }
@@ -261,6 +278,8 @@ export const defenseService = {
       await api.put(`/contacts/${input.contactId}`, {
         customField: {
           [SS_CONTACT_FIELDS.DEFENSE_STATUS]: 'ready',
+          [WORKFLOW_DEFENSE_CONTACT_FIELDS.DEFENSE_PACKET_URL]: defensePacketUrl,
+          [WORKFLOW_DEFENSE_CONTACT_FIELDS.DEFENSE_PDF_URL]: defensePacketUrl,
         },
       });
     } catch (err) {
@@ -276,10 +295,25 @@ export const defenseService = {
     } catch {}
 
     try {
-      await notificationService.fireDefenseReady(input.locationId, input.contactId, {
-        packetUrl: '',
+      await triggerService.fireTrigger(input.locationId, 'ss_defense_ready', {
+        event_type: 'defense_ready',
+        location_id: input.locationId,
+        locationId: input.locationId,
+        contact_id: input.contactId,
+        contactId: input.contactId,
+        offer_id: input.offerId || '',
+        offerId: input.offerId || '',
+        defense_id: defenseId,
+        defenseId,
+        packet_url: defensePacketUrl,
+        packetUrl: defensePacketUrl,
+        defense_pdf_url: defensePacketUrl,
+        defensePdfUrl: defensePacketUrl,
+        evidence_count: exhibitList.exhibits.length,
         evidenceCount: exhibitList.exhibits.length,
+        readiness_score: readinessScore,
         readinessScore,
+        processor: input.processor || 'stripe',
       });
     } catch (trigErr: any) {
       logger.warn({ err: trigErr.message, defenseId }, 'Defense ready trigger fire failed (non-fatal)');

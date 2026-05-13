@@ -14,7 +14,8 @@ Purpose: keep live beta test failures visible until they are proven fixed. This 
 
 - Status: WATCH
 - Reason: the app now sends richer trigger payloads and syncs compatibility contact fields, but each live GHL workflow still has to prove that its trigger is active and its message body renders populated values.
-- Known workflows needing proof: refund processed, milestone sign-off request, milestone sign-off confirmation, recurring receipt, payment reminders.
+- Known workflows needing proof: refund processed, milestone sign-off request, milestone sign-off confirmation, recurring receipt, payment reminders, pulse due, chargeback detected, defense ready.
+- 2026-05-13 update: Trigger Health now logs `no_subscription` when the app fires a trigger with no active GHL workflow subscription, and Provisioning Health surfaces last sent/failed/no-subscription status per trigger.
 
 ## Fixed / Ready To Retest
 

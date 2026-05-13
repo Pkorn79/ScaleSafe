@@ -472,12 +472,25 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
 
     // Fire trigger — flat doc contract
     const { triggerService } = require('../services/trigger.service');
+    const signatureTimestamp = new Date().toISOString();
     await triggerService.fireTrigger(locationId, 'ss_milestone_signedoff', {
+      event_type: 'milestone_signedoff',
+      location_id: locationId,
+      locationId,
       contact_id: contactId,
+      contactId,
+      enrollment_id: enrollment.id,
+      enrollmentId: enrollment.id,
+      offer_id: enrollment.offer_id || '',
+      offerId: enrollment.offer_id || '',
       milestone_number: milestoneNumber,
+      milestoneNumber,
       milestone_name: milestoneName,
-      signature_timestamp: new Date().toISOString(),
+      milestoneName,
+      signature_timestamp: signatureTimestamp,
+      signatureTimestamp,
       ip_address: clientIp,
+      ipAddress: clientIp,
     });
 
     logger.info({ contactId, milestoneNumber, milestoneName }, 'Milestone signed off by client');

@@ -318,6 +318,30 @@
               <div v-if="item.details?.deleteCandidateCount" class="text-sm text-muted">
                 {{ item.details.deleteCandidateCount }} cleanup candidates found. Review dry-run before deleting anything.
               </div>
+              <div v-if="item.key === 'trigger_health' && item.details?.rows" class="trigger-health-grid">
+                <div v-for="row in item.details.rows" :key="row.key" class="trigger-health-row">
+                  <div>
+                    <div class="trigger-health-title">
+                      {{ row.label }}
+                      <span class="mini-badge" :class="`mini-badge-${row.betaStatus}`">{{ row.betaStatus }}</span>
+                    </div>
+                    <div class="text-sm text-muted">{{ row.key }} · {{ row.firesFrom }}</div>
+                  </div>
+                  <div class="trigger-health-metrics">
+                    <span :class="row.activeSubscriptionCount > 0 ? 'text-green' : 'text-warn'">
+                      {{ row.activeSubscriptionCount }} subscription{{ row.activeSubscriptionCount === 1 ? '' : 's' }}
+                    </span>
+                    <span>Last sent: {{ formatHealthTime(row.lastSentAt) }}</span>
+                    <span v-if="row.lastNoSubscriptionAt" class="text-warn">No subscription: {{ formatHealthTime(row.lastNoSubscriptionAt) }}</span>
+                    <span v-if="row.lastFailedAt" class="text-red">Failed: {{ formatHealthTime(row.lastFailedAt) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="item.key === 'field_automation_health' && item.details?.fieldAutomations" class="field-automation-list">
+                <div v-for="automation in item.details.fieldAutomations" :key="automation.key" class="text-sm text-muted">
+                  <strong>{{ automation.label }}:</strong> {{ automation.fieldKey }} = {{ automation.expectedValue }}
+                </div>
+              </div>
             </div>
             <button
               v-if="item.key === 'custom_fields' && item.status !== 'pass'"
@@ -559,6 +583,11 @@ function healthStatusLabel(status: string) {
 function formatCheckedAt(value: string) {
   if (!value) return '';
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatHealthTime(value: string | null) {
+  if (!value) return 'never';
+  return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 async function handleLogoUpload(event: Event) {
@@ -1000,5 +1029,90 @@ async function setDefaultProcessor(proc: string) {
   font-weight: 600;
   font-size: 14px;
   color: #111827;
+}
+
+.trigger-health-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trigger-health-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.2fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.trigger-health-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.trigger-health-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: #526176;
+}
+
+.mini-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #eef2f7;
+  color: #526176;
+}
+
+.mini-badge-critical {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.mini-badge-important {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.mini-badge-optional,
+.mini-badge-deferred {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.field-automation-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.text-green {
+  color: #047857;
+  font-weight: 600;
+}
+
+.text-warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.text-red {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+@media (max-width: 800px) {
+  .trigger-health-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

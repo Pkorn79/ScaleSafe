@@ -311,14 +311,22 @@ export const paymentLifecycleService = {
 
     // Fire trigger — flat payload
     try {
+      let enrollmentId = params.enrollmentId || '';
+      let offerId = params.offerId || '';
       let offerName = '';
       let paymentsRemaining = 0;
+      let processor = params.processorType || '';
+      let subscriptionId = params.processorSubscriptionId || '';
       try {
         const supabase = getSupabase();
         const { data: enr } = await supabase.from('enrollments')
-          .select('offer_id, payments_made, payments_total')
+          .select('id, offer_id, payments_made, payments_total, processor_type, processor_subscription_id')
           .eq('location_id', params.locationId).eq('contact_id', params.contactId)
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        enrollmentId = enrollmentId || enr?.id || '';
+        offerId = offerId || enr?.offer_id || '';
+        processor = processor || enr?.processor_type || '';
+        subscriptionId = subscriptionId || enr?.processor_subscription_id || '';
         if (enr?.offer_id) {
           const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
           offerName = ofr?.offer_name || '';
@@ -326,11 +334,27 @@ export const paymentLifecycleService = {
         }
       } catch {}
       await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', {
+        event_type: 'subscription_paused',
+        location_id: params.locationId,
+        locationId: params.locationId,
         contact_id: params.contactId,
+        contactId: params.contactId,
+        enrollment_id: enrollmentId,
+        enrollmentId,
+        offer_id: offerId,
+        offerId,
         offer_name: offerName,
+        offerName,
+        program_name: offerName,
+        programName: offerName,
+        processor,
+        subscription_id: subscriptionId,
+        subscriptionId,
         pause_reason: params.reason,
+        pauseReason: params.reason,
         pause_resume_date: '',
         payments_remaining: paymentsRemaining,
+        paymentsRemaining,
       });
     } catch { /* non-blocking */ }
 
@@ -458,15 +482,25 @@ export const paymentLifecycleService = {
 
     // Fire trigger — flat doc contract: contact_id, offer_name, next_billing_date, payments_remaining, days_paused
     try {
+      let enrollmentId = params.enrollmentId || '';
+      let offerId = params.offerId || '';
       let offerName = '';
       let paymentsRemaining = 0;
       let daysPaused = 0;
+      let processor = params.processorType || '';
+      let subscriptionId = params.processorSubscriptionId || '';
+      let nextBillingDate = '';
       try {
         const supabase = getSupabase();
         const { data: enr } = await supabase.from('enrollments')
-          .select('offer_id, payments_made, payments_total, updated_at')
+          .select('id, offer_id, payments_made, payments_total, updated_at, next_billing_date, processor_type, processor_subscription_id')
           .eq('location_id', params.locationId).eq('contact_id', params.contactId)
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        enrollmentId = enrollmentId || enr?.id || '';
+        offerId = offerId || enr?.offer_id || '';
+        processor = processor || enr?.processor_type || '';
+        subscriptionId = subscriptionId || enr?.processor_subscription_id || '';
+        nextBillingDate = enr?.next_billing_date || '';
         if (enr?.offer_id) {
           const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
           offerName = ofr?.offer_name || '';
@@ -477,11 +511,28 @@ export const paymentLifecycleService = {
         }
       } catch {}
       await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', {
+        event_type: 'subscription_resumed',
+        location_id: params.locationId,
+        locationId: params.locationId,
         contact_id: params.contactId,
+        contactId: params.contactId,
+        enrollment_id: enrollmentId,
+        enrollmentId,
+        offer_id: offerId,
+        offerId,
         offer_name: offerName,
-        next_billing_date: '',
+        offerName,
+        program_name: offerName,
+        programName: offerName,
+        processor,
+        subscription_id: subscriptionId,
+        subscriptionId,
+        next_billing_date: nextBillingDate,
+        nextBillingDate,
         payments_remaining: paymentsRemaining,
+        paymentsRemaining,
         days_paused: daysPaused,
+        daysPaused,
       });
     } catch { /* non-blocking */ }
 
@@ -605,20 +656,44 @@ export const paymentLifecycleService = {
 
     // Fire trigger — flat doc contract: contact_id, offer_id, reason, refund_eligibility, enrollment_date
     try {
+      let enrollmentId = params.enrollmentId || '';
       let enrollmentDate = '';
+      let offerName = '';
       try {
         const supabase = getSupabase();
         const { data: enr } = await supabase.from('enrollments')
-          .select('enrolled_at').eq('location_id', params.locationId).eq('contact_id', params.contactId)
+          .select('id, enrolled_at, offer_id').eq('location_id', params.locationId).eq('contact_id', params.contactId)
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        enrollmentId = enrollmentId || enr?.id || '';
         enrollmentDate = enr?.enrolled_at || '';
+        const resolvedOfferId = params.offerId || enr?.offer_id;
+        if (resolvedOfferId) {
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name').eq('id', resolvedOfferId).maybeSingle();
+          offerName = ofr?.offer_name || '';
+        }
       } catch {}
       await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', {
+        event_type: 'cancellation_requested',
+        location_id: params.locationId,
+        locationId: params.locationId,
         contact_id: params.contactId,
+        contactId: params.contactId,
+        enrollment_id: enrollmentId,
+        enrollmentId,
         offer_id: params.offerId,
+        offerId: params.offerId,
+        offer_name: offerName,
+        offerName,
+        program_name: offerName,
+        programName: offerName,
+        processor: params.processorType || '',
+        subscription_id: params.processorSubscriptionId || '',
+        subscriptionId: params.processorSubscriptionId || '',
         reason: params.reason,
         refund_eligibility: 'per_terms',
+        refundEligibility: 'per_terms',
         enrollment_date: enrollmentDate,
+        enrollmentDate,
       });
     } catch { /* non-blocking */ }
 
@@ -699,11 +774,32 @@ export const paymentLifecycleService = {
 
     // Fire trigger
     try {
+      let offerName = '';
+      try {
+        const { data: ofr } = await getSupabase().from('offers_mirror').select('offer_name').eq('id', params.offerId).maybeSingle();
+        offerName = ofr?.offer_name || '';
+      } catch {}
       await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
+        event_type: 'program_completed',
+        location_id: params.locationId,
+        locationId: params.locationId,
         contact_id: params.contactId,
+        contactId: params.contactId,
+        enrollment_id: params.enrollmentId || '',
+        enrollmentId: params.enrollmentId || '',
         offer_id: params.offerId,
+        offerId: params.offerId,
+        offer_name: offerName,
+        offerName,
+        program_name: offerName,
+        programName: offerName,
+        processor: params.processorType || '',
+        subscription_id: params.processorSubscriptionId || '',
+        subscriptionId: params.processorSubscriptionId || '',
         completed_at: completedAt,
+        completedAt,
         completion_reason: params.reason || 'manual_complete',
+        completionReason: params.reason || 'manual_complete',
       });
     } catch {}
 
@@ -869,6 +965,8 @@ export const paymentLifecycleService = {
    */
   async notifyRefundProcessed(locationId: string, contactId: string, data: {
     amount: number; refundType: string; reason: string; transactionId?: string;
+    enrollmentId?: string | null; offerId?: string | null; programName?: string | null;
+    processor?: string | null; subscriptionId?: string | null;
   }): Promise<void> {
     try {
       const api = await ghlApi(locationId);
@@ -885,6 +983,17 @@ export const paymentLifecycleService = {
         locationId,
         contact_id: contactId,
         contactId,
+        enrollment_id: data.enrollmentId || '',
+        enrollmentId: data.enrollmentId || '',
+        offer_id: data.offerId || '',
+        offerId: data.offerId || '',
+        program_name: data.programName || '',
+        programName: data.programName || '',
+        offer_name: data.programName || '',
+        offerName: data.programName || '',
+        processor: data.processor || '',
+        subscription_id: data.subscriptionId || '',
+        subscriptionId: data.subscriptionId || '',
         amount: data.amount,
         amount_display: formatMoney(data.amount),
         amountDisplay: formatMoney(data.amount),

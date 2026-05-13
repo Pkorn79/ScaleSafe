@@ -112,6 +112,13 @@ jest.mock('../../src/services/payment.service', () => ({
   },
 }));
 
+const mockFireTrigger = jest.fn().mockResolvedValue({ sent: 1, failed: 0 });
+jest.mock('../../src/services/trigger.service', () => ({
+  triggerService: {
+    fireTrigger: (...args: any[]) => mockFireTrigger(...args),
+  },
+}));
+
 jest.mock('../../src/services/notification.service', () => ({
   notificationService: {
     fireChargebackDetected: jest.fn(),
@@ -233,6 +240,27 @@ describe('Defense Service - Compilation Flow', () => {
     expect(id).toBe('def_1');
   });
 
+  test('compileDefense fires chargeback detected through triggerService', async () => {
+    await defenseService.compileDefense({
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      processor: 'nmi',
+    });
+
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_chargeback_detected',
+      expect.objectContaining({
+        contact_id: 'c_1',
+        amount: 5000,
+        reason_code: '13.1',
+        dispute_date: '2026-03-20',
+        processor: 'nmi',
+      }),
+    );
+  });
+
   test('runCompilation calls Claude API', async () => {
     await defenseService.runCompilation('def_1', {
       locationId: 'loc_1', contactId: 'c_1',
@@ -244,6 +272,26 @@ describe('Defense Service - Compilation Flow', () => {
     expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
       'def_1', 'complete',
       expect.objectContaining({ defense_letter_text: 'Defense letter content here' }),
+    );
+  });
+
+  test('runCompilation fires defense ready through triggerService', async () => {
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      processor: 'stripe',
+    }, 'services_not_provided');
+
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_defense_ready',
+      expect.objectContaining({
+        contact_id: 'c_1',
+        evidence_count: 1,
+        readiness_score: expect.any(Number),
+        processor: 'stripe',
+      }),
     );
   });
 });

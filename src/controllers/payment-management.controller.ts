@@ -534,6 +534,15 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
 
     const refundTransactionId = result.refundId || originalEvent.processor_transaction_id;
     const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
+    let programName = '';
+    if (originalEvent.offer_id) {
+      const { data: offer } = await supabase
+        .from('offers_mirror')
+        .select('offer_name')
+        .eq('id', originalEvent.offer_id)
+        .maybeSingle();
+      programName = offer?.offer_name || '';
+    }
 
     // Log refund event
     const { data: refundEvent, error: refundInsertError } = await supabase.from('payment_events').insert({
@@ -557,6 +566,11 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       refundType,
       reason: reason || 'Refund processed',
       transactionId: refundTransactionId,
+      enrollmentId: originalEvent.enrollment_id || null,
+      offerId: originalEvent.offer_id || null,
+      programName,
+      processor: procConfig.processor_type,
+      subscriptionId: originalEvent.processor_subscription_id || null,
     });
 
     logger.info({ paymentEventId, amount, reason }, 'Refund processed');

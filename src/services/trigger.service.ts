@@ -12,6 +12,7 @@ interface TriggerDeliveryResult {
   httpStatus?: number;
   attemptCount: number;
   errorMessage?: string;
+  status?: 'sent' | 'failed' | 'no_subscription';
 }
 
 function normalizeTriggerPayload(
@@ -127,7 +128,7 @@ async function recordTriggerDelivery(params: {
         location_id: params.locationId,
         trigger_key: params.triggerKey,
         subscription_url: params.subscriptionUrl,
-        status: params.result.success ? 'sent' : 'failed',
+        status: params.result.status || (params.result.success ? 'sent' : 'failed'),
         http_status: params.result.httpStatus ?? null,
         attempt_count: params.result.attemptCount,
         error_message: params.result.errorMessage ?? null,
@@ -154,7 +155,19 @@ export const triggerService = {
     const normalizedPayload = normalizeTriggerPayload(locationId, triggerKey, payload);
 
     if (subscriptions.length === 0) {
-      logger.debug({ locationId, triggerKey }, 'No active subscriptions for trigger');
+      await recordTriggerDelivery({
+        locationId,
+        triggerKey,
+        subscriptionUrl: 'no_subscription',
+        result: {
+          success: false,
+          status: 'no_subscription',
+          attemptCount: 0,
+          errorMessage: 'No active GHL workflow subscriptions for this trigger key',
+        },
+        payload: normalizedPayload,
+      });
+      logger.warn({ locationId, triggerKey }, 'No active subscriptions for trigger');
       return { sent: 0, failed: 0 };
     }
 

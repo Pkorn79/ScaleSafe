@@ -29,6 +29,48 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-13: Trigger Wiring Audit + Health Visibility (Codex)
+
+Files changed:
+
+- `src/constants/trigger-contracts.ts`
+- `src/services/trigger.service.ts`
+- `src/services/trigger-health.service.ts`
+- `src/services/merchant.service.ts`
+- `src/services/defense.service.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/controllers/payment-management.controller.ts`
+- `src/controllers/payment-update.controller.ts`
+- `src/controllers/send-link.controller.ts`
+- `src/controllers/webhook.controller.ts`
+- `src/ui/src/views/SettingsView.vue`
+- `supabase/migrations/060_trigger_delivery_no_subscription.sql`
+- `tests/unit/trigger.service.test.ts`
+- `tests/unit/defense.service.test.ts`
+- `tests/unit/trigger-contracts.test.ts`
+
+Summary:
+
+- Added a trigger contract registry for all Marketplace trigger keys, including owner, source, audience, beta status, firing path, and required payload fields.
+- `triggerService.fireTrigger` now records a visible `trigger_delivery_logs` row with `status = no_subscription` whenever the app fires a trigger that has no active GHL workflow subscription.
+- Moved defense workflows off the old `notificationService` path. `ss_chargeback_detected` and `ss_defense_ready` now use the same modern `triggerService` + `trigger_delivery_logs` path as the rest of the app.
+- Added trigger health to Settings > Provisioning Health: active subscription counts, last sent/failed/no-subscription times, and separate field-automation visibility for At Risk/Re-Engaged (`contact.ss_engagement_status`).
+- Enriched sparse workflow payloads for refund, milestone reached/signed off, pause/resume, cancellation, program completion, and send-link paths with IDs, program names, processor/subscription details where available.
+
+SQL required:
+
+- Run `supabase/migrations/060_trigger_delivery_no_subscription.sql` in Supabase so `trigger_delivery_logs.status` accepts `no_subscription`.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/trigger.service.test.ts tests/unit/defense.service.test.ts tests/unit/trigger-contracts.test.ts` passed.
+
+Next proof:
+
+- After SQL + deploy, run Provisioning Health and inspect Trigger Health.
+- Retest refund, milestone mark-complete/signoff, payment reminder, pulse due, and a defense packet so each beta-critical workflow has either `sent / 201` or an obvious `no_subscription` row.
+
 ### 2026-05-13: Refund + Milestone Workflow Recovery (Codex)
 
 Files changed:

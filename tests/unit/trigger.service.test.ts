@@ -7,8 +7,11 @@ jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn(),
 }));
 
+const mockInsert = jest.fn().mockResolvedValue({ error: null });
+const mockFrom = jest.fn(() => ({ insert: mockInsert }));
+
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({}),
+  getSupabase: () => ({ from: mockFrom }),
 }));
 
 jest.mock('../../src/repositories/trigger.repository', () => ({
@@ -33,6 +36,8 @@ const mockGhlApi = ghlApi as jest.MockedFunction<typeof ghlApi>;
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
+  mockInsert.mockResolvedValue({ error: null });
+  mockFrom.mockReturnValue({ insert: mockInsert });
   mockGhlApi.mockResolvedValue({ post: mockedAxios.post } as any);
 });
 
@@ -50,6 +55,18 @@ describe('Trigger Service - fireTrigger', () => {
 
     expect(result).toEqual({ sent: 0, failed: 0 });
     expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(mockFrom).toHaveBeenCalledWith('trigger_delivery_logs');
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1',
+      trigger_key: 'ss_payment_received',
+      subscription_url: 'no_subscription',
+      status: 'no_subscription',
+      attempt_count: 0,
+      payload: expect.objectContaining({
+        contact_id: 'c1',
+        contactId: 'c1',
+      }),
+    }));
   });
 
   test('posts payload to all active subscriptions', async () => {

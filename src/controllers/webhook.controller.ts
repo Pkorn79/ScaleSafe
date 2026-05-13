@@ -6,7 +6,6 @@ import { paymentEventRepository } from '../repositories/paymentEvent.repository'
 import { offerRepository } from '../repositories/offer.repository';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { evidenceService } from '../services/evidence.service';
-import { notificationService } from '../services/notification.service';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';

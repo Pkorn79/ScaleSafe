@@ -635,14 +635,23 @@ export const dashboardController = {
         .filter(Boolean)
         .join('. Client responsibility: ');
       const triggerPayload = {
+        event_type: 'milestone_reached',
+        location_id: locationId,
+        locationId,
         contact_id: contactId,
         contactId,
+        enrollment_id: enrollmentId,
+        enrollmentId,
         milestone_number: milestoneNumber,
         milestoneNumber,
         milestone_name: milestoneName,
         milestoneName,
         offer_id: enrollment.offer_id || '',
         offerId: enrollment.offer_id || '',
+        offer_name: (offer as any)?.offer_name || '',
+        offerName: (offer as any)?.offer_name || '',
+        program_name: (offer as any)?.offer_name || '',
+        programName: (offer as any)?.offer_name || '',
         signoff_link: signoffLink,
         signoffLink,
         milestone_signoff_link: signoffLink,

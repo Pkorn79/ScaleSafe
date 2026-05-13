@@ -115,12 +115,25 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
 
     try {
       await triggerService.fireTrigger(locationId, 'ss_send_enrollment_link', {
+        event_type: 'send_enrollment_link',
+        location_id: locationId,
+        locationId,
         contact_id: contactId,
+        contactId,
         offer_id: offerId,
+        offerId,
         offer_name: offer.offer_name,
+        offerName: offer.offer_name,
+        program_name: offer.offer_name,
+        programName: offer.offer_name,
         enrollment_url: enrollmentUrl,
+        enrollmentUrl,
         send_via: sendVia,
+        sendVia,
         first_name: firstName,
+        firstName,
+        last_name: lastName || '',
+        lastName: lastName || '',
         email: email || '',
         phone: phone || '',
       });

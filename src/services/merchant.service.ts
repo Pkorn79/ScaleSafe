@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { BETA_CUSTOM_FIELD_REGISTRY, CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
 import { getSupabase } from '../clients/supabase.client';
+import { triggerHealthService } from './trigger-health.service';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -385,6 +386,41 @@ export const merchantService = {
         status: 'warn',
         message: 'Could not create a GHL API client for this tenant.',
         details: { error: err.message },
+      });
+    }
+
+    try {
+      const triggerHealth = await triggerHealthService.getHealth(locationId);
+      const criticalMissing = triggerHealth.criticalMissingSubscriptions.length;
+      const noSubscription = triggerHealth.recentNoSubscriptionTriggers.length;
+      add({
+        key: 'trigger_health',
+        label: 'ScaleSafe trigger health',
+        status: criticalMissing > 0 || noSubscription > 0 ? 'warn' : 'pass',
+        message: criticalMissing > 0
+          ? `${criticalMissing} beta-critical trigger(s) have no active GHL workflow subscription.`
+          : noSubscription > 0
+            ? `${noSubscription} trigger(s) recently fired with no active workflow subscription.`
+            : `${triggerHealth.activeSubscriptionRows} active workflow subscription(s) are mapped.`,
+        details: triggerHealth as unknown as Record<string, unknown>,
+      });
+
+      add({
+        key: 'field_automation_health',
+        label: 'Field automation health',
+        status: 'pass',
+        message: 'At Risk and Re-Engaged automations use GHL Contact Field Changed on ss_engagement_status.',
+        details: {
+          fieldAutomations: triggerHealth.fieldAutomations,
+        },
+      });
+    } catch (err: any) {
+      add({
+        key: 'trigger_health',
+        label: 'ScaleSafe trigger health',
+        status: 'warn',
+        message: 'Could not query trigger subscriptions or trigger delivery logs.',
+        details: { error: err.message || String(err) },
       });
     }
 
