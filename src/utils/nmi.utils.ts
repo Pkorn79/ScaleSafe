@@ -56,17 +56,28 @@ export function parseNmiQueryTransactions(xml: string): NmiQueryTransaction[] {
 
   const transactions = Array.isArray(root.transaction) ? root.transaction : [root.transaction];
 
-  return transactions.map((tx: any) => ({
-    transactionId: String(tx.transaction_id || ''),
-    condition: String(tx.condition || 'unknown'),
-    amount: String(tx.action?.amount || '0.00'),
-    action: String(tx.action?.action_type || ''),
-    date: String(tx.action?.date || ''),
-    responseText: String(tx.action?.response_text || ''),
-    cc_number: tx.cc_number ? String(tx.cc_number) : undefined,
-    cc_exp: tx.cc_exp ? String(tx.cc_exp) : undefined,
-    cc_type: tx.cc_type ? String(tx.cc_type) : undefined,
-  }));
+  return transactions.map((tx: any) => {
+    const actions = tx.action
+      ? (Array.isArray(tx.action) ? tx.action : [tx.action])
+      : [];
+    const primaryAction = actions.find((action: any) => String(action?.action_type || '').toLowerCase() === 'sale')
+      || actions.find((action: any) => Number(action?.success) === 1 && Number(action?.amount) > 0)
+      || actions.find((action: any) => Number(action?.amount) > 0)
+      || actions[0]
+      || {};
+
+    return {
+      transactionId: String(tx.transaction_id || ''),
+      condition: String(tx.condition || 'unknown'),
+      amount: String(primaryAction.amount || '0.00'),
+      action: String(primaryAction.action_type || ''),
+      date: String(primaryAction.date || ''),
+      responseText: String(primaryAction.response_text || ''),
+      cc_number: tx.cc_number ? String(tx.cc_number) : undefined,
+      cc_exp: tx.cc_exp ? String(tx.cc_exp) : undefined,
+      cc_type: tx.cc_type ? String(tx.cc_type) : undefined,
+    };
+  });
 }
 
 /**

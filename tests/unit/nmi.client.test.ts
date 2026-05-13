@@ -150,6 +150,37 @@ describe('NMI XML Parsing', () => {
       expect(result[0].action).toBe('sale');
     });
 
+    it('uses the sale action amount when NMI returns multiple actions', () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+        <nm_response>
+          <transaction>
+            <transaction_id>12054526789</transaction_id>
+            <condition>complete</condition>
+            <action>
+              <amount>0.50</amount>
+              <action_type>sale</action_type>
+              <date>20260512235438</date>
+              <success>1</success>
+              <response_text>SUCCESS</response_text>
+            </action>
+            <action>
+              <amount>0.50</amount>
+              <action_type>settle</action_type>
+              <date>20260513010000</date>
+              <success>1</success>
+              <response_text>ACCEPTED</response_text>
+            </action>
+          </transaction>
+        </nm_response>`;
+
+      const result = parseNmiQueryTransactions(xml);
+      expect(result).toHaveLength(1);
+      expect(result[0].transactionId).toBe('12054526789');
+      expect(parseFloat(result[0].amount)).toBeCloseTo(0.50);
+      expect(result[0].action).toBe('sale');
+      expect(result[0].responseText).toBe('SUCCESS');
+    });
+
     it('returns empty array for no transactions', () => {
       const xml = '<nm_response></nm_response>';
       expect(parseNmiQueryTransactions(xml)).toEqual([]);
