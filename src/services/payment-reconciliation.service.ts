@@ -37,6 +37,7 @@ interface ReconciliationResult {
     low: number;
     activeRecurringEnrollments: number;
     paymentEventsScanned: number;
+    nmiSilentPostLogsScanned: number;
     processors: Record<string, number>;
   };
   issues: ReconciliationIssue[];
@@ -84,6 +85,23 @@ const EVENT_COLUMNS = [
 ].join(', ');
 
 const OFFER_COLUMNS = 'id, offer_name, payment_type, price, installment_amount, installment_frequency, num_payments';
+
+const NMI_LOG_COLUMNS = [
+  'id',
+  'location_id',
+  'enrollment_id',
+  'processor_subscription_id',
+  'transaction_id',
+  'amount',
+  'response_code',
+  'response_text',
+  'matched',
+  'duplicate',
+  'verification_status',
+  'action',
+  'error_message',
+  'created_at',
+].join(', ');
 
 function clampLookbackDays(value: unknown): number {
   const parsed = Number(value || 30);
@@ -179,6 +197,20 @@ function priorityRank(priority: IssuePriority): number {
   return 2;
 }
 
+function isColumnCompatibilityError(error: any): boolean {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return text.includes('pgrst204')
+    || text.includes('schema cache')
+    || text.includes('could not find')
+    || text.includes('does not exist');
+}
+
 async function fetchOffers(locationId: string, enrollments: any[], events: any[]) {
   const ids = new Set<string>();
   for (const enrollment of enrollments) if (enrollment.offer_id) ids.add(enrollment.offer_id);
@@ -194,13 +226,30 @@ async function fetchOffers(locationId: string, enrollments: any[], events: any[]
   return new Map((data || []).map((offer: any) => [offer.id, offer]));
 }
 
+async function fetchNmiSilentPostLogs(locationId: string, since: string): Promise<{ rows: any[]; available: boolean }> {
+  const { data, error } = await getSupabase()
+    .from('nmi_silent_post_logs')
+    .select(NMI_LOG_COLUMNS)
+    .eq('location_id', locationId)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1000);
+
+  if (error) {
+    if (isColumnCompatibilityError(error)) return { rows: [], available: false };
+    throw error;
+  }
+
+  return { rows: data || [], available: true };
+}
+
 export const paymentReconciliationService = {
   async report(locationId: string, options: ReconciliationOptions = {}): Promise<ReconciliationResult> {
     const lookbackDays = clampLookbackDays(options.lookbackDays);
     const since = new Date(Date.now() - lookbackDays * 86400000).toISOString();
     const supabase = getSupabase();
 
-    const [enrollmentResponse, eventResponse] = await Promise.all([
+    const [enrollmentResponse, eventResponse, nmiLogResponse] = await Promise.all([
       supabase
         .from('enrollments')
         .select(ENROLLMENT_COLUMNS)
@@ -214,6 +263,7 @@ export const paymentReconciliationService = {
         .gte('created_at', since)
         .order('created_at', { ascending: false })
         .limit(2000),
+      fetchNmiSilentPostLogs(locationId, since),
     ]);
 
     if (enrollmentResponse.error) throw enrollmentResponse.error;
@@ -221,8 +271,17 @@ export const paymentReconciliationService = {
 
     const enrollments = (enrollmentResponse.data || []) as any[];
     const events = (eventResponse.data || []) as any[];
+    const nmiLogs = nmiLogResponse.rows;
+    const nmiLogsAvailable = nmiLogResponse.available;
     const offerMap = await fetchOffers(locationId, enrollments, events);
     const enrollmentMap = new Map(enrollments.map((enrollment: any) => [enrollment.id, enrollment]));
+    const nmiLogsBySubscription = new Map<string, any[]>();
+    for (const log of nmiLogs) {
+      if (!log.processor_subscription_id) continue;
+      const group = nmiLogsBySubscription.get(log.processor_subscription_id) || [];
+      group.push(log);
+      nmiLogsBySubscription.set(log.processor_subscription_id, group);
+    }
     const contactEnrollmentMap = new Map<string, any>();
     for (const enrollment of enrollments) {
       if (enrollment.contact_id && !contactEnrollmentMap.has(enrollment.contact_id)) {
@@ -306,7 +365,59 @@ export const paymentReconciliationService = {
             offer,
           ));
         }
+
+        if (
+          nmiLogsAvailable
+          && processor === 'nmi'
+          && enrollment.processor_subscription_id
+          && overdueDays > 0
+          && !(nmiLogsBySubscription.get(enrollment.processor_subscription_id) || []).length
+        ) {
+          issues.push(issueBase(
+            'nmi_postback_missing',
+            overdueDays >= 2 ? 'high' : 'medium',
+            'NMI recurring postback missing',
+            'This NMI plan is past its next billing date and ScaleSafe has no NMI Silent Post diagnostic for the subscription in the selected lookback window.',
+            enrollment,
+            offer,
+          ));
+        }
       }
+    }
+
+    for (const log of nmiLogs) {
+      const action = String(log.action || '').toLowerCase();
+      const verificationStatus = String(log.verification_status || '').toLowerCase();
+      const problem = action.includes('ignored')
+        || action.includes('error')
+        || action.includes('failure')
+        || verificationStatus === 'failed'
+        || verificationStatus === 'error';
+
+      if (!problem) continue;
+
+      const enrollment = log.enrollment_id ? enrollmentMap.get(log.enrollment_id) : null;
+      const offer = enrollment?.offer_id ? offerMap.get(enrollment.offer_id) : null;
+      issues.push({
+        id: `nmi_silent_post:${log.id}`,
+        priority: action.includes('unknown_subscription') || action.includes('verification') ? 'high' : 'medium',
+        type: 'nmi_silent_post_processing',
+        title: 'NMI Silent Post received but not applied cleanly',
+        detail: log.error_message || log.response_text || `NMI Silent Post action: ${log.action}`,
+        contactId: enrollment?.contact_id || null,
+        customerName: enrollment ? displayName(enrollment) : 'Unknown client',
+        customerEmail: String(enrollment?.email || '').trim(),
+        enrollmentId: enrollment?.id || log.enrollment_id || null,
+        offerId: enrollment?.offer_id || null,
+        programName: offer?.offer_name || 'Unassigned program',
+        processor: 'nmi',
+        paymentType: normalizePaymentType(enrollment?.payment_type),
+        amount: log.amount == null ? null : Number(log.amount),
+        eventId: null,
+        transactionId: log.transaction_id || null,
+        subscriptionId: log.processor_subscription_id || null,
+        eventDate: log.created_at || null,
+      });
     }
 
     const transactionGroups = new Map<string, any[]>();
@@ -417,6 +528,7 @@ export const paymentReconciliationService = {
         low: 0,
         activeRecurringEnrollments,
         paymentEventsScanned: events.length,
+        nmiSilentPostLogsScanned: nmiLogs.length,
         processors,
       },
     );

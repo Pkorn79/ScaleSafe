@@ -5,6 +5,8 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentLedgerService } from '../services/payment-ledger.service';
 import { paymentReconciliationService } from '../services/payment-reconciliation.service';
+import { nmiRecurringRepairService } from '../services/nmi-recurring-repair.service';
+import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
 import { logger } from '../utils/logger';
 
 function getMerchantId(req: Request): string {
@@ -314,6 +316,32 @@ export async function getPaymentReconciliation(req: Request, res: Response, next
 
 // ─── GET /api/payments/customer/:contactId ──────────────────────
 
+export async function repairNmiRecurringPayment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
+    const subscriptionId = String(req.body?.subscriptionId || req.body?.referenceId || '').trim();
+    const transactionId = String(req.body?.transactionId || '').trim();
+
+    if (!subscriptionId || !transactionId) {
+      res.status(400).json({ error: 'subscriptionId and transactionId are required' });
+      return;
+    }
+
+    const result = await nmiRecurringRepairService.repairMissedPayment({
+      locationId,
+      merchantId,
+      subscriptionId,
+      transactionId,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err: err?.message }, 'NMI recurring repair failed');
+    res.status(500).json({ error: err?.message || 'NMI recurring repair failed' });
+  }
+}
+
 export async function getPaymentHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
@@ -358,7 +386,8 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
 
     if (error) throw error;
 
-    const result = (methods || []).map(m => {
+    const { visible, hiddenCount } = collapseVisiblePaymentMethods(methods || []);
+    const result = visible.map(m => {
       const display = cleanCardDisplay(m);
       return {
         id: m.id,
@@ -371,10 +400,11 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
         processorReference: m.nmi_customer_vault_id || m.stripe_payment_method_id || m.stripe_customer_id || '',
         customerId: m.nmi_customer_vault_id || m.stripe_customer_id,
         paymentMethodId: m.stripe_payment_method_id,
+        hiddenDuplicateCount: m.hidden_duplicate_count || 0,
       };
     });
 
-    res.json({ methods: result });
+    res.json({ methods: result, hiddenMethodCount: hiddenCount });
   } catch (err) { next(err); }
 }
 

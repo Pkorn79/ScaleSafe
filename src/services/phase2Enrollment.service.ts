@@ -336,6 +336,13 @@ export const phase2EnrollmentService = {
     Promise.resolve().then(async () => {
       // 6. Fire enrollment_complete trigger
       try {
+        let triggerSupportEmail = '';
+        let triggerBusinessName = '';
+        try {
+          const merchant = await merchantRepository.getByLocationId(bgLocationId);
+          triggerSupportEmail = merchantSupportEmail(merchant);
+          triggerBusinessName = (merchant as any)?.dba_name || (merchant as any)?.business_name || '';
+        } catch {}
         await triggerService.fireTrigger(bgLocationId, 'enrollment_complete', {
           event_type: 'enrollment_complete',
           location_id: bgLocationId,
@@ -348,11 +355,19 @@ export const phase2EnrollmentService = {
           enrollmentId: bgEnrollmentId,
           offer_id: bgOfferId,
           offerId: bgOfferId,
+          program_name: offerName,
+          programName: offerName,
           offer_name: offerName,
           offerName,
           amount: bgPaymentAmount,
+          amount_display: formatMoney(bgPaymentAmount),
+          amountDisplay: formatMoney(bgPaymentAmount),
           payment_type: bgPaymentType,
           paymentType: bgPaymentType,
+          support_email: triggerSupportEmail,
+          supportEmail: triggerSupportEmail,
+          business_name: triggerBusinessName,
+          businessName: triggerBusinessName,
           bump_1_accepted: false,
           bump_2_accepted: false,
         });
@@ -537,6 +552,18 @@ export const phase2EnrollmentService = {
     const enrollment = await enrollmentRepository.getById(params.enrollmentId);
     const runningTotal = (enrollment.payments_made) * params.amount;
     const paymentKind: 'installment' | 'subscription' = enrollment.payment_type === 'subscription' ? 'subscription' : 'installment';
+    let programName = '';
+    let supportEmail = '';
+    let businessName = '';
+    try {
+      if (enrollment.offer_id) {
+        const offer = await offerRepository.findById(enrollment.offer_id);
+        programName = offer?.offer_name || '';
+      }
+      const merchant = await merchantRepository.getByLocationId(params.locationId);
+      supportEmail = merchantSupportEmail(merchant);
+      businessName = (merchant as any)?.dba_name || (merchant as any)?.business_name || '';
+    } catch {}
     try {
       const api = await ghlApi(params.locationId);
       const paymentFields: Record<string, unknown> = {};
@@ -553,15 +580,29 @@ export const phase2EnrollmentService = {
       contactId: params.contactId,
       enrollment_id: params.enrollmentId,
       enrollmentId: params.enrollmentId,
+      offer_id: enrollment.offer_id,
+      offerId: enrollment.offer_id,
+      program_name: programName,
+      programName,
+      offer_name: programName,
+      offerName: programName,
       amount: params.amount,
+      amount_display: formatMoney(params.amount),
+      amountDisplay: formatMoney(params.amount),
       transaction_id: params.transactionId,
       transactionId: params.transactionId,
       payments_remaining: params.paymentsRemaining,
       paymentsRemaining: params.paymentsRemaining,
       running_total: runningTotal,
       runningTotal,
+      running_total_display: formatMoney(runningTotal),
+      runningTotalDisplay: formatMoney(runningTotal),
       payment_kind: paymentKind,
       paymentKind,
+      support_email: supportEmail,
+      supportEmail,
+      business_name: businessName,
+      businessName,
     });
 
     // Final installment billing marker.
@@ -638,11 +679,20 @@ export const phase2EnrollmentService = {
     }
 
     await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
+      event_type: 'payment_failed',
+      location_id: params.locationId,
+      locationId: params.locationId,
       contact_id: params.contactId,
+      contactId: params.contactId,
       amount: params.amount,
+      amount_display: formatMoney(params.amount),
+      amountDisplay: formatMoney(params.amount),
       failure_reason: params.failureReason || 'unknown',
+      failureReason: params.failureReason || 'unknown',
       attempt_count: params.attemptCount || 1,
+      attemptCount: params.attemptCount || 1,
       next_retry_date: 'none',
+      nextRetryDate: 'none',
     });
 
     // Initiate dunning for recurring payment failures
@@ -728,9 +778,16 @@ export const phase2EnrollmentService = {
     }
 
     await triggerService.fireTrigger(params.locationId, 'ss_refund_processed', {
+      event_type: 'refund_processed',
+      location_id: params.locationId,
+      locationId: params.locationId,
       contact_id: params.contactId,
+      contactId: params.contactId,
       amount: params.amount,
+      amount_display: formatMoney(params.amount),
+      amountDisplay: formatMoney(params.amount),
       refund_type: 'full',
+      refundType: 'full',
       reason: params.reason || '',
     });
 

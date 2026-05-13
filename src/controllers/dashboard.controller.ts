@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { evidenceService } from '../services/evidence.service';
 import { disengagementService } from '../services/disengagement.service';
+import { selectProcessorPaymentMethod } from '../services/payment-methods.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 
@@ -74,10 +75,7 @@ function cardSummary(method: any) {
 }
 
 function selectProcessorCard(methods: any[], processor?: string | null) {
-  const value = String(processor || '').toLowerCase();
-  if (!value) return null;
-  const matches = methods.filter(method => String(method.processor_type || '').toLowerCase() === value);
-  return matches.find(method => method.is_default) || matches[0] || null;
+  return selectProcessorPaymentMethod(methods, processor);
 }
 
 export const dashboardController = {
@@ -511,7 +509,7 @@ export const dashboardController = {
 
       const { data: paymentMethods } = await supabase
         .from('payment_methods')
-        .select('id, processor_type, nmi_customer_vault_id, stripe_customer_id, stripe_payment_method_id, card_last_four, card_brand, card_exp_month, card_exp_year, is_default, created_at')
+        .select('*')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });

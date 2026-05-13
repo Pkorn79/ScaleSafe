@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { triggerService } from '../services/trigger.service';
 import { ghlApi } from '../clients/ghl.client';
+import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -644,12 +645,26 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       if (resolvedQuickPayContact) {
         try {
           await triggerService.fireTrigger(merchant.locationId, 'ss_payment_received', {
+            event_type: 'payment_received',
+            location_id: merchant.locationId,
+            locationId: merchant.locationId,
             contact_id: resolvedQuickPayContact,
+            contactId: resolvedQuickPayContact,
+            program_name: productDetails?.[0]?.name || '',
+            programName: productDetails?.[0]?.name || '',
+            offer_name: productDetails?.[0]?.name || '',
+            offerName: productDetails?.[0]?.name || '',
             amount: amount / 100,
+            amount_display: `$${Number(amount / 100).toFixed(2)}`,
+            amountDisplay: `$${Number(amount / 100).toFixed(2)}`,
             transaction_id: result.transactionId,
+            transactionId: result.transactionId,
             payments_remaining: quickPayPaymentsRemaining,
+            paymentsRemaining: quickPayPaymentsRemaining,
             running_total: amount / 100,
+            runningTotal: amount / 100,
             payment_kind: quickPayPaymentKind,
+            paymentKind: quickPayPaymentKind,
           });
         } catch (trigErr: any) {
           logger.warn({ err: trigErr.message, contactId: resolvedQuickPayContact }, 'Quick Pay: ss_payment_received trigger fire failed (non-fatal)');
@@ -693,26 +708,18 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             });
           }
 
-          // Demote any existing defaults for this contact (one is_default=true at a time)
-          await supabase.from('payment_methods')
-            .update({ is_default: false })
-            .eq('location_id', merchant.locationId)
-            .eq('contact_id', finalContactId)
-            .eq('is_default', true);
-
-          await supabase.from('payment_methods').insert({
-            merchant_id: merchant.merchantId,
-            location_id: merchant.locationId,
-            contact_id: finalContactId,
-            processor_type: procConfig.processor_type,
-            nmi_customer_vault_id: procConfig.processor_type === 'nmi' ? saveResult.customerId : null,
-            stripe_customer_id: procConfig.processor_type === 'stripe' ? saveResult.customerId : null,
-            stripe_payment_method_id: procConfig.processor_type === 'stripe' ? saveResult.paymentMethodId : null,
-            card_last_four: saveResult.cardLastFour,
-            card_brand: saveResult.cardBrand,
-            card_exp_month: saveResult.cardExpMonth,
-            card_exp_year: saveResult.cardExpYear,
-            is_default: true,
+          await saveOrReusePaymentMethod({
+            merchantId: merchant.merchantId,
+            locationId: merchant.locationId,
+            contactId: finalContactId,
+            processorType: procConfig.processor_type,
+            customerId: saveResult.customerId,
+            paymentMethodId: saveResult.paymentMethodId,
+            cardLastFour: saveResult.cardLastFour,
+            cardBrand: saveResult.cardBrand,
+            cardExpMonth: saveResult.cardExpMonth,
+            cardExpYear: saveResult.cardExpYear,
+            makeDefault: true,
           });
 
           logger.info({
@@ -740,19 +747,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                 const bgSupabase = getSupabase();
                 const { data: enrForSub } = await bgSupabase
                   .from('enrollments')
-                  .select('id, offer_id, payments_total, next_billing_date')
+                  .select('id, offer_id, payment_type, payments_total, next_billing_date')
                   .eq('id', bgEnrId)
                   .single();
 
                 if (enrForSub?.offer_id && enrForSub.next_billing_date) {
                   const { data: subOffer } = await bgSupabase
                     .from('offers_mirror')
-                    .select('offer_name, installment_amount, installment_frequency')
+                    .select('offer_name, price, payment_type, installment_amount, installment_frequency')
                     .eq('id', enrForSub.offer_id)
                     .single();
 
-                  if (subOffer?.installment_amount) {
-                    const subAmountCents = Math.round(Number(subOffer.installment_amount) * 100);
+                  if (subOffer) {
+                    const recurringPaymentType = String(enrForSub.payment_type || subOffer.payment_type || '').toLowerCase();
+                    const recurringAmount = recurringPaymentType === 'subscription'
+                      ? Number(subOffer.price || subOffer.installment_amount || 0)
+                      : Number(subOffer.installment_amount || subOffer.price || 0);
+                    const subAmountCents = Math.round(recurringAmount * 100);
                     const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
                     const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
                       freq === 'daily' ? 'daily' :
@@ -761,9 +772,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                       freq === 'quarterly' ? 'quarterly' :
                       freq === 'annual' ? 'annual' : 'monthly';
 
-                    const remainingPayments = (enrForSub.payments_total || 0) - 1;
+                    const remainingPayments = recurringPaymentType === 'subscription'
+                      ? 0
+                      : Math.max(0, (enrForSub.payments_total || 0) - 1);
 
-                    if (remainingPayments > 0) {
+                    if (subAmountCents > 0 && (recurringPaymentType === 'subscription' || remainingPayments > 0)) {
                       const subResult = await processor.createSubscription({
                         paymentMethodId: bgSaveResult.paymentMethodId || bgSaveResult.customerId,
                         customerId: bgSaveResult.customerId,
@@ -776,6 +789,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                           enrollment_id: bgEnrId,
                           offer_id: enrForSub.offer_id,
                           contact_id: bgContactId,
+                          payment_type: recurringPaymentType,
                         },
                       });
 
@@ -789,6 +803,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                           processor: bgProcType,
                           interval: subInterval,
                           remainingPayments,
+                          recurringPaymentType,
                         }, 'BG-SUBSCRIPTION: processor-level recurring schedule created');
                       } else {
                         logger.warn({
@@ -886,21 +901,20 @@ export async function saveCard(req: Request, res: Response): Promise<void> {
       customerName: contactName,
     });
 
-    // Store in payment_methods
+    // Store/reuse in payment_methods
     const supabase = getSupabase();
-    await supabase.from('payment_methods').insert({
-      merchant_id: merchant.merchantId,
-      location_id: merchant.locationId,
-      contact_id: contactId,
-      processor_type: procConfig.processor_type,
-      nmi_customer_vault_id: procConfig.processor_type === 'nmi' ? result.customerId : null,
-      stripe_customer_id: procConfig.processor_type === 'stripe' ? result.customerId : null,
-      stripe_payment_method_id: procConfig.processor_type === 'stripe' ? result.paymentMethodId : null,
-      card_last_four: result.cardLastFour,
-      card_brand: result.cardBrand,
-      card_exp_month: result.cardExpMonth,
-      card_exp_year: result.cardExpYear,
-      is_default: true,
+    await saveOrReusePaymentMethod({
+      merchantId: merchant.merchantId,
+      locationId: merchant.locationId,
+      contactId,
+      processorType: procConfig.processor_type,
+      customerId: result.customerId,
+      paymentMethodId: result.paymentMethodId,
+      cardLastFour: result.cardLastFour,
+      cardBrand: result.cardBrand,
+      cardExpMonth: result.cardExpMonth,
+      cardExpYear: result.cardExpYear,
+      makeDefault: true,
     });
 
     res.json({

@@ -38,6 +38,8 @@ function queryBuilder(data: any) {
   };
   const builder: any = {
     select: jest.fn(() => builder),
+    insert: jest.fn(() => builder),
+    update: jest.fn(() => builder),
     eq: jest.fn(() => builder),
     maybeSingle: terminal.maybeSingle,
     single: terminal.single,

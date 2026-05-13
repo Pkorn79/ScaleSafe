@@ -20,6 +20,11 @@ jest.mock('../../src/services/processor-config.service', () => ({
   processorConfigService: { listConfigs: mockListConfigs },
 }));
 
+const mockSaveOrReusePaymentMethod = jest.fn();
+jest.mock('../../src/services/payment-methods.service', () => ({
+  saveOrReusePaymentMethod: (...args: any[]) => mockSaveOrReusePaymentMethod(...args),
+}));
+
 const mockFrom = jest.fn();
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -84,6 +89,7 @@ beforeEach(() => {
     config: { processor_type: 'nmi' },
   });
   mockCreateProcessorClient.mockReturnValue(mockProcessor);
+  mockSaveOrReusePaymentMethod.mockResolvedValue({ id: 'card_1' });
   // Default: no consent token lookup, insert succeeds
   mockFrom.mockReturnValue({
     insert: jest.fn().mockResolvedValue({ error: null }),

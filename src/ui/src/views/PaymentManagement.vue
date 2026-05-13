@@ -61,6 +61,9 @@
           <strong>{{ cardLabel(m) }}</strong>
           <span v-if="m.isDefault" class="badge badge-blue" style="margin-left:6px">Default</span>
           <div v-if="m.detailLabel" class="text-xs text-muted">{{ m.detailLabel }}</div>
+          <div v-if="m.hiddenDuplicateCount" class="text-xs text-muted">
+            {{ m.hiddenDuplicateCount }} older saved version{{ m.hiddenDuplicateCount === 1 ? '' : 's' }} hidden
+          </div>
         </div>
         <div class="flex gap-2">
           <button v-if="!m.isDefault" class="btn btn-sm btn-secondary" @click="setDefaultCard(m.id)" :disabled="cardActionLoading">

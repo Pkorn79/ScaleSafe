@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentProviderService } from '../services/payment-provider.service';
+import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
 import { getCardBrandImageUrl, getCardBrandTitle } from '../utils/card-brands';
 import { logger } from '../utils/logger';
 
@@ -160,7 +161,8 @@ async function handleListPaymentMethods(req: Request, res: Response, merchant: M
     return;
   }
 
-  const result = methods.map((pm: any) => ({
+  const { visible } = collapseVisiblePaymentMethods(methods);
+  const result = visible.map((pm: any) => ({
     id: pm.id,
     type: 'card',
     title: getCardBrandTitle(pm.card_brand || 'visa'),

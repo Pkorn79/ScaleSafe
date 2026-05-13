@@ -227,7 +227,9 @@ export class NmiClient implements ProcessorInterface {
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('recurring', 'add_subscription');
-    params.set('plan_payments', String(request.totalPayments));
+    if (request.totalPayments > 0) {
+      params.set('plan_payments', String(request.totalPayments));
+    }
     params.set('plan_amount', centsToDollars(request.planAmount));
     params.set('customer_vault_id', request.paymentMethodId);
 

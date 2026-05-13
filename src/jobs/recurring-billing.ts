@@ -1,29 +1,33 @@
 import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
+import { findSavedCardForProcessor } from '../services/payment-methods.service';
 import { logger } from '../utils/logger';
 
+function normalizeProcessor(value: unknown): 'nmi' | 'stripe' | null {
+  const raw = String(value || '').toLowerCase();
+  return raw === 'nmi' || raw === 'stripe' ? raw : null;
+}
+
+function recurringAmountDollars(enrollment: any, offer: any): number {
+  const paymentType = String(enrollment.payment_type || '').toLowerCase();
+  const amount = paymentType === 'subscription'
+    ? Number(offer.price || offer.installment_amount || 0)
+    : Number(offer.installment_amount || offer.price || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 /**
- * Daily job: charge the next installment for any enrollment whose
- * next_billing_date is on or before today.
+ * Fallback recurring billing.
  *
- * Only runs for installment / subscription payment_types — PIF enrollments
- * never appear here because they don't have a next_billing_date.
- *
- * Card resolution depends on the funnel checkout having persisted the card
- * to payment_methods on enrollment (see checkout.controller.ts shouldSaveCard).
- * Without a row with is_default=true, the enrollment is logged + skipped.
- *
- * On success: logs payment_events ('sale'), advances next_billing_date,
- * increments payments_made, fires ss_payment_received, and marks finite
- * installment billing complete without completing the client program.
- *
- * On failure: logs payment_events ('payment_failed') and hands off to
- * paymentLifecycleService.initiateDunning() which has its own retry schedule.
+ * Processor-native subscriptions should normally bill and post back through
+ * Stripe webhooks or NMI Silent Post. This job only charges enrollments that
+ * do not have a processor_subscription_id. It must never borrow the contact's
+ * global default card from a different processor.
  */
 export async function runRecurringBilling(): Promise<void> {
   const supabase = getSupabase();
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
 
   let due: any[] = [];
   try {
@@ -56,56 +60,51 @@ export async function runRecurringBilling(): Promise<void> {
 
   for (const enr of due) {
     try {
-      // Skip if final installment already collected (subscriptions never hit this — payments_total is null)
-      if (enr.payment_type !== 'subscription' && enr.payments_total != null
-          && (enr.payments_made || 0) >= enr.payments_total) {
-        logger.info({ enrollmentId: enr.id }, 'Recurring billing: payments_made >= payments_total — skipping');
+      const paymentType = String(enr.payment_type || '').toLowerCase();
+      if (paymentType !== 'subscription' && enr.payments_total != null
+        && (enr.payments_made || 0) >= enr.payments_total) {
+        logger.info({ enrollmentId: enr.id }, 'Recurring billing: installment already paid off - skipping');
         skipped++;
         continue;
       }
 
-      // 1. Load default payment method
-      const { data: pm } = await supabase
-        .from('payment_methods')
-        .select('*')
-        .eq('location_id', enr.location_id)
-        .eq('contact_id', enr.contact_id)
-        .eq('is_default', true)
-        .limit(1)
-        .maybeSingle();
-
-      if (!pm) {
-        logger.warn({ enrollmentId: enr.id, contactId: enr.contact_id }, 'Recurring billing: no default payment method — skipping (will require manual card update)');
-        skipped++;
-        continue;
-      }
-
-      // 2. Resolve offer for amount + frequency + name
       const { data: offer } = await supabase
         .from('offers_mirror')
-        .select('id, offer_name, installment_amount, installment_frequency, processor_override, nmi_processor_id')
+        .select('id, offer_name, price, payment_type, installment_amount, installment_frequency, processor_override, nmi_processor_id')
         .eq('id', enr.offer_id)
         .single();
 
-      if (!offer || !offer.installment_amount) {
-        logger.warn({ enrollmentId: enr.id, offerId: enr.offer_id }, 'Recurring billing: offer missing installment_amount — skipping');
+      if (!offer) {
+        logger.warn({ enrollmentId: enr.id, offerId: enr.offer_id }, 'Recurring billing: offer missing - skipping');
         skipped++;
         continue;
       }
 
-      const amountCents = Math.round(Number(offer.installment_amount) * 100);
-      const amountDollars = Number(offer.installment_amount);
-
-      // 3. Resolve the processor that owns the saved card.
-      const savedCardProcessor = (pm.processor_type || enr.processor_type) as 'nmi' | 'stripe' | undefined;
-      if (!savedCardProcessor || !['nmi', 'stripe'].includes(savedCardProcessor)) {
-        logger.warn({ enrollmentId: enr.id, contactId: enr.contact_id }, 'Recurring billing: saved card has no processor_type - skipping');
+      const targetProcessor = normalizeProcessor(enr.processor_type) || normalizeProcessor(offer.processor_override);
+      if (!targetProcessor) {
+        logger.warn({ enrollmentId: enr.id, contactId: enr.contact_id }, 'Recurring billing: no trusted processor_type - skipping');
         skipped++;
         continue;
       }
+
+      const pm = await findSavedCardForProcessor(enr.location_id, enr.contact_id, targetProcessor);
+      if (!pm) {
+        logger.warn({ enrollmentId: enr.id, contactId: enr.contact_id, processor: targetProcessor }, 'Recurring billing: no matching processor card - skipping');
+        skipped++;
+        continue;
+      }
+
+      const amountDollars = recurringAmountDollars(enr, offer);
+      if (amountDollars <= 0) {
+        logger.warn({ enrollmentId: enr.id, offerId: enr.offer_id, paymentType }, 'Recurring billing: recurring amount missing - skipping');
+        skipped++;
+        continue;
+      }
+
+      const amountCents = Math.round(amountDollars * 100);
       const { config: procConfig } = await resolveProcessor(enr.merchant_id, enr.location_id, {
-        processor_override: savedCardProcessor,
-        nmi_processor_id: savedCardProcessor === 'nmi' ? (offer.nmi_processor_id || null) : null,
+        processor_override: targetProcessor,
+        nmi_processor_id: targetProcessor === 'nmi' ? (offer.nmi_processor_id || null) : null,
       });
       const processor = createProcessorClient(procConfig);
 
@@ -113,12 +112,11 @@ export async function runRecurringBilling(): Promise<void> {
       const paymentMethodToken = pm.stripe_payment_method_id || pm.nmi_customer_vault_id || '';
       const nextPaymentNumber = (enr.payments_made || 0) + 1;
 
-      // 4. Charge the saved card
       const result = await processor.chargeStoredCard(customerId, paymentMethodToken, {
         amount: amountCents,
         currency: 'usd',
         paymentToken: paymentMethodToken,
-        description: `${offer.offer_name} — installment ${nextPaymentNumber}${enr.payments_total ? `/${enr.payments_total}` : ''}`,
+        description: `${offer.offer_name} - ${paymentType === 'subscription' ? 'subscription' : `installment ${nextPaymentNumber}${enr.payments_total ? `/${enr.payments_total}` : ''}`}`,
         metadata: {
           scalesafe_enrollment_id: enr.id,
           scalesafe_offer_id: offer.id,
@@ -164,7 +162,7 @@ export async function runRecurringBilling(): Promise<void> {
           contactId: enr.contact_id,
           reason: result.errorMessage,
           code: result.errorCode,
-        }, 'Recurring billing: charge failed — dunning initiated');
+        }, 'Recurring billing: charge failed - dunning initiated');
       }
     } catch (err: any) {
       logger.error({ err: err.message, stack: err.stack, enrollmentId: enr.id }, 'Recurring billing: iteration threw');

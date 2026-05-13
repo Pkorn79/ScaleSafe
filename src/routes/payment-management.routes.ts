@@ -5,6 +5,7 @@ import {
   searchCustomers,
   listPaymentLedger,
   getPaymentReconciliation,
+  repairNmiRecurringPayment,
   getPaymentHistory,
   getPaymentMethods,
   chargeStoredCard,
@@ -18,6 +19,7 @@ router.use(ssoAuth, requireTenant);
 
 router.get('/ledger', listPaymentLedger);
 router.get('/reconciliation', getPaymentReconciliation);
+router.post('/repair/nmi-recurring', repairNmiRecurringPayment);
 router.get('/customers', searchCustomers);
 router.get('/customer/:contactId', getPaymentHistory);
 router.get('/customer/:contactId/methods', getPaymentMethods);

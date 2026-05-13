@@ -4,6 +4,7 @@ import { resolveProcessor, createProcessorClient } from './processor.factory';
 import { triggerService } from './trigger.service';
 import { evidenceService } from './evidence.service';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { collapseVisiblePaymentMethods, archivePaymentMethod } from './payment-methods.service';
 import { logger } from '../utils/logger';
 import { createPublicActionToken } from '../utils/public-action-token';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
@@ -77,11 +78,20 @@ export const paymentLifecycleService = {
     // Fire trigger for GHL dunning workflow
     try {
       await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
+        event_type: 'payment_failed',
+        location_id: params.locationId,
+        locationId: params.locationId,
         contact_id: params.contactId,
+        contactId: params.contactId,
         amount: params.amountCents / 100,
+        amount_display: formatMoney(params.amountCents / 100),
+        amountDisplay: formatMoney(params.amountCents / 100),
         failure_reason: params.failureReason,
+        failureReason: params.failureReason,
         attempt_count: failedPaymentCount,
+        attemptCount: failedPaymentCount,
         next_retry_date: nextRetryDate || 'none',
+        nextRetryDate: nextRetryDate || 'none',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId: params.contactId }, 'Dunning trigger failed');
@@ -727,7 +737,8 @@ export const paymentLifecycleService = {
       .eq('contact_id', params.contactId)
       .order('created_at', { ascending: false });
 
-    return (methods || []).map(m => ({
+    const { visible } = collapseVisiblePaymentMethods(methods || []);
+    return visible.map(m => ({
       paymentMethodId: m.stripe_payment_method_id || m.nmi_customer_vault_id || m.id,
       customerId: m.stripe_customer_id || m.nmi_customer_vault_id || '',
       cardLastFour: m.card_last_four || '',
@@ -754,8 +765,7 @@ export const paymentLifecycleService = {
 
     if (!method) throw new Error('Payment method not found');
 
-    // Remove from payment_methods table
-    await supabase.from('payment_methods').delete().eq('id', cardId);
+    await archivePaymentMethod(params.locationId, params.contactId, cardId);
 
     logger.info({ contactId: params.contactId, cardId }, 'Payment method deleted');
   },
@@ -834,11 +844,20 @@ export const paymentLifecycleService = {
         },
       });
       await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
+        event_type: 'payment_failed',
+        location_id: locationId,
+        locationId,
         contact_id: contactId,
+        contactId,
         amount: data.amount,
+        amount_display: formatMoney(data.amount),
+        amountDisplay: formatMoney(data.amount),
         failure_reason: data.failureReason,
+        failureReason: data.failureReason,
         attempt_count: data.attemptCount || 1,
+        attemptCount: data.attemptCount || 1,
         next_retry_date: data.nextRetryDate || 'none',
+        nextRetryDate: data.nextRetryDate || 'none',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId }, 'Payment failed notification trigger failed');
@@ -860,9 +879,16 @@ export const paymentLifecycleService = {
         },
       });
       await triggerService.fireTrigger(locationId, 'ss_refund_processed', {
+        event_type: 'refund_processed',
+        location_id: locationId,
+        locationId,
         contact_id: contactId,
+        contactId,
         amount: data.amount,
+        amount_display: formatMoney(data.amount),
+        amountDisplay: formatMoney(data.amount),
         refund_type: data.refundType,
+        refundType: data.refundType,
         reason: data.reason,
       });
     } catch (err: any) {

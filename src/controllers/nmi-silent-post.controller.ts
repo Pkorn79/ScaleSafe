@@ -4,26 +4,50 @@ import { resolveProcessor, createProcessorClient } from '../services/processor.f
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { logger } from '../utils/logger';
 
+async function createDiagnosticLog(
+  supabase: ReturnType<typeof getSupabase>,
+  fields: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('nmi_silent_post_logs')
+      .insert(fields)
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data?.id || null;
+  } catch (err: any) {
+    logger.debug({ err: err.message }, 'NMI Silent Post diagnostic insert skipped');
+    return null;
+  }
+}
+
+async function updateDiagnosticLog(
+  supabase: ReturnType<typeof getSupabase>,
+  logId: string | null,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  if (!logId) return;
+  try {
+    await supabase.from('nmi_silent_post_logs').update(fields).eq('id', logId);
+  } catch (err: any) {
+    logger.debug({ err: err.message, logId }, 'NMI Silent Post diagnostic update skipped');
+  }
+}
+
 /**
  * POST /webhooks/nmi/silent-post
  *
- * NMI "Silent Post URL" receives URL-encoded form data when a recurring
- * subscription transaction is processed. Unlike Stripe, NMI does NOT sign
- * its notifications — we verify each transaction by calling verifyTransaction()
- * with the merchant's security key.
- *
- * NMI expects a 200 response. Non-200 triggers retries.
- *
- * Key fields in req.body:
- *   subscription_id — NMI recurring subscription ID
- *   response        — "1" approved, "2" declined, "3" error
- *   transactionid   — NMI transaction ID for this charge
- *   amount          — dollar amount (e.g. "0.50")
- *   responsetext    — human-readable message
- *   type            — transaction type (usually "sale")
+ * NMI Silent Post receives URL-encoded form data when a recurring subscription
+ * transaction is processed. NMI does not sign these notifications, so approved
+ * transaction-bearing posts are verified with NMI before ScaleSafe advances an
+ * enrollment.
  */
 export async function handleNmiSilentPost(req: Request, res: Response): Promise<void> {
-  // Always return 200 to prevent NMI from retrying
+  let diagnosticLogId: string | null = null;
+  let diagnosticSupabase: ReturnType<typeof getSupabase> | null = null;
+
+  // Always return 200 to prevent NMI from retrying forever.
   try {
     const body = req.body || {};
     const readBodyValue = (...keys: string[]): string => {
@@ -44,13 +68,33 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       'recurring_id',
       'recurringid',
     );
-    const nmiResponse = readBodyValue('response', 'response_code'); // "1"=approved, "2"=declined, "3"=error
+    const nmiResponse = readBodyValue('response', 'response_code');
     const transactionId = readBodyValue('transactionid', 'transaction_id', 'transactionId', 'id');
     const amountStr = readBodyValue('amount');
     const responseText = readBodyValue('responsetext', 'response_text', 'responseText');
+    const amountValue = Number.parseFloat(amountStr || '0');
+    const safeAmount = Number.isFinite(amountValue) ? amountValue : 0;
+    const rawKeys = Object.keys(body).sort();
+    const supabase = getSupabase();
+    diagnosticSupabase = supabase;
+
+    diagnosticLogId = await createDiagnosticLog(supabase, {
+      processor_subscription_id: subscriptionId || null,
+      transaction_id: transactionId || null,
+      amount: safeAmount || null,
+      response_code: nmiResponse || null,
+      response_text: responseText || null,
+      verification_status: transactionId && nmiResponse === '1' ? 'pending' : 'skipped',
+      action: 'received',
+      raw_keys: rawKeys,
+    });
 
     if (!subscriptionId) {
-      logger.debug({ body: Object.keys(body) }, 'NMI Silent Post: no subscription_id — ignoring');
+      logger.debug({ body: rawKeys }, 'NMI Silent Post: no subscription id - ignoring');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        action: 'ignored_missing_subscription_id',
+        error_message: 'No subscription_id/reference_id in NMI Silent Post body',
+      });
       res.status(200).json({ received: true });
       return;
     }
@@ -62,9 +106,6 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       amount: amountStr,
     }, 'NMI Silent Post received');
 
-    const supabase = getSupabase();
-
-    // Look up enrollment by processor_subscription_id
     const { data: enrollment } = await supabase
       .from('enrollments')
       .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
@@ -72,12 +113,23 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       .single();
 
     if (!enrollment) {
-      logger.warn({ subscriptionId }, 'NMI Silent Post: unknown subscription — ignoring');
+      logger.warn({ subscriptionId }, 'NMI Silent Post: unknown subscription - ignoring');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        matched: false,
+        action: 'ignored_unknown_subscription',
+        error_message: `No enrollment matched processor_subscription_id ${subscriptionId}`,
+      });
       res.status(200).json({ received: true });
       return;
     }
 
-    // Idempotency: check if we already processed this transaction
+    await updateDiagnosticLog(supabase, diagnosticLogId, {
+      merchant_id: enrollment.merchant_id,
+      location_id: enrollment.location_id,
+      enrollment_id: enrollment.id,
+      matched: true,
+    });
+
     if (transactionId) {
       const { data: existing } = await supabase
         .from('payment_events')
@@ -85,13 +137,17 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         .eq('processor_transaction_id', transactionId)
         .maybeSingle();
       if (existing) {
-        logger.debug({ transactionId }, 'NMI Silent Post: transaction already processed — skipping');
+        logger.debug({ transactionId }, 'NMI Silent Post: transaction already processed - skipping');
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          duplicate: true,
+          verification_status: 'skipped',
+          action: 'duplicate_transaction',
+        });
         res.status(200).json({ received: true });
         return;
       }
     }
 
-    // Resolve offer before verification so NMI verification uses the intended NMI MID.
     let installmentFrequency = 'monthly';
     let offerName = '';
     let offerNmiProcessorId: string | null = null;
@@ -108,7 +164,6 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       }
     }
 
-    // Verify transaction with processor to prevent spoofing
     if (transactionId && nmiResponse === '1') {
       try {
         const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
@@ -118,21 +173,33 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         const processor = createProcessorClient(procConfig);
         const verification = await processor.verifyTransaction(transactionId);
         if (!verification.success) {
-          logger.warn({ transactionId, subscriptionId }, 'NMI Silent Post: transaction verification failed — ignoring');
+          logger.warn({ transactionId, subscriptionId }, 'NMI Silent Post: transaction verification failed - ignoring');
+          await updateDiagnosticLog(supabase, diagnosticLogId, {
+            verification_status: 'failed',
+            action: 'ignored_verification_failed',
+            error_message: 'NMI transaction verification returned unsuccessful',
+          });
           res.status(200).json({ received: true });
           return;
         }
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          verification_status: 'verified',
+        });
       } catch (verifyErr: any) {
         logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          verification_status: 'error',
+          action: 'ignored_verification_error',
+          error_message: verifyErr.message || 'NMI verification threw',
+        });
         res.status(200).json({ received: true });
         return;
       }
     }
 
-    const amountCents = Math.round(parseFloat(amountStr || '0') * 100);
+    const amountCents = Math.round(safeAmount * 100);
 
     if (nmiResponse === '1') {
-      // Approved — process as success
       const result = await handleRecurringPaymentSuccess({
         enrollment,
         processorType: 'nmi',
@@ -151,8 +218,12 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         newPaymentsMade: result.newPaymentsMade,
         isFinal: result.isFinal,
       }, 'NMI Silent Post: subscription payment processed');
+
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        verification_status: transactionId ? 'verified' : 'skipped',
+        action: 'processed_success',
+      });
     } else {
-      // Declined or error — process as failure
       await handleRecurringPaymentFailure({
         enrollment,
         processorType: 'nmi',
@@ -166,10 +237,21 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         subscriptionId,
         response: nmiResponse,
         responseText,
-      }, 'NMI Silent Post: subscription payment failed — dunning initiated');
+      }, 'NMI Silent Post: subscription payment failed - dunning initiated');
+
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        action: 'processed_failure',
+        error_message: responseText || `NMI response code: ${nmiResponse}`,
+      });
     }
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'NMI Silent Post handler error');
+    if (diagnosticSupabase) {
+      await updateDiagnosticLog(diagnosticSupabase, diagnosticLogId, {
+        action: 'handler_error',
+        error_message: err.message || 'NMI Silent Post handler error',
+      });
+    }
   }
 
   res.status(200).json({ received: true });

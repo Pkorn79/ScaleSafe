@@ -8,6 +8,10 @@ const mockEvidenceFindByEnrollment = jest.fn();
 const mockOfferGetById = jest.fn();
 const mockFireTrigger = jest.fn();
 
+function flushBackgroundTasks(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({}),
 }));
@@ -128,6 +132,7 @@ describe('Phase 2 Enrollment Service - completeEnrollment', () => {
 
   test('fires enrollment_complete trigger with bump defaults', async () => {
     await phase2EnrollmentService.completeEnrollment(params);
+    await flushBackgroundTasks();
 
     expect(mockFireTrigger).toHaveBeenCalledWith(
       'loc_1',

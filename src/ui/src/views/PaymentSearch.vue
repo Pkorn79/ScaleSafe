@@ -239,6 +239,7 @@
         <div class="card metric-card">
           <div class="card-title">Events Scanned</div>
           <div class="card-value">{{ reconciliationSummary.paymentEventsScanned || 0 }}</div>
+          <div class="text-xs text-muted">{{ reconciliationSummary.nmiSilentPostLogsScanned || 0 }} NMI postbacks</div>
         </div>
       </div>
 

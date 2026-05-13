@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
+import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import {
@@ -201,27 +202,18 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
       return;
     }
 
-    // Mark previous methods as non-default
-    await supabase
-      .from('payment_methods')
-      .update({ is_default: false })
-      .eq('location_id', locationId)
-      .eq('contact_id', contactId);
-
-    // Store new payment method
-    await supabase.from('payment_methods').insert({
-      merchant_id: merchant.id,
-      location_id: locationId,
-      contact_id: contactId,
-      processor_type: procConfig.processor_type,
-      nmi_customer_vault_id: procConfig.processor_type === 'nmi' ? result.customerId : null,
-      stripe_customer_id: procConfig.processor_type === 'stripe' ? result.customerId : null,
-      stripe_payment_method_id: procConfig.processor_type === 'stripe' ? result.paymentMethodId : null,
-      card_last_four: result.cardLastFour,
-      card_brand: result.cardBrand,
-      card_exp_month: result.cardExpMonth,
-      card_exp_year: result.cardExpYear,
-      is_default: true,
+    await saveOrReusePaymentMethod({
+      merchantId: merchant.id,
+      locationId,
+      contactId,
+      processorType: procConfig.processor_type,
+      customerId: result.customerId,
+      paymentMethodId: result.paymentMethodId,
+      cardLastFour: result.cardLastFour,
+      cardBrand: result.cardBrand,
+      cardExpMonth: result.cardExpMonth,
+      cardExpYear: result.cardExpYear,
+      makeDefault: true,
     });
 
     // Log evidence

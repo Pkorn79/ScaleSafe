@@ -48,7 +48,7 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
 
   const { data: enrollments, error } = await supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, payments_made, payments_total')
+    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, payments_made, payments_total')
     .eq('next_billing_date', targetDateStr)
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription']);
@@ -80,15 +80,29 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
 
       let amount = 0;
       let offerName = '';
+      let processor = '';
       if (enr.offer_id) {
         const { data: offer } = await supabase
           .from('offers_mirror')
-          .select('offer_name, installment_amount, price')
+          .select('offer_name, installment_amount, price, processor_override')
           .eq('id', enr.offer_id)
           .single();
         offerName = offer?.offer_name || '';
         amount = offer?.installment_amount || offer?.price || 0;
+        processor = enr.processor_type || offer?.processor_override || '';
       }
+
+      let supportEmail = '';
+      let businessName = '';
+      try {
+        const { data: merchant } = await supabase
+          .from('merchants')
+          .select('business_name, dba_name, support_email, email')
+          .eq('location_id', enr.location_id)
+          .single();
+        supportEmail = merchant?.support_email || merchant?.email || '';
+        businessName = merchant?.dba_name || merchant?.business_name || '';
+      } catch {}
 
       const paymentsMade = enr.payments_made || 0;
       const paymentsTotal = enr.payments_total || 0;
@@ -106,8 +120,12 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         offer_id: enr.offer_id,
         offerId: enr.offer_id,
         amount,
+        amount_display: `$${Number(amount || 0).toFixed(2)}`,
+        amountDisplay: `$${Number(amount || 0).toFixed(2)}`,
         installment_amount: amount,
         installmentAmount: amount,
+        program_name: offerName,
+        programName: offerName,
         next_billing_date: enr.next_billing_date,
         nextBillingDate: enr.next_billing_date,
         next_payment_number: nextPaymentNumber,
@@ -122,6 +140,11 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         reminderWindow: daysUntilPayment === 3 ? 'three_day' : 'one_day',
         payments_remaining: paymentsRemaining,
         paymentsRemaining,
+        processor,
+        support_email: supportEmail,
+        supportEmail,
+        business_name: businessName,
+        businessName,
         offer_name: offerName,
         offerName,
         offer: {

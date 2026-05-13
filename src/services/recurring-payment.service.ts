@@ -61,6 +61,26 @@ function today(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+async function getMerchantWorkflowIdentity(merchantId: string, locationId: string): Promise<{
+  businessName: string;
+  supportEmail: string;
+}> {
+  try {
+    const { data } = await getSupabase()
+      .from('merchants')
+      .select('business_name, dba_name, support_email, email')
+      .eq('id', merchantId)
+      .eq('location_id', locationId)
+      .single();
+    return {
+      businessName: data?.dba_name || data?.business_name || '',
+      supportEmail: data?.support_email || data?.email || '',
+    };
+  } catch {
+    return { businessName: '', supportEmail: '' };
+  }
+}
+
 /**
  * Handle a successful recurring payment — shared across cron, Stripe webhook, NMI silent post.
  *
@@ -165,6 +185,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   try {
     const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
     const runningTotal = amountDollars * newPaymentsMade;
+    const merchantIdentity = await getMerchantWorkflowIdentity(enr.merchant_id, enr.location_id);
     try {
       const api = await ghlApi(enr.location_id);
       await api.put(`/contacts/${enr.contact_id}`, {
@@ -191,9 +212,15 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       enrollmentId: enr.id,
       offer_id: enr.offer_id,
       offerId: enr.offer_id,
+      program_name: offerName,
+      programName: offerName,
+      offer_name: offerName,
+      offerName,
       processor: processorType,
       source,
       amount: amountDollars,
+      amount_display: formatMoney(amountDollars),
+      amountDisplay: formatMoney(amountDollars),
       transaction_id: transactionId,
       transactionId,
       payment_number: newPaymentsMade,
@@ -204,8 +231,14 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       paymentsRemaining,
       running_total: runningTotal,
       runningTotal,
+      running_total_display: formatMoney(runningTotal),
+      runningTotalDisplay: formatMoney(runningTotal),
       payment_kind: paymentKind,
       paymentKind,
+      support_email: merchantIdentity.supportEmail,
+      supportEmail: merchantIdentity.supportEmail,
+      business_name: merchantIdentity.businessName,
+      businessName: merchantIdentity.businessName,
     });
   } catch (trigErr: any) {
     logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');
