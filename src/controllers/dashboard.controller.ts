@@ -6,6 +6,9 @@ import { disengagementService } from '../services/disengagement.service';
 import { selectProcessorPaymentMethod } from '../services/payment-methods.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
+import { config } from '../config';
+import { createPublicActionToken } from '../utils/public-action-token';
+import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -621,11 +624,31 @@ export const dashboardController = {
       const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
 
       const completedAt = new Date().toISOString();
+      const signoffToken = createPublicActionToken({
+        action: 'milestone_signoff',
+        locationId,
+        contactId,
+        milestoneNumber,
+      });
+      const signoffLink = `${config.appUrl}/milestone-signoff?actionToken=${encodeURIComponent(signoffToken)}`;
+      const workSummary = [milestoneDelivers, milestoneClientDoes]
+        .filter(Boolean)
+        .join('. Client responsibility: ');
       const triggerPayload = {
         contact_id: contactId,
+        contactId,
         milestone_number: milestoneNumber,
+        milestoneNumber,
         milestone_name: milestoneName,
+        milestoneName,
         offer_id: enrollment.offer_id || '',
+        offerId: enrollment.offer_id || '',
+        signoff_link: signoffLink,
+        signoffLink,
+        milestone_signoff_link: signoffLink,
+        milestoneSignoffLink: signoffLink,
+        work_summary: workSummary,
+        workSummary,
       };
 
       // Log evidence — enriched with description + contact_email + raw_payload for downstream defense compilation
@@ -663,6 +686,24 @@ export const dashboardController = {
         .update({ current_milestone: milestoneNumber })
         .eq('id', enrollmentId);
       if (updateError) throw updateError;
+
+      try {
+        const api = await ghlApi(locationId);
+        await api.put(`/contacts/${contactId}`, {
+          customField: {
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(milestoneNumber),
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,
+          },
+        });
+      } catch (fieldErr: any) {
+        const { logger } = require('../utils/logger');
+        logger.warn(
+          { err: fieldErr?.message || String(fieldErr), locationId, contactId, milestoneNumber },
+          'Milestone contact field sync failed (non-fatal)',
+        );
+      }
 
       // Fire trigger — fire-and-forget. Trigger delivery has its own retry/backoff
       // (postWithRetry) and a subscription-list fetch failure must NOT 500 the

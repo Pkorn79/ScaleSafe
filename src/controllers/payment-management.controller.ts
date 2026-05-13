@@ -6,6 +6,7 @@ import { resolveProcessor, createProcessorClient } from '../services/processor.f
 import { paymentLedgerService } from '../services/payment-ledger.service';
 import { paymentReconciliationService } from '../services/payment-reconciliation.service';
 import { nmiRecurringRepairService } from '../services/nmi-recurring-repair.service';
+import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
 import { logger } from '../utils/logger';
 
@@ -525,23 +526,40 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       amount: Math.round(amount * 100),
     });
 
+    if (!result.success) {
+      logger.warn({ paymentEventId, amount, reason, error: result.errorMessage }, 'Refund failed');
+      res.json({ success: false, error: result.errorMessage || 'Refund failed' });
+      return;
+    }
+
+    const refundTransactionId = result.refundId || originalEvent.processor_transaction_id;
+    const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
+
     // Log refund event
-    await supabase.from('payment_events').insert({
+    const { data: refundEvent, error: refundInsertError } = await supabase.from('payment_events').insert({
       merchant_id: merchantId,
       location_id: locationId,
       contact_id: originalEvent.contact_id,
       event_type: 'refund',
       processor: procConfig.processor_type,
-      processor_transaction_id: result.refundId || originalEvent.processor_transaction_id,
+      processor_transaction_id: refundTransactionId,
       amount,
       currency: 'usd',
       enrollment_id: originalEvent.enrollment_id || null,
       offer_id: originalEvent.offer_id || null,
       source: 'manual_refund',
       is_recurring: false,
+    }).select('id').single();
+    if (refundInsertError) throw refundInsertError;
+
+    await paymentLifecycleService.notifyRefundProcessed(locationId, originalEvent.contact_id, {
+      amount,
+      refundType,
+      reason: reason || 'Refund processed',
+      transactionId: refundTransactionId,
     });
 
     logger.info({ paymentEventId, amount, reason }, 'Refund processed');
-    res.json({ success: result.success, error: result.errorMessage });
+    res.json({ success: true, refundId: refundTransactionId, paymentEventId: refundEvent?.id || null });
   } catch (err) { next(err); }
 }

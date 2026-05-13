@@ -868,7 +868,7 @@ export const paymentLifecycleService = {
    * Fire GHL trigger for a processed refund.
    */
   async notifyRefundProcessed(locationId: string, contactId: string, data: {
-    amount: number; refundType: string; reason: string;
+    amount: number; refundType: string; reason: string; transactionId?: string;
   }): Promise<void> {
     try {
       const api = await ghlApi(locationId);
@@ -876,6 +876,7 @@ export const paymentLifecycleService = {
         customField: {
           [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_AMOUNT]: formatMoney(data.amount),
           [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_TRANSACTION_ID]: data.transactionId || '',
         },
       });
       await triggerService.fireTrigger(locationId, 'ss_refund_processed', {
@@ -890,6 +891,10 @@ export const paymentLifecycleService = {
         refund_type: data.refundType,
         refundType: data.refundType,
         reason: data.reason,
+        transaction_id: data.transactionId || '',
+        transactionId: data.transactionId || '',
+        refund_transaction_id: data.transactionId || '',
+        refundTransactionId: data.transactionId || '',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId }, 'Refund notification trigger failed');

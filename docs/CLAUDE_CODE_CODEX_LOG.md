@@ -29,6 +29,38 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-05-13: Refund + Milestone Workflow Recovery (Codex)
+
+Files changed:
+
+- `src/controllers/payment-management.controller.ts`
+- `src/services/payment-lifecycle.service.ts`
+- `src/controllers/dashboard.controller.ts`
+- `src/ui/src/views/client-profile/ProgramsTab.vue`
+- `src/utils/nmi.utils.ts`
+- `tests/unit/nmi.client.test.ts`
+- `docs/BETA_TESTING_ISSUE_TRACKER.md`
+- `docs/CLAUDE_CODE_CODEX_LOG.md`
+
+Summary:
+
+- Repaired Beta Tester 2 missed NMI recurring charge after fixing NMI Query parsing for multi-action transaction responses.
+- Manual refunds from Payment Management now only log refund events after processor success and now fire `ss_refund_processed` with refund amount/date/transaction id data.
+- Milestone mark-complete now creates a signed milestone sign-off link, syncs milestone workflow contact fields, includes sign-off link aliases in the trigger payload, and updates the UI immediately after success.
+- Added `docs/BETA_TESTING_ISSUE_TRACKER.md` so live beta failures and retest items are tracked explicitly.
+
+Verification:
+
+- `npm.cmd run typecheck` passed.
+- `npm.cmd test -- --runInBand tests/unit/nmi.client.test.ts tests/unit/nmi-silent-post.controller.test.ts` passed.
+- `npm.cmd run build` passed.
+
+Known live retests:
+
+- Philip is running a new 3-payment NMI installment test. Expected: recurring payment posts automatically without manual repair.
+- Retest refund workflow: refund action should create a trigger delivery for `ss_refund_processed` and send the client notification.
+- Retest milestone workflow: Mark Complete should advance UI state and fire the milestone sign-off request workflow with a usable sign-off link.
+
 ### 2026-05-11: Tracking ID First-Class Ledger Filter (Codex)
 
 Files changed:

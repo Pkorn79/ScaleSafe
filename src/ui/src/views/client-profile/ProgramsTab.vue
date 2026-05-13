@@ -312,11 +312,12 @@ async function executeMilestone() {
   if (!enr || !milestone) return;
   milestoneLoading.value = true;
   try {
-    await api.post('/api/dashboard/mark-milestone', {
+    const result = await api.post<any>('/api/dashboard/mark-milestone', {
       contactId: props.contactId,
       enrollmentId: enr.id,
       milestoneNumber: milestone.number,
     });
+    enr.currentMilestone = result?.currentMilestone || milestone.number;
     showMilestoneModal.value = false;
     pendingEnrollment.value = null;
     pendingMilestone.value = null;
