@@ -6,6 +6,7 @@ import { resolveProcessor, createProcessorClient } from '../services/processor.f
 import { paymentLedgerService } from '../services/payment-ledger.service';
 import { paymentReconciliationService } from '../services/payment-reconciliation.service';
 import { nmiRecurringRepairService } from '../services/nmi-recurring-repair.service';
+import { nmiRecurringSyncService } from '../services/nmi-recurring-sync.service';
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
 import { logger } from '../utils/logger';
@@ -316,6 +317,33 @@ export async function getPaymentReconciliation(req: Request, res: Response, next
 }
 
 // ─── GET /api/payments/customer/:contactId ──────────────────────
+
+export async function getNmiRecurringDiagnostics(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const result = await nmiRecurringSyncService.diagnostics(locationId);
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err: err?.message, code: err?.code }, 'NMI recurring diagnostics failed');
+    res.status(500).json({
+      message: err?.message ? `Unable to load NMI diagnostics: ${err.message}` : 'Unable to load NMI diagnostics',
+    });
+  }
+}
+
+export async function syncNmiRecurringHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const enrollmentId = String(req.body?.enrollmentId || '').trim();
+    const result = enrollmentId
+      ? await nmiRecurringSyncService.syncEnrollment(locationId, enrollmentId)
+      : await nmiRecurringSyncService.syncDueEnrollments(locationId);
+    res.json(result);
+  } catch (err: any) {
+    logger.error({ err: err?.message }, 'NMI recurring history sync failed');
+    res.status(500).json({ error: err?.message || 'NMI recurring history sync failed' });
+  }
+}
 
 export async function repairNmiRecurringPayment(req: Request, res: Response, next: NextFunction) {
   try {

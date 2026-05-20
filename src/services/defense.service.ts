@@ -267,7 +267,9 @@ export const defenseService = {
     let defensePacketUrl = '';
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      defensePacketUrl = await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId);
+      defensePacketUrl = await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, {
+        enrollmentId: input.enrollmentId,
+      });
     } catch (pdfErr: any) {
       logger.warn({ err: pdfErr.message, defenseId }, 'Bundled PDF generation failed (non-fatal — letter text is available inline)');
     }
@@ -618,6 +620,7 @@ LETTER STRUCTURE:
     const input: CompileDefenseInput = {
       locationId: packet.location_id,
       contactId: packet.contact_id,
+      enrollmentId: packet.enrollment_id || undefined,
       reasonCode: packet.chargeback_reason_code || '',
       disputeAmount: packet.chargeback_amount || 0,
       disputeDate: packet.chargeback_date || '',
@@ -626,7 +629,9 @@ LETTER STRUCTURE:
       addressee: (packet as any).addressee || '',
     };
 
-    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId);
+    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, {
+      enrollmentId: input.enrollmentId,
+    });
     const undisputedPayments = await paymentService.getUndisputedPayments(input.locationId, input.contactId);
     let contactDetails: Record<string, unknown> = {};
     try {
@@ -663,7 +668,9 @@ LETTER STRUCTURE:
     // Rebundle PDF
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId);
+      await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, {
+        enrollmentId: input.enrollmentId,
+      });
     } catch {}
 
     logger.info({ defenseId, version: nextVersion }, 'Defense letter regenerated');
@@ -706,7 +713,9 @@ LETTER STRUCTURE:
     // Rebundle PDF
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      await defenseBundleService.bundleDefensePdf(defenseId, packet.location_id, packet.contact_id);
+      await defenseBundleService.bundleDefensePdf(defenseId, packet.location_id, packet.contact_id, {
+        enrollmentId: packet.enrollment_id || undefined,
+      });
     } catch {}
 
     logger.info({ defenseId, version: nextVersion }, 'Defense letter edited (manual)');

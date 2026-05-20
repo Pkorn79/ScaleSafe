@@ -6,6 +6,7 @@ import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { logger } from '../utils/logger';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 /**
  * Shared handlers for recurring payment success/failure.
@@ -46,6 +47,7 @@ interface RecurringFailureParams {
     processor_subscription_id?: string | null;
   };
   processorType: 'nmi' | 'stripe';
+  transactionId?: string | null;
   amountCents: number;
   errorMessage: string;
   errorCode?: string;
@@ -170,11 +172,45 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
       source,
       {
         amount: amountDollars,
-        transaction_id: transactionId,
+        ghl_transaction_id: transactionId,
+        payment_date: new Date().toISOString(),
         payment_number: newPaymentsMade,
         payments_remaining: paymentsRemaining,
+        running_total: amountDollars * newPaymentsMade,
         processor: processorType,
-        timestamp: new Date().toISOString(),
+        enrollment_id: enr.id,
+        raw_payload: {
+          transactionId,
+          processorType,
+          amountCents,
+          source,
+          paymentType: enr.payment_type,
+          offerName,
+        },
+        ...buildDefenseEvidenceFields({
+          summary: `${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} processed via ${processorType}. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`,
+          title: `Recurring Payment #${newPaymentsMade}`,
+          proofRole: 'payment_history',
+          relevance: {
+            tags: ['authorization', 'fraud', 'services_not_provided', 'credit_not_processed', 'cancelled_recurring'],
+            priority: 'high',
+            confidence: 'strong',
+          },
+          enrollmentId: enr.id,
+          metadata: {
+            actor: 'processor',
+            service: { enrollmentId: enr.id, offerId: enr.offer_id, offerName },
+            transaction: {
+              processor: processorType,
+              transactionId,
+              subscriptionId: enr.processor_subscription_id || null,
+              amount: amountDollars,
+              currency: 'USD',
+              paymentSequence: newPaymentsMade,
+            },
+            source: { system: source, recordId: transactionId, rawEventType: 'recurring_payment_success' },
+          },
+        }),
       },
     );
   } catch (evErr: any) {
@@ -260,7 +296,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
 export async function handleRecurringPaymentFailure(params: RecurringFailureParams): Promise<{
   paymentEventId: string | null;
 }> {
-  const { enrollment: enr, processorType, amountCents, errorMessage, errorCode, source } = params;
+  const { enrollment: enr, processorType, transactionId, amountCents, errorMessage, errorCode, source } = params;
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
 
@@ -273,6 +309,7 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
       enrollment_id: enr.id,
       event_type: 'payment_failed',
       processor: processorType,
+      processor_transaction_id: transactionId || null,
       processor_subscription_id: enr.processor_subscription_id || null,
       amount: amountDollars,
       currency: 'usd',

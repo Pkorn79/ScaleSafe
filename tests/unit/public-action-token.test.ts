@@ -33,6 +33,7 @@ describe('public action tokens', () => {
       action: 'milestone_signoff',
       locationId: 'loc_123',
       contactId: 'contact_456',
+      enrollmentId: 'enr_789',
       milestoneNumber: 2,
     });
 
@@ -40,6 +41,7 @@ describe('public action tokens', () => {
       action: 'milestone_signoff',
       locationId: 'loc_123',
       contactId: 'contact_456',
+      enrollmentId: 'enr_789',
       milestoneNumber: 2,
     });
   });

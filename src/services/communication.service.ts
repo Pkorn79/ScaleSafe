@@ -2,6 +2,26 @@ import { ghlApi } from '../clients/ghl.client';
 import { evidenceService } from './evidence.service';
 import { logger } from '../utils/logger';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+
+function normalizeCommType(type: string): 'email' | 'sms' | 'call' | 'voicemail' | 'chat' | 'other' {
+  const t = String(type || '').toLowerCase();
+  if (t.includes('sms')) return 'sms';
+  if (t.includes('email')) return 'email';
+  if (t.includes('call')) return 'call';
+  if (t.includes('voicemail')) return 'voicemail';
+  if (t.includes('chat')) return 'chat';
+  return 'other';
+}
+
+function communicationPurpose(summary: string, direction: string): string {
+  const text = summary.toLowerCase();
+  if (text.includes('refund')) return 'refund_discussion';
+  if (text.includes('cancel')) return 'cancellation_discussion';
+  if (text.includes('payment') || text.includes('card') || text.includes('invoice')) return 'billing_discussion';
+  if (text.includes('login') || text.includes('access') || text.includes('session') || text.includes('module')) return 'service_access_or_delivery';
+  return direction === 'inbound' ? 'client_engagement' : 'merchant_outreach';
+}
 
 /**
  * Communication logging — P0 priority per v2.1 spec.
@@ -35,7 +55,9 @@ export const communicationService = {
 
         for (const msg of messages) {
           const direction = msg.direction === 1 ? 'inbound' : 'outbound';
-          const type = msg.type || 'unknown'; // SMS, Email, etc.
+          const type = normalizeCommType(msg.type || 'unknown');
+          const summary = (msg.body || msg.text || '').slice(0, 500);
+          const purpose = communicationPurpose(summary, direction);
 
           await evidenceService.logEvidence(
             EVIDENCE_TYPES.COMMUNICATION,
@@ -44,9 +66,34 @@ export const communicationService = {
               comm_type: type,
               direction,
               comm_date: msg.dateAdded || msg.createdAt,
-              summary: (msg.body || msg.text || '').slice(0, 500),
-              message_id: msg.id,
-              conversation_id: conv.id,
+              summary,
+              body_preview: summary.slice(0, 200),
+              ghl_message_id: msg.id,
+              ghl_conversation_id: conv.id,
+              raw_payload: msg,
+              ...buildDefenseEvidenceFields({
+                summary: `${direction === 'inbound' ? 'Client' : 'Merchant'} ${type} communication recorded. Purpose: ${purpose.replace(/_/g, ' ')}.${summary ? ` Excerpt: ${summary.slice(0, 180)}` : ''}`,
+                title: `${direction === 'inbound' ? 'Client' : 'Merchant'} Communication`,
+                proofRole: 'communication',
+                relevance: {
+                  tags: ['services_not_provided', 'not_as_described', 'credit_not_processed', 'cancelled_recurring', 'fraud'],
+                  priority: direction === 'inbound' ? 'high' : 'medium',
+                  confidence: 'moderate',
+                },
+                sourceRecordId: msg.id,
+                metadata: {
+                  actor: direction === 'inbound' ? 'client' : 'merchant',
+                  communication: {
+                    channel: type,
+                    direction,
+                    purpose,
+                    excerpt: summary.slice(0, 300),
+                    ghlConversationId: conv.id,
+                    ghlMessageId: msg.id,
+                  },
+                  source: { system: 'ghl_conversations', recordId: msg.id, rawEventType: 'conversation_message' },
+                },
+              }),
             },
           );
           logged++;
@@ -74,10 +121,31 @@ export const communicationService = {
       EVIDENCE_TYPES.COMMUNICATION,
       locationId, contactId, 'app_triggered',
       {
-        comm_type: type,
+        comm_type: normalizeCommType(type),
         direction: 'outbound',
         comm_date: new Date().toISOString(),
         summary,
+        body_preview: summary.slice(0, 200),
+        ...buildDefenseEvidenceFields({
+          summary: `Merchant outbound ${normalizeCommType(type)} recorded. Purpose: ${communicationPurpose(summary, 'outbound').replace(/_/g, ' ')}.${summary ? ` Excerpt: ${summary.slice(0, 180)}` : ''}`,
+          title: 'Outbound Communication',
+          proofRole: 'communication',
+          relevance: {
+            tags: ['services_not_provided', 'not_as_described', 'credit_not_processed', 'cancelled_recurring'],
+            priority: 'medium',
+            confidence: 'moderate',
+          },
+          metadata: {
+            actor: 'merchant',
+            communication: {
+              channel: normalizeCommType(type),
+              direction: 'outbound',
+              purpose: communicationPurpose(summary, 'outbound'),
+              excerpt: summary.slice(0, 300),
+            },
+            source: { system: 'app_triggered', rawEventType: 'outbound_message' },
+          },
+        }),
       },
     );
   },
@@ -97,10 +165,31 @@ export const communicationService = {
       EVIDENCE_TYPES.COMMUNICATION,
       locationId, contactId, 'ghl_webhook',
       {
-        comm_type: type,
+        comm_type: normalizeCommType(type),
         direction: 'inbound',
         comm_date: receivedAt || new Date().toISOString(),
         summary,
+        body_preview: summary.slice(0, 200),
+        ...buildDefenseEvidenceFields({
+          summary: `Client inbound ${normalizeCommType(type)} recorded. Purpose: ${communicationPurpose(summary, 'inbound').replace(/_/g, ' ')}.${summary ? ` Excerpt: ${summary.slice(0, 180)}` : ''}`,
+          title: 'Inbound Client Communication',
+          proofRole: 'communication',
+          relevance: {
+            tags: ['services_not_provided', 'not_as_described', 'credit_not_processed', 'cancelled_recurring', 'fraud'],
+            priority: 'high',
+            confidence: 'moderate',
+          },
+          metadata: {
+            actor: 'client',
+            communication: {
+              channel: normalizeCommType(type),
+              direction: 'inbound',
+              purpose: communicationPurpose(summary, 'inbound'),
+              excerpt: summary.slice(0, 300),
+            },
+            source: { system: 'ghl_webhook', rawEventType: 'inbound_message' },
+          },
+        }),
       },
     );
   },

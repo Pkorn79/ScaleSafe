@@ -173,6 +173,7 @@ export const defenseController = {
         req.params.id,
         (packet as any).location_id,
         (packet as any).contact_id,
+        { enrollmentId: (packet as any).enrollment_id || undefined },
       );
       res.json({ status: 'ok', pdfUrl: url });
     } catch (err) { next(err); }

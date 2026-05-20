@@ -5,7 +5,7 @@ import {
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
   CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
-  VerifyResult,
+  VerifyResult, SubscriptionTransaction,
 } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
 import {
@@ -19,6 +19,18 @@ import {
 } from '../utils/nmi.utils';
 import { logger } from '../utils/logger';
 import { config as appConfig } from '../config';
+
+function formatNmiQueryDate(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.replace(/[^0-9]/g, '').slice(0, 14);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const min = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}${hh}${min}${ss}`;
+}
 
 export class NmiClient implements ProcessorInterface {
   readonly processorType = 'nmi' as const;
@@ -369,6 +381,35 @@ export class NmiClient implements ProcessorInterface {
     };
   }
 
+  async listSubscriptionTransactions(
+    subscriptionId: string,
+    opts: { startDate?: string; endDate?: string; limit?: number } = {},
+  ): Promise<SubscriptionTransaction[]> {
+    const params = new URLSearchParams();
+    params.set('security_key', this.securityKey);
+    params.set('subscription_id', subscriptionId);
+    params.set('source', 'recurring');
+    params.set('result_limit', String(Math.min(100, Math.max(1, opts.limit || 50))));
+    if (opts.startDate) params.set('start_date', formatNmiQueryDate(opts.startDate));
+    if (opts.endDate) params.set('end_date', formatNmiQueryDate(opts.endDate));
+
+    const xml = await this.postQuery(params);
+    return parseNmiQueryTransactions(xml)
+      .filter(tx => tx.transactionId)
+      .map((tx): SubscriptionTransaction => {
+        const status = this.mapNmiCondition(tx.condition);
+        return {
+          transactionId: tx.transactionId,
+          status,
+          amount: Math.round(parseFloat(tx.amount || '0') * 100),
+          occurredAt: tx.date || undefined,
+          responseText: tx.responseText || undefined,
+          success: tx.success === null ? ['settled', 'pending'].includes(status) : tx.success,
+          source: tx.source,
+        };
+      });
+  }
+
   // ─── testConnection ────────────────────────────────────────
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
@@ -400,6 +441,17 @@ export class NmiClient implements ProcessorInterface {
     if (this.processorId) {
       params.set('processor_id', this.processorId);
     }
+  }
+
+  private mapNmiCondition(condition: string): VerifyResult['status'] {
+    const statusMap: Record<string, VerifyResult['status']> = {
+      complete: 'settled',
+      pendingsettlement: 'pending',
+      pending: 'pending',
+      failed: 'failed',
+      canceled: 'voided',
+    };
+    return statusMap[String(condition || '').toLowerCase()] || 'pending';
   }
 
   private addMetadata(params: URLSearchParams, request: ChargeRequest): void {

@@ -7,6 +7,7 @@ export interface PublicActionTokenPayload {
   action: PublicActionType;
   locationId: string;
   contactId: string;
+  enrollmentId?: string;
   milestoneNumber?: number;
   exp: number;
 }
@@ -15,6 +16,7 @@ export interface CreatePublicActionTokenInput {
   action: PublicActionType;
   locationId: string;
   contactId: string;
+  enrollmentId?: string;
   milestoneNumber?: number;
   ttlSeconds?: number;
 }
@@ -57,6 +59,9 @@ export function createPublicActionToken(input: CreatePublicActionTokenInput): st
 
   if (input.milestoneNumber !== undefined) {
     payload.milestoneNumber = input.milestoneNumber;
+  }
+  if (input.enrollmentId) {
+    payload.enrollmentId = input.enrollmentId;
   }
 
   const payloadPart = encodeBase64Url(JSON.stringify(payload));

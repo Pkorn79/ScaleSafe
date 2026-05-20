@@ -3,7 +3,7 @@ import {
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
   CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
-  VerifyResult,
+  VerifyResult, SubscriptionTransaction,
 } from '../types/processor.types';
 
 /**
@@ -37,6 +37,11 @@ export interface ProcessorInterface {
   cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }>;
 
   verifyTransaction(transactionId: string): Promise<VerifyResult>;
+
+  listSubscriptionTransactions?(
+    subscriptionId: string,
+    opts?: { startDate?: string; endDate?: string; limit?: number },
+  ): Promise<SubscriptionTransaction[]>;
 
   testConnection(): Promise<{ success: boolean; message: string }>;
 }

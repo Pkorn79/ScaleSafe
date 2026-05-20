@@ -10,6 +10,7 @@ import {
   PublicActionType,
   verifyPublicActionToken,
 } from '../utils/public-action-token';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -21,6 +22,7 @@ function getClientIp(req: Request): string {
 interface PublicActionContext {
   contactId: string;
   locationId: string;
+  enrollmentId?: string;
   milestoneNumber?: number;
 }
 
@@ -35,6 +37,7 @@ function readPublicActionContext(req: Request, action: PublicActionType | Public
     return {
       contactId: payload.contactId,
       locationId: payload.locationId,
+      enrollmentId: payload.enrollmentId,
       milestoneNumber: payload.milestoneNumber,
     };
   }
@@ -45,6 +48,7 @@ function readPublicActionContext(req: Request, action: PublicActionType | Public
 
   const contactId = (req.query.contactId || req.body?.contactId) as string | undefined;
   const locationId = (req.query.locationId || req.body?.locationId) as string | undefined;
+  const enrollmentId = (req.query.enrollmentId || req.body?.enrollmentId) as string | undefined;
   const rawMilestoneNumber = (req.query.milestoneNumber || req.body?.milestoneNumber) as string | number | undefined;
   const milestoneNumber = rawMilestoneNumber ? parseInt(rawMilestoneNumber.toString(), 10) : undefined;
 
@@ -52,11 +56,41 @@ function readPublicActionContext(req: Request, action: PublicActionType | Public
     throw new Error('Valid action token required');
   }
 
-  return { contactId, locationId, milestoneNumber };
+  return { contactId, locationId, enrollmentId, milestoneNumber };
 }
 
 function isPublicActionTokenError(err: unknown): boolean {
   return err instanceof Error && err.message.toLowerCase().includes('action token');
+}
+
+async function resolveMilestoneEnrollment(
+  supabase: any,
+  params: { locationId: string; contactId: string; enrollmentId?: string | null },
+): Promise<any | null> {
+  if (params.enrollmentId) {
+    const { data, error } = await supabase
+      .from('enrollments')
+      .select('id, offer_id, current_milestone')
+      .eq('id', params.enrollmentId)
+      .eq('location_id', params.locationId)
+      .eq('contact_id', params.contactId)
+      .in('status', ['enrolled', 'active'])
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+
+  const { data, error } = await supabase
+    .from('enrollments')
+    .select('id, offer_id, current_milestone')
+    .eq('location_id', params.locationId)
+    .eq('contact_id', params.contactId)
+    .in('status', ['enrolled', 'active'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
 }
 
 /**
@@ -231,6 +265,22 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
         },
         ip_address: clientIp,
         device_info: userAgent,
+        ...buildDefenseEvidenceFields({
+          summary: `Client updated payment method. New card: ${result.cardBrand || 'card'} ending ${result.cardLastFour || 'unknown'}.`,
+          title: 'Client Payment Method Update',
+          proofRole: 'billing_update',
+          relevance: { tags: ['authorization', 'fraud', 'cancelled_recurring'], priority: 'high', confidence: 'strong' },
+          metadata: {
+            actor: 'client',
+            customerIdentity: { ipAddress: clientIp, browser: userAgent },
+            transaction: {
+              processor: procConfig.processor_type,
+              cardBrand: result.cardBrand,
+              cardLastFour: result.cardLastFour,
+            },
+            source: { system: 'payment_update_widget', rawEventType: 'card_update' },
+          },
+        }),
       });
     } catch (evErr: any) {
       logger.warn({ err: evErr.message, contactId }, 'Payment update evidence insert failed (non-blocking)');
@@ -330,6 +380,19 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
           ip_address: clientIp,
         },
         ip_address: clientIp,
+        ...buildDefenseEvidenceFields({
+          summary: `Client submitted subscription cancellation request from IP ${clientIp || 'unknown'}. Reason: ${reason}.`,
+          title: 'Client Cancellation Request',
+          proofRole: 'cancellation',
+          relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'critical', confidence: 'strong' },
+          enrollmentId: enrollment.id,
+          metadata: {
+            actor: 'client',
+            customerIdentity: { ipAddress: clientIp },
+            service: { enrollmentId: enrollment.id, offerId: enrollment.offer_id || null },
+            source: { system: 'subscription_cancel_widget', rawEventType: 'client_cancellation' },
+          },
+        }),
       });
     } catch { /* non-blocking */ }
 
@@ -350,17 +413,14 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
  */
 export async function getMilestoneConfig(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId, milestoneNumber } = readPublicActionContext(req, 'milestone_signoff');
+    const { contactId, locationId, enrollmentId, milestoneNumber } = readPublicActionContext(req, 'milestone_signoff');
     if (!milestoneNumber) {
       res.status(400).json({ error: 'milestoneNumber required' });
       return;
     }
 
     const supabase = getSupabase();
-    const { data: enrollment } = await supabase
-      .from('enrollments').select('id, offer_id, current_milestone')
-      .eq('location_id', locationId).eq('contact_id', contactId).in('status', ['enrolled', 'active'])
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
     if (!enrollment || !enrollment.offer_id) {
       res.status(404).json({ error: 'No active enrollment found' });
       return;
@@ -379,6 +439,7 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
       clientDoes: (offer as any)?.[`m${milestoneNumber}_client_does`] || '',
       offerName: offer?.offer_name || '',
       merchantName: merchant?.business_name || '',
+      enrollmentId: enrollment.id,
       milestoneNumber,
     });
   } catch (err) {
@@ -398,6 +459,7 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const actionContext = readPublicActionContext(req, 'milestone_signoff');
     const contactId = actionContext.contactId;
     const locationId = actionContext.locationId;
+    const enrollmentId = actionContext.enrollmentId;
     const milestoneNumber = actionContext.milestoneNumber || parseInt(req.body.milestoneNumber, 10);
     const { signature } = req.body;
     if (!milestoneNumber || !signature) {
@@ -408,11 +470,8 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
     const supabase = getSupabase();
 
-    // Verify enrollment
-    const { data: enrollment } = await supabase
-      .from('enrollments').select('id, offer_id')
-      .eq('location_id', locationId).eq('contact_id', contactId).in('status', ['enrolled', 'active'])
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    // Verify enrollment. New signoff links are enrollment-specific; legacy links keep the old fallback.
+    const enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
     if (!enrollment) {
       res.status(404).json({ success: false, error: 'No active enrollment' });
       return;
@@ -451,7 +510,7 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const fmtSignedDate = new Date(signedAt).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
 
     // Insert evidence signoff (enriched)
-    await supabase.from('evidence_signoffs').insert({
+    const { error: signoffInsertError } = await supabase.from('evidence_signoffs').insert({
       location_id: locationId,
       contact_id: contactId,
       enrollment_id: enrollment.id,
@@ -466,9 +525,34 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
       signed_at: signedAt,
       contact_name: signoffContactName || null,
       contact_email: signoffContactEmail || null,
-      raw_payload: { contactId, locationId, milestoneNumber, milestoneDelivers, milestoneClientDoes },
+      raw_payload: { contactId, locationId, enrollmentId: enrollment.id, milestoneNumber, milestoneDelivers, milestoneClientDoes },
       description: `${signoffContactName || 'Client'} digitally signed off on Milestone ${milestoneNumber} (${milestoneName}) on ${fmtSignedDate} from IP ${clientIp || 'unknown'} (${browserDisplay}).${milestoneDelivers ? ` Work delivered: ${milestoneDelivers}.` : ''}`,
+      ...buildDefenseEvidenceFields({
+        summary: `${signoffContactName || 'Client'} digitally signed off on Milestone ${milestoneNumber} (${milestoneName}) on ${fmtSignedDate} from IP ${clientIp || 'unknown'} using ${browserDisplay}.${milestoneDelivers ? ` Work delivered: ${milestoneDelivers}.` : ''}`,
+        title: `Client Signoff: Milestone ${milestoneNumber}`,
+        proofRole: 'service_delivery',
+        relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: 'critical', confidence: 'strong' },
+        enrollmentId: enrollment.id,
+        metadata: {
+          actor: 'client',
+          customerIdentity: {
+            name: signoffContactName || null,
+            email: signoffContactEmail || null,
+            ipAddress: clientIp || null,
+            deviceFingerprint: req.body.deviceFingerprint || null,
+            browser: browserDisplay,
+          },
+          service: {
+            enrollmentId: enrollment.id,
+            offerId: enrollment.offer_id || null,
+            deliverableName: milestoneName,
+            serviceDate: signedAt,
+          },
+          source: { system: 'milestone_signoff_widget', rawEventType: 'client_milestone_signoff' },
+        },
+      }),
     });
+    if (signoffInsertError) throw signoffInsertError;
 
     // Fire trigger — flat doc contract
     const { triggerService } = require('../services/trigger.service');

@@ -296,6 +296,26 @@ describe('Dispute Triage Service', () => {
       expect(evidence['uncategorized_text']).toContain('2 session logs');
     });
 
+    it('appends app service evidence for product_not_received disputes', () => {
+      const vault = makeVaultEntry();
+      const evidence = stripeDisputeService.mapReasonCodeToEvidence('product_not_received', vault, null, {
+        serviceText: 'Exhibit C: Session Completion - Client attended the kickoff session and received the onboarding deliverables.',
+      });
+
+      expect(evidence['customer_communication']).toBe('file_comm_1');
+      expect(evidence['uncategorized_text']).toContain('2 session logs');
+      expect(evidence['uncategorized_text']).toContain('Client attended the kickoff session');
+    });
+
+    it('uses app communication text when no communication file is available', () => {
+      const vault = makeVaultEntry({ communication_file_id: null });
+      const evidence = stripeDisputeService.mapReasonCodeToEvidence('product_not_received', vault, null, {
+        communicationText: 'Exhibit D: Client Communication - Enrollment link sent and subsequent check-in message delivered.',
+      });
+
+      expect(evidence['customer_communication']).toContain('Enrollment link sent');
+    });
+
     it('maps general reason with contract, communication, refund policy', () => {
       const vault = makeVaultEntry();
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('general', vault, null);
@@ -319,6 +339,17 @@ describe('Dispute Triage Service', () => {
       expect(evidence['uncategorized_text']).toContain('no-refund policy');
     });
 
+    it('appends termination timeline for credit_not_processed disputes', () => {
+      const vault = makeVaultEntry();
+      const evidence = stripeDisputeService.mapReasonCodeToEvidence('credit_not_processed', vault, null, {
+        terminationText: 'Exhibit G: Refund Review - Merchant reviewed the refund request and recorded the policy basis for denial.',
+      });
+
+      expect(evidence['refund_policy']).toContain('No refunds');
+      expect(evidence['uncategorized_text']).toContain('no-refund policy');
+      expect(evidence['uncategorized_text']).toContain('policy basis for denial');
+    });
+
     it('maps unrecognized with IP, email, descriptor explanation', () => {
       const vault = makeVaultEntry();
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('unrecognized', vault, null);
@@ -332,6 +363,15 @@ describe('Dispute Triage Service', () => {
       expect(evidence['uncategorized_file']).toBe('file_contract_1');
       expect(evidence['customer_communication']).toBe('file_comm_1');
       expect(evidence['refund_policy']).toContain('No refunds');
+    });
+
+    it('can build text-only evidence when the Stripe vault is missing but app evidence exists', () => {
+      const evidence = stripeDisputeService.mapReasonCodeToEvidence('general', null, null, {
+        summaryText: 'ScaleSafe app evidence summary: Exhibit A signed packet, Exhibit B payment confirmation, Exhibit C service access.',
+      });
+
+      expect(evidence['uncategorized_text']).toContain('signed packet');
+      expect(evidence['cancellation_policy']).toContain('No cancellations');
     });
   });
 

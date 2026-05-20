@@ -75,7 +75,8 @@ describe('Payment Service - Event Routing', () => {
       expect.objectContaining({
         location_id: 'loc_1',
         contact_id: 'contact_1',
-        reason_code: 'insufficient_funds',
+        decline_reason: 'insufficient_funds',
+        proof_role: 'dunning',
       }),
     );
   });
@@ -108,7 +109,8 @@ describe('Payment Service - Event Routing', () => {
       expect.objectContaining({
         location_id: 'loc_1',
         contact_id: 'contact_1',
-        action: 'paused',
+        action: 'pause',
+        proof_role: 'billing_update',
       }),
     );
   });
@@ -121,8 +123,9 @@ describe('Payment Service - Event Routing', () => {
     expect(mockInsert).toHaveBeenCalledWith(
       'subscription_change',
       expect.objectContaining({
-        action: 'cancelled',
+        action: 'cancel',
         reason: 'Completed program',
+        proof_role: 'cancellation',
       }),
     );
   });

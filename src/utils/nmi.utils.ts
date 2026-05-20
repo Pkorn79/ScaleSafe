@@ -23,6 +23,8 @@ export interface NmiQueryTransaction {
   action: string; // 'sale', 'auth', 'capture', 'void', 'refund', 'credit'
   date: string;
   responseText: string;
+  success: boolean | null;
+  source?: string;
   cc_number?: string; // masked, e.g. "4xxxxxxxxxxx1111"
   cc_exp?: string; // "MMYY"
   cc_type?: string; // "visa", "mastercard", etc.
@@ -73,6 +75,10 @@ export function parseNmiQueryTransactions(xml: string): NmiQueryTransaction[] {
       action: String(primaryAction.action_type || ''),
       date: String(primaryAction.date || ''),
       responseText: String(primaryAction.response_text || ''),
+      success: primaryAction.success === undefined || primaryAction.success === null
+        ? null
+        : Number(primaryAction.success) === 1,
+      source: tx.source ? String(tx.source) : undefined,
       cc_number: tx.cc_number ? String(tx.cc_number) : undefined,
       cc_exp: tx.cc_exp ? String(tx.cc_exp) : undefined,
       cc_type: tx.cc_type ? String(tx.cc_type) : undefined,

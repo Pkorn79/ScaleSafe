@@ -2,24 +2,15 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
+import { nmiDiagnosticLogService } from '../services/nmi-diagnostic-log.service';
 import { logger } from '../utils/logger';
 
 async function createDiagnosticLog(
   supabase: ReturnType<typeof getSupabase>,
   fields: Record<string, unknown>,
 ): Promise<string | null> {
-  try {
-    const { data, error } = await supabase
-      .from('nmi_silent_post_logs')
-      .insert(fields)
-      .select('id')
-      .single();
-    if (error) throw error;
-    return data?.id || null;
-  } catch (err: any) {
-    logger.debug({ err: err.message }, 'NMI Silent Post diagnostic insert skipped');
-    return null;
-  }
+  void supabase;
+  return nmiDiagnosticLogService.create(fields);
 }
 
 async function updateDiagnosticLog(
@@ -27,12 +18,8 @@ async function updateDiagnosticLog(
   logId: string | null,
   fields: Record<string, unknown>,
 ): Promise<void> {
-  if (!logId) return;
-  try {
-    await supabase.from('nmi_silent_post_logs').update(fields).eq('id', logId);
-  } catch (err: any) {
-    logger.debug({ err: err.message, logId }, 'NMI Silent Post diagnostic update skipped');
-  }
+  void supabase;
+  await nmiDiagnosticLogService.update(logId, fields);
 }
 
 /**
@@ -142,6 +129,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
           duplicate: true,
           verification_status: 'skipped',
           action: 'duplicate_transaction',
+          payment_event_id: existing.id,
         });
         res.status(200).json({ received: true });
         return;
@@ -221,16 +209,19 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
 
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         verification_status: transactionId ? 'verified' : 'skipped',
-        action: 'processed_success',
+        action: result.paymentEventId ? 'processed_success' : 'processed_success_payment_event_missing',
+        error_message: result.paymentEventId ? null : 'Recurring payment handler did not return a payment_event id',
+        payment_event_id: result.paymentEventId,
       });
     } else {
-      await handleRecurringPaymentFailure({
+      const failed = await handleRecurringPaymentFailure({
         enrollment,
         processorType: 'nmi',
+        transactionId: transactionId || null,
         amountCents,
         errorMessage: responseText || `NMI response code: ${nmiResponse}`,
         source: 'nmi_silent_post',
-      });
+      }) || { paymentEventId: null };
 
       logger.warn({
         enrollmentId: enrollment.id,
@@ -240,8 +231,9 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       }, 'NMI Silent Post: subscription payment failed - dunning initiated');
 
       await updateDiagnosticLog(supabase, diagnosticLogId, {
-        action: 'processed_failure',
-        error_message: responseText || `NMI response code: ${nmiResponse}`,
+        action: failed.paymentEventId ? 'processed_failure' : 'processed_failure_payment_event_missing',
+        error_message: failed.paymentEventId ? (responseText || `NMI response code: ${nmiResponse}`) : 'Failed payment handler did not return a payment_event id',
+        payment_event_id: failed.paymentEventId,
       });
     }
   } catch (err: any) {

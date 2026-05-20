@@ -7,6 +7,7 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { triggerService } from '../services/trigger.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 /**
  * POST /api/enrollment/send-link
@@ -195,8 +196,30 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
           comm_type: sendVia.includes('sms') ? 'sms' : 'email',
           comm_date: new Date().toISOString(),
           subject: `Enrollment link: ${offer.offer_name}`,
-          summary: `Enrollment link sent for ${offer.offer_name}`,
-          body_preview: enrollmentUrl,
+          summary: `Enrollment link sent for ${offer.offer_name} via ${sendVia.join(', ')}`,
+          body_preview: `Secure enrollment link sent for ${offer.offer_name}.`,
+          raw_payload: { offerId, sendVia, emailProvided: Boolean(email), phoneProvided: Boolean(phone) },
+          ...buildDefenseEvidenceFields({
+            summary: `Merchant sent an enrollment link for ${offer.offer_name} via ${sendVia.join(', ')} to begin the client's purchase and consent flow.`,
+            title: 'Enrollment Link Sent',
+            proofRole: 'communication',
+            relevance: {
+              tags: ['authorization', 'fraud', 'not_as_described'],
+              priority: 'medium',
+              confidence: 'moderate',
+            },
+            metadata: {
+              actor: 'merchant',
+              service: { offerId, offerName: offer.offer_name },
+              communication: {
+                channel: sendVia.includes('sms') ? 'sms' : 'email',
+                direction: 'outbound',
+                purpose: 'enrollment_invitation',
+                excerpt: `Secure enrollment link sent for ${offer.offer_name}.`,
+              },
+              source: { system: 'send_enrollment_link', rawEventType: 'enrollment_link_sent' },
+            },
+          }),
         },
       );
     } catch (evErr: any) {

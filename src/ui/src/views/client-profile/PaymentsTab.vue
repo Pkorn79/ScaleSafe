@@ -64,6 +64,13 @@
         <div v-if="enr.nextBillingDate" class="text-muted text-xs" style="margin-top:2px">
           Next: {{ formatDateShort(enr.nextBillingDate) }}
         </div>
+        <div v-if="enr.lastPaymentDate" class="text-muted text-xs" style="margin-top:2px">
+          Last paid: {{ formatDateShort(enr.lastPaymentDate) }}
+          <span v-if="enr.lastPaymentAmount"> (${{ Number(enr.lastPaymentAmount).toFixed(2) }})</span>
+        </div>
+        <div v-if="paymentDateSummary(enr)" class="text-muted text-xs" style="margin-top:2px">
+          Payment dates: {{ paymentDateSummary(enr) }}
+        </div>
         <div v-if="enr.processorSubscriptionId" class="text-muted text-xs" style="margin-top:2px">
           Subscription ID: {{ enr.processorSubscriptionId }}
         </div>
@@ -72,6 +79,9 @@
         </div>
         <div v-else class="text-muted text-xs" style="margin-top:2px">
           Card: not linked to this processor
+        </div>
+        <div v-if="enr.billingIssue" class="billing-warning">
+          {{ enr.billingIssue.label }}
         </div>
         <!-- Progress bar for installments -->
         <div v-if="enr.paymentType !== 'subscription' && enr.paymentsTotal" class="progress-bar-wrapper mt-1">
@@ -169,6 +179,7 @@ function enrProgramTotal(enr: any): number {
 }
 
 function enrAmountPaid(enr: any): string {
+  if (enr.amountPaidActual != null) return Number(enr.amountPaidActual || 0).toFixed(2);
   const paid = Number(enr.paymentsMade || 0);
   const amt = Number(enr.installmentAmount || 0);
   return (paid * amt).toFixed(2);
@@ -212,6 +223,15 @@ function formatDateShort(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function paymentDateSummary(enr: any): string {
+  const dates = Array.isArray(enr.paymentDates) ? enr.paymentDates : [];
+  if (dates.length === 0) return '';
+  return dates
+    .slice(-4)
+    .map((p: any) => formatDateShort(p.date))
+    .join(', ');
+}
+
 onMounted(async () => {
   loading.value = true;
   try {
@@ -251,5 +271,12 @@ onMounted(async () => {
 }
 .text-xs {
   font-size: 12px;
+}
+
+.billing-warning {
+  margin-top: 6px;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
 }
 </style>

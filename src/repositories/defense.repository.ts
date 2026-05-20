@@ -24,6 +24,11 @@ export interface DefensePacketRecord {
   response_deadline: string | null;
   case_number: string | null;
   arn: string | null;
+  payment_event_id?: string | null;
+  enrollment_id?: string | null;
+  dispute_event_id?: string | null;
+  addressee?: string | null;
+  lifecycle_status?: string | null;
 
   // Evidence (frozen at compilation time)
   evidence_snapshot: unknown;
@@ -59,6 +64,11 @@ export const defenseRepository = {
     chargeback_date?: string;
     response_deadline?: string;
     case_number?: string;
+    payment_event_id?: string | null;
+    enrollment_id?: string | null;
+    dispute_event_id?: string | null;
+    addressee?: string | null;
+    lifecycle_status?: string;
   }): Promise<DefensePacketRecord> {
     const { data: packet, error } = await getSupabase()
       .from('defense_packets')

@@ -4,6 +4,7 @@ import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { EvidenceType, EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 export const evidenceService = {
   /**
@@ -128,6 +129,17 @@ export const evidenceService = {
           no_show: d.no_show || false,
           notes: d.notes,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Session "${d.session_title || d.topics || 'Untitled'}" ${d.no_show ? 'was marked no-show' : 'was delivered'}${d.duration ? ` for ${d.duration} minutes` : ''}. Topics: ${d.topics || d.topics_covered || 'not specified'}.`,
+            title: d.no_show ? 'Session No-Show' : 'Session Delivered',
+            proofRole: d.no_show ? 'client_engagement' : 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: d.no_show ? 'medium' : 'high', confidence: 'moderate' },
+            metadata: {
+              actor: d.no_show ? 'client' : 'merchant',
+              service: { serviceDate: String(d.session_date || '') || null, deliverableName: String(d.session_title || d.topics || '') || null },
+              source: { system: 'ghl_form', rawEventType: 'SYS2-07' },
+            },
+          }),
         }),
       },
       'SYS2-08': {
@@ -141,6 +153,17 @@ export const evidenceService = {
           time_spent_minutes: d.time_spent,
           notes: d.notes,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Module "${d.module_name || 'Untitled'}" recorded as ${d.status || (d.progress === 100 || d.progress_pct === 100 ? 'completed' : 'in progress')} with ${d.progress || d.progress_pct || 100}% progress.`,
+            title: `Module: ${d.module_name || 'Untitled'}`,
+            proofRole: 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'high', confidence: 'moderate' },
+            metadata: {
+              actor: 'client',
+              service: { deliverableName: String(d.module_name || '') || null, serviceDate: String(d.completion_date || '') || null },
+              source: { system: 'ghl_form', rawEventType: 'SYS2-08' },
+            },
+          }),
         }),
       },
       'SYS2-09': {
@@ -153,6 +176,18 @@ export const evidenceService = {
           follow_up_action: d.follow_up_action,
           enrollment_id: d.enrollment_id || d.enrollmentId || null,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Client pulse check-in recorded with sentiment score ${d.satisfaction || d.sentiment || d.sentiment_score || 'n/a'}.${d.feedback_text || d.feedback ? ` Feedback: ${String(d.feedback_text || d.feedback).slice(0, 180)}` : ''}`,
+            title: 'Client Pulse Check-In',
+            proofRole: 'client_engagement',
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: 'high', confidence: 'moderate' },
+            enrollmentId: String(d.enrollment_id || d.enrollmentId || '') || null,
+            metadata: {
+              actor: 'client',
+              service: { enrollmentId: String(d.enrollment_id || d.enrollmentId || '') || null },
+              source: { system: 'ghl_form', rawEventType: 'SYS2-09' },
+            },
+          }),
         }),
       },
       'SYS2-10': {
@@ -166,6 +201,21 @@ export const evidenceService = {
           payments_remaining: d.payments_remaining,
           payment_method: d.payment_method,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Payment confirmation recorded for $${Number(d.amount || 0).toFixed(2)}${d.payment_number ? ` as payment #${d.payment_number}` : ''}.`,
+            title: d.payment_number ? `Payment #${d.payment_number}` : 'Payment Confirmation',
+            proofRole: 'payment_history',
+            relevance: { tags: ['fraud', 'authorization', 'services_not_provided', 'credit_not_processed'], priority: 'high', confidence: 'strong' },
+            metadata: {
+              actor: 'processor',
+              transaction: {
+                transactionId: String(d.transaction_id || '') || null,
+                amount: d.amount as any,
+                paymentSequence: d.payment_number as any,
+              },
+              source: { system: 'ghl_form', rawEventType: 'SYS2-10' },
+            },
+          }),
         }),
       },
       'SYS2-11': {
@@ -178,6 +228,17 @@ export const evidenceService = {
           initiated_by: d.initiated_by || 'merchant',
           notes: d.notes,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Cancellation request recorded. Initiated by ${d.initiated_by || 'merchant'}. Reason: ${d.reason || 'not specified'}. Refund eligibility: ${d.refund_eligibility || 'not specified'}.`,
+            title: 'Cancellation Request',
+            proofRole: 'cancellation',
+            relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'critical', confidence: 'strong' },
+            metadata: {
+              actor: String(d.initiated_by || 'merchant') as any,
+              policy: { policyType: 'cancellation' },
+              source: { system: 'ghl_form', rawEventType: 'SYS2-11' },
+            },
+          }),
         }),
       },
     };
@@ -253,6 +314,18 @@ export const evidenceService = {
           topics_covered: d.topics || d.topics_covered,
           notes: d.notes,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `${source} session "${d.session_type || 'session'}" completed${d.duration ? ` for ${d.duration} minutes` : ''}. Topics: ${d.topics || d.topics_covered || 'not specified'}.`,
+            title: `${source} Session Completed`,
+            proofRole: 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'high', confidence: 'moderate' },
+            sourceRecordId: String(d.id || d.event_id || '') || null,
+            metadata: {
+              actor: 'client',
+              service: { serviceDate: String(d.session_date || '') || null, deliverableName: String(d.session_type || '') || null },
+              source: { system: source, recordId: String(d.id || d.event_id || '') || null, rawEventType: 'session_completed' },
+            },
+          }),
         }),
       },
       no_show: {
@@ -262,6 +335,17 @@ export const evidenceService = {
           status: 'no_show',
           followup_action: d.notes,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `No-show recorded for scheduled session on ${d.session_date || 'unknown date'}.${d.notes ? ` Follow-up: ${d.notes}.` : ''}`,
+            title: 'Session No-Show',
+            proofRole: 'client_engagement',
+            relevance: { tags: ['services_not_provided'], priority: 'medium', confidence: 'moderate' },
+            metadata: {
+              actor: 'client',
+              service: { serviceDate: String(d.session_date || '') || null },
+              source: { system: source, rawEventType: 'no_show' },
+            },
+          }),
         }),
       },
       module_completed: {
@@ -274,6 +358,17 @@ export const evidenceService = {
           score: d.score,
           time_spent_minutes: d.time_spent,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `External module "${d.module_name || 'Untitled'}" completed on ${d.completion_date || 'unknown date'}.`,
+            title: `Module Completed: ${d.module_name || 'Untitled'}`,
+            proofRole: 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'high', confidence: 'moderate' },
+            metadata: {
+              actor: 'client',
+              service: { deliverableName: String(d.module_name || '') || null, serviceDate: String(d.completion_date || '') || null },
+              source: { system: source, rawEventType: 'module_completed' },
+            },
+          }),
         }),
       },
       milestone_signed: {
@@ -284,6 +379,17 @@ export const evidenceService = {
           approved: d.approved,
           signed_at: new Date().toISOString(),
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Client milestone signoff recorded for "${d.milestone_name || 'Untitled'}". Approved: ${d.approved ? 'yes' : 'not specified'}.`,
+            title: `Milestone Signoff: ${d.milestone_name || 'Untitled'}`,
+            proofRole: 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'critical', confidence: 'strong' },
+            metadata: {
+              actor: 'client',
+              service: { deliverableName: String(d.milestone_name || '') || null },
+              source: { system: source, rawEventType: 'milestone_signed' },
+            },
+          }),
         }),
       },
       pulse_check: {
@@ -294,6 +400,16 @@ export const evidenceService = {
           feedback_text: d.going_well ? `${d.going_well} | Concerns: ${d.concerns || 'none'}` : '',
           follow_up_needed: d.follow_up_needed || false,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Client pulse check-in recorded.${d.going_well ? ` Going well: ${String(d.going_well).slice(0, 140)}.` : ''}${d.concerns ? ` Concerns: ${String(d.concerns).slice(0, 140)}.` : ''}`,
+            title: 'Client Pulse Check-In',
+            proofRole: 'client_engagement',
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: 'high', confidence: 'moderate' },
+            metadata: {
+              actor: 'client',
+              source: { system: source, rawEventType: 'pulse_check' },
+            },
+          }),
         }),
       },
       payment_update: {
@@ -303,16 +419,50 @@ export const evidenceService = {
           payment_date: new Date().toISOString(),
           payment_method: d.payment_method || d.reason,
           raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `External payment update recorded${d.amount ? ` for $${Number(d.amount).toFixed(2)}` : ''}. Method/reason: ${d.payment_method || d.reason || 'not specified'}.`,
+            title: 'Payment Update',
+            proofRole: 'payment_history',
+            relevance: { tags: ['credit_not_processed', 'cancelled_recurring'], priority: 'medium', confidence: 'moderate' },
+            metadata: {
+              actor: 'processor',
+              transaction: { amount: d.amount as any, processor: source },
+              source: { system: source, rawEventType: 'payment_update' },
+            },
+          }),
         }),
       },
       service_access: {
         evidenceType: EVIDENCE_TYPES.SERVICE_ACCESS,
         mapper: (d) => ({
           platform: d.platform || source,
-          login_timestamp: d.access_date || new Date().toISOString(),
+          event_type: d.event_type || 'access',
+          access_date: d.access_date || new Date().toISOString(),
+          duration_seconds: d.duration_seconds || (d.time_spent ? Number(d.time_spent) * 60 : undefined),
+          ip_address: d.ip_address,
+          device_fingerprint: d.device_fingerprint,
           content_accessed: d.content_accessed,
-          time_spent_minutes: d.time_spent,
-          completion_status: d.completion_status,
+          raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Client accessed ${d.platform || source}${d.content_accessed ? ` content: ${d.content_accessed}` : ''}${d.time_spent ? ` for ${d.time_spent} minutes` : ''}.`,
+            title: 'Service Access',
+            proofRole: 'service_access',
+            relevance: { tags: ['fraud', 'authorization', 'services_not_provided'], priority: 'critical', confidence: 'strong' },
+            sourceRecordId: String(d.id || d.event_id || '') || null,
+            metadata: {
+              actor: 'client',
+              customerIdentity: {
+                ipAddress: String(d.ip_address || '') || null,
+                deviceFingerprint: String(d.device_fingerprint || '') || null,
+              },
+              service: {
+                accessConfirmed: true,
+                serviceDate: String(d.access_date || '') || null,
+                deliverableName: String(d.content_accessed || '') || null,
+              },
+              source: { system: String(d.platform || source), recordId: String(d.id || d.event_id || '') || null, rawEventType: 'service_access' },
+            },
+          }),
         }),
       },
       course_completed: {
@@ -322,6 +472,18 @@ export const evidenceService = {
           course_name: d.course_name,
           completed_at: d.completion_date || new Date().toISOString(),
           certificate_url: d.certificate,
+          raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Course "${d.course_name || 'Untitled'}" completed on ${d.completion_date || 'record date'}${d.certificate ? ' with certificate on file' : ''}.`,
+            title: `Course Completed: ${d.course_name || 'Untitled'}`,
+            proofRole: 'service_delivery',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'high', confidence: 'strong' },
+            metadata: {
+              actor: 'client',
+              service: { deliverableName: String(d.course_name || '') || null, serviceDate: String(d.completion_date || '') || null },
+              source: { system: source, rawEventType: 'course_completed' },
+            },
+          }),
         }),
       },
       assignment_submitted: {
@@ -330,6 +492,19 @@ export const evidenceService = {
           title: d.title,
           submitted_at: new Date().toISOString(),
           grade: d.grade,
+          feedback: d.feedback,
+          raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Assignment "${d.title || 'Untitled'}" submitted${d.grade ? ` with grade ${d.grade}` : ''}.`,
+            title: `Assignment Submitted: ${d.title || 'Untitled'}`,
+            proofRole: 'client_engagement',
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: 'medium', confidence: 'moderate' },
+            metadata: {
+              actor: 'client',
+              service: { deliverableName: String(d.title || '') || null },
+              source: { system: source, rawEventType: 'assignment_submitted' },
+            },
+          }),
         }),
       },
       custom_event: {
@@ -337,7 +512,21 @@ export const evidenceService = {
         mapper: (d) => ({
           event_type: d.type || 'custom',
           event_timestamp: new Date().toISOString(),
+          description: d.description || d.summary || `${d.type || 'custom'} event from ${source}`,
           metadata: d,
+          raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: String(d.description || d.summary || `${d.type || 'custom'} event from ${source}`),
+            title: String(d.title || d.type || 'Custom Event'),
+            proofRole: 'other',
+            relevance: { tags: ['general'], priority: 'low', confidence: 'weak' },
+            sourceRecordId: String(d.id || d.event_id || '') || null,
+            metadata: {
+              actor: 'third_party',
+              source: { system: source, recordId: String(d.id || d.event_id || '') || null, rawEventType: String(d.type || 'custom_event') },
+              original: d,
+            },
+          }),
         }),
       },
     };
@@ -348,7 +537,21 @@ export const evidenceService = {
       await this.logEvidence(EVIDENCE_TYPES.CUSTOM_EVENT, locationId, contactId, source, {
         event_type: eventType,
         event_timestamp: new Date().toISOString(),
+        description: data.description || data.summary || `${eventType} event from ${source}`,
         metadata: data,
+        raw_payload: data,
+        ...buildDefenseEvidenceFields({
+          summary: String(data.description || data.summary || `${eventType} event from ${source}`),
+          title: String(data.title || eventType),
+          proofRole: 'other',
+          relevance: { tags: ['general'], priority: 'low', confidence: 'weak' },
+          sourceRecordId: String(data.id || data.event_id || '') || null,
+          metadata: {
+            actor: 'third_party',
+            source: { system: source, recordId: String(data.id || data.event_id || '') || null, rawEventType: eventType },
+            original: data,
+          },
+        }),
       });
       return EVIDENCE_TYPES.CUSTOM_EVENT;
     }

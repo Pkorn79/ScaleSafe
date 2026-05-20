@@ -130,6 +130,16 @@ export interface VerifyResult {
   settledAt?: string;
 }
 
+export interface SubscriptionTransaction {
+  transactionId: string;
+  status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded';
+  amount: number;
+  occurredAt?: string;
+  responseText?: string;
+  success: boolean;
+  source?: string;
+}
+
 // ============================================================
 // Processor Config (DB row shape)
 // ============================================================

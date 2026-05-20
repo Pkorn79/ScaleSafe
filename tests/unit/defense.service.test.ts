@@ -27,7 +27,7 @@ jest.mock('../../src/clients/anthropic.client', () => ({
 jest.mock('../../src/repositories/defense.repository', () => ({
   defenseRepository: {
     create: jest.fn().mockResolvedValue({ id: 'def_1', location_id: 'loc_1', contact_id: 'c_1' }),
-    getById: jest.fn().mockResolvedValue({ id: 'def_1', status: 'complete', dispute_amount: 5000, location_id: 'loc_1', contact_id: 'c_1' }),
+    getById: jest.fn().mockResolvedValue({ id: 'def_1', status: 'complete', dispute_amount: 5000, location_id: 'loc_1', contact_id: 'c_1', enrollment_id: 'enr_1' }),
     updateStatus: jest.fn().mockResolvedValue(undefined),
     getReasonCodeStrategy: jest.fn().mockResolvedValue(null),
     getDefenseTemplate: jest.fn().mockResolvedValue(null),
@@ -92,6 +92,13 @@ jest.mock('../../src/services/defense-exhibits.service', () => ({
   },
 }));
 
+const mockBundleDefensePdf = jest.fn().mockResolvedValue('https://files.test/defense.pdf');
+jest.mock('../../src/services/defense-bundle.service', () => ({
+  defenseBundleService: {
+    bundleDefensePdf: (...args: any[]) => mockBundleDefensePdf(...args),
+  },
+}));
+
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     getByLocationId: jest.fn().mockResolvedValue({
@@ -129,6 +136,7 @@ jest.mock('../../src/services/notification.service', () => ({
 import { defenseService } from '../../src/services/defense.service';
 import { defenseRepository } from '../../src/repositories/defense.repository';
 import { callClaude } from '../../src/clients/anthropic.client';
+import { defenseExhibitsService } from '../../src/services/defense-exhibits.service';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -272,6 +280,30 @@ describe('Defense Service - Compilation Flow', () => {
     expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
       'def_1', 'complete',
       expect.objectContaining({ defense_letter_text: 'Defense letter content here' }),
+    );
+  });
+
+  test('runCompilation scopes exhibits and PDF bundle to enrollmentId', async () => {
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1',
+      contactId: 'c_1',
+      reasonCode: '13.1',
+      disputeAmount: 5000,
+      disputeDate: '2026-03-20',
+      deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseExhibitsService.buildExhibitList).toHaveBeenCalledWith(
+      'loc_1',
+      'c_1',
+      { enrollmentId: 'enr_1' },
+    );
+    expect(mockBundleDefensePdf).toHaveBeenCalledWith(
+      'def_1',
+      'loc_1',
+      'c_1',
+      { enrollmentId: 'enr_1' },
     );
   });
 

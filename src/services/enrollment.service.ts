@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { sha256 } from '../utils/crypto';
 import { ValidationError } from '../utils/errors';
 import { formatMoney, getPaidInFullDisplayPrice } from '../utils/offer-display';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -482,6 +483,35 @@ export const enrollmentService = {
           browser: input.browser, userAgent: input.userAgent, tcHash,
         },
         description: `${contactName || 'Client'}${contactEmail ? ` (${contactEmail})` : ''} accepted Terms & Conditions on ${fmtTs} from IP ${input.ip || 'unknown'} (${input.browser || 'unknown browser'}). Consent captured via checkbox. T&C hash: ${tcHash.slice(0, 12)}...`,
+        ...buildDefenseEvidenceFields({
+          summary: `${contactName || 'Client'}${contactEmail ? ` (${contactEmail})` : ''} accepted Terms & Conditions on ${fmtTs} from IP ${input.ip || 'unknown'} using ${input.browser || 'unknown browser'}. T&C hash: ${tcHash}.`,
+          title: 'Terms & Conditions Acceptance',
+          proofRole: 'terms_acceptance',
+          relevance: {
+            tags: ['authorization', 'fraud', 'not_as_described', 'credit_not_processed', 'cancelled_recurring'],
+            priority: 'critical',
+            confidence: 'strong',
+          },
+          enrollmentId,
+          metadata: {
+            actor: 'client',
+            customerIdentity: {
+              name: contactName || null,
+              email: contactEmail || null,
+              ipAddress: input.ip || null,
+              deviceFingerprint: input.deviceFingerprint || null,
+              browser: input.browser || null,
+            },
+            service: { enrollmentId, offerId: input.offerId },
+            policy: {
+              policyType: 'terms',
+              policyVersion: 'v1',
+              policyHash: tcHash,
+              acceptedAt: input.consentTimestamp,
+            },
+            source: { system: 'enrollment_funnel', rawEventType: 'terms_consent' },
+          },
+        }),
         source: 'enrollment_funnel',
       });
 
@@ -610,6 +640,30 @@ export const enrollmentService = {
         paymentAmount: input.paymentAmount, paymentMethod: input.paymentMethod,
       },
       description: `Enrollment payment of $${Number(input.paymentAmount || 0).toFixed(2)} USD processed ${fmtPayDate} via ${input.paymentMethod || 'card'}. Transaction: ${input.ghlTransactionId || 'n/a'}. Program: ${offer.offer_name}.`,
+      ...buildDefenseEvidenceFields({
+        summary: `Initial enrollment payment of $${Number(input.paymentAmount || 0).toFixed(2)} USD for ${offer.offer_name} processed ${fmtPayDate} via ${input.paymentMethod || 'card'}. Transaction: ${input.ghlTransactionId || 'n/a'}.`,
+        title: 'Initial Enrollment Payment',
+        proofRole: 'payment_history',
+        relevance: {
+          tags: ['authorization', 'fraud', 'services_not_provided', 'credit_not_processed'],
+          priority: 'critical',
+          confidence: 'strong',
+        },
+        enrollmentId: payEnrollmentId,
+        metadata: {
+          actor: 'processor',
+          customerIdentity: { name: payContactName || null, email: payContactEmail || null },
+          service: { enrollmentId: payEnrollmentId, offerId, offerName: offer.offer_name },
+          transaction: {
+            processor: 'ghl',
+            transactionId: input.ghlTransactionId || null,
+            amount: input.paymentAmount as any,
+            currency: 'USD',
+            paymentSequence: 1,
+          },
+          source: { system: 'ghl_webhook', recordId: input.ghlTransactionId || input.ghlOrderId || null, rawEventType: 'enrollment_payment' },
+        },
+      }),
       source: 'ghl_webhook',
     });
 

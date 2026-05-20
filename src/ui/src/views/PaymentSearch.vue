@@ -217,11 +217,15 @@
             <button class="btn btn-primary" @click="loadReconciliation" :disabled="reconciliationLoading">
               {{ reconciliationLoading ? 'Checking...' : 'Run Check' }}
             </button>
+            <button class="btn btn-secondary" @click="syncNmiHistory()" :disabled="nmiSyncLoading">
+              {{ nmiSyncLoading ? 'Syncing...' : 'Sync NMI History' }}
+            </button>
           </div>
         </div>
       </div>
 
       <div v-if="reconciliationError" class="error-msg">{{ reconciliationError }}</div>
+      <div v-if="nmiSyncMessage" class="text-sm mb-4" style="color:#047857">{{ nmiSyncMessage }}</div>
 
       <div class="grid grid-4 mb-4">
         <div class="card metric-card">
@@ -240,6 +244,80 @@
           <div class="card-title">Events Scanned</div>
           <div class="card-value">{{ reconciliationSummary.paymentEventsScanned || 0 }}</div>
           <div class="text-xs text-muted">{{ reconciliationSummary.nmiSilentPostLogsScanned || 0 }} NMI postbacks</div>
+        </div>
+      </div>
+
+      <div class="card ledger-card">
+        <div class="flex-between mb-4">
+          <div>
+            <div class="card-title" style="margin-bottom:0">NMI Recurring Diagnostics</div>
+            <div class="text-sm text-muted">Shows whether ScaleSafe received, matched, and recorded NMI recurring payments.</div>
+          </div>
+          <button class="btn btn-sm btn-secondary" @click="loadNmiDiagnostics" :disabled="nmiDiagnosticsLoading">
+            {{ nmiDiagnosticsLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+        </div>
+        <div v-if="nmiDiagnosticsLoading" class="loading">Loading NMI diagnostics...</div>
+        <div v-else-if="nmiDiagnostics.length === 0" class="empty-state">
+          <p>No NMI recurring enrollments found.</p>
+        </div>
+        <div v-else class="table-scroll">
+          <table class="table reconcile-table">
+            <thead>
+              <tr>
+                <th>Issue</th>
+                <th>Client</th>
+                <th>Program</th>
+                <th>Subscription</th>
+                <th>Progress</th>
+                <th>Last ScaleSafe Payment</th>
+                <th>Last NMI Post</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in nmiDiagnostics" :key="row.enrollmentId">
+                <td><span class="badge" :class="nmiIssueBadge(row.issueCode)">{{ row.issueLabel }}</span></td>
+                <td>
+                  <router-link v-if="row.contactId" :to="`/payments/${row.contactId}`" class="client-link">
+                    {{ row.customerName || row.customerEmail || row.contactId }}
+                  </router-link>
+                  <span v-else>{{ row.customerName || 'Unknown' }}</span>
+                  <div v-if="row.customerEmail" class="text-xs text-muted">{{ row.customerEmail }}</div>
+                </td>
+                <td>
+                  {{ row.programName || 'Unknown Program' }}
+                  <div class="text-xs text-muted">{{ row.paymentType }} · {{ row.status }}</div>
+                </td>
+                <td class="txn-cell">{{ row.subscriptionId || '-' }}</td>
+                <td>
+                  {{ row.paymentsMade || 0 }} of {{ row.paymentsTotal || '?' }}
+                  <div v-if="row.nextBillingDate" class="text-xs text-muted">Next: {{ formatDateShort(row.nextBillingDate) }}</div>
+                </td>
+                <td>
+                  <span v-if="row.lastScaleSafePaymentDate">
+                    {{ formatDateShort(row.lastScaleSafePaymentDate) }}
+                    <span v-if="row.lastScaleSafePaymentAmount != null"> · ${{ Number(row.lastScaleSafePaymentAmount).toFixed(2) }}</span>
+                  </span>
+                  <span v-else>-</span>
+                  <div v-if="row.lastScaleSafeTransactionId" class="text-xs text-muted txn-cell">{{ row.lastScaleSafeTransactionId }}</div>
+                </td>
+                <td>
+                  <span v-if="row.lastNmiPostDate">{{ formatDateShort(row.lastNmiPostDate) }}</span>
+                  <span v-else>-</span>
+                  <div v-if="row.lastNmiPostAction" class="text-xs text-muted">{{ row.lastNmiPostAction }}</div>
+                  <div v-if="row.lastNmiPostTransactionId" class="text-xs text-muted txn-cell">{{ row.lastNmiPostTransactionId }}</div>
+                  <button
+                    v-if="row.issueCode !== 'billing_complete'"
+                    class="btn btn-sm btn-secondary mt-1"
+                    @click="syncNmiHistory(row.enrollmentId)"
+                    :disabled="nmiSyncLoading"
+                  >
+                    Sync This
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -333,6 +411,10 @@ const reconciliationIssues = ref<any[]>([]);
 const reconciliationLoading = ref(false);
 const reconciliationError = ref('');
 const reconciliationDays = ref(30);
+const nmiDiagnostics = ref<any[]>([]);
+const nmiDiagnosticsLoading = ref(false);
+const nmiSyncLoading = ref(false);
+const nmiSyncMessage = ref('');
 
 onMounted(async () => {
   await loadLedger();
@@ -377,6 +459,13 @@ function priorityBadge(priority: string): string {
   if (priority === 'high') return 'badge-red';
   if (priority === 'medium') return 'badge-yellow';
   return 'badge-gray';
+}
+
+function nmiIssueBadge(issueCode: string): string {
+  if (['no_post_received', 'unmatched_subscription', 'verification_failed', 'payment_record_failed', 'overdue_tracking'].includes(issueCode)) return 'badge-red';
+  if (issueCode === 'imported_successfully') return 'badge-green';
+  if (issueCode === 'billing_complete' || issueCode === 'ok') return 'badge-blue';
+  return 'badge-yellow';
 }
 
 function sourceLabel(source: string, recurring: boolean): string {
@@ -447,7 +536,10 @@ async function loadReconciliation() {
   reconciliationLoading.value = true;
   reconciliationError.value = '';
   try {
-    const result = await api.get<any>(`/api/payments/manage/reconciliation?days=${reconciliationDays.value}`);
+    const [result] = await Promise.all([
+      api.get<any>(`/api/payments/manage/reconciliation?days=${reconciliationDays.value}`),
+      loadNmiDiagnostics(),
+    ]);
     reconciliationReport.value = result || null;
     reconciliationSummary.value = result?.summary || { issueCount: 0, high: 0, medium: 0, low: 0, activeRecurringEnrollments: 0, paymentEventsScanned: 0 };
     reconciliationIssues.value = result?.issues || [];
@@ -455,6 +547,38 @@ async function loadReconciliation() {
     reconciliationError.value = e.message || 'Failed to load payment reconciliation';
   } finally {
     reconciliationLoading.value = false;
+  }
+}
+
+async function loadNmiDiagnostics() {
+  nmiDiagnosticsLoading.value = true;
+  try {
+    const result = await api.get<any>('/api/payments/manage/nmi-diagnostics');
+    nmiDiagnostics.value = result?.rows || [];
+  } catch {
+    nmiDiagnostics.value = [];
+  } finally {
+    nmiDiagnosticsLoading.value = false;
+  }
+}
+
+async function syncNmiHistory(enrollmentId?: string) {
+  nmiSyncLoading.value = true;
+  nmiSyncMessage.value = '';
+  reconciliationError.value = '';
+  try {
+    const result = await api.post<any>('/api/payments/manage/sync/nmi-recurring', enrollmentId ? { enrollmentId } : {});
+    if (enrollmentId) {
+      nmiSyncMessage.value = `NMI sync checked ${result?.checked || 0} transactions, imported ${result?.imported || 0}.`;
+    } else {
+      const imported = (result?.results || []).reduce((sum: number, row: any) => sum + Number(row.imported || 0), 0);
+      nmiSyncMessage.value = `NMI sync checked ${result?.checked || 0} enrollments, imported ${imported} payments.`;
+    }
+    await loadReconciliation();
+  } catch (e: any) {
+    reconciliationError.value = e.message || 'NMI history sync failed';
+  } finally {
+    nmiSyncLoading.value = false;
   }
 }
 </script>

@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { ghlApi } from '../clients/ghl.client';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 /**
  * Payment service — OBSERVE ONLY.
@@ -66,6 +67,31 @@ export const paymentService = {
         running_total: data.runningTotal,
         payments_remaining: data.paymentsRemaining,
         payment_number: data.paymentNumber,
+        payment_method: data.paymentMethod,
+        enrollment_id: data.enrollmentId || null,
+        raw_payload: data,
+        ...buildDefenseEvidenceFields({
+          summary: `Payment of $${Number(data.amount || 0).toFixed(2)} recorded${data.paymentNumber ? ` as payment #${data.paymentNumber}` : ''}${data.transactionId ? `, transaction ${data.transactionId}` : ''}.`,
+          title: data.paymentNumber ? `Payment #${data.paymentNumber}` : 'Payment Confirmation',
+          proofRole: 'payment_history',
+          relevance: {
+            tags: ['fraud', 'authorization', 'services_not_provided', 'credit_not_processed'],
+            priority: 'high',
+            confidence: 'strong',
+          },
+          metadata: {
+            actor: 'processor',
+            service: { enrollmentId: String(data.enrollmentId || '') || null },
+            transaction: {
+              processor: String(data.processor || data.processorType || 'ghl'),
+              transactionId: String(data.transactionId || '') || null,
+              amount: data.amount as any,
+              currency: String(data.currency || 'USD'),
+              paymentSequence: data.paymentNumber as any,
+            },
+            source: { system: 'ghl_webhook', rawEventType: 'payment_success' },
+          },
+        }),
       },
     );
 
@@ -83,9 +109,34 @@ export const paymentService = {
       {
         amount: data.amount,
         failure_date: new Date().toISOString(),
-        reason_code: data.declineReason || data.failureReason,
+        decline_reason: data.declineReason || data.failureReason,
+        decline_code: data.declineCode || data.reasonCode,
         retry_scheduled: data.retryScheduled || false,
+        retry_date: data.retryDate,
         attempt_count: data.attemptCount || 1,
+        enrollment_id: data.enrollmentId || null,
+        raw_payload: data,
+        ...buildDefenseEvidenceFields({
+          summary: `Payment attempt for $${Number(data.amount || 0).toFixed(2)} failed. Reason: ${data.declineReason || data.failureReason || data.declineCode || 'not provided'}. Attempt count: ${data.attemptCount || 1}.`,
+          title: 'Failed Payment Attempt',
+          proofRole: 'dunning',
+          relevance: {
+            tags: ['credit_not_processed', 'cancelled_recurring'],
+            priority: 'medium',
+            confidence: 'moderate',
+          },
+          metadata: {
+            actor: 'processor',
+            service: { enrollmentId: String(data.enrollmentId || '') || null },
+            transaction: {
+              processor: String(data.processor || data.processorType || 'ghl'),
+              transactionId: String(data.transactionId || '') || null,
+              amount: data.amount as any,
+              currency: String(data.currency || 'USD'),
+            },
+            source: { system: 'ghl_webhook', rawEventType: 'payment_failed' },
+          },
+        }),
       },
     );
 
@@ -121,6 +172,30 @@ export const paymentService = {
         refund_type: data.refundType || 'full',
         reason: data.reason,
         initiated_by: data.initiatedBy || 'merchant',
+        ghl_transaction_id: data.transactionId || data.ghlTransactionId,
+        enrollment_id: data.enrollmentId || null,
+        raw_payload: data,
+        ...buildDefenseEvidenceFields({
+          summary: `${data.refundType || 'Full'} refund of $${Number(data.amount || 0).toFixed(2)} recorded. Reason: ${data.reason || 'not specified'}.`,
+          title: `${data.refundType || 'Full'} Refund`,
+          proofRole: 'refund',
+          relevance: {
+            tags: ['credit_not_processed', 'cancelled_recurring'],
+            priority: 'critical',
+            confidence: 'strong',
+          },
+          metadata: {
+            actor: String(data.initiatedBy || 'merchant') as any,
+            service: { enrollmentId: String(data.enrollmentId || '') || null },
+            transaction: {
+              processor: String(data.processor || data.processorType || 'ghl'),
+              transactionId: String(data.transactionId || data.ghlTransactionId || '') || null,
+              amount: data.amount as any,
+              currency: String(data.currency || 'USD'),
+            },
+            source: { system: 'ghl_webhook', rawEventType: 'refund_created' },
+          },
+        }),
       },
     );
 
@@ -134,9 +209,9 @@ export const paymentService = {
     data: Record<string, unknown>,
   ): Promise<void> {
     const actionMap: Record<string, string> = {
-      'subscription.paused': 'paused',
-      'subscription.resumed': 'resumed',
-      'subscription.cancelled': 'cancelled',
+      'subscription.paused': 'pause',
+      'subscription.resumed': 'resume',
+      'subscription.cancelled': 'cancel',
     };
     const action = actionMap[eventType] || eventType;
 
@@ -147,15 +222,38 @@ export const paymentService = {
         action,
         change_date: new Date().toISOString(),
         reason: data.reason,
-        who_initiated: data.initiatedBy || 'merchant',
+        initiated_by: data.initiatedBy || 'merchant',
+        previous_status: data.previousStatus,
+        new_status: data.newStatus || action,
+        enrollment_id: data.enrollmentId || null,
+        raw_payload: data,
+        ...buildDefenseEvidenceFields({
+          summary: `Subscription ${action} recorded. Initiated by ${data.initiatedBy || 'merchant'}. Reason: ${data.reason || 'not specified'}.`,
+          title: `Subscription ${action}`,
+          proofRole: action === 'cancel' ? 'cancellation' : 'billing_update',
+          relevance: {
+            tags: ['cancelled_recurring', 'credit_not_processed'],
+            priority: action === 'cancel' ? 'high' : 'medium',
+            confidence: 'moderate',
+          },
+          metadata: {
+            actor: String(data.initiatedBy || 'merchant') as any,
+            service: { enrollmentId: String(data.enrollmentId || '') || null },
+            transaction: {
+              processor: String(data.processor || data.processorType || 'ghl'),
+              subscriptionId: String(data.subscriptionId || data.processorSubscriptionId || '') || null,
+            },
+            source: { system: 'ghl_webhook', rawEventType: eventType },
+          },
+        }),
       },
     );
 
     // Update enrollment status
     const statusMap: Record<string, string> = {
-      paused: 'paused',
-      resumed: 'active',
-      cancelled: 'cancelled',
+      pause: 'paused',
+      resume: 'active',
+      cancel: 'cancelled',
     };
 
     try {

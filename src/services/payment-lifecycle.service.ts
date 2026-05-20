@@ -11,6 +11,7 @@ import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS, WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
 import type { StoredCard } from '../types/processor.types';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -186,7 +187,31 @@ export const paymentLifecycleService = {
         // Log evidence
         await evidenceService.logEvidence(
           EVIDENCE_TYPES.PAYMENT_CONFIRMATION, locationId, contactId, 'dunning_retry',
-          { amount: originalEvent.amount, payment_date: new Date().toISOString(), transaction_id: result.transactionId },
+          {
+            amount: originalEvent.amount,
+            payment_date: new Date().toISOString(),
+            ghl_transaction_id: result.transactionId,
+            payment_event_id: paymentEventId,
+            raw_payload: { originalEvent, result },
+            ...buildDefenseEvidenceFields({
+              summary: `Dunning retry recovered payment of $${Number(originalEvent.amount || 0).toFixed(2)}. Transaction: ${result.transactionId || 'n/a'}.`,
+              title: 'Dunning Recovery Payment',
+              proofRole: 'payment_history',
+              relevance: { tags: ['credit_not_processed', 'cancelled_recurring'], priority: 'high', confidence: 'strong' },
+              paymentEventId,
+              metadata: {
+                actor: 'processor',
+                transaction: {
+                  paymentEventId,
+                  processor: procConfig.processor_type,
+                  transactionId: result.transactionId,
+                  amount: originalEvent.amount,
+                  currency: originalEvent.currency || 'usd',
+                },
+                source: { system: 'dunning_retry', rawEventType: 'dunning_resolved' },
+              },
+            }),
+          },
         );
 
         // Fire success trigger
@@ -250,7 +275,25 @@ export const paymentLifecycleService = {
     // Log evidence of collection attempts
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.FAILED_PAYMENT, locationId, contactId, 'dunning_escalation',
-      { action: 'dunning_escalated', reason: 'Max retries reached', timestamp: new Date().toISOString() },
+      {
+        failure_date: new Date().toISOString(),
+        decline_reason: 'Max retries reached',
+        attempt_count: null,
+        payment_event_id: paymentEventId,
+        raw_payload: { action: 'dunning_escalated', reason: 'Max retries reached' },
+        ...buildDefenseEvidenceFields({
+          summary: 'Payment collection escalated after the configured retry sequence was exhausted.',
+          title: 'Dunning Escalation',
+          proofRole: 'dunning',
+          relevance: { tags: ['credit_not_processed', 'cancelled_recurring'], priority: 'medium', confidence: 'moderate' },
+          paymentEventId,
+          metadata: {
+            actor: 'system',
+            transaction: { paymentEventId },
+            source: { system: 'payment_lifecycle', rawEventType: 'dunning_escalated' },
+          },
+        }),
+      },
     );
 
     // Update GHL contact — enrollment status only. Engagement is decoupled from dunning.
@@ -306,7 +349,32 @@ export const paymentLifecycleService = {
     // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'pause', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'paused' },
+      {
+        action: 'pause',
+        change_date: new Date().toISOString(),
+        reason: params.reason,
+        initiated_by: 'merchant',
+        previous_status: 'enrolled',
+        new_status: 'paused',
+        enrollment_id: params.enrollmentId || null,
+        raw_payload: params as any,
+        ...buildDefenseEvidenceFields({
+          summary: `Merchant paused the subscription. Reason: ${params.reason || 'not specified'}. Future billing was paused with enrollment status moved from enrolled to paused.`,
+          title: 'Subscription Paused',
+          proofRole: 'billing_update',
+          relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'medium', confidence: 'moderate' },
+          enrollmentId: params.enrollmentId || null,
+          metadata: {
+            actor: 'merchant',
+            service: { enrollmentId: params.enrollmentId || null, offerId: params.offerId || null },
+            transaction: {
+              processor: params.processorType || null,
+              subscriptionId: params.processorSubscriptionId || null,
+            },
+            source: { system: 'payment_lifecycle', rawEventType: 'subscription_pause' },
+          },
+        }),
+      },
     );
 
     // Fire trigger — flat payload
@@ -477,7 +545,32 @@ export const paymentLifecycleService = {
     // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'resume', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'paused', new_status: 'enrolled' },
+      {
+        action: 'resume',
+        change_date: new Date().toISOString(),
+        reason: params.reason,
+        initiated_by: 'merchant',
+        previous_status: 'paused',
+        new_status: 'enrolled',
+        enrollment_id: params.enrollmentId || null,
+        raw_payload: params as any,
+        ...buildDefenseEvidenceFields({
+          summary: `Merchant resumed the subscription. Reason: ${params.reason || 'not specified'}. Billing status moved from paused to enrolled.`,
+          title: 'Subscription Resumed',
+          proofRole: 'billing_update',
+          relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'medium', confidence: 'moderate' },
+          enrollmentId: params.enrollmentId || null,
+          metadata: {
+            actor: 'merchant',
+            service: { enrollmentId: params.enrollmentId || null, offerId: params.offerId || null },
+            transaction: {
+              processor: params.processorType || null,
+              subscriptionId: params.processorSubscriptionId || null,
+            },
+            source: { system: 'payment_lifecycle', rawEventType: 'subscription_resume' },
+          },
+        }),
+      },
     );
 
     // Fire trigger — flat doc contract: contact_id, offer_name, next_billing_date, payments_remaining, days_paused
@@ -599,7 +692,32 @@ export const paymentLifecycleService = {
     try {
       await evidenceService.logEvidence(
         EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-        { action: 'cancel', change_date: new Date().toISOString(), reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'cancelled' },
+        {
+          action: 'cancel',
+          change_date: new Date().toISOString(),
+          reason: params.reason,
+          initiated_by: params.reason?.startsWith('Client-initiated:') ? 'client' : 'merchant',
+          previous_status: 'enrolled',
+          new_status: 'cancelled',
+          enrollment_id: params.enrollmentId || null,
+          raw_payload: params as any,
+          ...buildDefenseEvidenceFields({
+            summary: `Subscription cancellation recorded. Initiated by ${params.reason?.startsWith('Client-initiated:') ? 'client' : 'merchant'}. Reason: ${params.reason || 'not specified'}.`,
+            title: 'Subscription Cancelled',
+            proofRole: 'cancellation',
+            relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'high', confidence: 'strong' },
+            enrollmentId: params.enrollmentId || null,
+            metadata: {
+              actor: params.reason?.startsWith('Client-initiated:') ? 'client' : 'merchant',
+              service: { enrollmentId: params.enrollmentId || null, offerId: params.offerId || null },
+              transaction: {
+                processor: params.processorType || null,
+                subscriptionId: params.processorSubscriptionId || null,
+              },
+              source: { system: 'payment_lifecycle', rawEventType: 'subscription_cancel' },
+            },
+          }),
+        },
       );
     } catch (evErr: any) {
       logger.warn({ err: evErr.message, enrollmentId: params.enrollmentId }, 'Cancel subscription change evidence failed (non-fatal)');
@@ -648,6 +766,21 @@ export const paymentLifecycleService = {
           contact_name: cancelContactName || null,
           contact_email: cancelContactEmail || null,
           description: `Merchant-initiated cancellation on ${fmtCancelDate}. Reason: ${params.reason || 'not specified'}. Status at cancellation: enrolled (${cancelPaymentsMade} of ${cancelPaymentsTotal || '?'} payments made). Active service period: ${fmtEnrolledAt} to ${fmtCancelDate}${daysSinceEnroll !== null ? ` (${daysSinceEnroll} days)` : ''}.`,
+          raw_payload: params as any,
+          ...buildDefenseEvidenceFields({
+            summary: `Cancellation recorded on ${fmtCancelDate}. Reason: ${params.reason || 'not specified'}. Active service period: ${fmtEnrolledAt} to ${fmtCancelDate}${daysSinceEnroll !== null ? ` (${daysSinceEnroll} days)` : ''}.`,
+            title: 'Cancellation Record',
+            proofRole: 'cancellation',
+            relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'critical', confidence: 'strong' },
+            enrollmentId: cancelEnrollmentId,
+            metadata: {
+              actor: params.reason?.startsWith('Client-initiated:') ? 'client' : 'merchant',
+              customerIdentity: { name: cancelContactName || null, email: cancelContactEmail || null },
+              service: { enrollmentId: cancelEnrollmentId, offerId: params.offerId || null },
+              transaction: { processor: params.processorType || null, subscriptionId: params.processorSubscriptionId || null },
+              source: { system: 'payment_lifecycle', rawEventType: 'cancellation_record' },
+            },
+          }),
         },
       );
     } catch (evErr: any) {
@@ -769,7 +902,32 @@ export const paymentLifecycleService = {
     // Log evidence
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.SUBSCRIPTION_CHANGE, params.locationId, params.contactId, 'merchant_action',
-      { action: 'manual_complete', change_date: completedAt, reason: params.reason, initiated_by: 'merchant', previous_status: 'enrolled', new_status: 'completed' },
+      {
+        action: 'complete',
+        change_date: completedAt,
+        reason: params.reason,
+        initiated_by: 'merchant',
+        previous_status: 'enrolled',
+        new_status: 'completed',
+        enrollment_id: params.enrollmentId || null,
+        raw_payload: params as any,
+        ...buildDefenseEvidenceFields({
+          summary: `Merchant marked the subscription complete. Reason: ${params.reason || 'not specified'}.`,
+          title: 'Subscription Completed',
+          proofRole: 'billing_update',
+          relevance: { tags: ['services_not_provided', 'cancelled_recurring'], priority: 'medium', confidence: 'moderate' },
+          enrollmentId: params.enrollmentId || null,
+          metadata: {
+            actor: 'merchant',
+            service: { enrollmentId: params.enrollmentId || null, offerId: params.offerId || null },
+            transaction: {
+              processor: params.processorType || null,
+              subscriptionId: params.processorSubscriptionId || null,
+            },
+            source: { system: 'payment_lifecycle', rawEventType: 'subscription_complete' },
+          },
+        }),
+      },
     );
 
     // Fire trigger

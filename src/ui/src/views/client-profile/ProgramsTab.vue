@@ -28,6 +28,7 @@
         <div>
           <strong style="font-size:14px">{{ enr.offerName }}</strong>
           <span class="badge" :class="enrollmentBadge(enr.status)" style="margin-left:8px">{{ enr.status }}</span>
+          <span v-if="enr.processorType" class="badge" :class="processorBadge(enr.processorType)" style="margin-left:6px">{{ processorLabel(enr.processorType) }}</span>
         </div>
         <div class="flex gap-2">
           <!-- Status action buttons -->
@@ -60,6 +61,20 @@
             ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }}/{{ shortFrequency(enr.installmentFrequency) }}
           </span>
           <span v-else>${{ Number(enr.paymentAmount || 0).toFixed(2) }}</span>
+          <div class="payment-detail-line">
+            <span v-if="enr.amountPaidActual != null">${{ Number(enr.amountPaidActual || 0).toFixed(2) }} paid</span>
+            <span v-if="enr.lastPaymentDate">Last: {{ formatDateShort(enr.lastPaymentDate) }}</span>
+            <span v-if="enr.nextBillingDate">Next: {{ formatDateShort(enr.nextBillingDate) }}</span>
+          </div>
+          <div v-if="enr.processorSubscriptionId" class="payment-detail-line">
+            Subscription ID: {{ enr.processorSubscriptionId }}
+          </div>
+          <div v-if="enr.cardOnFile" class="payment-detail-line">
+            Card: {{ enr.cardOnFile.displayLabel }}
+          </div>
+          <div v-if="enr.billingIssue" class="billing-warning">
+            {{ enr.billingIssue.label }}
+          </div>
         </div>
         <div class="text-sm" v-if="enr.deliveryMethod">
           <strong>Delivery:</strong> {{ enr.deliveryMethod }}
@@ -93,6 +108,7 @@
     </div>
 
     <div v-if="packetError || actionError" class="text-sm mt-2" style="color:#ef4444">{{ packetError || actionError }}</div>
+    <div v-if="milestoneResult" class="text-sm mt-2" style="color:#047857">{{ milestoneResult }}</div>
 
     <!-- Mark Complete confirmation modal -->
     <Modal v-model:open="showMilestoneModal" title="Mark milestone complete">
@@ -171,6 +187,7 @@ const api = useApi();
 
 const packetLoading = ref(false);
 const packetError = ref('');
+const milestoneResult = ref('');
 const milestoneLoading = ref(false);
 const actionLoading = ref(false);
 const actionError = ref('');
@@ -298,11 +315,28 @@ function enrollmentBadge(status: string): string {
   return 'badge-gray';
 }
 
+function processorLabel(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
+  return proc || 'Unknown';
+}
+
+function processorBadge(proc?: string | null): string {
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'badge-blue';
+  if (value === 'stripe') return 'badge-purple';
+  if (value === 'ghl') return 'badge-gray';
+  return 'badge-gray';
+}
+
 function confirmMilestone(enr: any) {
   if (!enr.milestones || (enr.currentMilestone || 0) >= enr.milestones.length) return;
   pendingEnrollment.value = enr;
   pendingMilestone.value = enr.milestones[enr.currentMilestone || 0];
   packetError.value = '';
+  milestoneResult.value = '';
   showMilestoneModal.value = true;
 }
 
@@ -311,6 +345,8 @@ async function executeMilestone() {
   const milestone = pendingMilestone.value;
   if (!enr || !milestone) return;
   milestoneLoading.value = true;
+  packetError.value = '';
+  milestoneResult.value = '';
   try {
     const result = await api.post<any>('/api/dashboard/mark-milestone', {
       contactId: props.contactId,
@@ -318,6 +354,13 @@ async function executeMilestone() {
       milestoneNumber: milestone.number,
     });
     enr.currentMilestone = result?.currentMilestone || milestone.number;
+    const workflow = result?.workflowResult;
+    milestoneResult.value = workflow?.status === 'sent'
+      ? 'Milestone saved and workflow fired.'
+      : 'Milestone saved. Check workflow logs if the request does not arrive.';
+    if (result?.evidenceStatus === 'failed') {
+      milestoneResult.value += ' Evidence log needs review.';
+    }
     showMilestoneModal.value = false;
     pendingEnrollment.value = null;
     pendingMilestone.value = null;
@@ -430,6 +473,22 @@ async function downloadPacket(enrollmentId: string) {
 }
 .btn-red:hover {
   background: #dc2626;
+}
+
+.payment-detail-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.billing-warning {
+  margin-top: 5px;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .form-textarea {

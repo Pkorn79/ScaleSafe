@@ -1,6 +1,7 @@
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
 import { stripeEvidenceVaultService } from './stripe-evidence-vault.service';
+import { defenseExhibitsService, ExhibitEntry, ExhibitList } from './defense-exhibits.service';
 import {
   DisputeTriageResult,
   DisputeRecommendation,
@@ -12,6 +13,84 @@ const Stripe = require('stripe');
 
 function getStripe(): any {
   return new Stripe(config.stripe.secretKey);
+}
+
+interface StripeAppEvidenceContext {
+  summaryText?: string;
+  communicationText?: string;
+  serviceText?: string;
+  paymentText?: string;
+  terminationText?: string;
+  consentText?: string;
+}
+
+const STRIPE_EVIDENCE_TEXT_LIMIT = 3500;
+
+function compactText(value: string | null | undefined): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function limitText(value: string): string {
+  if (value.length <= STRIPE_EVIDENCE_TEXT_LIMIT) return value;
+  return `${value.slice(0, STRIPE_EVIDENCE_TEXT_LIMIT - 3).trim()}...`;
+}
+
+function appendEvidenceText(existing: string | undefined, addition: string | undefined): string | undefined {
+  const cleanAddition = compactText(addition);
+  if (!cleanAddition) return existing;
+  const cleanExisting = compactText(existing);
+  return limitText(cleanExisting ? `${cleanExisting}\n\n${cleanAddition}` : cleanAddition);
+}
+
+function mergeEvidenceText(evidence: Record<string, string>, key: string, addition: string | undefined): void {
+  const merged = appendEvidenceText(evidence[key], addition);
+  if (merged) evidence[key] = merged;
+}
+
+function exhibitLine(exhibit: ExhibitEntry): string {
+  return compactText(`Exhibit ${exhibit.letter}: ${exhibit.name} - ${exhibit.summary}`);
+}
+
+function exhibitLines(exhibits: ExhibitEntry[], limit = 4): string | undefined {
+  const lines = exhibits.slice(0, limit).map(exhibitLine).filter(Boolean);
+  return lines.length ? lines.join('\n') : undefined;
+}
+
+function buildStripeAppEvidenceContext(reason: string, exhibitList: ExhibitList | null): StripeAppEvidenceContext | null {
+  if (!exhibitList?.exhibits?.length) return null;
+
+  const consentText = exhibitLines(exhibitList.byCategory.consent, 2);
+  const serviceText = exhibitLines(exhibitList.byCategory.service_delivery, 5);
+  const communicationText = exhibitLines(exhibitList.byCategory.communication, 4);
+  const paymentText = exhibitLines(exhibitList.byCategory.payments, 4);
+  const terminationText = exhibitLines(exhibitList.byCategory.termination, 4);
+
+  const reasonPriority: Record<string, Array<keyof StripeAppEvidenceContext>> = {
+    fraudulent: ['consentText', 'paymentText', 'communicationText', 'serviceText'],
+    unrecognized: ['consentText', 'paymentText', 'communicationText'],
+    product_not_received: ['serviceText', 'communicationText', 'consentText'],
+    general: ['consentText', 'serviceText', 'communicationText', 'paymentText', 'terminationText'],
+    credit_not_processed: ['terminationText', 'consentText', 'paymentText', 'communicationText'],
+  };
+
+  const context: StripeAppEvidenceContext = {
+    consentText,
+    serviceText,
+    communicationText,
+    paymentText,
+    terminationText,
+  };
+
+  const priority = reasonPriority[reason] || ['consentText', 'serviceText', 'communicationText', 'paymentText', 'terminationText'];
+  const summaryParts = priority
+    .map((key) => context[key])
+    .filter((value): value is string => !!value);
+
+  context.summaryText = summaryParts.length
+    ? `ScaleSafe app evidence summary:\n${summaryParts.join('\n')}`
+    : exhibitLines(exhibitList.exhibits, 6);
+
+  return context.summaryText ? context : null;
 }
 
 export const stripeDisputeService = {
@@ -188,9 +267,30 @@ export const stripeDisputeService = {
       offerTermsFileId = offer?.stripe_terms_file_id || null;
     }
 
-    // 4. Build evidence based on reason code
+    // 4. Pull ScaleSafe application evidence summaries when the dispute row has contact context.
     const reason = (disputeEvent.reason || '') as string;
-    const evidence = this.mapReasonCodeToEvidence(reason, vaultEntry, offerTermsFileId);
+    let appEvidence: StripeAppEvidenceContext | null = null;
+    if (disputeEvent.location_id && disputeEvent.contact_id) {
+      try {
+        const exhibitList = await defenseExhibitsService.buildExhibitList(
+          disputeEvent.location_id,
+          disputeEvent.contact_id,
+          { enrollmentId: disputeEvent.enrollment_id || undefined },
+        );
+        appEvidence = buildStripeAppEvidenceContext(reason, exhibitList);
+      } catch (err: any) {
+        logger.warn({
+          err: err?.message || err,
+          stripeDisputeId,
+          merchantId,
+          locationId: disputeEvent.location_id,
+          contactId: disputeEvent.contact_id,
+        }, 'Failed to attach app evidence summaries to Stripe dispute packet');
+      }
+    }
+
+    // 5. Build evidence based on reason code
+    const evidence = this.mapReasonCodeToEvidence(reason, vaultEntry, offerTermsFileId, appEvidence || undefined);
 
     return {
       stripeDisputeId,
@@ -206,69 +306,98 @@ export const stripeDisputeService = {
     reason: string,
     vault: any | null,
     offerTermsFileId: string | null,
+    appEvidence?: StripeAppEvidenceContext,
   ): Record<string, string> {
     const evidence: Record<string, string> = {};
 
-    if (!vault) return evidence;
-
     // Common fields for ALL reason codes
-    if (vault.customer_name) evidence['customer_name'] = vault.customer_name;
-    if (vault.customer_email) evidence['customer_email_address'] = vault.customer_email;
-    if (vault.offer_description) evidence['product_description'] = vault.offer_description;
+    if (vault?.customer_name) evidence['customer_name'] = vault.customer_name;
+    if (vault?.customer_email) evidence['customer_email_address'] = vault.customer_email;
+    if (vault?.offer_description) evidence['product_description'] = vault.offer_description;
 
     switch (reason) {
       case 'fraudulent':
-        if (vault.customer_ip) evidence['customer_purchase_ip'] = vault.customer_ip;
-        if (vault.customer_billing_address) {
+        if (vault?.customer_ip) evidence['customer_purchase_ip'] = vault.customer_ip;
+        if (vault?.customer_billing_address) {
           const addr = vault.customer_billing_address as any;
           evidence['billing_address'] = `${addr.line1 || ''}, ${addr.city || ''} ${addr.state || ''} ${addr.postal_code || ''}`.trim();
         }
-        if (vault.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
-        if (vault.ce30_eligible) {
+        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
+        if (vault?.ce30_eligible) {
           evidence['uncategorized_text'] = 'This transaction is CE 3.0 eligible. The cardholder has prior non-disputed transactions with matching IP address and email. Visa CE 3.0 pre-dispute block criteria met.';
         }
+        mergeEvidenceText(
+          evidence,
+          'uncategorized_text',
+          appEvidence?.summaryText,
+        );
         break;
 
       case 'product_not_received':
-        if (vault.service_start_date) evidence['service_date'] = vault.service_start_date;
-        if (vault.communication_file_id) evidence['customer_communication'] = vault.communication_file_id;
-        if (vault.session_file_ids?.length > 0) {
+        if (vault?.service_start_date) evidence['service_date'] = vault.service_start_date;
+        if (vault?.communication_file_id) {
+          evidence['customer_communication'] = vault.communication_file_id;
+        } else if (appEvidence?.communicationText) {
+          evidence['customer_communication'] = appEvidence.communicationText;
+        }
+        if (vault?.session_file_ids?.length > 0) {
           evidence['uncategorized_file'] = vault.session_file_ids[0];
           if (vault.session_file_ids.length > 1) {
             evidence['uncategorized_text'] = `${vault.session_file_ids.length} session logs on file documenting service delivery. Primary log attached. Client was active throughout the engagement.`;
           }
         }
+        mergeEvidenceText(
+          evidence,
+          'uncategorized_text',
+          appEvidence?.serviceText || appEvidence?.summaryText,
+        );
         break;
 
       case 'general':
-        if (vault.contract_file_id) {
+        if (vault?.contract_file_id) {
           evidence['uncategorized_file'] = vault.contract_file_id;
         } else if (offerTermsFileId) {
           evidence['uncategorized_file'] = offerTermsFileId;
         }
-        if (vault.communication_file_id) evidence['customer_communication'] = vault.communication_file_id;
-        if (vault.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
-        evidence['cancellation_policy'] = vault.refund_policy_text || 'No cancellations after program commencement per signed agreement.';
+        if (vault?.communication_file_id) {
+          evidence['customer_communication'] = vault.communication_file_id;
+        } else if (appEvidence?.communicationText) {
+          evidence['customer_communication'] = appEvidence.communicationText;
+        }
+        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
+        evidence['cancellation_policy'] = vault?.refund_policy_text || 'No cancellations after program commencement per signed agreement.';
+        mergeEvidenceText(evidence, 'uncategorized_text', appEvidence?.summaryText);
         break;
 
       case 'credit_not_processed':
-        if (vault.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
-        if (vault.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
-        evidence['uncategorized_text'] = vault.terms_accepted
+        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
+        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
+        evidence['uncategorized_text'] = vault?.terms_accepted
           ? `Client accepted terms including no-refund policy on ${vault.terms_accepted_at || 'date of enrollment'}.`
           : 'Offer terms were presented to client at time of purchase.';
+        mergeEvidenceText(
+          evidence,
+          'uncategorized_text',
+          appEvidence?.terminationText || appEvidence?.summaryText,
+        );
         break;
 
       case 'unrecognized':
-        if (vault.customer_ip) evidence['customer_purchase_ip'] = vault.customer_ip;
-        if (vault.customer_email) evidence['customer_email_address'] = vault.customer_email;
-        evidence['uncategorized_text'] = `Purchase was made for "${vault.offer_title || 'service'}". Statement descriptor reflects merchant business name. Receipt was sent to ${vault.customer_email || 'customer email on file'}.`;
+        if (vault?.customer_ip) evidence['customer_purchase_ip'] = vault.customer_ip;
+        if (vault?.customer_email) evidence['customer_email_address'] = vault.customer_email;
+        evidence['uncategorized_text'] = `Purchase was made for "${vault?.offer_title || 'service'}". Statement descriptor reflects merchant business name. Receipt was sent to ${vault?.customer_email || 'customer email on file'}.`;
+        mergeEvidenceText(evidence, 'uncategorized_text', appEvidence?.summaryText);
         break;
 
       default:
-        if (vault.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
-        if (vault.communication_file_id) evidence['customer_communication'] = vault.communication_file_id;
-        if (vault.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
+        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
+        if (vault?.communication_file_id) {
+          evidence['customer_communication'] = vault.communication_file_id;
+        } else if (appEvidence?.communicationText) {
+          evidence['customer_communication'] = appEvidence.communicationText;
+        }
+        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
+        mergeEvidenceText(evidence, 'uncategorized_text', appEvidence?.summaryText);
         break;
     }
 

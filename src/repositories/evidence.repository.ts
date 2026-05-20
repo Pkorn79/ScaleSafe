@@ -1,7 +1,8 @@
 import { getSupabase } from '../clients/supabase.client';
 import { EVIDENCE_TABLE_MAP, EvidenceType } from '../constants/evidence-types';
+import { DefenseEvidenceFields } from '../types/defense-evidence.types';
 
-export interface EvidenceInsert {
+export interface EvidenceInsert extends DefenseEvidenceFields {
   location_id: string;
   contact_id: string;
   source: string;

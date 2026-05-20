@@ -9,6 +9,8 @@ import { ValidationError } from '../utils/errors';
 import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
 import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { logger } from '../utils/logger';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -26,6 +28,67 @@ function buildMilestoneList(offer: any): Array<{ number: number; name: string; d
     }
   }
   return milestones;
+}
+
+const DEFENSE_EVIDENCE_COLUMNS = [
+  'payment_event_id',
+  'defense_summary',
+  'issuer_exhibit_title',
+  'proof_role',
+  'reason_code_tags',
+  'dispute_relevance',
+  'source_record_id',
+  'actor',
+  'defense_metadata',
+];
+
+function isColumnCompatibilityError(error: any): boolean {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return text.includes('pgrst204')
+    || text.includes('schema cache')
+    || text.includes('could not find')
+    || text.includes('does not exist');
+}
+
+function omitColumns(fields: Record<string, unknown>, columns: string[]): Record<string, unknown> {
+  const next = { ...fields };
+  for (const column of columns) {
+    delete next[column];
+  }
+  return next;
+}
+
+async function insertMilestoneEvidence(
+  supabase: any,
+  fields: Record<string, unknown>,
+): Promise<{ status: 'logged' | 'failed'; error?: string }> {
+  try {
+    let response = await supabase.from('evidence_milestones').insert(fields);
+    if (!response.error) return { status: 'logged' };
+
+    if (isColumnCompatibilityError(response.error)) {
+      const withoutDefenseFields = omitColumns(fields, DEFENSE_EVIDENCE_COLUMNS);
+      response = await supabase.from('evidence_milestones').insert(withoutDefenseFields);
+      if (!response.error) return { status: 'logged' };
+
+      if (isColumnCompatibilityError(response.error) && 'enrollment_id' in withoutDefenseFields) {
+        response = await supabase
+          .from('evidence_milestones')
+          .insert(omitColumns(withoutDefenseFields, ['enrollment_id']));
+        if (!response.error) return { status: 'logged' };
+      }
+    }
+
+    return { status: 'failed', error: response.error?.message || String(response.error) };
+  } catch (err: any) {
+    return { status: 'failed', error: err?.message || String(err) };
+  }
 }
 
 function cleanCardDisplay(card: {
@@ -79,6 +142,56 @@ function cardSummary(method: any) {
 
 function selectProcessorCard(methods: any[], processor?: string | null) {
   return selectProcessorPaymentMethod(methods, processor);
+}
+
+const PAID_PAYMENT_EVENT_TYPES = new Set(['sale', 'subscription_payment', 'capture']);
+
+function isPaidPaymentEvent(event: any): boolean {
+  const type = String(event?.event_type || '').toLowerCase();
+  return PAID_PAYMENT_EVENT_TYPES.has(type) && !event?.failure_reason && Number(event?.amount || 0) > 0;
+}
+
+function paymentDates(events: any[]): Array<{ date: string; amount: number; transactionId: string | null; paymentNumber: number | null }> {
+  return events
+    .filter(isPaidPaymentEvent)
+    .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+    .map(event => ({
+      date: event.created_at,
+      amount: Number(event.amount || 0),
+      transactionId: event.processor_transaction_id || null,
+      paymentNumber: event.payment_number == null ? null : Number(event.payment_number),
+    }));
+}
+
+function enrollmentBillingIssue(enrollment: any, lastPayment: any | null, lastNmiLog: any | null) {
+  const processor = String(enrollment?.processor_type || '').toLowerCase();
+  const paymentType = String(enrollment?.payment_type || '').toLowerCase();
+  const status = String(enrollment?.status || '').toLowerCase();
+  const recurring = ['installment', 'installments', 'subscription'].includes(paymentType);
+  const active = ['enrolled', 'active', 'paused', 'consent_captured'].includes(status);
+  if (!recurring || !active || enrollment?.billing_completed_at) return null;
+
+  if (processor === 'nmi' && !enrollment?.processor_subscription_id) {
+    return { code: 'missing_nmi_subscription', label: 'Missing NMI subscription ID' };
+  }
+
+  if (processor === 'nmi') {
+    const action = String(lastNmiLog?.action || '').toLowerCase();
+    const verification = String(lastNmiLog?.verification_status || '').toLowerCase();
+    if (action.includes('unknown_subscription')) return { code: 'unmatched_subscription', label: 'NMI post did not match this enrollment' };
+    if (action.includes('verification') || verification === 'failed' || verification === 'error') return { code: 'verification_failed', label: 'NMI verification failed' };
+    if (action.includes('payment_event_missing')) return { code: 'payment_record_failed', label: 'Payment record failed' };
+  }
+
+  const nextBilling = String(enrollment?.next_billing_date || '').slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  if (nextBilling && nextBilling < today) {
+    if (processor === 'nmi' && !lastNmiLog) return { code: 'no_nmi_post', label: 'No NMI post received for overdue billing' };
+    if (!lastPayment) return { code: 'missing_payment_record', label: 'Payment record missing for overdue billing' };
+    return { code: 'overdue_tracking', label: 'Billing date is overdue' };
+  }
+
+  return null;
 }
 
 export const dashboardController = {
@@ -517,9 +630,55 @@ export const dashboardController = {
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
 
+      const enrollmentIds = (enrollments || []).map((e: any) => e.id).filter(Boolean);
+      const nmiSubscriptionIds = (enrollments || [])
+        .filter((e: any) => String(e.processor_type || '').toLowerCase() === 'nmi')
+        .map((e: any) => e.processor_subscription_id)
+        .filter(Boolean);
+
+      const [paymentEventsResult, nmiLogsResult] = await Promise.all([
+        enrollmentIds.length > 0
+          ? supabase
+            .from('payment_events')
+            .select('id, enrollment_id, event_type, amount, failure_reason, processor_transaction_id, payment_number, created_at')
+            .eq('location_id', locationId)
+            .in('enrollment_id', enrollmentIds)
+            .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
+        nmiSubscriptionIds.length > 0
+          ? supabase
+            .from('nmi_silent_post_logs')
+            .select('id, processor_subscription_id, transaction_id, action, verification_status, created_at')
+            .eq('location_id', locationId)
+            .in('processor_subscription_id', nmiSubscriptionIds)
+            .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const paymentsByEnrollment = new Map<string, any[]>();
+      for (const payment of ((paymentEventsResult as any).data || [])) {
+        const list = paymentsByEnrollment.get(payment.enrollment_id) || [];
+        list.push(payment);
+        paymentsByEnrollment.set(payment.enrollment_id, list);
+      }
+
+      const nmiLogsBySubscription = new Map<string, any[]>();
+      for (const log of ((nmiLogsResult as any).data || [])) {
+        const list = nmiLogsBySubscription.get(log.processor_subscription_id) || [];
+        list.push(log);
+        nmiLogsBySubscription.set(log.processor_subscription_id, list);
+      }
+
       const result = (enrollments || []).map(e => {
         const offer = e.offer_id ? offerMap[e.offer_id] : null;
         const matchedCard = selectProcessorCard(paymentMethods || [], e.processor_type);
+        const enrollmentPayments = paymentsByEnrollment.get(e.id) || [];
+        const paidDates = paymentDates(enrollmentPayments);
+        const lastPayment = paidDates.length > 0 ? paidDates[paidDates.length - 1] : null;
+        const lastNmiLog = e.processor_subscription_id
+          ? ((nmiLogsBySubscription.get(e.processor_subscription_id) || [])[0] || null)
+          : null;
+        const billingIssue = enrollmentBillingIssue(e, lastPayment, lastNmiLog);
         return {
           id: e.id,
           status: e.status,
@@ -537,6 +696,15 @@ export const dashboardController = {
           createdAt: e.created_at,
           paymentsMade: e.payments_made || 0,
           paymentsTotal: e.payments_total || offer?.num_payments || null,
+          amountPaidActual: paidDates.reduce((sum, payment) => sum + payment.amount, 0),
+          lastPaymentDate: lastPayment?.date || null,
+          lastPaymentAmount: lastPayment?.amount || null,
+          lastPaymentTransactionId: lastPayment?.transactionId || null,
+          paymentDates: paidDates,
+          lastNmiPostDate: lastNmiLog?.created_at || null,
+          lastNmiPostAction: lastNmiLog?.action || null,
+          lastNmiPostTransactionId: lastNmiLog?.transaction_id || null,
+          billingIssue,
           billingCompletedAt: e.billing_completed_at || null,
           installmentAmount: offer?.installment_amount || null,
           installmentFrequency: offer?.installment_frequency || null,
@@ -603,32 +771,59 @@ export const dashboardController = {
       if (!locationId) throw new ValidationError('locationId required');
       const { contactId, enrollmentId, milestoneNumber } = req.body;
       if (!contactId || !enrollmentId || !milestoneNumber) throw new ValidationError('contactId, enrollmentId, milestoneNumber required');
+      const requestedMilestoneNumber = Number(milestoneNumber);
+      if (!Number.isInteger(requestedMilestoneNumber) || requestedMilestoneNumber <= 0) {
+        throw new ValidationError('milestoneNumber must be a positive whole number');
+      }
 
       const supabase = getSupabase();
 
       // Verify enrollment belongs to location + check sequential order
-      const { data: enrollment } = await supabase
-        .from('enrollments').select('id, location_id, current_milestone, offer_id, email')
-        .eq('id', enrollmentId).single();
-      if (!enrollment || enrollment.location_id !== locationId) throw new ValidationError('Enrollment not found');
-      if (milestoneNumber !== (enrollment.current_milestone || 0) + 1) {
-        throw new ValidationError(`Must complete milestone ${(enrollment.current_milestone || 0) + 1} before ${milestoneNumber}`);
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('enrollments')
+        .select('id, location_id, contact_id, current_milestone, offer_id, email')
+        .eq('id', enrollmentId)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .maybeSingle();
+      if (enrollmentError) {
+        logger.error(
+          { err: enrollmentError.message, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
+          'Milestone enrollment validation failed',
+        );
+        throw enrollmentError;
+      }
+      if (!enrollment) {
+        logger.warn({ locationId, contactId, enrollmentId }, 'Milestone enrollment validation failed: enrollment not found');
+        throw new ValidationError('Enrollment not found');
+      }
+      const nextMilestoneNumber = (Number(enrollment.current_milestone) || 0) + 1;
+      if (requestedMilestoneNumber !== nextMilestoneNumber) {
+        throw new ValidationError(`Must complete milestone ${nextMilestoneNumber} before ${requestedMilestoneNumber}`);
       }
 
       // Get milestone name + delivers + client_does from offer
-      const { data: offer } = await supabase
+      const { data: offer, error: offerError } = await supabase
         .from('offers_mirror').select('*')
-        .eq('id', enrollment.offer_id).single();
-      const milestoneName = (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`;
-      const milestoneDelivers = (offer as any)?.[`m${milestoneNumber}_delivers`] || '';
-      const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
+        .eq('id', enrollment.offer_id)
+        .maybeSingle();
+      if (offerError) {
+        logger.warn(
+          { err: offerError.message, locationId, contactId, enrollmentId, offerId: enrollment.offer_id },
+          'Milestone offer lookup failed; using fallback milestone labels',
+        );
+      }
+      const milestoneName = (offer as any)?.[`m${requestedMilestoneNumber}_name`] || `Milestone ${requestedMilestoneNumber}`;
+      const milestoneDelivers = (offer as any)?.[`m${requestedMilestoneNumber}_delivers`] || '';
+      const milestoneClientDoes = (offer as any)?.[`m${requestedMilestoneNumber}_client_does`] || '';
 
       const completedAt = new Date().toISOString();
       const signoffToken = createPublicActionToken({
         action: 'milestone_signoff',
         locationId,
         contactId,
-        milestoneNumber,
+        enrollmentId,
+        milestoneNumber: requestedMilestoneNumber,
       });
       const signoffLink = `${config.appUrl}/milestone-signoff?actionToken=${encodeURIComponent(signoffToken)}`;
       const workSummary = [milestoneDelivers, milestoneClientDoes]
@@ -642,8 +837,8 @@ export const dashboardController = {
         contactId,
         enrollment_id: enrollmentId,
         enrollmentId,
-        milestone_number: milestoneNumber,
-        milestoneNumber,
+        milestone_number: requestedMilestoneNumber,
+        milestoneNumber: requestedMilestoneNumber,
         milestone_name: milestoneName,
         milestoneName,
         offer_id: enrollment.offer_id || '',
@@ -660,6 +855,21 @@ export const dashboardController = {
         workSummary,
       };
 
+      // Save first. Evidence and workflow steps cannot block the saved milestone.
+      const { error: updateError } = await supabase
+        .from('enrollments')
+        .update({ current_milestone: requestedMilestoneNumber })
+        .eq('id', enrollmentId)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId);
+      if (updateError) {
+        logger.error(
+          { err: updateError.message, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
+          'Milestone enrollment update failed',
+        );
+        throw updateError;
+      }
+
       // Log evidence — enriched with description + contact_email + raw_payload for downstream defense compilation
       // Resolve contact name for enriched evidence row
       let milestoneContactName = '';
@@ -671,14 +881,19 @@ export const dashboardController = {
           .maybeSingle();
         milestoneContactName = [enrName?.first_name, enrName?.last_name].filter(Boolean).join(' ')
           || enrName?.digital_signature || '';
-      } catch {}
+      } catch (nameErr: any) {
+        logger.debug(
+          { err: nameErr?.message || String(nameErr), locationId, contactId, enrollmentId },
+          'Milestone contact name lookup skipped',
+        );
+      }
 
-      const { error: insertError } = await supabase.from('evidence_milestones').insert({
+      const evidenceResult = await insertMilestoneEvidence(supabase, {
         location_id: locationId,
         contact_id: contactId,
         enrollment_id: enrollmentId,
         source: 'merchant_action',
-        milestone_number: milestoneNumber,
+        milestone_number: requestedMilestoneNumber,
         milestone_name: milestoneName,
         description: milestoneDelivers || null,
         notes: milestoneClientDoes || null,
@@ -686,15 +901,32 @@ export const dashboardController = {
         contact_email: (enrollment as any).email || null,
         completed_at: completedAt,
         raw_payload: triggerPayload,
+        ...buildDefenseEvidenceFields({
+          summary: `Merchant marked Milestone ${requestedMilestoneNumber} (${milestoneName}) complete.${milestoneDelivers ? ` Deliverables: ${milestoneDelivers}.` : ''}${milestoneClientDoes ? ` Client responsibility: ${milestoneClientDoes}.` : ''}`,
+          title: `Milestone ${requestedMilestoneNumber}: ${milestoneName}`,
+          proofRole: 'service_delivery',
+          relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'high', confidence: 'moderate' },
+          enrollmentId,
+          metadata: {
+            actor: 'merchant',
+            customerIdentity: { name: milestoneContactName || null, email: (enrollment as any).email || null },
+            service: {
+              enrollmentId,
+              offerId: enrollment.offer_id || null,
+              offerName: (offer as any)?.offer_name || null,
+              deliverableName: milestoneName,
+              serviceDate: completedAt,
+            },
+            source: { system: 'dashboard', rawEventType: 'milestone_completed' },
+          },
+        }),
       });
-      if (insertError) throw insertError;
-
-      // Update enrollment
-      const { error: updateError } = await supabase
-        .from('enrollments')
-        .update({ current_milestone: milestoneNumber })
-        .eq('id', enrollmentId);
-      if (updateError) throw updateError;
+      if (evidenceResult.status === 'failed') {
+        logger.warn(
+          { err: evidenceResult.error, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
+          'Milestone evidence insert failed after enrollment save',
+        );
+      }
 
       try {
         const api = await ghlApi(locationId);
@@ -702,14 +934,13 @@ export const dashboardController = {
           customField: {
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(milestoneNumber),
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(requestedMilestoneNumber),
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,
           },
         });
       } catch (fieldErr: any) {
-        const { logger } = require('../utils/logger');
         logger.warn(
-          { err: fieldErr?.message || String(fieldErr), locationId, contactId, milestoneNumber },
+          { err: fieldErr?.message || String(fieldErr), locationId, contactId, milestoneNumber: requestedMilestoneNumber },
           'Milestone contact field sync failed (non-fatal)',
         );
       }
@@ -717,18 +948,47 @@ export const dashboardController = {
       // Fire trigger — fire-and-forget. Trigger delivery has its own retry/backoff
       // (postWithRetry) and a subscription-list fetch failure must NOT 500 the
       // merchant action since the evidence row + enrollment update have already succeeded.
+      let workflowResult: { status: string; sent: number; failed: number; error?: string } = {
+        status: 'not_attempted',
+        sent: 0,
+        failed: 0,
+      };
       try {
         const { triggerService: ts } = require('../services/trigger.service');
-        await ts.fireTrigger(locationId, 'ss_milestone_reached', triggerPayload);
+        const result = await ts.fireTrigger(locationId, 'ss_milestone_reached', triggerPayload);
+        workflowResult = {
+          status: result.sent > 0 ? 'sent' : result.failed > 0 ? 'failed' : 'not_sent',
+          sent: result.sent,
+          failed: result.failed,
+        };
+        if (workflowResult.status !== 'sent') {
+          logger.warn(
+            { locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber, workflowResult },
+            'Milestone trigger returned without delivery',
+          );
+        }
       } catch (triggerErr: any) {
-        const { logger } = require('../utils/logger');
+        workflowResult = {
+          status: 'failed',
+          sent: 0,
+          failed: 1,
+          error: triggerErr?.message || String(triggerErr),
+        };
         logger.warn(
-          { err: triggerErr?.message || String(triggerErr), locationId, contactId, milestoneNumber },
+          { err: workflowResult.error, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
           'Milestone trigger fire failed (non-fatal — evidence already logged)',
         );
       }
 
-      res.json({ success: true, currentMilestone: milestoneNumber, milestoneName });
+      res.json({
+        success: true,
+        currentMilestone: requestedMilestoneNumber,
+        milestoneName,
+        signoffLink,
+        evidenceStatus: evidenceResult.status,
+        evidenceError: evidenceResult.error || null,
+        workflowResult,
+      });
     } catch (err) { next(err); }
   },
 
@@ -1142,7 +1402,28 @@ export const dashboardController = {
       try {
         await evidenceService.logEvidence(
           'subscription_change', locationId, contactId, 'merchant_action',
-          { action: 'manual_assign', offer_id: offerId, offer_name: offer.offer_name, change_date: new Date().toISOString(), initiated_by: 'merchant', previous_status: 'none', new_status: 'enrolled' },
+          {
+            action: 'plan_change',
+            offer_id: offerId,
+            offer_name: offer.offer_name,
+            change_date: new Date().toISOString(),
+            initiated_by: 'merchant',
+            previous_status: 'none',
+            new_status: 'enrolled',
+            enrollment_id: enrollment?.id || null,
+            ...buildDefenseEvidenceFields({
+              summary: `Merchant manually enrolled client in ${offer.offer_name}.`,
+              title: 'Manual Enrollment Assignment',
+              proofRole: 'merchant_action',
+              relevance: { tags: ['services_not_provided', 'not_as_described'], priority: 'medium', confidence: 'moderate' },
+              enrollmentId: enrollment?.id || null,
+              metadata: {
+                actor: 'merchant',
+                service: { enrollmentId: enrollment?.id || null, offerId, offerName: offer.offer_name },
+                source: { system: 'dashboard', rawEventType: 'manual_enrollment' },
+              },
+            }),
+          },
         );
       } catch {}
 

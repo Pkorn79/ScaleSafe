@@ -25,13 +25,17 @@ export const defenseBundleService = {
     defenseId: string,
     locationId: string,
     contactId: string,
+    opts?: { enrollmentId?: string | null },
   ): Promise<string> {
     const supabase = getSupabase();
     const packet = await defenseRepository.getById(defenseId);
     const merchant = await merchantRepository.getByLocationId(locationId);
 
     // 1. Build the exhibit list (same list that was used for the letter prompt)
-    const exhibitList = await defenseExhibitsService.buildExhibitList(locationId, contactId);
+    const enrollmentId = opts?.enrollmentId || packet.enrollment_id || undefined;
+    const exhibitList = await defenseExhibitsService.buildExhibitList(locationId, contactId, {
+      enrollmentId,
+    });
 
     // 2. Get the latest letter text
     const letterText = packet.defense_letter_text || '';

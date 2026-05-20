@@ -1,6 +1,7 @@
 import { getSupabase } from '../clients/supabase.client';
 import { evidenceRepository } from '../repositories/evidence.repository';
 import { logger } from '../utils/logger';
+import { getDefenseSummary } from '../utils/defense-evidence';
 
 /**
  * Defense Exhibits Service — single source of truth for the numbered exhibit
@@ -102,6 +103,43 @@ function fmtDate(d: string | Date | null | undefined): string {
   }
 }
 
+const DEFENSE_FIELD_SELECT = [
+  'defense_summary',
+  'issuer_exhibit_title',
+  'proof_role',
+  'reason_code_tags',
+  'dispute_relevance',
+  'defense_metadata',
+  'actor',
+  'source_record_id',
+].join(', ');
+
+function exhibitName(row: any, fallback: string): string {
+  return row?.issuer_exhibit_title || fallback;
+}
+
+function exhibitSummary(row: any, fallback: string): string {
+  return getDefenseSummary(row) || fallback;
+}
+
+function exhibitMeta(row: any, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...extra,
+    proofRole: row?.proof_role || null,
+    reasonCodeTags: row?.reason_code_tags || [],
+    disputeRelevance: row?.dispute_relevance || {},
+    defenseMetadata: row?.defense_metadata || {},
+    actor: row?.actor || null,
+    sourceRecordId: row?.source_record_id || null,
+  };
+}
+
+function applyDefenseContract(exhibit: ExhibitEntry, row: any): void {
+  exhibit.name = exhibitName(row, exhibit.name);
+  exhibit.summary = exhibitSummary(row, exhibit.summary);
+  exhibit.meta = exhibitMeta(row, exhibit.meta || {});
+}
+
 export const defenseExhibitsService = {
   /**
    * Build the exhibit list for a contact at compilation time.
@@ -177,20 +215,20 @@ export const defenseExhibitsService = {
     try {
       const { data: consents } = await supabase
         .from('evidence_consent')
-        .select('id, consent_timestamp, ip_address, device_fingerprint, browser, tc_version, contact_name, contact_email')
+        .select(`id, consent_timestamp, ip_address, device_fingerprint, browser, tc_version, contact_name, contact_email, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('consent_timestamp', { ascending: true });
-      for (const c of (consents || [])) {
+      for (const c of ((consents || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
-          name: 'Consent Record',
+          name: exhibitName(c, 'Consent Record'),
           category: 'consent',
           source: 'evidence_consent',
           ref: c.id,
           occurredAt: c.consent_timestamp,
-          summary: `Terms & Conditions acceptance recorded ${fmtDate(c.consent_timestamp)} from IP ${c.ip_address || 'unknown'}${c.browser ? ` (${c.browser})` : ''}. T&C version: ${c.tc_version || 'n/a'}.`,
-          meta: { ip: c.ip_address, device: c.device_fingerprint, browser: c.browser },
+          summary: exhibitSummary(c, `Terms & Conditions acceptance recorded ${fmtDate(c.consent_timestamp)} from IP ${c.ip_address || 'unknown'}${c.browser ? ` (${c.browser})` : ''}. T&C version: ${c.tc_version || 'n/a'}.`),
+          meta: exhibitMeta(c, { ip: c.ip_address, device: c.device_fingerprint, browser: c.browser }),
         });
       }
     } catch { /* table may be empty — non-fatal */ }
@@ -199,20 +237,21 @@ export const defenseExhibitsService = {
     try {
       const { data: sessions } = await supabase
         .from('evidence_sessions')
-        .select('id, session_date, session_title, duration_minutes, attendance_status, facilitator')
+        .select(`id, session_date, session_title, duration_minutes, attendance_status, facilitator, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .eq('attendance_status', 'attended') // only count attended sessions as delivery evidence
         .order('session_date', { ascending: true });
-      for (const s of (sessions || [])) {
+      for (const s of ((sessions || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
-          name: `Session: ${s.session_title || 'Untitled'}`,
+          name: exhibitName(s, `Session: ${s.session_title || 'Untitled'}`),
           category: 'service_delivery',
           source: 'evidence_sessions',
           ref: s.id,
           occurredAt: s.session_date,
-          summary: `Session "${s.session_title || 'Untitled'}" delivered ${fmtDate(s.session_date)}, duration ${s.duration_minutes || 'n/a'} minutes${s.facilitator ? `, facilitated by ${s.facilitator}` : ''}. Status: attended.`,
+          summary: exhibitSummary(s, `Session "${s.session_title || 'Untitled'}" delivered ${fmtDate(s.session_date)}, duration ${s.duration_minutes || 'n/a'} minutes${s.facilitator ? `, facilitated by ${s.facilitator}` : ''}. Status: attended.`),
+          meta: exhibitMeta(s),
         });
       }
     } catch {}
@@ -220,31 +259,32 @@ export const defenseExhibitsService = {
     try {
       const { data: modules } = await supabase
         .from('evidence_modules')
-        .select('id, module_name, completion_date, completion_status, progress_pct, time_spent_minutes')
+        .select(`id, module_name, completion_date, completion_status, progress_pct, time_spent_minutes, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completion_date', { ascending: true });
-      for (const m of (modules || [])) {
+      for (const m of ((modules || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
-          name: `Module: ${m.module_name || 'Untitled'}`,
+          name: exhibitName(m, `Module: ${m.module_name || 'Untitled'}`),
           category: 'service_delivery',
           source: 'evidence_modules',
           ref: m.id,
           occurredAt: m.completion_date,
           summary: `Module "${m.module_name || 'Untitled'}" — status ${m.completion_status || 'n/a'} as of ${fmtDate(m.completion_date)}. Progress: ${m.progress_pct ?? 'n/a'}%. Time spent: ${m.time_spent_minutes ?? 'n/a'} minutes.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], m);
       }
     } catch {}
 
     try {
       const { data: milestones } = await supabase
         .from('evidence_milestones')
-        .select('id, milestone_number, milestone_name, completed_at, description, notes')
+        .select(`id, milestone_number, milestone_name, completed_at, description, notes, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const ms of (milestones || [])) {
+      for (const ms of ((milestones || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Milestone ${ms.milestone_number ?? '?'}: ${ms.milestone_name || ''}`,
@@ -254,17 +294,18 @@ export const defenseExhibitsService = {
           occurredAt: ms.completed_at,
           summary: `Milestone ${ms.milestone_number ?? '?'} ("${ms.milestone_name || 'Untitled'}") marked complete ${fmtDate(ms.completed_at)}.${ms.description ? ` Deliverables: ${ms.description}.` : ''}`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], ms);
       }
     } catch {}
 
     try {
       const { data: signoffs } = await supabase
         .from('evidence_signoffs')
-        .select('id, milestone_number, milestone_name, work_summary, signed_at, ip_address')
+        .select(`id, milestone_number, milestone_name, work_summary, signed_at, ip_address, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('signed_at', { ascending: true });
-      for (const so of (signoffs || [])) {
+      for (const so of ((signoffs || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Client Signoff: Milestone ${so.milestone_number ?? '?'}`,
@@ -274,17 +315,18 @@ export const defenseExhibitsService = {
           occurredAt: so.signed_at,
           summary: `Client digitally signed off on milestone ${so.milestone_number ?? '?'} ("${so.milestone_name || 'Untitled'}") on ${fmtDate(so.signed_at)} from IP ${so.ip_address || 'unknown'}.${so.work_summary ? ` Work summary: ${so.work_summary}.` : ''}`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], so);
       }
     } catch {}
 
     try {
       const { data: courses } = await supabase
         .from('evidence_course_completion')
-        .select('id, course_name, completed_at, certificate_url, grade, platform')
+        .select(`id, course_name, completed_at, certificate_url, grade, platform, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const c of (courses || [])) {
+      for (const c of ((courses || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Course Completion: ${c.course_name || ''}`,
@@ -294,6 +336,7 @@ export const defenseExhibitsService = {
           occurredAt: c.completed_at,
           summary: `Course "${c.course_name || 'Untitled'}" completed ${fmtDate(c.completed_at)} on ${c.platform || 'platform unknown'}${c.grade ? `, grade ${c.grade}` : ''}.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
     } catch {}
 
@@ -301,11 +344,11 @@ export const defenseExhibitsService = {
     try {
       const { data: comms } = await supabase
         .from('evidence_communication')
-        .select('id, comm_type, direction, comm_date, summary, body_preview')
+        .select(`id, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
-      for (const c of (comms || [])) {
+      for (const c of ((comms || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Communication: ${c.direction === 'inbound' ? 'From client' : 'To client'} (${c.comm_type})`,
@@ -315,6 +358,7 @@ export const defenseExhibitsService = {
           occurredAt: c.comm_date,
           summary: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} ${c.comm_type} on ${fmtDate(c.comm_date)}.${c.summary ? ` Summary: ${c.summary}.` : c.body_preview ? ` Preview: ${c.body_preview.slice(0, 200)}.` : ''}`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
     } catch {}
 
@@ -322,11 +366,11 @@ export const defenseExhibitsService = {
     try {
       const { data: enrollPay } = await supabase
         .from('evidence_enrollment_payment')
-        .select('id, ghl_transaction_id, amount, payment_method, last_four, payment_timestamp')
+        .select(`id, ghl_transaction_id, amount, payment_method, last_four, payment_timestamp, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_timestamp', { ascending: true });
-      for (const p of (enrollPay || [])) {
+      for (const p of ((enrollPay || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Enrollment Payment',
@@ -336,17 +380,18 @@ export const defenseExhibitsService = {
           occurredAt: p.payment_timestamp,
           summary: `Initial enrollment payment of $${Number(p.amount || 0).toFixed(2)} processed ${fmtDate(p.payment_timestamp)} via ${p.payment_method || 'card'}${p.last_four ? ` ending ${p.last_four}` : ''}. Transaction id: ${p.ghl_transaction_id || 'n/a'}.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], p);
       }
     } catch {}
 
     try {
       const { data: recPay } = await supabase
         .from('evidence_payment_confirmation')
-        .select('id, ghl_transaction_id, amount, payment_date, payment_number, running_total')
+        .select(`id, ghl_transaction_id, amount, payment_date, payment_number, running_total, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_date', { ascending: true });
-      for (const p of (recPay || [])) {
+      for (const p of ((recPay || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Recurring Payment #${p.payment_number ?? '?'}`,
@@ -356,6 +401,7 @@ export const defenseExhibitsService = {
           occurredAt: p.payment_date,
           summary: `Recurring payment #${p.payment_number ?? '?'} of $${Number(p.amount || 0).toFixed(2)} processed ${fmtDate(p.payment_date)}. Running total: $${Number(p.running_total || 0).toFixed(2)}.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], p);
       }
     } catch {}
 
@@ -363,11 +409,11 @@ export const defenseExhibitsService = {
     try {
       const { data: cancels } = await supabase
         .from('evidence_cancellation')
-        .select('id, cancellation_date, reason, refund_eligibility, status_at_cancellation, initiated_by')
+        .select(`id, cancellation_date, reason, refund_eligibility, status_at_cancellation, initiated_by, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('cancellation_date', { ascending: true });
-      for (const c of (cancels || [])) {
+      for (const c of ((cancels || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Cancellation Record',
@@ -377,17 +423,18 @@ export const defenseExhibitsService = {
           occurredAt: c.cancellation_date,
           summary: `Subscription cancelled on ${fmtDate(c.cancellation_date)}${c.initiated_by ? ` by ${c.initiated_by}` : ''}. Reason: ${c.reason || 'not specified'}. Status at cancellation: ${c.status_at_cancellation || 'n/a'}. Refund eligibility: ${c.refund_eligibility || 'n/a'}.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
     } catch {}
 
     try {
       const { data: refunds } = await supabase
         .from('evidence_refund_activity')
-        .select('id, amount, refund_type, reason, refund_date, initiated_by, ghl_transaction_id')
+        .select(`id, amount, refund_type, reason, refund_date, initiated_by, ghl_transaction_id, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('refund_date', { ascending: true });
-      for (const r of (refunds || [])) {
+      for (const r of ((refunds || []) as any[])) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Refund (${r.refund_type || 'partial'})`,
@@ -397,6 +444,7 @@ export const defenseExhibitsService = {
           occurredAt: r.refund_date,
           summary: `Refund of $${Number(r.amount || 0).toFixed(2)} (${r.refund_type || 'partial'}) issued ${fmtDate(r.refund_date)}${r.initiated_by ? ` by ${r.initiated_by}` : ''}. Reason: ${r.reason || 'not specified'}.`,
         });
+        applyDefenseContract(exhibits[exhibits.length - 1], r);
       }
     } catch {}
 
@@ -411,15 +459,16 @@ export const defenseExhibitsService = {
         // Only include high-signal types from the unified table
         const type = (e as any).evidence_type || (e as any).type;
         if (!['custom_event', 'resource_delivery', 'service_access'].includes(type)) continue;
-        const summary = (e as any).data?.summary || (e as any).data?.description || JSON.stringify((e as any).data || {}).slice(0, 200);
+        const summary = getDefenseSummary(e) || JSON.stringify((e as any).data || {}).slice(0, 200);
         exhibits.push({
           letter: indexToLetter(nextIdx++),
-          name: `Evidence: ${type.replace(/_/g, ' ')}`,
+          name: exhibitName(e, `Evidence: ${type.replace(/_/g, ' ')}`),
           category: 'service_delivery',
           source: ('evidence_' + type) as ExhibitSource,
           ref: e.id,
           occurredAt: (e as any).created_at || null,
           summary: `${type.replace(/_/g, ' ')} recorded ${fmtDate((e as any).created_at)}. ${summary}`,
+          meta: exhibitMeta(e),
         });
       }
     } catch {}

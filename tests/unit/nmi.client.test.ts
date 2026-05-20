@@ -156,6 +156,7 @@ describe('NMI XML Parsing', () => {
           <transaction>
             <transaction_id>12054526789</transaction_id>
             <condition>complete</condition>
+            <source>recurring</source>
             <action>
               <amount>0.50</amount>
               <action_type>sale</action_type>
@@ -179,6 +180,8 @@ describe('NMI XML Parsing', () => {
       expect(parseFloat(result[0].amount)).toBeCloseTo(0.50);
       expect(result[0].action).toBe('sale');
       expect(result[0].responseText).toBe('SUCCESS');
+      expect(result[0].success).toBe(true);
+      expect(result[0].source).toBe('recurring');
     });
 
     it('returns empty array for no transactions', () => {
@@ -509,6 +512,51 @@ describe('NmiClient', () => {
       expect(result.success).toBe(true);
       expect(result.status).toBe('settled');
       expect(result.amount).toBe(1050);
+    });
+  });
+
+  describe('listSubscriptionTransactions', () => {
+    it('queries NMI subscription history and maps recurring transactions', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: `<?xml version="1.0" encoding="UTF-8"?>
+          <nm_response>
+            <transaction>
+              <transaction_id>12061861902</transaction_id>
+              <condition>complete</condition>
+              <source>recurring</source>
+              <action>
+                <amount>0.33</amount>
+                <action_type>sale</action_type>
+                <date>20260514035531</date>
+                <success>1</success>
+                <response_text>APPROVAL 327580</response_text>
+              </action>
+            </transaction>
+          </nm_response>`,
+      });
+
+      const result = await client.listSubscriptionTransactions('12060786864', {
+        startDate: '2026-05-13T22:27:06.000Z',
+        limit: 10,
+      });
+
+      expect(result).toEqual([{
+        transactionId: '12061861902',
+        status: 'settled',
+        amount: 33,
+        occurredAt: '20260514035531',
+        responseText: 'APPROVAL 327580',
+        success: true,
+        source: 'recurring',
+      }]);
+
+      const postBody = mockedAxios.post.mock.calls[0][1] as string;
+      const params = new URLSearchParams(postBody);
+      expect(params.get('subscription_id')).toBe('12060786864');
+      expect(params.get('source')).toBe('recurring');
+      expect(params.get('result_limit')).toBe('10');
+      expect(params.get('start_date')).toBe('20260513222706');
+      expect(params.get('security_key')).toBe(TEST_CONFIG.securityKey);
     });
   });
 

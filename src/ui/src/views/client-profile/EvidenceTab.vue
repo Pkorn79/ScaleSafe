@@ -49,8 +49,21 @@
         <tbody>
           <tr v-for="(item, i) in timeline" :key="i">
             <td class="text-sm">{{ formatDate(item.created_at || item.event_date) }}</td>
-            <td><span class="badge badge-blue">{{ formatEvidenceType(item.evidence_type || item.type) }}</span></td>
-            <td class="text-sm">{{ summarize(item) }}</td>
+            <td>
+              <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+                <span class="badge badge-blue">{{ formatEvidenceType(item.evidence_type || item.type) }}</span>
+                <span v-if="proofRole(item)" class="badge badge-gray">{{ formatEvidenceType(proofRole(item)) }}</span>
+              </div>
+            </td>
+            <td class="text-sm">
+              <div class="evidence-detail">
+                <div v-if="exhibitTitle(item)" class="evidence-title">{{ exhibitTitle(item) }}</div>
+                <div>{{ summarize(item) }}</div>
+                <div v-if="reasonTags(item).length" class="evidence-tags">
+                  <span v-for="tag in reasonTags(item)" :key="tag" class="badge badge-gray">{{ formatEvidenceType(tag) }}</span>
+                </div>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -120,8 +133,30 @@ function formatEvidenceType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
+function evidenceData(item: any): any {
+  return item?.data && typeof item.data === 'object' ? item.data : {};
+}
+
+function exhibitTitle(item: any): string {
+  return String(item.issuer_exhibit_title || evidenceData(item).issuer_exhibit_title || '').trim();
+}
+
+function proofRole(item: any): string {
+  return String(item.proof_role || evidenceData(item).proof_role || '').trim();
+}
+
+function reasonTags(item: any): string[] {
+  const tags = item.reason_code_tags || evidenceData(item).reason_code_tags || [];
+  return Array.isArray(tags) ? tags.filter(Boolean).slice(0, 4) : [];
+}
+
 function summarize(item: any): string {
   const type = item.evidence_type || item.type || '';
+  const defenseSummary = item.defense_summary || evidenceData(item).defense_summary;
+  if (typeof defenseSummary === 'string' && defenseSummary.trim()) {
+    return defenseSummary.trim();
+  }
+
   const d = item.data || item.summary || item.details;
   if (!d) return '-';
   if (typeof d === 'string') return d.slice(0, 120);
@@ -189,3 +224,24 @@ async function loadMore() {
 
 onMounted(() => fetchPage(0, false));
 </script>
+
+<style scoped>
+.evidence-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.evidence-title {
+  color: var(--text, #111827);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.evidence-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+</style>
