@@ -335,7 +335,11 @@ function statusBadge(status: string): string {
 
 function formatDateShort(d: string | null): string {
   if (!d) return '';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(d);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // Summary strip derived values
@@ -515,6 +519,7 @@ onMounted(async () => {
 
   // Overview data — bundled endpoint (built in Sub-phase C)
   try {
+    pageLoading.value = false;
     const activity = await api.get<any>(`/api/dashboard/client-activity/${cid}?limit=5`);
     recentActivity.value = activity?.recentActivity || [];
     recentNote.value = activity?.recentNote || null;
