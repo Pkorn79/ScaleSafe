@@ -70,13 +70,17 @@ export const processorConfigController = {
     } catch (err) { next(err); }
   },
 
-  /** POST /api/processor-config/nmi/webhook/rotate — generate a new signing secret */
-  async rotateNmiWebhook(req: Request, res: Response, next: NextFunction) {
+  /** POST /api/processor-config/nmi/webhook/key — save the NMI-provided webhook key */
+  async saveNmiWebhookKey(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
+      const { key } = req.body || {};
+      if (typeof key !== 'string' || !key.trim()) {
+        throw new ValidationError('NMI webhook key is required');
+      }
 
-      const webhook = await processorConfigService.rotateNmiWebhookSecret(locationId);
+      const webhook = await processorConfigService.saveNmiWebhookKey(locationId, key);
       res.json(webhook);
     } catch (err) { next(err); }
   },

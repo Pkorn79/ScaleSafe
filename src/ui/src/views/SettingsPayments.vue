@@ -104,14 +104,24 @@
                 </div>
               </div>
               <div class="setup-row">
-                <label>Signing Secret</label>
+                <label>NMI Webhook Key</label>
                 <div class="copy-line">
-                  <input class="form-input mono" :type="showNmiWebhookSecret ? 'text' : 'password'" :value="nmiWebhook.secret" readonly />
-                  <button class="btn btn-secondary btn-sm" @click="showNmiWebhookSecret = !showNmiWebhookSecret">
-                    {{ showNmiWebhookSecret ? 'Hide' : 'Show' }}
+                  <input
+                    class="form-input mono"
+                    :type="showNmiWebhookKey ? 'text' : 'password'"
+                    v-model="nmiWebhookKeyInput"
+                    :placeholder="nmiWebhook.hasKey ? 'Key saved. Paste a new key to replace it.' : 'Paste the key from NMI Webhooks'"
+                  />
+                  <button class="btn btn-secondary btn-sm" @click="showNmiWebhookKey = !showNmiWebhookKey">
+                    {{ showNmiWebhookKey ? 'Hide' : 'Show' }}
                   </button>
-                  <button class="btn btn-secondary btn-sm" @click="copyText(nmiWebhook.secret)">Copy</button>
+                  <button class="btn btn-primary btn-sm" @click="saveNmiWebhookKey" :disabled="nmiWebhookSaving">
+                    {{ nmiWebhookSaving ? 'Saving...' : 'Save Key' }}
+                  </button>
                 </div>
+                <p class="text-sm text-muted mt-2">
+                  Use the key shown in NMI Webhooks. ScaleSafe uses it to verify the Signature header on official events.
+                </p>
               </div>
               <div class="setup-row">
                 <label>Required events</label>
@@ -124,7 +134,6 @@
               <p v-if="nmiWebhook.lastError" class="text-sm" style="color:#dc2626">{{ nmiWebhook.lastError }}</p>
               <div class="flex gap-2 mt-2">
                 <button class="btn btn-secondary btn-sm" @click="loadNmiWebhook">Refresh</button>
-                <button class="btn btn-danger btn-sm" @click="rotateNmiWebhookSecret">Rotate Secret</button>
               </div>
               <p v-if="nmiWebhookMessage" class="text-sm mt-2" style="color:#059669">{{ nmiWebhookMessage }}</p>
             </template>
@@ -202,8 +211,10 @@ const nmiTestResult = ref<{ success: boolean; message: string } | null>(null);
 const riskAudit = ref<any>(null);
 const nmiWebhook = ref<any>(null);
 const nmiWebhookLoading = ref(false);
+const nmiWebhookSaving = ref(false);
 const nmiWebhookMessage = ref('');
-const showNmiWebhookSecret = ref(false);
+const nmiWebhookKeyInput = ref('');
+const showNmiWebhookKey = ref(false);
 
 const nmiForm = ref({
   securityKey: '',
@@ -273,6 +284,7 @@ async function loadNmiWebhook() {
   nmiWebhookMessage.value = '';
   try {
     nmiWebhook.value = await api.get<any>('/api/processor-config/nmi/webhook');
+    nmiWebhookKeyInput.value = '';
   } catch (err: any) {
     loadError.value = err?.message || 'Failed to load NMI webhook setup';
   } finally {
@@ -280,15 +292,24 @@ async function loadNmiWebhook() {
   }
 }
 
-async function rotateNmiWebhookSecret() {
-  if (!confirm('Rotate the NMI webhook signing secret? You will need to update NMI with the new secret.')) return;
+async function saveNmiWebhookKey() {
+  if (!nmiWebhookKeyInput.value.trim()) {
+    loadError.value = 'Paste the NMI webhook key first.';
+    return;
+  }
+  nmiWebhookSaving.value = true;
   nmiWebhookMessage.value = '';
+  loadError.value = null;
   try {
-    nmiWebhook.value = await api.post<any>('/api/processor-config/nmi/webhook/rotate');
-    showNmiWebhookSecret.value = true;
-    nmiWebhookMessage.value = 'New secret created. Update this in NMI before the next test.';
+    nmiWebhook.value = await api.post<any>('/api/processor-config/nmi/webhook/key', {
+      key: nmiWebhookKeyInput.value.trim(),
+    });
+    nmiWebhookKeyInput.value = '';
+    nmiWebhookMessage.value = 'NMI webhook key saved.';
   } catch (err: any) {
-    loadError.value = err?.message || 'Failed to rotate NMI webhook secret';
+    loadError.value = err?.message || 'Failed to save NMI webhook key';
+  } finally {
+    nmiWebhookSaving.value = false;
   }
 }
 

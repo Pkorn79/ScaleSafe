@@ -36,7 +36,10 @@ jest.mock('../../src/services/processor-config.service', () => ({
   },
 }));
 
-import { handleNmiWebhookEvent } from '../../src/controllers/nmi-webhook-events.controller';
+import {
+  handleNmiWebhookEvent,
+  processNmiOfficialWebhookRequest,
+} from '../../src/controllers/nmi-webhook-events.controller';
 
 const SECRET = 'webhook_secret';
 
@@ -64,7 +67,7 @@ const enrollment = {
   billing_completed_at: null,
 };
 
-function queryBuilder(data: any, opts: { maybeData?: any } = {}) {
+function queryBuilder(data: any, opts: { maybeData?: any; thenData?: any } = {}) {
   const builder: any = {
     select: jest.fn(() => builder),
     insert: jest.fn(() => builder),
@@ -74,6 +77,7 @@ function queryBuilder(data: any, opts: { maybeData?: any } = {}) {
     limit: jest.fn(() => builder),
     single: jest.fn().mockResolvedValue({ data, error: null }),
     maybeSingle: jest.fn().mockResolvedValue({ data: opts.maybeData ?? data, error: null }),
+    then: (resolve: any, reject: any) => Promise.resolve({ data: opts.thenData ?? data, error: null }).then(resolve, reject),
   };
   return builder;
 }
@@ -201,5 +205,35 @@ describe('NMI official webhook events', () => {
       errorMessage: 'Declined',
       source: 'nmi_webhook_event',
     }));
+  });
+
+  it('processes official events on the generic existing NMI webhook URL by matching the signature key', async () => {
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'processor_configs') return queryBuilder(processorConfig, { thenData: [processorConfig] });
+      if (table === 'nmi_silent_post_logs') return queryBuilder(null);
+      if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table === 'payment_events') return queryBuilder(null);
+      if (table === 'offers_mirror') return queryBuilder({ offer_name: 'Beta Tester 2', installment_frequency: 'daily' });
+      return queryBuilder(null);
+    });
+
+    const { req, res } = makeReqRes({
+      event_id: 'evt_generic',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        transaction_id: '12090000000',
+        subscription_id: 'sub_1',
+        action: { source: 'recurring', amount: '0.33', response_code: '1' },
+      },
+    });
+    req.params = {};
+
+    await processNmiOfficialWebhookRequest(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: '12090000000',
+      source: 'nmi_webhook_event',
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

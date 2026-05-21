@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { nmiDiagnosticLogService } from '../services/nmi-diagnostic-log.service';
+import { isNmiOfficialEventPayload, processNmiOfficialWebhookRequest } from './nmi-webhook-events.controller';
 import { logger } from '../utils/logger';
 
 async function createDiagnosticLog(
@@ -25,10 +26,9 @@ async function updateDiagnosticLog(
 /**
  * POST /webhooks/nmi/silent-post
  *
- * NMI Silent Post receives URL-encoded form data when a recurring subscription
- * transaction is processed. NMI does not sign these notifications, so approved
- * transaction-bearing posts are verified with NMI before ScaleSafe advances an
- * enrollment.
+ * Compatibility endpoint for the NMI webhook URL already configured in merchant
+ * portals. It now accepts both official NMI event payloads and older
+ * transaction/name-value payloads.
  */
 export async function handleNmiSilentPost(req: Request, res: Response): Promise<void> {
   let diagnosticLogId: string | null = null;
@@ -37,6 +37,11 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
   // Always return 200 to prevent NMI from retrying forever.
   try {
     const body = req.body || {};
+    if (isNmiOfficialEventPayload(body)) {
+      await processNmiOfficialWebhookRequest(req, res);
+      return;
+    }
+
     const readBodyValue = (...keys: string[]): string => {
       for (const key of keys) {
         const value = body[key];

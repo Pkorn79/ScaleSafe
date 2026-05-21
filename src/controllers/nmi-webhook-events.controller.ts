@@ -56,6 +56,18 @@ function getEventType(payload: any): string {
   return firstString(payload, ['event_type', 'eventType', 'type']);
 }
 
+export function isNmiOfficialEventPayload(payload: any): boolean {
+  const eventType = getEventType(payload);
+  return !!(
+    payload?.event_body
+    || payload?.eventBody
+    || payload?.event_id
+    || payload?.eventId
+    || eventType.startsWith('transaction.')
+    || eventType.startsWith('recurring.')
+  );
+}
+
 function getSubscriptionId(payload: any): string {
   const body = eventBody(payload);
   return firstString(body, [
@@ -153,6 +165,79 @@ async function loadProcessorConfig(supabase: SupabaseClient, configId: string): 
     .single();
 
   return (data || null) as ProcessorConfig | null;
+}
+
+async function loadActiveNmiConfigs(supabase: SupabaseClient): Promise<ProcessorConfig[]> {
+  const { data } = await supabase
+    .from('processor_configs')
+    .select('*')
+    .eq('processor_type', 'nmi')
+    .eq('is_active', true);
+
+  return (data || []) as ProcessorConfig[];
+}
+
+async function loadConfigForEnrollment(supabase: SupabaseClient, enrollment: any): Promise<ProcessorConfig | null> {
+  if (!enrollment?.merchant_id || !enrollment?.location_id) return null;
+  const { data } = await supabase
+    .from('processor_configs')
+    .select('*')
+    .eq('merchant_id', enrollment.merchant_id)
+    .eq('location_id', enrollment.location_id)
+    .eq('processor_type', 'nmi')
+    .eq('is_active', true)
+    .order('is_default', { ascending: false })
+    .limit(1)
+    .single();
+
+  return (data || null) as ProcessorConfig | null;
+}
+
+async function findEnrollmentWithoutConfig(supabase: SupabaseClient, payload: any): Promise<any | null> {
+  const enrollmentId = getEnrollmentId(payload);
+  if (enrollmentId) {
+    const { data } = await supabase
+      .from('enrollments')
+      .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .eq('id', enrollmentId)
+      .single();
+    if (data) return data;
+  }
+
+  const subscriptionId = getSubscriptionId(payload);
+  if (subscriptionId) {
+    const { data } = await supabase
+      .from('enrollments')
+      .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .eq('processor_subscription_id', subscriptionId)
+      .single();
+    if (data) return data;
+  }
+
+  return null;
+}
+
+async function loadConfigFromPayload(supabase: SupabaseClient, payload: any): Promise<ProcessorConfig | null> {
+  const enrollment = await findEnrollmentWithoutConfig(supabase, payload);
+  return loadConfigForEnrollment(supabase, enrollment);
+}
+
+async function findConfigBySignature(
+  supabase: SupabaseClient,
+  raw: Buffer,
+  signature: string,
+): Promise<ProcessorConfig | null> {
+  const configs = await loadActiveNmiConfigs(supabase);
+  for (const config of configs) {
+    if (!config.nmi_webhook_secret_encrypted) continue;
+    try {
+      const secret = processorConfigService.decryptNmiWebhookSecret(config);
+      if (verifySignature(raw, signature, secret)) return config;
+    } catch {
+      // Bad local key should not stop checking the next config.
+    }
+  }
+  return null;
 }
 
 async function updateWebhookStatus(
@@ -406,39 +491,121 @@ async function processSubscriptionEvent(
   });
 }
 
-/**
- * POST /webhooks/nmi/events/:processorConfigId
- *
- * NMI official webhooks are JSON and signed with the Signature header.
- */
-export async function handleNmiWebhookEvent(req: Request, res: Response): Promise<void> {
+async function rejectInvalidSignature(
+  supabase: SupabaseClient,
+  res: Response,
+  config: ProcessorConfig | null,
+  payload: any,
+  message: string,
+): Promise<void> {
+  if (config) {
+    await createDiagnosticLog(config, payload, {
+      signature_verified: false,
+      verification_status: 'failed',
+      action: 'ignored_invalid_signature',
+      error_message: message,
+    });
+    await updateWebhookStatus(supabase, config.id, 'signature_failed', message);
+  }
+  logger.warn({ eventType: getEventType(payload), eventId: getEventId(payload) }, 'NMI official webhook rejected: invalid signature');
+  res.status(401).json({ received: false, error: 'invalid signature' });
+}
+
+async function resolveOfficialWebhookConfig(
+  supabase: SupabaseClient,
+  req: Request,
+  payload: any,
+  processorConfigId?: string,
+): Promise<{
+  config: ProcessorConfig | null;
+  signaturePresent: boolean;
+  signatureVerified: boolean | null;
+  invalidSignatureConfig: ProcessorConfig | null;
+}> {
+  const signature = String(req.get('Signature') || req.get('signature') || '');
+  const signaturePresent = !!signature.trim();
+
+  if (processorConfigId) {
+    const config = await loadProcessorConfig(supabase, processorConfigId);
+    if (!signaturePresent) {
+      return { config, signaturePresent, signatureVerified: null, invalidSignatureConfig: config };
+    }
+    if (!config?.nmi_webhook_secret_encrypted) {
+      return { config, signaturePresent, signatureVerified: false, invalidSignatureConfig: config };
+    }
+    const secret = processorConfigService.decryptNmiWebhookSecret(config);
+    const signatureVerified = verifySignature(rawPayload(req), signature, secret);
+    return {
+      config: signatureVerified ? config : null,
+      signaturePresent,
+      signatureVerified,
+      invalidSignatureConfig: config,
+    };
+  }
+
+  if (signaturePresent) {
+    const config = await findConfigBySignature(supabase, rawPayload(req), signature);
+    if (config) return { config, signaturePresent, signatureVerified: true, invalidSignatureConfig: config };
+    const configFromPayload = await loadConfigFromPayload(supabase, payload);
+    if (configFromPayload && !configFromPayload.nmi_webhook_secret_encrypted) {
+      return { config: configFromPayload, signaturePresent, signatureVerified: null, invalidSignatureConfig: configFromPayload };
+    }
+    return { config: null, signaturePresent, signatureVerified: false, invalidSignatureConfig: configFromPayload };
+  }
+
+  const config = await loadConfigFromPayload(supabase, payload);
+  return { config, signaturePresent, signatureVerified: null, invalidSignatureConfig: config };
+}
+
+export async function processNmiOfficialWebhookRequest(
+  req: Request,
+  res: Response,
+  options: { processorConfigId?: string; requireSignature?: boolean } = {},
+): Promise<void> {
   const supabase = getSupabase();
-  const processorConfigId = String(req.params.processorConfigId || '');
+  const processorConfigId = options.processorConfigId || '';
   const payload = req.body || {};
   let config: ProcessorConfig | null = null;
   let logId: string | null = null;
 
   try {
-    config = await loadProcessorConfig(supabase, processorConfigId);
+    const resolved = await resolveOfficialWebhookConfig(
+      supabase,
+      req,
+      payload,
+      processorConfigId || undefined,
+    );
+    config = resolved.config;
+
     if (!config) {
-      res.status(404).json({ received: false, error: 'NMI processor config not found' });
+      if (resolved.signaturePresent && resolved.signatureVerified === false) {
+        await rejectInvalidSignature(
+          supabase,
+          res,
+          resolved.invalidSignatureConfig,
+          payload,
+          'NMI Signature header did not match stored webhook key',
+        );
+        return;
+      }
+      logger.warn({
+        eventType: getEventType(payload),
+        eventId: getEventId(payload),
+        subscriptionId: getSubscriptionId(payload),
+        transactionId: getTransactionId(payload),
+      }, 'NMI official webhook could not be matched to a processor config');
+      res.status(200).json({ received: true, matched: false });
       return;
     }
 
-    const signature = String(req.get('Signature') || req.get('signature') || '');
-    const secret = processorConfigService.decryptNmiWebhookSecret(config);
-    const signatureVerified = verifySignature(rawPayload(req), signature, secret);
-
-    if (!signatureVerified) {
-      logId = await createDiagnosticLog(config, payload, {
-        signature_verified: false,
-        verification_status: 'failed',
-        action: 'ignored_invalid_signature',
-        error_message: 'NMI Signature header did not match stored webhook secret',
-      });
-      await updateWebhookStatus(supabase, config.id, 'signature_failed', 'Latest NMI event had an invalid signature');
-      logger.warn({ processorConfigId, eventType: getEventType(payload), eventId: getEventId(payload) }, 'NMI official webhook rejected: invalid signature');
-      res.status(401).json({ received: false, error: 'invalid signature' });
+    if (options.requireSignature && !resolved.signaturePresent) {
+      await rejectInvalidSignature(
+        supabase,
+        res,
+        config,
+        payload,
+        'NMI Signature header was missing',
+      );
       return;
     }
 
@@ -457,7 +624,17 @@ export async function handleNmiWebhookEvent(req: Request, res: Response): Promis
     }
 
     logId = await createDiagnosticLog(config, payload);
-    await updateWebhookStatus(supabase, config.id, 'verified', null);
+    if (resolved.signatureVerified === true) {
+      await updateDiagnosticLog(logId, { signature_verified: true });
+      await updateWebhookStatus(supabase, config.id, 'verified', null);
+    } else {
+      await updateDiagnosticLog(logId, {
+        signature_verified: false,
+        error_message: resolved.signaturePresent
+          ? 'Signature header received, but no NMI webhook key is saved yet; proceeding by transaction verification/matching'
+          : 'No Signature header on official NMI event; proceeding by transaction verification/matching',
+      });
+    }
 
     const eventType = getEventType(payload);
     if ([TRANSACTION_SUCCESS, TRANSACTION_FAILURE, TRANSACTION_UNKNOWN].includes(eventType)) {
@@ -484,4 +661,17 @@ export async function handleNmiWebhookEvent(req: Request, res: Response): Promis
     }
     res.status(200).json({ received: true });
   }
+}
+
+/**
+ * POST /webhooks/nmi/events/:processorConfigId
+ *
+ * Optional direct official webhook route. The merchant-facing NMI setup should
+ * normally use /webhooks/nmi/silent-post, which now detects official events too.
+ */
+export async function handleNmiWebhookEvent(req: Request, res: Response): Promise<void> {
+  await processNmiOfficialWebhookRequest(req, res, {
+    processorConfigId: String(req.params.processorConfigId || ''),
+    requireSignature: true,
+  });
 }
