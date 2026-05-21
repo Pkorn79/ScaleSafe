@@ -513,6 +513,15 @@ var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 var milestoneNumber = params.get('milestoneNumber') || '';
+function setLabeledText(id, label, value) {
+  if (!value) return;
+  var node = document.getElementById(id);
+  node.textContent = '';
+  var strong = document.createElement('strong');
+  strong.textContent = label;
+  node.appendChild(strong);
+  node.appendChild(document.createTextNode(' ' + value));
+}
 (async function() {
   if ((!actionToken && (!contactId || !locationId)) || (!actionToken && !milestoneNumber)) {
     document.getElementById('loading').classList.add('hidden');
@@ -531,8 +540,8 @@ var milestoneNumber = params.get('milestoneNumber') || '';
     milestoneNumber = data.milestoneNumber || milestoneNumber;
     document.getElementById('merchant-name').textContent = data.merchantName || '';
     document.getElementById('milestone-title').textContent = 'Milestone ' + milestoneNumber + ': ' + data.milestoneName;
-    if (data.delivers) document.getElementById('delivers').innerHTML = '<strong>Deliverables:</strong> ' + data.delivers;
-    if (data.clientDoes) document.getElementById('client-does').innerHTML = '<strong>Your Responsibility:</strong> ' + data.clientDoes;
+    setLabeledText('delivers', 'Deliverables:', data.delivers);
+    setLabeledText('client-does', 'Your Responsibility:', data.clientDoes);
     document.getElementById('form-section').classList.remove('hidden');
   } catch (e) {
     document.getElementById('loading').classList.add('hidden');

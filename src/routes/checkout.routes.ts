@@ -817,10 +817,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     // Merchant logo
     if (offerData.merchantLogoUrl) {
-      var logoDiv = document.createElement('div');
-      logoDiv.style.cssText = 'text-align:center;margin-bottom:12px;';
-      logoDiv.innerHTML = '<img src="' + offerData.merchantLogoUrl + '" alt="" style="max-width:150px;height:auto;">';
-      el('offer-section').insertBefore(logoDiv, el('offer-section').firstChild);
+      try {
+        var logoUrl = new URL(offerData.merchantLogoUrl, window.location.origin);
+        if (logoUrl.protocol === 'https:' || logoUrl.protocol === 'http:') {
+          var logoDiv = document.createElement('div');
+          logoDiv.style.cssText = 'text-align:center;margin-bottom:12px;';
+          var logoImg = document.createElement('img');
+          logoImg.src = logoUrl.href;
+          logoImg.alt = '';
+          logoImg.style.cssText = 'max-width:150px;height:auto;';
+          logoDiv.appendChild(logoImg);
+          el('offer-section').insertBefore(logoDiv, el('offer-section').firstChild);
+        }
+      } catch(e) { /* ignore invalid logo URLs */ }
     }
 
     el('offer-name').textContent = offerData.programName;
@@ -858,7 +867,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     // Update consent label with T&C link (source order: per-offer tcUrl → default text)
     var consentLabel = el('consent-text');
     if (offerData.tcUrl) {
-      consentLabel.innerHTML = 'I agree to the <a href="' + offerData.tcUrl + '" target="_blank" style="color:#3b82f6;text-decoration:underline">Terms and Conditions</a> and authorize this charge.';
+      try {
+        var termsUrl = new URL(offerData.tcUrl, window.location.origin);
+        if (termsUrl.protocol === 'https:' || termsUrl.protocol === 'http:') {
+          consentLabel.textContent = 'I agree to the ';
+          var link = document.createElement('a');
+          link.href = termsUrl.href;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.style.cssText = 'color:#3b82f6;text-decoration:underline';
+          link.textContent = 'Terms and Conditions';
+          consentLabel.appendChild(link);
+          consentLabel.appendChild(document.createTextNode(' and authorize this charge.'));
+        } else {
+          consentLabel.textContent = 'I agree to the Terms and Conditions and authorize this charge.';
+        }
+      } catch(e) {
+        consentLabel.textContent = 'I agree to the Terms and Conditions and authorize this charge.';
+      }
     } else if (offerData.quickCheckoutConsentText) {
       consentLabel.textContent = offerData.quickCheckoutConsentText;
     }
