@@ -28,6 +28,14 @@ function requireDebugToken(req: Request, res: Response, next: () => void): void 
   next();
 }
 
+function sendDebugError(res: Response, err: any): void {
+  const body: Record<string, unknown> = { error: err?.message || 'Debug route failed' };
+  if (process.env.NODE_ENV !== 'production') {
+    body.stack = err?.stack;
+  }
+  res.status(500).json(body);
+}
+
 router.get('/health', async (_req: Request, res: Response) => {
   const checks: Record<string, string> = { app: 'ok' };
 
@@ -148,35 +156,11 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
         };
       }
 
-      // Test actual upsert (creates or finds the contact)
-      try {
-        const email = enrollment.email;
-        if (email) {
-          const upsertRes = await api.post('/contacts/upsert', {
-            firstName: email.split('@')[0] || 'TestClient',
-            email: email,
-            locationId: locationId,
-          });
-          const cid = upsertRes.data?.contact?.id || upsertRes.data?.id || '';
-          ghlDiagnostic.upsertTest = { success: true, contactId: cid, error: '' };
-
-          // If we got a contactId, update the enrollment record
-          if (cid && !enrollment.contact_id) {
-            await supabase.from('enrollments').update({ contact_id: cid }).eq('id', enrollment.id);
-            ghlDiagnostic.upsertTest.contactId += ' (saved to enrollment)';
-          }
-        } else {
-          ghlDiagnostic.upsertTest = { success: false, contactId: '', error: 'no email on enrollment' };
-        }
-      } catch (upsertErr: any) {
-        ghlDiagnostic.upsertTest = {
-          success: false,
-          contactId: '',
-          error: upsertErr.message || 'upsert failed',
-          status: (upsertErr as any).response?.status,
-          responseData: (upsertErr as any).response?.data,
-        };
-      }
+      ghlDiagnostic.upsertTest = {
+        success: false,
+        contactId: '',
+        error: 'read-only diagnostic; use POST /api/debug/enrollment-check/:consentToken/repair-contact to upsert/save contact',
+      };
     } catch (apiErr: any) {
       ghlDiagnostic.ghlApiInit = {
         success: false,
@@ -212,7 +196,62 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'enrollment-check diagnostic failed');
-    res.status(500).json({ error: err.message });
+    sendDebugError(res, err);
+  }
+});
+
+router.post('/api/debug/enrollment-check/:consentToken/repair-contact', async (req: Request, res: Response) => {
+  try {
+    const { consentToken } = req.params;
+    const supabase = getSupabase();
+
+    const { data: enrollment, error: enrollErr } = await supabase
+      .from('enrollments')
+      .select('id, location_id, contact_id, email')
+      .eq('consent_token', consentToken)
+      .single();
+
+    if (enrollErr || !enrollment) {
+      res.status(404).json({
+        found: false,
+        error: enrollErr?.message || 'No enrollment found',
+        consentToken,
+      });
+      return;
+    }
+
+    const locationId = enrollment.location_id || '';
+    const email = enrollment.email || '';
+    if (!locationId || !email) {
+      res.status(400).json({ error: 'Enrollment must have location_id and email to repair contact' });
+      return;
+    }
+
+    const api = await ghlApi(locationId);
+    const upsertRes = await api.post('/contacts/upsert', {
+      firstName: email.split('@')[0] || 'Client',
+      email,
+      locationId,
+    });
+    const contactId = upsertRes.data?.contact?.id || upsertRes.data?.id || '';
+    if (!contactId) {
+      res.status(502).json({ error: 'GHL upsert returned no contact id' });
+      return;
+    }
+
+    if (!enrollment.contact_id) {
+      await supabase.from('enrollments').update({ contact_id: contactId }).eq('id', enrollment.id);
+    }
+
+    res.json({
+      _debug: true,
+      repaired: !enrollment.contact_id,
+      enrollmentId: enrollment.id,
+      contactId,
+    });
+  } catch (err: any) {
+    logger.error({ err: err.message, stack: err.stack }, 'enrollment-check repair-contact failed');
+    sendDebugError(res, err);
   }
 });
 
@@ -296,7 +335,7 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug clients-data failed');
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
@@ -396,7 +435,7 @@ router.get('/api/debug/payments-data/:locationId', async (req: Request, res: Res
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug payments-data failed');
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
@@ -422,12 +461,12 @@ router.get('/api/debug/enrollments/:locationId', async (req: Request, res: Respo
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug enrollments failed');
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
 // ─── Debug: backfill all enrollments missing contactId + fix evidence records ───────
-router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res: Response) => {
+router.post('/api/debug/backfill-contacts/:locationId', async (req: Request, res: Response) => {
   try {
     const locationId = req.params.locationId;
     const supabase = getSupabase();
@@ -676,7 +715,7 @@ router.get('/api/debug/backfill-contacts/:locationId', async (req: Request, res:
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack }, 'debug backfill-contacts failed');
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
@@ -739,12 +778,12 @@ router.get('/api/debug/evidence-check/:locationId', async (req: Request, res: Re
       contactCounts,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
 // ─── Debug: test PDF storage upload ─────────────────────────
-router.get('/api/debug/test-pdf-storage', async (_req: Request, res: Response) => {
+router.post('/api/debug/test-pdf-storage', async (_req: Request, res: Response) => {
   try {
     const supabase = getSupabase();
 
@@ -784,7 +823,7 @@ router.get('/api/debug/test-pdf-storage', async (_req: Request, res: Response) =
       enrollmentsWithPacket: withPacket || [],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendDebugError(res, err);
   }
 });
 
