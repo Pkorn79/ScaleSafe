@@ -102,13 +102,10 @@ function paymentUpdateHtml(): string {
 
 <script>
 var API_BASE = window.location.origin;
-console.log('RAW search:', window.location.search);
-console.log('RAW href:', window.location.href);
 var params = new URLSearchParams(window.location.search);
 var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
-console.log('Parsed contactId:', contactId, 'locationId:', locationId);
 
 var state = {
   config: null,
@@ -140,7 +137,6 @@ function showError(msg) {
       : API_BASE + '/api/payment-update/config?contactId=' + encodeURIComponent(contactId) + '&locationId=' + encodeURIComponent(locationId);
     var res = await fetch(configUrl);
     var data = await res.json();
-    console.log('Payment update config:', JSON.stringify(data));
     state.config = data;
 
     el('loading').classList.add('hidden');
