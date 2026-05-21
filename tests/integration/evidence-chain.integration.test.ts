@@ -65,6 +65,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['payment_events'] = [
       {
         id: paymentId,
+        location_id: 'loc_1',
         consent_token: consentToken,
         ip_address: sharedIp,
         processor: 'stripe',
@@ -94,7 +95,7 @@ describe('Evidence Chain Integration', () => {
       },
     ];
 
-    const result = await evidenceChainService.verifyChain(paymentId);
+    const result = await evidenceChainService.verifyChain(paymentId, 'loc_1');
 
     expect(result.complete).toBe(true);
     expect(result.gaps).toHaveLength(0);
@@ -116,6 +117,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['payment_events'] = [
       {
         id: paymentId,
+        location_id: 'loc_1',
         consent_token: consentToken,
         ip_address: '2.2.2.2',
         processor: 'nmi',
@@ -148,6 +150,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['payment_events'] = [
       {
         id: paymentId,
+        location_id: 'loc_1',
         consent_token: null,
         ip_address: '3.3.3.3',
         processor: 'nmi',
@@ -170,6 +173,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['payment_events'] = [
       {
         id: paymentId,
+        location_id: 'loc_1',
         consent_token: null,
         ip_address: '4.4.4.4',
         processor: 'stripe',
@@ -193,6 +197,28 @@ describe('Evidence Chain Integration', () => {
     const result = await evidenceChainService.verifyChain('nonexistent');
 
     expect(result.complete).toBe(false);
+    expect(result.chainStrength).toBe(0);
+    expect(result.gaps).toContain('Payment event not found');
+  });
+
+  it('should not return a payment chain for another location', async () => {
+    chainMockData['payment_events'] = [
+      {
+        id: 'pay_cross_tenant',
+        location_id: 'loc_other',
+        consent_token: null,
+        ip_address: '5.5.5.5',
+        processor: 'nmi',
+        processor_transaction_id: 'txn_other',
+        amount: 100,
+        created_at: '2026-04-01T00:00:00Z',
+      },
+    ];
+
+    const result = await evidenceChainService.verifyChain('pay_cross_tenant', 'loc_1');
+
+    expect(result.complete).toBe(false);
+    expect(result.links).toHaveLength(0);
     expect(result.chainStrength).toBe(0);
     expect(result.gaps).toContain('Payment event not found');
   });

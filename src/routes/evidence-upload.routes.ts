@@ -130,7 +130,8 @@ router.get('/status', ssoAuth, requireTenant, async (req: Request, res: Response
 // GET /api/evidence/chain/:paymentEventId
 router.get('/chain/:paymentEventId', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await evidenceChainService.verifyChain(req.params.paymentEventId);
+    const locationId = resolveLocationId(req);
+    const result = await evidenceChainService.verifyChain(req.params.paymentEventId, locationId);
     res.json(result);
   } catch (err) {
     next(err);

@@ -17,13 +17,18 @@ export interface EvidenceChainResult {
 }
 
 export const evidenceChainService = {
-  async verifyChain(paymentEventId: string): Promise<EvidenceChainResult> {
+  async verifyChain(paymentEventId: string, locationId?: string): Promise<EvidenceChainResult> {
     const supabase = getSupabase();
-    const { data: payment } = await supabase
+    let paymentQuery = supabase
       .from('payment_events')
       .select('*')
-      .eq('id', paymentEventId)
-      .single();
+      .eq('id', paymentEventId);
+
+    if (locationId) {
+      paymentQuery = paymentQuery.eq('location_id', locationId);
+    }
+
+    const { data: payment } = await paymentQuery.single();
 
     if (!payment) {
       return { complete: false, links: [], gaps: ['Payment event not found'], chainStrength: 0 };
