@@ -7,10 +7,11 @@ import axios from 'axios';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+const mockGhlPost = jest.fn();
 
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn().mockResolvedValue({
-    post: jest.fn().mockResolvedValue({ data: {} }),
+    post: mockGhlPost,
     put: jest.fn().mockResolvedValue({ data: {} }),
     get: jest.fn().mockResolvedValue({ data: {} }),
   }),
@@ -255,13 +256,16 @@ beforeEach(() => {
   paymentEventStore.length = 0;
   triggerSubStore.length = 0;
   mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+  mockGhlPost.mockResolvedValue({ status: 200, data: {} });
 });
 
 describe('Enrollment Integration — full lifecycle', () => {
   test('consent → payment → enrollment complete → trigger fired', async () => {
     // Subscribe a trigger
     await triggerRepository.upsertSubscription(
-      'loc_1', 'enrollment_complete', 'https://hooks.ghl.com/wf_enrollment',
+      'loc_1',
+      'enrollment_complete',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf_enrollment',
     );
 
     // Step 1: Capture consent
@@ -316,8 +320,8 @@ describe('Enrollment Integration — full lifecycle', () => {
     expect(paymentEventStore[0].processor).toBe('ghl');
 
     // Verify trigger was fired
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://hooks.ghl.com/wf_enrollment',
+    expect(mockGhlPost).toHaveBeenCalledWith(
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf_enrollment',
       expect.objectContaining({
         contact_id: 'contact_1',
         offer_name: 'Test Program',
@@ -331,7 +335,9 @@ describe('Enrollment Integration — full lifecycle', () => {
   test('recurring payment fires ss_payment_received trigger', async () => {
     // Setup: create an enrolled enrollment
     await triggerRepository.upsertSubscription(
-      'loc_1', 'ss_payment_received', 'https://hooks.ghl.com/wf_payment',
+      'loc_1',
+      'ss_payment_received',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf_payment',
     );
 
     const consent = await consentService.captureConsent({
@@ -361,6 +367,8 @@ describe('Enrollment Integration — full lifecycle', () => {
     // Clear axios mock to isolate recurring payment trigger
     mockedAxios.post.mockClear();
     mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+    mockGhlPost.mockClear();
+    mockGhlPost.mockResolvedValue({ status: 200, data: {} });
 
     // Recurring payment
     await phase2EnrollmentService.handleRecurringPayment({
@@ -375,8 +383,8 @@ describe('Enrollment Integration — full lifecycle', () => {
     await new Promise(resolve => setImmediate(resolve));
 
     // Verify ss_payment_received trigger fired
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://hooks.ghl.com/wf_payment',
+    expect(mockGhlPost).toHaveBeenCalledWith(
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf_payment',
       expect.objectContaining({
         contact_id: 'contact_2',
         amount: 500,
