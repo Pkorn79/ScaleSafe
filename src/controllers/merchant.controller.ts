@@ -5,6 +5,7 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { storageService } from '../services/storage.service';
+import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
 
 export const merchantController = {
   /** GET /api/merchants/config — get full merchant configuration */
@@ -98,7 +99,7 @@ export const merchantController = {
         secret,
         headerName: 'x-scalesafe-webhook-secret',
         mergeField: '{{ custom_values.scalesafe_webhook_secret }}',
-        enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+        enforceRequired: isMerchantWebhookSecretEnforced(),
       });
     } catch (err) { next(err); }
   },
@@ -115,7 +116,7 @@ export const merchantController = {
         secret,
         headerName: 'x-scalesafe-webhook-secret',
         mergeField: '{{ custom_values.scalesafe_webhook_secret }}',
-        enforceRequired: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+        enforceRequired: isMerchantWebhookSecretEnforced(),
       });
     } catch (err) { next(err); }
   },

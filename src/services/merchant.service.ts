@@ -6,6 +6,7 @@ import { BETA_CUSTOM_FIELD_REGISTRY, CUSTOM_VALUE_REGISTRY } from '../constants/
 import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-clauses';
 import { getSupabase } from '../clients/supabase.client';
 import { triggerHealthService } from './trigger-health.service';
+import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ export const merchantService = {
       details: {
         headerName: 'x-scalesafe-webhook-secret',
         mergeField: WEBHOOK_SECRET_MERGE_FIELD,
-        enforcementEnabled: process.env.REQUIRE_WEBHOOK_SECRET === 'true',
+        enforcementEnabled: isMerchantWebhookSecretEnforced(),
       },
     });
 

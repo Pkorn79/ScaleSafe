@@ -35,10 +35,12 @@ function res() {
 
 describe('requireMerchantWebhookSecret', () => {
   const originalRequireWebhookSecret = process.env.REQUIRE_WEBHOOK_SECRET;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.REQUIRE_WEBHOOK_SECRET;
+    process.env.NODE_ENV = 'test';
   });
 
   afterAll(() => {
@@ -46,6 +48,11 @@ describe('requireMerchantWebhookSecret', () => {
       delete process.env.REQUIRE_WEBHOOK_SECRET;
     } else {
       process.env.REQUIRE_WEBHOOK_SECRET = originalRequireWebhookSecret;
+    }
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
     }
   });
 
@@ -77,6 +84,18 @@ describe('requireMerchantWebhookSecret', () => {
 
   it('rejects missing secrets when enforcement is on', async () => {
     process.env.REQUIRE_WEBHOOK_SECRET = 'true';
+    const response = res();
+    const next = jest.fn();
+
+    await requireMerchantWebhookSecret(req({}, { locationId: 'loc_1' }), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(response.json).toHaveBeenCalledWith({ error: 'WEBHOOK_SECRET_REQUIRED' });
+  });
+
+  it('rejects missing secrets in production even when REQUIRE_WEBHOOK_SECRET is unset', async () => {
+    process.env.NODE_ENV = 'production';
     const response = res();
     const next = jest.fn();
 

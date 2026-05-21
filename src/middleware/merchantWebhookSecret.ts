@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
+import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
 
 function getHeaderSecret(req: Request): string {
   const direct = req.header('x-scalesafe-webhook-secret');
@@ -12,7 +13,7 @@ function getHeaderSecret(req: Request): string {
 }
 
 function shouldEnforce(): boolean {
-  return process.env.REQUIRE_WEBHOOK_SECRET === 'true';
+  return isMerchantWebhookSecretEnforced();
 }
 
 function observe(req: Request, reason: string, extra: Record<string, unknown> = {}) {
