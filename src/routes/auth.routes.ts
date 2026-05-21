@@ -9,6 +9,11 @@ import { ValidationError, AuthenticationError } from '../utils/errors';
 
 const router = Router();
 
+function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
+  if (config.isProd || !debug) return undefined;
+  return debug;
+}
+
 /**
  * GET /auth/callback
  * GHL OAuth callback — exchanges authorization code for tokens and provisions the merchant.
@@ -25,12 +30,11 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     if (!locationId) {
       logger.error({ debug: _debug, companyId }, 'GHL token response missing locationId');
-      // Return debug info directly in response so we can diagnose without logs
       res.status(400).json({
         error: 'VALIDATION_ERROR',
         message: 'GHL token response missing locationId — cannot provision merchant',
         companyId: companyId || 'none',
-        debug: _debug,
+        debug: oauthDebugResponse(_debug),
       });
       return;
     }

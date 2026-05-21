@@ -149,10 +149,8 @@ async function resolveLocationFromCompany(
       params: { companyId },
     });
 
-    // Capture the FULL response for debugging
     debug.httpStatus = res.status;
     debug.responseKeys = Object.keys(res.data || {});
-    debug.fullResponseBody = res.data;
 
     const locations = res.data.locations || [];
     debug.locationCount = locations.length;
@@ -175,8 +173,13 @@ async function resolveLocationFromCompany(
   } catch (err: any) {
     debug.error = err.message;
     debug.errorStatus = err.response?.status;
-    debug.errorBody = err.response?.data;
-    logger.error({ err: err.message, companyId, status: err.response?.status, body: err.response?.data }, 'Failed to resolve locationId from locations/search');
+    debug.errorBodyKeys = err.response?.data ? Object.keys(err.response.data) : [];
+    logger.error({
+      err: err.message,
+      companyId,
+      status: err.response?.status,
+      responseKeys: err.response?.data ? Object.keys(err.response.data) : [],
+    }, 'Failed to resolve locationId from locations/search');
     return { locationId: '', debug };
   }
 }

@@ -41,7 +41,7 @@ jest.mock('../../src/utils/crypto', () => ({
 }));
 
 jest.mock('../../src/config', () => ({
-  config: { ghl: { ssoKey: 'test-key' } },
+  config: { ghl: { ssoKey: 'test-key' }, isProd: false },
 }));
 
 jest.mock('../../src/utils/logger', () => ({
@@ -51,6 +51,7 @@ jest.mock('../../src/utils/logger', () => ({
 import express from 'express';
 import request from 'supertest';
 import authRoutes from '../../src/routes/auth.routes';
+import { config as testConfig } from '../../src/config';
 
 const app = express();
 app.use(express.json());
@@ -79,6 +80,7 @@ const MERCHANT_RECORD = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (testConfig as any).isProd = false;
 });
 
 describe('GET /auth/callback', () => {
@@ -134,6 +136,21 @@ describe('GET /auth/callback', () => {
     expect(res.body.message).toMatch(/missing locationId/);
     expect(res.body.debug).toBeDefined();
     expect(res.body.debug.hadLocationId).toBe(false);
+  });
+
+  it('does not expose OAuth debug info in production', async () => {
+    (testConfig as any).isProd = true;
+    mockExchangeCodeForTokens.mockResolvedValue({
+      ...BASE_TOKEN_RESPONSE,
+      locationId: '',
+      _debug: { tokenResponseKeys: ['access_token'], hadLocationId: false, hadCompanyId: true },
+    });
+
+    const res = await request(app).get('/auth/callback?code=bad-code');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('VALIDATION_ERROR');
+    expect(res.body.debug).toBeUndefined();
   });
 });
 
