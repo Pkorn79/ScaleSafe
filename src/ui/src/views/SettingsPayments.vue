@@ -357,18 +357,12 @@ async function connectStripe() {
   if (stripePopup && !stripePopup.closed) stripePopup.close();
 
   try {
-    const config = await api.get<any>('/api/merchants/config');
-    const locationId = config?.locationId;
-    if (!locationId) {
-      loadError.value = 'Location ID not found. Please refresh and try again.';
-      return;
-    }
-
     // Open Stripe OAuth in a popup — Stripe refuses to load inside an iframe,
     // so the SPA stays inside GHL (preserving SSO) and the popup handles OAuth.
     // The /auth/stripe/callback endpoint renders a page that postMessages the
     // result back here and self-closes.
-    const url = '/auth/stripe/connect?locationId=' + encodeURIComponent(locationId);
+    const connect = await api.get<{ url: string }>('/auth/stripe/connect-url');
+    const url = connect.url;
     stripePopup = window.open(url, 'scalesafe_stripe_oauth', 'width=600,height=750');
     if (!stripePopup) {
       loadError.value = 'Popup blocked. Please allow popups for this site and try again.';

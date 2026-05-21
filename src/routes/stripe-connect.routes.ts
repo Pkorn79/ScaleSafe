@@ -12,9 +12,9 @@ const router = Router();
  * GET /auth/stripe/connect
  * Generates the OAuth URL and redirects the merchant to Stripe.
  */
-router.get('/connect', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/connect', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = req.query.locationId as string;
+    const locationId = req.tenantContext?.locationId;
     const email = req.query.email as string | undefined;
 
     if (!locationId) {
@@ -23,6 +23,26 @@ router.get('/connect', async (req: Request, res: Response, next: NextFunction) =
 
     const url = stripeConnectService.generateAuthUrl(locationId, email);
     res.redirect(url);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /auth/stripe/connect-url
+ * Authenticated SPA helper. Returns the Stripe OAuth URL so the browser can
+ * open it in a popup while keeping SSO headers on this request.
+ */
+router.get('/connect-url', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const locationId = req.tenantContext?.locationId;
+    const email = (req.query.email as string | undefined) || req.tenantContext?.email;
+
+    if (!locationId) {
+      throw new ValidationError('Missing locationId');
+    }
+
+    res.json({ url: stripeConnectService.generateAuthUrl(locationId, email) });
   } catch (err) {
     next(err);
   }
@@ -40,7 +60,7 @@ router.get('/connect', async (req: Request, res: Response, next: NextFunction) =
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const code = req.query.code as string;
-    const state = req.query.state as string; // locationId
+    const state = req.query.state as string;
     const error = req.query.error as string;
 
     if (error) {
@@ -53,20 +73,29 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       throw new ValidationError('Missing code or state in Stripe callback');
     }
 
+    let locationId: string;
+    try {
+      locationId = stripeConnectService.parseCallbackState(state);
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Stripe OAuth callback state rejected');
+      sendPopupResult(res, false, 'invalid_state');
+      return;
+    }
+
     // Exchange code for stripe_user_id
     let result;
     try {
-      result = await stripeConnectService.handleCallback(code, state);
+      result = await stripeConnectService.handleCallback(code, locationId);
     } catch (err: any) {
-      logger.error({ err: err.message, code: err.code, state }, 'Stripe OAuth token exchange failed');
+      logger.error({ err: err.message, code: err.code, locationId }, 'Stripe OAuth token exchange failed');
       sendPopupResult(res, false, 'Token exchange failed: ' + (err.message || 'unknown'));
       return;
     }
 
     // Look up merchant by locationId
-    const merchant = await merchantRepository.findByLocationId(state);
+    const merchant = await merchantRepository.findByLocationId(locationId);
     if (!merchant) {
-      logger.error({ locationId: state }, 'Stripe callback: merchant not found');
+      logger.error({ locationId }, 'Stripe callback: merchant not found');
       sendPopupResult(res, false, 'merchant_not_found');
       return;
     }
@@ -76,7 +105,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     try {
       webhookEndpointId = await stripeConnectService.registerWebhooks(
         result.stripeUserId,
-        state,
+        locationId,
       );
     } catch (err) {
       logger.warn({ err }, 'Failed to register Stripe webhooks — continuing');
@@ -86,7 +115,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     try {
       await stripeConnectService.saveConnection(
         merchant.id,
-        state,
+        locationId,
         result.stripeUserId,
         webhookEndpointId,
       );
@@ -97,7 +126,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     }
 
     logger.info(
-      { locationId: state, stripeUserId: result.stripeUserId },
+      { locationId, stripeUserId: result.stripeUserId },
       'Stripe Connect fully provisioned',
     );
 

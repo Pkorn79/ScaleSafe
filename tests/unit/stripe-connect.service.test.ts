@@ -23,9 +23,12 @@ jest.mock('stripe', () => {
 jest.mock('../../src/config', () => ({
   config: {
     stripe: { secretKey: 'sk_test_xxx', clientId: 'ca_test_client', webhookSecret: '' },
+    ghl: { ssoKey: 'test-sso-key' },
+    processorEncryptionKey: 'test-processor-encryption-key',
     appUrl: 'https://app.scalesafe.com',
     logLevel: 'silent',
     isDev: true,
+    isProd: false,
     nodeEnv: 'test',
   },
 }));
@@ -58,20 +61,32 @@ describe('StripeConnectService', () => {
       expect(url).toContain('client_id=ca_test_client');
       expect(url).toContain('response_type=code');
       expect(url).toContain('scope=read_write');
-      expect(url).toContain('state=loc_123');
+      const parsed = new URL(url);
+      const state = parsed.searchParams.get('state') || '';
+      expect(stripeConnectService.parseCallbackState(state)).toBe('loc_123');
       expect(url).toContain('stripe_user%5Bemail%5D=merchant%40test.com');
     });
 
     it('generates URL without email prefill', () => {
       const url = stripeConnectService.generateAuthUrl('loc_456');
 
-      expect(url).toContain('state=loc_456');
+      const parsed = new URL(url);
+      const state = parsed.searchParams.get('state') || '';
+      expect(stripeConnectService.parseCallbackState(state)).toBe('loc_456');
       expect(url).not.toContain('stripe_user');
     });
 
     it('includes redirect_uri', () => {
       const url = stripeConnectService.generateAuthUrl('loc_789');
       expect(url).toContain('redirect_uri=https%3A%2F%2Fapp.scalesafe.com%2Fauth%2Fstripe%2Fcallback');
+    });
+
+    it('rejects tampered callback state', () => {
+      const url = stripeConnectService.generateAuthUrl('loc_123');
+      const parsed = new URL(url);
+      const state = parsed.searchParams.get('state') || '';
+
+      expect(() => stripeConnectService.parseCallbackState(`${state}x`)).toThrow('state');
     });
   });
 

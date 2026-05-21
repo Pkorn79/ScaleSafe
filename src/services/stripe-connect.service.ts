@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
+import * as crypto from 'crypto';
 const Stripe = require('stripe');
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
@@ -21,8 +22,27 @@ const WEBHOOK_EVENTS: string[] = [
   'charge.refunded',
 ];
 
+const STATE_MAX_AGE_MS = 60 * 60 * 1000;
+
 function getStripe(): any {
   return new Stripe(config.stripe.secretKey);
+}
+
+function stripeStateSecret(): string {
+  return config.processorEncryptionKey || config.ghl?.ssoKey || config.stripe.secretKey;
+}
+
+function signStatePayload(payload: string): string {
+  return crypto.createHmac('sha256', stripeStateSecret()).update(payload).digest('base64url');
+}
+
+function generateSignedState(locationId: string): string {
+  const payload = Buffer.from(JSON.stringify({
+    locationId,
+    issuedAt: Date.now(),
+    nonce: crypto.randomBytes(16).toString('hex'),
+  })).toString('base64url');
+  return `${payload}.${signStatePayload(payload)}`;
 }
 
 export const stripeConnectService = {
@@ -31,12 +51,13 @@ export const stripeConnectService = {
    * Merchant clicks this to start the OAuth flow.
    */
   generateAuthUrl(locationId: string, merchantEmail?: string): string {
+    const state = generateSignedState(locationId);
     const params = new URLSearchParams({
       client_id: config.stripe.clientId,
       response_type: 'code',
       scope: 'read_write',
       redirect_uri: `${config.appUrl}/auth/stripe/callback`,
-      state: locationId,
+      state,
     });
 
     if (merchantEmail) {
@@ -44,6 +65,50 @@ export const stripeConnectService = {
     }
 
     return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
+  },
+
+  /**
+   * Verify the callback state and return the intended location.
+   */
+  parseCallbackState(state: string): string {
+    const parts = state.split('.');
+    const [payload, signature] = parts;
+    if (parts.length !== 2) {
+      if (!config.isProd && /^[A-Za-z0-9_-]+$/.test(state)) return state;
+      throw new ProcessorError('Invalid Stripe OAuth state', 'stripe', 'OAUTH_INVALID_STATE');
+    }
+
+    if (!payload || !signature) {
+      if (!config.isProd && /^[A-Za-z0-9_-]+$/.test(state)) return state;
+      throw new ProcessorError('Invalid Stripe OAuth state', 'stripe', 'OAUTH_INVALID_STATE');
+    }
+
+    const expected = signStatePayload(payload);
+    const actualBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (
+      actualBuffer.length !== expectedBuffer.length
+      || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+    ) {
+      throw new ProcessorError('Invalid Stripe OAuth state signature', 'stripe', 'OAUTH_INVALID_STATE');
+    }
+
+    let parsed: { locationId?: unknown; issuedAt?: unknown };
+    try {
+      parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    } catch {
+      throw new ProcessorError('Invalid Stripe OAuth state payload', 'stripe', 'OAUTH_INVALID_STATE');
+    }
+
+    if (typeof parsed.locationId !== 'string' || !parsed.locationId) {
+      throw new ProcessorError('Stripe OAuth state missing location', 'stripe', 'OAUTH_INVALID_STATE');
+    }
+
+    if (typeof parsed.issuedAt !== 'number' || Date.now() - parsed.issuedAt > STATE_MAX_AGE_MS) {
+      throw new ProcessorError('Expired Stripe OAuth state', 'stripe', 'OAUTH_EXPIRED_STATE');
+    }
+
+    return parsed.locationId;
   },
 
   /**
