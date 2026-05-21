@@ -97,6 +97,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const { enrollment: enr, processorType, transactionId, amountCents, offerName, installmentFrequency, source } = params;
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
+  const isNmiHistorySync = source === 'nmi_history_sync';
   const newPaymentsMade = (enr.payments_made || 0) + 1;
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
   const paymentsRemaining = isFiniteInstallment
@@ -186,10 +187,17 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
           source,
           paymentType: enr.payment_type,
           offerName,
+          recovery_note: isNmiHistorySync
+            ? 'Recovered from NMI history - live Silent Post missing'
+            : null,
         },
         ...buildDefenseEvidenceFields({
-          summary: `${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} processed via ${processorType}. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`,
-          title: `Recurring Payment #${newPaymentsMade}`,
+          summary: isNmiHistorySync
+            ? `Recovered from NMI history - live Silent Post missing. ${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} was imported from NMI transaction history. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`
+            : `${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} processed via ${processorType}. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`,
+          title: isNmiHistorySync
+            ? `Recovered NMI Payment #${newPaymentsMade}`
+            : `Recurring Payment #${newPaymentsMade}`,
           proofRole: 'payment_history',
           relevance: {
             tags: ['authorization', 'fraud', 'services_not_provided', 'credit_not_processed', 'cancelled_recurring'],

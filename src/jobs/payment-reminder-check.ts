@@ -5,21 +5,22 @@ import { logger } from '../utils/logger';
 
 /**
  * Frequent job: scan enrollments for upcoming installment/subscription payments
- * due in 3 days and 1 day. Fires ss_upcoming_payment_reminder for each.
- * Idempotency keys prevent duplicate 3-day or 1-day reminders when the job runs hourly.
+ * due in 3 days and within the next 24 hours. Fires ss_upcoming_payment_reminder
+ * for each. Idempotency keys prevent duplicate reminders when the job runs hourly.
  */
 export async function runPaymentReminderCheck(): Promise<{
   total: number;
   sent: number;
   skipped: number;
-  reminders: Array<Awaited<ReturnType<typeof sendRemindersForDay>>>;
+  reminders: Array<Awaited<ReturnType<typeof sendRemindersForWindow>>>;
 }> {
   const supabase = getSupabase();
 
   try {
-    const results = await Promise.all(([3, 1] as const).map((daysUntilPayment) =>
-      sendRemindersForDay(supabase, daysUntilPayment),
-    ));
+    const results = await Promise.all([
+      sendRemindersForWindow(supabase, { type: 'three_day', daysUntilPayment: 3 }),
+      sendRemindersForWindow(supabase, { type: 'next_24_hours', daysUntilPayment: 1 }),
+    ]);
 
     const summary = {
       total: results.reduce((sum, result) => sum + result.total, 0),
@@ -35,31 +36,48 @@ export async function runPaymentReminderCheck(): Promise<{
   }
 }
 
-async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, daysUntilPayment: 1 | 3): Promise<{
+type ReminderWindow = {
+  type: 'three_day' | 'next_24_hours';
+  daysUntilPayment: 1 | 3;
+};
+
+function dateOnly(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, window: ReminderWindow): Promise<{
   daysUntilPayment: number;
   targetDate: string;
+  reminderWindow: string;
   total: number;
   sent: number;
   skipped: number;
 }> {
-  const targetDate = new Date();
-  targetDate.setDate(targetDate.getDate() + daysUntilPayment);
-  const targetDateStr = targetDate.toISOString().split('T')[0];
+  const today = new Date();
+  const targetDate = new Date(today);
+  targetDate.setDate(targetDate.getDate() + window.daysUntilPayment);
+  const targetDateStr = dateOnly(targetDate);
+  const todayStr = dateOnly(today);
 
-  const { data: enrollments, error } = await supabase
+  const baseQuery = supabase
     .from('enrollments')
     .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, payments_made, payments_total')
-    .eq('next_billing_date', targetDateStr)
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription']);
 
+  const { data: enrollments, error } = window.type === 'next_24_hours'
+    ? await baseQuery
+        .gte('next_billing_date', todayStr)
+        .lte('next_billing_date', targetDateStr)
+    : await baseQuery.eq('next_billing_date', targetDateStr);
+
   if (error) {
-    logger.error({ err: error.message, daysUntilPayment, targetDate: targetDateStr }, 'Payment reminder query failed');
-    return { daysUntilPayment, targetDate: targetDateStr, total: 0, sent: 0, skipped: 0 };
+    logger.error({ err: error.message, daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, targetDate: targetDateStr }, 'Payment reminder query failed');
+    return { daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, targetDate: targetDateStr, total: 0, sent: 0, skipped: 0 };
   }
   if (!enrollments || enrollments.length === 0) {
-    logger.info({ daysUntilPayment, targetDate: targetDateStr }, 'No upcoming payments for reminder window');
-    return { daysUntilPayment, targetDate: targetDateStr, total: 0, sent: 0, skipped: 0 };
+    logger.info({ daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, targetDate: targetDateStr }, 'No upcoming payments for reminder window');
+    return { daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, targetDate: targetDateStr, total: 0, sent: 0, skipped: 0 };
   }
 
   let sent = 0;
@@ -71,7 +89,7 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         enr.location_id,
         enr.id,
         enr.next_billing_date,
-        `${daysUntilPayment}d`,
+        window.type,
       ].join(':');
       if (await idempotencyRepository.exists(reminderEventId, 'payment_reminder')) {
         skipped++;
@@ -134,10 +152,10 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         paymentsMade,
         payments_total: paymentsTotal,
         paymentsTotal,
-        days_until_payment: daysUntilPayment,
-        daysUntilPayment,
-        reminder_window: daysUntilPayment === 3 ? 'three_day' : 'one_day',
-        reminderWindow: daysUntilPayment === 3 ? 'three_day' : 'one_day',
+        days_until_payment: window.daysUntilPayment,
+        daysUntilPayment: window.daysUntilPayment,
+        reminder_window: window.type,
+        reminderWindow: window.type,
         payments_remaining: paymentsRemaining,
         paymentsRemaining,
         processor,
@@ -162,7 +180,8 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
       const result = await triggerService.fireTrigger(enr.location_id, 'ss_upcoming_payment_reminder', payload);
       if (result.sent > 0) {
         await idempotencyRepository.record(reminderEventId, 'payment_reminder', enr.location_id, {
-          days_until_payment: daysUntilPayment,
+          days_until_payment: window.daysUntilPayment,
+          reminder_window: window.type,
           next_billing_date: enr.next_billing_date,
           sent: result.sent,
           failed: result.failed,
@@ -170,14 +189,14 @@ async function sendRemindersForDay(supabase: ReturnType<typeof getSupabase>, day
         sent++;
       } else {
         logger.warn(
-          { enrollmentId: enr.id, daysUntilPayment, nextBillingDate: enr.next_billing_date },
+          { enrollmentId: enr.id, daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, nextBillingDate: enr.next_billing_date },
           'Payment reminder trigger had no active successful deliveries',
         );
       }
     } catch (err: any) {
-      logger.warn({ err: err.message, enrollmentId: enr.id, daysUntilPayment }, 'Payment reminder trigger failed');
+      logger.warn({ err: err.message, enrollmentId: enr.id, daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type }, 'Payment reminder trigger failed');
     }
   }
 
-  return { daysUntilPayment, targetDate: targetDateStr, total: enrollments.length, sent, skipped };
+  return { daysUntilPayment: window.daysUntilPayment, reminderWindow: window.type, targetDate: targetDateStr, total: enrollments.length, sent, skipped };
 }

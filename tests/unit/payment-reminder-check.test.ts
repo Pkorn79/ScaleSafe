@@ -34,28 +34,29 @@ describe('payment reminder check', () => {
 
     mockFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') {
+        const enrollment = {
+          id: 'enr_1',
+          location_id: 'loc_1',
+          contact_id: 'contact_1',
+          offer_id: 'offer_1',
+          next_billing_date: '2026-05-12',
+          payment_type: 'installment',
+          payments_made: 1,
+          payments_total: 2,
+        };
+        const query: any = {};
+        query.in = jest.fn(() => query);
+        query.eq = jest.fn((_column: string, targetDate: string) => Promise.resolve({
+          data: targetDate === '2026-05-12' ? [enrollment] : [],
+          error: null,
+        }));
+        query.gte = jest.fn(() => query);
+        query.lte = jest.fn((_column: string, targetDate: string) => Promise.resolve({
+          data: targetDate === '2026-05-12' ? [enrollment] : [],
+          error: null,
+        }));
         return {
-          select: jest.fn(() => ({
-            eq: jest.fn((_column: string, targetDate: string) => ({
-              in: jest.fn(() => ({
-                in: jest.fn(() => Promise.resolve({
-                  data: targetDate === '2026-05-12'
-                    ? [{
-                        id: 'enr_1',
-                        location_id: 'loc_1',
-                        contact_id: 'contact_1',
-                        offer_id: 'offer_1',
-                        next_billing_date: '2026-05-12',
-                        payment_type: 'installment',
-                        payments_made: 1,
-                        payments_total: 2,
-                      }]
-                    : [],
-                  error: null,
-                })),
-              })),
-            })),
-          })),
+          select: jest.fn(() => query),
         };
       }
 
@@ -80,7 +81,7 @@ describe('payment reminder check', () => {
     jest.useRealTimers();
   });
 
-  test('fires a one-day reminder with workflow payload and records idempotency', async () => {
+  test('fires a next-24-hours reminder with workflow payload and records idempotency', async () => {
     const result = await runPaymentReminderCheck();
 
     expect(result.sent).toBe(1);
@@ -96,7 +97,7 @@ describe('payment reminder check', () => {
       next_payment_number: 2,
       payments_total: 2,
       days_until_payment: 1,
-      reminder_window: 'one_day',
+      reminder_window: 'next_24_hours',
       offer: expect.objectContaining({ name: 'Maui Trip', installment_amount: 50 }),
       subscription: expect.objectContaining({
         next_billing_date: '2026-05-12',
@@ -105,10 +106,10 @@ describe('payment reminder check', () => {
       }),
     }));
     expect(mockIdempotencyRecord).toHaveBeenCalledWith(
-      'payment-reminder:loc_1:enr_1:2026-05-12:1d',
+      'payment-reminder:loc_1:enr_1:2026-05-12:next_24_hours',
       'payment_reminder',
       'loc_1',
-      expect.objectContaining({ days_until_payment: 1, sent: 1, failed: 0 }),
+      expect.objectContaining({ days_until_payment: 1, reminder_window: 'next_24_hours', sent: 1, failed: 0 }),
     );
   });
 

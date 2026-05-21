@@ -150,6 +150,13 @@ function reasonTags(item: any): string[] {
   return Array.isArray(tags) ? tags.filter(Boolean).slice(0, 4) : [];
 }
 
+function sourceLabel(source: string): string {
+  if (source === 'nmi_history_sync') return 'Recovered from NMI history - live Silent Post missing';
+  if (source === 'nmi_silent_post') return 'NMI Silent Post';
+  if (source === 'merchant_action') return 'Merchant action';
+  return source ? source.replace(/_/g, ' ') : '';
+}
+
 function summarize(item: any): string {
   const type = item.evidence_type || item.type || '';
   const defenseSummary = item.defense_summary || evidenceData(item).defense_summary;
@@ -170,12 +177,29 @@ function summarize(item: any): string {
       if (d.ip_address) parts.push(`IP: ${d.ip_address}`);
       if (parts.length > 0) return parts.join(' | ');
     }
+    if (type === 'milestone') {
+      const actor = sourceLabel(d.source || item.source || 'merchant_action') || 'Merchant action';
+      const milestoneNumber = d.milestone_number || d.milestoneNumber;
+      const milestoneName = d.milestone_name || d.milestoneName || 'Milestone';
+      const details: string[] = [];
+      details.push(`${actor}: ${milestoneNumber ? `Milestone ${milestoneNumber}` : 'Milestone'} complete - ${milestoneName}`);
+      if (d.description) details.push(`Delivered: ${d.description}`);
+      if (d.notes) details.push(`Client responsibility: ${d.notes}`);
+      if (d.completed_at) details.push(`Completed: ${formatDate(d.completed_at)}`);
+      return details.join(' | ');
+    }
+    if (type === 'payment_confirmation' && (d.source === 'nmi_history_sync' || item.source === 'nmi_history_sync')) {
+      const amount = d.amount ? `$${Number(d.amount).toFixed(2)}` : 'payment';
+      const paymentNumber = d.payment_number ? ` #${d.payment_number}` : '';
+      const tx = d.ghl_transaction_id || d.transaction_id;
+      return `Recovered from NMI history - live Silent Post missing. Recorded ${amount} payment${paymentNumber}${tx ? `, Tx: ${String(tx).slice(0, 12)}...` : ''}.`;
+    }
     const parts: string[] = [];
     if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);
     if (d.payment_type) parts.push(d.payment_type);
     if (d.transaction_id) parts.push(`Tx: ${String(d.transaction_id).slice(0, 12)}...`);
     if (d.timestamp) parts.push(formatDate(d.timestamp));
-    if (d.source) parts.push(d.source);
+    if (d.source) parts.push(sourceLabel(d.source));
     if (parts.length > 0) return parts.join(' | ');
     const keys = Object.keys(d).filter(k => d[k] != null && d[k] !== '');
     const summary = keys.slice(0, 4).map(k => `${k}: ${String(d[k]).slice(0, 30)}`).join(', ');
