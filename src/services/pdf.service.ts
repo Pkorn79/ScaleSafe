@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
+import { storageService } from './storage.service';
 
 interface EnrollmentPacketData {
   clientName: string;
@@ -266,21 +267,6 @@ export const pdfService = {
   // --- Storage ---
 
   async uploadToStorage(path: string, buffer: Buffer): Promise<string> {
-    const supabase = getSupabase();
-
-    const { error } = await supabase.storage
-      .from('scalesafe-files')
-      .upload(path, buffer, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-
-    if (error) throw error;
-
-    const { data: urlData } = await supabase.storage
-      .from('scalesafe-files')
-      .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
-
-    return urlData?.signedUrl || path;
+    return storageService.uploadPrivateFile(path, buffer, 'application/pdf');
   },
 };

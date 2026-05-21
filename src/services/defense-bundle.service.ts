@@ -6,6 +6,7 @@ import { defenseLetterPdfService } from './defense-letter-pdf.service';
 import { renderHtmlToPdf } from './pdf-renderer.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
+import { storageService } from './storage.service';
 
 /**
  * Defense Bundle Service — assembles the combined defense PDF.
@@ -16,9 +17,9 @@ import { logger } from '../utils/logger';
  *   3. Signed enrollment packet (loaded AS-IS from storage — never re-rendered
  *      to preserve forensic integrity of the consent-time document)
  *
- * The three parts are merged via pdf-lib into a single PDF, uploaded to
- * `scalesafe-files/defense-packets/{locationId}/{defenseId}-v{n}.pdf`, and
- * the signed URL is saved on `defense_packets.pdf_url` + `pdf_storage_path`.
+ * The three parts are merged via pdf-lib into a single PDF, uploaded to the
+ * private storage bucket, and the signed URL is saved on `defense_packets.pdf_url`
+ * + `pdf_storage_path`.
  */
 export const defenseBundleService = {
   async bundleDefensePdf(
@@ -75,12 +76,8 @@ export const defenseBundleService = {
     let enrollmentPdfBuffer: Buffer | null = null;
     if (exhibitList.enrollmentPacketPath) {
       try {
-        const { data: fileData, error } = await supabase.storage
-          .from('scalesafe-files')
-          .download(exhibitList.enrollmentPacketPath);
-        if (!error && fileData) {
-          enrollmentPdfBuffer = Buffer.from(await fileData.arrayBuffer());
-        }
+        const { buffer } = await storageService.downloadPrivateFileWithLegacy(exhibitList.enrollmentPacketPath);
+        enrollmentPdfBuffer = buffer;
       } catch (err: any) {
         logger.warn({ err: err.message, path: exhibitList.enrollmentPacketPath }, 'Failed to download enrollment packet for defense bundle');
       }
@@ -114,20 +111,7 @@ export const defenseBundleService = {
 
     // 8. Upload to Supabase storage with a versioned key
     const storagePath = `defense-packets/${locationId}/${defenseId}-v${versionSuffix}.pdf`;
-    const { error: uploadErr } = await supabase.storage
-      .from('scalesafe-files')
-      .upload(storagePath, mergedBuffer, { contentType: 'application/pdf', upsert: true });
-
-    if (uploadErr) {
-      logger.error({ err: uploadErr.message, defenseId, storagePath }, 'Defense bundle upload failed');
-      throw uploadErr;
-    }
-
-    // 9. Generate signed URL (365-day expiry, same as enrollment packets)
-    const { data: urlData } = await supabase.storage
-      .from('scalesafe-files')
-      .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
-    const signedUrl = urlData?.signedUrl || '';
+    const signedUrl = await storageService.uploadPrivateFile(storagePath, mergedBuffer, 'application/pdf');
 
     // 10. Persist paths on the defense_packets row
     await supabase.from('defense_packets')

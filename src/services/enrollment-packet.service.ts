@@ -3,6 +3,7 @@ import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { merchantService } from './merchant.service';
 import { renderHtmlToPdf } from './pdf-renderer.service';
+import { storageService } from './storage.service';
 import { logger } from '../utils/logger';
 
 interface PacketData {
@@ -61,14 +62,7 @@ export const enrollmentPacketService = {
     const storagePath = `enrollment-packets/${locationId}/${enrollmentId}.pdf`;
 
     const supabase = getSupabase();
-    const { error: uploadErr } = await supabase.storage
-      .from('scalesafe-files')
-      .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: true });
-
-    if (uploadErr) {
-      logger.error({ err: uploadErr.message, statusCode: (uploadErr as any).statusCode, enrollmentId, storagePath, bufferSize: buffer.length }, 'PACKET: Storage upload FAILED');
-      throw uploadErr;
-    }
+    const signedUrl = await storageService.uploadPrivateFile(storagePath, buffer, 'application/pdf');
 
     // Save path to enrollment record
     await supabase
@@ -76,12 +70,8 @@ export const enrollmentPacketService = {
       .update({ packet_pdf_path: storagePath })
       .eq('id', enrollmentId);
 
-    const { data: urlData } = await supabase.storage
-      .from('scalesafe-files')
-      .createSignedUrl(storagePath, 60 * 60 * 24 * 365);
-
     logger.info({ enrollmentId, locationId, storagePath }, 'Enrollment packet PDF generated and stored');
-    return urlData?.signedUrl || storagePath;
+    return signedUrl || storagePath;
   },
 };
 

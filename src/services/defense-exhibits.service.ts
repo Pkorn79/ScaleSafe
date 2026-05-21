@@ -23,7 +23,7 @@ import { getDefenseSummary } from '../utils/defense-evidence';
  */
 
 export type ExhibitSource =
-  | 'enrollment_packet_pdf' // loaded from scalesafe-files storage
+  | 'enrollment_packet_pdf' // loaded from private storage with legacy bucket fallback
   | 'evidence_consent'
   | 'evidence_sessions'
   | 'evidence_modules'

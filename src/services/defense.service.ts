@@ -6,6 +6,7 @@ import { evidenceRepository } from '../repositories/evidence.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { paymentService } from './payment.service';
 import { triggerService } from './trigger.service';
+import { storageService } from './storage.service';
 import { defenseExhibitsService, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { logger } from '../utils/logger';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
@@ -77,6 +78,19 @@ function shapePacketResponse(packet: any): any {
     disputeEventId: packet.dispute_event_id || null,
     addressee: packet.addressee || null,
   };
+}
+
+async function shapePacketResponseWithFreshUrl(packet: any): Promise<any> {
+  const shaped = shapePacketResponse(packet);
+  if (!shaped?.pdf_storage_path) return shaped;
+
+  try {
+    shaped.pdf_url = await storageService.createPrivateSignedUrl(shaped.pdf_storage_path);
+  } catch (err: any) {
+    logger.warn({ err: err.message, defenseId: shaped.id }, 'Failed to refresh defense packet signed URL');
+  }
+
+  return shaped;
 }
 
 export const defenseService = {
@@ -489,12 +503,12 @@ LETTER STRUCTURE:
 
   async getPacket(defenseId: string) {
     const packet = await defenseRepository.getById(defenseId);
-    return shapePacketResponse(packet);
+    return shapePacketResponseWithFreshUrl(packet);
   },
 
   async listForContact(locationId: string, contactId: string) {
     const packets = await defenseRepository.listByContact(locationId, contactId);
-    return packets.map(shapePacketResponse);
+    return Promise.all(packets.map(shapePacketResponseWithFreshUrl));
   },
 
   async recordOutcome(defenseId: string, outcome: 'won' | 'lost' | 'withdrawn', opts?: {

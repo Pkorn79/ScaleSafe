@@ -1,12 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
-import path from 'path';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
-import { getSupabase } from '../clients/supabase.client';
-import { config } from '../config';
 import { logger } from '../utils/logger';
+import { storageService } from '../services/storage.service';
 
 export const merchantController = {
   /** GET /api/merchants/config — get full merchant configuration */
@@ -152,45 +150,20 @@ export const merchantController = {
       const file = (req as any).file;
       if (!file) throw new ValidationError('No file uploaded');
 
-      const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
       if (!allowedTypes.includes(file.mimetype)) {
-        throw new ValidationError('File must be PNG, JPEG, WebP, or SVG');
+        throw new ValidationError('File must be PNG, JPEG, or WebP');
       }
 
-      const ext = path.extname(file.originalname).toLowerCase() || '.png';
+      const extByMime: Record<string, string> = {
+        'image/png': '.png',
+        'image/jpeg': '.jpg',
+        'image/webp': '.webp',
+      };
+      const ext = extByMime[file.mimetype] || '.png';
       const storagePath = `logos/${locationId}/logo${ext}`;
 
-      const supabase = getSupabase();
-
-      // Ensure storage bucket exists
-      const { data: buckets } = await supabase.storage.listBuckets();
-      if (!buckets?.find((b: any) => b.name === 'scalesafe-files')) {
-        await supabase.storage.createBucket('scalesafe-files', {
-          public: true,
-          fileSizeLimit: 5242880,
-          allowedMimeTypes: ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'],
-        });
-      }
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('scalesafe-files')
-        .upload(storagePath, file.buffer, {
-          contentType: file.mimetype,
-          upsert: true,
-        });
-
-      if (uploadError) {
-        logger.error({ err: uploadError, storagePath, mimetype: file.mimetype }, 'Logo upload failed');
-        throw uploadError;
-      }
-
-      logger.info({ storagePath, uploadData }, 'Logo uploaded successfully');
-
-      const { data: urlData } = supabase.storage
-        .from('scalesafe-files')
-        .getPublicUrl(storagePath);
-
-      const logoUrl = urlData.publicUrl;
+      const logoUrl = await storageService.uploadPublicAsset(storagePath, file.buffer, file.mimetype);
       logger.info({ logoUrl }, 'Logo public URL generated');
 
       // Save to merchant record

@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { evidenceService } from '../services/evidence.service';
+import { STORAGE_BUCKETS } from '../services/storage.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -749,18 +750,20 @@ router.get('/api/debug/test-pdf-storage', async (_req: Request, res: Response) =
 
     // 1. Check bucket exists and its config
     const { data: buckets } = await supabase.storage.listBuckets();
-    const bucket = buckets?.find((b: any) => b.name === 'scalesafe-files');
+    const privateBucket = buckets?.find((b: any) => b.name === STORAGE_BUCKETS.privateFiles);
+    const publicBucket = buckets?.find((b: any) => b.name === STORAGE_BUCKETS.publicAssets);
+    const legacyBucket = buckets?.find((b: any) => b.name === STORAGE_BUCKETS.legacyFiles);
 
     // 2. Try uploading a tiny test PDF
     const testPdf = Buffer.from('%PDF-1.0\ntest');
     const testPath = `test/pdf-upload-test-${Date.now()}.pdf`;
     const { error: uploadErr } = await supabase.storage
-      .from('scalesafe-files')
+      .from(STORAGE_BUCKETS.privateFiles)
       .upload(testPath, testPdf, { contentType: 'application/pdf', upsert: true });
 
     // 3. Clean up test file
     if (!uploadErr) {
-      await supabase.storage.from('scalesafe-files').remove([testPath]);
+      await supabase.storage.from(STORAGE_BUCKETS.privateFiles).remove([testPath]);
     }
 
     // 4. Check if any enrollments have packet_pdf_path set
@@ -772,7 +775,11 @@ router.get('/api/debug/test-pdf-storage', async (_req: Request, res: Response) =
 
     res.json({
       _debug: true,
-      bucket: bucket ? { name: bucket.name, public: bucket.public, fileSizeLimit: (bucket as any).file_size_limit, allowedMimeTypes: (bucket as any).allowed_mime_types } : 'NOT FOUND',
+      buckets: {
+        privateFiles: privateBucket ? { name: privateBucket.name, public: privateBucket.public, fileSizeLimit: (privateBucket as any).file_size_limit, allowedMimeTypes: (privateBucket as any).allowed_mime_types } : 'NOT FOUND',
+        publicAssets: publicBucket ? { name: publicBucket.name, public: publicBucket.public, fileSizeLimit: (publicBucket as any).file_size_limit, allowedMimeTypes: (publicBucket as any).allowed_mime_types } : 'NOT FOUND',
+        legacyFiles: legacyBucket ? { name: legacyBucket.name, public: legacyBucket.public, fileSizeLimit: (legacyBucket as any).file_size_limit, allowedMimeTypes: (legacyBucket as any).allowed_mime_types } : 'NOT FOUND',
+      },
       pdfUploadTest: uploadErr ? { error: uploadErr.message, statusCode: (uploadErr as any).statusCode } : 'SUCCESS',
       enrollmentsWithPacket: withPacket || [],
     });
