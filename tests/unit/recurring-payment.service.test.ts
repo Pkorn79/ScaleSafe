@@ -147,4 +147,36 @@ describe('recurring payment lifecycle', () => {
     expect(enrollmentUpdates[0].updates).not.toHaveProperty('billing_completed_at');
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
   });
+
+  it('imports NMI history payments without firing a customer receipt workflow', async () => {
+    const result = await handleRecurringPaymentSuccess({
+      enrollment: {
+        id: 'enr_history',
+        merchant_id: 'merchant_1',
+        location_id: 'loc_1',
+        contact_id: 'contact_1',
+        offer_id: 'offer_1',
+        payments_made: 1,
+        payments_total: 3,
+        payment_type: 'installment',
+        processor_subscription_id: 'sub_nmi',
+      },
+      processorType: 'nmi',
+      transactionId: '12061861902',
+      amountCents: 3300,
+      offerName: 'Imported Offer',
+      installmentFrequency: 'daily',
+      source: 'nmi_history_sync',
+    });
+
+    expect(result.paymentEventId).toBe('pe_1');
+    expect(paymentEventInserts[0]).toEqual(expect.objectContaining({
+      processor: 'nmi',
+      processor_transaction_id: '12061861902',
+      source: 'nmi_history_sync',
+    }));
+    expect(enrollmentUpdates[0].updates.payments_made).toBe(2);
+    expect(mockGhlPut).not.toHaveBeenCalled();
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
+  });
 });

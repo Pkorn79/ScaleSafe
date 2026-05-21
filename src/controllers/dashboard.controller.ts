@@ -11,6 +11,7 @@ import { createPublicActionToken } from '../utils/public-action-token';
 import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { logger } from '../utils/logger';
+import { merchantRepository } from '../repositories/merchant.repository';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -88,6 +89,38 @@ async function insertMilestoneEvidence(
     return { status: 'failed', error: response.error?.message || String(response.error) };
   } catch (err: any) {
     return { status: 'failed', error: err?.message || String(err) };
+  }
+}
+
+function normalizeUrlBase(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(withProtocol);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
+}
+
+async function buildMilestoneSignoffLink(locationId: string, actionToken: string): Promise<string> {
+  const fallback = `${config.appUrl}/milestone-signoff?actionToken=${encodeURIComponent(actionToken)}`;
+  try {
+    const merchant = await merchantRepository.findByLocationId(locationId);
+    const merchantConfig = (merchant?.config || {}) as Record<string, unknown>;
+    const base = normalizeUrlBase(
+      merchantConfig.enrollment_funnel_url
+      || merchantConfig.business_website,
+    );
+    if (!base) return fallback;
+
+    const url = new URL('/milestone-approval-page', base);
+    url.searchParams.set('actionToken', actionToken);
+    return url.toString();
+  } catch (err: any) {
+    logger.warn({ err: err?.message || String(err), locationId }, 'Milestone merchant signoff link fallback used');
+    return fallback;
   }
 }
 
@@ -825,7 +858,8 @@ export const dashboardController = {
         enrollmentId,
         milestoneNumber: requestedMilestoneNumber,
       });
-      const signoffLink = `${config.appUrl}/milestone-signoff?actionToken=${encodeURIComponent(signoffToken)}`;
+      const scaleSafeSignoffLink = `${config.appUrl}/milestone-signoff?actionToken=${encodeURIComponent(signoffToken)}`;
+      const signoffLink = await buildMilestoneSignoffLink(locationId, signoffToken);
       const workSummary = [milestoneDelivers, milestoneClientDoes]
         .filter(Boolean)
         .join('. Client responsibility: ');
@@ -851,6 +885,8 @@ export const dashboardController = {
         signoffLink,
         milestone_signoff_link: signoffLink,
         milestoneSignoffLink: signoffLink,
+        scalesafe_signoff_link: scaleSafeSignoffLink,
+        scaleSafeSignoffLink,
         work_summary: workSummary,
         workSummary,
       };
@@ -933,6 +969,7 @@ export const dashboardController = {
         await api.put(`/contacts/${contactId}`, {
           customField: {
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
+            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK]: signoffLink,
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(requestedMilestoneNumber),
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,

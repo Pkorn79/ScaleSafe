@@ -22,6 +22,12 @@ export function createApp(): express.Application {
     allowedHeaders: ['Content-Type'],
     credentials: false,
   }));
+  app.use('/api/milestone-signoff', cors({
+    origin: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: false,
+  }));
 
   // Parse JSON with raw body capture for webhook signature verification
   app.use(express.json({ verify: captureRawBody as any }));

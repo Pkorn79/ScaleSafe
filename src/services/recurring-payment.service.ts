@@ -217,67 +217,72 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     logger.warn({ err: evErr.message, enrollmentId: enr.id }, 'Recurring payment evidence log failed (non-fatal)');
   }
 
-  // 4. Fire ss_payment_received trigger (non-blocking)
-  try {
-    const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
-    const runningTotal = amountDollars * newPaymentsMade;
-    const merchantIdentity = await getMerchantWorkflowIdentity(enr.merchant_id, enr.location_id);
+  // 4. Fire ss_payment_received trigger for live payments only.
+  // History sync repairs ScaleSafe records, but should not email clients about old payments.
+  if (source === 'nmi_history_sync') {
+    logger.info({ enrollmentId: enr.id, transactionId }, 'NMI history import: customer receipt workflow suppressed');
+  } else {
     try {
-      const api = await ghlApi(enr.location_id);
-      await api.put(`/contacts/${enr.contact_id}`, {
-        customField: {
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: isFinal ? 'Completed' : 'Current',
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amountDollars),
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: today(),
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: newPaymentsMade,
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: paymentsRemaining,
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT]: newPaymentsMade,
-          [WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID]: formatMoney(runningTotal),
-        },
+      const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';
+      const runningTotal = amountDollars * newPaymentsMade;
+      const merchantIdentity = await getMerchantWorkflowIdentity(enr.merchant_id, enr.location_id);
+      try {
+        const api = await ghlApi(enr.location_id);
+        await api.put(`/contacts/${enr.contact_id}`, {
+          customField: {
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: isFinal ? 'Completed' : 'Current',
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amountDollars),
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: today(),
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: newPaymentsMade,
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: paymentsRemaining,
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT]: newPaymentsMade,
+            [WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID]: formatMoney(runningTotal),
+          },
+        });
+      } catch (syncErr: any) {
+        logger.warn({ err: syncErr.message, enrollmentId: enr.id }, 'Recurring payment contact field sync failed (non-fatal)');
+      }
+      await triggerService.fireTrigger(enr.location_id, 'ss_payment_received', {
+        event_type: 'payment_received',
+        location_id: enr.location_id,
+        locationId: enr.location_id,
+        contact_id: enr.contact_id,
+        contactId: enr.contact_id,
+        enrollment_id: enr.id,
+        enrollmentId: enr.id,
+        offer_id: enr.offer_id,
+        offerId: enr.offer_id,
+        program_name: offerName,
+        programName: offerName,
+        offer_name: offerName,
+        offerName,
+        processor: processorType,
+        source,
+        amount: amountDollars,
+        amount_display: formatMoney(amountDollars),
+        amountDisplay: formatMoney(amountDollars),
+        transaction_id: transactionId,
+        transactionId,
+        payment_number: newPaymentsMade,
+        paymentNumber: newPaymentsMade,
+        payments_total: isFiniteInstallment ? Number(enr.payments_total) : null,
+        paymentsTotal: isFiniteInstallment ? Number(enr.payments_total) : null,
+        payments_remaining: paymentsRemaining,
+        paymentsRemaining,
+        running_total: runningTotal,
+        runningTotal,
+        running_total_display: formatMoney(runningTotal),
+        runningTotalDisplay: formatMoney(runningTotal),
+        payment_kind: paymentKind,
+        paymentKind,
+        support_email: merchantIdentity.supportEmail,
+        supportEmail: merchantIdentity.supportEmail,
+        business_name: merchantIdentity.businessName,
+        businessName: merchantIdentity.businessName,
       });
-    } catch (syncErr: any) {
-      logger.warn({ err: syncErr.message, enrollmentId: enr.id }, 'Recurring payment contact field sync failed (non-fatal)');
+    } catch (trigErr: any) {
+      logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');
     }
-    await triggerService.fireTrigger(enr.location_id, 'ss_payment_received', {
-      event_type: 'payment_received',
-      location_id: enr.location_id,
-      locationId: enr.location_id,
-      contact_id: enr.contact_id,
-      contactId: enr.contact_id,
-      enrollment_id: enr.id,
-      enrollmentId: enr.id,
-      offer_id: enr.offer_id,
-      offerId: enr.offer_id,
-      program_name: offerName,
-      programName: offerName,
-      offer_name: offerName,
-      offerName,
-      processor: processorType,
-      source,
-      amount: amountDollars,
-      amount_display: formatMoney(amountDollars),
-      amountDisplay: formatMoney(amountDollars),
-      transaction_id: transactionId,
-      transactionId,
-      payment_number: newPaymentsMade,
-      paymentNumber: newPaymentsMade,
-      payments_total: isFiniteInstallment ? Number(enr.payments_total) : null,
-      paymentsTotal: isFiniteInstallment ? Number(enr.payments_total) : null,
-      payments_remaining: paymentsRemaining,
-      paymentsRemaining,
-      running_total: runningTotal,
-      runningTotal,
-      running_total_display: formatMoney(runningTotal),
-      runningTotalDisplay: formatMoney(runningTotal),
-      payment_kind: paymentKind,
-      paymentKind,
-      support_email: merchantIdentity.supportEmail,
-      supportEmail: merchantIdentity.supportEmail,
-      business_name: merchantIdentity.businessName,
-      businessName: merchantIdentity.businessName,
-    });
-  } catch (trigErr: any) {
-    logger.warn({ err: trigErr.message, enrollmentId: enr.id }, 'Recurring payment trigger fire failed (non-fatal)');
   }
 
   // 5. Final-installment billing marker

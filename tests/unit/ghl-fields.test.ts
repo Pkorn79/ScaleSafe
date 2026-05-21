@@ -1,4 +1,11 @@
-import { SS_CONTACT_FIELDS, OFFER_CONTACT_FIELDS, OFFER_CLAUSE_FIELDS, OFFER_MILESTONE_FIELDS, CUSTOM_TRIGGERS } from '../../src/constants/ghl-fields';
+import {
+  SS_CONTACT_FIELDS,
+  OFFER_CONTACT_FIELDS,
+  OFFER_CLAUSE_FIELDS,
+  OFFER_MILESTONE_FIELDS,
+  WORKFLOW_MILESTONE_CONTACT_FIELDS,
+  CUSTOM_TRIGGERS,
+} from '../../src/constants/ghl-fields';
 
 describe('GHL Fields Constants', () => {
   test('should have exactly 6 SS contact fields', () => {
@@ -29,6 +36,10 @@ describe('GHL Fields Constants', () => {
       expect(slot.name).toMatch(/^contact\.offer_milestone_\d+_name$/);
       expect(slot.description).toMatch(/^contact\.offer_milestone_\d+_description$/);
     }
+  });
+
+  test('should include a managed milestone signoff link field', () => {
+    expect(WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK).toBe('contact.ss_signoff_link');
   });
 
   test('should have 5 custom triggers', () => {

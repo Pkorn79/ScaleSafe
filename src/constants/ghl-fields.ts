@@ -68,6 +68,7 @@ export const WORKFLOW_PAYMENT_CONTACT_FIELDS = {
 
 export const WORKFLOW_MILESTONE_CONTACT_FIELDS = {
   CURRENT_MILESTONE_NAME:     'contact.ss_current_milestone_name',
+  SIGNOFF_LINK:               'contact.ss_signoff_link',
   SIGNOFF_MILESTONE_NAME:     'contact.ss_signoff_milestone_name',
   SIGNOFF_MILESTONE_NUMBER:   'contact.ss_signoff_milestone_number',
   SIGNOFF_WORK_SUMMARY:       'contact.ss_signoff_work_summary',
@@ -162,6 +163,7 @@ export const BETA_CUSTOM_FIELD_REGISTRY: readonly CustomFieldDef[] = [
   textField('SS Last Failed Payment Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE),
 
   textField('SS Current Milestone Name', WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME),
+  textField('SS Sign-Off Link', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK),
   textField('SS Sign-Off Milestone Name', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME),
   textField('SS Sign-Off Milestone Number', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER),
   largeTextField('SS Sign-Off Work Summary', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY),

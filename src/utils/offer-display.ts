@@ -22,3 +22,18 @@ export function getPaidInFullDisplayPrice(offer: {
   }
   return offer.price;
 }
+
+export function getSelectedPlanReceiptPrice(
+  offer: {
+    price?: number | string | null;
+    pif_price?: number | string | null;
+    pif_discount_enabled?: boolean | null;
+  },
+  selectedPaymentType?: unknown,
+): unknown {
+  const type = String(selectedPaymentType || '').toLowerCase();
+  if (['pif', 'one_time', 'paid_in_full'].includes(type)) {
+    return getPaidInFullDisplayPrice(offer);
+  }
+  return offer.price;
+}

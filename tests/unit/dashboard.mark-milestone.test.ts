@@ -1,6 +1,7 @@
 const mockSupabaseFrom = jest.fn();
 const mockGhlPut = jest.fn();
 const mockFireTrigger = jest.fn();
+const mockFindMerchantByLocationId = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockSupabaseFrom(...args) }),
@@ -13,6 +14,12 @@ jest.mock('../../src/clients/ghl.client', () => ({
 jest.mock('../../src/services/trigger.service', () => ({
   triggerService: {
     fireTrigger: (...args: any[]) => mockFireTrigger(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    findByLocationId: (...args: any[]) => mockFindMerchantByLocationId(...args),
   },
 }));
 
@@ -71,6 +78,9 @@ describe('dashboardController.markMilestone', () => {
     jest.clearAllMocks();
     process.env.PUBLIC_ACTION_TOKEN_SECRET = 'unit-test-public-action-secret';
     process.env.APP_URL = 'https://app.scalesafe.test';
+    mockFindMerchantByLocationId.mockResolvedValue({
+      config: { enrollment_funnel_url: 'https://wholepay.co' },
+    });
   });
 
   afterEach(() => {
@@ -194,6 +204,8 @@ describe('dashboardController.markMilestone', () => {
     }));
     const payload = mockFireTrigger.mock.calls[0][2];
     const url = new URL(payload.signoff_link);
+    expect(url.origin).toBe('https://wholepay.co');
+    expect(url.pathname).toBe('/milestone-approval-page');
     const token = url.searchParams.get('actionToken') || '';
     expect(verifyPublicActionToken(token, 'milestone_signoff')).toMatchObject({
       contactId: 'contact_1',
@@ -201,5 +213,10 @@ describe('dashboardController.markMilestone', () => {
       enrollmentId: 'enr_2',
       milestoneNumber: 2,
     });
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.ss_signoff_link': expect.stringContaining('https://wholepay.co/milestone-approval-page?actionToken='),
+      }),
+    }));
   });
 });

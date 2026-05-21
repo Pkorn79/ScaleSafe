@@ -8,7 +8,7 @@ import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
 import { createPublicActionToken } from '../utils/public-action-token';
-import { formatMoney, getPaidInFullDisplayPrice } from '../utils/offer-display';
+import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -77,25 +77,25 @@ function applyOfferContactFields(
   customFields: Record<string, unknown>,
   offer: any,
   merchant: any,
+  selectedPaymentType?: unknown,
 ): void {
   const businessName = merchant?.dba_name || merchant?.business_name || '';
-  const fullPriceDisplay = formatMoney(offer.price);
-  const pifPriceDisplay = formatMoney(getPaidInFullDisplayPrice(offer));
+  const receiptPriceDisplay = formatMoney(getSelectedPlanReceiptPrice(offer, selectedPaymentType || offer.payment_type));
   const billingAmount = offer.installment_amount ?? offer.price;
   const billingAmountDisplay = formatMoney(billingAmount);
-  const paymentTypeDisplay = formatPaymentType(offer.payment_type);
+  const paymentTypeDisplay = formatPaymentType(selectedPaymentType || offer.payment_type);
   const frequencyDisplay = formatFrequency(offer.installment_frequency);
   const numPayments = offer.num_payments ?? '';
 
   customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
   customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
-  customFields[OFFER_CONTACT_FIELDS.PRICE] = fullPriceDisplay;
+  customFields[OFFER_CONTACT_FIELDS.PRICE] = receiptPriceDisplay;
   customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = paymentTypeDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
   customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name || '';
-  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = pifPriceDisplay;
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = receiptPriceDisplay;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = merchantSupportEmail(merchant);
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = merchant?.tc_document_url || '';
@@ -255,7 +255,7 @@ export const phase2EnrollmentService = {
           [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
         };
         if (enrollmentOffer) {
-          applyOfferContactFields(customFields, enrollmentOffer, merchant);
+          applyOfferContactFields(customFields, enrollmentOffer, merchant, params.paymentType);
         }
         applyPaymentContactFields(customFields, params.paymentAmount, 1, params.paymentsTotal, enrolledAt);
         await api.put(`/contacts/${resolvedContactId}`, { customField: customFields });
@@ -390,7 +390,7 @@ export const phase2EnrollmentService = {
           if (bgOfferId) {
             try {
               const offer = await offerRepository.getById(bgOfferId);
-              applyOfferContactFields(customFields, offer, merchant);
+              applyOfferContactFields(customFields, offer, merchant, bgPaymentType);
               applyPaymentContactFields(customFields, bgPaymentAmount, 1, params.paymentsTotal, enrolledAt);
               pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
               pulseFrequencyDays = Math.min(365, Math.max(1, Number(offer.pulse_frequency_days || 30)));

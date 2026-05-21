@@ -1,4 +1,4 @@
-import { formatMoney, getPaidInFullDisplayPrice } from '../../src/utils/offer-display';
+import { formatMoney, getPaidInFullDisplayPrice, getSelectedPlanReceiptPrice } from '../../src/utils/offer-display';
 
 describe('offer display helpers', () => {
   test('formats money consistently for workflow fields', () => {
@@ -21,5 +21,13 @@ describe('offer display helpers', () => {
       pif_price: 750,
       pif_discount_enabled: false,
     })).toBe(1000);
+  });
+
+  test('uses PIF discount only when the selected plan is PIF', () => {
+    const offer = { price: 990, pif_price: 750, pif_discount_enabled: true };
+
+    expect(getSelectedPlanReceiptPrice(offer, 'pif')).toBe(750);
+    expect(getSelectedPlanReceiptPrice(offer, 'installment')).toBe(990);
+    expect(getSelectedPlanReceiptPrice(offer, 'subscription')).toBe(990);
   });
 });
