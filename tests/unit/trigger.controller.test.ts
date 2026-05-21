@@ -73,4 +73,26 @@ describe('triggerController.handleSubscription', () => {
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
+
+  it('rejects non-GHL subscription URLs', async () => {
+    const req = {
+      body: {
+        triggerData: {
+          key: 'ss_payment_received',
+          eventType: 'CREATED',
+          targetUrl: 'https://example.com/steal-trigger-payloads',
+        },
+        extras: { locationId: 'loc_123' },
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
+
+    await triggerController.handleSubscription(req, res, next);
+
+    expect(mockUpsertSubscription).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Unsupported trigger subscription URL',
+    }));
+  });
 });

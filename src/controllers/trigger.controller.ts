@@ -3,6 +3,7 @@ import { triggerRepository } from '../repositories/trigger.repository';
 import { isValidTriggerKey } from '../constants/trigger-keys';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
+import { isAllowedTriggerSubscriptionUrl } from '../utils/trigger-subscription-url';
 
 export const triggerController = {
   /**
@@ -33,6 +34,11 @@ export const triggerController = {
 
       if (!isValidTriggerKey(triggerKey)) {
         throw new ValidationError(`Invalid trigger key: ${triggerKey}`);
+      }
+
+      if (!isAllowedTriggerSubscriptionUrl(String(subscriptionUrl))) {
+        logger.warn({ locationId, triggerKey, type }, 'Rejected unsupported trigger subscription URL');
+        throw new ValidationError('Unsupported trigger subscription URL');
       }
 
       if (type === 'subscribe' || type === 'created' || type === 'updated') {

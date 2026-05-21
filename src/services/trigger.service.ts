@@ -3,10 +3,9 @@ import { ghlApi } from '../clients/ghl.client';
 import { getSupabase } from '../clients/supabase.client';
 import { triggerRepository } from '../repositories/trigger.repository';
 import { logger } from '../utils/logger';
+import { isAllowedTriggerSubscriptionUrl } from '../utils/trigger-subscription-url';
 
 const RETRY_DELAYS = [1000, 5000, 30000]; // 1s, 5s, 30s
-const GHL_TRIGGER_EXECUTE_URL = 'services.leadconnectorhq.com/workflows-marketplace/triggers/execute';
-
 interface TriggerDeliveryResult {
   success: boolean;
   httpStatus?: number;
@@ -50,7 +49,7 @@ function normalizeTriggerPayload(
 }
 
 function isGhlTriggerExecuteUrl(url: string): boolean {
-  return url.includes(GHL_TRIGGER_EXECUTE_URL);
+  return isAllowedTriggerSubscriptionUrl(url);
 }
 
 function isInactiveGhlTriggerError(message?: string): boolean {
@@ -176,6 +175,28 @@ export const triggerService = {
 
     const results = await Promise.allSettled(
       subscriptions.map(async (sub) => {
+        if (!isAllowedTriggerSubscriptionUrl(sub.subscription_url)) {
+          failed++;
+          const result: TriggerDeliveryResult = {
+            success: false,
+            status: 'failed',
+            attemptCount: 0,
+            errorMessage: 'Unsupported trigger subscription URL',
+          };
+          await recordTriggerDelivery({
+            locationId,
+            triggerKey,
+            subscriptionUrl: sub.subscription_url,
+            result,
+            payload: normalizedPayload,
+          });
+          logger.error(
+            { locationId, triggerKey, subscriptionUrl: sub.subscription_url },
+            'Skipped unsupported trigger subscription URL',
+          );
+          return;
+        }
+
         const result = await postWithRetry(locationId, sub.subscription_url, normalizedPayload);
         await recordTriggerDelivery({
           locationId,

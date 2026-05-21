@@ -12,7 +12,7 @@ const router = Router();
 // Marketplace workflow trigger subscription lifecycle. HighLevel sends the
 // target workflow execution URL here when a workflow using one of our custom
 // triggers is created/updated/deleted.
-router.post('/ghl/triggers', triggerController.handleSubscription);
+router.post('/ghl/triggers', requireGhlWebhookSignature, triggerController.handleSubscription);
 
 // Official GHL marketplace/payment webhooks are signed by HighLevel.
 router.post('/ghl/payment', requireGhlWebhookSignature, webhookController.ghlPayment);

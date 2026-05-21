@@ -3,6 +3,10 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn(() => Promise.resolve({ post: mockedAxios.post })),
+}));
+
 // Mock Supabase with in-memory store for integration testing
 const subscriptionStore: Record<string, { is_active: boolean; subscription_url: string; trigger_key: string; location_id: string }[]> = {};
 
@@ -83,7 +87,7 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     await triggerRepository.upsertSubscription(
       'loc_1',
       'ss_payment_received',
-      'https://hooks.ghl.com/workflow-abc',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/workflow-abc',
     );
 
     // Step 2: Fire the trigger
@@ -102,7 +106,7 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     expect(result).toEqual({ sent: 1, failed: 0 });
     expect(mockedAxios.post).toHaveBeenCalledTimes(1);
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://hooks.ghl.com/workflow-abc',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/workflow-abc',
       expect.objectContaining({
         ...payload,
         contactId: 'contact_123',
@@ -119,14 +123,14 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     await triggerRepository.upsertSubscription(
       'loc_1',
       'ss_payment_received',
-      'https://hooks.ghl.com/workflow-abc',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/workflow-abc',
     );
 
     // Unsubscribe
     await triggerRepository.deactivateSubscription(
       'loc_1',
       'ss_payment_received',
-      'https://hooks.ghl.com/workflow-abc',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/workflow-abc',
     );
 
     // Fire — should not POST
@@ -142,12 +146,12 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     await triggerRepository.upsertSubscription(
       'loc_1',
       'enrollment_complete',
-      'https://hooks.ghl.com/wf1',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
     );
     await triggerRepository.upsertSubscription(
       'loc_1',
       'enrollment_complete',
-      'https://hooks.ghl.com/wf2',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf2',
     );
 
     mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
@@ -163,7 +167,7 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
     await triggerRepository.upsertSubscription(
       'loc_1',
       'ss_payment_received',
-      'https://hooks.ghl.com/wf1',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
     );
 
     // Fire for loc_2 — should find no subscriptions

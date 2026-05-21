@@ -75,7 +75,7 @@ describe('Trigger Service - fireTrigger', () => {
         id: 'sub1',
         location_id: 'loc_1',
         trigger_key: 'ss_payment_received',
-        subscription_url: 'https://hooks.ghl.com/wf1',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
         is_active: true,
         created_at: '',
         updated_at: '',
@@ -84,7 +84,7 @@ describe('Trigger Service - fireTrigger', () => {
         id: 'sub2',
         location_id: 'loc_1',
         trigger_key: 'ss_payment_received',
-        subscription_url: 'https://hooks.ghl.com/wf2',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf2',
         is_active: true,
         created_at: '',
         updated_at: '',
@@ -97,8 +97,9 @@ describe('Trigger Service - fireTrigger', () => {
 
     expect(result).toEqual({ sent: 2, failed: 0 });
     expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    expect(mockGhlApi).toHaveBeenCalledWith('loc_1');
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://hooks.ghl.com/wf1',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
       expect.objectContaining({
         ...payload,
         event_type: 'payment_received',
@@ -109,7 +110,7 @@ describe('Trigger Service - fireTrigger', () => {
       { timeout: 10000 },
     );
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      'https://hooks.ghl.com/wf2',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf2',
       expect.objectContaining({
         ...payload,
         event_type: 'payment_received',
@@ -160,7 +161,7 @@ describe('Trigger Service - fireTrigger', () => {
         id: 'sub1',
         location_id: 'loc_1',
         trigger_key: 'ss_payment_received',
-        subscription_url: 'https://hooks.ghl.com/wf1',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
         is_active: true,
         created_at: '',
         updated_at: '',
@@ -184,6 +185,35 @@ describe('Trigger Service - fireTrigger', () => {
     expect(result).toEqual({ sent: 0, failed: 1 });
     // 1 initial + 3 retries = 4 attempts
     expect(mockedAxios.post).toHaveBeenCalledTimes(4);
+  });
+
+  test('skips unsupported subscription URLs without posting payload', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'ss_payment_received',
+        subscription_url: 'https://example.com/steal-trigger-payloads',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+
+    const result = await triggerService.fireTrigger('loc_1', 'ss_payment_received', {
+      contact_id: 'c1',
+    });
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1',
+      trigger_key: 'ss_payment_received',
+      subscription_url: 'https://example.com/steal-trigger-payloads',
+      status: 'failed',
+      attempt_count: 0,
+      error_message: 'Unsupported trigger subscription URL',
+    }));
   });
 
   test('deactivates stale GHL marketplace trigger subscription when GHL reports it inactive', async () => {
