@@ -110,6 +110,10 @@ describe('queryUrl Controller', () => {
       const req = mockReq({ type: 'verify', apiKey: 'valid', chargeId: 'ch_1' });
       const res = mockRes();
       await handleQueryUrl(req, res);
+      expect(mockResolveProcessor).toHaveBeenCalledWith('merch-1', 'loc-1', {
+        processor_override: 'nmi',
+        nmi_processor_id: null,
+      });
       expect(res.json).toHaveBeenCalledWith({ success: true });
     });
   });
@@ -303,6 +307,41 @@ describe('queryUrl Controller', () => {
       const res = mockRes();
       await handleQueryUrl(req, res);
 
+      expect(mockResolveProcessor).toHaveBeenCalledWith('merch-1', 'loc-1', {
+        processor_override: 'nmi',
+        nmi_processor_id: null,
+      });
+      expect(res.json).toHaveBeenCalledWith({ status: 'canceled' });
+    });
+
+    it('uses the mapped Stripe processor when canceling a Stripe subscription', async () => {
+      mockFrom.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({
+                data: { processor_subscription_id: 'stripe_sub_1', processor_type: 'stripe' },
+              }),
+            }),
+          }),
+        }),
+      });
+
+      mockProcessor.cancelSubscription.mockResolvedValue({ success: true });
+
+      const req = mockReq({
+        type: 'cancel_subscription',
+        apiKey: 'valid',
+        subscriptionId: 'ghl_sub_1',
+      });
+      const res = mockRes();
+      await handleQueryUrl(req, res);
+
+      expect(mockResolveProcessor).toHaveBeenCalledWith('merch-1', 'loc-1', {
+        processor_override: 'stripe',
+        nmi_processor_id: null,
+      });
+      expect(mockProcessor.cancelSubscription).toHaveBeenCalledWith('stripe_sub_1');
       expect(res.json).toHaveBeenCalledWith({ status: 'canceled' });
     });
   });
@@ -337,12 +376,62 @@ describe('queryUrl Controller', () => {
       const res = mockRes();
       await handleQueryUrl(req, res);
 
+      expect(mockResolveProcessor).toHaveBeenCalledWith('merch-1', 'loc-1', {
+        processor_override: 'nmi',
+        nmi_processor_id: null,
+      });
       // Verify dollars → cents
       expect(mockProcessor.refund.mock.calls[0][0].amount).toBe(5000);
 
       const result = (res.json as jest.Mock).mock.calls[0][0];
       expect(result.success).toBe(true);
       expect(result.amount).toBe(50.00);
+    });
+
+    it('uses the mapped Stripe processor when refunding a Stripe transaction', async () => {
+      mockFrom.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          or: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({
+                data: { processor_transaction_id: 'stripe_txn_1', processor_type: 'stripe' },
+              }),
+            }),
+          }),
+        }),
+      });
+
+      mockProcessor.refund.mockResolvedValue({
+        success: true,
+        refundId: 'ref_1',
+        amount: 2500,
+        status: 'refunded',
+      });
+
+      const req = mockReq({
+        type: 'refund',
+        apiKey: 'valid',
+        amount: 25.00,
+        chargeId: 'ch_1',
+      });
+      const res = mockRes();
+      await handleQueryUrl(req, res);
+
+      expect(mockResolveProcessor).toHaveBeenCalledWith('merch-1', 'loc-1', {
+        processor_override: 'stripe',
+        nmi_processor_id: null,
+      });
+      expect(mockProcessor.refund).toHaveBeenCalledWith({
+        transactionId: 'stripe_txn_1',
+        amount: 2500,
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        message: 'Refund successful',
+        id: 'ref_1',
+        amount: 25.00,
+        currency: 'USD',
+      });
     });
   });
 });

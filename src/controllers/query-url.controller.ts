@@ -3,12 +3,24 @@ import { getSupabase } from '../clients/supabase.client';
 import { resolveProcessor, createProcessorClient } from '../services/processor.factory';
 import { paymentProviderService } from '../services/payment-provider.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
+import { ProcessorType } from '../types/processor.types';
 import { getCardBrandImageUrl, getCardBrandTitle } from '../utils/card-brands';
 import { logger } from '../utils/logger';
 
 interface MerchantRef {
   merchantId: string;
   locationId: string;
+}
+
+function mappedProcessorType(processorType: unknown): ProcessorType | null {
+  return processorType === 'nmi' || processorType === 'stripe' ? processorType : null;
+}
+
+function resolveMappedProcessor(merchant: MerchantRef, processorType: unknown) {
+  return resolveProcessor(merchant.merchantId, merchant.locationId, {
+    processor_override: mappedProcessorType(processorType),
+    nmi_processor_id: null,
+  });
 }
 
 /** Dollars → cents (GHL sends dollars, ProcessorInterface uses cents) */
@@ -112,7 +124,7 @@ async function handleVerify(req: Request, res: Response, merchant: MerchantRef):
       return;
     }
 
-    const { processorType, config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+    const { config } = await resolveMappedProcessor(merchant, mapping2.processor_type);
     const processor = createProcessorClient(config);
     const result = await processor.verifyTransaction(mapping2.processor_transaction_id);
 
@@ -126,7 +138,7 @@ async function handleVerify(req: Request, res: Response, merchant: MerchantRef):
     return;
   }
 
-  const { processorType, config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+  const { config } = await resolveMappedProcessor(merchant, mapping.processor_type);
   const processor = createProcessorClient(config);
   const result = await processor.verifyTransaction(mapping.processor_transaction_id);
 
@@ -370,7 +382,7 @@ async function handleCancelSubscription(req: Request, res: Response, merchant: M
     return;
   }
 
-  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+  const { config } = await resolveMappedProcessor(merchant, mapping.processor_type);
   const processor = createProcessorClient(config);
 
   await processor.cancelSubscription(mapping.processor_subscription_id);
@@ -399,7 +411,7 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
     return;
   }
 
-  const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId);
+  const { config } = await resolveMappedProcessor(merchant, mapping.processor_type);
   const processor = createProcessorClient(config);
 
   const result = await processor.refund({
