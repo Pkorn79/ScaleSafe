@@ -469,8 +469,9 @@ function nmiIssueBadge(issueCode: string): string {
 }
 
 function sourceLabel(source: string, recurring: boolean): string {
-  if (source === 'nmi_history_sync') return 'Recovered from NMI history - live Silent Post missing';
+  if (source === 'nmi_history_sync') return 'NMI history sync';
   if (source === 'nmi_silent_post') return 'NMI Silent Post';
+  if (source === 'nmi_webhook_event') return 'NMI webhook';
   const value = source || (recurring ? 'recurring' : 'checkout');
   return value.replace(/_/g, ' ');
 }

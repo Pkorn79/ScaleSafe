@@ -789,6 +789,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                           enrollment_id: bgEnrId,
                           offer_id: enrForSub.offer_id,
                           contact_id: bgContactId,
+                          location_id: merchant.locationId,
                           payment_type: recurringPaymentType,
                         },
                       });

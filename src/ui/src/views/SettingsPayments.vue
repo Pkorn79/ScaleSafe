@@ -87,6 +87,49 @@
         <div v-else>
           <p class="text-sm text-muted">NMI account connected. Security key stored securely.</p>
           <p v-if="nmiProcessorId" class="text-sm text-muted">Processor ID: {{ nmiProcessorId }}</p>
+          <div class="webhook-panel mt-4">
+            <div class="flex-between mb-2">
+              <h4 class="subsection-title">Official NMI Webhook</h4>
+              <span v-if="nmiWebhook?.status" class="badge" :class="nmiWebhook.status === 'verified' ? 'badge-green' : 'badge-yellow'">
+                {{ nmiWebhook.status.replace(/_/g, ' ') }}
+              </span>
+            </div>
+            <div v-if="nmiWebhookLoading" class="text-sm text-muted">Loading webhook setup...</div>
+            <template v-else-if="nmiWebhook">
+              <div class="setup-row">
+                <label>Callback URL</label>
+                <div class="copy-line">
+                  <input class="form-input mono" :value="nmiWebhook.callbackUrl" readonly />
+                  <button class="btn btn-secondary btn-sm" @click="copyText(nmiWebhook.callbackUrl)">Copy</button>
+                </div>
+              </div>
+              <div class="setup-row">
+                <label>Signing Secret</label>
+                <div class="copy-line">
+                  <input class="form-input mono" :type="showNmiWebhookSecret ? 'text' : 'password'" :value="nmiWebhook.secret" readonly />
+                  <button class="btn btn-secondary btn-sm" @click="showNmiWebhookSecret = !showNmiWebhookSecret">
+                    {{ showNmiWebhookSecret ? 'Hide' : 'Show' }}
+                  </button>
+                  <button class="btn btn-secondary btn-sm" @click="copyText(nmiWebhook.secret)">Copy</button>
+                </div>
+              </div>
+              <div class="setup-row">
+                <label>Required events</label>
+                <div class="event-list">
+                  <span v-for="event in nmiWebhook.events" :key="event" class="event-pill">{{ event }}</span>
+                </div>
+              </div>
+              <p class="text-sm text-muted">Signature header: <span class="mono">Signature</span></p>
+              <p v-if="nmiWebhook.lastVerifiedAt" class="text-sm text-muted">Last verified: {{ formatDateTime(nmiWebhook.lastVerifiedAt) }}</p>
+              <p v-if="nmiWebhook.lastError" class="text-sm" style="color:#dc2626">{{ nmiWebhook.lastError }}</p>
+              <div class="flex gap-2 mt-2">
+                <button class="btn btn-secondary btn-sm" @click="loadNmiWebhook">Refresh</button>
+                <button class="btn btn-danger btn-sm" @click="rotateNmiWebhookSecret">Rotate Secret</button>
+              </div>
+              <p v-if="nmiWebhookMessage" class="text-sm mt-2" style="color:#059669">{{ nmiWebhookMessage }}</p>
+            </template>
+            <p v-else class="text-sm text-muted">Webhook setup values are not available yet.</p>
+          </div>
           <button class="btn btn-danger btn-sm mt-2" @click="disconnectNmi">Disconnect</button>
         </div>
       </div>
@@ -157,6 +200,10 @@ const saving = ref(false);
 const testing = ref(false);
 const nmiTestResult = ref<{ success: boolean; message: string } | null>(null);
 const riskAudit = ref<any>(null);
+const nmiWebhook = ref<any>(null);
+const nmiWebhookLoading = ref(false);
+const nmiWebhookMessage = ref('');
+const showNmiWebhookSecret = ref(false);
 
 const nmiForm = ref({
   securityKey: '',
@@ -187,6 +234,9 @@ async function loadProcessorStatus() {
         // Risk audit may not be available yet
       }
     }
+    if (nmiConnected.value) {
+      await loadNmiWebhook();
+    }
   } catch (err: any) {
     loadError.value = err.message || 'Failed to load processor status';
   } finally {
@@ -211,10 +261,44 @@ async function connectNmi() {
     nmiProcessorId.value = nmiForm.value.processorId || '';
     nmiForm.value = { securityKey: '', tokenizationKey: '', processorId: '' };
     nmiTestResult.value = null;
+    await loadNmiWebhook();
   } catch (err: any) {
     loadError.value = err?.message || 'Failed to connect NMI';
   }
   saving.value = false;
+}
+
+async function loadNmiWebhook() {
+  nmiWebhookLoading.value = true;
+  nmiWebhookMessage.value = '';
+  try {
+    nmiWebhook.value = await api.get<any>('/api/processor-config/nmi/webhook');
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to load NMI webhook setup';
+  } finally {
+    nmiWebhookLoading.value = false;
+  }
+}
+
+async function rotateNmiWebhookSecret() {
+  if (!confirm('Rotate the NMI webhook signing secret? You will need to update NMI with the new secret.')) return;
+  nmiWebhookMessage.value = '';
+  try {
+    nmiWebhook.value = await api.post<any>('/api/processor-config/nmi/webhook/rotate');
+    showNmiWebhookSecret.value = true;
+    nmiWebhookMessage.value = 'New secret created. Update this in NMI before the next test.';
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to rotate NMI webhook secret';
+  }
+}
+
+async function copyText(value: string) {
+  await navigator.clipboard.writeText(value || '');
+  nmiWebhookMessage.value = 'Copied.';
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString();
 }
 
 async function testNmiConnection() {
@@ -296,6 +380,7 @@ async function disconnectNmi() {
     await api.del('/api/processor-config/nmi');
     nmiConnected.value = false;
     nmiProcessorId.value = '';
+    nmiWebhook.value = null;
     if (defaultProcessor.value === 'nmi') defaultProcessor.value = '';
   } catch (err: any) {
     loadError.value = err?.message || 'Failed to disconnect NMI';
@@ -335,6 +420,60 @@ async function saveAutoSubmit() {
   margin-bottom: 16px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.subsection-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.webhook-panel {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.setup-row {
+  margin-bottom: 12px;
+}
+
+.setup-row label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.copy-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.copy-line .form-input {
+  min-width: 0;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.event-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-pill {
+  display: inline-flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #334155;
+  background: #f8fafc;
 }
 
 .toggle-switch-label {

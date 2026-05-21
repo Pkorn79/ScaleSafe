@@ -188,12 +188,12 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
           paymentType: enr.payment_type,
           offerName,
           recovery_note: isNmiHistorySync
-            ? 'Recovered from NMI history - live Silent Post missing'
+            ? 'Imported from NMI transaction history'
             : null,
         },
         ...buildDefenseEvidenceFields({
           summary: isNmiHistorySync
-            ? `Recovered from NMI history - live Silent Post missing. ${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} was imported from NMI transaction history. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`
+            ? `${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} was imported from NMI transaction history. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`
             : `${enr.payment_type === 'subscription' ? 'Subscription' : 'Installment'} payment #${newPaymentsMade} of $${amountDollars.toFixed(2)} for ${offerName || 'program'} processed via ${processorType}. Transaction: ${transactionId}. Payments remaining: ${paymentsRemaining}.`,
           title: isNmiHistorySync
             ? `Recovered NMI Payment #${newPaymentsMade}`

@@ -437,6 +437,13 @@ describe('NmiClient', () => {
         interval: 'monthly',
         totalPayments: 12,
         description: 'Monthly Coaching',
+        metadata: {
+          enrollment_id: '11111111-1111-4111-8111-111111111111',
+          contact_id: 'contact_1',
+          offer_id: 'offer_1',
+          location_id: 'loc_1',
+          payment_type: 'installment',
+        },
       });
 
       expect(result.success).toBe(true);
@@ -450,6 +457,12 @@ describe('NmiClient', () => {
       expect(params.get('plan_payments')).toBe('12');
       expect(params.get('month_frequency')).toBe('1');
       expect(params.get('customer_vault_id')).toBe('VAULT999');
+      expect(params.get('order_id')).toBe('11111111-1111-4111-8111-111111111111');
+      expect(params.get('merchant_defined_field_1')).toBe('11111111-1111-4111-8111-111111111111');
+      expect(params.get('merchant_defined_field_2')).toBe('contact_1');
+      expect(params.get('merchant_defined_field_3')).toBe('offer_1');
+      expect(params.get('merchant_defined_field_4')).toBe('loc_1');
+      expect(params.get('merchant_defined_field_5')).toBe('installment');
     });
 
     it('creates a weekly subscription', async () => {

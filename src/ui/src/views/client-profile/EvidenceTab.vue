@@ -151,8 +151,9 @@ function reasonTags(item: any): string[] {
 }
 
 function sourceLabel(source: string): string {
-  if (source === 'nmi_history_sync') return 'Recovered from NMI history - live Silent Post missing';
+  if (source === 'nmi_history_sync') return 'NMI history sync';
   if (source === 'nmi_silent_post') return 'NMI Silent Post';
+  if (source === 'nmi_webhook_event') return 'NMI webhook';
   if (source === 'merchant_action') return 'Merchant action';
   return source ? source.replace(/_/g, ' ') : '';
 }
@@ -192,7 +193,7 @@ function summarize(item: any): string {
       const amount = d.amount ? `$${Number(d.amount).toFixed(2)}` : 'payment';
       const paymentNumber = d.payment_number ? ` #${d.payment_number}` : '';
       const tx = d.ghl_transaction_id || d.transaction_id;
-      return `Recovered from NMI history - live Silent Post missing. Recorded ${amount} payment${paymentNumber}${tx ? `, Tx: ${String(tx).slice(0, 12)}...` : ''}.`;
+      return `NMI history sync recorded ${amount} payment${paymentNumber}${tx ? `, Tx: ${String(tx).slice(0, 12)}...` : ''}.`;
     }
     const parts: string[] = [];
     if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);

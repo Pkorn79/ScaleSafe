@@ -16,7 +16,16 @@ function isColumnCompatibilityError(error: any): boolean {
 }
 
 function stripNewDiagnosticFields(fields: Record<string, unknown>): Record<string, unknown> {
-  const { payment_event_id: _paymentEventId, ...fallback } = fields;
+  const {
+    payment_event_id: _paymentEventId,
+    webhook_kind: _webhookKind,
+    event_id: _eventId,
+    event_type: _eventType,
+    signature_verified: _signatureVerified,
+    nmi_merchant_id: _nmiMerchantId,
+    nmi_processor_id: _nmiProcessorId,
+    ...fallback
+  } = fields;
   return fallback;
 }
 
@@ -30,7 +39,7 @@ export const nmiDiagnosticLogService = {
         .select('id')
         .single();
 
-      if (response.error && isColumnCompatibilityError(response.error) && 'payment_event_id' in fields) {
+      if (response.error && isColumnCompatibilityError(response.error)) {
         response = await supabase
           .from('nmi_silent_post_logs')
           .insert(stripNewDiagnosticFields(fields))
@@ -55,7 +64,7 @@ export const nmiDiagnosticLogService = {
         .update(fields)
         .eq('id', logId);
 
-      if (response.error && isColumnCompatibilityError(response.error) && 'payment_event_id' in fields) {
+      if (response.error && isColumnCompatibilityError(response.error)) {
         response = await supabase
           .from('nmi_silent_post_logs')
           .update(stripNewDiagnosticFields(fields))

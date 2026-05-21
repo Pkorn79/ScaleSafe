@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ProcessorType, ProcessorConfig } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
 import { logger } from '../utils/logger';
+import { config as appConfig } from '../config';
 
 // ============================================================
 // Encryption helpers (AES-256-GCM)
@@ -63,6 +64,23 @@ export interface CreateNmiConfigInput {
   isDefault?: boolean;
 }
 
+export const NMI_WEBHOOK_EVENTS = [
+  'transaction.sale.success',
+  'transaction.sale.failure',
+  'transaction.sale.unknown',
+  'recurring.subscription.add',
+  'recurring.subscription.update',
+  'recurring.subscription.delete',
+];
+
+function generateNmiWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+export function nmiWebhookCallbackUrl(configId: string): string {
+  return `${appConfig.appUrl}/webhooks/nmi/events/${encodeURIComponent(configId)}`;
+}
+
 export interface CreateStripeConfigInput {
   merchantId: string;
   locationId: string;
@@ -94,6 +112,9 @@ export const processorConfigService = {
         nmi_security_key_encrypted: encrypt(input.securityKey),
         nmi_tokenization_key: input.tokenizationKey,
         nmi_processor_id: input.processorId || null,
+        nmi_webhook_secret_encrypted: encrypt(generateNmiWebhookSecret()),
+        nmi_webhook_status: 'manual_setup_required',
+        nmi_webhook_events: NMI_WEBHOOK_EVENTS,
         is_default: input.isDefault ?? true,
       })
       .select('*')
@@ -111,6 +132,13 @@ export const processorConfigService = {
       { merchantId: input.merchantId, configId: data.id },
       'NMI processor config created',
     );
+
+    await supabase
+      .from('processor_configs')
+      .update({ nmi_webhook_callback_url: nmiWebhookCallbackUrl(data.id) })
+      .eq('id', data.id);
+
+    (data as any).nmi_webhook_callback_url = nmiWebhookCallbackUrl(data.id);
 
     return data as ProcessorConfig;
   },
@@ -336,6 +364,111 @@ export const processorConfigService = {
       );
     }
     return decrypt(config.nmi_security_key_encrypted);
+  },
+
+  /**
+   * Decrypt the NMI webhook signing secret from a config row.
+   */
+  decryptNmiWebhookSecret(config: ProcessorConfig): string {
+    if (!config.nmi_webhook_secret_encrypted) {
+      throw new ProcessorError(
+        'No encrypted NMI webhook secret in config',
+        'nmi',
+        'MISSING_WEBHOOK_SECRET',
+      );
+    }
+    return decrypt(config.nmi_webhook_secret_encrypted);
+  },
+
+  async getOrCreateNmiWebhookConfig(locationId: string): Promise<{
+    configId: string;
+    callbackUrl: string;
+    secret: string;
+    events: string[];
+    status: string;
+    lastVerifiedAt: string | null;
+    lastError: string | null;
+  }> {
+    const supabase = getSupabase();
+    const { data: config, error } = await supabase
+      .from('processor_configs')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('processor_type', 'nmi')
+      .eq('is_active', true)
+      .order('is_default', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !config) {
+      throw new ProcessorError('No active NMI config found', 'nmi', 'CONFIG_NOT_FOUND');
+    }
+
+    const callbackUrl = nmiWebhookCallbackUrl(config.id);
+    let secret = config.nmi_webhook_secret_encrypted
+      ? decrypt(config.nmi_webhook_secret_encrypted)
+      : generateNmiWebhookSecret();
+
+    const patch: Record<string, unknown> = {};
+    if (!config.nmi_webhook_secret_encrypted) patch.nmi_webhook_secret_encrypted = encrypt(secret);
+    if (config.nmi_webhook_callback_url !== callbackUrl) patch.nmi_webhook_callback_url = callbackUrl;
+    if (!Array.isArray(config.nmi_webhook_events) || config.nmi_webhook_events.length === 0) {
+      patch.nmi_webhook_events = NMI_WEBHOOK_EVENTS;
+    }
+    if (!config.nmi_webhook_status || config.nmi_webhook_status === 'not_configured') {
+      patch.nmi_webhook_status = 'manual_setup_required';
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const { error: updateError } = await supabase
+        .from('processor_configs')
+        .update(patch)
+        .eq('id', config.id);
+      if (updateError) throw updateError;
+    }
+
+    return {
+      configId: config.id,
+      callbackUrl,
+      secret,
+      events: Array.isArray(config.nmi_webhook_events) && config.nmi_webhook_events.length
+        ? config.nmi_webhook_events
+        : NMI_WEBHOOK_EVENTS,
+      status: String(patch.nmi_webhook_status || config.nmi_webhook_status || 'manual_setup_required'),
+      lastVerifiedAt: config.nmi_webhook_last_verified_at || null,
+      lastError: config.nmi_webhook_last_error || null,
+    };
+  },
+
+  async rotateNmiWebhookSecret(locationId: string): Promise<{
+    configId: string;
+    callbackUrl: string;
+    secret: string;
+    events: string[];
+    status: string;
+    lastVerifiedAt: string | null;
+    lastError: string | null;
+  }> {
+    const current = await this.getOrCreateNmiWebhookConfig(locationId);
+    const supabase = getSupabase();
+    const secret = generateNmiWebhookSecret();
+    await supabase
+      .from('processor_configs')
+      .update({
+        nmi_webhook_secret_encrypted: encrypt(secret),
+        nmi_webhook_status: 'manual_setup_required',
+        nmi_webhook_last_verified_at: null,
+        nmi_webhook_last_error: null,
+      })
+      .eq('id', current.configId);
+
+    return {
+      ...current,
+      secret,
+      status: 'manual_setup_required',
+      lastVerifiedAt: null,
+      lastError: null,
+    };
   },
 
   /**

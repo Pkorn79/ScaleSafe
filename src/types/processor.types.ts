@@ -154,6 +154,13 @@ export interface ProcessorConfig {
   nmi_security_key_encrypted: string | null;
   nmi_tokenization_key: string | null;
   nmi_processor_id: string | null;
+  nmi_webhook_secret_encrypted: string | null;
+  nmi_webhook_subscription_id: string | null;
+  nmi_webhook_status: string | null;
+  nmi_webhook_events: string[] | null;
+  nmi_webhook_callback_url: string | null;
+  nmi_webhook_last_verified_at: string | null;
+  nmi_webhook_last_error: string | null;
 
   // Stripe Connect
   stripe_user_id: string | null;

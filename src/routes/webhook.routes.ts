@@ -3,6 +3,7 @@ import { webhookController } from '../controllers/webhook.controller';
 import { triggerController } from '../controllers/trigger.controller';
 import { handleStripeWebhook } from '../controllers/stripe-webhook.controller';
 import { handleNmiSilentPost } from '../controllers/nmi-silent-post.controller';
+import { handleNmiWebhookEvent } from '../controllers/nmi-webhook-events.controller';
 import { requireGhlWebhookSignature } from '../middleware/ghlWebhookSignature';
 import { requireMerchantWebhookSecret } from '../middleware/merchantWebhookSecret';
 
@@ -23,5 +24,8 @@ router.post('/stripe', handleStripeWebhook);
 
 // NMI Silent Post — no signature; verified by calling verifyTransaction() per notification
 router.post('/nmi/silent-post', handleNmiSilentPost);
+
+// NMI official webhooks — signed JSON events. Configure this URL in NMI.
+router.post('/nmi/events/:processorConfigId', handleNmiWebhookEvent);
 
 export default router;

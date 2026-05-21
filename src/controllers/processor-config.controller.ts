@@ -44,6 +44,7 @@ export const processorConfigController = {
       });
 
       logger.info({ merchantId: merchant.id, locationId, configId: config.id }, 'NMI config created via Settings');
+      const webhook = await processorConfigService.getOrCreateNmiWebhookConfig(locationId);
 
       // Don't echo the encrypted security key back to the client
       res.json({
@@ -53,7 +54,30 @@ export const processorConfigController = {
         is_default: config.is_default,
         is_active: config.is_active,
         created_at: config.created_at,
+        webhook,
       });
+    } catch (err) { next(err); }
+  },
+
+  /** GET /api/processor-config/nmi/webhook — setup values for NMI official webhooks */
+  async getNmiWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const webhook = await processorConfigService.getOrCreateNmiWebhookConfig(locationId);
+      res.json(webhook);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/processor-config/nmi/webhook/rotate — generate a new signing secret */
+  async rotateNmiWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const webhook = await processorConfigService.rotateNmiWebhookSecret(locationId);
+      res.json(webhook);
     } catch (err) { next(err); }
   },
 
