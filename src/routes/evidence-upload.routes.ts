@@ -3,6 +3,7 @@ import multer from 'multer';
 import { stripeEvidenceVaultService } from '../services/stripe-evidence-vault.service';
 import { evidenceChainService } from '../services/evidence-chain.service';
 import { ssoAuth } from '../middleware/ssoAuth';
+import { requireTenant, resolveLocationId } from '../middleware/tenantContext';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { getSupabase } from '../clients/supabase.client';
 import { ValidationError } from '../utils/errors';
@@ -11,9 +12,9 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
 
 // POST /api/evidence/upload-contract
-router.post('/upload-contract', ssoAuth, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload-contract', ssoAuth, requireTenant, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId;
+    const locationId = resolveLocationId(req);
     const { clientContactId, offerId } = req.body;
 
     if (!req.file || !clientContactId || !offerId) throw new ValidationError('Missing file, clientContactId, or offerId');
@@ -36,9 +37,9 @@ router.post('/upload-contract', ssoAuth, upload.single('file'), async (req: Requ
 });
 
 // POST /api/evidence/log-session
-router.post('/log-session', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/log-session', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId;
+    const locationId = resolveLocationId(req);
     const { clientContactId, offerId, sessionDate, sessionType, sessionNotes, durationMinutes } = req.body;
 
     if (!clientContactId || !offerId || !sessionDate || !sessionNotes) {
@@ -65,9 +66,9 @@ router.post('/log-session', ssoAuth, async (req: Request, res: Response, next: N
 });
 
 // POST /api/evidence/upload-communication
-router.post('/upload-communication', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload-communication', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId;
+    const locationId = resolveLocationId(req);
     const { clientContactId, offerId, communicationType, messages } = req.body;
 
     if (!clientContactId || !offerId || !messages?.length) {
@@ -92,9 +93,9 @@ router.post('/upload-communication', ssoAuth, async (req: Request, res: Response
 });
 
 // GET /api/evidence/status
-router.get('/status', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/status', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = (req as any).locationId;
+    const locationId = resolveLocationId(req);
     const merchant = await merchantRepository.getByLocationId(locationId);
 
     const { data: entries } = await getSupabase()
@@ -127,7 +128,7 @@ router.get('/status', ssoAuth, async (req: Request, res: Response, next: NextFun
 });
 
 // GET /api/evidence/chain/:paymentEventId
-router.get('/chain/:paymentEventId', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/chain/:paymentEventId', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await evidenceChainService.verifyChain(req.params.paymentEventId);
     res.json(result);
