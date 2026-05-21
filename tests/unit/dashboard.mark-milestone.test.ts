@@ -215,7 +215,7 @@ describe('dashboardController.markMilestone', () => {
     });
     expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', expect.objectContaining({
       customField: expect.objectContaining({
-        'contact.ss_signoff_link': expect.stringContaining('https://wholepay.co/milestone-approval-page?actionToken='),
+        'contact.sign_off_link': expect.stringContaining('https://wholepay.co/milestone-approval-page?actionToken='),
       }),
     }));
   });

@@ -39,7 +39,7 @@ describe('GHL Fields Constants', () => {
   });
 
   test('should include a managed milestone signoff link field', () => {
-    expect(WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK).toBe('contact.ss_signoff_link');
+    expect(WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK).toBe('contact.sign_off_link');
   });
 
   test('should have 5 custom triggers', () => {

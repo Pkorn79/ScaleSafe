@@ -303,7 +303,11 @@ async function executeAction(enr: any, action: string, reason?: string) {
 
 function formatDateShort(d: string): string {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(d);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function enrollmentBadge(status: string): string {
