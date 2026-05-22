@@ -63,4 +63,75 @@ describe('merchantRepository token storage', () => {
     expect(decrypt(updatePayload.ghl_refresh_token_encrypted)).toBe('refresh_refreshed');
     expect(eq).toHaveBeenCalledWith('location_id', 'loc_1');
   });
+
+  it('falls back to plaintext token insert when encrypted token columns are not migrated yet', async () => {
+    const firstSingle = jest.fn().mockReturnValue({
+      data: null,
+      error: {
+        code: '42703',
+        message: 'column merchants.ghl_access_token_encrypted does not exist',
+      },
+    });
+    const secondSingle = jest.fn().mockReturnValue({
+      data: { id: 'merchant_1', location_id: 'loc_1' },
+      error: null,
+    });
+    const firstInsert = jest.fn(() => ({ select: () => ({ single: firstSingle }) }));
+    const secondInsert = jest.fn(() => ({ select: () => ({ single: secondSingle }) }));
+    mockFrom
+      .mockReturnValueOnce({ insert: firstInsert })
+      .mockReturnValueOnce({ insert: secondInsert });
+
+    await merchantRepository.create({
+      location_id: 'loc_1',
+      ghl_access_token: 'access_plain',
+      ghl_refresh_token: 'refresh_plain',
+      ghl_token_expires_at: new Date().toISOString(),
+    });
+
+    expect(firstInsert).toHaveBeenCalledWith(expect.objectContaining({
+      ghl_access_token: null,
+      ghl_refresh_token: null,
+      ghl_access_token_encrypted: expect.any(String),
+      ghl_refresh_token_encrypted: expect.any(String),
+    }));
+    expect(secondInsert).toHaveBeenCalledWith(expect.objectContaining({
+      ghl_access_token: 'access_plain',
+      ghl_refresh_token: 'refresh_plain',
+    }));
+  });
+
+  it('falls back to plaintext token refresh when encrypted token columns are not migrated yet', async () => {
+    const firstEq = jest.fn().mockResolvedValue({
+      error: {
+        code: '42703',
+        message: 'column merchants.ghl_refresh_token_encrypted does not exist',
+      },
+    });
+    const secondEq = jest.fn().mockResolvedValue({ error: null });
+    const firstUpdate = jest.fn(() => ({ eq: firstEq }));
+    const secondUpdate = jest.fn(() => ({ eq: secondEq }));
+    mockFrom
+      .mockReturnValueOnce({ update: firstUpdate })
+      .mockReturnValueOnce({ update: secondUpdate });
+
+    await merchantRepository.updateTokens(
+      'loc_1',
+      'access_refreshed',
+      'refresh_refreshed',
+      new Date('2026-05-21T12:00:00Z'),
+    );
+
+    expect(firstUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      ghl_access_token: null,
+      ghl_refresh_token: null,
+      ghl_access_token_encrypted: expect.any(String),
+      ghl_refresh_token_encrypted: expect.any(String),
+    }));
+    expect(secondUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      ghl_access_token: 'access_refreshed',
+      ghl_refresh_token: 'refresh_refreshed',
+      ghl_token_expires_at: '2026-05-21T12:00:00.000Z',
+    }));
+  });
 });

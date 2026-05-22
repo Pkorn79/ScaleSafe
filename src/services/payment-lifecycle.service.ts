@@ -22,6 +22,19 @@ function today(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+function fireTriggerInBackground(
+  locationId: string,
+  triggerKey: string,
+  payload: Record<string, unknown>,
+): void {
+  triggerService.fireTrigger(locationId, triggerKey, payload).catch((err: any) => {
+    logger.warn(
+      { err: err?.message || String(err), triggerKey, locationId },
+      'Workflow trigger failed after enrollment action response',
+    );
+  });
+}
+
 export const paymentLifecycleService = {
 
   // ═══════════════════════════════════════════════════════════════
@@ -401,7 +414,7 @@ export const paymentLifecycleService = {
           paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
         }
       } catch {}
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_paused', {
+      fireTriggerInBackground(params.locationId, 'ss_subscription_paused', {
         event_type: 'subscription_paused',
         location_id: params.locationId,
         locationId: params.locationId,
@@ -603,7 +616,7 @@ export const paymentLifecycleService = {
           daysPaused = Math.floor((Date.now() - new Date(enr.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         }
       } catch {}
-      await triggerService.fireTrigger(params.locationId, 'ss_subscription_resumed', {
+      fireTriggerInBackground(params.locationId, 'ss_subscription_resumed', {
         event_type: 'subscription_resumed',
         location_id: params.locationId,
         locationId: params.locationId,
@@ -805,7 +818,7 @@ export const paymentLifecycleService = {
           offerName = ofr?.offer_name || '';
         }
       } catch {}
-      await triggerService.fireTrigger(params.locationId, 'ss_cancellation_requested', {
+      fireTriggerInBackground(params.locationId, 'ss_cancellation_requested', {
         event_type: 'cancellation_requested',
         location_id: params.locationId,
         locationId: params.locationId,
@@ -937,7 +950,7 @@ export const paymentLifecycleService = {
         const { data: ofr } = await getSupabase().from('offers_mirror').select('offer_name').eq('id', params.offerId).maybeSingle();
         offerName = ofr?.offer_name || '';
       } catch {}
-      await triggerService.fireTrigger(params.locationId, 'ss_program_completed', {
+      fireTriggerInBackground(params.locationId, 'ss_program_completed', {
         event_type: 'program_completed',
         location_id: params.locationId,
         locationId: params.locationId,

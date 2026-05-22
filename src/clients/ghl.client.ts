@@ -31,6 +31,14 @@ function readConfigToken(config: Record<string, unknown>, encryptedKey: string, 
   return typeof legacy === 'string' ? legacy : '';
 }
 
+function isMissingEncryptedTokenColumn(error: any): boolean {
+  const message = String(error?.message || '');
+  return error?.code === '42703' && (
+    message.includes('ghl_access_token_encrypted')
+    || message.includes('ghl_refresh_token_encrypted')
+  );
+}
+
 interface TokenResponse extends TokenPair {
   locationId: string;
   companyId: string;
@@ -329,11 +337,27 @@ async function getLocationToken(
 export async function ghlApi(locationId: string): Promise<AxiosInstance> {
   const supabase = getSupabase();
 
-  const { data: merchant, error } = await supabase
+  const merchantResult = await supabase
     .from('merchants')
     .select('ghl_access_token, ghl_refresh_token, ghl_access_token_encrypted, ghl_refresh_token_encrypted, ghl_token_expires_at, company_id, config')
     .eq('location_id', locationId)
     .single();
+  let merchant: any = merchantResult.data;
+  let error: any = merchantResult.error;
+
+  if (isMissingEncryptedTokenColumn(error)) {
+    logger.warn(
+      { locationId },
+      'Encrypted GHL token columns missing; using legacy plaintext token columns until migration 068 is applied',
+    );
+    const legacyResult = await supabase
+      .from('merchants')
+      .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config')
+      .eq('location_id', locationId)
+      .single();
+    merchant = legacyResult.data;
+    error = legacyResult.error;
+  }
 
   if (error || !merchant) {
     throw new GHLApiError(`Merchant not found: ${locationId}`);

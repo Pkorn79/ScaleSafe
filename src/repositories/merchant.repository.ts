@@ -45,6 +45,14 @@ export interface MerchantRecord {
 }
 
 export const merchantRepository = {
+  isMissingEncryptedTokenColumn(error: any): boolean {
+    const message = String(error?.message || '');
+    return error?.code === '42703' && (
+      message.includes('ghl_access_token_encrypted')
+      || message.includes('ghl_refresh_token_encrypted')
+    );
+  },
+
   encryptTokenUpdates<T extends Record<string, any>>(updates: T): T {
     const next: Record<string, any> = { ...updates };
     if (typeof next.ghl_access_token === 'string') {
@@ -124,11 +132,21 @@ export const merchantRepository = {
     support_email?: string;
   }): Promise<MerchantRecord> {
     const insertData = this.encryptTokenUpdates(data);
-    const { data: merchant, error } = await getSupabase()
+    let { data: merchant, error } = await getSupabase()
       .from('merchants')
       .insert(insertData)
       .select()
       .single();
+
+    if (this.isMissingEncryptedTokenColumn(error)) {
+      const legacyResult = await getSupabase()
+        .from('merchants')
+        .insert(data)
+        .select()
+        .single();
+      merchant = legacyResult.data;
+      error = legacyResult.error;
+    }
 
     if (error) throw error;
     return merchant;
@@ -136,19 +154,30 @@ export const merchantRepository = {
 
   async update(locationId: string, updates: Partial<MerchantRecord>): Promise<MerchantRecord> {
     const safeUpdates = this.encryptTokenUpdates(updates);
-    const { data, error } = await getSupabase()
+    let { data, error } = await getSupabase()
       .from('merchants')
       .update(safeUpdates)
       .eq('location_id', locationId)
       .select()
       .single();
 
+    if (this.isMissingEncryptedTokenColumn(error)) {
+      const legacyResult = await getSupabase()
+        .from('merchants')
+        .update(updates)
+        .eq('location_id', locationId)
+        .select()
+        .single();
+      data = legacyResult.data;
+      error = legacyResult.error;
+    }
+
     if (error) throw error;
     return data;
   },
 
   async updateTokens(locationId: string, accessToken: string, refreshToken: string, expiresAt: Date): Promise<void> {
-    const { error } = await getSupabase()
+    let { error } = await getSupabase()
       .from('merchants')
       .update(this.encryptTokenUpdates({
         ghl_access_token: accessToken,
@@ -156,6 +185,18 @@ export const merchantRepository = {
         ghl_token_expires_at: expiresAt.toISOString(),
       }))
       .eq('location_id', locationId);
+
+    if (this.isMissingEncryptedTokenColumn(error)) {
+      const legacyResult = await getSupabase()
+        .from('merchants')
+        .update({
+          ghl_access_token: accessToken,
+          ghl_refresh_token: refreshToken,
+          ghl_token_expires_at: expiresAt.toISOString(),
+        })
+        .eq('location_id', locationId);
+      error = legacyResult.error;
+    }
 
     if (error) throw error;
   },
