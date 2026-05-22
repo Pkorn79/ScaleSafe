@@ -4,10 +4,14 @@ import path from 'path';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { captureRawBody } from './middleware/rawBody';
+import { securityHeaders } from './middleware/securityHeaders';
 import routes from './routes';
 
 export function createApp(): express.Application {
   const app = express();
+
+  app.disable('x-powered-by');
+  app.use(securityHeaders);
 
   // CORS for public endpoints (called from GHL iframes)
   app.use('/api/enrollment', cors({
