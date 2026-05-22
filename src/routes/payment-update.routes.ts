@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getPaymentUpdateConfig, updatePaymentMethod, cancelSubscriptionPublic, getMilestoneConfig, submitMilestoneSignoff } from '../controllers/payment-update.controller';
 
@@ -11,16 +12,23 @@ router.get('/api/milestone-signoff/config', getMilestoneConfig);
 router.post('/api/milestone-signoff/submit', submitMilestoneSignoff);
 
 // Widget page (loaded in GHL funnel iframe or standalone)
-const widgetCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com";
+function createScriptNonce(): string {
+  return crypto.randomBytes(16).toString('base64');
+}
+
+function widgetCsp(nonce: string): string {
+  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com`;
+}
 
 router.get('/payment-update', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
   res.setHeader('Content-Type', 'text/html');
-  res.setHeader('Content-Security-Policy', widgetCsp);
+  res.setHeader('Content-Security-Policy', widgetCsp(nonce));
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send(paymentUpdateHtml());
+  res.send(paymentUpdateHtml(nonce));
 });
 
-function paymentUpdateHtml(): string {
+function paymentUpdateHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -83,7 +91,7 @@ function paymentUpdateHtml(): string {
       </div>
     </div>
   </div>
-  <button class="btn btn-primary" id="nmi-submit" onclick="submitNmi()">Update Payment Method</button>
+  <button class="btn btn-primary" id="nmi-submit">Update Payment Method</button>
 </div>
 
 <!-- Stripe Elements form -->
@@ -94,13 +102,13 @@ function paymentUpdateHtml(): string {
       <div id="card-element"></div>
     </div>
   </div>
-  <button class="btn btn-primary" id="stripe-submit" onclick="submitStripe()">Update Payment Method</button>
+  <button class="btn btn-primary" id="stripe-submit">Update Payment Method</button>
 </div>
 
 <div id="success-msg" class="status status-success hidden"></div>
 <div id="error-msg" class="status status-error hidden"></div>
 
-<script>
+<script nonce="${nonce}">
 var API_BASE = window.location.origin;
 var params = new URLSearchParams(window.location.search);
 var actionToken = params.get('actionToken') || params.get('token') || '';
@@ -315,6 +323,9 @@ async function doSubmit(token, processorType) {
   if (nmiBtn) { nmiBtn.disabled = false; nmiBtn.textContent = 'Update Payment Method'; }
   if (stripeBtn) { stripeBtn.disabled = false; stripeBtn.textContent = 'Update Payment Method'; }
 }
+
+document.getElementById('nmi-submit').addEventListener('click', submitNmi);
+document.getElementById('stripe-submit').addEventListener('click', submitStripe);
 </script>
 </body>
 </html>`;
@@ -322,12 +333,14 @@ async function doSubmit(token, processorType) {
 
 // Subscription cancellation page (client-facing)
 router.get('/subscription-cancel', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
   res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Security-Policy', widgetCsp(nonce));
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send(subscriptionCancelHtml());
+  res.send(subscriptionCancelHtml(nonce));
 });
 
-function subscriptionCancelHtml(): string {
+function subscriptionCancelHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -375,7 +388,7 @@ function subscriptionCancelHtml(): string {
     <textarea id="reason" placeholder="Please let us know why you'd like to cancel..."></textarea>
   </div>
 
-  <button class="btn btn-danger" id="cancel-btn" onclick="submitCancel()" disabled>
+  <button class="btn btn-danger" id="cancel-btn" disabled>
     Cancel My Subscription
   </button>
 </div>
@@ -385,7 +398,7 @@ function subscriptionCancelHtml(): string {
 </div>
 <div id="error-msg" class="status status-error hidden"></div>
 
-<script>
+<script nonce="${nonce}">
 var API_BASE = window.location.origin;
 var params = new URLSearchParams(window.location.search);
 var actionToken = params.get('actionToken') || params.get('token') || '';
@@ -470,6 +483,8 @@ async function submitCancel() {
     document.getElementById('cancel-btn').textContent = 'Cancel My Subscription';
   }
 }
+
+document.getElementById('cancel-btn').addEventListener('click', submitCancel);
 </script>
 </body>
 </html>`;
@@ -477,12 +492,14 @@ async function submitCancel() {
 
 // Milestone sign-off page (client-facing)
 router.get('/milestone-signoff', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
   res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Security-Policy', widgetCsp(nonce));
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send(milestoneSignoffHtml());
+  res.send(milestoneSignoffHtml(nonce));
 });
 
-function milestoneSignoffHtml(): string {
+function milestoneSignoffHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -532,11 +549,11 @@ function milestoneSignoffHtml(): string {
     <label class="field-label">Your Full Legal Name (Electronic Signature)</label>
     <input type="text" id="signature" placeholder="Type your full legal name" />
   </div>
-  <button class="btn btn-primary" id="submit-btn" onclick="submitSignoff()" disabled>Sign Off</button>
+  <button class="btn btn-primary" id="submit-btn" disabled>Sign Off</button>
 </div>
 <div id="success-msg" class="status status-success hidden">Milestone signed off. Thank you!</div>
 <div id="error-msg" class="status status-error hidden"></div>
-<script>
+<script nonce="${nonce}">
 var API_BASE = window.location.origin;
 var params = new URLSearchParams(window.location.search);
 var actionToken = params.get('actionToken') || params.get('token') || '';
@@ -604,6 +621,8 @@ async function submitSignoff() {
     document.getElementById('submit-btn').textContent = 'Sign Off';
   }
 }
+
+document.getElementById('submit-btn').addEventListener('click', submitSignoff);
 </script>
 </body>
 </html>`;

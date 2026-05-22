@@ -1,6 +1,6 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, processPayment, saveCard } from '../controllers/checkout.controller';
-import { config } from '../config';
 
 const router = Router();
 
@@ -11,20 +11,28 @@ router.get('/api/checkout/config-by-product/:ghlProductId', getCheckoutConfigByP
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/save-card', saveCard);
 
-const checkoutCsp = "frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'unsafe-inline' https://secure.nmi.com https://js.stripe.com";
+function createScriptNonce(): string {
+  return crypto.randomBytes(16).toString('base64');
+}
+
+function checkoutCsp(nonce: string): string {
+  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com`;
+}
 
 // Serve the checkout page (loaded by GHL in an iframe)
 router.get('/checkout', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
   res.setHeader('Content-Type', 'text/html');
-  res.setHeader('Content-Security-Policy', checkoutCsp);
-  res.send(checkoutHtml());
+  res.setHeader('Content-Security-Policy', checkoutCsp(nonce));
+  res.send(checkoutHtml(nonce));
 });
 
 // Quick checkout page (compact single-page checkout for lower-ticket items)
 router.get('/quick-checkout', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
   res.setHeader('Content-Type', 'text/html');
-  res.setHeader('Content-Security-Policy', checkoutCsp);
-  res.send(quickCheckoutHtml());
+  res.setHeader('Content-Security-Policy', checkoutCsp(nonce));
+  res.send(quickCheckoutHtml(nonce));
 });
 
 // Payment thank-you page (standalone redirect after quick-checkout)
@@ -61,7 +69,7 @@ ${merchantName ? `<div class="merchant">${merchantName.replace(/</g, '&lt;')}</d
 </div></body></html>`);
 });
 
-function checkoutHtml(): string {
+function checkoutHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -112,11 +120,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="product-amount" id="product-amount"></div>
     </div>
     <div class="toggle-group hidden" id="toggle-group">
-      <div class="toggle-btn active" id="toggle-pif" onclick="selectPricing('pif')">
+      <div class="toggle-btn active" id="toggle-pif">
         <div class="label">Pay in Full</div>
         <div class="amount" id="pif-amount"></div>
       </div>
-      <div class="toggle-btn" id="toggle-installments" onclick="selectPricing('installments')">
+      <div class="toggle-btn" id="toggle-installments">
         <div class="label">Installments</div>
         <div class="amount" id="installments-amount"></div>
       </div>
@@ -146,13 +154,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     Save card for future use
   </label>
 
-  <button class="pay-btn" id="pay-btn" onclick="submitPayment()">Pay</button>
+  <button class="pay-btn" id="pay-btn">Pay</button>
   <div class="spinner" id="spinner"></div>
 
   <div class="footer">Secured by ScaleSafe</div>
 </div>
 
-<script>
+<script nonce="${nonce}">
 (function() {
   // ─── State ──────────────────────────────────────────────
   var state = {
@@ -295,7 +303,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     el('toggle-installments').classList.toggle('active', type === 'installments');
     updateDisplayAmount();
   }
-  window.selectPricing = selectPricing;
 
   function updateDisplayAmount() {
     var amt = state.amount;
@@ -448,7 +455,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       });
     }
   }
-  window.submitPayment = submitPayment;
 
   // ─── Do the actual submission ───────────────────────────
   function doSubmit(token) {
@@ -566,13 +572,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     el('pay-btn').classList.toggle('hidden', on);
     el('spinner').style.display = on ? 'block' : 'none';
   }
+
+  el('toggle-pif').addEventListener('click', function() { selectPricing('pif'); });
+  el('toggle-installments').addEventListener('click', function() { selectPricing('installments'); });
+  el('pay-btn').addEventListener('click', submitPayment);
 })();
 </script>
 </body>
 </html>`;
 }
 
-function quickCheckoutHtml(): string {
+function quickCheckoutHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -631,10 +641,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <!-- PIF / Installment toggle (shown when offer supports both) -->
     <div id="pricing-toggle" class="hidden" style="display:none;margin:12px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
       <div style="display:flex">
-        <button type="button" id="toggle-pif-btn" onclick="selectPaymentOption('pif')" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#3b82f6;color:#fff;transition:background 0.15s">
+        <button type="button" id="toggle-pif-btn" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#3b82f6;color:#fff;transition:background 0.15s">
           Pay in Full <span id="toggle-pif-price"></span>
         </button>
-        <button type="button" id="toggle-inst-btn" onclick="selectPaymentOption('installments')" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#f9fafb;color:#374151;transition:background 0.15s">
+        <button type="button" id="toggle-inst-btn" style="flex:1;padding:10px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#f9fafb;color:#374151;transition:background 0.15s">
           Installments <span id="toggle-inst-price"></span>
         </button>
       </div>
@@ -698,7 +708,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 </div>
 
-<script>
+<script nonce="${nonce}">
 (function(){
   var API_BASE = window.location.origin;
   var params = new URLSearchParams(window.location.search);
@@ -961,7 +971,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     updatePayBtn();
   }
 
-  window.selectPaymentOption = function(choice) {
+  function selectPaymentOption(choice) {
     paymentChoice = choice;
     updatePricingDisplay();
   }
@@ -976,6 +986,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   // For Stripe: button enables when consent is checked (token is created inline via createPaymentMethod on submit).
   // Both processors handle tokenization at submit time — no pre-tokenization gate needed.
   el('consent-cb').addEventListener('change', updatePayBtn);
+  el('toggle-pif-btn').addEventListener('click', function() { selectPaymentOption('pif'); });
+  el('toggle-inst-btn').addEventListener('click', function() { selectPaymentOption('installments'); });
   function updatePayBtn() {
     var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi');
     el('pay-btn').disabled = !ready;
