@@ -56,6 +56,13 @@ jest.mock('../../src/services/processor.factory', () => ({
   createProcessorClient: jest.fn(),
 }));
 
+const mockNotifyRefundProcessed = jest.fn();
+jest.mock('../../src/services/payment-lifecycle.service', () => ({
+  paymentLifecycleService: {
+    notifyRefundProcessed: mockNotifyRefundProcessed,
+  },
+}));
+
 jest.mock('../../src/middleware/tenantContext', () => ({
   resolveLocationId: jest.fn().mockReturnValue('loc-1'),
   requireTenant: jest.fn().mockImplementation((_req: any, _res: any, next: any) => next()),
@@ -252,6 +259,7 @@ describe('Payment Management Controller', () => {
       order: jest.fn().mockReturnThis(),
       single: jest.fn().mockResolvedValue({ data, error }),
       maybeSingle: jest.fn().mockResolvedValue({ data, error }),
+      then: jest.fn((resolve: any) => Promise.resolve({ data, error }).then(resolve)),
     };
   }
 
@@ -307,5 +315,109 @@ describe('Payment Management Controller', () => {
     await issueRefund(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should reject refund above remaining refundable balance', async () => {
+    const originalEvent = {
+      id: 'pay-1',
+      location_id: 'loc-1',
+      contact_id: 'contact-1',
+      event_type: 'sale',
+      processor: 'nmi',
+      processor_transaction_id: 'txn-1',
+      amount: 100,
+      currency: 'usd',
+    };
+    const originalChain = mockChain(originalEvent);
+    const priorRefundChain = mockChain([
+      {
+        amount: 75,
+        processor_transaction_id: 'refund-1',
+        raw_webhook_payload: {
+          original_payment_event_id: 'pay-1',
+          original_processor_transaction_id: 'txn-1',
+        },
+      },
+    ]);
+
+    mockFrom
+      .mockReturnValueOnce(originalChain)
+      .mockReturnValueOnce(priorRefundChain);
+
+    const processorFactory = require('../../src/services/processor.factory');
+    processorFactory.resolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    processorFactory.createProcessorClient.mockReturnValue({ refund: jest.fn() });
+
+    const req = mockReq({ paymentEventId: 'pay-1', amount: 50 });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await issueRefund(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Refund amount exceeds remaining refundable balance' });
+    expect(processorFactory.resolveProcessor).not.toHaveBeenCalled();
+  });
+
+  it('should record refund with original payment reference when within balance', async () => {
+    const originalEvent = {
+      id: 'pay-1',
+      location_id: 'loc-1',
+      contact_id: 'contact-1',
+      event_type: 'sale',
+      processor: 'nmi',
+      processor_transaction_id: 'txn-1',
+      amount: 100,
+      currency: 'usd',
+      enrollment_id: 'enroll-1',
+      offer_id: 'offer-1',
+    };
+    const originalChain = mockChain(originalEvent);
+    const priorRefundChain = mockChain([
+      {
+        amount: 25,
+        processor_transaction_id: 'refund-old',
+        raw_webhook_payload: {
+          original_payment_event_id: 'pay-1',
+          original_processor_transaction_id: 'txn-1',
+        },
+      },
+    ]);
+    const insertChain = mockChain({ id: 'refund-event-1' });
+    const offerChain = mockChain({ offer_name: 'Program' });
+    const refund = jest.fn().mockResolvedValue({ success: true, refundId: 'refund-2' });
+
+    mockFrom
+      .mockReturnValueOnce(originalChain)
+      .mockReturnValueOnce(priorRefundChain)
+      .mockReturnValueOnce(offerChain)
+      .mockReturnValueOnce(insertChain);
+
+    const processorFactory = require('../../src/services/processor.factory');
+    processorFactory.resolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    processorFactory.createProcessorClient.mockReturnValue({ refund });
+
+    const req = mockReq({ paymentEventId: 'pay-1', amount: 50, reason: 'Courtesy refund' });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await issueRefund(req, res, next);
+
+    expect(refund).toHaveBeenCalledWith({ transactionId: 'txn-1', amount: 5000 });
+    expect(insertChain.insert).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'refund',
+      amount: 50,
+      raw_webhook_payload: {
+        original_payment_event_id: 'pay-1',
+        original_processor_transaction_id: 'txn-1',
+        reason: 'Courtesy refund',
+      },
+    }));
+    expect(mockNotifyRefundProcessed).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      refundId: 'refund-2',
+      paymentEventId: 'refund-event-1',
+    });
   });
 });

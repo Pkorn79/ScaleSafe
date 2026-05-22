@@ -64,6 +64,19 @@ function paymentMethodDetail(method: any) {
   return pieces.join(' - ');
 }
 
+const REFUNDABLE_EVENT_TYPES = new Set(['sale', 'subscription_payment', 'capture']);
+
+function dollarsToCents(value: number): number {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function isRefundLinkedToPayment(refund: any, originalEvent: any, paymentEventId: string): boolean {
+  const raw = refund?.raw_webhook_payload || {};
+  return raw.original_payment_event_id === paymentEventId
+    || raw.original_processor_transaction_id === originalEvent.processor_transaction_id
+    || refund.processor_transaction_id === originalEvent.processor_transaction_id;
+}
+
 async function resolveMerchantId(locationId: string): Promise<string> {
   const supabase = getSupabase();
   const { data } = await supabase
@@ -547,8 +560,33 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    if (amount > Number(originalEvent.amount)) {
-      res.status(400).json({ error: 'Refund amount cannot exceed original charge amount' });
+    if (!REFUNDABLE_EVENT_TYPES.has(String(originalEvent.event_type || '').toLowerCase()) || originalEvent.failure_reason) {
+      res.status(400).json({ error: 'Only successful payment events can be refunded' });
+      return;
+    }
+
+    if (!originalEvent.processor_transaction_id) {
+      res.status(400).json({ error: 'Payment event is missing a processor transaction ID' });
+      return;
+    }
+
+    const { data: priorRefunds, error: priorRefundsError } = await supabase
+      .from('payment_events')
+      .select('id, amount, processor_transaction_id, raw_webhook_payload')
+      .eq('location_id', locationId)
+      .eq('contact_id', originalEvent.contact_id)
+      .eq('event_type', 'refund');
+    if (priorRefundsError) throw priorRefundsError;
+
+    const priorRefundCents = (priorRefunds || [])
+      .filter((refund: any) => isRefundLinkedToPayment(refund, originalEvent, paymentEventId))
+      .reduce((sum: number, refund: any) => sum + dollarsToCents(Number(refund.amount || 0)), 0);
+    const originalAmountCents = dollarsToCents(Number(originalEvent.amount || 0));
+    const requestedAmountCents = dollarsToCents(amount);
+    const remainingRefundableCents = originalAmountCents - priorRefundCents;
+
+    if (requestedAmountCents <= 0 || requestedAmountCents > remainingRefundableCents) {
+      res.status(400).json({ error: 'Refund amount exceeds remaining refundable balance' });
       return;
     }
 
@@ -560,7 +598,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
 
     const result = await processor.refund({
       transactionId: originalEvent.processor_transaction_id,
-      amount: Math.round(amount * 100),
+      amount: requestedAmountCents,
     });
 
     if (!result.success) {
@@ -594,6 +632,11 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       enrollment_id: originalEvent.enrollment_id || null,
       offer_id: originalEvent.offer_id || null,
       source: 'manual_refund',
+      raw_webhook_payload: {
+        original_payment_event_id: paymentEventId,
+        original_processor_transaction_id: originalEvent.processor_transaction_id,
+        reason: reason || null,
+      },
       is_recurring: false,
     }).select('id').single();
     if (refundInsertError) throw refundInsertError;
