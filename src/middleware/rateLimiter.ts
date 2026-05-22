@@ -52,3 +52,6 @@ export const checkoutLimiter = createLimiter(10, 1 * 60 * 1000);
 
 /** Public enrollment widget endpoints: 100 requests per minute per IP */
 export const enrollmentPublicLimiter = createLimiter(100, 1 * 60 * 1000);
+
+/** Debug/admin diagnostics: strict limit because these are token-protected support tools */
+export const debugLimiter = createLimiter(30, 15 * 60 * 1000);

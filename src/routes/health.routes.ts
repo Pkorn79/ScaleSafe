@@ -4,6 +4,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { evidenceService } from '../services/evidence.service';
 import { STORAGE_BUCKETS } from '../services/storage.service';
+import { debugLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 
@@ -57,7 +58,7 @@ router.get('/health', async (_req: Request, res: Response) => {
 });
 
 // ─── Debug: enrollment diagnostic ──────────────────────────────
-router.use('/api/debug', requireDebugToken);
+router.use('/api/debug', debugLimiter, requireDebugToken);
 
 router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res: Response) => {
   try {

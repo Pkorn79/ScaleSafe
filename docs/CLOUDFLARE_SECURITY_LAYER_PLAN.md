@@ -41,6 +41,8 @@ Use Cloudflare rate limits as the outer shield. Keep the app rate limits as the 
 - `/api/debug/*`: very strict limit and only usable with `DEBUG_ADMIN_TOKEN`.
 - `/health`: low or no challenge, because Railway may use it for health checks.
 
+ScaleSafe also applies an inner app-level limiter to `/api/debug/*`. Cloudflare should still rate limit it at the edge, because Cloudflare blocks abusive traffic before it reaches Railway.
+
 ### Routes That Must Stay Bot-Friendly
 
 Do not put interactive challenges on these:

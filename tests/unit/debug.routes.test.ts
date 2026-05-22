@@ -75,4 +75,22 @@ describe('debug routes hardening', () => {
     expect(response.body.error).toEqual(expect.any(String));
     expect(response.body.stack).toBeUndefined();
   });
+
+  it('rate limits debug routes', async () => {
+    let rateLimited = false;
+
+    for (let i = 0; i < 35; i += 1) {
+      const response = await request(app())
+        .get('/api/debug/clients-data/loc_1')
+        .set('x-admin-debug-token', 'debug-token');
+
+      if (response.status === 429) {
+        rateLimited = true;
+        expect(response.body).toEqual({ error: 'RATE_LIMITED', message: 'Too many requests' });
+        break;
+      }
+    }
+
+    expect(rateLimited).toBe(true);
+  });
 });
