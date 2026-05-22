@@ -389,6 +389,24 @@ export class NmiClient implements ProcessorInterface {
       status: statusMap[tx.condition] || 'pending',
       amount: Math.round(parseFloat(tx.amount) * 100), // dollars → cents
       settledAt: tx.condition === 'complete' ? tx.date : undefined,
+      ...(tx.source ? { source: tx.source } : {}),
+      ...(tx.subscriptionId ? { subscriptionId: tx.subscriptionId } : {}),
+      ...(tx.orderId ? { orderId: tx.orderId } : {}),
+      ...(tx.customerVaultId ? { customerVaultId: tx.customerVaultId } : {}),
+      ...(tx.processorId ? { processorId: tx.processorId } : {}),
+      ...(tx.responseCode ? { responseCode: tx.responseCode } : {}),
+      ...(tx.responseText ? { responseText: tx.responseText } : {}),
+      ...(tx.processorResponseCode ? { processorResponseCode: tx.processorResponseCode } : {}),
+      ...(tx.processorResponseDescription ? { processorResponseDescription: tx.processorResponseDescription } : {}),
+      ...(tx.processorResponseText ? { processorResponseText: tx.processorResponseText } : {}),
+      ...(String(tx.recurring || '').toLowerCase() === '1'
+        || String(tx.recurring || '').toLowerCase() === 'true'
+        ? { recurring: true }
+        : {}),
+      ...(tx.currency ? { currency: tx.currency } : {}),
+      ...(tx.ipAddress ? { ipAddress: tx.ipAddress } : {}),
+      ...(tx.originalTransactionId ? { originalTransactionId: tx.originalTransactionId } : {}),
+      ...(tx.merchantDefinedFields && Object.keys(tx.merchantDefinedFields).length ? { merchantDefinedFields: tx.merchantDefinedFields } : {}),
     };
   }
 
@@ -417,6 +435,22 @@ export class NmiClient implements ProcessorInterface {
           responseText: tx.responseText || undefined,
           success: tx.success === null ? ['settled', 'pending'].includes(status) : tx.success,
           source: tx.source,
+          ...(tx.subscriptionId ? { subscriptionId: tx.subscriptionId } : {}),
+          ...(tx.orderId ? { orderId: tx.orderId } : {}),
+          ...(tx.customerVaultId ? { customerVaultId: tx.customerVaultId } : {}),
+          ...(tx.processorId ? { processorId: tx.processorId } : {}),
+          ...(tx.responseCode ? { responseCode: tx.responseCode } : {}),
+          ...(tx.processorResponseCode ? { processorResponseCode: tx.processorResponseCode } : {}),
+          ...(tx.processorResponseDescription ? { processorResponseDescription: tx.processorResponseDescription } : {}),
+          ...(tx.processorResponseText ? { processorResponseText: tx.processorResponseText } : {}),
+          ...(String(tx.recurring || '').toLowerCase() === '1'
+            || String(tx.recurring || '').toLowerCase() === 'true'
+            ? { recurring: true }
+            : {}),
+          ...(tx.currency ? { currency: tx.currency } : {}),
+          ...(tx.ipAddress ? { ipAddress: tx.ipAddress } : {}),
+          ...(tx.originalTransactionId ? { originalTransactionId: tx.originalTransactionId } : {}),
+          ...(tx.merchantDefinedFields && Object.keys(tx.merchantDefinedFields).length ? { merchantDefinedFields: tx.merchantDefinedFields } : {}),
         };
       });
   }

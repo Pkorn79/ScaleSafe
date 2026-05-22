@@ -6,6 +6,7 @@ import {
   listPaymentLedger,
   getPaymentReconciliation,
   getNmiRecurringDiagnostics,
+  getNmiWebhookTrace,
   syncNmiRecurringHistory,
   repairNmiRecurringPayment,
   getPaymentHistory,
@@ -22,6 +23,7 @@ router.use(ssoAuth, requireTenant);
 router.get('/ledger', listPaymentLedger);
 router.get('/reconciliation', getPaymentReconciliation);
 router.get('/nmi-diagnostics', getNmiRecurringDiagnostics);
+router.get('/nmi-webhook-trace', getNmiWebhookTrace);
 router.post('/sync/nmi-recurring', syncNmiRecurringHistory);
 router.post('/repair/nmi-recurring', repairNmiRecurringPayment);
 router.get('/customers', searchCustomers);

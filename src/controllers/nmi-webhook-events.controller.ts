@@ -5,12 +5,26 @@ import { createProcessorClient } from '../services/processor.factory';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { nmiDiagnosticLogService } from '../services/nmi-diagnostic-log.service';
 import { processorConfigService } from '../services/processor-config.service';
-import { ProcessorConfig } from '../types/processor.types';
+import { ProcessorConfig, VerifyResult } from '../types/processor.types';
 import { logger } from '../utils/logger';
 
 const TRANSACTION_SUCCESS = 'transaction.sale.success';
 const TRANSACTION_FAILURE = 'transaction.sale.failure';
 const TRANSACTION_UNKNOWN = 'transaction.sale.unknown';
+const TRANSACTION_AUTH_SUCCESS = 'transaction.auth.success';
+const TRANSACTION_CAPTURE_SUCCESS = 'transaction.capture.success';
+const TRANSACTION_REFUND_SUCCESS = 'transaction.refund.success';
+const TRANSACTION_VOID_SUCCESS = 'transaction.void.success';
+const TRANSACTION_REVERSAL_FAILURES = new Set([
+  'transaction.refund.failure',
+  'transaction.void.failure',
+]);
+const TRANSACTION_LOG_ONLY_EVENTS = new Set([
+  TRANSACTION_AUTH_SUCCESS,
+  TRANSACTION_CAPTURE_SUCCESS,
+  'transaction.auth.failure',
+  'transaction.capture.failure',
+]);
 
 type SupabaseClient = ReturnType<typeof getSupabase>;
 
@@ -72,12 +86,14 @@ function getSubscriptionId(payload: any): string {
   const body = eventBody(payload);
   return firstString(body, [
     'subscription_id',
+    'subscriptionid',
     'subscription.id',
     'recurring_subscription_id',
     'recurring.id',
     'reference_id',
     'referenceid',
     'action.subscription_id',
+    'action.subscriptionid',
   ]);
 }
 
@@ -109,12 +125,22 @@ function getEnrollmentId(payload: any): string {
 
 function getTransactionSource(payload: any): string {
   const body = eventBody(payload);
+  const recurring = firstString(body, ['action.recurring', 'recurring', 'transaction.recurring']);
+  if (['1', 'true', 'yes'].includes(recurring.toLowerCase())) return 'recurring';
   return firstString(body, ['action.source', 'source', 'transaction.source']).toLowerCase();
 }
 
 function getAmount(payload: any): number {
   const body = eventBody(payload);
-  return firstNumber(body, ['action.amount', 'amount', 'requested_amount', 'transaction.amount', 'plan.amount']);
+  return firstNumber(body, [
+    'action.amount',
+    'amount',
+    'amount_authorized',
+    'action.amount_authorized',
+    'requested_amount',
+    'transaction.amount',
+    'plan.amount',
+  ]);
 }
 
 function getResponseCode(payload: any): string {
@@ -137,6 +163,56 @@ function getNmiMerchantId(payload: any): string {
   return firstString(body, ['merchant.id', 'merchant_id']);
 }
 
+function getOriginalTransactionId(payload: any): string {
+  const body = eventBody(payload);
+  return firstString(body, [
+    'action.original_transaction_id',
+    'action.original_transactionid',
+    'transaction.original_transaction_id',
+    'original_transaction_id',
+    'original_transactionid',
+    'parent_transaction_id',
+    'related_transaction_id',
+  ]);
+}
+
+function payloadWithTransactionLookup(payload: any, verification: VerifyResult): any {
+  const body = eventBody(payload);
+  const merchantDefinedFields = {
+    ...(body?.merchant_defined_fields || {}),
+    ...(verification.merchantDefinedFields || {}),
+  };
+
+  return {
+    ...payload,
+    event_body: {
+      ...body,
+      transaction_id: body?.transaction_id || body?.transactionid || verification.transactionId,
+      amount: getAmount(payload) || (verification.amount ? verification.amount / 100 : undefined),
+      subscription_id: getSubscriptionId(payload) || verification.subscriptionId,
+      order_id: firstString(body, ['order_id', 'orderid']) || verification.orderId,
+      customer_vault_id: firstString(body, ['customer_vault_id', 'customer_vaultid']) || verification.customerVaultId,
+      processor_id: firstString(body, ['processor_id', 'action.processor_id', 'processor.id']) || verification.processorId,
+      source: getTransactionSource(payload) || verification.source || (verification.recurring ? 'recurring' : undefined),
+      recurring: firstString(body, ['action.recurring', 'recurring', 'transaction.recurring']) || (verification.recurring ? 'true' : undefined),
+      response_code: getResponseCode(payload) || verification.responseCode,
+      response_text: getResponseText(payload) || verification.responseText,
+      processor_response_code: verification.processorResponseCode,
+      processor_response_description: verification.processorResponseDescription,
+      processor_response_text: verification.processorResponseText,
+      currency: firstString(body, ['currency']) || verification.currency,
+      ip_address: firstString(body, ['ip_address']) || verification.ipAddress,
+      original_transaction_id: getOriginalTransactionId(payload) || verification.originalTransactionId,
+      merchant_defined_fields: merchantDefinedFields,
+      merchant_defined_field_1: body?.merchant_defined_field_1 || merchantDefinedFields.merchant_defined_field_1,
+      merchant_defined_field_2: body?.merchant_defined_field_2 || merchantDefinedFields.merchant_defined_field_2,
+      merchant_defined_field_3: body?.merchant_defined_field_3 || merchantDefinedFields.merchant_defined_field_3,
+      merchant_defined_field_4: body?.merchant_defined_field_4 || merchantDefinedFields.merchant_defined_field_4,
+      merchant_defined_field_5: body?.merchant_defined_field_5 || merchantDefinedFields.merchant_defined_field_5,
+    },
+  };
+}
+
 function rawPayload(req: Request): Buffer {
   if ((req as any).rawBody instanceof Buffer) return (req as any).rawBody;
   return Buffer.from(JSON.stringify(req.body || {}));
@@ -146,10 +222,17 @@ function verifySignature(raw: Buffer, signatureHeader: string, secret: string): 
   if (!signatureHeader || !secret) return false;
   const expectedHex = crypto.createHmac('sha256', secret).update(raw).digest('hex');
   const expectedBase64 = crypto.createHmac('sha256', secret).update(raw).digest('base64');
-  const candidates = [expectedHex, expectedBase64];
+  const expectedBase64Url = crypto.createHmac('sha256', secret).update(raw).digest('base64url');
+  const candidates = [
+    expectedHex,
+    expectedBase64,
+    expectedBase64Url,
+    expectedBase64Url.replace(/=+$/, ''),
+  ];
 
   return candidates.some((expected) => {
-    const sent = Buffer.from(signatureHeader.trim(), 'utf8');
+    const sentValue = signatureHeader.trim();
+    const sent = Buffer.from(sentValue, 'utf8');
     const want = Buffer.from(expected, 'utf8');
     return sent.length === want.length && crypto.timingSafeEqual(sent, want);
   });
@@ -360,14 +443,166 @@ async function offerDetails(supabase: SupabaseClient, offerId: string | null): P
   };
 }
 
+async function processMatchedReversalEvent(
+  supabase: SupabaseClient,
+  config: ProcessorConfig,
+  payload: any,
+  logId: string | null,
+  verification: VerifyResult | null,
+): Promise<void> {
+  const eventType = getEventType(payload);
+  const transactionId = getTransactionId(payload);
+  const originalTransactionId = getOriginalTransactionId(payload) || verification?.originalTransactionId || '';
+  const reversalType = eventType === TRANSACTION_VOID_SUCCESS ? 'void' : 'refund';
+
+  if (!transactionId) {
+    await updateDiagnosticLog(logId, {
+      action: `ignored_${reversalType}_missing_transaction_id`,
+      verification_status: 'failed',
+      error_message: `NMI ${reversalType} event did not include a transaction id`,
+    });
+    return;
+  }
+
+  const { data: duplicate } = await supabase
+    .from('payment_events')
+    .select('id')
+    .eq('location_id', config.location_id)
+    .eq('processor', 'nmi')
+    .eq('processor_transaction_id', transactionId)
+    .maybeSingle();
+  if (duplicate) {
+    await updateDiagnosticLog(logId, {
+      duplicate: true,
+      action: `duplicate_${reversalType}_transaction`,
+      verification_status: 'skipped',
+      payment_event_id: duplicate.id,
+    });
+    return;
+  }
+
+  if (!originalTransactionId) {
+    await updateDiagnosticLog(logId, {
+      action: `${reversalType}_received_original_transaction_missing`,
+      verification_status: verification ? 'verified' : 'skipped',
+      error_message: `NMI ${reversalType} event did not include an original transaction id; logged only`,
+    });
+    return;
+  }
+
+  const { data: originalPayment } = await supabase
+    .from('payment_events')
+    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor_subscription_id, amount, currency, event_type, is_recurring')
+    .eq('location_id', config.location_id)
+    .eq('processor', 'nmi')
+    .eq('processor_transaction_id', originalTransactionId)
+    .in('event_type', ['sale', 'subscription_payment', 'capture'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!originalPayment) {
+    await updateDiagnosticLog(logId, {
+      matched: false,
+      action: `${reversalType}_received_original_payment_unmatched`,
+      verification_status: verification ? 'verified' : 'skipped',
+      error_message: `No ScaleSafe payment matched original NMI transaction ${originalTransactionId}`,
+    });
+    return;
+  }
+
+  const amount = getAmount(payload) || (verification?.amount ? verification.amount / 100 : Number(originalPayment.amount || 0));
+  const { data: reversal, error } = await supabase
+    .from('payment_events')
+    .insert({
+      merchant_id: originalPayment.merchant_id,
+      location_id: originalPayment.location_id,
+      contact_id: originalPayment.contact_id,
+      enrollment_id: originalPayment.enrollment_id || null,
+      offer_id: originalPayment.offer_id || null,
+      event_type: reversalType,
+      processor: 'nmi',
+      processor_transaction_id: transactionId,
+      processor_subscription_id: originalPayment.processor_subscription_id || getSubscriptionId(payload) || null,
+      amount,
+      currency: originalPayment.currency || 'usd',
+      source: 'nmi_webhook_event',
+      is_recurring: Boolean(originalPayment.is_recurring),
+      raw_webhook_payload: {
+        event_id: getEventId(payload) || null,
+        event_type: eventType,
+        original_payment_event_id: originalPayment.id,
+        original_processor_transaction_id: originalTransactionId,
+        verification_status: verification?.status || null,
+      },
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    await updateDiagnosticLog(logId, {
+      action: `${reversalType}_record_failed`,
+      verification_status: verification ? 'verified' : 'skipped',
+      error_message: error.message,
+    });
+    return;
+  }
+
+  await updateDiagnosticLog(logId, {
+    matched: true,
+    action: `${reversalType}_recorded`,
+    verification_status: verification ? 'verified' : 'skipped',
+    payment_event_id: reversal?.id || null,
+    error_message: null,
+  });
+}
+
 async function processTransactionEvent(
   supabase: SupabaseClient,
   config: ProcessorConfig,
   payload: any,
   logId: string | null,
 ): Promise<void> {
-  const eventType = getEventType(payload);
-  const source = getTransactionSource(payload);
+  let effectivePayload = payload;
+  const eventType = getEventType(effectivePayload);
+  let source = getTransactionSource(effectivePayload);
+  let verification: VerifyResult | null = null;
+
+  if (TRANSACTION_LOG_ONLY_EVENTS.has(eventType)) {
+    await updateDiagnosticLog(logId, {
+      action: 'logged_transaction_event',
+      verification_status: 'skipped',
+      error_message: `${eventType} logged for diagnostics only`,
+    });
+    return;
+  }
+
+  if (TRANSACTION_REVERSAL_FAILURES.has(eventType)) {
+    await updateDiagnosticLog(logId, {
+      action: 'logged_reversal_failure',
+      verification_status: 'failed',
+      error_message: getResponseText(effectivePayload) || `${eventType} reported by NMI`,
+    });
+    return;
+  }
+
+  if ([TRANSACTION_REFUND_SUCCESS, TRANSACTION_VOID_SUCCESS].includes(eventType)) {
+    const transactionId = getTransactionId(effectivePayload);
+    if (transactionId) {
+      try {
+        verification = await createProcessorClient(config).verifyTransaction(transactionId);
+        if (verification.success) effectivePayload = payloadWithTransactionLookup(effectivePayload, verification);
+      } catch (err: any) {
+        await updateDiagnosticLog(logId, {
+          verification_status: 'error',
+          error_message: err.message || 'NMI transaction lookup threw for reversal event',
+        });
+      }
+    }
+    await processMatchedReversalEvent(supabase, config, effectivePayload, logId, verification);
+    return;
+  }
+
   if (source && source !== 'recurring') {
     await updateDiagnosticLog(logId, {
       action: 'ignored_non_recurring_event',
@@ -377,12 +612,45 @@ async function processTransactionEvent(
     return;
   }
 
-  const enrollment = await findEnrollment(supabase, config, payload);
+  const transactionId = getTransactionId(effectivePayload);
+  let enrollment = await findEnrollment(supabase, config, effectivePayload);
+  if (!enrollment && transactionId) {
+    try {
+      verification = await createProcessorClient(config).verifyTransaction(transactionId);
+      if (verification.success) {
+        effectivePayload = payloadWithTransactionLookup(effectivePayload, verification);
+        source = getTransactionSource(effectivePayload);
+        enrollment = await findEnrollment(supabase, config, effectivePayload);
+        await updateDiagnosticLog(logId, {
+          verification_status: 'verified',
+          processor_subscription_id: getSubscriptionId(effectivePayload) || null,
+          error_message: enrollment
+            ? null
+            : 'NMI transaction lookup succeeded but did not recover enrollment-matching metadata',
+        });
+      }
+    } catch (err: any) {
+      await updateDiagnosticLog(logId, {
+        verification_status: 'error',
+        error_message: err.message || 'NMI transaction lookup threw while matching webhook',
+      });
+    }
+  }
+
   if (!enrollment) {
     await updateDiagnosticLog(logId, {
       matched: false,
       action: 'ignored_unmatched_event',
       error_message: 'No enrollment matched NMI event metadata or subscription id',
+    });
+    return;
+  }
+
+  if (eventType === TRANSACTION_SUCCESS && source !== 'recurring' && !getSubscriptionId(effectivePayload)) {
+    await updateDiagnosticLog(logId, {
+      action: 'ignored_non_recurring_event',
+      verification_status: verification ? 'verified' : 'skipped',
+      error_message: 'Sale event did not include recurring source or subscription id',
     });
     return;
   }
@@ -394,7 +662,6 @@ async function processTransactionEvent(
     location_id: enrollment.location_id,
   });
 
-  const transactionId = getTransactionId(payload);
   if (eventType === TRANSACTION_SUCCESS && !transactionId) {
     await updateDiagnosticLog(logId, {
       action: 'ignored_missing_transaction_id',
@@ -423,14 +690,14 @@ async function processTransactionEvent(
     }
   }
 
-  const amountCents = Math.round(getAmount(payload) * 100);
+  const amountCents = Math.round(getAmount(effectivePayload) * 100);
   const { offerName, installmentFrequency } = await offerDetails(supabase, enrollment.offer_id);
 
   if (eventType === TRANSACTION_SUCCESS) {
-    if (transactionId) {
+    if (transactionId && !verification) {
       try {
         const processor = createProcessorClient(config);
-        const verification = await processor.verifyTransaction(transactionId);
+        verification = await processor.verifyTransaction(transactionId);
         if (!verification.success) {
           await updateDiagnosticLog(logId, {
             action: 'ignored_verification_failed',
@@ -454,7 +721,7 @@ async function processTransactionEvent(
       enrollment,
       processorType: 'nmi',
       transactionId: transactionId || `nmi_event_${Date.now()}`,
-      amountCents,
+      amountCents: amountCents || verification?.amount || 0,
       offerName,
       installmentFrequency,
       source: 'nmi_webhook_event',
@@ -473,15 +740,15 @@ async function processTransactionEvent(
     processorType: 'nmi',
     transactionId: transactionId || null,
     amountCents,
-    errorMessage: getResponseText(payload) || `NMI event: ${eventType}`,
-    errorCode: getResponseCode(payload) || eventType,
+    errorMessage: getResponseText(effectivePayload) || `NMI event: ${eventType}`,
+    errorCode: getResponseCode(effectivePayload) || eventType,
     source: 'nmi_webhook_event',
   });
 
   await updateDiagnosticLog(logId, {
     action: failed.paymentEventId ? 'processed_failure' : 'processed_failure_payment_event_missing',
     verification_status: eventType === TRANSACTION_UNKNOWN ? 'unknown' : 'skipped',
-    error_message: failed.paymentEventId ? (getResponseText(payload) || `NMI event: ${eventType}`) : 'Failed payment handler did not return a payment_event id',
+    error_message: failed.paymentEventId ? (getResponseText(effectivePayload) || `NMI event: ${eventType}`) : 'Failed payment handler did not return a payment_event id',
     payment_event_id: failed.paymentEventId,
   });
 }
@@ -687,7 +954,7 @@ export async function processNmiOfficialWebhookRequest(
     }
 
     const eventType = getEventType(payload);
-    if ([TRANSACTION_SUCCESS, TRANSACTION_FAILURE, TRANSACTION_UNKNOWN].includes(eventType)) {
+    if (eventType.startsWith('transaction.')) {
       await processTransactionEvent(supabase, config, payload, logId);
     } else if (eventType.startsWith('recurring.subscription.')) {
       await processSubscriptionEvent(supabase, config, payload, logId);

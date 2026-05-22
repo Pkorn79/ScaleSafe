@@ -275,7 +275,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in nmiDiagnostics" :key="row.enrollmentId">
+              <template v-for="row in nmiDiagnostics" :key="row.enrollmentId">
+              <tr>
                 <td><span class="badge" :class="nmiIssueBadge(row.issueCode)">{{ row.issueLabel }}</span></td>
                 <td>
                   <router-link v-if="row.contactId" :to="`/payments/${row.contactId}`" class="client-link">
@@ -307,6 +308,13 @@
                   <div v-if="row.lastNmiPostAction" class="text-xs text-muted">{{ row.lastNmiPostAction }}</div>
                   <div v-if="row.lastNmiPostTransactionId" class="text-xs text-muted txn-cell">{{ row.lastNmiPostTransactionId }}</div>
                   <button
+                    class="btn btn-sm btn-secondary mt-1"
+                    @click="loadNmiTrace(row)"
+                    :disabled="nmiTraceLoading === row.enrollmentId"
+                  >
+                    {{ nmiTraceLoading === row.enrollmentId ? 'Tracing...' : 'Trace' }}
+                  </button>
+                  <button
                     v-if="row.issueCode !== 'billing_complete'"
                     class="btn btn-sm btn-secondary mt-1"
                     @click="syncNmiHistory(row.enrollmentId)"
@@ -316,6 +324,39 @@
                   </button>
                 </td>
               </tr>
+              <tr v-if="selectedNmiTraceEnrollment === row.enrollmentId">
+                <td colspan="7">
+                  <div class="trace-panel">
+                    <div class="trace-grid">
+                      <div>
+                        <div class="text-sm font-semibold">Webhook logs</div>
+                        <div v-if="!nmiTrace.logs?.length" class="text-xs text-muted">No logs found.</div>
+                        <div v-for="log in nmiTrace.logs || []" :key="log.id" class="trace-line">
+                          {{ formatDate(log.created_at) }} - {{ log.event_type || log.webhook_kind || 'NMI post' }} - {{ log.action || '-' }}
+                          <div class="text-xs text-muted">{{ log.transaction_id || '-' }} - signature {{ log.signature_verified === true ? 'verified' : log.signature_verified === false ? 'not verified' : 'n/a' }}</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-sm font-semibold">ScaleSafe payments</div>
+                        <div v-if="!nmiTrace.payments?.length" class="text-xs text-muted">No payment records found.</div>
+                        <div v-for="payment in nmiTrace.payments || []" :key="payment.id" class="trace-line">
+                          {{ formatDate(payment.created_at) }} - {{ payment.event_type }} - ${{ Number(payment.amount || 0).toFixed(2) }}
+                          <div class="text-xs text-muted">{{ payment.processor_transaction_id || '-' }} - {{ payment.source || '-' }}</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="text-sm font-semibold">Receipt trigger</div>
+                        <div v-if="!nmiTrace.receiptTriggers?.length" class="text-xs text-muted">No recent receipt trigger logs.</div>
+                        <div v-for="trigger in nmiTrace.receiptTriggers || []" :key="trigger.id" class="trace-line">
+                          {{ formatDate(trigger.created_at) }} - {{ trigger.status || '-' }} - HTTP {{ trigger.http_status || '-' }}
+                          <div v-if="trigger.error_message" class="text-xs text-muted">{{ trigger.error_message }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -415,6 +456,9 @@ const nmiDiagnostics = ref<any[]>([]);
 const nmiDiagnosticsLoading = ref(false);
 const nmiSyncLoading = ref(false);
 const nmiSyncMessage = ref('');
+const selectedNmiTraceEnrollment = ref('');
+const nmiTraceLoading = ref('');
+const nmiTrace = ref<any>({ logs: [], payments: [], receiptTriggers: [], enrollments: [] });
 
 onMounted(async () => {
   await loadLedger();
@@ -584,6 +628,29 @@ async function syncNmiHistory(enrollmentId?: string) {
     nmiSyncLoading.value = false;
   }
 }
+
+async function loadNmiTrace(row: any) {
+  if (selectedNmiTraceEnrollment.value === row.enrollmentId) {
+    selectedNmiTraceEnrollment.value = '';
+    nmiTrace.value = { logs: [], payments: [], receiptTriggers: [], enrollments: [] };
+    return;
+  }
+
+  selectedNmiTraceEnrollment.value = row.enrollmentId;
+  nmiTraceLoading.value = row.enrollmentId;
+  reconciliationError.value = '';
+  try {
+    const params = new URLSearchParams();
+    if (row.enrollmentId) params.set('enrollmentId', row.enrollmentId);
+    if (row.subscriptionId) params.set('subscriptionId', row.subscriptionId);
+    const result = await api.get<any>(`/api/payments/manage/nmi-webhook-trace?${params.toString()}`);
+    nmiTrace.value = result || { logs: [], payments: [], receiptTriggers: [], enrollments: [] };
+  } catch (e: any) {
+    reconciliationError.value = e.message || 'NMI webhook trace failed';
+  } finally {
+    nmiTraceLoading.value = '';
+  }
+}
 </script>
 
 <style scoped>
@@ -689,6 +756,29 @@ async function syncNmiHistory(enrollmentId?: string) {
   font-size: 12px;
 }
 
+.font-semibold {
+  font-weight: 600;
+}
+
+.trace-panel {
+  background: var(--ss-bg-subtle, #f8fafc);
+  border: 1px solid var(--ss-border, #e2e8f0);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.trace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.trace-line {
+  border-top: 1px solid var(--ss-border, #e2e8f0);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
 @media (max-width: 980px) {
   .ledger-filters {
     grid-template-columns: 1fr 1fr;
@@ -702,6 +792,10 @@ async function syncNmiHistory(enrollmentId?: string) {
     width: 100%;
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .trace-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

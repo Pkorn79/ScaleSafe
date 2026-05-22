@@ -128,6 +128,21 @@ export interface VerifyResult {
   status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded';
   amount: number;
   settledAt?: string;
+  source?: string;
+  subscriptionId?: string;
+  orderId?: string;
+  customerVaultId?: string;
+  processorId?: string;
+  responseCode?: string;
+  responseText?: string;
+  processorResponseCode?: string;
+  processorResponseDescription?: string;
+  processorResponseText?: string;
+  recurring?: boolean;
+  currency?: string;
+  ipAddress?: string;
+  originalTransactionId?: string;
+  merchantDefinedFields?: Record<string, string>;
 }
 
 export interface SubscriptionTransaction {
@@ -138,6 +153,19 @@ export interface SubscriptionTransaction {
   responseText?: string;
   success: boolean;
   source?: string;
+  subscriptionId?: string;
+  orderId?: string;
+  customerVaultId?: string;
+  processorId?: string;
+  responseCode?: string;
+  processorResponseCode?: string;
+  processorResponseDescription?: string;
+  processorResponseText?: string;
+  recurring?: boolean;
+  currency?: string;
+  ipAddress?: string;
+  originalTransactionId?: string;
+  merchantDefinedFields?: Record<string, string>;
 }
 
 // ============================================================

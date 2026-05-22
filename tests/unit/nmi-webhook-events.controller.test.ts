@@ -73,6 +73,7 @@ function queryBuilder(data: any, opts: { maybeData?: any; thenData?: any } = {})
     insert: jest.fn(() => builder),
     update: jest.fn(() => builder),
     eq: jest.fn(() => builder),
+    in: jest.fn(() => builder),
     order: jest.fn(() => builder),
     limit: jest.fn(() => builder),
     single: jest.fn().mockResolvedValue({ data, error: null }),
@@ -85,6 +86,22 @@ function queryBuilder(data: any, opts: { maybeData?: any; thenData?: any } = {})
 function makeReqRes(payload: any, secret = SECRET) {
   const raw = Buffer.from(JSON.stringify(payload));
   const signature = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  const req = {
+    params: { processorConfigId: 'config_1' },
+    body: payload,
+    rawBody: raw,
+    get: jest.fn((name: string) => (name.toLowerCase() === 'signature' ? signature : undefined)),
+  } as any;
+  const res = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn(),
+  } as any;
+  return { req, res };
+}
+
+function makeReqResBase64Url(payload: any, secret = SECRET) {
+  const raw = Buffer.from(JSON.stringify(payload));
+  const signature = crypto.createHmac('sha256', secret).update(raw).digest('base64url');
   const req = {
     params: { processorConfigId: 'config_1' },
     body: payload,
@@ -145,6 +162,63 @@ describe('NMI official webhook events', () => {
     expect(mockDiagnosticUpdate).toHaveBeenCalledWith('log_1', expect.objectContaining({
       action: 'processed_success',
       payment_event_id: 'pe_1',
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('accepts NMI base64-url signatures', async () => {
+    const { req, res } = makeReqResBase64Url({
+      event_id: 'evt_base64url',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        transaction_id: '12089230193',
+        subscription_id: 'sub_1',
+        action: { source: 'recurring', amount: '0.33', response_code: '1' },
+      },
+    });
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: '12089230193',
+      source: 'nmi_webhook_event',
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('uses NMI transaction lookup metadata when a recurring sale webhook has no subscription id', async () => {
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction: jest.fn().mockResolvedValue({
+        success: true,
+        transactionId: '12090000001',
+        status: 'settled',
+        amount: 33,
+        subscriptionId: 'sub_1',
+        recurring: true,
+        source: 'recurring',
+        merchantDefinedFields: { merchant_defined_field_1: enrollment.id },
+      }),
+    });
+
+    const { req, res } = makeReqRes({
+      event_id: 'evt_no_sub',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        transaction_id: '12090000001',
+        action: { amount: '0.33', response_code: '1' },
+      },
+    });
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment: expect.objectContaining({ id: enrollment.id }),
+      transactionId: '12090000001',
+      amountCents: 33,
+      source: 'nmi_webhook_event',
+    }));
+    expect(mockDiagnosticUpdate).toHaveBeenCalledWith('log_1', expect.objectContaining({
+      processor_subscription_id: 'sub_1',
     }));
     expect(res.status).toHaveBeenCalledWith(200);
   });

@@ -25,6 +25,19 @@ export interface NmiQueryTransaction {
   responseText: string;
   success: boolean | null;
   source?: string;
+  subscriptionId?: string;
+  orderId?: string;
+  customerVaultId?: string;
+  processorId?: string;
+  responseCode?: string;
+  processorResponseCode?: string;
+  processorResponseDescription?: string;
+  processorResponseText?: string;
+  recurring?: string;
+  currency?: string;
+  ipAddress?: string;
+  originalTransactionId?: string;
+  merchantDefinedFields?: Record<string, string>;
   cc_number?: string; // masked, e.g. "4xxxxxxxxxxx1111"
   cc_exp?: string; // "MMYY"
   cc_type?: string; // "visa", "mastercard", etc.
@@ -67,6 +80,20 @@ export function parseNmiQueryTransactions(xml: string): NmiQueryTransaction[] {
       || actions.find((action: any) => Number(action?.amount) > 0)
       || actions[0]
       || {};
+    const field = (...keys: string[]): string => {
+      for (const key of keys) {
+        const value = tx[key] ?? primaryAction[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+      return '';
+    };
+    const merchantDefinedFields: Record<string, string> = {};
+    for (let i = 1; i <= 20; i++) {
+      const value = field(`merchant_defined_field_${i}`, `merchant_defined_field${i}`);
+      if (value) merchantDefinedFields[`merchant_defined_field_${i}`] = value;
+    }
 
     return {
       transactionId: String(tx.transaction_id || ''),
@@ -79,6 +106,19 @@ export function parseNmiQueryTransactions(xml: string): NmiQueryTransaction[] {
         ? null
         : Number(primaryAction.success) === 1,
       source: tx.source ? String(tx.source) : undefined,
+      subscriptionId: field('subscription_id', 'subscriptionid', 'recurring_subscription_id'),
+      orderId: field('order_id', 'orderid'),
+      customerVaultId: field('customer_vault_id', 'customer_vaultid'),
+      processorId: field('processor_id'),
+      responseCode: field('response_code', 'response'),
+      processorResponseCode: field('processor_response_code'),
+      processorResponseDescription: field('processor_response_description'),
+      processorResponseText: field('processor_response_text'),
+      recurring: field('recurring'),
+      currency: field('currency'),
+      ipAddress: field('ip_address'),
+      originalTransactionId: field('original_transaction_id', 'original_transactionid', 'parent_transaction_id', 'related_transaction_id'),
+      merchantDefinedFields,
       cc_number: tx.cc_number ? String(tx.cc_number) : undefined,
       cc_exp: tx.cc_exp ? String(tx.cc_exp) : undefined,
       cc_type: tx.cc_type ? String(tx.cc_type) : undefined,

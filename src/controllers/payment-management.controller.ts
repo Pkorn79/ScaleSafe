@@ -356,6 +356,109 @@ export async function getNmiRecurringDiagnostics(req: Request, res: Response, ne
   }
 }
 
+function safeTracePayload(payload: any): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    event_type: payload.event_type || payload.eventType || payload.event_body?.event_type || null,
+    transaction_id: payload.transaction_id || payload.transactionid || payload.event_body?.transaction_id || null,
+    subscription_id: payload.subscription_id || payload.subscriptionid || payload.event_body?.subscription_id || null,
+    enrollment_id: payload.enrollment_id || payload.event_body?.merchant_defined_fields?.enrollment_id || null,
+    source: payload.source || payload.event_body?.source || payload.event_body?.action?.source || null,
+    amount: payload.amount || payload.event_body?.amount || payload.event_body?.action?.amount || null,
+    keys: Object.keys(payload).sort(),
+  };
+}
+
+function cleanTraceId(value: unknown): string {
+  const raw = String(value || '').trim();
+  return /^[A-Za-z0-9_.:-]{1,120}$/.test(raw) ? raw : '';
+}
+
+export async function getNmiWebhookTrace(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = resolveLocationId(req);
+    const subscriptionId = cleanTraceId(req.query.subscriptionId);
+    const transactionId = cleanTraceId(req.query.transactionId);
+    const enrollmentId = cleanTraceId(req.query.enrollmentId);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const supabase = getSupabase();
+
+    let logsQuery: any = supabase
+      .from('nmi_silent_post_logs')
+      .select('id, created_at, webhook_kind, event_id, event_type, processor_subscription_id, transaction_id, amount, response_code, response_text, matched, duplicate, verification_status, action, error_message, payment_event_id, signature_verified, raw_keys')
+      .eq('location_id', locationId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (subscriptionId) logsQuery = logsQuery.eq('processor_subscription_id', subscriptionId);
+    if (transactionId) logsQuery = logsQuery.eq('transaction_id', transactionId);
+    if (enrollmentId) logsQuery = logsQuery.eq('enrollment_id', enrollmentId);
+
+    let paymentsQuery: any = supabase
+      .from('payment_events')
+      .select('id, created_at, contact_id, enrollment_id, event_type, processor, processor_transaction_id, processor_subscription_id, amount, currency, source, payment_number, payments_total, payments_remaining, failure_reason, raw_webhook_payload')
+      .eq('location_id', locationId)
+      .eq('processor', 'nmi')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (subscriptionId) paymentsQuery = paymentsQuery.eq('processor_subscription_id', subscriptionId);
+    if (transactionId) paymentsQuery = paymentsQuery.eq('processor_transaction_id', transactionId);
+    if (enrollmentId) paymentsQuery = paymentsQuery.eq('enrollment_id', enrollmentId);
+
+    let enrollmentsQuery: any = supabase
+      .from('enrollments')
+      .select('id, contact_id, email, offer_id, status, payment_type, processor_type, processor_subscription_id, payments_made, payments_total, next_billing_date, billing_completed_at')
+      .eq('location_id', locationId)
+      .eq('processor_type', 'nmi')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (subscriptionId) enrollmentsQuery = enrollmentsQuery.eq('processor_subscription_id', subscriptionId);
+    if (enrollmentId) enrollmentsQuery = enrollmentsQuery.eq('id', enrollmentId);
+
+    const [{ data: logs, error: logsError }, { data: payments, error: paymentsError }, { data: enrollments, error: enrollmentsError }, { data: triggers, error: triggersError }] = await Promise.all([
+      logsQuery,
+      paymentsQuery,
+      enrollmentsQuery,
+      supabase
+        .from('trigger_delivery_logs')
+        .select('id, created_at, trigger_key, status, http_status, attempt_count, error_message, payload')
+        .eq('location_id', locationId)
+        .eq('trigger_key', 'ss_payment_received')
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ]);
+
+    if (logsError) throw logsError;
+    if (paymentsError) throw paymentsError;
+    if (enrollmentsError) throw enrollmentsError;
+    if (triggersError) throw triggersError;
+
+    res.json({
+      filters: { subscriptionId, transactionId, enrollmentId, limit },
+      logs: logs || [],
+      payments: (payments || []).map((row: any) => ({
+        ...row,
+        raw_webhook_payload: safeTracePayload(row.raw_webhook_payload),
+      })),
+      enrollments: enrollments || [],
+      receiptTriggers: (triggers || []).map((row: any) => ({
+        id: row.id,
+        created_at: row.created_at,
+        trigger_key: row.trigger_key,
+        status: row.status,
+        http_status: row.http_status,
+        attempt_count: row.attempt_count,
+        error_message: row.error_message,
+        payload: safeTracePayload(row.payload),
+      })),
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message, code: err?.code }, 'NMI webhook trace failed');
+    res.status(500).json({
+      message: err?.message ? `Unable to load NMI webhook trace: ${err.message}` : 'Unable to load NMI webhook trace',
+    });
+  }
+}
+
 export async function syncNmiRecurringHistory(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
