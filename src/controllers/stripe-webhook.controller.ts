@@ -6,11 +6,67 @@ import { stripeEfwService } from '../services/stripe-efw.service';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { decrypt } from '../services/processor-config.service';
 
 const Stripe = require('stripe');
 
 function getStripe(): any {
   return new Stripe(config.stripe.secretKey);
+}
+
+type StripeProcessorConfig = {
+  id: string;
+  merchant_id: string;
+  location_id: string;
+  stripe_user_id: string | null;
+  stripe_webhook_secret_encrypted: string | null;
+};
+
+async function resolveStripeWebhookConfig(req: Request): Promise<{
+  secret: string | null;
+  processorConfig: StripeProcessorConfig | null;
+  error?: string;
+}> {
+  const locationId = req.params.locationId;
+
+  if (!locationId) {
+    return {
+      secret: config.stripe.webhookSecret || null,
+      processorConfig: null,
+      error: config.stripe.webhookSecret ? undefined : 'Missing Stripe webhook secret',
+    };
+  }
+
+  const { data, error } = await getSupabase()
+    .from('processor_configs')
+    .select('id, merchant_id, location_id, stripe_user_id, stripe_webhook_secret_encrypted')
+    .eq('location_id', locationId)
+    .eq('processor_type', 'stripe')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    logger.error({ err: error.message, locationId }, 'Stripe webhook config lookup failed');
+    return { secret: null, processorConfig: null, error: 'Stripe webhook config lookup failed' };
+  }
+
+  if (!data) {
+    return { secret: null, processorConfig: null, error: 'Stripe webhook config not found' };
+  }
+
+  if (!data.stripe_webhook_secret_encrypted) {
+    return { secret: null, processorConfig: data, error: 'Stripe webhook signing secret not configured' };
+  }
+
+  try {
+    return {
+      secret: decrypt(data.stripe_webhook_secret_encrypted),
+      processorConfig: data,
+    };
+  } catch (err: any) {
+    logger.error({ err: err.message, locationId }, 'Stripe webhook signing secret decrypt failed');
+    return { secret: null, processorConfig: data, error: 'Stripe webhook signing secret decrypt failed' };
+  }
 }
 
 /**
@@ -21,8 +77,15 @@ function getStripe(): any {
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers['stripe-signature'] as string;
 
-  if (!sig || !config.stripe.webhookSecret) {
-    res.status(400).json({ error: 'Missing signature or webhook secret' });
+  if (!sig) {
+    res.status(400).json({ error: 'Missing Stripe signature' });
+    return;
+  }
+
+  const resolved = await resolveStripeWebhookConfig(req);
+  if (!resolved.secret) {
+    logger.warn({ locationId: req.params.locationId, reason: resolved.error }, 'Stripe webhook rejected before signature verification');
+    res.status(400).json({ error: resolved.error || 'Stripe webhook not configured' });
     return;
   }
 
@@ -31,27 +94,45 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     const stripe = getStripe();
     // Use rawBody (Buffer) preserved by captureRawBody middleware for signature verification
     const rawBody = (req as any).rawBody || req.body;
-    event = stripe.webhooks.constructEvent(rawBody, sig, config.stripe.webhookSecret);
+    event = stripe.webhooks.constructEvent(rawBody, sig, resolved.secret);
   } catch (err: any) {
     logger.error({ err: err.message }, 'Webhook signature verification failed');
     res.status(400).json({ error: 'Webhook signature verification failed' });
     return;
   }
 
+  if (
+    resolved.processorConfig?.stripe_user_id
+    && event.account
+    && event.account !== resolved.processorConfig.stripe_user_id
+  ) {
+    logger.warn({
+      locationId: resolved.processorConfig.location_id,
+      expectedAccount: resolved.processorConfig.stripe_user_id,
+      eventAccount: event.account,
+    }, 'Stripe webhook account mismatch');
+    res.status(400).json({ error: 'Stripe account mismatch' });
+    return;
+  }
+
   // Identify merchant from connected account
   const stripeAccountId = event.account;
-  if (!stripeAccountId) {
+  if (!stripeAccountId && !resolved.processorConfig) {
     // Platform-level event, not connected account
     res.status(200).json({ received: true });
     return;
   }
 
   const supabase = getSupabase();
-  const { data: merchant } = await supabase
-    .from('merchants')
-    .select('*')
-    .eq('stripe_user_id', stripeAccountId)
-    .single();
+  const merchantQuery = supabase.from('merchants').select('*');
+  const { data: merchant } = resolved.processorConfig
+    ? await merchantQuery
+      .eq('id', resolved.processorConfig.merchant_id)
+      .eq('location_id', resolved.processorConfig.location_id)
+      .single()
+    : await merchantQuery
+      .eq('stripe_user_id', stripeAccountId)
+      .single();
 
   if (!merchant) {
     logger.warn({ stripeAccountId }, 'Webhook for unknown Stripe account');
@@ -314,6 +395,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     .from('enrollments')
     .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
+    .eq('location_id', merchant.location_id)
     .single();
 
   if (!enrollment) {
@@ -327,6 +409,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     const { data: existing } = await supabase
       .from('payment_events')
       .select('id')
+      .eq('location_id', merchant.location_id)
       .eq('processor_transaction_id', chargeId)
       .maybeSingle();
     if (existing) {
@@ -343,6 +426,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
       .from('offers_mirror')
       .select('offer_name, installment_frequency')
       .eq('id', enrollment.offer_id)
+      .eq('location_id', merchant.location_id)
       .single();
     if (offer) {
       installmentFrequency = offer.installment_frequency || 'monthly';
@@ -385,6 +469,7 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
     .from('enrollments')
     .select('id, merchant_id, location_id, contact_id, offer_id, processor_subscription_id')
     .eq('processor_subscription_id', subscriptionId)
+    .eq('location_id', merchant.location_id)
     .single();
 
   if (!enrollment) {
@@ -418,6 +503,7 @@ async function handleSubscriptionDeleted(event: any, merchant: any): Promise<voi
     .from('enrollments')
     .select('id, status, payments_made, payments_total, payment_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
+    .eq('location_id', merchant.location_id)
     .single();
 
   if (!enrollment) return;
@@ -462,6 +548,7 @@ async function handleSubscriptionUpdated(event: any, merchant: any): Promise<voi
     .from('enrollments')
     .select('id, status')
     .eq('processor_subscription_id', subscriptionId)
+    .eq('location_id', merchant.location_id)
     .single();
 
   if (!enrollment) return;

@@ -20,6 +20,7 @@ router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlFor
 router.post('/external', requireMerchantWebhookSecret, webhookController.external);
 
 // Stripe webhooks — signature verified inside the handler using req.rawBody
+router.post('/stripe/:locationId', handleStripeWebhook);
 router.post('/stripe', handleStripeWebhook);
 
 // NMI Silent Post — no signature; verified by calling verifyTransaction() per notification

@@ -5,6 +5,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
 import { ProcessorError } from '../errors/processor.error';
 import { logger } from '../utils/logger';
+import { encrypt } from './processor-config.service';
 
 const WEBHOOK_EVENTS: string[] = [
   // Dispute lifecycle
@@ -19,7 +20,13 @@ const WEBHOOK_EVENTS: string[] = [
   'payment_intent.payment_failed',
   // Charge events (for evidence vault)
   'charge.succeeded',
+  'payment_intent.succeeded',
   'charge.refunded',
+  // Subscription lifecycle
+  'invoice.payment_succeeded',
+  'invoice.payment_failed',
+  'customer.subscription.deleted',
+  'customer.subscription.updated',
 ];
 
 const STATE_MAX_AGE_MS = 60 * 60 * 1000;
@@ -154,7 +161,10 @@ export const stripeConnectService = {
   /**
    * Register webhooks on the connected merchant's Stripe account.
    */
-  async registerWebhooks(stripeUserId: string, locationId: string): Promise<string> {
+  async registerWebhooks(stripeUserId: string, locationId: string): Promise<{
+    endpointId: string;
+    signingSecret?: string;
+  }> {
     const stripe = getStripe();
 
     const webhookUrl = `${config.appUrl}/webhooks/stripe/${locationId}`;
@@ -173,7 +183,10 @@ export const stripeConnectService = {
       'Stripe webhook endpoint registered',
     );
 
-    return endpoint.id;
+    return {
+      endpointId: endpoint.id,
+      signingSecret: endpoint.secret || undefined,
+    };
   },
 
   /**
@@ -184,6 +197,7 @@ export const stripeConnectService = {
     locationId: string,
     stripeUserId: string,
     webhookEndpointId?: string,
+    webhookSigningSecret?: string,
   ): Promise<void> {
     const supabase = getSupabase();
 
@@ -196,16 +210,21 @@ export const stripeConnectService = {
       .maybeSingle();
 
     if (existing) {
+      const updates: Record<string, any> = {
+        location_id: locationId,
+        stripe_user_id: stripeUserId,
+        stripe_webhook_endpoint_id: webhookEndpointId || null,
+        is_active: true,
+        is_default: true,
+        label: 'Stripe Connect',
+      };
+      if (webhookSigningSecret) {
+        updates.stripe_webhook_secret_encrypted = encrypt(webhookSigningSecret);
+      }
+
       const { error: updateError } = await supabase
         .from('processor_configs')
-        .update({
-          location_id: locationId,
-          stripe_user_id: stripeUserId,
-          stripe_webhook_endpoint_id: webhookEndpointId || null,
-          is_active: true,
-          is_default: true,
-          label: 'Stripe Connect',
-        })
+        .update(updates)
         .eq('id', existing.id);
 
       if (updateError) {
@@ -226,6 +245,7 @@ export const stripeConnectService = {
           label: 'Stripe Connect',
           stripe_user_id: stripeUserId,
           stripe_webhook_endpoint_id: webhookEndpointId || null,
+          stripe_webhook_secret_encrypted: webhookSigningSecret ? encrypt(webhookSigningSecret) : null,
           is_active: true,
           is_default: true,
         });

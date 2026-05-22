@@ -102,11 +102,14 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     // Register webhooks on the connected account
     let webhookEndpointId: string | undefined;
+    let webhookSigningSecret: string | undefined;
     try {
-      webhookEndpointId = await stripeConnectService.registerWebhooks(
+      const webhook = await stripeConnectService.registerWebhooks(
         result.stripeUserId,
         locationId,
       );
+      webhookEndpointId = webhook.endpointId;
+      webhookSigningSecret = webhook.signingSecret;
     } catch (err) {
       logger.warn({ err }, 'Failed to register Stripe webhooks — continuing');
     }
@@ -118,6 +121,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         locationId,
         result.stripeUserId,
         webhookEndpointId,
+        webhookSigningSecret,
       );
     } catch (err: any) {
       logger.error({ err: err.message }, 'Failed to save Stripe connection');

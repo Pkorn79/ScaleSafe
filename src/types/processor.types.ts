@@ -169,6 +169,7 @@ export interface ProcessorConfig {
   stripe_publishable_key: string | null;
   stripe_token_expires_at: string | null;
   stripe_webhook_endpoint_id: string | null;
+  stripe_webhook_secret_encrypted: string | null;
 
   is_active: boolean;
   is_default: boolean;

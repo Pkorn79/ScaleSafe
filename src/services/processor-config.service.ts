@@ -87,6 +87,7 @@ export interface CreateStripeConfigInput {
   label?: string;
   stripeUserId: string; // Connected account ID (acct_xxx) — NOT a secret
   webhookEndpointId?: string;
+  webhookSigningSecret?: string;
   isDefault?: boolean;
 }
 
@@ -157,6 +158,7 @@ export const processorConfigService = {
           label: input.label || 'Stripe Connect',
           stripe_user_id: input.stripeUserId,
           stripe_webhook_endpoint_id: input.webhookEndpointId || null,
+          stripe_webhook_secret_encrypted: input.webhookSigningSecret ? encrypt(input.webhookSigningSecret) : null,
           is_active: true,
           is_default: input.isDefault ?? true,
         },

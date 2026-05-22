@@ -121,19 +121,20 @@ describe('StripeConnectService', () => {
 
   describe('registerWebhooks', () => {
     it('creates webhook endpoint on connected account', async () => {
-      mockWebhookEndpointsCreate.mockResolvedValue({ id: 'we_test1' });
+      mockWebhookEndpointsCreate.mockResolvedValue({ id: 'we_test1', secret: 'whsec_test1' });
 
-      const endpointId = await stripeConnectService.registerWebhooks(
+      const webhook = await stripeConnectService.registerWebhooks(
         'acct_test1',
         'loc_123',
       );
 
-      expect(endpointId).toBe('we_test1');
+      expect(webhook).toEqual({ endpointId: 'we_test1', signingSecret: 'whsec_test1' });
 
       const [params, opts] = mockWebhookEndpointsCreate.mock.calls[0];
       expect(params.url).toBe('https://app.scalesafe.com/webhooks/stripe/loc_123');
       expect(params.enabled_events).toContain('charge.dispute.created');
       expect(params.enabled_events).toContain('radar.early_fraud_warning.created');
+      expect(params.enabled_events).toContain('invoice.payment_succeeded');
       expect(opts.stripeAccount).toBe('acct_test1');
     });
   });
