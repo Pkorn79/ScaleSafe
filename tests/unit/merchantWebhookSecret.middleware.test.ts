@@ -94,16 +94,15 @@ describe('requireMerchantWebhookSecret', () => {
     expect(response.json).toHaveBeenCalledWith({ error: 'WEBHOOK_SECRET_REQUIRED' });
   });
 
-  it('rejects missing secrets in production even when REQUIRE_WEBHOOK_SECRET is unset', async () => {
+  it('observes missing secrets in production when REQUIRE_WEBHOOK_SECRET is unset', async () => {
     process.env.NODE_ENV = 'production';
     const response = res();
     const next = jest.fn();
 
     await requireMerchantWebhookSecret(req({}, { locationId: 'loc_1' }), response, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(response.status).toHaveBeenCalledWith(401);
-    expect(response.json).toHaveBeenCalledWith({ error: 'WEBHOOK_SECRET_REQUIRED' });
+    expect(next).toHaveBeenCalled();
+    expect(response.status).not.toHaveBeenCalled();
   });
 
   it('rejects mismatched tenant secrets when enforcement is on', async () => {

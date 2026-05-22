@@ -65,4 +65,14 @@ describe('debug routes hardening', () => {
       .set('x-admin-debug-token', 'debug-token')
       .expect(404);
   });
+
+  it('does not include stack traces in debug error responses', async () => {
+    const response = await request(app())
+      .get('/api/debug/clients-data/loc_1')
+      .set('x-admin-debug-token', 'debug-token')
+      .expect(500);
+
+    expect(response.body.error).toEqual(expect.any(String));
+    expect(response.body.stack).toBeUndefined();
+  });
 });

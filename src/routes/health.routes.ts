@@ -5,6 +5,7 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { evidenceService } from '../services/evidence.service';
 import { STORAGE_BUCKETS } from '../services/storage.service';
 import { logger } from '../utils/logger';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -20,7 +21,15 @@ function requireDebugToken(req: Request, res: Response, next: () => void): void 
     return;
   }
 
-  if (supplied !== expected && bearer !== expected) {
+  const expectedBuffer = Buffer.from(expected);
+  const suppliedMatches = typeof supplied === 'string'
+    && Buffer.byteLength(supplied) === expectedBuffer.length
+    && crypto.timingSafeEqual(Buffer.from(supplied), expectedBuffer);
+  const bearerMatches = bearer
+    && Buffer.byteLength(bearer) === expectedBuffer.length
+    && crypto.timingSafeEqual(Buffer.from(bearer), expectedBuffer);
+
+  if (!suppliedMatches && !bearerMatches) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -29,11 +38,8 @@ function requireDebugToken(req: Request, res: Response, next: () => void): void 
 }
 
 function sendDebugError(res: Response, err: any): void {
-  const body: Record<string, unknown> = { error: err?.message || 'Debug route failed' };
-  if (process.env.NODE_ENV !== 'production') {
-    body.stack = err?.stack;
-  }
-  res.status(500).json(body);
+  logger.error({ err: err?.message, stack: err?.stack }, 'Debug route failed');
+  res.status(500).json({ error: err?.message || 'Debug route failed' });
 }
 
 router.get('/health', async (_req: Request, res: Response) => {
