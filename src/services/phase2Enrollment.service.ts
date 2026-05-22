@@ -3,6 +3,7 @@ import { phase2EvidenceRepository, EvidenceRecord } from '../repositories/phase2
 import { paymentEventRepository, PaymentEventRecord } from '../repositories/paymentEvent.repository';
 import { offerRepository } from '../repositories/offer.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
@@ -25,6 +26,28 @@ const CLICK_WRAP_CHECKED_VALUE = 'Yes';
 
 function formatDate(value: Date = new Date()): string {
   return value.toISOString().split('T')[0];
+}
+
+async function findExistingContactIdByEmail(
+  locationId: string,
+  email: string,
+  excludeEnrollmentId?: string,
+): Promise<string> {
+  if (!locationId || !email) return '';
+  let dbQuery = getSupabase()
+    .from('enrollments')
+    .select('contact_id')
+    .eq('location_id', locationId)
+    .eq('email', email)
+    .not('contact_id', 'is', null)
+    .not('contact_id', 'eq', '')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (excludeEnrollmentId) {
+    dbQuery = dbQuery.neq('id', excludeEnrollmentId);
+  }
+  const { data } = await dbQuery.maybeSingle();
+  return data?.contact_id || '';
 }
 
 function formatPaymentType(value: unknown): string {
@@ -209,11 +232,28 @@ export const phase2EnrollmentService = {
     let resolvedContactId = params.contactId;
     if (params.locationId) {
       try {
-        const api = await ghlApi(params.locationId);
-
         // Find or create GHL contact if we don't have one
         const email = params.contactEmail || (enrollment as any).email || '';
         if (!resolvedContactId && email) {
+          try {
+            const existingContactId = await findExistingContactIdByEmail(params.locationId, email, params.enrollmentId);
+            if (existingContactId) {
+              resolvedContactId = existingContactId;
+              await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
+                contact_id: resolvedContactId,
+              } as any);
+              logger.info(
+                { resolvedContactId, enrollmentId: params.enrollmentId, email },
+                'Existing GHL contact reused from prior enrollment before evidence insert',
+              );
+            }
+          } catch (lookupErr: any) {
+            logger.warn({ err: lookupErr.message, enrollmentId: params.enrollmentId }, 'Existing contact lookup failed before GHL upsert');
+          }
+        }
+
+        if (!resolvedContactId && email) {
+          const api = await ghlApi(params.locationId);
           // Name priority: enrollment first_name/last_name → digital_signature parse → email prefix
           let firstName = (enrollment as any).first_name || '';
           let lastName = (enrollment as any).last_name || '';

@@ -33,6 +33,21 @@ function normalizePaymentType(choice?: string): string {
   return choice;
 }
 
+async function findExistingContactIdByEmail(locationId: string, email: string): Promise<string> {
+  if (!locationId || !email) return '';
+  const { data } = await getSupabase()
+    .from('enrollments')
+    .select('contact_id')
+    .eq('location_id', locationId)
+    .eq('email', email)
+    .not('contact_id', 'is', null)
+    .not('contact_id', 'eq', '')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.contact_id || '';
+}
+
 function dollarsToCents(value: number | null | undefined): number | null {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
   return Math.round(Number(value) * 100);
@@ -548,6 +563,22 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       let resolvedQuickPayContact = contactId || '';
       if (quickPayEmail && !resolvedQuickPayContact) {
         try {
+          const existingContactId = await findExistingContactIdByEmail(merchant.locationId, quickPayEmail);
+          if (existingContactId) {
+            resolvedQuickPayContact = existingContactId;
+            finalContactId = existingContactId;
+            logger.info(
+              { contactId: resolvedQuickPayContact, hasEmail: !!quickPayEmail },
+              'Quick Pay: existing contact reused from prior enrollment',
+            );
+          }
+        } catch (lookupErr: any) {
+          logger.warn({ err: lookupErr.message }, 'Quick Pay: existing contact lookup failed');
+        }
+      }
+
+      if (quickPayEmail && !resolvedQuickPayContact) {
+        try {
           const api = await ghlApi(merchant.locationId);
           const nameParts = quickPayName.split(' ');
           const upsertRes = await api.post('/contacts/upsert', {
@@ -582,6 +613,21 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           }
         } catch (upsertErr: any) {
           logger.warn({ err: upsertErr.message }, 'Quick Pay: GHL contact upsert failed — payment still succeeded');
+        }
+      }
+
+      // Backfill payment_events with any contactId resolved through existing enrollment or GHL upsert.
+      if (resolvedQuickPayContact) {
+        try {
+          await supabase.from('payment_events')
+            .update({ contact_id: resolvedQuickPayContact })
+            .eq('processor_transaction_id', result.transactionId)
+            .eq('contact_id', '');
+        } catch (backfillErr: any) {
+          logger.warn(
+            { err: backfillErr.message, transactionId: result.transactionId },
+            'Quick Pay: payment event contact backfill failed - non-blocking',
+          );
         }
       }
 
