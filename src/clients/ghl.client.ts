@@ -3,6 +3,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { GHLApiError } from '../utils/errors';
 import { getSupabase } from './supabase.client';
+import { encrypt, decrypt } from '../utils/field-encryption';
 
 const TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const CUSTOM_FIELD_ID_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -16,6 +17,18 @@ interface TokenPair {
   accessToken: string;
   refreshToken: string;
   expiresAt: Date;
+}
+
+function readEncryptedToken(encrypted?: string | null, plaintext?: string | null): string {
+  if (encrypted) return decrypt(encrypted);
+  return plaintext || '';
+}
+
+function readConfigToken(config: Record<string, unknown>, encryptedKey: string, legacyKey: string): string {
+  const encrypted = config[encryptedKey];
+  if (typeof encrypted === 'string' && encrypted) return decrypt(encrypted);
+  const legacy = config[legacyKey];
+  return typeof legacy === 'string' ? legacy : '';
 }
 
 interface TokenResponse extends TokenPair {
@@ -217,8 +230,10 @@ async function refreshCompanyToken(locationId: string, currentRefreshToken: stri
   const { error } = await getSupabase()
     .from('merchants')
     .update({
-      ghl_access_token: tokens.accessToken,
-      ghl_refresh_token: tokens.refreshToken,
+      ghl_access_token: null,
+      ghl_refresh_token: null,
+      ghl_access_token_encrypted: encrypt(tokens.accessToken),
+      ghl_refresh_token_encrypted: encrypt(tokens.refreshToken),
       ghl_token_expires_at: tokens.expiresAt.toISOString(),
     })
     .eq('location_id', locationId);
@@ -286,8 +301,10 @@ async function getLocationToken(
       .update({
         config: {
           ...existingConfig,
-          location_access_token: tokens.accessToken,
-          location_refresh_token: tokens.refreshToken,
+          location_access_token: null,
+          location_refresh_token: null,
+          location_access_token_encrypted: encrypt(tokens.accessToken),
+          location_refresh_token_encrypted: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
           location_token_expires_at: tokens.expiresAt.toISOString(),
         },
       })
@@ -314,7 +331,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
   const { data: merchant, error } = await supabase
     .from('merchants')
-    .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config')
+    .select('ghl_access_token, ghl_refresh_token, ghl_access_token_encrypted, ghl_refresh_token_encrypted, ghl_token_expires_at, company_id, config')
     .eq('location_id', locationId)
     .single();
 
@@ -324,6 +341,14 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
   const companyId = (merchant as any).company_id || '';
   const cfg = (merchant.config || {}) as Record<string, unknown>;
+  const storedAccessToken = readEncryptedToken(
+    (merchant as any).ghl_access_token_encrypted,
+    (merchant as any).ghl_access_token,
+  );
+  const storedRefreshToken = readEncryptedToken(
+    (merchant as any).ghl_refresh_token_encrypted,
+    (merchant as any).ghl_refresh_token,
+  );
 
   // Determine if we need a location token exchange
   let accessToken: string;
@@ -332,12 +357,13 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     : null;
   const locationTokenValid = locationTokenExpiry && locationTokenExpiry > new Date();
 
-  if (locationTokenValid && cfg.location_access_token) {
+  const cachedLocationAccessToken = readConfigToken(cfg, 'location_access_token_encrypted', 'location_access_token');
+  if (locationTokenValid && cachedLocationAccessToken) {
     // Use cached location token
-    accessToken = cfg.location_access_token as string;
+    accessToken = cachedLocationAccessToken;
   } else if (companyId) {
     // Need to get a location token from company token
-    let companyAccessToken = merchant.ghl_access_token;
+    let companyAccessToken = storedAccessToken;
 
     // Check if company token is expired and refresh if needed
     const companyExpiry = merchant.ghl_token_expires_at
@@ -345,7 +371,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
       : null;
     if (companyExpiry && companyExpiry <= new Date()) {
       try {
-        const refreshed = await refreshCompanyToken(locationId, merchant.ghl_refresh_token);
+        const refreshed = await refreshCompanyToken(locationId, storedRefreshToken);
         companyAccessToken = refreshed.accessToken;
       } catch (err: any) {
         logger.error({ err: err.message }, 'Failed to refresh company token');
@@ -364,7 +390,11 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     }
   } else {
     // No companyId — use the stored token directly (Location-level install)
-    accessToken = merchant.ghl_access_token;
+    accessToken = storedAccessToken;
+  }
+
+  if (!accessToken) {
+    throw new GHLApiError(`Missing GHL access token for merchant: ${locationId}`);
   }
 
   const instance = axios.create({
@@ -416,7 +446,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
         try {
           // Refresh company token
-          const refreshed = await refreshCompanyToken(locationId, merchant.ghl_refresh_token);
+          const refreshed = await refreshCompanyToken(locationId, storedRefreshToken);
 
           if (companyId) {
             // Get fresh location token

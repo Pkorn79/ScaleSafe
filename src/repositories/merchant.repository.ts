@@ -1,13 +1,16 @@
 import { getSupabase } from '../clients/supabase.client';
 import { NotFoundError } from '../utils/errors';
 import crypto from 'crypto';
+import { encrypt } from '../utils/field-encryption';
 
 export interface MerchantRecord {
   id: string;
   location_id: string;
   company_id: string | null;
-  ghl_access_token: string;
-  ghl_refresh_token: string;
+  ghl_access_token: string | null;
+  ghl_refresh_token: string | null;
+  ghl_access_token_encrypted: string | null;
+  ghl_refresh_token_encrypted: string | null;
   ghl_token_expires_at: string | null;
   ghl_scopes: string | null;
   business_name: string | null;
@@ -42,6 +45,19 @@ export interface MerchantRecord {
 }
 
 export const merchantRepository = {
+  encryptTokenUpdates<T extends Record<string, any>>(updates: T): T {
+    const next: Record<string, any> = { ...updates };
+    if (typeof next.ghl_access_token === 'string') {
+      next.ghl_access_token_encrypted = encrypt(next.ghl_access_token);
+      next.ghl_access_token = null;
+    }
+    if (typeof next.ghl_refresh_token === 'string') {
+      next.ghl_refresh_token_encrypted = encrypt(next.ghl_refresh_token);
+      next.ghl_refresh_token = null;
+    }
+    return next as T;
+  },
+
   async findByLocationId(locationId: string): Promise<MerchantRecord | null> {
     const { data, error } = await getSupabase()
       .from('merchants')
@@ -107,9 +123,10 @@ export const merchantRepository = {
     business_name?: string;
     support_email?: string;
   }): Promise<MerchantRecord> {
+    const insertData = this.encryptTokenUpdates(data);
     const { data: merchant, error } = await getSupabase()
       .from('merchants')
-      .insert(data)
+      .insert(insertData)
       .select()
       .single();
 
@@ -118,9 +135,10 @@ export const merchantRepository = {
   },
 
   async update(locationId: string, updates: Partial<MerchantRecord>): Promise<MerchantRecord> {
+    const safeUpdates = this.encryptTokenUpdates(updates);
     const { data, error } = await getSupabase()
       .from('merchants')
-      .update(updates)
+      .update(safeUpdates)
       .eq('location_id', locationId)
       .select()
       .single();
@@ -132,11 +150,11 @@ export const merchantRepository = {
   async updateTokens(locationId: string, accessToken: string, refreshToken: string, expiresAt: Date): Promise<void> {
     const { error } = await getSupabase()
       .from('merchants')
-      .update({
+      .update(this.encryptTokenUpdates({
         ghl_access_token: accessToken,
         ghl_refresh_token: refreshToken,
         ghl_token_expires_at: expiresAt.toISOString(),
-      })
+      }))
       .eq('location_id', locationId);
 
     if (error) throw error;
