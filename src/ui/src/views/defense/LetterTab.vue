@@ -36,6 +36,8 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 
 const props = defineProps<{
   letterText: string;
@@ -71,12 +73,16 @@ function save() {
 }
 
 function renderMarkdown(text: string): string {
-  return (text || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^### (.+)$/gm, '<h4 style="font-size:13px;font-weight:600;margin:10px 0 4px">$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 style="font-size:15px;font-weight:600;margin:14px 0 6px;border-bottom:1px solid #e5e7eb;padding-bottom:4px">$1</h3>')
-    .replace(/\n/g, '<br>');
+  const rawHtml = marked.parse(text || '', {
+    async: false,
+    breaks: true,
+    gfm: true,
+  });
+
+  return DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'blockquote'],
+    ALLOWED_ATTR: [],
+  });
 }
 </script>
 
