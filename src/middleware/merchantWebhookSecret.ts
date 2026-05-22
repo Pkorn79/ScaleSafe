@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
@@ -14,6 +15,23 @@ function getHeaderSecret(req: Request): string {
 
 function shouldEnforce(): boolean {
   return isMerchantWebhookSecretEnforced();
+}
+
+function timingSafeSecretMatches(candidate: string | null | undefined, supplied: string): boolean {
+  if (!candidate || !supplied) return false;
+  const candidateDigest = crypto.createHash('sha256').update(candidate, 'utf8').digest();
+  const suppliedDigest = crypto.createHash('sha256').update(supplied, 'utf8').digest();
+  return crypto.timingSafeEqual(candidateDigest, suppliedDigest);
+}
+
+async function findMerchantForSecret(secret: string, bodyLocationId: string) {
+  if (bodyLocationId) {
+    const merchant = await merchantRepository.findByLocationId(bodyLocationId);
+    return timingSafeSecretMatches(merchant?.webhook_secret, secret) ? merchant : null;
+  }
+
+  const merchants = await merchantRepository.listActive();
+  return merchants.find((merchant) => timingSafeSecretMatches(merchant.webhook_secret, secret)) || null;
 }
 
 function observe(req: Request, reason: string, extra: Record<string, unknown> = {}) {
@@ -45,7 +63,7 @@ export async function requireMerchantWebhookSecret(req: Request, res: Response, 
   }
 
   try {
-    const merchant = await merchantRepository.findByWebhookSecret(secret);
+    const merchant = await findMerchantForSecret(secret, bodyLocationId);
     if (!merchant) {
       observe(req, 'invalid_secret');
       if (enforce) {

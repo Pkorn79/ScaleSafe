@@ -3,7 +3,8 @@ import { merchantRepository } from '../../src/repositories/merchant.repository';
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
-    findByWebhookSecret: jest.fn(),
+    findByLocationId: jest.fn(),
+    listActive: jest.fn(),
   },
 }));
 
@@ -15,7 +16,8 @@ jest.mock('../../src/utils/logger', () => ({
   },
 }));
 
-const mockFindByWebhookSecret = merchantRepository.findByWebhookSecret as jest.Mock;
+const mockFindByLocationId = merchantRepository.findByLocationId as jest.Mock;
+const mockListActive = merchantRepository.listActive as jest.Mock;
 
 function req(headers: Record<string, string> = {}, body: Record<string, unknown> = {}) {
   return {
@@ -57,9 +59,10 @@ describe('requireMerchantWebhookSecret', () => {
   });
 
   it('allows a valid secret and populates tenant context', async () => {
-    mockFindByWebhookSecret.mockResolvedValue({
+    mockFindByLocationId.mockResolvedValue({
       id: 'merchant_1',
       location_id: 'loc_1',
+      webhook_secret: 'secret_1',
     });
     const request = req({ 'x-scalesafe-webhook-secret': 'secret_1' }, { locationId: 'loc_1' });
     const response = res();
@@ -107,9 +110,10 @@ describe('requireMerchantWebhookSecret', () => {
 
   it('rejects mismatched tenant secrets when enforcement is on', async () => {
     process.env.REQUIRE_WEBHOOK_SECRET = 'true';
-    mockFindByWebhookSecret.mockResolvedValue({
+    mockFindByLocationId.mockResolvedValue({
       id: 'merchant_1',
       location_id: 'loc_1',
+      webhook_secret: 'secret_1',
     });
     const response = res();
     const next = jest.fn();
@@ -127,7 +131,13 @@ describe('requireMerchantWebhookSecret', () => {
 
   it('rejects invalid secrets when enforcement is on', async () => {
     process.env.REQUIRE_WEBHOOK_SECRET = 'true';
-    mockFindByWebhookSecret.mockResolvedValue(null);
+    mockListActive.mockResolvedValue([
+      {
+        id: 'merchant_1',
+        location_id: 'loc_1',
+        webhook_secret: 'secret_1',
+      },
+    ]);
     const response = res();
     const next = jest.fn();
 
@@ -136,5 +146,30 @@ describe('requireMerchantWebhookSecret', () => {
     expect(next).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(401);
     expect(response.json).toHaveBeenCalledWith({ error: 'INVALID_WEBHOOK_SECRET' });
+  });
+
+  it('can validate a secret without using a database equality lookup', async () => {
+    mockListActive.mockResolvedValue([
+      {
+        id: 'merchant_1',
+        location_id: 'loc_1',
+        webhook_secret: 'secret_1',
+      },
+      {
+        id: 'merchant_2',
+        location_id: 'loc_2',
+        webhook_secret: 'secret_2',
+      },
+    ]);
+    const response = res();
+    const next = jest.fn();
+    const request = req({ authorization: 'Bearer secret_2' });
+
+    await requireMerchantWebhookSecret(request, response, next);
+
+    expect(mockFindByLocationId).not.toHaveBeenCalled();
+    expect(mockListActive).toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(request.tenantContext).toEqual({ locationId: 'loc_2', merchantId: 'merchant_2' });
   });
 });
