@@ -72,6 +72,11 @@ function getClientIp(req: Request): string {
     || '';
 }
 
+type BillingSetupIssue = {
+  code: string;
+  message: string;
+};
+
 // ─── GET /api/checkout/config ────────────────────────────────
 
 export async function getCheckoutConfig(req: Request, res: Response): Promise<void> {
@@ -398,6 +403,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // `finalContactId` and run the save-card block once at the end.
     let finalContactId = contactId || '';
     let finalEnrollmentId = '';
+    let recurringSubscriptionId = '';
+    let billingSetupIssue: BillingSetupIssue | null = null;
 
     // Create transaction mapping
     if (transactionId || orderId) {
@@ -633,8 +640,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
       // ─── Quick Pay enrollment + receipt ──────────────────────────
       // For installment/subscription Quick Pay offers, create a synthetic enrollment
-      // row so the existing recurring-billing cron and payment-reminder cron pick it up.
-      // Both crons key off the enrollments table; no other wiring needed.
+      // row so the payment-reminder job and processor subscription setup can key off it.
       let quickPayEnrollmentId: string | null = null;
       let quickPayPaymentKind: 'one_off' | 'installment' | 'subscription' = 'one_off';
       let quickPayPaymentsTotal: number | null = null;
@@ -711,6 +717,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
 
       // Insert payment_customer_map
+      if (quickPayEnrollmentId) finalEnrollmentId = quickPayEnrollmentId;
       if (offerId) {
         try {
           await supabase.from('payment_customer_map').insert({
@@ -759,14 +766,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
     }
 
-    // ─── Persist card to payment_methods (recurring-billing prerequisite) ──
-    // Runs AFTER both contactId resolution branches above so we always have
-    // a real contactId to attach to the payment_methods row. Without this row
-    // (with is_default=true), the daily recurring-billing job has nothing to
-    // charge for installment / subscription enrollments.
+    // Persist card before creating a processor-level recurring subscription.
+    // Runs after contactId resolution so payment_methods and processor metadata
+    // attach to the same client/enrollment record.
     if (shouldSaveCard) {
       if (!finalContactId) {
-        logger.warn({ contactEmail }, 'CARD-SAVE: skipped — could not resolve contactId for recurring payment');
+        billingSetupIssue = {
+          code: 'missing_contact_for_recurring_setup',
+          message: 'Payment was received, but recurring billing setup could not complete because the contact was not resolved.',
+        };
+        logger.warn({ contactEmail }, 'CARD-SAVE: skipped - could not resolve contactId for recurring payment');
       } else {
         try {
           let saveResult: { success: boolean; paymentMethodId: string; customerId: string; cardLastFour: string; cardBrand: string; cardExpMonth: number; cardExpYear: number };
@@ -820,104 +829,140 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             cardExpYear: saveResult.cardExpYear,
           }, 'CARD-SAVE: payment method persisted for recurring billing');
 
-          // ─── Create processor-level subscription (fire-and-forget) ──
-          // Runs in background after response is sent. The subscription doesn't
-          // need to exist before the checkout confirmation — the cron fallback
-          // handles billing if subscription creation is delayed or fails.
+          // Create the processor-level subscription before responding. Recurring
+          // checkout is not complete unless the processor subscription ID is saved.
           if (isRecurringPaymentType && finalEnrollmentId) {
-            const bgSaveResult = { ...saveResult };
-            const bgEnrId = finalEnrollmentId;
-            const bgContactId = finalContactId;
-            const bgProcType = procConfig.processor_type;
-            Promise.resolve().then(async () => {
-              try {
-                const bgSupabase = getSupabase();
-                const { data: enrForSub } = await bgSupabase
-                  .from('enrollments')
-                  .select('id, offer_id, payment_type, payments_total, next_billing_date')
-                  .eq('id', bgEnrId)
+            try {
+              const { data: enrForSub } = await supabase
+                .from('enrollments')
+                .select('id, offer_id, payment_type, payments_total, next_billing_date')
+                .eq('id', finalEnrollmentId)
+                .single();
+
+              if (!enrForSub?.offer_id || !enrForSub.next_billing_date) {
+                billingSetupIssue = {
+                  code: 'missing_enrollment_schedule_for_recurring_setup',
+                  message: 'Payment was received, but recurring billing setup could not complete because the enrollment schedule was incomplete.',
+                };
+              } else {
+                const { data: subOffer } = await supabase
+                  .from('offers_mirror')
+                  .select('offer_name, price, payment_type, installment_amount, installment_frequency')
+                  .eq('id', enrForSub.offer_id)
                   .single();
 
-                if (enrForSub?.offer_id && enrForSub.next_billing_date) {
-                  const { data: subOffer } = await bgSupabase
-                    .from('offers_mirror')
-                    .select('offer_name, price, payment_type, installment_amount, installment_frequency')
-                    .eq('id', enrForSub.offer_id)
-                    .single();
+                if (!subOffer) {
+                  billingSetupIssue = {
+                    code: 'missing_offer_for_recurring_setup',
+                    message: 'Payment was received, but recurring billing setup could not complete because the offer was not found.',
+                  };
+                } else {
+                  const recurringPaymentType = String(enrForSub.payment_type || subOffer.payment_type || '').toLowerCase();
+                  const recurringAmount = recurringPaymentType === 'subscription'
+                    ? Number(subOffer.price || subOffer.installment_amount || 0)
+                    : Number(subOffer.installment_amount || subOffer.price || 0);
+                  const subAmountCents = Math.round(recurringAmount * 100);
+                  const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
+                  const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
+                    freq === 'daily' ? 'daily' :
+                    freq === 'weekly' ? 'weekly' :
+                    freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' :
+                    freq === 'quarterly' ? 'quarterly' :
+                    freq === 'annual' ? 'annual' : 'monthly';
 
-                  if (subOffer) {
-                    const recurringPaymentType = String(enrForSub.payment_type || subOffer.payment_type || '').toLowerCase();
-                    const recurringAmount = recurringPaymentType === 'subscription'
-                      ? Number(subOffer.price || subOffer.installment_amount || 0)
-                      : Number(subOffer.installment_amount || subOffer.price || 0);
-                    const subAmountCents = Math.round(recurringAmount * 100);
-                    const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
-                    const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
-                      freq === 'daily' ? 'daily' :
-                      freq === 'weekly' ? 'weekly' :
-                      freq === 'bi_weekly' || freq === 'biweekly' ? 'biweekly' :
-                      freq === 'quarterly' ? 'quarterly' :
-                      freq === 'annual' ? 'annual' : 'monthly';
+                  const remainingPayments = recurringPaymentType === 'subscription'
+                    ? 0
+                    : Math.max(0, (enrForSub.payments_total || 0) - 1);
 
-                    const remainingPayments = recurringPaymentType === 'subscription'
-                      ? 0
-                      : Math.max(0, (enrForSub.payments_total || 0) - 1);
+                  if (subAmountCents > 0 && (recurringPaymentType === 'subscription' || remainingPayments > 0)) {
+                    const subResult = await processor.createSubscription({
+                      paymentMethodId: saveResult.paymentMethodId || saveResult.customerId,
+                      customerId: saveResult.customerId,
+                      planAmount: subAmountCents,
+                      interval: subInterval,
+                      totalPayments: remainingPayments,
+                      startDate: enrForSub.next_billing_date,
+                      description: subOffer.offer_name || 'ScaleSafe Installment',
+                      metadata: {
+                        enrollment_id: finalEnrollmentId,
+                        offer_id: enrForSub.offer_id,
+                        contact_id: finalContactId,
+                        location_id: merchant.locationId,
+                        payment_type: recurringPaymentType,
+                      },
+                    });
 
-                    if (subAmountCents > 0 && (recurringPaymentType === 'subscription' || remainingPayments > 0)) {
-                      const subResult = await processor.createSubscription({
-                        paymentMethodId: bgSaveResult.paymentMethodId || bgSaveResult.customerId,
-                        customerId: bgSaveResult.customerId,
-                        planAmount: subAmountCents,
-                        interval: subInterval,
-                        totalPayments: remainingPayments,
-                        startDate: enrForSub.next_billing_date,
-                        description: subOffer.offer_name || 'ScaleSafe Installment',
-                        metadata: {
-                          enrollment_id: bgEnrId,
-                          offer_id: enrForSub.offer_id,
-                          contact_id: bgContactId,
-                          location_id: merchant.locationId,
-                          payment_type: recurringPaymentType,
-                        },
-                      });
-
-                      if (subResult.success && subResult.subscriptionId) {
-                        await bgSupabase.from('enrollments')
-                          .update({ processor_subscription_id: subResult.subscriptionId, processor_type: bgProcType })
-                          .eq('id', bgEnrId);
-                        logger.info({
-                          enrollmentId: bgEnrId,
+                    if (subResult.success && subResult.subscriptionId) {
+                      recurringSubscriptionId = subResult.subscriptionId;
+                      const { error: subSaveErr } = await supabase.from('enrollments')
+                        .update({ processor_subscription_id: subResult.subscriptionId, processor_type: procConfig.processor_type })
+                        .eq('id', finalEnrollmentId);
+                      if (subSaveErr) {
+                        billingSetupIssue = {
+                          code: 'processor_subscription_save_failed',
+                          message: subSaveErr.message || 'The processor subscription was created, but ScaleSafe could not save the subscription ID.',
+                        };
+                        logger.error({
+                          enrollmentId: finalEnrollmentId,
                           subscriptionId: subResult.subscriptionId,
-                          processor: bgProcType,
+                          err: subSaveErr.message,
+                        }, 'Processor subscription ID save failed during checkout');
+                      } else {
+                        logger.info({
+                          enrollmentId: finalEnrollmentId,
+                          subscriptionId: subResult.subscriptionId,
+                          processor: procConfig.processor_type,
                           interval: subInterval,
                           remainingPayments,
                           recurringPaymentType,
-                        }, 'BG-SUBSCRIPTION: processor-level recurring schedule created');
-                      } else {
-                        logger.warn({
-                          enrollmentId: bgEnrId,
-                          error: subResult.errorMessage,
-                        }, 'BG-SUBSCRIPTION: processor createSubscription failed — cron will handle billing');
+                        }, 'Processor recurring subscription created during checkout');
                       }
+                    } else {
+                      billingSetupIssue = {
+                        code: 'processor_subscription_creation_failed',
+                        message: subResult.errorMessage || 'Payment was received, but recurring billing setup failed at the processor.',
+                      };
+                      logger.error({
+                        enrollmentId: finalEnrollmentId,
+                        error: subResult.errorMessage,
+                      }, 'Processor subscription creation failed during checkout');
                     }
                   }
                 }
-              } catch (subErr: any) {
-                logger.warn({
-                  err: subErr.message,
-                  enrollmentId: bgEnrId,
-                }, 'BG-SUBSCRIPTION: failed to create processor subscription — cron will handle billing');
               }
-            }).catch(() => {});
+            } catch (subErr: any) {
+              billingSetupIssue = {
+                code: 'processor_subscription_creation_error',
+                message: subErr.message || 'Payment was received, but recurring billing setup failed.',
+              };
+              logger.error({
+                err: subErr.message,
+                enrollmentId: finalEnrollmentId,
+              }, 'Processor subscription creation threw during checkout');
+            }
+          } else if (isRecurringPaymentType && !finalEnrollmentId) {
+            billingSetupIssue = {
+              code: 'missing_enrollment_for_recurring_setup',
+              message: 'Payment was received, but recurring billing setup could not complete because the enrollment was not saved.',
+            };
           }
         } catch (err: any) {
+          billingSetupIssue = {
+            code: 'card_save_failed_for_recurring_setup',
+            message: err.message || 'Payment was received, but the payment method could not be saved for recurring billing.',
+          };
           logger.warn({
             err: err.message,
             contactId: finalContactId,
             paymentChoice: req.body.paymentChoice,
-          }, 'CARD-SAVE: failed — payment still succeeded but recurring billing will not run');
+          }, 'CARD-SAVE: failed - payment still succeeded but recurring billing will not run');
         }
       }
+    } else if (result.success && isRecurringPaymentType) {
+      billingSetupIssue = {
+        code: 'card_not_saved_for_recurring_setup',
+        message: 'Payment was received, but the payment method was not saved for recurring billing.',
+      };
     }
 
     // Flag payment without consent (do NOT block — just warn)
@@ -948,6 +993,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     res.json({
       success: result.success,
       chargeId: result.chargeId || result.transactionId,
+      subscriptionId: recurringSubscriptionId || undefined,
+      billingIssue: billingSetupIssue || undefined,
       error: result.errorMessage,
       threeDSecureUrl: result.threeDSecureUrl,
     });

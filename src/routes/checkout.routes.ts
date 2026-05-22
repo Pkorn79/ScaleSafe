@@ -531,7 +531,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       if (data.success) {
         ssPostToParent({
           type: 'custom_element_success_response',
-          chargeId: data.chargeId
+          chargeId: data.chargeId,
+          subscriptionId: data.subscriptionId || '',
+          billingIssue: data.billingIssue || null
         });
       } else if (data.threeDSecureUrl) {
         window.location.href = data.threeDSecureUrl;
@@ -1132,7 +1134,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       // Success
       el('pay-btn').classList.add('hidden');
-      el('success-msg').textContent = 'Payment Successful!';
+      el('success-msg').textContent = data.billingIssue
+        ? 'Payment received. Recurring billing setup needs merchant attention.'
+        : 'Payment Successful!';
       el('success-msg').style.display = 'block';
 
       // In GHL iframe: notify parent
@@ -1141,7 +1145,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           ssCheckoutPostToParent(JSON.stringify({
             action: 'custom_element_success_response',
             chargeId: data.chargeId,
-            transactionId: data.chargeId
+            transactionId: data.chargeId,
+            subscriptionId: data.subscriptionId || '',
+            billingIssue: data.billingIssue || null
           }));
         } catch(e){}
         setTimeout(function() {
