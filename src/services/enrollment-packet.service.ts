@@ -19,8 +19,8 @@ export const enrollmentPacketService = {
    */
   async generatePacket(enrollmentId: string, locationId: string): Promise<Buffer> {
     // Gather all data
-    const enrollment = await enrollmentRepository.getById(enrollmentId);
-    const offer = enrollment.offer_id ? await offerRepository.findById(enrollment.offer_id) : null;
+    const enrollment = await enrollmentRepository.getById(enrollmentId, locationId);
+    const offer = enrollment.offer_id ? await offerRepository.findById(enrollment.offer_id, locationId) : null;
 
     let merchant = { businessName: '', supportEmail: '', logoUrl: '' };
     try {

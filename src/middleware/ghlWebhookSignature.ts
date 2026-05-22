@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 
 const GHL_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -57,12 +56,11 @@ export function verifyGhlWebhookRequest(req: Request): { ok: boolean; reason?: s
 }
 
 export function requireGhlWebhookSignature(req: Request, res: Response, next: NextFunction): void {
-  const allowUnsigned = process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS === 'true'
-    || (process.env.NODE_ENV || config.nodeEnv) !== 'production';
+  const allowUnsigned = process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS === 'true';
   const result = verifyGhlWebhookRequest(req);
 
   if (!result.ok && allowUnsigned && result.reason === 'Missing GHL webhook signature') {
-    logger.warn({ path: req.path }, 'Allowing unsigned GHL webhook outside production/with explicit override');
+    logger.warn({ path: req.path }, 'Allowing unsigned GHL webhook with explicit override');
     next();
     return;
   }

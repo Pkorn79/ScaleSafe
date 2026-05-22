@@ -441,8 +441,8 @@ export const offerService = {
     return offer;
   },
 
-  async getById(offerId: string): Promise<OfferRecord> {
-    return offerRepository.getById(offerId);
+  async getById(offerId: string, locationId?: string): Promise<OfferRecord> {
+    return offerRepository.getById(offerId, locationId);
   },
 
   async listByLocation(locationId: string): Promise<OfferRecord[]> {
@@ -468,9 +468,10 @@ export const offerService = {
   },
 
   async cloneOffer(offerId: string, locationId: string): Promise<OfferRecord> {
-    const source = await offerRepository.getById(offerId);
+    const source = await offerRepository.getById(offerId, locationId);
 
-    // Verify ownership
+    // Keep an explicit ownership check even though the repository is scoped.
+    // Unit mocks and future data-access changes should not be able to bypass it.
     if (source.location_id !== locationId) {
       throw new Error('Offer not found');
     }

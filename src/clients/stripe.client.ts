@@ -77,16 +77,16 @@ export class StripeClient implements ProcessorInterface {
       if (result.success && vaultCustomer) {
         result.vaultedCustomerId = vaultCustomer.id;
         const latestCharge = typeof pi.latest_charge === 'object' ? pi.latest_charge : null;
-        console.log('[Stripe] latest_charge type:', typeof pi.latest_charge, 'isObject:', !!latestCharge);
+        logger.debug({ latestChargeType: typeof pi.latest_charge, hasLatestCharge: !!latestCharge }, 'Stripe latest charge expanded');
         const pmDetails = latestCharge?.payment_method_details?.card;
         if (pmDetails) {
           result.vaultedCardLastFour = pmDetails.last4 || '****';
           result.vaultedCardBrand = pmDetails.brand || 'unknown';
           result.vaultedCardExpMonth = pmDetails.exp_month || 0;
           result.vaultedCardExpYear = pmDetails.exp_year || 0;
-          console.log('[Stripe] Card metadata from expanded charge:', { last4: result.vaultedCardLastFour, brand: result.vaultedCardBrand, expMonth: result.vaultedCardExpMonth, expYear: result.vaultedCardExpYear });
+          logger.debug('Stripe vault card metadata resolved from expanded charge');
         } else {
-          console.log('[Stripe] No pmDetails from latest_charge — trying PM retrieve fallback');
+          logger.debug('Stripe charge did not include card metadata; trying payment method fallback');
           try {
             // Stripe Node SDK signature: retrieve(id, params, options).
             // Calling retrieve(id, this.acct) with two args makes the SDK treat
@@ -97,9 +97,9 @@ export class StripeClient implements ProcessorInterface {
             result.vaultedCardBrand = pm.card?.brand || 'unknown';
             result.vaultedCardExpMonth = pm.card?.exp_month || 0;
             result.vaultedCardExpYear = pm.card?.exp_year || 0;
-            console.log('[Stripe] Card metadata from PM retrieve:', { last4: result.vaultedCardLastFour, brand: result.vaultedCardBrand });
+            logger.debug('Stripe vault card metadata resolved from payment method');
           } catch (pmErr: any) {
-            console.warn('[Stripe] PM retrieve fallback failed:', pmErr.message);
+            logger.warn({ err: pmErr?.message }, 'Stripe payment method fallback failed');
             result.vaultedCardLastFour = '****';
             result.vaultedCardBrand = 'unknown';
             result.vaultedCardExpMonth = 0;

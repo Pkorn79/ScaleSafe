@@ -53,19 +53,22 @@ export const enrollmentRepository = {
     return record;
   },
 
-  async findById(id: string): Promise<EnrollmentRecord | null> {
-    const { data, error } = await getSupabase()
+  async findById(id: string, locationId?: string): Promise<EnrollmentRecord | null> {
+    let query = getSupabase()
       .from('enrollments')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.single();
 
     if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
 
-  async getById(id: string): Promise<EnrollmentRecord> {
-    const record = await this.findById(id);
+  async getById(id: string, locationId?: string): Promise<EnrollmentRecord> {
+    const record = await this.findById(id, locationId);
     if (!record) throw new NotFoundError(`Enrollment ${id}`);
     return record;
   },

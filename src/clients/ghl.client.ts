@@ -82,16 +82,16 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
 
   const data = res.data;
 
-  // Log full response for debugging (redact tokens in production)
-  logger.info({
-    tokenResponseKeys: Object.keys(data),
-    locationId: data.locationId,
-    location_id: data.location_id,
-    companyId: data.companyId,
-    userId: data.userId,
-    userType: data.userType,
-    scope: data.scope,
-  }, 'GHL token exchange response');
+  if (config.isDev) {
+    logger.debug({
+      tokenResponseKeys: Object.keys(data),
+      hasLocation: !!(data.locationId || data.location_id),
+      hasCompany: !!(data.companyId || data.company_id),
+      hasUser: !!(data.userId || data.user_id),
+      userType: data.userType,
+      scopeCount: data.scope ? String(data.scope).split(' ').length : 0,
+    }, 'GHL token exchange response');
+  }
 
   // GHL uses camelCase (locationId) but has historically been inconsistent
   let locationId = data.locationId || data.location_id || '';
@@ -135,10 +135,10 @@ async function resolveLocationFromCompany(
   accessToken: string,
   companyId: string,
 ): Promise<{ locationId: string; debug: Record<string, unknown> }> {
-  const debug: Record<string, unknown> = { called: true, companyId };
+  const debug: Record<string, unknown> = { called: true };
 
   try {
-    logger.info({ companyId }, 'No locationId in token response — resolving via locations/search');
+    logger.info('No locationId in token response - resolving via locations/search');
 
     const res = await axios.get(`${config.ghl.apiDomain}/locations/search`, {
       headers: {
@@ -154,12 +154,14 @@ async function resolveLocationFromCompany(
 
     const locations = res.data.locations || [];
     debug.locationCount = locations.length;
-    debug.rawLocations = locations.map((l: any) => ({ id: l.id || l._id, name: l.name }));
+    if (config.isDev) {
+      debug.rawLocations = locations.map((l: any) => ({ id: l.id || l._id, name: l.name }));
+    }
 
-    logger.info({ companyId, locationCount: locations.length, locations: debug.rawLocations }, 'Locations search response');
+    logger.info({ locationCount: locations.length }, 'Locations search response');
 
     if (locations.length === 0) {
-      logger.error({ companyId }, 'No locations found for company');
+      logger.error('No locations found for company');
       return { locationId: '', debug };
     }
 
@@ -168,7 +170,7 @@ async function resolveLocationFromCompany(
     const resolvedId = loc.id || loc._id || loc.locationId || '';
     debug.resolvedLocationId = resolvedId;
     debug.firstLocationKeys = Object.keys(loc);
-    logger.info({ companyId, resolvedLocationId: resolvedId, locationName: loc.name }, 'Resolved locationId from locations/search');
+    logger.info('Resolved locationId from locations/search');
     return { locationId: resolvedId, debug };
   } catch (err: any) {
     debug.error = err.message;
@@ -176,7 +178,6 @@ async function resolveLocationFromCompany(
     debug.errorBodyKeys = err.response?.data ? Object.keys(err.response.data) : [];
     logger.error({
       err: err.message,
-      companyId,
       status: err.response?.status,
       responseKeys: err.response?.data ? Object.keys(err.response.data) : [],
     }, 'Failed to resolve locationId from locations/search');
@@ -189,7 +190,7 @@ async function resolveLocationFromCompany(
  * Updates the company tokens in the merchants table.
  */
 async function refreshCompanyToken(locationId: string, currentRefreshToken: string): Promise<TokenPair> {
-  logger.info({ locationId }, 'Refreshing GHL company access token');
+  logger.info('Refreshing GHL company access token');
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
     client_secret: config.ghl.clientSecret,
@@ -223,7 +224,7 @@ async function refreshCompanyToken(locationId: string, currentRefreshToken: stri
     .eq('location_id', locationId);
 
   if (error) {
-    logger.error({ locationId, error }, 'Failed to persist refreshed company tokens');
+    logger.error({ error }, 'Failed to persist refreshed company tokens');
   }
 
   return tokens;
@@ -243,7 +244,7 @@ async function getLocationToken(
   companyId: string,
   locationId: string,
 ): Promise<TokenPair> {
-  logger.info({ companyId, locationId }, 'Exchanging company token for location token');
+  logger.info('Exchanging company token for location token');
 
   const res = await axios.post(
     `${config.ghl.apiDomain}/oauth/locationToken`,
@@ -292,7 +293,7 @@ async function getLocationToken(
       })
       .eq('location_id', locationId);
   } catch (err) {
-    logger.error({ locationId, err }, 'Failed to persist location token');
+    logger.error({ err }, 'Failed to persist location token');
   }
 
   return tokens;
@@ -347,7 +348,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
         const refreshed = await refreshCompanyToken(locationId, merchant.ghl_refresh_token);
         companyAccessToken = refreshed.accessToken;
       } catch (err: any) {
-        logger.error({ err: err.message, locationId }, 'Failed to refresh company token');
+        logger.error({ err: err.message }, 'Failed to refresh company token');
         throw new GHLApiError(`Company token refresh failed: ${err.message}`);
       }
     }
@@ -357,7 +358,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
       const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
       accessToken = locationTokens.accessToken;
     } catch (err: any) {
-      logger.error({ err: err.message, locationId, companyId }, 'Failed to get location token');
+      logger.error({ err: err.message }, 'Failed to get location token');
       // Fall back to company token — some endpoints may work
       accessToken = companyAccessToken;
     }
@@ -411,7 +412,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
       const original = err.config as AxiosRequestConfig & { _retried?: boolean };
       if ((err.response?.status === 401 || err.response?.status === 403) && !original._retried) {
         original._retried = true;
-        logger.info({ locationId }, 'GHL token rejected, refreshing');
+        logger.info('GHL token rejected, refreshing');
 
         try {
           // Refresh company token
@@ -428,7 +429,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
           original.headers = { ...original.headers, Authorization: `Bearer ${accessToken}` };
           return instance.request(original);
         } catch (refreshErr: any) {
-          logger.error({ err: refreshErr.message, locationId }, 'Token refresh+exchange failed');
+          logger.error({ err: refreshErr.message }, 'Token refresh+exchange failed');
           throw new GHLApiError(`Token refresh failed: ${refreshErr.message}`);
         }
       }

@@ -3,6 +3,7 @@ import {
   legacyPublicActionLinksAllowed,
   verifyPublicActionToken,
 } from '../../src/utils/public-action-token';
+import { config } from '../../src/config';
 
 describe('public action tokens', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -85,11 +86,25 @@ describe('public action tokens', () => {
     expect(() => verifyPublicActionToken(token)).toThrow('expired');
   });
 
-  it('allows legacy raw links outside production only unless explicitly enabled', () => {
-    process.env.NODE_ENV = 'production';
+  it('allows legacy raw links only when explicitly enabled', () => {
+    process.env.NODE_ENV = 'test';
     expect(legacyPublicActionLinksAllowed()).toBe(false);
 
     process.env.ALLOW_LEGACY_PUBLIC_ACTION_LINKS = 'true';
     expect(legacyPublicActionLinksAllowed()).toBe(true);
+  });
+
+  it('requires an independent public action token secret', () => {
+    delete process.env.PUBLIC_ACTION_TOKEN_SECRET;
+    const originalConfigSecret = config.publicActionTokenSecret;
+    (config as any).publicActionTokenSecret = '';
+
+    expect(() => createPublicActionToken({
+      action: 'payment_update',
+      locationId: 'loc_123',
+      contactId: 'contact_456',
+    })).toThrow('PUBLIC_ACTION_TOKEN_SECRET is required');
+
+    (config as any).publicActionTokenSecret = originalConfigSecret;
   });
 });

@@ -24,7 +24,11 @@ export interface CreatePublicActionTokenInput {
 const DEFAULT_TTL_SECONDS = 14 * 24 * 60 * 60;
 
 function getSecret(): string {
-  return process.env.PUBLIC_ACTION_TOKEN_SECRET || config.ghl.ssoKey;
+  const secret = process.env.PUBLIC_ACTION_TOKEN_SECRET || config.publicActionTokenSecret;
+  if (!secret) {
+    throw new Error('PUBLIC_ACTION_TOKEN_SECRET is required');
+  }
+  return secret;
 }
 
 function encodeBase64Url(value: string | Buffer): string {
@@ -95,6 +99,5 @@ export function verifyPublicActionToken(token: string, expectedAction?: PublicAc
 }
 
 export function legacyPublicActionLinksAllowed(): boolean {
-  return process.env.ALLOW_LEGACY_PUBLIC_ACTION_LINKS === 'true'
-    || (process.env.NODE_ENV || config.nodeEnv) !== 'production';
+  return process.env.ALLOW_LEGACY_PUBLIC_ACTION_LINKS === 'true';
 }

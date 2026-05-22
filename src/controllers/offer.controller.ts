@@ -21,7 +21,10 @@ export const offerController = {
 
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
-      const offer = await offerService.getById(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const offer = await offerService.getById(req.params.id, locationId);
       res.json(offer);
     } catch (err) { next(err); }
   },
@@ -38,6 +41,10 @@ export const offerController = {
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      await offerService.getById(req.params.id, locationId);
+
       const offer = await offerService.update(req.params.id, req.body);
       res.json(offer);
     } catch (err) { next(err); }
@@ -45,6 +52,10 @@ export const offerController = {
 
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      await offerService.getById(req.params.id, locationId);
+
       await offerService.delete(req.params.id);
       res.status(204).end();
     } catch (err) { next(err); }
@@ -53,7 +64,8 @@ export const offerController = {
   async getEnrollmentLink(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);
-      const offer = await offerService.getById(req.params.id);
+      if (!locationId) throw new ValidationError('locationId required');
+      const offer = await offerService.getById(req.params.id, locationId);
       const appBaseUrl = config.appUrl;
 
       // Read the merchant's funnel URL from config

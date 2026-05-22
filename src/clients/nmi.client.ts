@@ -84,18 +84,17 @@ export class NmiClient implements ProcessorInterface {
     // If vault succeeded, populate vault metadata on the result
     if (result.success && nmi.customer_vault_id) {
       result.vaultedCustomerId = nmi.customer_vault_id;
-      console.log('[NMI] Vault created, ID:', nmi.customer_vault_id, 'Transact response keys:', Object.keys(nmi).join(','));
+      logger.debug({ responseKeys: Object.keys(nmi) }, 'NMI vault created');
       try {
         const cardInfo = await this.queryVaultCard(nmi.customer_vault_id);
         result.vaultedCardLastFour = cardInfo.lastFour;
         result.vaultedCardBrand = cardInfo.brand;
         result.vaultedCardExpMonth = cardInfo.expMonth;
         result.vaultedCardExpYear = cardInfo.expYear;
-        console.log('[NMI] Card metadata from vault query:', { last4: cardInfo.lastFour, brand: cardInfo.brand, expMonth: cardInfo.expMonth, expYear: cardInfo.expYear });
+        logger.debug('NMI vault card metadata resolved');
       } catch (vaultErr: any) {
         // Vault query failed — try extracting from the charge response directly
-        console.warn('[NMI] Vault card query FAILED:', vaultErr.message, '— trying transact response fallback');
-        console.log('[NMI] Transact response cc fields:', { cc_number: nmi.cc_number, cc_type: nmi.cc_type, cc_exp: nmi.cc_exp });
+        logger.warn({ err: vaultErr?.message }, 'NMI vault card query failed; using transact response fallback');
         const maskedCC = nmi.cc_number || '';
         if (maskedCC.length >= 4) {
           result.vaultedCardLastFour = maskedCC.slice(-4);

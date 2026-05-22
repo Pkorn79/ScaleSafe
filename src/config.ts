@@ -14,6 +14,26 @@ function optional(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
+const nodeEnv = optional('NODE_ENV', 'development');
+const isProd = nodeEnv === 'production';
+
+function failIfProductionFlagEnabled(key: string): void {
+  if (isProd && process.env[key] === 'true') {
+    console.error(`FATAL: ${key}=true is not allowed in production`);
+    process.exit(1);
+  }
+}
+
+failIfProductionFlagEnabled('ALLOW_DEV_LOCATION_AUTH');
+failIfProductionFlagEnabled('ALLOW_UNSIGNED_GHL_WEBHOOKS');
+failIfProductionFlagEnabled('ALLOW_UNSIGNED_STRIPE_STATE');
+failIfProductionFlagEnabled('ALLOW_LEGACY_PUBLIC_ACTION_LINKS');
+
+if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
+  console.error('FATAL: Missing required environment variable: PUBLIC_ACTION_TOKEN_SECRET');
+  process.exit(1);
+}
+
 export const config = {
   // GHL Marketplace App
   ghl: {
@@ -46,11 +66,14 @@ export const config = {
   // App URL (for OAuth callbacks, webhook URLs)
   appUrl: optional('APP_URL', 'http://localhost:3000'),
 
+  // Public action links (payment update, cancellation, milestone signoff)
+  publicActionTokenSecret: optional('PUBLIC_ACTION_TOKEN_SECRET', ''),
+
   // Server
   port: parseInt(optional('PORT', '3000'), 10),
-  nodeEnv: optional('NODE_ENV', 'development'),
+  nodeEnv,
   logLevel: optional('LOG_LEVEL', 'debug'),
 
-  isDev: optional('NODE_ENV', 'development') === 'development',
-  isProd: optional('NODE_ENV', 'development') === 'production',
+  isDev: nodeEnv === 'development',
+  isProd,
 };

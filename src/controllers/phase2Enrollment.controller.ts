@@ -103,8 +103,8 @@ export const phase2EnrollmentController = {
       if (!locationId) throw new ValidationError('Location context required');
 
       const enrollmentId = req.params.id;
-      const enrollment = await enrollmentRepository.findById(enrollmentId);
-      if (!enrollment || enrollment.location_id !== locationId) {
+      const enrollment = await enrollmentRepository.findById(enrollmentId, locationId);
+      if (!enrollment) {
         throw new NotFoundError(`Enrollment ${enrollmentId}`);
       }
       logger.info({ enrollmentId, locationId }, 'PACKET: Found enrollment');

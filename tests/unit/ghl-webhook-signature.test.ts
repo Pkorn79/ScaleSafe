@@ -58,8 +58,9 @@ describe('GHL webhook signature middleware', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Invalid webhook signature' });
   });
 
-  it('allows unsigned webhooks outside production for local tests', () => {
+  it('allows unsigned webhooks only with explicit override', () => {
     process.env.NODE_ENV = 'test';
+    process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS = 'true';
     const req = createReq();
     const res = createRes();
     const next = jest.fn();

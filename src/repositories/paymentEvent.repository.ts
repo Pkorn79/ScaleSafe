@@ -74,14 +74,18 @@ export const paymentEventRepository = {
   async findByTransactionId(
     processor: string,
     transactionId: string,
+    locationId?: string,
   ): Promise<PaymentEventRecord | null> {
-    const { data, error } = await getSupabase()
+    let query = getSupabase()
       .from('payment_events')
       .select('*')
       .eq('processor', processor)
       .eq('processor_transaction_id', transactionId)
-      .limit(1)
-      .single();
+      .limit(1);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.single();
 
     if (error && error.code !== 'PGRST116') throw error;
     return data;

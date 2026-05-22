@@ -80,12 +80,15 @@ export const defenseRepository = {
     return packet;
   },
 
-  async getById(id: string): Promise<DefensePacketRecord> {
-    const { data, error } = await getSupabase()
+  async getById(id: string, locationId?: string): Promise<DefensePacketRecord> {
+    let query = getSupabase()
       .from('defense_packets')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.single();
 
     if (error) throw new NotFoundError(`Defense packet ${id}`);
     return data;

@@ -226,6 +226,68 @@ describe('Checkout Controller', () => {
       expect(meta.customer_ip).toBe('1.2.3.4');
     });
 
+    it('rejects offer checkout when submitted amount does not match selected plan', async () => {
+      const offer = {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Security Test Offer',
+        price: 100,
+        payment_type: 'pif',
+        installment_amount: 25,
+        pif_price: null,
+        pif_discount_enabled: false,
+        processor_override: null,
+        nmi_processor_id: null,
+      };
+      const merchant = { id: 'merch-1', location_id: 'loc-1' };
+
+      mockGetMerchantByPublishableKey.mockResolvedValue(null);
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'offers_mirror') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnThis(),
+              single: jest.fn().mockResolvedValue({ data: offer, error: null }),
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({ data: merchant, error: null }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: jest.fn().mockResolvedValue({ error: null }),
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: null }),
+            }),
+          }),
+        };
+      });
+
+      const req = mockReq({
+        offerId: 'offer-1',
+        paymentToken: 'tok_card',
+        amount: 1,
+        currency: 'USD',
+        paymentChoice: 'pif',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Payment amount does not match selected offer',
+      });
+      expect(mockProcessor.charge).not.toHaveBeenCalled();
+    });
+
     it('verifies consent token before processing', async () => {
       // Mock enrollment lookup — consent not found
       mockFrom.mockReturnValue({

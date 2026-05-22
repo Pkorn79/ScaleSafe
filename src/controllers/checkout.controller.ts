@@ -10,6 +10,7 @@ import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { triggerService } from '../services/trigger.service';
 import { ghlApi } from '../clients/ghl.client';
 import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
+import { OfferRecord } from '../repositories/offer.repository';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -30,6 +31,23 @@ function normalizePaymentType(choice?: string): string {
   if (!choice) return 'pif';
   if (choice === 'installments') return 'installment';
   return choice;
+}
+
+function dollarsToCents(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+  return Math.round(Number(value) * 100);
+}
+
+function expectedOfferAmountCents(offer: OfferRecord, paymentChoice?: string): number | null {
+  const paymentType = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif').toLowerCase());
+  if (paymentType === 'installment' || paymentType === 'subscription') {
+    return dollarsToCents(offer.installment_amount ?? offer.price);
+  }
+  return dollarsToCents(
+    offer.pif_discount_enabled && offer.pif_price !== null && offer.pif_price !== undefined
+      ? offer.pif_price
+      : offer.price,
+  );
 }
 
 function getClientIp(req: Request): string {
@@ -225,6 +243,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     return;
   }
 
+  const normalizedCurrency = String(currency || 'usd').toLowerCase();
+  if (normalizedCurrency !== 'usd') {
+    res.status(400).json({ success: false, error: 'Invalid currency' });
+    return;
+  }
+
   if (typeof paymentToken !== 'string' || paymentToken.length < 3) {
     res.status(400).json({ success: false, error: 'Invalid payment token' });
     return;
@@ -232,12 +256,14 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
   // Resolve merchant by publishableKey or by offerId
   let merchant: { merchantId: string; locationId: string } | null = null;
+  let resolvedOffer: OfferRecord | null = null;
   if (publishableKey) {
     merchant = await paymentProviderService.getMerchantByPublishableKey(publishableKey);
   }
   if (!merchant && offerId) {
     const offer = await offerRepository.findById(offerId);
     if (offer) {
+      resolvedOffer = offer;
       const m = await merchantRepository.findByLocationId(offer.location_id);
       if (m) {
         merchant = { merchantId: m.id, locationId: m.location_id };
@@ -270,19 +296,34 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // Resolve offer hint for per-offer processor override
     let offerHint: { processor_override: 'nmi' | 'stripe' | null; nmi_processor_id: string | null } | undefined;
     if (offerId) {
-      const ofr = await offerRepository.findById(offerId);
+      const ofr = resolvedOffer || await offerRepository.findById(offerId);
+      resolvedOffer = ofr || resolvedOffer;
       if (ofr?.processor_override) {
         offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
       }
     } else if (ghlProductId) {
       const { data: ofr } = await supabase.from('offers_mirror')
-        .select('processor_override, nmi_processor_id')
+        .select('*')
         .eq('ghl_product_id', ghlProductId)
         .eq('location_id', merchant.locationId)
         .eq('active', true)
         .maybeSingle();
+      resolvedOffer = ofr || null;
       if (ofr?.processor_override) {
         offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
+      }
+    }
+
+    if (resolvedOffer) {
+      const expectedAmount = expectedOfferAmountCents(resolvedOffer, req.body.paymentChoice);
+      if (expectedAmount !== null && expectedAmount !== amount) {
+        logger.warn({
+          offerId: resolvedOffer.id,
+          submittedAmount: amount,
+          expectedAmount,
+        }, 'Rejected checkout amount mismatch');
+        res.status(400).json({ success: false, error: 'Payment amount does not match selected offer' });
+        return;
       }
     }
 
@@ -307,7 +348,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     const result = await processor.charge({
       amount,
-      currency: (currency || 'usd').toLowerCase(),
+      currency: normalizedCurrency,
       paymentToken,
       description: productDetails?.[0]?.name || 'ScaleSafe Payment',
       metadata: {

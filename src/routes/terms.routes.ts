@@ -9,6 +9,15 @@ function esc(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function isAllowedTermsRedirect(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || (process.env.NODE_ENV !== 'production' && url.protocol === 'http:');
+  } catch {
+    return false;
+  }
+}
+
 router.get('/:locationId', async (req: Request, res: Response) => {
   try {
     const locationId = req.params.locationId;
@@ -23,6 +32,11 @@ router.get('/:locationId', async (req: Request, res: Response) => {
 
     // Priority 1: External URL redirect
     if (config.tcHasOwn && config.tcDocumentUrl) {
+      if (!isAllowedTermsRedirect(config.tcDocumentUrl)) {
+        logger.warn({ locationId }, 'Blocked invalid terms redirect URL');
+        res.status(400).send(termsPageHtml('Terms Not Available', '<p>The merchant terms link is not configured correctly.</p>', config.businessName || merchant.business_name || ''));
+        return;
+      }
       res.redirect(config.tcDocumentUrl);
       return;
     }

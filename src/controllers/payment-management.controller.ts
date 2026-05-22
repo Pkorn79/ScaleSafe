@@ -15,6 +15,10 @@ function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
 }
 
+function isSafeSearchInput(value: string): boolean {
+  return value.length <= 80 && /^[A-Za-z0-9 @._+#:-]*$/.test(value);
+}
+
 function cleanCardDisplay(card: {
   card_last_four?: string | null;
   card_brand?: string | null;
@@ -76,6 +80,11 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
   try {
     const locationId = resolveLocationId(req);
     const search = (req.query.search as string || '').trim();
+    if (search && !isSafeSearchInput(search)) {
+      res.status(400).json({ error: 'Invalid search value' });
+      return;
+    }
+
     const supabase = getSupabase();
     const loweredSearch = search.toLowerCase();
 

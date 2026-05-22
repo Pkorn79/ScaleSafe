@@ -85,7 +85,10 @@ export const defenseController = {
   /** GET /api/defense/:id — get defense packet status/details */
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
-      const packet = await defenseService.getPacket(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const packet = await defenseService.getPacket(req.params.id, locationId);
       res.json(packet);
     } catch (err) { next(err); }
   },
@@ -93,7 +96,10 @@ export const defenseController = {
   /** GET /api/defense/:id/status — poll compilation status */
   async getStatus(req: Request, res: Response, next: NextFunction) {
     try {
-      const status = await defenseService.getStatus(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const status = await defenseService.getStatus(req.params.id, locationId);
       res.json(status);
     } catch (err) { next(err); }
   },
@@ -117,10 +123,14 @@ export const defenseController = {
         throw new ValidationError('outcome must be "won", "lost", or "withdrawn"');
       }
 
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
       await defenseService.recordOutcome(req.params.id, outcome, {
         amountRecovered: amountRecovered ?? undefined,
         resolvedAt: resolvedAt ?? undefined,
         notes,
+        locationId,
       });
       res.json({ status: 'ok', outcome });
     } catch (err) { next(err); }
@@ -129,7 +139,10 @@ export const defenseController = {
   /** POST /api/defense/:id/submit — mark packet as submitted to processor */
   async markSubmitted(req: Request, res: Response, next: NextFunction) {
     try {
-      await defenseService.markSubmitted(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      await defenseService.markSubmitted(req.params.id, locationId);
       res.json({ status: 'ok', lifecycleStatus: 'submitted' });
     } catch (err) { next(err); }
   },
@@ -137,8 +150,11 @@ export const defenseController = {
   /** POST /api/defense/:id/regenerate — regenerate the AI letter (pre-submit only) */
   async regenerateLetter(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await defenseService.regenerateLetter(req.params.id);
-      const packet = await defenseService.getPacket(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await defenseService.regenerateLetter(req.params.id, locationId);
+      const packet = await defenseService.getPacket(req.params.id, locationId);
       res.json({ ...result, pdfUrl: (packet as any).pdf_url || '' });
     } catch (err) { next(err); }
   },
@@ -150,8 +166,11 @@ export const defenseController = {
       if (!letterText || typeof letterText !== 'string') {
         throw new ValidationError('letterText is required');
       }
-      const result = await defenseService.saveLetterEdit(req.params.id, letterText);
-      const packet = await defenseService.getPacket(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await defenseService.saveLetterEdit(req.params.id, letterText, locationId);
+      const packet = await defenseService.getPacket(req.params.id, locationId);
       res.json({ ...result, pdfUrl: (packet as any).pdf_url || '' });
     } catch (err) { next(err); }
   },
@@ -159,7 +178,10 @@ export const defenseController = {
   /** GET /api/defense/:id/versions — letter version history */
   async getVersions(req: Request, res: Response, next: NextFunction) {
     try {
-      const versions = await defenseService.getLetterVersions(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const versions = await defenseService.getLetterVersions(req.params.id, locationId);
       res.json(versions);
     } catch (err) { next(err); }
   },
@@ -167,7 +189,10 @@ export const defenseController = {
   /** POST /api/defense/:id/rebundle — manually trigger PDF rebundle */
   async rebundle(req: Request, res: Response, next: NextFunction) {
     try {
-      const packet = await defenseService.getPacket(req.params.id);
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const packet = await defenseService.getPacket(req.params.id, locationId);
       const { defenseBundleService } = require('../services/defense-bundle.service');
       const url = await defenseBundleService.bundleDefensePdf(
         req.params.id,

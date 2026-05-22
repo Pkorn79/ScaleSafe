@@ -45,19 +45,22 @@ export interface OfferRecord {
 }
 
 export const offerRepository = {
-  async findById(id: string): Promise<OfferRecord | null> {
-    const { data, error } = await getSupabase()
+  async findById(id: string, locationId?: string): Promise<OfferRecord | null> {
+    let query = getSupabase()
       .from('offers_mirror')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.single();
 
     if (error && error.code !== 'PGRST116') throw error;
     return data;
   },
 
-  async getById(id: string): Promise<OfferRecord> {
-    const offer = await this.findById(id);
+  async getById(id: string, locationId?: string): Promise<OfferRecord> {
+    const offer = await this.findById(id, locationId);
     if (!offer) throw new NotFoundError(`Offer ${id}`);
     return offer;
   },

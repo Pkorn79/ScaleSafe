@@ -28,6 +28,10 @@ function dollarsToCents(dollars: number): number {
   return Math.round(dollars * 100);
 }
 
+function isSafeProcessorReference(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
+}
+
 /** Cents → dollars (for GHL response snapshots) */
 function centsToDollars(cents: number): number {
   return cents / 100;
@@ -394,6 +398,11 @@ async function handleCancelSubscription(req: Request, res: Response, merchant: M
 
 async function handleRefund(req: Request, res: Response, merchant: MerchantRef): Promise<void> {
   const { amount, chargeId } = req.body;
+
+  if (!isSafeProcessorReference(chargeId)) {
+    res.status(400).json({ success: false, message: 'Invalid transaction reference' });
+    return;
+  }
 
   const amountCents = amount ? dollarsToCents(amount) : undefined;
 

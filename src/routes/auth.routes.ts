@@ -29,11 +29,13 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes, _debug } = tokenResponse;
 
     if (!locationId) {
-      logger.error({ debug: _debug, companyId }, 'GHL token response missing locationId');
+      logger.error({
+        debug: config.isDev ? _debug : undefined,
+        hasCompany: !!companyId,
+      }, 'GHL token response missing locationId');
       res.status(400).json({
         error: 'VALIDATION_ERROR',
         message: 'GHL token response missing locationId — cannot provision merchant',
-        companyId: companyId || 'none',
         debug: oauthDebugResponse(_debug),
       });
       return;
@@ -51,7 +53,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         ghl_scopes: scopes.join(' '),
         status: 'active',
       } as any);
-      logger.info({ locationId }, 'Existing merchant re-authenticated');
+      logger.info('Existing merchant re-authenticated');
     } else {
       // New install: create merchant record
       await merchantRepository.create({
@@ -62,13 +64,13 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         ghl_token_expires_at: expiresAt.toISOString(),
         ghl_scopes: scopes.join(' '),
       });
-      logger.info({ locationId, companyId }, 'New merchant provisioned');
+      logger.info('New merchant provisioned');
     }
 
     // Run provisioning async — don't block the OAuth response
     // GHL expects a fast callback response; provisioning runs in background
     merchantService.provisionMerchant(locationId).catch((err) => {
-      logger.error({ err, locationId }, 'Background provisioning failed');
+      logger.error({ err }, 'Background provisioning failed');
     });
 
     res.json({ success: true, message: 'ScaleSafe installed successfully', locationId });
@@ -93,19 +95,16 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
 
     const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
 
-    // Log the full SSO payload keys and location-related fields for debugging
-    logger.info({
-      ssoPayloadKeys: Object.keys(userData),
-      activeLocation: userData.activeLocation,
-      locationId: userData.locationId,
-      location_id: userData.location_id,
-      companyId: userData.companyId,
-      company_id: userData.company_id,
-      userId: userData.userId,
-      role: userData.role,
-      type: userData.type,
-      userType: userData.userType,
-    }, 'SSO payload received');
+    if (config.isDev) {
+      logger.debug({
+        ssoPayloadKeys: Object.keys(userData),
+        hasLocation: !!(userData.activeLocation || userData.locationId || userData.location_id),
+        hasCompany: !!(userData.companyId || userData.company_id),
+        role: userData.role,
+        type: userData.type,
+        userType: userData.userType,
+      }, 'SSO payload received');
+    }
 
     // Try all known field names for location ID
     const locationId = userData.activeLocation || userData.locationId || userData.location_id || '';
@@ -115,13 +114,13 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     let merchant = locationId ? await merchantRepository.findByLocationId(locationId) : null;
 
     if (!merchant && companyId) {
-      logger.info({ companyId }, 'No merchant found by locationId, trying companyId lookup');
+      logger.info('No merchant found by locationId, trying companyId lookup');
       const companyMerchants = await merchantRepository.findAllByCompanyId(companyId);
       if (companyMerchants.length === 1) {
         merchant = companyMerchants[0];
-        logger.info({ companyId, locationId: merchant.location_id }, 'Single merchant found for company');
+        logger.info('Single merchant found for company');
       } else if (companyMerchants.length > 1) {
-        logger.error({ companyId, count: companyMerchants.length, locations: companyMerchants.map(m => m.location_id) },
+        logger.error({ count: companyMerchants.length },
           'SSO: multiple locations for company — cannot resolve without explicit locationId');
         throw new AuthenticationError(
           'Multiple locations found for this company. Please access ScaleSafe from a specific location.'
@@ -130,27 +129,27 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     if (!merchant) {
-      logger.error({ locationId, companyId, ssoKeys: Object.keys(userData) }, 'SSO: no merchant found');
+      logger.error({ hasLocationId: !!locationId, hasCompanyId: !!companyId }, 'SSO: no merchant found');
       throw new AuthenticationError(
-        `Merchant not found — locationId=${locationId || 'none'}, companyId=${companyId || 'none'}`
+        'Merchant not found for this ScaleSafe install.'
       );
     }
 
     const resolvedLocationId = merchant.location_id;
 
     // Auto-provision if snapshot never completed
-    logger.info({ locationId: resolvedLocationId, snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
+    logger.info({ snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
     if (merchant.snapshot_status !== 'installed') {
-      logger.info({ locationId: resolvedLocationId, snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed — triggering provisioning');
+      logger.info({ snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed - triggering provisioning');
       if (merchant.snapshot_status === 'failed') {
         await merchantRepository.updateSnapshotStatus(resolvedLocationId, 'pending');
       }
       merchantService.provisionMerchant(resolvedLocationId).catch((err) => {
-        logger.error({ err, locationId: resolvedLocationId }, 'Background provisioning from SSO failed');
+        logger.error({ err }, 'Background provisioning from SSO failed');
       });
     }
 
-    logger.info({ locationId: resolvedLocationId, userId: userData.userId, email: userData.email }, 'SSO session established');
+    logger.info('SSO session established');
 
     res.json({
       locationId: resolvedLocationId,

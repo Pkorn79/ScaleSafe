@@ -487,8 +487,8 @@ LETTER STRUCTURE:
     return msg;
   },
 
-  async getStatus(defenseId: string) {
-    const packet = await defenseRepository.getById(defenseId);
+  async getStatus(defenseId: string, locationId?: string) {
+    const packet = await defenseRepository.getById(defenseId, locationId);
     return {
       id: packet.id,
       status: packet.status,
@@ -501,8 +501,8 @@ LETTER STRUCTURE:
     };
   },
 
-  async getPacket(defenseId: string) {
-    const packet = await defenseRepository.getById(defenseId);
+  async getPacket(defenseId: string, locationId?: string) {
+    const packet = await defenseRepository.getById(defenseId, locationId);
     return shapePacketResponseWithFreshUrl(packet);
   },
 
@@ -515,8 +515,9 @@ LETTER STRUCTURE:
     amountRecovered?: number;
     resolvedAt?: string;
     notes?: string;
+    locationId?: string;
   }) {
-    const packet = await defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId, opts?.locationId);
     const supabase = getSupabase();
 
     // 1. Write defense_outcomes row
@@ -570,9 +571,9 @@ LETTER STRUCTURE:
   /**
    * Mark a defense packet as submitted. Locks the letter + PDF.
    */
-  async markSubmitted(defenseId: string): Promise<void> {
+  async markSubmitted(defenseId: string, locationId?: string): Promise<void> {
     const supabase = getSupabase();
-    const packet = await defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId, locationId);
 
     if ((packet as any).lifecycle_status !== 'pending_submission') {
       throw new Error(`Cannot submit a packet with status '${(packet as any).lifecycle_status}'`);
@@ -611,9 +612,9 @@ LETTER STRUCTURE:
    * Regenerate the AI letter for a packet. Inserts a new version, mirrors to fast-read column.
    * Only available before submission.
    */
-  async regenerateLetter(defenseId: string): Promise<{ letterText: string; versionNumber: number }> {
+  async regenerateLetter(defenseId: string, locationId?: string): Promise<{ letterText: string; versionNumber: number }> {
     const supabase = getSupabase();
-    const packet = await defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId, locationId);
 
     if ((packet as any).lifecycle_status === 'submitted' || (packet as any).lifecycle_status === 'won' || (packet as any).lifecycle_status === 'lost') {
       throw new Error('Cannot regenerate a letter after submission');
@@ -695,9 +696,9 @@ LETTER STRUCTURE:
    * Save a manual letter edit. Creates a new version.
    * Only available before submission.
    */
-  async saveLetterEdit(defenseId: string, letterText: string): Promise<{ versionNumber: number }> {
+  async saveLetterEdit(defenseId: string, letterText: string, locationId?: string): Promise<{ versionNumber: number }> {
     const supabase = getSupabase();
-    const packet = await defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId, locationId);
 
     if ((packet as any).lifecycle_status === 'submitted' || (packet as any).lifecycle_status === 'won' || (packet as any).lifecycle_status === 'lost') {
       throw new Error('Cannot edit a letter after submission');
@@ -739,7 +740,8 @@ LETTER STRUCTURE:
   /**
    * Get letter version history for a packet.
    */
-  async getLetterVersions(defenseId: string): Promise<any[]> {
+  async getLetterVersions(defenseId: string, locationId?: string): Promise<any[]> {
+    await defenseRepository.getById(defenseId, locationId);
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('defense_letter_versions')

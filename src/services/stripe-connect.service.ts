@@ -45,6 +45,11 @@ function generateSignedState(locationId: string): string {
   return `${payload}.${signStatePayload(payload)}`;
 }
 
+function unsignedStripeStateAllowed(state: string): boolean {
+  return process.env.ALLOW_UNSIGNED_STRIPE_STATE === 'true'
+    && /^[A-Za-z0-9_-]+$/.test(state);
+}
+
 export const stripeConnectService = {
   /**
    * Generate the Stripe Connect authorization URL.
@@ -74,12 +79,12 @@ export const stripeConnectService = {
     const parts = state.split('.');
     const [payload, signature] = parts;
     if (parts.length !== 2) {
-      if (!config.isProd && /^[A-Za-z0-9_-]+$/.test(state)) return state;
+      if (unsignedStripeStateAllowed(state)) return state;
       throw new ProcessorError('Invalid Stripe OAuth state', 'stripe', 'OAUTH_INVALID_STATE');
     }
 
     if (!payload || !signature) {
-      if (!config.isProd && /^[A-Za-z0-9_-]+$/.test(state)) return state;
+      if (unsignedStripeStateAllowed(state)) return state;
       throw new ProcessorError('Invalid Stripe OAuth state', 'stripe', 'OAUTH_INVALID_STATE');
     }
 

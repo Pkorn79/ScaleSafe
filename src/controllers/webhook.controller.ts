@@ -36,7 +36,7 @@ export const webhookController = {
       // Idempotency: check by transactionId or orderId
       const transactionId = body.transactionId || body.orderId || '';
       if (transactionId) {
-        const existing = await paymentEventRepository.findByTransactionId('ghl', transactionId);
+        const existing = await paymentEventRepository.findByTransactionId('ghl', transactionId, locationId);
         if (existing) {
           logger.info({ transactionId, type }, 'Duplicate payment webhook, skipping');
           res.json({ status: 'duplicate', transactionId });
