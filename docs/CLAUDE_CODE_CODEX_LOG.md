@@ -681,14 +681,14 @@ Files changed:
 
 Summary:
 
-- Expanded the `ss_upcoming_payment_reminder` payload so the GHL workflow has both flat fields and nested aliases.
+- Expanded the `upcoming_payment_reminder` app-event payload so the GHL workflow has both flat fields and nested aliases.
 - Flat fields now include `installment_amount`, `offer_name`, `next_billing_date`, `next_payment_number`, `payments_made`, `payments_total`, `payments_remaining`, `days_until_payment`, and `reminder_window`.
 - Nested aliases now include `offer.name`, `offer.installment_amount`, and `subscription.next_billing_date` / `subscription.next_payment_number` / `subscription.payments_total` / `subscription.payments_made` / `subscription.payments_remaining`.
 - Purpose: avoid ambiguity when building the GHL workflow. GHL can use whichever merge fields its custom trigger UI exposes from the sample event.
 
 Philip/GHL action:
 
-- Build the `ss_upcoming_payment_reminder` workflow. The app controls timing. GHL only needs to send the message from trigger fields and can optionally branch on `reminder_window` (`three_day` vs `one_day`).
+- Build the `ss_app_event` workflow filtered to `event_type = upcoming_payment_reminder`. The app controls timing. GHL only needs to send the message from trigger fields and can optionally branch on `reminder_window` (`three_day` vs `one_day`).
 
 ### 2026-05-01: Restore 3-Day + Add 1-Day Payment Reminders (Codex)
 
@@ -700,7 +700,7 @@ Files changed:
 Summary:
 
 - Corrected the beta reminder behavior from "1-day only" to the standard two-touch sequence: 3 days before and 1 day before the next installment/subscription payment.
-- Reused the existing `ss_upcoming_payment_reminder` trigger to avoid new GHL trigger subscriptions.
+- Reused the shared `ss_app_event` trigger with `event_type = upcoming_payment_reminder` to avoid new GHL trigger subscriptions.
 - Added payload fields `days_until_payment` (`3` or `1`) and `reminder_window` (`three_day` or `one_day`) so GHL can branch or use correct copy.
 
 Philip/GHL action:
@@ -1392,7 +1392,7 @@ Summary:
 - Added `trigger_delivery_logs` so Marketplace trigger delivery is persisted in Supabase, not only Railway logs. Each active subscription POST now records trigger key, target URL, sent/failed status, HTTP status, attempt count, error message, and the payload sent.
 - Added `ss_app_event` to valid trigger keys. Philip created this as the shared multi-event GHL Marketplace trigger with required `event_type` filter constants.
 - Rewired the pulse cadence job away from direct workflow webhook URLs. App-owned pulse cadence now fires `ss_app_event` with `event_type = pulse_check_due`; GHL workflows should filter on that event type.
-- Enriched `enrollment_complete`, `ss_payment_received`, and `ss_upcoming_payment_reminder` payloads with both snake_case and camelCase aliases (`contact_id`/`contactId`, `enrollment_id`/`enrollmentId`, etc.) so GHL workflows have easier access to contact and event data.
+- Enriched `enrollment_complete`, `ss_payment_received`, and `upcoming_payment_reminder` app-event payloads with both snake_case and camelCase aliases (`contact_id`/`contactId`, `enrollment_id`/`enrollmentId`, etc.) so GHL workflows have easier access to contact and event data.
 
 Verification:
 

@@ -5,8 +5,9 @@ import { logger } from '../utils/logger';
 
 /**
  * Frequent job: scan enrollments for upcoming installment/subscription payments
- * due in 3 days and within the next 24 hours. Fires ss_upcoming_payment_reminder
- * for each. Idempotency keys prevent duplicate reminders when the job runs hourly.
+ * due in 3 days and within the next 24 hours. Fires the shared ss_app_event
+ * trigger with event_type=upcoming_payment_reminder for each. Idempotency keys
+ * prevent duplicate reminders when the job runs hourly.
  */
 export async function runPaymentReminderCheck(): Promise<{
   total: number;
@@ -177,7 +178,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
           payments_remaining: paymentsRemaining,
         },
       };
-      const result = await triggerService.fireTrigger(enr.location_id, 'ss_upcoming_payment_reminder', payload);
+      const result = await triggerService.fireTrigger(enr.location_id, 'ss_app_event', payload);
       if (result.sent > 0) {
         await idempotencyRepository.record(reminderEventId, 'payment_reminder', enr.location_id, {
           days_until_payment: window.daysUntilPayment,

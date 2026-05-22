@@ -27,12 +27,13 @@ Canonical payload variables:
 - `enrollment_id`
 - `offer_id`
 
-## `ss_upcoming_payment_reminder`
+## `ss_app_event` with `event_type = upcoming_payment_reminder`
 
 Use for 3-day and 1-day upcoming payment reminders.
 
 Canonical payload variables:
 
+- `event_type`
 - `program_name`
 - `offer_name`
 - `amount`

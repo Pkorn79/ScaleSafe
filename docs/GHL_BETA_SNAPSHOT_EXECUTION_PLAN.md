@@ -82,7 +82,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
 6. Confirm `SS - Pulse Check Due` exists, uses the shared Marketplace trigger `ss_app_event`, filters `Event Type = Pulse Check Due`, and the old tag-driven pulse cadence workflow is excluded.
 7. Confirm all active notification workflow email/SMS bodies use the canonical field replacements in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
-8. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_upcoming_payment_reminder` one day before billing and `ss_payment_received` after installments.
+8. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_app_event` with `event_type = upcoming_payment_reminder` before billing and `ss_payment_received` after installments.
 9. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
 10. Install the Snapshot into a fresh sandbox location.
 11. Install ScaleSafe into that fresh location.

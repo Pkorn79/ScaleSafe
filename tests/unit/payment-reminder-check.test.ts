@@ -86,7 +86,7 @@ describe('payment reminder check', () => {
 
     expect(result.sent).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_upcoming_payment_reminder', expect.objectContaining({
+    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_app_event', expect.objectContaining({
       event_type: 'upcoming_payment_reminder',
       contact_id: 'contact_1',
       contactId: 'contact_1',

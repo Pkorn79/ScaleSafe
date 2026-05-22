@@ -1,8 +1,8 @@
 import { VALID_TRIGGER_KEYS, isValidTriggerKey } from '../../src/constants/trigger-keys';
 
 describe('Trigger Keys', () => {
-  test('has 21 trigger keys', () => {
-    expect(VALID_TRIGGER_KEYS).toHaveLength(21);
+  test('has 20 trigger keys', () => {
+    expect(VALID_TRIGGER_KEYS).toHaveLength(20);
   });
 
   test('enrollment_complete is valid (no ss_ prefix)', () => {
@@ -11,6 +11,14 @@ describe('Trigger Keys', () => {
 
   test('ss_payment_received is valid', () => {
     expect(isValidTriggerKey('ss_payment_received')).toBe(true);
+  });
+
+  test('shared app event trigger is valid', () => {
+    expect(isValidTriggerKey('ss_app_event')).toBe(true);
+  });
+
+  test('retired upcoming payment reminder trigger key is invalid', () => {
+    expect(isValidTriggerKey('ss_upcoming_payment_reminder')).toBe(false);
   });
 
   test('unknown key is invalid', () => {
