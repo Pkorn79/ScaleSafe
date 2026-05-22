@@ -222,6 +222,11 @@ describe('paymentLedgerService', () => {
     expect(missing.payments).toHaveLength(0);
   });
 
+  it('rejects search terms that could break PostgREST or filters', async () => {
+    await expect(paymentLedgerService.list('loc_1', { search: 'phil@example.com),id.eq.pay_1' }))
+      .rejects.toThrow('Invalid search value');
+  });
+
   it('falls back to base payment columns when optional ledger columns are not deployed yet', async () => {
     mockMissingColumns.payment_events = ['customer_email'];
 

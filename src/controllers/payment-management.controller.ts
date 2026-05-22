@@ -10,13 +10,10 @@ import { nmiRecurringSyncService } from '../services/nmi-recurring-sync.service'
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
 import { logger } from '../utils/logger';
+import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
 
 function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
-}
-
-function isSafeSearchInput(value: string): boolean {
-  return value.length <= 80 && /^[A-Za-z0-9 @._+#:-]*$/.test(value);
 }
 
 function cleanCardDisplay(card: {
@@ -93,7 +90,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
   try {
     const locationId = resolveLocationId(req);
     const search = (req.query.search as string || '').trim();
-    if (search && !isSafeSearchInput(search)) {
+    if (search && !isSafeOrFilterSearchInput(search)) {
       res.status(400).json({ error: 'Invalid search value' });
       return;
     }
@@ -111,7 +108,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       .order('created_at', { ascending: false });
 
     if (search) {
-      const escaped = search.replace(/,/g, '');
+      const escaped = cleanPostgrestLikeTerm(search);
       query = query.or(`program_name.ilike.%${escaped}%,contact_id.ilike.%${escaped}%,customer_id.ilike.%${escaped}%`);
     }
 
@@ -298,8 +295,14 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
 export async function listPaymentLedger(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
+    const search = (req.query.search as string || '').trim();
+    if (search && !isSafeOrFilterSearchInput(search)) {
+      res.status(400).json({ error: 'Invalid search value' });
+      return;
+    }
+
     const result = await paymentLedgerService.list(locationId, {
-      search: (req.query.search as string) || '',
+      search,
       trackingId: (req.query.trackingId as string) || '',
       processor: (req.query.processor as string) || '',
       paymentType: (req.query.paymentType as string) || '',

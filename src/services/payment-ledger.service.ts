@@ -1,4 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
+import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
 
 export interface PaymentLedgerFilters {
   contactId?: string;
@@ -173,7 +174,7 @@ const ENROLLMENT_FALLBACK_DEFAULTS = {
 };
 
 function cleanLike(value: string): string {
-  return value.replace(/[%_,]/g, ' ').trim();
+  return cleanPostgrestLikeTerm(value);
 }
 
 function cleanTrackingLike(value: string): string {
@@ -273,6 +274,9 @@ async function findMatchingEnrollmentIds(
   filters: Pick<PaymentLedgerFilters, 'search' | 'trackingId' | 'paymentType'>,
 ): Promise<string[] | null> {
   const search = String(filters.search || '').trim();
+  if (search && !isSafeOrFilterSearchInput(search)) {
+    throw new Error('Invalid search value');
+  }
   const trackingId = String((filters as PaymentLedgerFilters).trackingId || '').trim();
   const paymentType = normalizePaymentType(filters.paymentType);
   const needsPreFilter = !!search || !!trackingId || (paymentType && paymentType !== 'unknown');

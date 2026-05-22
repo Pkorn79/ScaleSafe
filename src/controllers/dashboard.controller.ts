@@ -12,6 +12,7 @@ import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { logger } from '../utils/logger';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { isSafeOrFilterSearchInput } from '../utils/search-input';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -1284,6 +1285,9 @@ export const dashboardController = {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
       const search = (req.query.search as string || '').trim();
+      if (search && !isSafeOrFilterSearchInput(search)) {
+        throw new ValidationError('Invalid search value');
+      }
       const status = req.query.status as string || '';
       const offset = (page - 1) * limit;
 
