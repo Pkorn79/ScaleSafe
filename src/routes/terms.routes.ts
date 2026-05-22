@@ -9,12 +9,14 @@ function esc(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function isAllowedTermsRedirect(value: string): boolean {
+function normalizeTermsRedirectUrl(value: string): string | null {
   try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || (process.env.NODE_ENV !== 'production' && url.protocol === 'http:');
+    const url = new URL(String(value || '').trim());
+    const isAllowedProtocol = url.protocol === 'https:'
+      || (process.env.NODE_ENV !== 'production' && url.protocol === 'http:');
+    return isAllowedProtocol ? url.href : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -32,12 +34,13 @@ router.get('/:locationId', async (req: Request, res: Response) => {
 
     // Priority 1: External URL redirect
     if (config.tcHasOwn && config.tcDocumentUrl) {
-      if (!isAllowedTermsRedirect(config.tcDocumentUrl)) {
+      const redirectUrl = normalizeTermsRedirectUrl(config.tcDocumentUrl);
+      if (!redirectUrl) {
         logger.warn({ locationId }, 'Blocked invalid terms redirect URL');
         res.status(400).send(termsPageHtml('Terms Not Available', '<p>The merchant terms link is not configured correctly.</p>', config.businessName || merchant.business_name || ''));
         return;
       }
-      res.redirect(config.tcDocumentUrl);
+      res.redirect(redirectUrl);
       return;
     }
 
