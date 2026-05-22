@@ -24,6 +24,38 @@ const ssoSession = reactive<SsoSession>({
 
 let ssoInitPromise: Promise<void> | null = null;
 
+const DEFAULT_GHL_PARENT_ORIGINS = [
+  'https://app.gohighlevel.com',
+  'https://app.leadconnectorhq.com',
+];
+
+function parseOrigins(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function getReferrerOrigin(): string {
+  try {
+    return document.referrer ? new URL(document.referrer).origin : '';
+  } catch {
+    return '';
+  }
+}
+
+function allowedParentOrigins(): string[] {
+  return Array.from(new Set([
+    getReferrerOrigin(),
+    ...parseOrigins(import.meta.env.VITE_GHL_PARENT_ORIGINS),
+    ...DEFAULT_GHL_PARENT_ORIGINS,
+  ].filter(Boolean)));
+}
+
+function isAllowedParentOrigin(origin: string): boolean {
+  return allowedParentOrigins().includes(origin);
+}
+
 /**
  * Initialize SSO by requesting user data from the GHL parent frame via postMessage.
  * GHL responds with an encrypted payload, which we send to our backend for decryption.
@@ -50,6 +82,7 @@ function initSso(): Promise<void> {
 
     // Listen for GHL's response
     const handler = async (event: MessageEvent) => {
+      if (!isAllowedParentOrigin(event.origin)) return;
       if (event.data?.message !== 'REQUEST_USER_DATA_RESPONSE') return;
       window.removeEventListener('message', handler);
 
@@ -111,7 +144,9 @@ function initSso(): Promise<void> {
     }, 5000);
 
     // Request user data from GHL parent
-    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
+    allowedParentOrigins().forEach((origin) => {
+      window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, origin);
+    });
   });
 
   return ssoInitPromise;

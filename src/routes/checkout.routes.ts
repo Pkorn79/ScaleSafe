@@ -183,15 +183,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   var API_BASE = '';
 
+  function ssParentOrigins() {
+    var origins = ['https://app.gohighlevel.com', 'https://app.leadconnectorhq.com'];
+    try {
+      if (document.referrer) origins.unshift(new URL(document.referrer).origin);
+    } catch(e) {}
+    return origins.filter(function(origin, index) { return origin && origins.indexOf(origin) === index; });
+  }
+
+  function ssPostToParent(message) {
+    if (window.parent === window) return;
+    ssParentOrigins().forEach(function(origin) {
+      try { window.parent.postMessage(message, origin); } catch(e) {}
+    });
+  }
+
+  function ssIsTrustedParentMessage(event) {
+    return ssParentOrigins().indexOf(event.origin) !== -1;
+  }
+
   // ─── PostMessage: send ready signal ─────────────────────
-  window.parent.postMessage({
+  ssPostToParent({
     type: 'custom_provider_ready',
     loaded: true,
     addCardOnFileSupported: true
-  }, '*');
+  });
 
   // ─── PostMessage: listen for GHL events ─────────────────
   window.addEventListener('message', function(event) {
+    if (!ssIsTrustedParentMessage(event)) return;
     var d = event.data;
     if (!d || !d.type) return;
     if (d.type === 'payment_initiate_props') initPayment(d);
@@ -455,10 +475,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         state.processing = false;
         setLoading(false);
         if (data.success) {
-          window.parent.postMessage({
+          ssPostToParent({
             type: 'custom_element_success_response',
             chargeId: data.paymentMethodId
-          }, '*');
+          });
         } else {
           showError(data.error || 'Failed to save card');
         }
@@ -503,10 +523,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       state.processing = false;
       setLoading(false);
       if (data.success) {
-        window.parent.postMessage({
+        ssPostToParent({
           type: 'custom_element_success_response',
           chargeId: data.chargeId
-        }, '*');
+        });
       } else if (data.threeDSecureUrl) {
         window.location.href = data.threeDSecureUrl;
       } else {
@@ -729,8 +749,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (cb) cb.checked = true;
   })();
 
+  function ssCheckoutParentOrigins() {
+    var origins = ['https://app.gohighlevel.com', 'https://app.leadconnectorhq.com'];
+    try {
+      if (document.referrer) origins.unshift(new URL(document.referrer).origin);
+    } catch(e) {}
+    return origins.filter(function(origin, index) { return origin && origins.indexOf(origin) === index; });
+  }
+
+  function ssCheckoutPostToParent(message) {
+    if (window.parent === window) return;
+    ssCheckoutParentOrigins().forEach(function(origin) {
+      try { window.parent.postMessage(message, origin); } catch(e) {}
+    });
+  }
+
+  function ssCheckoutIsTrustedParentMessage(event) {
+    return ssCheckoutParentOrigins().indexOf(event.origin) !== -1;
+  }
+
   // Listen for GHL postMessage (paymentsUrl protocol)
   window.addEventListener('message', function(e) {
+    if (!ssCheckoutIsTrustedParentMessage(e)) return;
     try {
       var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
       if (d.action === 'payment_initiate_props') {
@@ -1086,14 +1126,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       // In GHL iframe: notify parent
       if (window !== window.parent) {
         try {
-          window.parent.postMessage(JSON.stringify({
+          ssCheckoutPostToParent(JSON.stringify({
             action: 'custom_element_success_response',
             chargeId: data.chargeId,
             transactionId: data.chargeId
-          }), '*');
+          }));
         } catch(e){}
         setTimeout(function() {
-          try { window.parent.postMessage({ type: 'ssPaymentComplete' }, '*'); } catch(e) {}
+          try { ssCheckoutPostToParent({ type: 'ssPaymentComplete' }); } catch(e) {}
         }, 1500);
       } else {
         // Standalone: redirect to thank-you page or returnUrl

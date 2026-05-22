@@ -107,6 +107,21 @@ var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 
+function ssParentOrigins() {
+  var origins = ['https://app.gohighlevel.com', 'https://app.leadconnectorhq.com'];
+  try {
+    if (document.referrer) origins.unshift(new URL(document.referrer).origin);
+  } catch(e) {}
+  return origins.filter(function(origin, index) { return origin && origins.indexOf(origin) === index; });
+}
+
+function ssPostToParent(message) {
+  if (window.parent === window) return;
+  ssParentOrigins().forEach(function(origin) {
+    try { window.parent.postMessage(message, origin); } catch(e) {}
+  });
+}
+
 var state = {
   config: null,
   nmiToken: '',
@@ -289,7 +304,7 @@ async function doSubmit(token, processorType) {
     el('success-msg').classList.remove('hidden');
 
     // Notify parent (GHL iframe)
-    window.parent.postMessage({ type: 'ssPaymentMethodUpdated', last4: data.last4, brand: data.brand }, '*');
+    ssPostToParent({ type: 'ssPaymentMethodUpdated', last4: data.last4, brand: data.brand });
   } catch (err) {
     showError(err.message || 'Failed to update payment method. Please try again.');
   }
@@ -377,6 +392,21 @@ var actionToken = params.get('actionToken') || params.get('token') || '';
 var contactId = params.get('contactId') || '';
 var locationId = params.get('locationId') || '';
 
+function ssParentOrigins() {
+  var origins = ['https://app.gohighlevel.com', 'https://app.leadconnectorhq.com'];
+  try {
+    if (document.referrer) origins.unshift(new URL(document.referrer).origin);
+  } catch(e) {}
+  return origins.filter(function(origin, index) { return origin && origins.indexOf(origin) === index; });
+}
+
+function ssPostToParent(message) {
+  if (window.parent === window) return;
+  ssParentOrigins().forEach(function(origin) {
+    try { window.parent.postMessage(message, origin); } catch(e) {}
+  });
+}
+
 (async function init() {
   if (!actionToken && (!contactId || !locationId)) {
     document.getElementById('loading').classList.add('hidden');
@@ -432,7 +462,7 @@ async function submitCancel() {
 
     document.getElementById('cancel-form').classList.add('hidden');
     document.getElementById('success-msg').classList.remove('hidden');
-    window.parent.postMessage({ type: 'ssSubscriptionCancelled' }, '*');
+    ssPostToParent({ type: 'ssSubscriptionCancelled' });
   } catch (err) {
     document.getElementById('error-msg').textContent = err.message || 'Cancellation failed. Please try again.';
     document.getElementById('error-msg').classList.remove('hidden');
