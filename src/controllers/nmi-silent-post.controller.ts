@@ -127,6 +127,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         .from('payment_events')
         .select('id')
         .eq('processor_transaction_id', transactionId)
+        .eq('location_id', enrollment.location_id)
         .maybeSingle();
       if (existing) {
         logger.debug({ transactionId }, 'NMI Silent Post: transaction already processed - skipping');
@@ -139,6 +140,17 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         res.status(200).json({ received: true });
         return;
       }
+    }
+
+    if (nmiResponse === '1' && !transactionId) {
+      logger.warn({ subscriptionId }, 'NMI Silent Post: approved payment missing transaction id - ignoring');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        verification_status: 'failed',
+        action: 'ignored_missing_transaction_id',
+        error_message: 'Approved NMI payment post did not include a transaction id',
+      });
+      res.status(200).json({ received: true });
+      return;
     }
 
     let installmentFrequency = 'monthly';

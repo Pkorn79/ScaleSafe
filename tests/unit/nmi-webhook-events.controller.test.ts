@@ -166,6 +166,29 @@ describe('NMI official webhook events', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  it('logs invalid signed events even when no processor config is matched', async () => {
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'processor_configs') return queryBuilder(null);
+      return queryBuilder(null);
+    });
+
+    const { req, res } = makeReqRes({
+      event_id: 'evt_bad_unmatched',
+      event_type: 'transaction.sale.success',
+      event_body: { transaction_id: 'txn_bad_unmatched' },
+    }, 'wrong_secret');
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockDiagnosticCreate).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'evt_bad_unmatched',
+      signature_verified: false,
+      action: 'ignored_invalid_signature',
+    }));
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
   it('deduplicates by NMI event_id', async () => {
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'processor_configs') return queryBuilder(processorConfig);
@@ -207,6 +230,27 @@ describe('NMI official webhook events', () => {
     }));
   });
 
+  it('does not process successful sale events without a transaction id', async () => {
+    const { req, res } = makeReqRes({
+      event_id: 'evt_missing_txn',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        subscription_id: 'sub_1',
+        action: { source: 'recurring', amount: '0.33', response_code: '1' },
+      },
+    });
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockDiagnosticUpdate).toHaveBeenCalledWith('log_1', expect.objectContaining({
+      action: 'ignored_missing_transaction_id',
+      verification_status: 'failed',
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('processes official events on the generic existing NMI webhook URL by matching the signature key', async () => {
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'processor_configs') return queryBuilder(processorConfig, { thenData: [processorConfig] });
@@ -235,5 +279,36 @@ describe('NMI official webhook events', () => {
       source: 'nmi_webhook_event',
     }));
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('logs official events that cannot be matched to a processor config', async () => {
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'processor_configs') return queryBuilder(null, { thenData: [] });
+      if (table === 'enrollments') return queryBuilder(null);
+      return queryBuilder(null);
+    });
+
+    const { req, res } = makeReqRes({
+      event_id: 'evt_unmatched_config',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        transaction_id: 'txn_unmatched_config',
+        subscription_id: 'missing_sub',
+        action: { source: 'recurring', amount: '0.33', response_code: '1' },
+      },
+    });
+    req.params = {};
+    req.get = jest.fn(() => undefined);
+
+    await processNmiOfficialWebhookRequest(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockDiagnosticCreate).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'evt_unmatched_config',
+      action: 'ignored_unmatched_processor_config',
+      matched: false,
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ received: true, matched: false });
   });
 });

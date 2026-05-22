@@ -172,4 +172,19 @@ describe('NMI Silent Post webhook', () => {
     expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  it('does not process approved posts that do not include a transaction id', async () => {
+    const { req, res } = createReqRes({
+      subscription_id: 'sub_1',
+      response: '1',
+      amount: '10.00',
+    });
+
+    await handleNmiSilentPost(req, res);
+
+    expect(mockResolveProcessor).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });

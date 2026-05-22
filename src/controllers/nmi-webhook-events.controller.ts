@@ -286,6 +286,34 @@ async function createDiagnosticLog(
   });
 }
 
+async function createUnmatchedDiagnosticLog(
+  payload: any,
+  fields: Record<string, unknown> = {},
+): Promise<string | null> {
+  const body = eventBody(payload);
+  return nmiDiagnosticLogService.create({
+    webhook_kind: 'nmi_event',
+    event_id: getEventId(payload) || null,
+    event_type: getEventType(payload) || null,
+    signature_verified: fields.signature_verified ?? false,
+    nmi_merchant_id: getNmiMerchantId(payload) || null,
+    nmi_processor_id: firstString(body, ['processor_id', 'action.processor_id', 'processor.id']) || null,
+    processor_subscription_id: getSubscriptionId(payload) || null,
+    transaction_id: getTransactionId(payload) || null,
+    amount: getAmount(payload) || null,
+    response_code: getResponseCode(payload) || null,
+    response_text: getResponseText(payload) || null,
+    matched: false,
+    verification_status: 'skipped',
+    action: 'unmatched_event_received',
+    raw_keys: Array.from(new Set([
+      ...Object.keys(payload || {}),
+      ...Object.keys(body || {}).map((key) => `event_body.${key}`),
+    ])).sort(),
+    ...fields,
+  });
+}
+
 async function updateDiagnosticLog(logId: string | null, fields: Record<string, unknown>): Promise<void> {
   await nmiDiagnosticLogService.update(logId, fields);
 }
@@ -367,11 +395,21 @@ async function processTransactionEvent(
   });
 
   const transactionId = getTransactionId(payload);
+  if (eventType === TRANSACTION_SUCCESS && !transactionId) {
+    await updateDiagnosticLog(logId, {
+      action: 'ignored_missing_transaction_id',
+      verification_status: 'failed',
+      error_message: 'Approved NMI sale event did not include a transaction id',
+    });
+    return;
+  }
+
   if (transactionId) {
     const { data: existing } = await supabase
       .from('payment_events')
       .select('id')
       .eq('processor_transaction_id', transactionId)
+      .eq('location_id', enrollment.location_id)
       .maybeSingle();
 
     if (existing) {
@@ -506,6 +544,13 @@ async function rejectInvalidSignature(
       error_message: message,
     });
     await updateWebhookStatus(supabase, config.id, 'signature_failed', message);
+  } else {
+    await createUnmatchedDiagnosticLog(payload, {
+      signature_verified: false,
+      verification_status: 'failed',
+      action: 'ignored_invalid_signature',
+      error_message: message,
+    });
   }
   logger.warn({ eventType: getEventType(payload), eventId: getEventId(payload) }, 'NMI official webhook rejected: invalid signature');
   res.status(401).json({ received: false, error: 'invalid signature' });
@@ -594,6 +639,11 @@ export async function processNmiOfficialWebhookRequest(
         subscriptionId: getSubscriptionId(payload),
         transactionId: getTransactionId(payload),
       }, 'NMI official webhook could not be matched to a processor config');
+      await createUnmatchedDiagnosticLog(payload, {
+        signature_verified: resolved.signatureVerified === true,
+        action: 'ignored_unmatched_processor_config',
+        error_message: 'No active NMI processor config matched this official NMI event',
+      });
       res.status(200).json({ received: true, matched: false });
       return;
     }
