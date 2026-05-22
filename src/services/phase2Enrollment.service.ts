@@ -504,11 +504,11 @@ export const phase2EnrollmentService = {
     });
 
     // Increment payments_made + advance or finish billing.
-    await enrollmentRepository.incrementPaymentsMade(params.enrollmentId);
+    await enrollmentRepository.incrementPaymentsMade(params.enrollmentId, params.locationId);
     try {
-      const enr = await enrollmentRepository.getById(params.enrollmentId);
+      const enr = await enrollmentRepository.getById(params.enrollmentId, params.locationId);
       if (enr.offer_id) {
-        const ofr = await offerRepository.findById(enr.offer_id);
+        const ofr = await offerRepository.findById(enr.offer_id, params.locationId);
         if (ofr) {
           const isFinalInstallment = enr.payment_type !== 'subscription'
             && enr.payments_total != null
@@ -549,7 +549,7 @@ export const phase2EnrollmentService = {
     });
 
     // Fire trigger — flat doc contract: contact_id, amount, transaction_id, payments_remaining, running_total, payment_kind
-    const enrollment = await enrollmentRepository.getById(params.enrollmentId);
+    const enrollment = await enrollmentRepository.getById(params.enrollmentId, params.locationId);
     const runningTotal = (enrollment.payments_made) * params.amount;
     const paymentKind: 'installment' | 'subscription' = enrollment.payment_type === 'subscription' ? 'subscription' : 'installment';
     let programName = '';
@@ -557,7 +557,7 @@ export const phase2EnrollmentService = {
     let businessName = '';
     try {
       if (enrollment.offer_id) {
-        const offer = await offerRepository.findById(enrollment.offer_id);
+        const offer = await offerRepository.findById(enrollment.offer_id, params.locationId);
         programName = offer?.offer_name || '';
       }
       const merchant = await merchantRepository.getByLocationId(params.locationId);

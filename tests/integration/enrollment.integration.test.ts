@@ -38,9 +38,30 @@ let idCounter = 0;
 
 function genId() { return `test_${++idCounter}`; }
 
+const mockSupabaseRpc = jest.fn((fn: string, args: any) => {
+  if (fn === 'increment_enrollment_payments_made') {
+    const enrollment = enrollmentStore[args.p_enrollment_id];
+    if (!enrollment || (args.p_location_id && enrollment.location_id !== args.p_location_id)) {
+      return { data: [], error: null };
+    }
+    enrollment.payments_made = (enrollment.payments_made || 0) + 1;
+    return {
+      data: [{
+        payments_made: enrollment.payments_made,
+        payments_total: enrollment.payments_total,
+        billing_completed_at: enrollment.billing_completed_at,
+        next_billing_date: enrollment.next_billing_date,
+      }],
+      error: null,
+    };
+  }
+  return { data: null, error: null };
+});
+
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
     from: (table: string) => createMockTable(table),
+    rpc: mockSupabaseRpc,
   }),
 }));
 

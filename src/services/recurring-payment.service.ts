@@ -98,8 +98,15 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
   const isNmiHistorySync = source === 'nmi_history_sync';
-  const newPaymentsMade = (enr.payments_made || 0) + 1;
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
+  const { data: incrementRows, error: incrementError } = await supabase.rpc('increment_enrollment_payments_made', {
+    p_enrollment_id: enr.id,
+    p_location_id: enr.location_id,
+  });
+  if (incrementError) throw incrementError;
+
+  const incremented = Array.isArray(incrementRows) ? incrementRows[0] : null;
+  const newPaymentsMade = Number(incremented?.payments_made || (enr.payments_made || 0) + 1);
   const paymentsRemaining = isFiniteInstallment
     ? Math.max(0, Number(enr.payments_total) - newPaymentsMade)
     : null;
@@ -144,8 +151,8 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     }, 'Recurring payment: payment_events insert failed — enrollment will still advance, ledger row missing');
   }
 
-  // 2. Advance enrollment state
-  const updates: any = { payments_made: newPaymentsMade };
+  // 2. Advance billing schedule/final state. payments_made was already incremented atomically above.
+  const updates: any = {};
 
   if (isFinal) {
     updates.next_billing_date = null;
@@ -162,7 +169,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     updates.next_billing_date = next.toISOString().split('T')[0];
   }
 
-  await supabase.from('enrollments').update(updates).eq('id', enr.id);
+  await supabase.from('enrollments').update(updates).eq('id', enr.id).eq('location_id', enr.location_id);
 
   // 3. Log evidence (non-blocking)
   try {

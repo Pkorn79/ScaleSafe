@@ -122,15 +122,16 @@ export const enrollmentRepository = {
     return data;
   },
 
-  async incrementPaymentsMade(id: string): Promise<void> {
-    // Fetch current, increment, update
-    const enrollment = await this.getById(id);
-    const { error } = await getSupabase()
-      .from('enrollments')
-      .update({ payments_made: enrollment.payments_made + 1 })
-      .eq('id', id);
+  async incrementPaymentsMade(id: string, locationId?: string): Promise<void> {
+    const { data, error } = await getSupabase().rpc('increment_enrollment_payments_made', {
+      p_enrollment_id: id,
+      p_location_id: locationId || null,
+    });
 
     if (error) throw error;
+    if (locationId && (!Array.isArray(data) || data.length === 0)) {
+      throw new NotFoundError(`Enrollment ${id}`);
+    }
   },
 
   async listByLocation(

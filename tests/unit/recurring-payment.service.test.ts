@@ -1,10 +1,11 @@
 const mockFrom = jest.fn();
+const mockRpc = jest.fn();
 const mockGhlPut = jest.fn();
 const mockFireTrigger = jest.fn();
 const mockLogEvidence = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({ from: mockFrom }),
+  getSupabase: () => ({ from: mockFrom, rpc: mockRpc }),
 }));
 
 jest.mock('../../src/clients/ghl.client', () => ({
@@ -51,15 +52,29 @@ describe('recurring payment lifecycle', () => {
       if (table === 'enrollments') {
         return {
           update: jest.fn((updates: any) => ({
-            eq: jest.fn((column: string, id: string) => {
-              enrollmentUpdates.push({ column, id, updates });
-              return Promise.resolve({ error: null });
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn((column: string, id: string) => {
+                enrollmentUpdates.push({ column, id, updates });
+                return Promise.resolve({ error: null });
+              }),
             }),
           })),
         };
       }
 
       throw new Error(`Unexpected table ${table}`);
+    });
+
+    mockRpc.mockImplementation((_fn: string, params: any) => {
+      const madeByEnrollment: Record<string, number> = {
+        enr_1: 2,
+        enr_sub: 5,
+        enr_history: 2,
+      };
+      return Promise.resolve({
+        data: [{ payments_made: madeByEnrollment[params.p_enrollment_id] || 1 }],
+        error: null,
+      });
     });
   });
 
@@ -86,9 +101,9 @@ describe('recurring payment lifecycle', () => {
 
     expect(result.isFinal).toBe(true);
     expect(enrollmentUpdates[0].updates).toEqual(expect.objectContaining({
-      payments_made: 2,
       next_billing_date: null,
     }));
+    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
     expect(enrollmentUpdates[0].updates.billing_completed_at).toEqual(expect.any(String));
     expect(enrollmentUpdates[0].updates).not.toHaveProperty('status');
     expect(enrollmentUpdates[0].updates).not.toHaveProperty('completed_at');
@@ -142,7 +157,7 @@ describe('recurring payment lifecycle', () => {
     });
 
     expect(result.isFinal).toBe(false);
-    expect(enrollmentUpdates[0].updates.payments_made).toBe(5);
+    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
     expect(enrollmentUpdates[0].updates.next_billing_date).toEqual(expect.any(String));
     expect(enrollmentUpdates[0].updates).not.toHaveProperty('billing_completed_at');
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
@@ -175,7 +190,7 @@ describe('recurring payment lifecycle', () => {
       processor_transaction_id: '12061861902',
       source: 'nmi_history_sync',
     }));
-    expect(enrollmentUpdates[0].updates.payments_made).toBe(2);
+    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
     expect(mockGhlPut).not.toHaveBeenCalled();
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
   });

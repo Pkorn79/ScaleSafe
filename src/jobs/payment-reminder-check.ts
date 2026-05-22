@@ -91,7 +91,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
         enr.next_billing_date,
         window.type,
       ].join(':');
-      if (await idempotencyRepository.exists(reminderEventId, 'payment_reminder')) {
+      if (await idempotencyRepository.exists(reminderEventId, 'payment_reminder', enr.location_id)) {
         skipped++;
         continue;
       }

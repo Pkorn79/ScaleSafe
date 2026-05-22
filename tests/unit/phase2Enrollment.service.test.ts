@@ -168,7 +168,7 @@ describe('Phase 2 Enrollment Service - handleRecurringPayment', () => {
         payments_remaining: 4,
       }),
     );
-    expect(mockEnrollmentIncrementPayments).toHaveBeenCalledWith('enr_1');
+    expect(mockEnrollmentIncrementPayments).toHaveBeenCalledWith('enr_1', 'loc_1');
     expect(mockEvidenceCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         evidence_type: 'payment_received',

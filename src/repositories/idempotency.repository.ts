@@ -1,10 +1,11 @@
 import { getSupabase } from '../clients/supabase.client';
 
 export const idempotencyRepository = {
-  async exists(eventId: string, source: string): Promise<boolean> {
+  async exists(eventId: string, source: string, locationId: string): Promise<boolean> {
     const { data, error } = await getSupabase()
       .from('idempotency_keys')
       .select('id')
+      .eq('location_id', locationId)
       .eq('event_id', eventId)
       .eq('source', source)
       .maybeSingle();

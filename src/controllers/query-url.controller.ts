@@ -32,6 +32,9 @@ function isSafeProcessorReference(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value);
 }
 
+const REFUND_PAYMENT_EVENT_TYPES = ['payment_success', 'payment_received', 'sale'];
+const REFUND_EVENT_TYPES = ['refund', 'refund_processed'];
+
 /** Cents → dollars (for GHL response snapshots) */
 function centsToDollars(cents: number): number {
   return cents / 100;
@@ -405,12 +408,16 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
   }
 
   const amountCents = amount ? dollarsToCents(amount) : undefined;
+  if (amountCents !== undefined && amountCents <= 0) {
+    res.status(400).json({ success: false, message: 'Invalid refund amount' });
+    return;
+  }
 
   // Look up processor transaction
   const supabase = getSupabase();
   const { data: mapping } = await supabase
     .from('transaction_mappings')
-    .select('processor_transaction_id, processor_type')
+    .select('processor_transaction_id, processor_type, contact_id')
     .or(`processor_charge_id.eq.${chargeId},processor_transaction_id.eq.${chargeId}`)
     .eq('merchant_id', merchant.merchantId)
     .single();
@@ -418,6 +425,42 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
   if (!mapping) {
     res.json({ success: false, message: 'Transaction not found for refund' });
     return;
+  }
+
+  const { data: originalPayment } = await supabase
+    .from('payment_events')
+    .select('id, amount')
+    .eq('location_id', merchant.locationId)
+    .eq('processor_transaction_id', mapping.processor_transaction_id)
+    .in('event_type', REFUND_PAYMENT_EVENT_TYPES)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  let priorRefundTotal = 0;
+  if (originalPayment) {
+    const { data: priorRefunds } = await supabase
+      .from('payment_events')
+      .select('amount')
+      .eq('location_id', merchant.locationId)
+      .in('event_type', REFUND_EVENT_TYPES)
+      .eq('raw_webhook_payload->>original_processor_transaction_id', mapping.processor_transaction_id);
+
+    priorRefundTotal = (priorRefunds || [])
+      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+
+    const originalAmount = Number(originalPayment.amount || 0);
+    const requestedAmount = amountCents === undefined
+      ? Math.max(0, originalAmount - priorRefundTotal)
+      : amountCents / 100;
+
+    if (requestedAmount <= 0 || requestedAmount + priorRefundTotal > originalAmount + 0.0001) {
+      res.status(400).json({
+        success: false,
+        message: 'Refund amount exceeds remaining refundable balance',
+      });
+      return;
+    }
   }
 
   const { config } = await resolveMappedProcessor(merchant, mapping.processor_type);
@@ -429,12 +472,31 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
   });
 
   if (result.success) {
+    const refundAmount = amount ?? (result.amount ? centsToDollars(result.amount) : Number(originalPayment?.amount || 0) - priorRefundTotal);
+    await supabase.from('payment_events').insert({
+      merchant_id: merchant.merchantId,
+      location_id: merchant.locationId,
+      contact_id: mapping.contact_id || '',
+      event_type: 'refund',
+      processor: config.processor_type,
+      processor_transaction_id: result.refundId || null,
+      amount: refundAmount,
+      currency: 'usd',
+      source: 'query_url_refund',
+      raw_webhook_payload: {
+        original_processor_transaction_id: mapping.processor_transaction_id,
+        charge_id: chargeId,
+        requested_amount: amount ?? null,
+      },
+      is_recurring: false,
+    });
+
     logger.info({
       event: 'refund_processed',
       merchantId: merchant.merchantId,
       locationId: merchant.locationId,
       refundId: result.refundId,
-      amount: amount || 0,
+      amount: refundAmount,
       chargeId,
       timestamp: new Date().toISOString(),
     }, 'Refund processed successfully');
@@ -443,7 +505,7 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
       success: true,
       message: 'Refund successful',
       id: result.refundId,
-      amount: amount || 0,
+      amount: refundAmount,
       currency: 'USD',
     });
   } else {

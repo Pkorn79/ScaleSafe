@@ -55,6 +55,50 @@ const mockProcessor = {
   refund: jest.fn(),
 };
 
+function mockRefundTables(mapping: any, originalPayment: any = { id: 'pe_original', amount: 100 }, priorRefunds: any[] = []) {
+  const refundInsert = jest.fn().mockResolvedValue({ error: null });
+  mockFrom.mockImplementation((table: string) => {
+    if (table === 'transaction_mappings') {
+      return {
+        select: jest.fn().mockReturnValue({
+          or: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: mapping }),
+            }),
+          }),
+        }),
+      };
+    }
+
+    if (table === 'payment_events') {
+      return {
+        insert: refundInsert,
+        select: jest.fn((columns: string) => {
+          if (columns === 'id, amount') {
+            const chain: any = {};
+            chain.eq = jest.fn().mockReturnValue(chain);
+            chain.in = jest.fn().mockReturnValue(chain);
+            chain.order = jest.fn().mockReturnValue(chain);
+            chain.limit = jest.fn().mockReturnValue(chain);
+            chain.maybeSingle = jest.fn().mockResolvedValue({ data: originalPayment, error: null });
+            return chain;
+          }
+          return {
+            eq: jest.fn().mockReturnValue({
+              in: jest.fn().mockReturnValue({
+                eq: jest.fn().mockResolvedValue({ data: priorRefunds, error: null }),
+              }),
+            }),
+          };
+        }),
+      };
+    }
+
+    throw new Error(`Unexpected table ${table}`);
+  });
+  return refundInsert;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetMerchantByApiKey.mockResolvedValue(MERCHANT);
@@ -348,16 +392,10 @@ describe('queryUrl Controller', () => {
 
   describe('refund', () => {
     it('converts dollars to cents for refund', async () => {
-      mockFrom.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          or: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              single: jest.fn().mockResolvedValue({
-                data: { processor_transaction_id: 'txn_1', processor_type: 'nmi' },
-              }),
-            }),
-          }),
-        }),
+      const refundInsert = mockRefundTables({
+        processor_transaction_id: 'txn_1',
+        processor_type: 'nmi',
+        contact_id: 'contact_1',
       });
 
       mockProcessor.refund.mockResolvedValue({
@@ -382,6 +420,15 @@ describe('queryUrl Controller', () => {
       });
       // Verify dollars → cents
       expect(mockProcessor.refund.mock.calls[0][0].amount).toBe(5000);
+      expect(refundInsert).toHaveBeenCalledWith(expect.objectContaining({
+        event_type: 'refund',
+        processor: 'nmi',
+        processor_transaction_id: 'ref_1',
+        amount: 50,
+        raw_webhook_payload: expect.objectContaining({
+          original_processor_transaction_id: 'txn_1',
+        }),
+      }));
 
       const result = (res.json as jest.Mock).mock.calls[0][0];
       expect(result.success).toBe(true);
@@ -389,16 +436,10 @@ describe('queryUrl Controller', () => {
     });
 
     it('uses the mapped Stripe processor when refunding a Stripe transaction', async () => {
-      mockFrom.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          or: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              single: jest.fn().mockResolvedValue({
-                data: { processor_transaction_id: 'stripe_txn_1', processor_type: 'stripe' },
-              }),
-            }),
-          }),
-        }),
+      mockRefundTables({
+        processor_transaction_id: 'stripe_txn_1',
+        processor_type: 'stripe',
+        contact_id: 'contact_1',
       });
 
       mockProcessor.refund.mockResolvedValue({
@@ -432,6 +473,30 @@ describe('queryUrl Controller', () => {
         amount: 25.00,
         currency: 'USD',
       });
+    });
+
+    it('rejects refunds above the remaining refundable balance', async () => {
+      mockRefundTables({
+        processor_transaction_id: 'txn_1',
+        processor_type: 'nmi',
+        contact_id: 'contact_1',
+      }, { id: 'pe_original', amount: 100 }, [{ amount: 80 }]);
+
+      const req = mockReq({
+        type: 'refund',
+        apiKey: 'valid',
+        amount: 25.00,
+        chargeId: 'ch_1',
+      });
+      const res = mockRes();
+      await handleQueryUrl(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Refund amount exceeds remaining refundable balance',
+      });
+      expect(mockProcessor.refund).not.toHaveBeenCalled();
     });
   });
 });
