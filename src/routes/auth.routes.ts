@@ -6,13 +6,32 @@ import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError } from '../utils/errors';
+import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
 
 const router = Router();
+const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
 
 function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
   if (config.isProd || !debug) return undefined;
   return debug;
 }
+
+function validateOAuthCode(code: string): void {
+  if (!GHL_CODE_PATTERN.test(code)) {
+    throw new ValidationError('Invalid authorization code');
+  }
+}
+
+router.get('/install', (_req: Request, res: Response) => {
+  const state = createGhlOAuthState();
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: config.ghl.clientId,
+    redirect_uri: `${config.appUrl}/auth/callback`,
+    state,
+  });
+  res.redirect(`https://marketplace.gohighlevel.com/oauth/chooselocation?${params.toString()}`);
+});
 
 /**
  * GET /auth/callback
@@ -20,8 +39,16 @@ function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
  */
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const code = req.query.code as string;
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
     if (!code) throw new ValidationError('Missing authorization code');
+    validateOAuthCode(code);
+
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    if (state) {
+      verifyGhlOAuthState(state);
+    } else if (config.isDev) {
+      logger.debug('GHL OAuth callback did not include state; accepting documented Marketplace install callback');
+    }
 
     logger.info('OAuth callback received, exchanging code for tokens');
 

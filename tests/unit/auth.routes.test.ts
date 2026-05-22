@@ -41,7 +41,14 @@ jest.mock('../../src/utils/crypto', () => ({
 }));
 
 jest.mock('../../src/config', () => ({
-  config: { ghl: { ssoKey: 'test-key' }, isProd: false },
+  config: {
+    ghl: { clientId: 'test-ghl-client-id', ssoKey: 'test-key' },
+    appUrl: 'https://dashboard.scalesafe.test',
+    publicActionTokenSecret: 'test_public_action_secret_1234567890',
+    processorEncryptionKey: 'test_processor_secret_1234567890',
+    isProd: false,
+    isDev: false,
+  },
 }));
 
 jest.mock('../../src/utils/logger', () => ({
@@ -52,6 +59,7 @@ import express from 'express';
 import request from 'supertest';
 import authRoutes from '../../src/routes/auth.routes';
 import { config as testConfig } from '../../src/config';
+import { createGhlOAuthState } from '../../src/utils/ghl-oauth-state';
 
 const app = express();
 app.use(express.json());
@@ -84,10 +92,35 @@ beforeEach(() => {
 });
 
 describe('GET /auth/callback', () => {
+  it('starts ScaleSafe-controlled installs with a signed OAuth state', async () => {
+    const res = await request(app).get('/auth/install');
+
+    expect(res.status).toBe(302);
+    const redirect = new URL(res.headers.location);
+    expect(redirect.origin + redirect.pathname).toBe('https://marketplace.gohighlevel.com/oauth/chooselocation');
+    expect(redirect.searchParams.get('client_id')).toBe('test-ghl-client-id');
+    expect(redirect.searchParams.get('redirect_uri')).toBe('https://dashboard.scalesafe.test/auth/callback');
+    expect(redirect.searchParams.get('state')).toContain('.');
+  });
+
   it('returns 400 when authorization code is missing', async () => {
     const res = await request(app).get('/auth/callback');
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/Missing authorization code/);
+  });
+
+  it('rejects malformed authorization codes before token exchange', async () => {
+    const res = await request(app).get('/auth/callback?code=x');
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Invalid authorization code/);
+    expect(mockExchangeCodeForTokens).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate authorization code parameters before token exchange', async () => {
+    const res = await request(app).get('/auth/callback?code=test-code&code=other-code');
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Missing authorization code/);
+    expect(mockExchangeCodeForTokens).not.toHaveBeenCalled();
   });
 
   it('provisions a new merchant on fresh install', async () => {
@@ -104,6 +137,30 @@ describe('GET /auth/callback', () => {
       expect.objectContaining({ location_id: 'loc-abc' }),
     );
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('accepts valid signed state when GHL returns it', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
+    mockFindByLocationId.mockResolvedValue(null);
+    mockCreate.mockResolvedValue({});
+
+    const state = createGhlOAuthState();
+    const res = await request(app).get(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ location_id: 'loc-abc' }),
+    );
+  });
+
+  it('rejects tampered signed state before token exchange', async () => {
+    const state = `${createGhlOAuthState()}x`;
+    const res = await request(app).get(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/state/i);
+    expect(mockExchangeCodeForTokens).not.toHaveBeenCalled();
   });
 
   it('updates tokens on reinstall (existing merchant)', async () => {
