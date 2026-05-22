@@ -140,7 +140,7 @@ export const webhookController = {
           });
           resolvedContactId = search.data.contact?.id || '';
         } catch {
-          logger.warn({ contact_email, location_id }, 'Could not resolve contact by email');
+          logger.warn({ hasContactEmail: !!contact_email, location_id }, 'Could not resolve contact by email');
         }
       }
 

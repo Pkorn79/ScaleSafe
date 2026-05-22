@@ -156,13 +156,13 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
           html: emailBody,
           subject: `Your enrollment link for ${offer.offer_name}`,
         });
-        logger.info({ contactId, email }, 'Enrollment link email sent via GHL Conversations');
+        logger.info({ contactId, hasEmail: true }, 'Enrollment link email sent via GHL Conversations');
       } catch (emailErr: any) {
         logger.error({
           err: emailErr.message,
           status: emailErr.response?.status,
-          responseData: emailErr.response?.data,
-          contactId, email,
+          responseKeys: emailErr.response?.data ? Object.keys(emailErr.response.data) : [],
+          contactId,
         }, 'Failed to send enrollment link email via GHL Conversations');
       }
     }
@@ -174,13 +174,13 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
           contactId,
           message: `Hi ${firstName}! Here's your enrollment link for ${offer.offer_name}: ${enrollmentUrl}`,
         });
-        logger.info({ contactId, phone }, 'Enrollment link SMS sent via GHL Conversations');
+        logger.info({ contactId, hasPhone: true }, 'Enrollment link SMS sent via GHL Conversations');
       } catch (smsErr: any) {
         logger.error({
           err: smsErr.message,
           status: smsErr.response?.status,
-          responseData: smsErr.response?.data,
-          contactId, phone,
+          responseKeys: smsErr.response?.data ? Object.keys(smsErr.response.data) : [],
+          contactId,
         }, 'Failed to send enrollment link SMS via GHL Conversations');
       }
     }

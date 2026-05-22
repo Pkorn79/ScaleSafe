@@ -1209,7 +1209,7 @@ export const paymentLifecycleService = {
       }
     }
 
-    logger.info({ contactId, locationId, link }, 'Card update request sent');
+    logger.info({ contactId, locationId, linkGenerated: true }, 'Card update request sent');
     return { success: true, link };
   },
 

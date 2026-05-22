@@ -154,7 +154,7 @@ export class StripeRadarService {
         value: customerEmail,
       }, { stripeAccount });
 
-      logger.info({ merchantId, email: customerEmail }, 'Customer verified via Radar');
+      logger.info({ merchantId, hasEmail: !!customerEmail }, 'Customer verified via Radar');
     } catch (err: any) {
       if (err.code === 'resource_already_exists') {
         logger.info({ merchantId }, 'Customer already verified');

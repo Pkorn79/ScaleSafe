@@ -426,7 +426,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     });
 
     // ─── Complete enrollment + create GHL records ──────
-    logger.info({ consentToken: consentToken || 'EMPTY', hasConsent: !!consentToken, paymentSuccess: result.success }, 'POST-PAYMENT: checking enrollment completion eligibility');
+    logger.info({ hasConsent: !!consentToken, paymentSuccess: result.success }, 'POST-PAYMENT: checking enrollment completion eligibility');
     if (result.success && consentToken) {
       try {
         const { data: enrollment, error: enrollLookupErr } = await supabase
@@ -439,7 +439,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           const enrollEmail = (enrollment as any).email || '';
           const enrollContactId = (enrollment as any).contact_id || '';
           finalEnrollmentId = enrollment.id;
-          logger.info({ enrollmentId: enrollment.id, email: enrollEmail, contactId: enrollContactId, status: (enrollment as any).status, paymentChoice: req.body.paymentChoice }, 'POST-PAYMENT: enrollment found');
+          logger.info({ enrollmentId: enrollment.id, hasEmail: !!enrollEmail, contactId: enrollContactId, status: (enrollment as any).status, paymentChoice: req.body.paymentChoice }, 'POST-PAYMENT: enrollment found');
 
           // Resolve payment type and installment count
           const resolvedPaymentType = normalizePaymentType(req.body.paymentChoice);
@@ -496,7 +496,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   locationId: locId,
                 });
                 resolvedContactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
-                logger.info({ resolvedContactId, clientEmail }, 'POST-PAYMENT FALLBACK: GHL contact upserted');
+                logger.info({ resolvedContactId, hasEmail: !!clientEmail }, 'POST-PAYMENT FALLBACK: GHL contact upserted');
                 if (resolvedContactId) {
                   await supabase.from('enrollments')
                     .update({ contact_id: resolvedContactId })
@@ -533,10 +533,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             logger.warn({ err: mapErr.message }, 'Failed to insert payment_customer_map');
           }
         } else {
-          logger.warn({ consentToken, lookupError: enrollLookupErr?.message }, 'POST-PAYMENT: NO enrollment found for consent token');
+          logger.warn({ hasConsent: !!consentToken, lookupError: enrollLookupErr?.message }, 'POST-PAYMENT: NO enrollment found for consent token');
         }
       } catch (enrollErr: any) {
-        logger.error({ err: enrollErr.message, stack: enrollErr.stack, consentToken }, 'POST-PAYMENT: completeEnrollment failed — payment still succeeded');
+        logger.error({ err: enrollErr.message, stack: enrollErr.stack, hasConsent: !!consentToken }, 'POST-PAYMENT: completeEnrollment failed — payment still succeeded');
       }
     }
 
@@ -559,7 +559,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           });
           resolvedQuickPayContact = upsertRes.data.contact?.id || upsertRes.data.id || '';
           if (resolvedQuickPayContact) finalContactId = resolvedQuickPayContact;
-          logger.info({ contactId: resolvedQuickPayContact, quickPayEmail }, 'Quick Pay: GHL contact upserted');
+          logger.info({ contactId: resolvedQuickPayContact, hasEmail: !!quickPayEmail }, 'Quick Pay: GHL contact upserted');
 
           // Set engagement status baseline for new contacts (gated on merchant toggle).
           if (resolvedQuickPayContact) {

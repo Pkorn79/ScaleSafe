@@ -151,7 +151,7 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
             contactData: null,
             error: searchErr.message || 'search failed',
             status: searchErr.response?.status,
-            responseData: searchErr.response?.data,
+            responseKeys: searchErr.response?.data ? Object.keys(searchErr.response.data) : [],
           };
         }
       } else {
@@ -173,7 +173,7 @@ router.get('/api/debug/enrollment-check/:consentToken', async (req: Request, res
         success: false,
         error: apiErr.message || 'ghlApi init failed',
         status: apiErr.response?.status,
-        responseData: apiErr.response?.data,
+        responseKeys: apiErr.response?.data ? Object.keys(apiErr.response.data) : [],
       };
     }
 
