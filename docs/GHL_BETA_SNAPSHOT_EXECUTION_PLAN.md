@@ -12,16 +12,17 @@
 - Offer checkout/enrollment links are durable public links and must not expire by default. Quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) may be used in funnels, automations, emails, ads, or client follow-ups. Signed 14-day public action tokens are only for sensitive client actions such as payment update, subscription cancellation, and milestone signoff.
 - Current workflow email/SMS templates are accepted as the beta source of truth. The app now creates/writes the workflow-compatible contact fields they expect, including `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`. Run Settings > Provisioning Health > Repair Fields before snapshot export and after fresh install.
 
-## Current Beta Finish Path Status - 2026-05-11
+## Current Beta Finish Path Status - 2026-05-22
 
 - Phase 1 payment truth shipped: final installment payoff marks billing complete without completing the program.
 - Phase 2 payment ledger shipped: all-payments reporting, date filters, processor/billing/status filters, and schema-drift fallbacks.
 - Phase 3 processor clarity/lifecycle controls shipped: per-plan pause/resume/cancel controls and processor-aware stored-card handling.
 - Phase 4 reconciliation diagnostics shipped and should stay visible during beta.
 - Phase 4B payment display truth shipped: unlinked payment rows and reconciliation issues now show `Unassigned payment` instead of borrowing a program from the same contact. Offer Tracking ID is available after migration `057_offer_tracking_id.sql`.
-- Phase 5 payment workflow proof is still live-testing work: Welcome, Enrollment Payment Receipt, Recurring Payment Receipt, failed payment, NMI second installment, Stripe final installment keeping program active, and payment reminders.
+- Phase 5 payment workflow proof is still live-testing work: enrollment complete, payment received, recurring receipt, failed payment, NMI recurring webhook, Stripe sanity test, and payment reminders.
 - Phase 6 pulse cadence is code-shipped but still needs GHL smoke proof: force due pulse, confirm `ss_app_event` delivery filtered to `pulse_check_due`, submit SYS2-09, and verify `pulse_checkin` evidence links to the enrollment.
 - Phase 7 fresh install E2E remains blocked until Phases 5 and 6 are clean.
+- Phase 8 production hardening: automatic fallback billing and automatic NMI history sync are no longer scheduled. NMI recurring beta proof must come from the live processor webhook path, not repair/import jobs.
 
 ## App-Provisioned On Install
 
@@ -105,4 +106,16 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 
 ## Next Recommended Step
 
-Before export, run Settings > Provisioning Health and Repair Webhook Secret in PMG, complete Stripe/NMI installment E2E, smoke the pulse due-send/SYS2-09 evidence loop, then package the Snapshot with the checklist above.
+Before export, finish live NMI/Stripe recurring proof, run Settings > Provisioning Health and Repair Webhook Secret in PMG, smoke the pulse due-send/SYS2-09 evidence loop, generate one defense packet from a real test client, then package the Snapshot with the checklist above.
+
+## Post-Beta Release Lanes
+
+Do not add these to the June beta critical path unless Philip explicitly promotes one as a blocker:
+
+1. ACH support.
+2. Cloudflare enforcement/tighter security after webhook stability is proven.
+3. Multiple Stripe/NMI accounts and multi-MID routing by offer.
+4. Better evidence/defense automation.
+5. Standalone non-GHL version.
+6. MCP/API control layer for AI assistants.
+7. Mobile/PWA polish.
