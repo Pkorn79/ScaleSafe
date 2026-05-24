@@ -56,20 +56,51 @@ function arrayValue(value: unknown): unknown[] {
 }
 
 function eventBody(payload: Record<string, unknown>): Record<string, any> {
-  const body = (payload.event_body || payload.eventBody || payload.data || payload.body || payload.payload || {}) as Record<string, any>;
-  return body && typeof body === 'object' ? body : {};
+  const candidates = [
+    payload.event_body,
+    payload.eventBody,
+    payload.data,
+    payload.payload,
+    payload.body,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as Record<string, any>;
+    }
+  }
+
+  return payload;
 }
 
 function classify(eventType: string, body: Record<string, any>): SourceObject {
   const text = `${eventType} ${body.type || ''} ${body.eventType || ''}`.toLowerCase();
   if (text.includes('appointment') || text.includes('calendar')) return 'appointment';
-  if (text.includes('invoice') || body.invoiceId || body.invoice_id) return 'invoice';
+  if (text.includes('invoice') || body.invoiceId || body.invoice_id || body.invoiceNumber || body._id || body.invoiceItems) return 'invoice';
   if (text.includes('message') || text.includes('conversation') || body.messageId || body.conversationId) return 'communication';
   if (text.includes('note')) return 'note';
   if (text.includes('task')) return 'task';
   if (text.includes('form')) return 'form';
   if (text.includes('opportunity')) return 'opportunity';
   return 'unknown';
+}
+
+function inferEventType(body: Record<string, any>): string {
+  const explicit = stringValue(body.type, body.event_type, body.eventType);
+  if (explicit) return explicit;
+
+  if (body.invoiceNumber || body.invoiceItems || body.amountDue !== undefined || body.amountPaid !== undefined) {
+    const status = String(body.status || '').toLowerCase();
+    if (status.includes('partial')) return 'InvoicePartiallyPaid';
+    if (status.includes('paid')) return 'InvoicePaid';
+    if (status.includes('void')) return 'InvoiceVoid';
+    if (status.includes('delete')) return 'InvoiceDelete';
+    if (status.includes('sent')) return 'InvoiceSent';
+    if (status.includes('draft') || status.includes('created')) return 'InvoiceCreate';
+    return 'InvoiceUpdate';
+  }
+
+  return '';
 }
 
 function normalizeDirection(value: string): 'inbound' | 'outbound' {
@@ -109,12 +140,14 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
       : Object.keys(nestedMessage).length ? nestedMessage
         : body;
 
-  const eventType = stringValue(payload.type, payload.event_type, payload.eventType, body.type, body.event_type, body.eventType);
+  const eventType = stringValue(payload.type, payload.event_type, payload.eventType, inferEventType(body));
   const sourceObject = classify(eventType, body);
 
   const sourceRecordId = stringValue(
     payload.id,
+    payload._id,
     payload.event_id,
+    body._id,
     body.id,
     body.appointmentId,
     body.appointment_id,
@@ -123,32 +156,34 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     body.invoice_id,
     body.messageId,
     body.message_id,
+    body.emailMessageId,
     primary.id,
+    primary._id,
   );
 
   return {
     locationId: stringValue(payload.locationId, payload.location_id, body.locationId, body.location_id, body.location?.id),
-    contactId: stringValue(payload.contactId, payload.contact_id, body.contactId, body.contact_id, body.contact?.id, primary.contactId, primary.contact_id),
+    contactId: stringValue(payload.contactId, payload.contact_id, body.contactId, body.contact_id, body.contact?.id, body.contactDetails?.id, primary.contactId, primary.contact_id, primary.contactDetails?.id),
     eventType: eventType || 'unknown',
     sourceObject,
     sourceRecordId,
-    sourceParentId: stringValue(body.conversationId, body.conversation_id, body.orderId, body.order_id, body.parentId, body.parent_id),
-    occurredAt: stringValue(payload.timestamp, payload.createdAt, payload.created_at, body.timestamp, body.dateAdded, body.createdAt, body.created_at, primary.startTime, primary.start_time) || new Date().toISOString(),
+    sourceParentId: stringValue(body.conversationId, body.conversation_id, body.orderId, body.order_id, body.parentId, body.parent_id, body.threadId, body.emailMessageId),
+    occurredAt: stringValue(payload.timestamp, payload.createdAt, payload.created_at, body.timestamp, body.dateAdded, body.createdAt, body.created_at, body.updatedAt, body.issueDate, primary.startTime, primary.start_time) || new Date().toISOString(),
     title: stringValue(primary.title, primary.name, primary.appointmentTitle, primary.appointment_title, body.title, body.name, nestedInvoice.title, nestedMessage.subject),
-    status: stringValue(primary.status, body.status, body.appointmentStatus, body.invoiceStatus, body.invoice_status),
+    status: stringValue(primary.status, body.status, primary.appointmentStatus, body.appointmentStatus, body.invoiceStatus, body.invoice_status),
     calendarId: stringValue(primary.calendarId, primary.calendar_id, body.calendarId, body.calendar_id),
     assignedUserId: stringValue(primary.assignedUserId, primary.assigned_user_id, primary.userId, body.assignedUserId, body.userId),
     startTime: stringValue(primary.startTime, primary.start_time, primary.startDate, primary.start_date, body.startTime, body.start_time),
     endTime: stringValue(primary.endTime, primary.end_time, primary.endDate, primary.end_date, body.endTime, body.end_time),
-    amount: numberValue(primary.amount, primary.total, body.amount, body.total, nestedInvoice.amount, nestedInvoice.total),
+    amount: numberValue(primary.amount, primary.total, primary.amountDue, body.amount, body.total, body.amountDue, nestedInvoice.amount, nestedInvoice.total),
     amountPaid: numberValue(primary.amountPaid, primary.amount_paid, body.amountPaid, body.amount_paid, nestedInvoice.amountPaid, nestedInvoice.amount_paid),
     currency: stringValue(primary.currency, body.currency, nestedInvoice.currency) || 'USD',
     invoiceNumber: stringValue(primary.invoiceNumber, primary.invoice_number, body.invoiceNumber, body.invoice_number),
     invoiceDueDate: stringValue(primary.dueDate, primary.due_date, body.dueDate, body.due_date),
-    lineItems: arrayValue(primary.lineItems || primary.line_items || body.lineItems || body.line_items),
+    lineItems: arrayValue(primary.lineItems || primary.line_items || primary.invoiceItems || body.lineItems || body.line_items || body.invoiceItems),
     direction: stringValue(body.direction, primary.direction, nestedMessage.direction),
-    channel: stringValue(body.messageType, body.message_type, body.channel, primary.type, nestedMessage.type),
-    body: stringValue(body.body, body.text, body.message, primary.body, primary.text, nestedMessage.body, nestedMessage.text),
+    channel: stringValue(body.messageType, body.message_type, body.channel, primary.type, primary.messageType, nestedMessage.type),
+    body: stringValue(body.plainText, body.body, body.text, body.message, primary.plainText, primary.body, primary.text, nestedMessage.body, nestedMessage.text),
     raw: payload,
   };
 }
@@ -202,20 +237,7 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
     }
   }
 
-  const { data: activeEnrollments } = await supabase
-    .from('enrollments')
-    .select('*')
-    .eq('location_id', activity.locationId)
-    .eq('contact_id', activity.contactId)
-    .in('status', ['enrolled', 'active', 'at_risk'])
-    .limit(2);
-
-  if ((activeEnrollments || []).length === 1) {
-    const enrollment = activeEnrollments![0];
-    return { enrollment, offerId: enrollment.offer_id || null, reason: 'single_active_enrollment' };
-  }
-
-  return { enrollment: null, offerId: null, reason: (activeEnrollments || []).length > 1 ? 'multiple_active_enrollments' : 'no_active_enrollment' };
+  return { enrollment: null, offerId: null, reason: 'no_explicit_or_mapped_enrollment' };
 }
 
 function appointmentSummary(activity: NormalizedGhlActivity, offerName?: string): string {

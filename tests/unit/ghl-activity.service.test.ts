@@ -52,7 +52,7 @@ function mockEnrollmentQuery(enrollments: any[]) {
         eq: () => chain,
         in: () => chain,
         order: () => chain,
-        limit: () => Promise.resolve({ data: enrollments, error: null }),
+        limit: () => chain,
         maybeSingle: () => Promise.resolve({ data: enrollments[0] || null, error: null }),
       };
       return chain;
@@ -88,11 +88,12 @@ describe('ghlActivityService', () => {
     const normalized = ghlActivityService.normalizePayload({
       type: 'AppointmentCreate',
       locationId: 'loc_1',
-      event_body: {
-        appointmentId: 'appt_1',
+      appointment: {
+        id: 'appt_1',
         contactId: 'contact_1',
         calendarId: 'cal_1',
         title: 'Strategy Session',
+        appointmentStatus: 'confirmed',
         startTime: '2026-06-01T15:00:00.000Z',
       },
     });
@@ -102,17 +103,27 @@ describe('ghlActivityService', () => {
     expect(normalized.contactId).toBe('contact_1');
     expect(normalized.sourceRecordId).toBe('appt_1');
     expect(normalized.calendarId).toBe('cal_1');
+    expect(normalized.status).toBe('confirmed');
   });
 
-  test('creates appointment evidence when one active enrollment is confidently matched', async () => {
+  test('creates appointment evidence when an official appointment matches a calendar mapping', async () => {
+    mockListAppointmentMappings.mockResolvedValueOnce([{
+      is_active: true,
+      calendar_id: 'cal_1',
+      offer_id: 'offer_1',
+      staff_user_id: null,
+      title_keyword: null,
+    }]);
+
     const result = await ghlActivityService.handleWebhook({
       type: 'AppointmentCreate',
       locationId: 'loc_1',
-      event_body: {
-        appointmentId: 'appt_1',
+      appointment: {
+        id: 'appt_1',
         contactId: 'contact_1',
         calendarId: 'cal_1',
         title: 'Strategy Session',
+        appointmentStatus: 'confirmed',
         startTime: '2026-06-01T15:00:00.000Z',
       },
     });
@@ -124,7 +135,7 @@ describe('ghlActivityService', () => {
       source_object: 'appointment',
       source_record_id: 'appt_1',
       status: 'matched',
-      match_reason: 'single_active_enrollment',
+      match_reason: 'calendar_offer_mapping',
     }));
     expect(mockLogEvidence).toHaveBeenCalledWith(
       EVIDENCE_TYPES.APPOINTMENT,
@@ -148,7 +159,7 @@ describe('ghlActivityService', () => {
     const result = await ghlActivityService.handleWebhook({
       type: 'AppointmentCreate',
       locationId: 'loc_1',
-      event_body: { appointmentId: 'appt_1', contactId: 'contact_1' },
+      appointment: { id: 'appt_1', contactId: 'contact_1' },
     });
 
     expect(result.status).toBe('duplicate');
@@ -157,19 +168,23 @@ describe('ghlActivityService', () => {
 
   test('creates invoice evidence for invoice events with a contact', async () => {
     const result = await ghlActivityService.handleWebhook({
-      type: 'InvoicePaid',
       locationId: 'loc_1',
-      event_body: {
-        invoiceId: 'inv_1',
-        invoiceNumber: 'INV-1001',
-        contactId: 'contact_1',
-        amount: 125,
-        currency: 'USD',
-        status: 'paid',
+      _id: 'inv_1',
+      invoiceNumber: 'INV-1001',
+      contactDetails: {
+        id: 'contact_1',
       },
+      invoiceItems: [{ name: 'Beta Tester', qty: 1, amount: 125 }],
+      total: 125,
+      amountPaid: 125,
+      currency: 'USD',
+      status: 'paid',
+      dueDate: '2026-06-02',
+      createdAt: '2026-06-01T15:00:00.000Z',
     });
 
     expect(result.actionTaken).toBe('invoice_evidence_created');
+    expect(result.eventType).toBe('InvoicePaid');
     expect(mockLogEvidence).toHaveBeenCalledWith(
       EVIDENCE_TYPES.INVOICE,
       'loc_1',
@@ -181,5 +196,25 @@ describe('ghlActivityService', () => {
         amount: 125,
       }),
     );
+  });
+
+  test.each([
+    ['AppointmentUpdate', { type: 'AppointmentUpdate', locationId: 'loc_1', appointment: { id: 'appt_2', contactId: 'contact_1', calendarId: 'cal_1', title: 'Updated Session' } }, 'appointment', 'appt_2', 'contact_1'],
+    ['AppointmentDelete', { type: 'AppointmentDelete', locationId: 'loc_1', appointment: { id: 'appt_3', contactId: 'contact_1', calendarId: 'cal_1', title: 'Deleted Session' } }, 'appointment', 'appt_3', 'contact_1'],
+    ['InboundMessage', { type: 'InboundMessage', locationId: 'loc_1', contactId: 'contact_1', conversationId: 'conv_1', messageId: 'msg_in_1', direction: 'inbound', messageType: 'SMS', body: 'I have a question', dateAdded: '2026-06-01T15:00:00.000Z' }, 'communication', 'msg_in_1', 'contact_1'],
+    ['OutboundMessage', { type: 'OutboundMessage', locationId: 'loc_1', contactId: 'contact_1', conversationId: 'conv_2', messageId: 'msg_out_1', direction: 'outbound', messageType: 'Email', plainText: 'Here is your update', dateAdded: '2026-06-01T16:00:00.000Z' }, 'communication', 'msg_out_1', 'contact_1'],
+    ['InvoiceCreate', { locationId: 'loc_1', _id: 'inv_create', invoiceNumber: 'INV-1', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'draft', total: 100 }, 'invoice', 'inv_create', 'contact_1'],
+    ['InvoiceSent', { locationId: 'loc_1', _id: 'inv_sent', invoiceNumber: 'INV-2', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'sent', total: 100 }, 'invoice', 'inv_sent', 'contact_1'],
+    ['InvoicePartiallyPaid', { locationId: 'loc_1', _id: 'inv_partial', invoiceNumber: 'INV-3', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'partially_paid', total: 100, amountPaid: 50 }, 'invoice', 'inv_partial', 'contact_1'],
+    ['InvoiceUpdate', { locationId: 'loc_1', _id: 'inv_update', invoiceNumber: 'INV-4', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'updated', total: 100 }, 'invoice', 'inv_update', 'contact_1'],
+    ['InvoiceVoid', { locationId: 'loc_1', _id: 'inv_void', invoiceNumber: 'INV-5', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'void', total: 100 }, 'invoice', 'inv_void', 'contact_1'],
+    ['InvoiceDelete', { locationId: 'loc_1', _id: 'inv_delete', invoiceNumber: 'INV-6', contactDetails: { id: 'contact_1' }, invoiceItems: [], status: 'deleted', total: 100 }, 'invoice', 'inv_delete', 'contact_1'],
+  ])('normalizes official %s payload shape', (expectedType, payload, expectedObject, expectedRecordId, expectedContactId) => {
+    const normalized = ghlActivityService.normalizePayload(payload as any);
+
+    expect(normalized.eventType).toBe(expectedType);
+    expect(normalized.sourceObject).toBe(expectedObject);
+    expect(normalized.sourceRecordId).toBe(expectedRecordId);
+    expect(normalized.contactId).toBe(expectedContactId);
   });
 });
