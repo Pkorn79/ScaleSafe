@@ -6,6 +6,7 @@ import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { storageService } from '../services/storage.service';
 import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
+import { ghlActivityService } from '../services/ghl-activity.service';
 
 export const merchantController = {
   /** GET /api/merchants/config — get full merchant configuration */
@@ -118,6 +119,39 @@ export const merchantController = {
         mergeField: '{{ custom_values.scalesafe_webhook_secret }}',
         enforceRequired: isMerchantWebhookSecretEnforced(),
       });
+    } catch (err) { next(err); }
+  },
+
+  /** GET /api/merchants/ghl-activity/setup - calendars, offers, mappings, and unmatched activity */
+  async getGhlActivitySetup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const setup = await ghlActivityService.getSetup(locationId);
+      res.json(setup);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/merchants/ghl-activity/appointment-mappings - create/update one calendar mapping */
+  async saveGhlAppointmentMapping(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const mapping = await ghlActivityService.saveAppointmentMapping(locationId, req.body || {});
+      res.json(mapping);
+    } catch (err) { next(err); }
+  },
+
+  /** DELETE /api/merchants/ghl-activity/appointment-mappings/:id - deactivate mapping */
+  async deleteGhlAppointmentMapping(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      await ghlActivityService.deactivateAppointmentMapping(locationId, req.params.id);
+      res.json({ status: 'ok' });
     } catch (err) { next(err); }
   },
 

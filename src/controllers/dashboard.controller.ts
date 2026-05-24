@@ -13,6 +13,7 @@ import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { logger } from '../utils/logger';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { isSafeOrFilterSearchInput } from '../utils/search-input';
+import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -1042,7 +1043,7 @@ export const dashboardController = {
       const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 5));
 
       // 1) Recent activity (slice of timeline)
-      const [timelineResult, noteResult, riskResult] = await Promise.allSettled([
+      const [timelineResult, noteResult, riskResult, activityResult] = await Promise.allSettled([
         evidenceService.getTimeline(locationId, contactId, { limit }),
         (async () => {
           try {
@@ -1062,9 +1063,33 @@ export const dashboardController = {
           }
         })(),
         disengagementService.scoreClient(locationId, contactId),
+        ghlActivityRepository.listRecent(locationId, contactId, limit),
       ]);
 
-      const recentActivity = timelineResult.status === 'fulfilled' ? (timelineResult.value.rows || []) : [];
+      const evidenceActivity = timelineResult.status === 'fulfilled' ? (timelineResult.value.rows || []) : [];
+      const ghlActivity = activityResult.status === 'fulfilled'
+        ? activityResult.value.map((event: any) => ({
+          id: event.id,
+          type: `ghl_${event.source_object}`,
+          evidence_type: `ghl_${event.source_object}`,
+          created_at: event.occurred_at || event.created_at,
+          source: 'ghl_activity',
+          data: {
+            event_type: event.event_type,
+            status: event.status,
+            action_taken: event.action_taken,
+            match_reason: event.match_reason,
+            error_message: event.error_message,
+            ...(event.normalized || {}),
+          },
+          defense_summary: event.normalized?.title
+            ? `GHL ${event.source_object} event: ${event.normalized.title}. Status: ${event.status}.`
+            : `GHL ${event.source_object} event received. Status: ${event.status}.`,
+        }))
+        : [];
+      const recentActivity = [...evidenceActivity, ...ghlActivity]
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, limit);
       const recentNote = noteResult.status === 'fulfilled' ? noteResult.value : null;
       const risk = riskResult.status === 'fulfilled' ? riskResult.value : null;
 

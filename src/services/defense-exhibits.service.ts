@@ -30,6 +30,8 @@ export type ExhibitSource =
   | 'evidence_milestones'
   | 'evidence_signoffs'
   | 'evidence_communication'
+  | 'evidence_appointments'
+  | 'evidence_invoices'
   | 'evidence_payment_confirmation'
   | 'evidence_enrollment_payment'
   | 'evidence_cancellation'
@@ -235,6 +237,27 @@ export const defenseExhibitsService = {
 
     // ── 3. Service Delivery: sessions, modules, milestones, signoffs, course completion ──
     try {
+      const { data: appointments } = await supabase
+        .from('evidence_appointments')
+        .select(`id, appointment_title, appointment_status, appointment_event_type, start_time, end_time, calendar_id, delivery_role, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('start_time', { ascending: true });
+      for (const a of ((appointments || []) as any[])) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++),
+          name: exhibitName(a, `Appointment: ${a.appointment_title || 'GHL appointment'}`),
+          category: 'service_delivery',
+          source: 'evidence_appointments',
+          ref: a.id,
+          occurredAt: a.start_time || null,
+          summary: exhibitSummary(a, `GHL appointment "${a.appointment_title || 'Untitled'}" recorded as ${a.appointment_status || 'unknown'} on ${fmtDate(a.start_time)}.`),
+          meta: exhibitMeta(a, { calendarId: a.calendar_id, deliveryRole: a.delivery_role, appointmentStatus: a.appointment_status }),
+        });
+      }
+    } catch {}
+
+    try {
       const { data: sessions } = await supabase
         .from('evidence_sessions')
         .select(`id, session_date, session_title, duration_minutes, attendance_status, facilitator, ${DEFENSE_FIELD_SELECT}`)
@@ -363,6 +386,27 @@ export const defenseExhibitsService = {
     } catch {}
 
     // ── 5. Payments: enrollment + recurring confirmations (Prior Undisputed Transactions) ──
+    try {
+      const { data: invoices } = await supabase
+        .from('evidence_invoices')
+        .select(`id, invoice_id, invoice_number, invoice_status, invoice_event_type, amount, amount_paid, currency, sent_at, paid_at, due_date, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: true });
+      for (const inv of ((invoices || []) as any[])) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++),
+          name: exhibitName(inv, `Invoice: ${inv.invoice_number || inv.invoice_id || inv.invoice_status || 'GHL invoice'}`),
+          category: inv.paid_at ? 'payments' : 'communication',
+          source: 'evidence_invoices',
+          ref: inv.id,
+          occurredAt: inv.paid_at || inv.sent_at || inv.due_date || null,
+          summary: exhibitSummary(inv, `GHL invoice ${inv.invoice_number || inv.invoice_id || 'unknown'} recorded as ${inv.invoice_status || inv.invoice_event_type || 'unknown'}. Amount: $${Number(inv.amount || 0).toFixed(2)} ${inv.currency || 'USD'}.`),
+          meta: exhibitMeta(inv, { invoiceId: inv.invoice_id, amount: inv.amount, amountPaid: inv.amount_paid, status: inv.invoice_status }),
+        });
+      }
+    } catch {}
+
     try {
       const { data: enrollPay } = await supabase
         .from('evidence_enrollment_payment')

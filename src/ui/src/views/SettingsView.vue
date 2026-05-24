@@ -183,6 +183,86 @@
         </div>
       </div>
 
+      <!-- GHL Native Activity Tracking -->
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:4px">GHL Activity Tracking</h3>
+            <p class="text-sm text-muted">
+              Map GHL calendars to ScaleSafe programs so appointment webhooks become program-specific evidence.
+            </p>
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="loadGhlActivitySetup" :disabled="ghlActivityLoading">
+            {{ ghlActivityLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+        </div>
+
+        <div class="text-sm text-muted mb-4">
+          Webhook URL: <code>/webhooks/ghl/activity</code>
+        </div>
+
+        <div v-if="ghlActivityError" class="error-msg">{{ ghlActivityError }}</div>
+        <div v-if="ghlActivitySaved" class="success-msg">{{ ghlActivitySaved }}</div>
+
+        <div class="grid grid-3" style="gap:12px">
+          <div>
+            <label class="form-label">Calendar</label>
+            <select class="form-select" v-model="activityMapping.calendar_id">
+              <option value="">Select calendar...</option>
+              <option v-for="calendar in ghlCalendars" :key="calendar.id" :value="calendar.id">{{ calendar.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Program</label>
+            <select class="form-select" v-model="activityMapping.offer_id">
+              <option value="">No program mapping</option>
+              <option v-for="offer in ghlActivityOffers" :key="offer.id" :value="offer.id">{{ offer.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Title Keyword</label>
+            <input class="form-input" v-model="activityMapping.title_keyword" placeholder="optional" />
+          </div>
+        </div>
+        <div class="grid grid-3 mt-2" style="gap:12px">
+          <div>
+            <label class="form-label">Staff User ID</label>
+            <input class="form-input" v-model="activityMapping.staff_user_id" placeholder="optional" />
+          </div>
+          <div>
+            <label class="form-label">Appointment Type</label>
+            <input class="form-input" v-model="activityMapping.appointment_type" placeholder="coaching call, onboarding..." />
+          </div>
+          <div>
+            <label class="form-label">Delivery Role</label>
+            <input class="form-input" v-model="activityMapping.delivery_role" placeholder="coach, strategist..." />
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm mt-4" @click="saveGhlActivityMapping" :disabled="ghlActivityLoading || !activityMapping.calendar_id">
+          Save Mapping
+        </button>
+
+        <div v-if="ghlActivityMappings.length" class="activity-map-list">
+          <div v-for="mapping in ghlActivityMappings" :key="mapping.id" class="activity-map-row">
+            <div>
+              <strong>{{ calendarName(mapping.calendar_id) }}</strong>
+              <div class="text-sm text-muted">
+                {{ offerName(mapping.offer_id) || 'No program' }}
+                <span v-if="mapping.title_keyword"> · "{{ mapping.title_keyword }}"</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" @click="deactivateGhlActivityMapping(mapping.id)" :disabled="ghlActivityLoading">Disable</button>
+          </div>
+        </div>
+
+        <div v-if="ghlUnmatchedActivity.length" class="mt-4">
+          <div class="text-sm" style="font-weight:600">Unmatched activity</div>
+          <div v-for="event in ghlUnmatchedActivity.slice(0, 5)" :key="event.id" class="text-sm text-muted unmatched-row">
+            {{ event.source_object }} · {{ event.event_type }} · {{ formatHealthTime(event.created_at) }} · {{ event.match_reason || 'not matched' }}
+          </div>
+        </div>
+      </div>
+
       <!-- Engagement Tracking -->
       <div class="card" v-if="config">
         <h3 class="section-title">Engagement Tracking</h3>
@@ -459,6 +539,21 @@ const webhookSecretError = ref('');
 const provisioningHealth = ref<any>(null);
 const provisioningHealthLoading = ref(false);
 const provisioningHealthError = ref('');
+const ghlActivityLoading = ref(false);
+const ghlActivityError = ref('');
+const ghlActivitySaved = ref('');
+const ghlCalendars = ref<Array<{ id: string; name: string }>>([]);
+const ghlActivityOffers = ref<Array<{ id: string; name: string }>>([]);
+const ghlActivityMappings = ref<any[]>([]);
+const ghlUnmatchedActivity = ref<any[]>([]);
+const activityMapping = ref<any>({
+  calendar_id: '',
+  offer_id: '',
+  staff_user_id: '',
+  title_keyword: '',
+  appointment_type: '',
+  delivery_role: '',
+});
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -473,6 +568,7 @@ onMounted(async () => {
     config.value = await api.get<any>('/api/merchants/config');
     loadWebhookSecret();
     loadProvisioningHealth();
+    loadGhlActivitySetup();
     if (config.value.config?.disengagement_thresholds) {
       Object.assign(thresholds.value, config.value.config.disengagement_thresholds);
     }
@@ -549,6 +645,64 @@ async function loadProvisioningHealth() {
     provisioningHealthError.value = err.message || 'Failed to load provisioning health';
   }
   provisioningHealthLoading.value = false;
+}
+
+async function loadGhlActivitySetup() {
+  ghlActivityLoading.value = true;
+  ghlActivityError.value = '';
+  try {
+    const result = await api.get<any>('/api/merchants/ghl-activity/setup');
+    ghlCalendars.value = result.calendars || [];
+    ghlActivityOffers.value = result.offers || [];
+    ghlActivityMappings.value = (result.mappings || []).filter((m: any) => m.is_active !== false);
+    ghlUnmatchedActivity.value = result.unmatched || [];
+  } catch (err: any) {
+    ghlActivityError.value = err.message || 'Failed to load GHL activity setup';
+  }
+  ghlActivityLoading.value = false;
+}
+
+async function saveGhlActivityMapping() {
+  ghlActivityLoading.value = true;
+  ghlActivityError.value = '';
+  ghlActivitySaved.value = '';
+  try {
+    await api.post<any>('/api/merchants/ghl-activity/appointment-mappings', activityMapping.value);
+    activityMapping.value = {
+      calendar_id: '',
+      offer_id: '',
+      staff_user_id: '',
+      title_keyword: '',
+      appointment_type: '',
+      delivery_role: '',
+    };
+    ghlActivitySaved.value = 'Appointment mapping saved.';
+    await loadGhlActivitySetup();
+    setTimeout(() => { ghlActivitySaved.value = ''; }, 3000);
+  } catch (err: any) {
+    ghlActivityError.value = err.message || 'Failed to save appointment mapping';
+  }
+  ghlActivityLoading.value = false;
+}
+
+async function deactivateGhlActivityMapping(id: string) {
+  ghlActivityLoading.value = true;
+  ghlActivityError.value = '';
+  try {
+    await api.del(`/api/merchants/ghl-activity/appointment-mappings/${id}`);
+    await loadGhlActivitySetup();
+  } catch (err: any) {
+    ghlActivityError.value = err.message || 'Failed to disable appointment mapping';
+  }
+  ghlActivityLoading.value = false;
+}
+
+function calendarName(id: string) {
+  return ghlCalendars.value.find(c => c.id === id)?.name || id;
+}
+
+function offerName(id: string) {
+  return ghlActivityOffers.value.find(o => o.id === id)?.name || '';
 }
 
 async function repairWebhookSecretCustomValue() {
@@ -1087,6 +1241,26 @@ async function setDefaultProcessor(proc: string) {
   display: grid;
   gap: 4px;
   margin-top: 8px;
+}
+
+.activity-map-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.activity-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.unmatched-row {
+  padding: 6px 0;
+  border-top: 1px solid #f3f4f6;
 }
 
 .text-green {

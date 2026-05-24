@@ -16,6 +16,7 @@ router.post('/ghl/triggers', requireGhlWebhookSignature, triggerController.handl
 
 // Official GHL marketplace/payment webhooks are signed by HighLevel.
 router.post('/ghl/payment', requireGhlWebhookSignature, webhookController.ghlPayment);
+router.post('/ghl/activity', requireGhlWebhookSignature, webhookController.ghlActivity);
 router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlForms);
 router.post('/external', requireMerchantWebhookSecret, webhookController.external);
 

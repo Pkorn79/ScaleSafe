@@ -9,6 +9,7 @@ import { evidenceService } from '../services/evidence.service';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
+import { ghlActivityService } from '../services/ghl-activity.service';
 
 export const webhookController = {
   /**
@@ -154,6 +155,20 @@ export const webhookController = {
 
       res.json({ status: 'ok', eventId, evidenceType });
     } catch (err) { next(err); }
+  },
+
+  /**
+   * POST /webhooks/ghl/activity
+   * Native GHL activity webhooks: appointments, invoices, and conversation messages.
+   */
+  async ghlActivity(req: Request, res: Response, _next: NextFunction) {
+    try {
+      const result = await ghlActivityService.handleWebhook(req.body || {});
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      logger.error({ err: err.message }, 'Error processing GHL activity webhook');
+      res.json({ status: 'ok', error: 'internal' });
+    }
   },
 };
 

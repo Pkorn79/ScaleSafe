@@ -72,6 +72,7 @@ export const evidenceService = {
 
       const participationEvidenceTypes: EvidenceType[] = [
         EVIDENCE_TYPES.SESSION_DELIVERY,
+        EVIDENCE_TYPES.APPOINTMENT,
         EVIDENCE_TYPES.MODULE_COMPLETION,
         EVIDENCE_TYPES.PULSE_CHECKIN,
         EVIDENCE_TYPES.MILESTONE_COMPLETION,
@@ -597,6 +598,7 @@ export const evidenceService = {
     // Service delivery proof: 0-25
     const deliveryCount =
       (counts[EVIDENCE_TYPES.SESSION_DELIVERY] || 0) +
+      (counts[EVIDENCE_TYPES.APPOINTMENT] || 0) +
       (counts[EVIDENCE_TYPES.MODULE_COMPLETION] || 0) +
       (counts[EVIDENCE_TYPES.MILESTONE_COMPLETION] || 0) +
       (counts[EVIDENCE_TYPES.EXTERNAL_SESSION] || 0) +
@@ -608,7 +610,8 @@ export const evidenceService = {
     const engagementCount =
       (counts[EVIDENCE_TYPES.PULSE_CHECKIN] || 0) +
       (counts[EVIDENCE_TYPES.MILESTONE_SIGNOFF] || 0) +
-      (counts[EVIDENCE_TYPES.COMMUNICATION] || 0);
+      (counts[EVIDENCE_TYPES.COMMUNICATION] || 0) +
+      (counts[EVIDENCE_TYPES.INVOICE] || 0);
     const engagementPoints = Math.min(20, engagementCount * 4);
     breakdown.engagement = { points: engagementPoints, max: 20, detail: `${engagementCount} engagement record(s)` };
 

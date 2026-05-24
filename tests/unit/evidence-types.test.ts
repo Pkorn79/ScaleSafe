@@ -1,9 +1,9 @@
 import { EVIDENCE_TYPES, EVIDENCE_TABLE_MAP, EXTERNAL_EVENT_MAP, GHL_FORM_MAP } from '../../src/constants/evidence-types';
 
 describe('Evidence Types', () => {
-  test('should have 21 evidence types', () => {
+  test('should have 23 evidence types', () => {
     const types = Object.values(EVIDENCE_TYPES);
-    expect(types.length).toBe(21);
+    expect(types.length).toBe(23);
   });
 
   test('every evidence type should have a table mapping', () => {

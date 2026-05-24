@@ -59,7 +59,21 @@ export const evidenceRepository = {
       return out;
     };
 
-    const [timelineResult, evidenceResult] = await Promise.all([
+    const shouldQueryExtraTable = (type: string) => !opts.type || opts.type === type;
+
+    const extraTableQuery = (table: string, type: string) => {
+      if (!shouldQueryExtraTable(type)) return Promise.resolve({ data: [] as any[] });
+      let q: any = supabase
+        .from(table)
+        .select('*')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId);
+      if (opts.from) q = q.gte('created_at', opts.from);
+      if (opts.to) q = q.lte('created_at', opts.to);
+      return safeQuery(() => q.order('created_at', { ascending: false }));
+    };
+
+    const [timelineResult, evidenceResult, appointmentResult, invoiceResult] = await Promise.all([
       applyFilters(
         supabase.from('evidence_timeline').select('*'),
         'type',
@@ -70,6 +84,8 @@ export const evidenceRepository = {
           'evidence_type',
         ).order('created_at', { ascending: false }),
       ),
+      extraTableQuery('evidence_appointments', 'appointment'),
+      extraTableQuery('evidence_invoices', 'invoice'),
     ]);
 
     if (timelineResult.error) throw timelineResult.error;
@@ -80,9 +96,19 @@ export const evidenceRepository = {
       type: e.evidence_type,
       source: 'scalesafe',
     }));
+    const appointmentRows = (appointmentResult.data as any[] || []).map((e: any) => ({
+      ...e,
+      type: 'appointment',
+      data: e,
+    }));
+    const invoiceRows = (invoiceResult.data as any[] || []).map((e: any) => ({
+      ...e,
+      type: 'invoice',
+      data: e,
+    }));
 
     // Merge and deduplicate by id, sort newest first
-    const allRows = [...timelineRows, ...evidenceRows];
+    const allRows = [...timelineRows, ...evidenceRows, ...appointmentRows, ...invoiceRows];
     const seen = new Set<string>();
     const unique = allRows.filter(r => {
       if (r.id && seen.has(r.id)) return false;
@@ -108,7 +134,7 @@ export const evidenceRepository = {
   async getCounts(locationId: string, contactId: string): Promise<Record<string, number>> {
     const supabase = getSupabase();
 
-    const [timelineCounts, evidenceCounts] = await Promise.all([
+    const [timelineCounts, evidenceCounts, appointmentCounts, invoiceCounts] = await Promise.all([
       supabase
         .from('evidence_timeline')
         .select('type')
@@ -117,6 +143,16 @@ export const evidenceRepository = {
       safeQuery(() => supabase
         .from('evidence')
         .select('evidence_type')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)),
+      safeQuery(() => supabase
+        .from('evidence_appointments')
+        .select('id')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)),
+      safeQuery(() => supabase
+        .from('evidence_invoices')
+        .select('id')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)),
     ]);
@@ -132,6 +168,10 @@ export const evidenceRepository = {
       const t = row.evidence_type || 'unknown';
       counts[t] = (counts[t] || 0) + 1;
     }
+    const appointmentCount = (appointmentCounts.data as any[] || []).length;
+    if (appointmentCount > 0) counts.appointment = (counts.appointment || 0) + appointmentCount;
+    const invoiceCount = (invoiceCounts.data as any[] || []).length;
+    if (invoiceCount > 0) counts.invoice = (counts.invoice || 0) + invoiceCount;
     return counts;
   },
 
@@ -149,7 +189,7 @@ export const evidenceRepository = {
   async getLastEvidenceDate(locationId: string, contactId: string): Promise<string | null> {
     const supabase = getSupabase();
 
-    const [timelineResult, evidenceResult] = await Promise.all([
+    const [timelineResult, evidenceResult, appointmentResult, invoiceResult] = await Promise.all([
       supabase
         .from('evidence_timeline')
         .select('created_at')
@@ -166,16 +206,33 @@ export const evidenceRepository = {
         .order('created_at', { ascending: false })
         .limit(1)
         .single()),
+      safeQuery(() => supabase
+        .from('evidence_appointments')
+        .select('created_at')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()),
+      safeQuery(() => supabase
+        .from('evidence_invoices')
+        .select('created_at')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()),
     ]);
 
-    const timelineDate = (timelineResult.error?.code === 'PGRST116') ? null : timelineResult.data?.created_at || null;
-    const evidenceDate = (evidenceResult.data as any)?.created_at || null;
+    const dates = [
+      (timelineResult.error?.code === 'PGRST116') ? null : timelineResult.data?.created_at || null,
+      (evidenceResult.data as any)?.created_at || null,
+      (appointmentResult.data as any)?.created_at || null,
+      (invoiceResult.data as any)?.created_at || null,
+    ].filter(Boolean) as string[];
 
     if (timelineResult.error && timelineResult.error.code !== 'PGRST116') throw timelineResult.error;
 
-    // Return the most recent date from either source
-    if (!timelineDate) return evidenceDate;
-    if (!evidenceDate) return timelineDate;
-    return timelineDate > evidenceDate ? timelineDate : evidenceDate;
+    return dates.sort().pop() || null;
   },
 };

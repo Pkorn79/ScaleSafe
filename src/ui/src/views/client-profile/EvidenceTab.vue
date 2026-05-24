@@ -116,6 +116,8 @@ const typeOptions = [
   { value: 'course_completion', label: 'Course Completion' },
   { value: 'assignment', label: 'Assignment' },
   { value: 'communication', label: 'Communication' },
+  { value: 'appointment', label: 'Appointment' },
+  { value: 'invoice', label: 'Invoice' },
   { value: 'resource_delivery', label: 'Resource Delivery' },
   { value: 'refund', label: 'Refund' },
   { value: 'cancellation', label: 'Cancellation' },
@@ -194,6 +196,18 @@ function summarize(item: any): string {
       const paymentNumber = d.payment_number ? ` #${d.payment_number}` : '';
       const tx = d.ghl_transaction_id || d.transaction_id;
       return `NMI history sync recorded ${amount} payment${paymentNumber}${tx ? `, Tx: ${String(tx).slice(0, 12)}...` : ''}.`;
+    }
+    if (type === 'appointment') {
+      const title = d.appointment_title || d.title || 'GHL appointment';
+      const status = d.appointment_status || d.status || 'recorded';
+      const when = d.start_time || d.occurredAt || d.created_at;
+      return `${title} - ${formatEvidenceType(String(status))}${when ? ` on ${formatDate(when)}` : ''}`;
+    }
+    if (type === 'invoice') {
+      const invoice = d.invoice_number || d.invoice_id || 'GHL invoice';
+      const status = d.invoice_status || d.status || d.invoice_event_type || 'recorded';
+      const amount = d.amount ? ` · $${Number(d.amount).toFixed(2)}` : '';
+      return `${invoice} - ${formatEvidenceType(String(status))}${amount}`;
     }
     const parts: string[] = [];
     if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);
