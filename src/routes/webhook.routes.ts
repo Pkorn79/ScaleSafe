@@ -15,6 +15,7 @@ const router = Router();
 router.post('/ghl/triggers', requireGhlWebhookSignature, triggerController.handleSubscription);
 
 // Official GHL marketplace/payment webhooks are signed by HighLevel.
+router.post('/ghl', requireGhlWebhookSignature, webhookController.ghlUnified);
 router.post('/ghl/payment', requireGhlWebhookSignature, webhookController.ghlPayment);
 router.post('/ghl/activity', requireGhlWebhookSignature, webhookController.ghlActivity);
 router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlForms);

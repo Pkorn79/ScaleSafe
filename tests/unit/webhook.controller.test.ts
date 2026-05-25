@@ -9,6 +9,7 @@ const mockHandleFailed = jest.fn();
 const mockHandleRefund = jest.fn();
 const mockSupabaseFrom = jest.fn();
 const mockIdempotencyIsDuplicate = jest.fn().mockResolvedValue(false);
+const mockGhlActivityHandleWebhook = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -59,6 +60,12 @@ jest.mock('../../src/services/evidence.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/ghl-activity.service', () => ({
+  ghlActivityService: {
+    handleWebhook: (...args: any[]) => mockGhlActivityHandleWebhook(...args),
+  },
+}));
+
 jest.mock('../../src/services/notification.service', () => ({
   notificationService: { firePaymentFailed: jest.fn() },
 }));
@@ -86,6 +93,12 @@ beforeEach(() => {
   mockHandleRecurring.mockResolvedValue(undefined);
   mockHandleFailed.mockResolvedValue(undefined);
   mockHandleRefund.mockResolvedValue(undefined);
+  mockGhlActivityHandleWebhook.mockResolvedValue({
+    status: 'matched',
+    eventType: 'AppointmentCreate',
+    sourceObject: 'appointment',
+    actionTaken: 'appointment_evidence_created',
+  });
   // Default: enrollment queries return no match via supabase
   mockSupabaseFrom.mockReturnValue({
     select: () => ({
@@ -240,6 +253,71 @@ describe('Webhook Controller - ghlPayment', () => {
     await webhookController.ghlPayment(req, res, jest.fn());
 
     expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true });
+  });
+});
+
+describe('Webhook Controller - ghlUnified', () => {
+  test('routes appointment events from the default GHL webhook URL to activity processing', async () => {
+    const body = {
+      type: 'AppointmentCreate',
+      locationId: 'loc_1',
+      appointment: {
+        id: 'appt_1',
+        contactId: 'contact_1',
+        calendarId: 'cal_1',
+      },
+    };
+    const { req, res, next } = mockReqRes(body);
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockGhlActivityHandleWebhook).toHaveBeenCalledWith(body);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      status: 'matched',
+      eventType: 'AppointmentCreate',
+      sourceObject: 'appointment',
+      actionTaken: 'appointment_evidence_created',
+    });
+  });
+
+  test('routes payment events from the default GHL webhook URL to payment processing', async () => {
+    mockEnrollmentFindByConsentToken.mockResolvedValue({
+      id: 'enr_1',
+      offer_id: 'offer_1',
+      status: 'consent_captured',
+    });
+
+    const { req, res, next } = mockReqRes({
+      type: 'OrderCompleted',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      orderId: 'ord_1',
+      amount: 100,
+      metadata: { consent_token: 'tok_abc' },
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_1',
+      paymentAmount: 100,
+    }));
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok', type: 'OrderCompleted' });
+  });
+
+  test('acknowledges unsupported default GHL webhook events without failing delivery', async () => {
+    const { req, res, next } = mockReqRes({
+      type: 'LocationUpdate',
+      locationId: 'loc_1',
+      name: 'Updated Location',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockGhlActivityHandleWebhook).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true, type: 'LocationUpdate' });
   });
 });
 

@@ -10,8 +10,87 @@ import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { ghlActivityService } from '../services/ghl-activity.service';
+import { triggerController } from './trigger.controller';
+
+function webhookType(body: Record<string, any>): string {
+  return String(body.type || body.event_type || body.eventType || body.triggerData?.eventType || '').trim();
+}
+
+function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
+  return Boolean(
+    body.triggerKey ||
+    body.trigger_key ||
+    body.triggerData?.key ||
+    body.meta?.key ||
+    body.subscriptionUrl ||
+    body.subscription_url ||
+    body.triggerData?.targetUrl,
+  );
+}
+
+function isGhlPaymentWebhook(type: string): boolean {
+  const normalized = type.toLowerCase();
+  return [
+    'ordercompleted',
+    'ordercreate',
+    'orderstatusupdate',
+    'subscriptionpaymentsuccess',
+    'subscriptionpaymentfailed',
+    'invoicepaymentreceived',
+    'invoicepaymentfailed',
+    'orderrefunded',
+    'refund.processed',
+    'refundcreated',
+    'payment.failed',
+    'subscription.charged',
+    'order.completed',
+  ].includes(normalized);
+}
+
+function isGhlActivityWebhook(type: string, body: Record<string, any>): boolean {
+  const normalized = type.toLowerCase();
+  return (
+    normalized.includes('appointment') ||
+    normalized.includes('message') ||
+    normalized.includes('conversation') ||
+    normalized.includes('invoice') ||
+    normalized.includes('note') ||
+    normalized.includes('task') ||
+    normalized.includes('opportunity') ||
+    normalized.includes('contact') ||
+    Boolean(body.appointment || body.invoiceNumber || body.invoiceItems || body.messageId || body.conversationId)
+  );
+}
 
 export const webhookController = {
+  /**
+   * POST /webhooks/ghl
+   * Default HighLevel Marketplace webhook URL. HighLevel allows custom URLs
+   * per event, but this default route must accept and route mixed event types.
+   */
+  async ghlUnified(req: Request, res: Response, next: NextFunction) {
+    const body = req.body || {};
+    const type = webhookType(body);
+
+    if (isTriggerSubscriptionWebhook(body)) {
+      await triggerController.handleSubscription(req, res, next);
+      return;
+    }
+
+    if (isGhlPaymentWebhook(type)) {
+      await webhookController.ghlPayment(req, res, next);
+      return;
+    }
+
+    if (isGhlActivityWebhook(type, body)) {
+      await webhookController.ghlActivity(req, res, next);
+      return;
+    }
+
+    logger.info({ type: type || 'unknown', bodyKeys: Object.keys(body) }, 'Unhandled GHL default webhook event');
+    res.json({ status: 'ok', skipped: true, type: type || 'unknown' });
+  },
+
   /**
    * POST /webhooks/ghl/payment
    * GHL payment webhooks: OrderCompleted, SubscriptionPaymentSuccess,
