@@ -372,6 +372,35 @@ export const evidenceService = {
           }),
         }),
       },
+      module_progress: {
+        evidenceType: EVIDENCE_TYPES.MODULE_PROGRESS,
+        mapper: (d) => ({
+          module_name: d.module_name || d.lesson_name || d.category_name || d.product_name || d.course_name,
+          completion_date: d.progress_date || d.started_at || d.event_timestamp || new Date().toISOString(),
+          completion_status: d.completion_status || 'in_progress',
+          progress_pct: d.progress_pct || d.progress || 0,
+          score: d.score,
+          time_spent_minutes: d.time_spent,
+          notes: d.notes,
+          raw_payload: d,
+          ...buildDefenseEvidenceFields({
+            summary: `Course activity recorded: ${d.module_name || d.lesson_name || d.category_name || d.product_name || d.course_name || 'content'} started or progressed${d.progress_pct || d.progress ? ` (${d.progress_pct || d.progress}% progress)` : ''}.`,
+            title: `Course Progress: ${d.module_name || d.lesson_name || d.category_name || d.product_name || d.course_name || 'Content'}`,
+            proofRole: 'service_access',
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: 'medium', confidence: 'moderate' },
+            sourceRecordId: String(d.id || d.event_id || '') || null,
+            metadata: {
+              actor: 'client',
+              service: {
+                accessConfirmed: true,
+                serviceDate: String(d.progress_date || d.started_at || d.event_timestamp || '') || null,
+                deliverableName: String(d.module_name || d.lesson_name || d.category_name || d.product_name || d.course_name || '') || null,
+              },
+              source: { system: source, recordId: String(d.id || d.event_id || '') || null, rawEventType: 'module_progress' },
+            },
+          }),
+        }),
+      },
       milestone_signed: {
         evidenceType: EVIDENCE_TYPES.MILESTONE_SIGNOFF,
         mapper: (d) => ({
@@ -571,6 +600,16 @@ export const evidenceService = {
     opts: { limit?: number; offset?: number; type?: string; from?: string; to?: string } = {},
   ) {
     return evidenceRepository.getTimeline(locationId, contactId, opts);
+  },
+
+  async linkEvidenceToEnrollment(
+    locationId: string,
+    contactId: string,
+    evidenceTable: string,
+    evidenceId: string,
+    enrollmentId: string,
+  ): Promise<void> {
+    await evidenceRepository.linkToEnrollment(locationId, contactId, evidenceTable, evidenceId, enrollmentId);
   },
 
   /**

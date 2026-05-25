@@ -20,6 +20,22 @@ async function safeQuery<T>(fn: () => PromiseLike<{ data: T | null; error: any }
   }
 }
 
+const LINKABLE_EVIDENCE_TABLES = new Set([
+  'evidence_communication',
+  'evidence_appointments',
+  'evidence_invoices',
+  'evidence_service_access',
+  'evidence_modules',
+  'evidence_course_completion',
+  'evidence_custom_events',
+  'evidence_external_sessions',
+  'evidence_sessions',
+  'evidence_pulse_checkins',
+  'evidence_milestones',
+  'evidence_signoffs',
+  'evidence_resource_delivery',
+]);
+
 export const evidenceRepository = {
   /**
    * Insert a record into the appropriate evidence table.
@@ -73,7 +89,7 @@ export const evidenceRepository = {
       return safeQuery(() => q.order('created_at', { ascending: false }));
     };
 
-    const [timelineResult, evidenceResult, appointmentResult, invoiceResult] = await Promise.all([
+    const [timelineResult, evidenceResult, appointmentResult, invoiceResult, communicationResult] = await Promise.all([
       applyFilters(
         supabase.from('evidence_timeline').select('*'),
         'type',
@@ -86,29 +102,41 @@ export const evidenceRepository = {
       ),
       extraTableQuery('evidence_appointments', 'appointment'),
       extraTableQuery('evidence_invoices', 'invoice'),
+      extraTableQuery('evidence_communication', 'communication'),
     ]);
 
     if (timelineResult.error) throw timelineResult.error;
 
-    const timelineRows = timelineResult.data || [];
+    const timelineRows = (timelineResult.data || [])
+      .filter((row: any) => row.type !== 'communication')
+      .map((row: any) => ({ ...row, evidence_table: row.evidence_table || null }));
     const evidenceRows = (evidenceResult.data as any[] || []).map((e: any) => ({
       ...e,
       type: e.evidence_type,
       source: 'scalesafe',
+      evidence_table: 'evidence',
     }));
     const appointmentRows = (appointmentResult.data as any[] || []).map((e: any) => ({
       ...e,
       type: 'appointment',
       data: e,
+      evidence_table: 'evidence_appointments',
     }));
     const invoiceRows = (invoiceResult.data as any[] || []).map((e: any) => ({
       ...e,
       type: 'invoice',
       data: e,
+      evidence_table: 'evidence_invoices',
+    }));
+    const communicationRows = (communicationResult.data as any[] || []).map((e: any) => ({
+      ...e,
+      type: 'communication',
+      data: e,
+      evidence_table: 'evidence_communication',
     }));
 
     // Merge and deduplicate by id, sort newest first
-    const allRows = [...timelineRows, ...evidenceRows, ...appointmentRows, ...invoiceRows];
+    const allRows = [...timelineRows, ...evidenceRows, ...appointmentRows, ...invoiceRows, ...communicationRows];
     const seen = new Set<string>();
     const unique = allRows.filter(r => {
       if (r.id && seen.has(r.id)) return false;
@@ -134,7 +162,7 @@ export const evidenceRepository = {
   async getCounts(locationId: string, contactId: string): Promise<Record<string, number>> {
     const supabase = getSupabase();
 
-    const [timelineCounts, evidenceCounts, appointmentCounts, invoiceCounts] = await Promise.all([
+    const [timelineCounts, evidenceCounts, appointmentCounts, invoiceCounts, communicationCounts] = await Promise.all([
       supabase
         .from('evidence_timeline')
         .select('type')
@@ -155,6 +183,11 @@ export const evidenceRepository = {
         .select('id')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)),
+      safeQuery(() => supabase
+        .from('evidence_communication')
+        .select('id')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)),
     ]);
 
     if (timelineCounts.error) throw timelineCounts.error;
@@ -162,6 +195,7 @@ export const evidenceRepository = {
     const counts: Record<string, number> = {};
     for (const row of (timelineCounts.data || [])) {
       const t = row.type || 'unknown';
+      if (t === 'communication') continue;
       counts[t] = (counts[t] || 0) + 1;
     }
     for (const row of (evidenceCounts.data as any[] || [])) {
@@ -172,6 +206,8 @@ export const evidenceRepository = {
     if (appointmentCount > 0) counts.appointment = (counts.appointment || 0) + appointmentCount;
     const invoiceCount = (invoiceCounts.data as any[] || []).length;
     if (invoiceCount > 0) counts.invoice = (counts.invoice || 0) + invoiceCount;
+    const communicationCount = (communicationCounts.data as any[] || []).length;
+    if (communicationCount > 0) counts.communication = (counts.communication || 0) + communicationCount;
     return counts;
   },
 
@@ -189,7 +225,7 @@ export const evidenceRepository = {
   async getLastEvidenceDate(locationId: string, contactId: string): Promise<string | null> {
     const supabase = getSupabase();
 
-    const [timelineResult, evidenceResult, appointmentResult, invoiceResult] = await Promise.all([
+    const [timelineResult, evidenceResult, appointmentResult, invoiceResult, communicationResult] = await Promise.all([
       supabase
         .from('evidence_timeline')
         .select('created_at')
@@ -222,6 +258,14 @@ export const evidenceRepository = {
         .order('created_at', { ascending: false })
         .limit(1)
         .single()),
+      safeQuery(() => supabase
+        .from('evidence_communication')
+        .select('created_at')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()),
     ]);
 
     const dates = [
@@ -229,10 +273,44 @@ export const evidenceRepository = {
       (evidenceResult.data as any)?.created_at || null,
       (appointmentResult.data as any)?.created_at || null,
       (invoiceResult.data as any)?.created_at || null,
+      (communicationResult.data as any)?.created_at || null,
     ].filter(Boolean) as string[];
 
     if (timelineResult.error && timelineResult.error.code !== 'PGRST116') throw timelineResult.error;
 
     return dates.sort().pop() || null;
+  },
+
+  async linkToEnrollment(
+    locationId: string,
+    contactId: string,
+    evidenceTable: string,
+    evidenceId: string,
+    enrollmentId: string,
+  ): Promise<void> {
+    if (!LINKABLE_EVIDENCE_TABLES.has(evidenceTable)) {
+      throw new Error('Evidence type cannot be linked to a program');
+    }
+
+    const supabase = getSupabase();
+    const { data: enrollment, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('id')
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .eq('id', enrollmentId)
+      .maybeSingle();
+
+    if (enrollmentError && enrollmentError.code !== 'PGRST116') throw enrollmentError;
+    if (!enrollment) throw new Error('Program enrollment not found for this client');
+
+    const { error } = await supabase
+      .from(evidenceTable)
+      .update({ enrollment_id: enrollmentId })
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .eq('id', evidenceId);
+
+    if (error) throw error;
   },
 };

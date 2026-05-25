@@ -44,6 +44,7 @@
             <th>Date</th>
             <th>Type</th>
             <th>Details</th>
+            <th>Program</th>
           </tr>
         </thead>
         <tbody>
@@ -62,6 +63,34 @@
                 <div v-if="reasonTags(item).length" class="evidence-tags">
                   <span v-for="tag in reasonTags(item)" :key="tag" class="badge badge-gray">{{ formatEvidenceType(tag) }}</span>
                 </div>
+              </div>
+            </td>
+            <td class="text-sm evidence-link-cell">
+              <span v-if="linkedEnrollmentId(item)" class="badge badge-green">Linked</span>
+              <button
+                v-else-if="canLink(item)"
+                class="btn btn-sm btn-secondary"
+                @click="startLink(item)"
+              >
+                Link to Program
+              </button>
+              <span v-else class="text-muted">Client-level</span>
+            </td>
+          </tr>
+          <tr v-if="linkingItem" class="evidence-link-row">
+            <td colspan="4">
+              <div class="evidence-link-box">
+                <select class="form-select" v-model="selectedEnrollmentId">
+                  <option value="">Select program...</option>
+                  <option v-for="enrollment in enrollments" :key="enrollment.id" :value="enrollment.id">
+                    {{ enrollment.offer_name || enrollment.offerName || enrollment.program_name || 'Program' }}
+                  </option>
+                </select>
+                <button class="btn btn-sm btn-primary" @click="saveLink" :disabled="linkSaving || !selectedEnrollmentId">
+                  {{ linkSaving ? 'Saving...' : 'Save Link' }}
+                </button>
+                <button class="btn btn-sm btn-secondary" @click="cancelLink" :disabled="linkSaving">Cancel</button>
+                <span v-if="linkError" class="text-sm" style="color:#dc2626">{{ linkError }}</span>
               </div>
             </td>
           </tr>
@@ -93,6 +122,11 @@ const error = ref('');
 const hasMore = ref(false);
 const offset = ref(0);
 const pageSize = 50;
+const enrollments = ref<any[]>([]);
+const linkingItem = ref<any | null>(null);
+const selectedEnrollmentId = ref('');
+const linkSaving = ref(false);
+const linkError = ref('');
 
 const filterType = ref('');
 const filterFrom = ref('');
@@ -137,6 +171,14 @@ function formatEvidenceType(type: string): string {
 
 function evidenceData(item: any): any {
   return item?.data && typeof item.data === 'object' ? item.data : {};
+}
+
+function linkedEnrollmentId(item: any): string {
+  return String(item.enrollment_id || evidenceData(item).enrollment_id || '').trim();
+}
+
+function canLink(item: any): boolean {
+  return Boolean(item.id && item.evidence_table && enrollments.value.length > 0);
 }
 
 function exhibitTitle(item: any): string {
@@ -252,6 +294,45 @@ async function fetchPage(off: number, append = false) {
   loading.value = false;
 }
 
+async function fetchEnrollments() {
+  try {
+    const result = await api.get<any>(`/api/dashboard/client-enrollments/${props.contactId}`);
+    enrollments.value = Array.isArray(result) ? result : (result?.enrollments || result?.items || []);
+  } catch {
+    enrollments.value = [];
+  }
+}
+
+function startLink(item: any) {
+  linkingItem.value = item;
+  selectedEnrollmentId.value = '';
+  linkError.value = '';
+}
+
+function cancelLink() {
+  linkingItem.value = null;
+  selectedEnrollmentId.value = '';
+  linkError.value = '';
+}
+
+async function saveLink() {
+  if (!linkingItem.value || !selectedEnrollmentId.value) return;
+  linkSaving.value = true;
+  linkError.value = '';
+  try {
+    await api.post(`/api/evidence/${props.contactId}/link-program`, {
+      evidenceTable: linkingItem.value.evidence_table,
+      evidenceId: linkingItem.value.id,
+      enrollmentId: selectedEnrollmentId.value,
+    });
+    cancelLink();
+    await fetchPage(0, false);
+  } catch (e: any) {
+    linkError.value = e.message || 'Failed to link evidence';
+  }
+  linkSaving.value = false;
+}
+
 async function applyFilters() {
   offset.value = 0;
   await fetchPage(0, false);
@@ -261,7 +342,9 @@ async function loadMore() {
   await fetchPage(offset.value, true);
 }
 
-onMounted(() => fetchPage(0, false));
+onMounted(async () => {
+  await Promise.all([fetchEnrollments(), fetchPage(0, false)]);
+});
 </script>
 
 <style scoped>
@@ -282,5 +365,24 @@ onMounted(() => fetchPage(0, false));
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.evidence-link-cell {
+  white-space: nowrap;
+}
+
+.evidence-link-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.evidence-link-box .form-select {
+  max-width: 320px;
 }
 </style>

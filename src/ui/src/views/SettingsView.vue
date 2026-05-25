@@ -189,7 +189,7 @@
           <div>
             <h3 class="section-title" style="margin-bottom:4px">GHL Activity Tracking</h3>
             <p class="text-sm text-muted">
-              Connect GHL activity sources to ScaleSafe offers. Unmatched activity stays visible until linked.
+              ScaleSafe automatically records GHL messages, appointments, invoices, notes, tasks, and course activity as client-level evidence.
             </p>
           </div>
           <button class="btn btn-secondary btn-sm" @click="loadGhlActivitySetup" :disabled="ghlActivityLoading">
@@ -204,6 +204,11 @@
         <div v-if="ghlActivityError" class="error-msg">{{ ghlActivityError }}</div>
         <div v-if="ghlActivitySaved" class="success-msg">{{ ghlActivitySaved }}</div>
 
+        <div class="text-sm text-muted">
+          No setup mapping is required for beta. GHL activity attaches to the client first. When a message, invoice, appointment, note, task, or course event should support a specific program, link it from the client Evidence tab.
+        </div>
+
+        <div v-if="false">
         <div class="text-sm" style="font-weight:600;margin-bottom:8px">Activity matching rule</div>
         <div class="grid grid-3" style="gap:12px">
           <div>
@@ -311,10 +316,12 @@
           </div>
         </div>
 
+        </div>
+
         <div v-if="ghlUnmatchedActivity.length" class="mt-4">
-          <div class="text-sm" style="font-weight:600">Unmatched activity</div>
+          <div class="text-sm" style="font-weight:600">Recent client-level activity</div>
           <div v-for="event in ghlUnmatchedActivity.slice(0, 5)" :key="event.id" class="text-sm text-muted unmatched-row">
-            {{ event.source_object }} · {{ event.event_type }} · {{ formatHealthTime(event.created_at) }} · {{ event.match_reason || 'not matched' }}
+            {{ event.source_object }} · {{ event.event_type }} · {{ formatHealthTime(event.created_at) }}
           </div>
         </div>
       </div>

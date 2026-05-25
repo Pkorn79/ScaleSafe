@@ -237,6 +237,63 @@ export const webhookController = {
   },
 
   /**
+   * POST /webhooks/ghl/course-activity
+   * GHL workflow webhook bridge for native course/membership activity.
+   * Protected by the merchant workflow webhook secret.
+   */
+  async ghlCourseActivity(req: Request, res: Response, next: NextFunction) {
+    try {
+      const body = req.body || {};
+      const locationId = body.locationId || body.location_id;
+      const contactId = body.contactId || body.contact_id || '';
+      const contactEmail = body.contactEmail || body.contact_email || body.email || '';
+      const rawEventType = String(body.eventType || body.event_type || body.type || '').trim();
+
+      if (!locationId || !rawEventType) {
+        throw new ValidationError('locationId and eventType required');
+      }
+      if (!contactId && !contactEmail) {
+        throw new ValidationError('contactId or contactEmail required');
+      }
+
+      const eventId = stableExternalEventId('ghl_course', rawEventType, contactId || contactEmail, body);
+      if (await idempotencyRepository.isDuplicate(eventId, 'ghl_course', locationId)) {
+        res.json({ status: 'duplicate', eventId });
+        return;
+      }
+
+      let resolvedContactId = contactId;
+      if (!resolvedContactId && contactEmail) {
+        try {
+          const { ghlApi: getApi } = await import('../clients/ghl.client');
+          const api = await getApi(locationId);
+          const search = await api.get('/contacts/search/duplicate', {
+            params: { locationId, email: contactEmail },
+          });
+          resolvedContactId = search.data.contact?.id || '';
+        } catch {
+          logger.warn({ hasContactEmail: !!contactEmail, locationId }, 'Could not resolve GHL course contact by email');
+        }
+      }
+
+      if (!resolvedContactId) {
+        throw new ValidationError(`Could not resolve contact for ${contactEmail}`);
+      }
+
+      const mapped = mapCourseActivity(rawEventType, body);
+      const evidenceType = await evidenceService.handleExternalEvent(
+        mapped.eventType,
+        locationId,
+        resolvedContactId,
+        'ghl_course',
+        mapped.data,
+      );
+
+      res.json({ status: 'ok', eventId, rawEventType, evidenceType });
+    } catch (err) { next(err); }
+  },
+
+  /**
    * POST /webhooks/ghl/activity
    * Native GHL activity webhooks: appointments, invoices, and conversation messages.
    */
@@ -250,6 +307,95 @@ export const webhookController = {
     }
   },
 };
+
+function normalizeCourseEventType(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[\s.-]+/g, '_')
+    .toLowerCase();
+}
+
+function mapCourseActivity(rawEventType: string, body: Record<string, any>): { eventType: string; data: Record<string, unknown> } {
+  const normalized = normalizeCourseEventType(rawEventType);
+  const occurredAt = body.occurredAt || body.occurred_at || body.timestamp || body.dateAdded || new Date().toISOString();
+  const courseName = body.courseName || body.course_name || body.productName || body.product_name || body.product || body.course || '';
+  const categoryName = body.categoryName || body.category_name || body.category || '';
+  const lessonName = body.lessonName || body.lesson_name || body.lesson || '';
+  const contentName = lessonName || categoryName || courseName || body.contentName || body.content_name || rawEventType;
+  const base = {
+    id: body.id || body.event_id || body.eventId || '',
+    event_id: body.event_id || body.eventId || '',
+    event_type: normalized,
+    event_timestamp: occurredAt,
+    platform: 'GHL Courses',
+    course_name: courseName,
+    product_name: courseName,
+    category_name: categoryName,
+    lesson_name: lessonName,
+    module_name: contentName,
+    content_accessed: contentName,
+    ip_address: body.ipAddress || body.ip_address || '',
+    device_fingerprint: body.deviceFingerprint || body.device_fingerprint || '',
+    time_spent: body.timeSpent || body.time_spent || '',
+    raw: body,
+  };
+
+  if (normalized.includes('login') || normalized === 'access_granted') {
+    return {
+      eventType: 'service_access',
+      data: {
+        ...base,
+        event_type: normalized.includes('login') ? 'login' : 'access_granted',
+        access_date: occurredAt,
+        content_accessed: contentName || 'GHL course portal',
+      },
+    };
+  }
+
+  if (normalized === 'access_removed') {
+    return {
+      eventType: 'custom_event',
+      data: {
+        ...base,
+        type: 'course_access_removed',
+        description: `GHL course access removed${courseName ? ` for ${courseName}` : ''}.`,
+        summary: `GHL course access removed${courseName ? ` for ${courseName}` : ''}.`,
+      },
+    };
+  }
+
+  if (normalized.includes('product_completed') || normalized.includes('course_completed')) {
+    return {
+      eventType: 'course_completed',
+      data: {
+        ...base,
+        completion_date: occurredAt,
+        certificate: body.certificateUrl || body.certificate_url || '',
+      },
+    };
+  }
+
+  if (normalized.includes('completed')) {
+    return {
+      eventType: 'module_completed',
+      data: {
+        ...base,
+        completion_date: occurredAt,
+        progress_pct: body.progressPct || body.progress_pct || 100,
+      },
+    };
+  }
+
+  return {
+    eventType: 'module_progress',
+    data: {
+      ...base,
+      started_at: occurredAt,
+      progress_pct: body.progressPct || body.progress_pct || 0,
+    },
+  };
+}
 
 function stableExternalEventId(source: string, eventType: string, contactIdentifier: string, data: unknown): string {
   const hash = crypto

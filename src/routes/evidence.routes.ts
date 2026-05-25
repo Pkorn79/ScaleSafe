@@ -39,4 +39,28 @@ router.get('/:contactId/score', async (req: Request, res: Response, next: NextFu
   } catch (err) { next(err); }
 });
 
+/** POST /api/evidence/:contactId/link-program - manually link a client-level evidence row to an enrollment */
+router.post('/:contactId/link-program', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const locationId = resolveLocationId(req);
+    if (!locationId) throw new ValidationError('locationId required');
+
+    const evidenceTable = String(req.body?.evidenceTable || '');
+    const evidenceId = String(req.body?.evidenceId || '');
+    const enrollmentId = String(req.body?.enrollmentId || '');
+    if (!evidenceTable || !evidenceId || !enrollmentId) {
+      throw new ValidationError('evidenceTable, evidenceId, and enrollmentId required');
+    }
+
+    await evidenceService.linkEvidenceToEnrollment(
+      locationId,
+      req.params.contactId,
+      evidenceTable,
+      evidenceId,
+      enrollmentId,
+    );
+    res.json({ status: 'ok' });
+  } catch (err) { next(err); }
+});
+
 export default router;

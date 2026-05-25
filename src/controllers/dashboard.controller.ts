@@ -1124,8 +1124,9 @@ export const dashboardController = {
 
       const supabase = getSupabase();
 
-      // Pull GHL data + evidence cross-reference in parallel
-      const [ghlMessages, ghlNotes, appSentEvidence] = await Promise.allSettled([
+      // Pull GHL data + persisted evidence in parallel. Persisted evidence is the
+      // source of truth for Marketplace webhook-captured communications.
+      const [ghlMessages, ghlNotes, storedCommunicationEvidence] = await Promise.allSettled([
         (async () => {
           try {
             const api = await ghlApi(locationId);
@@ -1156,25 +1157,26 @@ export const dashboardController = {
             return [] as any[];
           }
         })(),
-        // Cross-reference: app-sent messages logged with source='app_triggered'
         supabase
           .from('evidence_communication')
-          .select('comm_type, comm_date, summary, direction')
+          .select('id, comm_type, comm_date, summary, body_preview, direction, source, ghl_conversation_id, ghl_message_id')
           .eq('location_id', locationId)
           .eq('contact_id', contactId)
-          .eq('source', 'app_triggered')
           .gte('comm_date', windowStart.toISOString())
           .order('comm_date', { ascending: false }),
       ]);
 
       const messages = ghlMessages.status === 'fulfilled' ? ghlMessages.value : [];
       const notes = ghlNotes.status === 'fulfilled' ? ghlNotes.value : [];
-      const appSentRows = (appSentEvidence.status === 'fulfilled' ? (appSentEvidence.value?.data || []) : []) as any[];
+      const storedCommRows = (storedCommunicationEvidence.status === 'fulfilled' ? (storedCommunicationEvidence.value?.data || []) : []) as any[];
 
       // Build marker set for fast cross-reference: (channel|direction|timestamp bucket)
       // Use 5-minute buckets on comm_date for matching outbound GHL messages to app-sent evidence rows.
       const appSentMarkers = new Set<string>();
-      for (const row of appSentRows) {
+      const storedMessageIds = new Set<string>();
+      for (const row of storedCommRows) {
+        if (row.ghl_message_id) storedMessageIds.add(String(row.ghl_message_id));
+        if (row.source !== 'app_triggered') continue;
         const bucket = Math.floor(new Date(row.comm_date).getTime() / (5 * 60 * 1000));
         const channel = String(row.comm_type || '').toLowerCase();
         appSentMarkers.add(`${channel}|outbound|${bucket}`);
@@ -1203,6 +1205,7 @@ export const dashboardController = {
           const date = msg.dateAdded || msg.createdAt || msg.date || '';
           return {
             id: `msg-${msg.id || convId}-${date}`,
+            sourceId: String(msg.id || ''),
             channel,
             direction,
             date,
@@ -1210,7 +1213,22 @@ export const dashboardController = {
             sourceMark: markSource(channel, direction, date),
           };
         })
+        .filter(m => !m.sourceId || !storedMessageIds.has(m.sourceId))
         .filter(m => m.date && (new Date(m.date).getTime() >= windowStart.getTime()));
+
+      const storedCommItems = storedCommRows
+        .map((row: any) => ({
+          id: `evidence-comm-${row.id}`,
+          channel: row.comm_type || 'other',
+          direction: row.direction || 'outbound',
+          date: row.comm_date || '',
+          body: row.summary || row.body_preview || '',
+          sourceMark: row.source === 'app_triggered' ? 'automated' : row.source === 'ghl_webhook' && row.direction === 'outbound' ? 'manual' : null,
+          evidenceId: row.id,
+          conversationId: row.ghl_conversation_id || null,
+          messageId: row.ghl_message_id || null,
+        }))
+        .filter((m: any) => m.date && (new Date(m.date).getTime() >= windowStart.getTime()));
 
       // Normalize GHL notes into feed items
       const noteItems = notes
@@ -1225,7 +1243,7 @@ export const dashboardController = {
         .filter((n: any) => n.date && (new Date(n.date).getTime() >= windowStart.getTime()));
 
       // Merge + sort newest-first
-      const combined = [...messageItems, ...noteItems].sort((a, b) => {
+      const combined = [...storedCommItems, ...messageItems, ...noteItems].sort((a, b) => {
         return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
 

@@ -115,15 +115,7 @@ describe('ghlActivityService', () => {
     expect(normalized.status).toBe('confirmed');
   });
 
-  test('creates appointment evidence when an official appointment matches a calendar mapping', async () => {
-    mockListAppointmentMappings.mockResolvedValueOnce([{
-      is_active: true,
-      calendar_id: 'cal_1',
-      offer_id: 'offer_1',
-      staff_user_id: null,
-      title_keyword: null,
-    }]);
-
+  test('creates client-level appointment evidence without requiring calendar mapping', async () => {
     const result = await ghlActivityService.handleWebhook({
       type: 'AppointmentCreate',
       locationId: 'loc_1',
@@ -143,8 +135,8 @@ describe('ghlActivityService', () => {
       contact_id: 'contact_1',
       source_object: 'appointment',
       source_record_id: 'appt_1',
-      status: 'matched',
-      match_reason: 'legacy_calendar_offer_mapping',
+      status: 'client_level',
+      match_reason: 'client_level_unmatched_to_enrollment',
     }));
     expect(mockLogEvidence).toHaveBeenCalledWith(
       EVIDENCE_TYPES.APPOINTMENT,
@@ -152,25 +144,14 @@ describe('ghlActivityService', () => {
       'contact_1',
       'ghl_calendar',
       expect.objectContaining({
-        enrollment_id: 'enr_1',
+        enrollment_id: null,
         appointment_id: 'appt_1',
         appointment_title: 'Strategy Session',
       }),
     );
   });
 
-  test('matches invoice line item to an offer with activity match rules', async () => {
-    mockListMatchRules.mockResolvedValueOnce([{
-      id: 'rule_1',
-      is_active: true,
-      rule_type: 'invoice_item',
-      source_key: 'invoice_item_name',
-      source_value: 'Beta Tester',
-      offer_id: 'offer_1',
-      staff_user_id: null,
-      title_keyword: null,
-    }]);
-
+  test('keeps GHL invoices client-level instead of guessing a program from line items', async () => {
     const result = await ghlActivityService.handleWebhook({
       locationId: 'loc_1',
       _id: 'inv_1',
@@ -187,17 +168,13 @@ describe('ghlActivityService', () => {
     expect(mockCreateEventIfNew).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc_1',
       contact_id: 'contact_1',
-      offer_id: 'offer_1',
-      status: 'matched',
-      match_reason: 'invoice_item_invoice_item_name_rule',
-      linked_enrollment_ids: ['enr_1'],
-      linked_offer_ids: ['offer_1'],
+      offer_id: null,
+      status: 'client_level',
+      match_reason: 'client_level_unmatched_to_enrollment',
+      linked_enrollment_ids: [],
+      linked_offer_ids: [],
     }));
-    expect(mockLinkActivityToEnrollment).toHaveBeenCalledWith(expect.objectContaining({
-      locationId: 'loc_1',
-      enrollmentId: 'enr_1',
-      offerId: 'offer_1',
-    }));
+    expect(mockLinkActivityToEnrollment).not.toHaveBeenCalled();
   });
 
   test('keeps duplicate GHL activity from creating duplicate evidence', async () => {

@@ -142,6 +142,25 @@ function applyDefenseContract(exhibit: ExhibitEntry, row: any): void {
   exhibit.meta = exhibitMeta(row, exhibit.meta || {});
 }
 
+function scopedRows<T extends Record<string, any>>(
+  rows: T[] | null | undefined,
+  enrollmentId: string | undefined,
+  dateField: string,
+  windowStart: Date | null,
+  windowEnd: Date | null,
+): T[] {
+  if (!enrollmentId) return rows || [];
+  return (rows || []).filter((row) => {
+    if (row.enrollment_id === enrollmentId) return true;
+    if (row.enrollment_id) return false;
+    if (!windowStart || !windowEnd) return true;
+    const value = row[dateField] || row.created_at;
+    if (!value) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= windowStart.getTime() && time <= windowEnd.getTime();
+  });
+}
+
 export const defenseExhibitsService = {
   /**
    * Build the exhibit list for a contact at compilation time.
@@ -160,16 +179,25 @@ export const defenseExhibitsService = {
     const exhibits: ExhibitEntry[] = [];
     let nextIdx = 1;
 
-    // Resolve the target enrollment's offer_id for scoping (when available)
+    // Resolve the target enrollment for scoping (when available)
     let scopeOfferId: string | null = null;
+    let scopeWindowStart: Date | null = null;
+    let scopeWindowEnd: Date | null = null;
     if (opts?.enrollmentId) {
       try {
         const { data: enr } = await supabase
           .from('enrollments')
-          .select('offer_id')
+          .select('offer_id, created_at, enrolled_at')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
           .eq('id', opts.enrollmentId)
           .maybeSingle();
         scopeOfferId = enr?.offer_id || null;
+        const anchor = enr?.enrolled_at || enr?.created_at;
+        if (anchor) {
+          scopeWindowStart = new Date(new Date(anchor).getTime() - 14 * 86400000);
+          scopeWindowEnd = new Date();
+        }
       } catch {}
     }
 
@@ -239,11 +267,11 @@ export const defenseExhibitsService = {
     try {
       const { data: appointments } = await supabase
         .from('evidence_appointments')
-        .select(`id, appointment_title, appointment_status, appointment_event_type, start_time, end_time, calendar_id, delivery_role, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, appointment_title, appointment_status, appointment_event_type, start_time, end_time, calendar_id, delivery_role, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('start_time', { ascending: true });
-      for (const a of ((appointments || []) as any[])) {
+      for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(a, `Appointment: ${a.appointment_title || 'GHL appointment'}`),
@@ -282,11 +310,11 @@ export const defenseExhibitsService = {
     try {
       const { data: modules } = await supabase
         .from('evidence_modules')
-        .select(`id, module_name, completion_date, completion_status, progress_pct, time_spent_minutes, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, module_name, completion_date, completion_status, progress_pct, time_spent_minutes, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completion_date', { ascending: true });
-      for (const m of ((modules || []) as any[])) {
+      for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(m, `Module: ${m.module_name || 'Untitled'}`),
@@ -345,11 +373,11 @@ export const defenseExhibitsService = {
     try {
       const { data: courses } = await supabase
         .from('evidence_course_completion')
-        .select(`id, course_name, completed_at, certificate_url, grade, platform, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, course_name, completed_at, certificate_url, grade, platform, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const c of ((courses || []) as any[])) {
+      for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Course Completion: ${c.course_name || ''}`,
@@ -367,11 +395,11 @@ export const defenseExhibitsService = {
     try {
       const { data: comms } = await supabase
         .from('evidence_communication')
-        .select(`id, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
-      for (const c of ((comms || []) as any[])) {
+      for (const c of scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Communication: ${c.direction === 'inbound' ? 'From client' : 'To client'} (${c.comm_type})`,
@@ -389,11 +417,11 @@ export const defenseExhibitsService = {
     try {
       const { data: invoices } = await supabase
         .from('evidence_invoices')
-        .select(`id, invoice_id, invoice_number, invoice_status, invoice_event_type, amount, amount_paid, currency, sent_at, paid_at, due_date, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, invoice_id, invoice_number, invoice_status, invoice_event_type, amount, amount_paid, currency, sent_at, paid_at, due_date, created_at, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true });
-      for (const inv of ((invoices || []) as any[])) {
+      for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(inv, `Invoice: ${inv.invoice_number || inv.invoice_id || inv.invoice_status || 'GHL invoice'}`),
@@ -497,7 +525,7 @@ export const defenseExhibitsService = {
     // safety net for the unified `evidence` table additions made post-migration 010).
     try {
       const { rows: extra } = await evidenceRepository.getTimeline(locationId, contactId, { limit: 200 });
-      for (const e of extra) {
+      for (const e of scopedRows(extra as any[], opts?.enrollmentId, 'created_at', scopeWindowStart, scopeWindowEnd)) {
         // Skip rows already covered by the per-table queries above (matched by id).
         if (exhibits.some(ex => ex.ref === e.id)) continue;
         // Only include high-signal types from the unified table

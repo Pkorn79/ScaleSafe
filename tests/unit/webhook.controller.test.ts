@@ -365,3 +365,45 @@ describe('Webhook Controller - external', () => {
     });
   });
 });
+
+describe('Webhook Controller - ghlCourseActivity', () => {
+  test('maps GHL lesson completed workflow payload to module completion evidence', async () => {
+    const { evidenceService } = await import('../../src/services/evidence.service');
+    (evidenceService.handleExternalEvent as jest.Mock).mockResolvedValue('module_completion');
+
+    const { req, res, next } = mockReqRes({
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      eventType: 'Lesson Completed',
+      courseName: 'Launch Course',
+      lessonName: 'Module 1',
+      occurredAt: '2026-06-01T15:00:00.000Z',
+    });
+
+    await webhookController.ghlCourseActivity(req, res, next);
+
+    expect(mockIdempotencyIsDuplicate).toHaveBeenCalledWith(
+      expect.stringMatching(/^ext_ghl_course_Lesson Completed_contact_1_[a-f0-9]{24}$/),
+      'ghl_course',
+      'loc_1',
+    );
+    expect(evidenceService.handleExternalEvent).toHaveBeenCalledWith(
+      'module_completed',
+      'loc_1',
+      'contact_1',
+      'ghl_course',
+      expect.objectContaining({
+        course_name: 'Launch Course',
+        lesson_name: 'Module 1',
+        module_name: 'Module 1',
+        completion_date: '2026-06-01T15:00:00.000Z',
+        progress_pct: 100,
+      }),
+    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'ok',
+      rawEventType: 'Lesson Completed',
+      evidenceType: 'module_completion',
+    }));
+  });
+});

@@ -1,6 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
-import { ActivityMatchRule, ghlActivityRepository } from '../repositories/ghlActivity.repository';
+import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
 import { offerRepository } from '../repositories/offer.repository';
 import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
@@ -226,30 +226,6 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
   };
 }
 
-function ruleMatchesActivity(rule: ActivityMatchRule, activity: NormalizedGhlActivity): boolean {
-  if (!rule.is_active) return false;
-  const values = activity.sourceRefs[rule.source_key] || [];
-  if (!values.includes(rule.source_value)) return false;
-  const titleLower = activity.title.toLowerCase();
-  if (rule.staff_user_id && rule.staff_user_id !== activity.assignedUserId) return false;
-  if (rule.title_keyword && !titleLower.includes(rule.title_keyword.toLowerCase())) return false;
-  return true;
-}
-
-async function findEnrollmentForOffer(activity: NormalizedGhlActivity, offerId: string): Promise<any | null> {
-  const { data } = await getSupabase()
-    .from('enrollments')
-    .select('*')
-    .eq('location_id', activity.locationId)
-    .eq('contact_id', activity.contactId)
-    .eq('offer_id', offerId)
-    .in('status', ['paid_pending_enrollment', 'consent_captured', 'enrolled', 'active', 'at_risk', 'completed'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data || null;
-}
-
 async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] }> {
   const supabase = getSupabase();
   const explicitEnrollmentId = stringValue(
@@ -272,56 +248,6 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
   }
 
   if (!activity.contactId) return { enrollment: null, offerId: null, reason: 'missing_contact_id', confidence: 'none', linkedEnrollmentIds: [], linkedOfferIds: [] };
-
-  const rules = await ghlActivityRepository.listMatchRules(activity.locationId);
-  const rule = rules.find((candidate) => ruleMatchesActivity(candidate, activity) && candidate.offer_id);
-  if (rule?.offer_id) {
-    const enrollment = await findEnrollmentForOffer(activity, rule.offer_id);
-    if (enrollment) {
-      return {
-        enrollment,
-        offerId: rule.offer_id,
-        reason: `${rule.rule_type}_${rule.source_key}_rule`,
-        confidence: 'strong',
-        linkedEnrollmentIds: [enrollment.id],
-        linkedOfferIds: [rule.offer_id],
-      };
-    }
-    return {
-      enrollment: null,
-      offerId: rule.offer_id,
-      reason: `${rule.rule_type}_${rule.source_key}_rule_no_enrollment`,
-      confidence: 'client_offer',
-      linkedEnrollmentIds: [],
-      linkedOfferIds: [rule.offer_id],
-    };
-  }
-
-  if (activity.sourceObject === 'appointment' && activity.calendarId) {
-    const mappings = await ghlActivityRepository.listAppointmentMappings(activity.locationId);
-    const titleLower = activity.title.toLowerCase();
-    const mapping = mappings.find((m) => {
-      if (!m.is_active || m.calendar_id !== activity.calendarId || !m.offer_id) return false;
-      if (m.staff_user_id && m.staff_user_id !== activity.assignedUserId) return false;
-      if (m.title_keyword && !titleLower.includes(m.title_keyword.toLowerCase())) return false;
-      return true;
-    });
-
-    if (mapping?.offer_id) {
-      const { data } = await supabase
-        .from('enrollments')
-        .select('*')
-        .eq('location_id', activity.locationId)
-        .eq('contact_id', activity.contactId)
-        .eq('offer_id', mapping.offer_id)
-        .in('status', ['enrolled', 'active', 'at_risk', 'completed'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (data) return { enrollment: data, offerId: mapping.offer_id, reason: 'legacy_calendar_offer_mapping', confidence: 'strong', linkedEnrollmentIds: [data.id], linkedOfferIds: [mapping.offer_id] };
-      return { enrollment: null, offerId: mapping.offer_id, reason: 'legacy_calendar_mapping_no_enrollment', confidence: 'client_offer', linkedEnrollmentIds: [], linkedOfferIds: [mapping.offer_id] };
-    }
-  }
 
   return { enrollment: null, offerId: null, reason: 'client_level_unmatched_to_enrollment', confidence: 'client', linkedEnrollmentIds: [], linkedOfferIds: [] };
 }
@@ -497,6 +423,34 @@ export const ghlActivityService = {
           }),
         });
         actionTaken = 'communication_evidence_created';
+      } else if ((activity.sourceObject === 'note' || activity.sourceObject === 'task' || activity.sourceObject === 'opportunity') && activity.contactId) {
+        const label = activity.sourceObject === 'note' ? 'GHL note' : activity.sourceObject === 'task' ? 'GHL task' : 'GHL opportunity';
+        const summary = `${label} ${activity.status || activity.eventType || 'recorded'}${activity.title ? `: ${activity.title}` : ''}.${activity.body ? ` Details: ${activity.body.slice(0, 220)}` : ''}`;
+        await evidenceService.logEvidence(EVIDENCE_TYPES.CUSTOM_EVENT, activity.locationId, activity.contactId, 'ghl_activity', {
+          event_type: activity.eventType,
+          event_timestamp: activity.occurredAt || new Date().toISOString(),
+          description: summary,
+          metadata: {
+            source_object: activity.sourceObject,
+            source_record_id: activity.sourceRecordId || null,
+            source_parent_id: activity.sourceParentId || null,
+            status: activity.status || null,
+            title: activity.title || null,
+          },
+          raw_payload: payload,
+          ...buildDefenseEvidenceFields({
+            summary,
+            title: label,
+            proofRole: activity.sourceObject === 'task' ? 'client_engagement' : 'communication',
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'credit_not_processed'], priority: 'medium', confidence: 'moderate' },
+            sourceRecordId: activity.sourceRecordId || null,
+            metadata: {
+              actor: 'merchant',
+              source: { system: 'ghl_activity', recordId: activity.sourceRecordId || null, rawEventType: activity.eventType },
+            },
+          }),
+        });
+        actionTaken = `${activity.sourceObject}_evidence_created`;
       }
     } catch (err: any) {
       await getSupabase()
