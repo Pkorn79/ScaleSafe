@@ -2,6 +2,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { evidenceRepository } from '../repositories/evidence.repository';
 import { logger } from '../utils/logger';
 import { getDefenseSummary } from '../utils/defense-evidence';
+import { cleanCommunicationBody } from '../utils/communication-evidence';
 
 /**
  * Defense Exhibits Service — single source of truth for the numbered exhibit
@@ -407,7 +408,7 @@ export const defenseExhibitsService = {
           source: 'evidence_communication',
           ref: c.id,
           occurredAt: c.comm_date,
-          summary: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} ${c.comm_type} on ${fmtDate(c.comm_date)}.${c.summary ? ` Summary: ${c.summary}.` : c.body_preview ? ` Preview: ${c.body_preview.slice(0, 200)}.` : ''}`,
+          summary: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} ${c.comm_type} on ${fmtDate(c.comm_date)}.${c.summary || c.body_preview ? ` Summary: ${cleanCommunicationBody(c.summary || c.body_preview).slice(0, 240)}.` : ''}`,
         });
         applyDefenseContract(exhibits[exhibits.length - 1], c);
       }

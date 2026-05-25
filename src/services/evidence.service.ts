@@ -1,10 +1,35 @@
 import { evidenceRepository, EvidenceInsert } from '../repositories/evidence.repository';
 import { ghlApi } from '../clients/ghl.client';
+import { getSupabase } from '../clients/supabase.client';
 import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
 import { EvidenceType, EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import {
+  buildCommunicationEvidenceSummary,
+  cleanCommunicationBody,
+  looksLikeHtml,
+  normalizeCommunicationChannel,
+  normalizeCommunicationDirection,
+  normalizeCommunicationSourceChannel,
+} from '../utils/communication-evidence';
+
+function nestedEventBody(payload: Record<string, any>): Record<string, any> {
+  for (const key of ['event_body', 'eventBody', 'data', 'payload', 'body']) {
+    const candidate = payload?.[key];
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) return candidate;
+  }
+  return payload || {};
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number') return String(value);
+  }
+  return '';
+}
 
 export const evidenceService = {
   /**
@@ -610,6 +635,101 @@ export const evidenceService = {
     enrollmentId: string,
   ): Promise<void> {
     await evidenceRepository.linkToEnrollment(locationId, contactId, evidenceTable, evidenceId, enrollmentId);
+  },
+
+  async repairCommunicationEvidence(locationId: string, contactId: string): Promise<{
+    scanned: number;
+    repaired: number;
+    skipped: number;
+  }> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('evidence_communication')
+      .select('id, comm_type, direction, comm_date, subject, summary, body_preview, ghl_conversation_id, ghl_message_id, raw_payload, defense_metadata, defense_summary')
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .eq('source', 'ghl_webhook')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+
+    let repaired = 0;
+    let skipped = 0;
+    for (const row of (data || []) as any[]) {
+      const raw = row.raw_payload || {};
+      const body = nestedEventBody(raw);
+      const nestedMessage = body.message || {};
+      const cleanedBody = cleanCommunicationBody(
+        body.plainText,
+        nestedMessage.plainText,
+        body.text,
+        nestedMessage.text,
+        body.message,
+        nestedMessage.message,
+        body.body,
+        nestedMessage.body,
+        body.html,
+        nestedMessage.html,
+        row.summary,
+        row.body_preview,
+      );
+
+      const direction = normalizeCommunicationDirection(row.direction || body.direction || nestedMessage.direction);
+      const channelRaw = pickString(body.messageType, body.message_type, body.messageTypeString, body.channel, nestedMessage.type, nestedMessage.messageType, nestedMessage.messageTypeString, row.comm_type);
+      const channel = normalizeCommunicationChannel(channelRaw || row.comm_type);
+      const comm = buildCommunicationEvidenceSummary({
+        direction,
+        channel,
+        sourceChannel: normalizeCommunicationSourceChannel(channelRaw || channel),
+        subject: pickString(row.subject, body.subject, nestedMessage.subject),
+        body: cleanedBody,
+        conversationId: row.ghl_conversation_id || body.conversationId || body.conversation_id || null,
+        messageId: row.ghl_message_id || body.messageId || body.message_id || null,
+      });
+
+      const needsRepair = looksLikeHtml(row.summary) || looksLikeHtml(row.body_preview) || looksLikeHtml(row.defense_summary) || row.summary !== comm.preview || row.body_preview !== comm.preview;
+      if (!needsRepair) {
+        skipped += 1;
+        continue;
+      }
+
+      const defenseMetadata = {
+        ...(row.defense_metadata || {}),
+        communication: {
+          ...((row.defense_metadata || {}).communication || {}),
+          channel,
+          sourceChannel: comm.sourceChannel,
+          direction,
+          nature: comm.nature,
+          natureLabel: comm.natureLabel,
+          excerpt: comm.preview,
+        },
+      };
+
+      const { error: updateError } = await supabase
+        .from('evidence_communication')
+        .update({
+          comm_type: channel,
+          direction,
+          summary: comm.preview,
+          body_preview: comm.preview,
+          defense_summary: comm.summary,
+          issuer_exhibit_title: comm.title,
+          actor: comm.actorLabel,
+          defense_metadata: defenseMetadata,
+        })
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .eq('id', row.id);
+      if (updateError) throw updateError;
+      repaired += 1;
+    }
+
+    return {
+      scanned: (data || []).length,
+      repaired,
+      skipped,
+    };
   },
 
   /**

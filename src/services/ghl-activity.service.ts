@@ -5,6 +5,13 @@ import { offerRepository } from '../repositories/offer.repository';
 import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import {
+  buildCommunicationEvidenceSummary,
+  cleanCommunicationBody,
+  normalizeCommunicationChannel,
+  normalizeCommunicationDirection,
+  normalizeCommunicationSourceChannel,
+} from '../utils/communication-evidence';
 import { logger } from '../utils/logger';
 
 type SourceObject = 'appointment' | 'invoice' | 'communication' | 'note' | 'task' | 'form' | 'opportunity' | 'unknown';
@@ -139,19 +146,11 @@ function inferEventType(body: Record<string, any>): string {
 }
 
 function normalizeDirection(value: string): 'inbound' | 'outbound' {
-  const v = String(value || '').toLowerCase();
-  if (v.includes('inbound') || v === '1' || v === 'incoming') return 'inbound';
-  return 'outbound';
+  return normalizeCommunicationDirection(value);
 }
 
 function normalizeChannel(value: string): 'email' | 'sms' | 'call' | 'voicemail' | 'chat' | 'other' {
-  const v = String(value || '').toLowerCase();
-  if (v.includes('email')) return 'email';
-  if (v.includes('sms') || v.includes('text')) return 'sms';
-  if (v.includes('call')) return 'call';
-  if (v.includes('voicemail')) return 'voicemail';
-  if (v.includes('chat') || v.includes('message')) return 'chat';
-  return 'other';
+  return normalizeCommunicationChannel(value);
 }
 
 function normalizeAppointmentStatus(eventType: string, rawStatus: string): string {
@@ -219,11 +218,50 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     invoiceDueDate: stringValue(primary.dueDate, primary.due_date, body.dueDate, body.due_date),
     lineItems: arrayValue(primary.lineItems || primary.line_items || primary.invoiceItems || body.lineItems || body.line_items || body.invoiceItems),
     direction: stringValue(body.direction, primary.direction, nestedMessage.direction),
-    channel: stringValue(body.messageType, body.message_type, body.channel, primary.type, primary.messageType, nestedMessage.type),
-    body: stringValue(body.plainText, body.body, body.text, body.message, primary.plainText, primary.body, primary.text, nestedMessage.body, nestedMessage.text),
+    channel: stringValue(body.messageType, body.message_type, body.messageTypeString, body.channel, primary.type, primary.messageType, primary.messageTypeString, nestedMessage.type, nestedMessage.messageType, nestedMessage.messageTypeString),
+    body: cleanCommunicationBody(body.plainText, primary.plainText, nestedMessage.plainText, body.text, primary.text, nestedMessage.text, body.message, primary.message, nestedMessage.message, body.body, primary.body, nestedMessage.body, body.html, primary.html, nestedMessage.html),
     sourceRefs,
     raw: payload,
   };
+}
+
+async function communicationEvidenceExists(activity: NormalizedGhlActivity, preview: string): Promise<boolean> {
+  const supabase = getSupabase();
+  const direction = normalizeDirection(activity.direction);
+  const channel = normalizeChannel(activity.channel);
+
+  if (activity.sourceRecordId) {
+    const { data, error } = await supabase
+      .from('evidence_communication')
+      .select('id')
+      .eq('location_id', activity.locationId)
+      .eq('contact_id', activity.contactId)
+      .eq('ghl_message_id', activity.sourceRecordId)
+      .limit(1);
+    if (error) throw error;
+    if ((data || []).length > 0) return true;
+  }
+
+  const occurred = new Date(activity.occurredAt);
+  if (!Number.isFinite(occurred.getTime()) || !preview) return false;
+  const start = new Date(occurred.getTime() - 5 * 60 * 1000).toISOString();
+  const end = new Date(occurred.getTime() + 5 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('evidence_communication')
+    .select('id, summary, body_preview')
+    .eq('location_id', activity.locationId)
+    .eq('contact_id', activity.contactId)
+    .eq('direction', direction)
+    .eq('comm_type', channel)
+    .gte('comm_date', start)
+    .lte('comm_date', end)
+    .limit(10);
+  if (error) throw error;
+  const normalizedPreview = preview.slice(0, 120).toLowerCase();
+  return (data || []).some((row: any) => {
+    const existing = cleanCommunicationBody(row.summary || row.body_preview || '').slice(0, 120).toLowerCase();
+    return existing && existing === normalizedPreview;
+  });
 }
 
 async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] }> {
@@ -397,32 +435,49 @@ export const ghlActivityService = {
         });
         actionTaken = 'invoice_evidence_created';
       } else if (activity.sourceObject === 'communication' && activity.contactId) {
+        const direction = normalizeDirection(activity.direction);
+        const channel = normalizeChannel(activity.channel);
+        const sourceChannel = normalizeCommunicationSourceChannel(activity.channel || channel);
+        const comm = buildCommunicationEvidenceSummary({
+          direction,
+          channel,
+          sourceChannel,
+          subject: activity.title || null,
+          body: activity.body,
+          conversationId: activity.sourceParentId || null,
+          messageId: activity.sourceRecordId || null,
+        });
+
+        if (await communicationEvidenceExists(activity, comm.preview)) {
+          actionTaken = 'communication_evidence_duplicate';
+        } else {
         await evidenceService.logEvidence(EVIDENCE_TYPES.COMMUNICATION, activity.locationId, activity.contactId, 'ghl_webhook', {
-          comm_type: normalizeChannel(activity.channel),
-          direction: normalizeDirection(activity.direction),
+          comm_type: channel,
+          direction,
           comm_date: activity.occurredAt,
           subject: activity.title || null,
-          summary: activity.body.slice(0, 500),
-          body_preview: activity.body.slice(0, 200),
+          summary: comm.preview,
+          body_preview: comm.preview,
           ghl_conversation_id: activity.sourceParentId || null,
           ghl_message_id: activity.sourceRecordId || null,
           enrollment_id: match.enrollment?.id || null,
           raw_payload: payload,
           ...buildDefenseEvidenceFields({
-            summary: `${normalizeDirection(activity.direction) === 'inbound' ? 'Client' : 'Merchant'} ${normalizeChannel(activity.channel)} message recorded.${activity.body ? ` Excerpt: ${activity.body.slice(0, 180)}` : ''}`,
-            title: `${normalizeDirection(activity.direction) === 'inbound' ? 'Client' : 'Merchant'} Communication`,
+            summary: comm.summary,
+            title: comm.title,
             proofRole: 'communication',
-            relevance: { tags: ['services_not_provided', 'not_as_described', 'credit_not_processed', 'cancelled_recurring', 'fraud'], priority: normalizeDirection(activity.direction) === 'inbound' ? 'high' : 'medium', confidence: 'moderate' },
+            relevance: { tags: ['services_not_provided', 'not_as_described', 'credit_not_processed', 'cancelled_recurring', 'fraud'], priority: direction === 'inbound' ? 'high' : 'medium', confidence: 'moderate' },
             enrollmentId: match.enrollment?.id || null,
             sourceRecordId: activity.sourceRecordId || null,
             metadata: {
-              actor: normalizeDirection(activity.direction) === 'inbound' ? 'client' : 'merchant',
-              communication: { channel: normalizeChannel(activity.channel), direction: normalizeDirection(activity.direction), excerpt: activity.body.slice(0, 300) },
+              actor: comm.actorLabel as 'client' | 'merchant',
+              communication: { channel, sourceChannel, direction, nature: comm.nature, natureLabel: comm.natureLabel, excerpt: comm.preview },
               source: { system: 'ghl_webhook', recordId: activity.sourceRecordId || null, rawEventType: activity.eventType },
             },
           }),
         });
         actionTaken = 'communication_evidence_created';
+        }
       } else if ((activity.sourceObject === 'note' || activity.sourceObject === 'task' || activity.sourceObject === 'opportunity') && activity.contactId) {
         const label = activity.sourceObject === 'note' ? 'GHL note' : activity.sourceObject === 'task' ? 'GHL task' : 'GHL opportunity';
         const summary = `${label} ${activity.status || activity.eventType || 'recorded'}${activity.title ? `: ${activity.title}` : ''}.${activity.body ? ` Details: ${activity.body.slice(0, 220)}` : ''}`;

@@ -15,6 +15,7 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { isSafeOrFilterSearchInput } from '../utils/search-input';
 import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
 import { payFirstEnrollmentService } from '../services/pay-first-enrollment.service';
+import { cleanCommunicationBody } from '../utils/communication-evidence';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -1209,7 +1210,7 @@ export const dashboardController = {
             channel,
             direction,
             date,
-            body: msg.body || msg.text || msg.message || '',
+            body: cleanCommunicationBody(msg.plainText, msg.text, msg.message, msg.body, msg.html),
             sourceMark: markSource(channel, direction, date),
           };
         })
@@ -1222,7 +1223,7 @@ export const dashboardController = {
           channel: row.comm_type || 'other',
           direction: row.direction || 'outbound',
           date: row.comm_date || '',
-          body: row.summary || row.body_preview || '',
+          body: cleanCommunicationBody(row.summary, row.body_preview),
           sourceMark: row.source === 'app_triggered' ? 'automated' : row.source === 'ghl_webhook' && row.direction === 'outbound' ? 'manual' : null,
           evidenceId: row.id,
           conversationId: row.ghl_conversation_id || null,
@@ -1237,7 +1238,7 @@ export const dashboardController = {
           channel: 'note',
           direction: 'note' as const,
           date: n.dateAdded || n.createdAt || '',
-          body: n.body || '',
+          body: cleanCommunicationBody(n.body || ''),
           sourceMark: null as null,
         }))
         .filter((n: any) => n.date && (new Date(n.date).getTime() >= windowStart.getTime()));

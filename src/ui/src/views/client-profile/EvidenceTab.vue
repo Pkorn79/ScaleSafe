@@ -2,7 +2,12 @@
   <div>
     <div class="flex-between mb-4">
       <div class="card-title" style="margin-bottom:0">Evidence Timeline</div>
-      <div class="text-sm text-muted">{{ total }} record{{ total !== 1 ? 's' : '' }}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-sm btn-secondary" @click="repairCommunications" :disabled="repairingCommunications">
+          {{ repairingCommunications ? 'Repairing...' : 'Repair Communication Text' }}
+        </button>
+        <div class="text-sm text-muted">{{ total }} record{{ total !== 1 ? 's' : '' }}</div>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -53,15 +58,15 @@
             <td>
               <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
                 <span class="badge badge-blue">{{ formatEvidenceType(item.evidence_type || item.type) }}</span>
-                <span v-if="proofRole(item)" class="badge badge-gray">{{ formatEvidenceType(proofRole(item)) }}</span>
+                <span v-if="visibleProofRole(item)" class="badge badge-gray">{{ formatEvidenceType(visibleProofRole(item)) }}</span>
               </div>
             </td>
             <td class="text-sm">
               <div class="evidence-detail">
                 <div v-if="exhibitTitle(item)" class="evidence-title">{{ exhibitTitle(item) }}</div>
                 <div>{{ summarize(item) }}</div>
-                <div v-if="reasonTags(item).length" class="evidence-tags">
-                  <span v-for="tag in reasonTags(item)" :key="tag" class="badge badge-gray">{{ formatEvidenceType(tag) }}</span>
+                <div v-if="visibleReasonTags(item).length" class="evidence-tags">
+                  <span v-for="tag in visibleReasonTags(item)" :key="tag" class="badge badge-gray">{{ formatEvidenceType(tag) }}</span>
                 </div>
               </div>
             </td>
@@ -127,6 +132,7 @@ const linkingItem = ref<any | null>(null);
 const selectedEnrollmentId = ref('');
 const linkSaving = ref(false);
 const linkError = ref('');
+const repairingCommunications = ref(false);
 
 const filterType = ref('');
 const filterFrom = ref('');
@@ -194,6 +200,34 @@ function reasonTags(item: any): string[] {
   return Array.isArray(tags) ? tags.filter(Boolean).slice(0, 4) : [];
 }
 
+function evidenceType(item: any): string {
+  return String(item.evidence_type || item.type || '').trim();
+}
+
+function visibleProofRole(item: any): string {
+  const role = proofRole(item);
+  return role && role !== evidenceType(item) ? role : '';
+}
+
+function visibleReasonTags(item: any): string[] {
+  return evidenceType(item) === 'communication' ? [] : reasonTags(item);
+}
+
+function stripHtml(value: string): string {
+  return String(value || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function sourceLabel(source: string): string {
   if (source === 'nmi_history_sync') return 'NMI history sync';
   if (source === 'nmi_silent_post') return 'NMI Silent Post';
@@ -203,10 +237,10 @@ function sourceLabel(source: string): string {
 }
 
 function summarize(item: any): string {
-  const type = item.evidence_type || item.type || '';
+  const type = evidenceType(item);
   const defenseSummary = item.defense_summary || evidenceData(item).defense_summary;
   if (typeof defenseSummary === 'string' && defenseSummary.trim()) {
-    return defenseSummary.trim();
+    return stripHtml(defenseSummary.trim());
   }
 
   const d = item.data || item.summary || item.details;
@@ -244,6 +278,13 @@ function summarize(item: any): string {
       const status = d.appointment_status || d.status || 'recorded';
       const when = d.start_time || d.occurredAt || d.created_at;
       return `${title} - ${formatEvidenceType(String(status))}${when ? ` on ${formatDate(when)}` : ''}`;
+    }
+    if (type === 'communication') {
+      const direction = d.direction === 'inbound' ? 'Inbound from client' : 'Outbound to client';
+      const channel = String(d.comm_type || 'message').toUpperCase();
+      const conversation = d.ghl_conversation_id ? ` · GHL conversation ${String(d.ghl_conversation_id).slice(0, 10)}` : '';
+      const preview = stripHtml(String(d.summary || d.body_preview || '')).slice(0, 240);
+      return `${direction} · ${channel}${conversation}${preview ? `. Preview: ${preview}` : ''}`;
     }
     if (type === 'invoice') {
       const invoice = d.invoice_number || d.invoice_id || 'GHL invoice';
@@ -331,6 +372,18 @@ async function saveLink() {
     linkError.value = e.message || 'Failed to link evidence';
   }
   linkSaving.value = false;
+}
+
+async function repairCommunications() {
+  repairingCommunications.value = true;
+  error.value = '';
+  try {
+    await api.post(`/api/evidence/${props.contactId}/repair-communications`);
+    await fetchPage(0, false);
+  } catch (e: any) {
+    error.value = e.message || 'Failed to repair communication evidence';
+  }
+  repairingCommunications.value = false;
 }
 
 async function applyFilters() {

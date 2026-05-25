@@ -76,8 +76,11 @@ export interface DefenseEvidenceMetadata {
   };
   communication?: {
     channel?: string | null;
+    sourceChannel?: string | null;
     direction?: 'inbound' | 'outbound' | 'note' | null;
     purpose?: string | null;
+    nature?: string | null;
+    natureLabel?: string | null;
     excerpt?: string | null;
     ghlConversationId?: string | null;
     ghlMessageId?: string | null;

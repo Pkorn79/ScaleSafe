@@ -72,6 +72,16 @@ function mockEnrollmentQuery(enrollments: any[]) {
       };
       return chain;
     }
+    if (table === 'evidence_communication') {
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        gte: () => chain,
+        lte: () => chain,
+        limit: () => Promise.resolve({ data: [], error: null }),
+      };
+      return chain;
+    }
     return {};
   });
 }
@@ -243,5 +253,36 @@ describe('ghlActivityService', () => {
     expect(normalized.sourceObject).toBe(expectedObject);
     expect(normalized.sourceRecordId).toBe(expectedRecordId);
     expect(normalized.contactId).toBe(expectedContactId);
+  });
+
+  test('cleans HTML email content before saving communication evidence', async () => {
+    const result = await ghlActivityService.handleWebhook({
+      type: 'OutboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_1',
+      messageId: 'msg_html_1',
+      direction: 'outbound',
+      messageType: 'TYPE_EMAIL',
+      body: '<div style="font-family:Roboto"><p>Hi Philip,</p><p>This confirms your payment receipt.</p></div>',
+      dateAdded: '2026-06-01T15:00:00.000Z',
+    });
+
+    expect(result.actionTaken).toBe('communication_evidence_created');
+    expect(mockLogEvidence).toHaveBeenCalledWith(
+      EVIDENCE_TYPES.COMMUNICATION,
+      'loc_1',
+      'contact_1',
+      'ghl_webhook',
+      expect.objectContaining({
+        comm_type: 'email',
+        direction: 'outbound',
+        summary: expect.not.stringContaining('<div'),
+        body_preview: expect.stringContaining('Hi Philip'),
+        defense_summary: expect.stringContaining('Payment receipt'),
+        ghl_conversation_id: 'conv_1',
+        ghl_message_id: 'msg_html_1',
+      }),
+    );
   });
 });
