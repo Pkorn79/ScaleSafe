@@ -189,7 +189,7 @@
           <div>
             <h3 class="section-title" style="margin-bottom:4px">GHL Activity Tracking</h3>
             <p class="text-sm text-muted">
-              Map GHL calendars to ScaleSafe programs so appointment webhooks become program-specific evidence.
+              Connect GHL activity sources to ScaleSafe offers. Unmatched activity stays visible until linked.
             </p>
           </div>
           <button class="btn btn-secondary btn-sm" @click="loadGhlActivitySetup" :disabled="ghlActivityLoading">
@@ -198,12 +198,68 @@
         </div>
 
         <div class="text-sm text-muted mb-4">
-          Webhook URL: <code>/webhooks/ghl/activity</code>
+          Marketplace webhook URL: <code>https://dashboard.scalesafe.app/webhooks/ghl</code>
         </div>
 
         <div v-if="ghlActivityError" class="error-msg">{{ ghlActivityError }}</div>
         <div v-if="ghlActivitySaved" class="success-msg">{{ ghlActivitySaved }}</div>
 
+        <div class="text-sm" style="font-weight:600;margin-bottom:8px">Activity matching rule</div>
+        <div class="grid grid-3" style="gap:12px">
+          <div>
+            <label class="form-label">Source Type</label>
+            <select class="form-select" v-model="activityRule.rule_type">
+              <option value="product">GHL Product</option>
+              <option value="price">GHL Price</option>
+              <option value="invoice_item">Invoice Line Item</option>
+              <option value="calendar">Calendar</option>
+              <option value="opportunity">Opportunity</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Source ID / Keyword</label>
+            <input class="form-input" v-model="activityRule.source_value" placeholder="product id, price id, calendar id, or exact keyword" />
+          </div>
+          <div>
+            <label class="form-label">ScaleSafe Offer</label>
+            <select class="form-select" v-model="activityRule.offer_id">
+              <option value="">No offer mapping</option>
+              <option v-for="offer in ghlActivityOffers" :key="offer.id" :value="offer.id">{{ offer.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-3 mt-2" style="gap:12px">
+          <div>
+            <label class="form-label">Title Keyword</label>
+            <input class="form-input" v-model="activityRule.title_keyword" placeholder="optional for calendars" />
+          </div>
+          <div>
+            <label class="form-label">Staff User ID</label>
+            <input class="form-input" v-model="activityRule.staff_user_id" placeholder="optional for calendars" />
+          </div>
+          <div>
+            <label class="form-label">Label</label>
+            <input class="form-input" v-model="activityRule.label" placeholder="optional internal label" />
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm mt-4" @click="saveGhlActivityRule" :disabled="ghlActivityLoading || !activityRule.source_value">
+          Save Rule
+        </button>
+
+        <div v-if="ghlActivityRules.length" class="activity-map-list">
+          <div v-for="rule in ghlActivityRules" :key="rule.id" class="activity-map-row">
+            <div>
+              <strong>{{ rule.label || `${rule.rule_type}: ${rule.source_value}` }}</strong>
+              <div class="text-sm text-muted">
+                {{ offerName(rule.offer_id) || 'Client-level only' }}
+                <span v-if="rule.title_keyword"> · "{{ rule.title_keyword }}"</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" @click="deactivateGhlActivityRule(rule.id)" :disabled="ghlActivityLoading">Disable</button>
+          </div>
+        </div>
+
+        <div class="text-sm mt-4" style="font-weight:600;margin-bottom:8px">Legacy appointment mapping</div>
         <div class="grid grid-3" style="gap:12px">
           <div>
             <label class="form-label">Calendar</label>
@@ -545,7 +601,16 @@ const ghlActivitySaved = ref('');
 const ghlCalendars = ref<Array<{ id: string; name: string }>>([]);
 const ghlActivityOffers = ref<Array<{ id: string; name: string }>>([]);
 const ghlActivityMappings = ref<any[]>([]);
+const ghlActivityRules = ref<any[]>([]);
 const ghlUnmatchedActivity = ref<any[]>([]);
+const activityRule = ref<any>({
+  rule_type: 'product',
+  source_value: '',
+  offer_id: '',
+  staff_user_id: '',
+  title_keyword: '',
+  label: '',
+});
 const activityMapping = ref<any>({
   calendar_id: '',
   offer_id: '',
@@ -655,9 +720,57 @@ async function loadGhlActivitySetup() {
     ghlCalendars.value = result.calendars || [];
     ghlActivityOffers.value = result.offers || [];
     ghlActivityMappings.value = (result.mappings || []).filter((m: any) => m.is_active !== false);
+    ghlActivityRules.value = (result.rules || []).filter((r: any) => r.is_active !== false);
     ghlUnmatchedActivity.value = result.unmatched || [];
   } catch (err: any) {
     ghlActivityError.value = err.message || 'Failed to load GHL activity setup';
+  }
+  ghlActivityLoading.value = false;
+}
+
+function sourceKeyForRule(ruleType: string) {
+  if (ruleType === 'product') return 'product_id';
+  if (ruleType === 'price') return 'price_id';
+  if (ruleType === 'invoice_item') return 'invoice_item_name';
+  if (ruleType === 'calendar') return 'calendar_id';
+  if (ruleType === 'opportunity') return 'opportunity_stage_id';
+  return `${ruleType}_id`;
+}
+
+async function saveGhlActivityRule() {
+  ghlActivityLoading.value = true;
+  ghlActivityError.value = '';
+  ghlActivitySaved.value = '';
+  try {
+    await api.post<any>('/api/merchants/ghl-activity/match-rules', {
+      ...activityRule.value,
+      source_key: sourceKeyForRule(activityRule.value.rule_type),
+    });
+    activityRule.value = {
+      rule_type: 'product',
+      source_value: '',
+      offer_id: '',
+      staff_user_id: '',
+      title_keyword: '',
+      label: '',
+    };
+    ghlActivitySaved.value = 'Activity rule saved.';
+    await loadGhlActivitySetup();
+    setTimeout(() => { ghlActivitySaved.value = ''; }, 3000);
+  } catch (err: any) {
+    ghlActivityError.value = err.message || 'Failed to save activity rule';
+  }
+  ghlActivityLoading.value = false;
+}
+
+async function deactivateGhlActivityRule(id: string) {
+  ghlActivityLoading.value = true;
+  ghlActivityError.value = '';
+  try {
+    await api.del(`/api/merchants/ghl-activity/match-rules/${id}`);
+    await loadGhlActivitySetup();
+  } catch (err: any) {
+    ghlActivityError.value = err.message || 'Failed to disable activity rule';
   }
   ghlActivityLoading.value = false;
 }

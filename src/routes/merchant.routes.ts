@@ -15,6 +15,8 @@ router.put('/config', merchantController.updateConfig);
 router.get('/webhook-secret', merchantController.getWebhookSecret);
 router.post('/webhook-secret/rotate', merchantController.rotateWebhookSecret);
 router.get('/ghl-activity/setup', merchantController.getGhlActivitySetup);
+router.post('/ghl-activity/match-rules', merchantController.saveGhlActivityMatchRule);
+router.delete('/ghl-activity/match-rules/:id', merchantController.deleteGhlActivityMatchRule);
 router.post('/ghl-activity/appointment-mappings', merchantController.saveGhlAppointmentMapping);
 router.delete('/ghl-activity/appointment-mappings/:id', merchantController.deleteGhlAppointmentMapping);
 router.get('/onboarding-status', merchantController.getOnboardingStatus);

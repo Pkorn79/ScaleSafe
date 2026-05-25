@@ -40,6 +40,33 @@ export interface PaymentEventInsert {
   raw_webhook_payload?: Record<string, unknown>;
   source?: string;
   is_recurring?: boolean;
+  external_payment_source?: string | null;
+  external_payment_reference?: string | null;
+  external_payment_method?: string | null;
+  recorded_by?: string | null;
+  recorded_at?: string | null;
+}
+
+const COMPATIBILITY_COLUMNS = [
+  'external_payment_source',
+  'external_payment_reference',
+  'external_payment_method',
+  'recorded_by',
+  'recorded_at',
+];
+
+function isMissingColumnError(err: any): boolean {
+  const text = `${err?.code || ''} ${err?.message || ''} ${err?.details || ''}`.toLowerCase();
+  return text.includes('pgrst204')
+    || text.includes('schema cache')
+    || text.includes('could not find')
+    || text.includes('does not exist');
+}
+
+function withoutCompatibilityColumns(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  for (const column of COMPATIBILITY_COLUMNS) delete next[column];
+  return next;
 }
 
 export const paymentEventRepository = {
@@ -50,11 +77,21 @@ export const paymentEventRepository = {
       record.payments_total = Number(record.payment_number) + Number(paymentsRemaining);
     }
 
-    const { data: result, error } = await getSupabase()
+    let { data: result, error } = await getSupabase()
       .from('payment_events')
       .insert(record)
       .select()
       .single();
+
+    if (error && isMissingColumnError(error)) {
+      const retry = await getSupabase()
+        .from('payment_events')
+        .insert(withoutCompatibilityColumns(record))
+        .select()
+        .single();
+      result = retry.data;
+      error = retry.error;
+    }
 
     if (error) throw error;
     return result;

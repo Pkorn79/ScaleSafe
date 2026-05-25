@@ -3,8 +3,13 @@ import { getSupabase } from '../clients/supabase.client';
 export interface GhlActivityEventInsert {
   location_id: string;
   contact_id?: string | null;
+  contact_email?: string | null;
+  source_contact_id?: string | null;
   enrollment_id?: string | null;
   offer_id?: string | null;
+  linked_enrollment_ids?: string[];
+  linked_offer_ids?: string[];
+  match_confidence?: string | null;
   source_object: string;
   event_type: string;
   source_record_id?: string | null;
@@ -32,6 +37,36 @@ export interface AppointmentMapping {
   updated_at: string;
 }
 
+export interface ActivityMatchRule {
+  id: string;
+  location_id: string;
+  rule_type: string;
+  source_key: string;
+  source_value: string;
+  offer_id: string | null;
+  staff_user_id: string | null;
+  title_keyword: string | null;
+  pipeline_id: string | null;
+  pipeline_stage_id: string | null;
+  label: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function missingColumnMessage(err: any, column: string): boolean {
+  const text = `${err?.message || ''} ${err?.details || ''}`.toLowerCase();
+  return text.includes(`'${column}'`) || text.includes(`"${column}"`) || text.includes(`${column} column`);
+}
+
+function stripEventCompatibilityColumns(event: Record<string, unknown>, err: any): Record<string, unknown> {
+  const next = { ...event };
+  for (const col of ['contact_email', 'source_contact_id', 'match_confidence', 'linked_enrollment_ids', 'linked_offer_ids']) {
+    if (missingColumnMessage(err, col)) delete next[col];
+  }
+  return next;
+}
+
 export const ghlActivityRepository = {
   async createEventIfNew(event: GhlActivityEventInsert): Promise<{ row: any; inserted: boolean }> {
     const supabase = getSupabase();
@@ -50,16 +85,31 @@ export const ghlActivityRepository = {
       if (existing) return { row: existing, inserted: false };
     }
 
-    const { data, error } = await supabase
+    const insertPayload: Record<string, unknown> = {
+      status: 'unmatched',
+      normalized: {},
+      raw_payload: {},
+      ...event,
+    };
+
+    let { data, error } = await supabase
       .from('ghl_activity_events')
-      .insert({
-        status: 'unmatched',
-        normalized: {},
-        raw_payload: {},
-        ...event,
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    if (error) {
+      const compatiblePayload = stripEventCompatibilityColumns(insertPayload, error);
+      if (Object.keys(compatiblePayload).length !== Object.keys(insertPayload).length) {
+        const retry = await supabase
+          .from('ghl_activity_events')
+          .insert(compatiblePayload)
+          .select()
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
+    }
 
     if (error) {
       if (event.source_record_id && error.code === '23505') {
@@ -98,7 +148,7 @@ export const ghlActivityRepository = {
       .from('ghl_activity_events')
       .select('*')
       .eq('location_id', locationId)
-      .eq('status', 'unmatched')
+      .in('status', ['unmatched', 'client_level'])
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -115,6 +165,58 @@ export const ghlActivityRepository = {
 
     if (error) throw error;
     return data || [];
+  },
+
+  async listMatchRules(locationId: string): Promise<ActivityMatchRule[]> {
+    const { data, error } = await getSupabase()
+      .from('ghl_activity_match_rules')
+      .select('*')
+      .eq('location_id', locationId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+      if (text.includes('ghl_activity_match_rules') || error.code === '42P01') return [];
+      throw error;
+    }
+    return data || [];
+  },
+
+  async upsertMatchRule(locationId: string, rule: Partial<ActivityMatchRule>): Promise<ActivityMatchRule> {
+    const payload = {
+      id: rule.id || undefined,
+      location_id: locationId,
+      rule_type: rule.rule_type,
+      source_key: rule.source_key,
+      source_value: rule.source_value,
+      offer_id: rule.offer_id || null,
+      staff_user_id: rule.staff_user_id || null,
+      title_keyword: rule.title_keyword || null,
+      pipeline_id: rule.pipeline_id || null,
+      pipeline_stage_id: rule.pipeline_stage_id || null,
+      label: rule.label || null,
+      is_active: rule.is_active ?? true,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await getSupabase()
+      .from('ghl_activity_match_rules')
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async deactivateMatchRule(locationId: string, id: string): Promise<void> {
+    const { error } = await getSupabase()
+      .from('ghl_activity_match_rules')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('location_id', locationId)
+      .eq('id', id);
+
+    if (error) throw error;
   },
 
   async upsertAppointmentMapping(locationId: string, mapping: Partial<AppointmentMapping>): Promise<AppointmentMapping> {
@@ -149,5 +251,30 @@ export const ghlActivityRepository = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  async linkActivityToEnrollment(params: {
+    locationId: string;
+    activityEventId: string;
+    enrollmentId: string;
+    offerId?: string | null;
+    reason?: string | null;
+  }): Promise<void> {
+    const { error } = await getSupabase()
+      .from('ghl_activity_enrollment_links')
+      .upsert({
+        location_id: params.locationId,
+        activity_event_id: params.activityEventId,
+        enrollment_id: params.enrollmentId,
+        offer_id: params.offerId || null,
+        link_reason: params.reason || null,
+        linked_by: 'system',
+      });
+
+    if (error) {
+      const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+      if (text.includes('ghl_activity_enrollment_links') || error.code === '42P01') return;
+      throw error;
+    }
   },
 };

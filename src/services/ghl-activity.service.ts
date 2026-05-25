@@ -1,6 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
-import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
+import { ActivityMatchRule, ghlActivityRepository } from '../repositories/ghlActivity.repository';
 import { offerRepository } from '../repositories/offer.repository';
 import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
@@ -12,6 +12,7 @@ type SourceObject = 'appointment' | 'invoice' | 'communication' | 'note' | 'task
 interface NormalizedGhlActivity {
   locationId: string;
   contactId: string;
+  contactEmail: string;
   eventType: string;
   sourceObject: SourceObject;
   sourceRecordId: string;
@@ -32,6 +33,7 @@ interface NormalizedGhlActivity {
   direction: string;
   channel: string;
   body: string;
+  sourceRefs: Record<string, string[]>;
   raw: Record<string, unknown>;
 }
 
@@ -53,6 +55,39 @@ function numberValue(...values: unknown[]): number | null {
 
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function pushRef(refs: Record<string, string[]>, key: string, value: unknown): void {
+  const v = stringValue(value);
+  if (!v) return;
+  refs[key] = refs[key] || [];
+  if (!refs[key].includes(v)) refs[key].push(v);
+}
+
+function collectSourceRefs(body: Record<string, any>, primary: Record<string, any>): Record<string, string[]> {
+  const refs: Record<string, string[]> = {};
+  pushRef(refs, 'calendar_id', primary.calendarId || primary.calendar_id || body.calendarId || body.calendar_id);
+  pushRef(refs, 'product_id', body.productId || body.product_id || primary.productId || primary.product_id);
+  pushRef(refs, 'price_id', body.priceId || body.price_id || primary.priceId || primary.price_id);
+  pushRef(refs, 'invoice_id', body.invoiceId || body.invoice_id || body._id || primary.invoiceId || primary.invoice_id || primary._id);
+  pushRef(refs, 'opportunity_pipeline_id', body.pipelineId || body.pipeline_id || primary.pipelineId || primary.pipeline_id);
+  pushRef(refs, 'opportunity_stage_id', body.pipelineStageId || body.pipeline_stage_id || body.stageId || body.stage_id || primary.pipelineStageId || primary.stageId);
+
+  const items = [
+    ...arrayValue(body.items),
+    ...arrayValue(body.lineItems || body.line_items || body.invoiceItems),
+    ...arrayValue(primary.items),
+    ...arrayValue(primary.lineItems || primary.line_items || primary.invoiceItems),
+  ];
+
+  for (const item of items as any[]) {
+    if (!item || typeof item !== 'object') continue;
+    pushRef(refs, 'product_id', item.productId || item.product_id || item.product?.id || item.product?._id);
+    pushRef(refs, 'price_id', item.priceId || item.price_id || item.price?.id || item.price?._id);
+    pushRef(refs, 'invoice_item_name', item.name || item.title || item.description);
+  }
+
+  return refs;
 }
 
 function eventBody(payload: Record<string, unknown>): Record<string, any> {
@@ -160,10 +195,12 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     primary.id,
     primary._id,
   );
+  const sourceRefs = collectSourceRefs(body, primary);
 
   return {
     locationId: stringValue(payload.locationId, payload.location_id, body.locationId, body.location_id, body.location?.id),
     contactId: stringValue(payload.contactId, payload.contact_id, body.contactId, body.contact_id, body.contact?.id, body.contactDetails?.id, primary.contactId, primary.contact_id, primary.contactDetails?.id),
+    contactEmail: stringValue(payload.contactEmail, payload.contact_email, body.contactEmail, body.contact_email, body.email, body.contact?.email, body.contactDetails?.email, primary.email, primary.contactDetails?.email),
     eventType: eventType || 'unknown',
     sourceObject,
     sourceRecordId,
@@ -184,11 +221,36 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     direction: stringValue(body.direction, primary.direction, nestedMessage.direction),
     channel: stringValue(body.messageType, body.message_type, body.channel, primary.type, primary.messageType, nestedMessage.type),
     body: stringValue(body.plainText, body.body, body.text, body.message, primary.plainText, primary.body, primary.text, nestedMessage.body, nestedMessage.text),
+    sourceRefs,
     raw: payload,
   };
 }
 
-async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string }> {
+function ruleMatchesActivity(rule: ActivityMatchRule, activity: NormalizedGhlActivity): boolean {
+  if (!rule.is_active) return false;
+  const values = activity.sourceRefs[rule.source_key] || [];
+  if (!values.includes(rule.source_value)) return false;
+  const titleLower = activity.title.toLowerCase();
+  if (rule.staff_user_id && rule.staff_user_id !== activity.assignedUserId) return false;
+  if (rule.title_keyword && !titleLower.includes(rule.title_keyword.toLowerCase())) return false;
+  return true;
+}
+
+async function findEnrollmentForOffer(activity: NormalizedGhlActivity, offerId: string): Promise<any | null> {
+  const { data } = await getSupabase()
+    .from('enrollments')
+    .select('*')
+    .eq('location_id', activity.locationId)
+    .eq('contact_id', activity.contactId)
+    .eq('offer_id', offerId)
+    .in('status', ['paid_pending_enrollment', 'consent_captured', 'enrolled', 'active', 'at_risk', 'completed'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
+
+async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] }> {
   const supabase = getSupabase();
   const explicitEnrollmentId = stringValue(
     (activity.raw as any).enrollment_id,
@@ -206,10 +268,34 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
       .eq('location_id', activity.locationId)
       .eq('id', explicitEnrollmentId)
       .maybeSingle();
-    if (data) return { enrollment: data, offerId: data.offer_id || null, reason: 'explicit_enrollment_id' };
+    if (data) return { enrollment: data, offerId: data.offer_id || null, reason: 'explicit_enrollment_id', confidence: 'strong', linkedEnrollmentIds: [data.id], linkedOfferIds: data.offer_id ? [data.offer_id] : [] };
   }
 
-  if (!activity.contactId) return { enrollment: null, offerId: null, reason: 'missing_contact_id' };
+  if (!activity.contactId) return { enrollment: null, offerId: null, reason: 'missing_contact_id', confidence: 'none', linkedEnrollmentIds: [], linkedOfferIds: [] };
+
+  const rules = await ghlActivityRepository.listMatchRules(activity.locationId);
+  const rule = rules.find((candidate) => ruleMatchesActivity(candidate, activity) && candidate.offer_id);
+  if (rule?.offer_id) {
+    const enrollment = await findEnrollmentForOffer(activity, rule.offer_id);
+    if (enrollment) {
+      return {
+        enrollment,
+        offerId: rule.offer_id,
+        reason: `${rule.rule_type}_${rule.source_key}_rule`,
+        confidence: 'strong',
+        linkedEnrollmentIds: [enrollment.id],
+        linkedOfferIds: [rule.offer_id],
+      };
+    }
+    return {
+      enrollment: null,
+      offerId: rule.offer_id,
+      reason: `${rule.rule_type}_${rule.source_key}_rule_no_enrollment`,
+      confidence: 'client_offer',
+      linkedEnrollmentIds: [],
+      linkedOfferIds: [rule.offer_id],
+    };
+  }
 
   if (activity.sourceObject === 'appointment' && activity.calendarId) {
     const mappings = await ghlActivityRepository.listAppointmentMappings(activity.locationId);
@@ -232,12 +318,12 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) return { enrollment: data, offerId: mapping.offer_id, reason: 'calendar_offer_mapping' };
-      return { enrollment: null, offerId: mapping.offer_id, reason: 'calendar_mapping_no_enrollment' };
+      if (data) return { enrollment: data, offerId: mapping.offer_id, reason: 'legacy_calendar_offer_mapping', confidence: 'strong', linkedEnrollmentIds: [data.id], linkedOfferIds: [mapping.offer_id] };
+      return { enrollment: null, offerId: mapping.offer_id, reason: 'legacy_calendar_mapping_no_enrollment', confidence: 'client_offer', linkedEnrollmentIds: [], linkedOfferIds: [mapping.offer_id] };
     }
   }
 
-  return { enrollment: null, offerId: null, reason: 'no_explicit_or_mapped_enrollment' };
+  return { enrollment: null, offerId: null, reason: 'client_level_unmatched_to_enrollment', confidence: 'client', linkedEnrollmentIds: [], linkedOfferIds: [] };
 }
 
 function appointmentSummary(activity: NormalizedGhlActivity, offerName?: string): string {
@@ -279,14 +365,19 @@ export const ghlActivityService = {
     const { row, inserted } = await ghlActivityRepository.createEventIfNew({
       location_id: activity.locationId,
       contact_id: activity.contactId || null,
+      contact_email: activity.contactEmail || null,
+      source_contact_id: activity.contactId || null,
       enrollment_id: match.enrollment?.id || null,
       offer_id: match.offerId || null,
+      linked_enrollment_ids: match.linkedEnrollmentIds,
+      linked_offer_ids: match.linkedOfferIds,
+      match_confidence: match.confidence,
       source_object: activity.sourceObject,
       event_type: activity.eventType,
       source_record_id: activity.sourceRecordId || null,
       source_parent_id: activity.sourceParentId || null,
       occurred_at: activity.occurredAt,
-      status: match.enrollment || activity.sourceObject === 'communication' ? 'matched' : 'unmatched',
+      status: match.enrollment ? 'matched' : activity.contactId ? 'client_level' : 'unmatched',
       match_reason: match.reason,
       action_taken: 'logged_activity',
       normalized,
@@ -297,13 +388,23 @@ export const ghlActivityService = {
 
     let actionTaken = 'logged_activity';
     try {
-      if (activity.sourceObject === 'appointment' && match.enrollment) {
+      if (match.enrollment?.id) {
+        await ghlActivityRepository.linkActivityToEnrollment({
+          locationId: activity.locationId,
+          activityEventId: row.id,
+          enrollmentId: match.enrollment.id,
+          offerId: match.offerId,
+          reason: match.reason,
+        });
+      }
+
+      if (activity.sourceObject === 'appointment' && activity.contactId) {
         const offer = match.offerId ? await offerRepository.findById(match.offerId, activity.locationId).catch(() => null) : null;
         const status = normalizeAppointmentStatus(activity.eventType, activity.status);
         const summary = appointmentSummary(activity, offer?.offer_name);
 
         await evidenceService.logEvidence(EVIDENCE_TYPES.APPOINTMENT, activity.locationId, activity.contactId, 'ghl_calendar', {
-          enrollment_id: match.enrollment.id,
+          enrollment_id: match.enrollment?.id || null,
           offer_id: match.offerId,
           appointment_id: activity.sourceRecordId,
           calendar_id: activity.calendarId,
@@ -322,11 +423,11 @@ export const ghlActivityService = {
             title: `GHL Appointment: ${activity.title || status}`,
             proofRole: status === 'completed' ? 'service_delivery' : 'client_engagement',
             relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: status === 'completed' ? 'high' : 'medium', confidence: 'moderate' },
-            enrollmentId: match.enrollment.id,
+            enrollmentId: match.enrollment?.id || null,
             sourceRecordId: activity.sourceRecordId || null,
             metadata: {
               actor: status === 'no_show' ? 'client' : 'merchant',
-              service: { enrollmentId: match.enrollment.id, serviceDate: activity.startTime || activity.occurredAt, deliverableName: activity.title || 'GHL appointment' },
+              service: { enrollmentId: match.enrollment?.id || null, offerId: match.offerId, serviceDate: activity.startTime || activity.occurredAt, deliverableName: activity.title || 'GHL appointment' },
               source: { system: 'ghl_calendar', recordId: activity.sourceRecordId || null, rawEventType: activity.eventType },
             },
           }),
@@ -410,12 +511,13 @@ export const ghlActivityService = {
       .update({ action_taken: actionTaken, updated_at: new Date().toISOString() })
       .eq('id', row.id);
 
-    return { status: match.enrollment || activity.sourceObject === 'communication' ? 'matched' : 'unmatched', eventType: activity.eventType, sourceObject: activity.sourceObject, actionTaken };
+    return { status: match.enrollment ? 'matched' : activity.contactId ? 'client_level' : 'unmatched', eventType: activity.eventType, sourceObject: activity.sourceObject, actionTaken };
   },
 
   async getSetup(locationId: string) {
-    const [mappings, offers, unmatched, calendars] = await Promise.all([
+    const [mappings, rules, offers, unmatched, calendars] = await Promise.all([
       ghlActivityRepository.listAppointmentMappings(locationId),
+      ghlActivityRepository.listMatchRules(locationId),
       offerRepository.listByLocation(locationId),
       ghlActivityRepository.listUnmatched(locationId, 25),
       this.listCalendars(locationId),
@@ -423,6 +525,7 @@ export const ghlActivityService = {
 
     return {
       mappings,
+      rules,
       offers: offers.map((offer) => ({ id: offer.id, name: offer.offer_name, active: offer.active })),
       calendars,
       unmatched,
@@ -459,6 +562,30 @@ export const ghlActivityService = {
       delivery_role: stringValue(payload.delivery_role, payload.deliveryRole) || null,
       is_active: payload.is_active === undefined ? true : payload.is_active === true,
     });
+  },
+
+  async saveMatchRule(locationId: string, payload: Record<string, unknown>) {
+    const ruleType = stringValue(payload.rule_type, payload.ruleType);
+    const sourceKey = stringValue(payload.source_key, payload.sourceKey);
+    const sourceValue = stringValue(payload.source_value, payload.sourceValue);
+    if (!ruleType || !sourceKey || !sourceValue) throw new Error('rule_type, source_key, and source_value required');
+    return ghlActivityRepository.upsertMatchRule(locationId, {
+      id: stringValue(payload.id) || undefined,
+      rule_type: ruleType,
+      source_key: sourceKey,
+      source_value: sourceValue,
+      offer_id: stringValue(payload.offer_id, payload.offerId) || null,
+      staff_user_id: stringValue(payload.staff_user_id, payload.staffUserId) || null,
+      title_keyword: stringValue(payload.title_keyword, payload.titleKeyword) || null,
+      pipeline_id: stringValue(payload.pipeline_id, payload.pipelineId) || null,
+      pipeline_stage_id: stringValue(payload.pipeline_stage_id, payload.pipelineStageId) || null,
+      label: stringValue(payload.label) || null,
+      is_active: payload.is_active === undefined ? true : payload.is_active === true,
+    });
+  },
+
+  async deactivateMatchRule(locationId: string, id: string) {
+    await ghlActivityRepository.deactivateMatchRule(locationId, id);
   },
 
   async deactivateAppointmentMapping(locationId: string, id: string) {

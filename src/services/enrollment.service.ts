@@ -110,13 +110,14 @@ export const enrollmentService = {
       capturedAt: new Date().toISOString(),
     };
 
-    // Check for existing record by email + offerId
+    // Check for existing record by email + offerId, including pay-first records.
     const { data: existing } = await supabase
       .from('enrollments')
-      .select('id')
+      .select('id, status')
       .eq('email', input.email)
       .eq('offer_id', input.offerId)
-      .eq('status', 'device_captured')
+      .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -240,19 +241,42 @@ export const enrollmentService = {
     };
 
     // Find existing enrollment (created by device-capture on Page 1)
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('enrollments')
-      .select('id')
+      .select('id, status')
       .eq('email', input.email)
       .eq('offer_id', input.offerId)
-      .in('status', ['device_captured', 'pending'])
-      .limit(1)
-      .maybeSingle();
+      .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
+      .order('created_at', { ascending: false })
+      .limit(5);
+    const existing = (existingRows || []).find((row: any) => row.status === 'paid_pending_enrollment')
+      || (existingRows || [])[0]
+      || null;
 
     // Parse first/last name from digital signature (e.g., "Susan Katz" → "Susan", "Katz")
     const sigParts = (input.digitalSignature || '').trim().split(/\s+/);
     const firstName = sigParts[0] || '';
     const lastName = sigParts.slice(1).join(' ') || '';
+
+    if (existing && (existing as any).status === 'paid_pending_enrollment') {
+      const { payFirstEnrollmentService } = await import('./pay-first-enrollment.service');
+      const finalized = await payFirstEnrollmentService.finalizePaidPendingEnrollment({
+        enrollmentId: existing.id,
+        locationId: offer.location_id,
+        consentTimestamp: input.consentTimestamp,
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+        deviceFingerprint: input.deviceFingerprint,
+        screenResolution: input.screenResolution,
+        timezone: input.timezone,
+        browserLanguage: input.browserLanguage,
+        tcVersionHash: input.tcVersionHash,
+        digitalSignature: input.digitalSignature,
+        clausesAccepted: input.clausesAccepted,
+        scrollDepth: input.scrollDepth,
+      });
+      if (finalized) return finalized;
+    }
 
     if (existing) {
       // Update existing record

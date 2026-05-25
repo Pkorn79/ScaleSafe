@@ -25,6 +25,7 @@
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showNoteModal = true">Add Note</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showMessageModal = true">Send Message</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-primary" @click="openSendOffer">Send Offer</button>
+          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openPayFirst">Record Payment</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openAssignOffer">Assign Offer</button>
           <router-link to="/clients" class="btn btn-sm btn-secondary">Back</router-link>
         </div>
@@ -183,6 +184,65 @@
       </template>
     </Modal>
 
+    <!-- Pay First Modal -->
+    <Modal v-model:open="showPayFirstModal" :title="`Record Payment for ${clientLabel}`">
+      <p class="text-sm text-muted" style="margin-top:-4px;margin-bottom:12px">
+        Use this when payment was taken outside the ScaleSafe checkout. ScaleSafe records the payment, creates a paid pending enrollment, and sends the enrollment link.
+      </p>
+
+      <div v-if="offersLoading" class="loading">Loading offers...</div>
+      <div v-else-if="activeOffers.length === 0" class="text-sm text-muted">
+        No active offers. Create an offer first.
+      </div>
+      <template v-else>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Offer</label>
+            <select class="form-select" v-model="payFirstOfferId">
+              <option value="">Choose an offer...</option>
+              <option v-for="o in activeOffers" :key="o.id" :value="o.id">
+                {{ o.offer_name }} - ${{ o.price || 0 }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Amount Paid</label>
+            <input class="form-input" type="number" min="0" step="0.01" v-model.number="payFirstAmount" />
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Payment Source</label>
+            <select class="form-select" v-model="payFirstSource">
+              <option value="ghl_invoice">GHL invoice</option>
+              <option value="ghl_payment_link">GHL payment link</option>
+              <option value="nmi_phone">NMI phone payment</option>
+              <option value="stripe_phone">Stripe phone payment</option>
+              <option value="external">Other external payment</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reference / Transaction ID</label>
+            <input class="form-input" v-model="payFirstReference" placeholder="optional, but recommended" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Note</label>
+          <textarea class="form-textarea" rows="2" v-model="payFirstNote" placeholder="Phone/Zoom payment, invoice number, or context"></textarea>
+        </div>
+      </template>
+
+      <div v-if="payFirstResult" class="text-sm mt-2" style="color:#10b981">{{ payFirstResult }}</div>
+      <div v-if="payFirstError" class="text-sm mt-2" style="color:#ef4444">{{ payFirstError }}</div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="showPayFirstModal = false">Close</button>
+        <button class="btn btn-primary" @click="submitPayFirst" :disabled="payFirstLoading || !payFirstOfferId || !payFirstAmount">
+          {{ payFirstLoading ? 'Recording...' : 'Record & Send Enrollment' }}
+        </button>
+      </template>
+    </Modal>
+
     <!-- Add Note Modal -->
     <Modal v-model:open="showNoteModal" title="Add Note">
       <div class="form-group">
@@ -304,6 +364,17 @@ const assignOfferLoading = ref(false);
 const assignOfferResult = ref('');
 const assignOfferError = ref('');
 
+// Pay-first modal
+const showPayFirstModal = ref(false);
+const payFirstOfferId = ref('');
+const payFirstAmount = ref<number | null>(null);
+const payFirstSource = ref('ghl_invoice');
+const payFirstReference = ref('');
+const payFirstNote = ref('');
+const payFirstLoading = ref(false);
+const payFirstResult = ref('');
+const payFirstError = ref('');
+
 // Note modal
 const showNoteModal = ref(false);
 const noteBody = ref('');
@@ -329,7 +400,7 @@ function statusBadge(status: string): string {
   if (['enrolled', 'active'].includes(status)) return 'badge-green';
   if (status === 'completed') return 'badge-blue';
   if (status === 'cancelled') return 'badge-red';
-  if (['paused', 'consent_captured', 'pending'].includes(status)) return 'badge-yellow';
+  if (['paused', 'consent_captured', 'pending', 'paid_pending_enrollment'].includes(status)) return 'badge-yellow';
   return 'badge-gray';
 }
 
@@ -419,6 +490,58 @@ async function openAssignOffer() {
     }
     offersLoading.value = false;
   }
+}
+
+async function openPayFirst() {
+  showPayFirstModal.value = true;
+  payFirstResult.value = '';
+  payFirstError.value = '';
+  payFirstOfferId.value = '';
+  payFirstAmount.value = null;
+  payFirstReference.value = '';
+  payFirstNote.value = '';
+  if (activeOffers.value.length === 0) {
+    offersLoading.value = true;
+    try {
+      const offers = await api.get<any[]>('/api/offers');
+      activeOffers.value = (offers || []).filter(o => o.active);
+    } catch (e: any) {
+      payFirstError.value = e.message || 'Failed to load offers';
+    }
+    offersLoading.value = false;
+  }
+}
+
+async function submitPayFirst() {
+  if (!payFirstOfferId.value || !payFirstAmount.value || !clientEmail.value) return;
+  payFirstLoading.value = true;
+  payFirstError.value = '';
+  payFirstResult.value = '';
+  try {
+    const parts = clientLabel.value.split(' ');
+    await api.post('/api/dashboard/pay-first-enrollment', {
+      contactId: contactId.value,
+      offerId: payFirstOfferId.value,
+      firstName: parts[0] || '',
+      lastName: parts.slice(1).join(' ') || '',
+      email: clientEmail.value,
+      phone: enrollmentInfo.value?.phone || '',
+      amount: payFirstAmount.value,
+      paymentSource: payFirstSource.value,
+      externalReference: payFirstReference.value,
+      notes: payFirstNote.value,
+      sendVia: ['email'],
+    });
+    payFirstResult.value = 'Payment recorded and enrollment link sent.';
+    payFirstOfferId.value = '';
+    payFirstAmount.value = null;
+    payFirstReference.value = '';
+    payFirstNote.value = '';
+    await reloadEnrollments();
+  } catch (e: any) {
+    payFirstError.value = e.message || 'Failed to record payment';
+  }
+  payFirstLoading.value = false;
 }
 
 async function submitAssignOffer() {

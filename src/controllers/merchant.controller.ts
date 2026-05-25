@@ -144,6 +144,28 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** POST /api/merchants/ghl-activity/match-rules - create/update one activity matching rule */
+  async saveGhlActivityMatchRule(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const rule = await ghlActivityService.saveMatchRule(locationId, req.body || {});
+      res.json(rule);
+    } catch (err) { next(err); }
+  },
+
+  /** DELETE /api/merchants/ghl-activity/match-rules/:id - deactivate one activity matching rule */
+  async deleteGhlActivityMatchRule(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      await ghlActivityService.deactivateMatchRule(locationId, req.params.id);
+      res.json({ status: 'ok' });
+    } catch (err) { next(err); }
+  },
+
   /** DELETE /api/merchants/ghl-activity/appointment-mappings/:id - deactivate mapping */
   async deleteGhlAppointmentMapping(req: Request, res: Response, next: NextFunction) {
     try {

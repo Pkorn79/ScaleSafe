@@ -1,9 +1,13 @@
 const mockCreateEventIfNew = jest.fn();
 const mockListAppointmentMappings = jest.fn();
+const mockListMatchRules = jest.fn();
 const mockListRecent = jest.fn();
 const mockListUnmatched = jest.fn();
 const mockUpsertAppointmentMapping = jest.fn();
 const mockDeactivateAppointmentMapping = jest.fn();
+const mockUpsertMatchRule = jest.fn();
+const mockDeactivateMatchRule = jest.fn();
+const mockLinkActivityToEnrollment = jest.fn();
 const mockLogEvidence = jest.fn();
 const mockOfferFindById = jest.fn();
 const mockOfferListByLocation = jest.fn();
@@ -13,10 +17,14 @@ jest.mock('../../src/repositories/ghlActivity.repository', () => ({
   ghlActivityRepository: {
     createEventIfNew: (...args: any[]) => mockCreateEventIfNew(...args),
     listAppointmentMappings: (...args: any[]) => mockListAppointmentMappings(...args),
+    listMatchRules: (...args: any[]) => mockListMatchRules(...args),
     listRecent: (...args: any[]) => mockListRecent(...args),
     listUnmatched: (...args: any[]) => mockListUnmatched(...args),
     upsertAppointmentMapping: (...args: any[]) => mockUpsertAppointmentMapping(...args),
     deactivateAppointmentMapping: (...args: any[]) => mockDeactivateAppointmentMapping(...args),
+    upsertMatchRule: (...args: any[]) => mockUpsertMatchRule(...args),
+    deactivateMatchRule: (...args: any[]) => mockDeactivateMatchRule(...args),
+    linkActivityToEnrollment: (...args: any[]) => mockLinkActivityToEnrollment(...args),
   },
 }));
 
@@ -71,6 +79,7 @@ function mockEnrollmentQuery(enrollments: any[]) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockListAppointmentMappings.mockResolvedValue([]);
+  mockListMatchRules.mockResolvedValue([]);
   mockListRecent.mockResolvedValue([]);
   mockListUnmatched.mockResolvedValue([]);
   mockOfferFindById.mockResolvedValue({ id: 'offer_1', offer_name: 'Beta Tester' });
@@ -135,7 +144,7 @@ describe('ghlActivityService', () => {
       source_object: 'appointment',
       source_record_id: 'appt_1',
       status: 'matched',
-      match_reason: 'calendar_offer_mapping',
+      match_reason: 'legacy_calendar_offer_mapping',
     }));
     expect(mockLogEvidence).toHaveBeenCalledWith(
       EVIDENCE_TYPES.APPOINTMENT,
@@ -148,6 +157,47 @@ describe('ghlActivityService', () => {
         appointment_title: 'Strategy Session',
       }),
     );
+  });
+
+  test('matches invoice line item to an offer with activity match rules', async () => {
+    mockListMatchRules.mockResolvedValueOnce([{
+      id: 'rule_1',
+      is_active: true,
+      rule_type: 'invoice_item',
+      source_key: 'invoice_item_name',
+      source_value: 'Beta Tester',
+      offer_id: 'offer_1',
+      staff_user_id: null,
+      title_keyword: null,
+    }]);
+
+    const result = await ghlActivityService.handleWebhook({
+      locationId: 'loc_1',
+      _id: 'inv_1',
+      invoiceNumber: 'INV-1001',
+      contactDetails: { id: 'contact_1' },
+      invoiceItems: [{ name: 'Beta Tester', qty: 1, amount: 125 }],
+      total: 125,
+      amountPaid: 125,
+      currency: 'USD',
+      status: 'paid',
+    });
+
+    expect(result.actionTaken).toBe('invoice_evidence_created');
+    expect(mockCreateEventIfNew).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'matched',
+      match_reason: 'invoice_item_invoice_item_name_rule',
+      linked_enrollment_ids: ['enr_1'],
+      linked_offer_ids: ['offer_1'],
+    }));
+    expect(mockLinkActivityToEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      locationId: 'loc_1',
+      enrollmentId: 'enr_1',
+      offerId: 'offer_1',
+    }));
   });
 
   test('keeps duplicate GHL activity from creating duplicate evidence', async () => {

@@ -14,6 +14,7 @@ import { logger } from '../utils/logger';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { isSafeOrFilterSearchInput } from '../utils/search-input';
 import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
+import { payFirstEnrollmentService } from '../services/pay-first-enrollment.service';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -251,7 +252,7 @@ export const dashboardController = {
           .from('client_list_view')
           .select('contact_id', { count: 'exact', head: true })
           .eq('location_id', locationId)
-          .in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused', 'manual_add']),
+          .in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paid_pending_enrollment', 'paused', 'manual_add']),
         supabase.from('defense_packets').select('id, status', { count: 'exact' }).eq('location_id', locationId),
         supabase.from('defense_outcomes').select('outcome, amount_recovered').eq('location_id', locationId).eq('outcome', 'won'),
         supabase.from('evidence_timeline').select('contact_id', { count: 'exact', head: true }).eq('location_id', locationId),
@@ -315,7 +316,7 @@ export const dashboardController = {
           .from('enrollments')
           .select('id, contact_id, email, status, created_at, digital_signature')
           .eq('location_id', locationId)
-          .in('status', ['enrolled', 'consent_captured', 'completed']),
+          .in('status', ['enrolled', 'consent_captured', 'paid_pending_enrollment', 'completed']),
       ]);
 
       // Build set of contact IDs from evidence_timeline
@@ -755,7 +756,7 @@ export const dashboardController = {
       });
 
       // Summary stats
-      const active = result.filter(e => ['enrolled', 'active', 'consent_captured'].includes(e.status)).length;
+      const active = result.filter(e => ['enrolled', 'active', 'consent_captured', 'paid_pending_enrollment'].includes(e.status)).length;
       const completed = result.filter(e => e.status === 'completed').length;
       const cancelled = result.filter(e => e.status === 'cancelled').length;
       const clientSince = result.length > 0 ? result[result.length - 1].createdAt : null;
@@ -1330,7 +1331,7 @@ export const dashboardController = {
       if (status) {
         query = query.eq('status', status);
       } else if (statusGroup === 'active') {
-        query = query.in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paused', 'manual_add']);
+        query = query.in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paid_pending_enrollment', 'paused', 'manual_add']);
       } else if (statusGroup === 'archive') {
         query = query.in('status', ['completed', 'cancelled']);
       }
@@ -1505,6 +1506,34 @@ export const dashboardController = {
       } catch {}
 
       res.json({ success: true, enrollmentId: enrollment?.id });
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/pay-first-enrollment - record external payment, then send enrollment link */
+  async recordPayFirstEnrollment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await payFirstEnrollmentService.recordPaymentAndSendEnrollment({
+        locationId,
+        offerId: req.body.offerId,
+        contactId: req.body.contactId,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        email: req.body.email,
+        phone: req.body.phone,
+        amount: Number(req.body.amount || 0),
+        paymentType: req.body.paymentType,
+        paymentSource: req.body.paymentSource || 'external',
+        paymentMethod: req.body.paymentMethod,
+        externalReference: req.body.externalReference,
+        notes: req.body.notes,
+        sendVia: req.body.sendVia,
+        recordedBy: String((req as any).tenantContext?.userId || 'merchant'),
+      });
+
+      res.json(result);
     } catch (err) { next(err); }
   },
 };
