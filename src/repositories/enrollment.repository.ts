@@ -73,12 +73,15 @@ export const enrollmentRepository = {
     return record;
   },
 
-  async findByConsentToken(token: string): Promise<EnrollmentRecord | null> {
-    const { data, error } = await getSupabase()
+  async findByConsentToken(token: string, locationId?: string): Promise<EnrollmentRecord | null> {
+    let query = getSupabase()
       .from('enrollments')
       .select('*')
-      .eq('consent_token', token)
-      .single();
+      .eq('consent_token', token);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.single();
 
     if (error && error.code !== 'PGRST116') throw error;
     return data;

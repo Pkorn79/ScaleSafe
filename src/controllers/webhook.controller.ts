@@ -513,7 +513,7 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
   // Primary: consent_token from metadata
   const consentToken = (metadata.consent_token || metadata.consentToken || '') as string;
   let enrollment = consentToken
-    ? await enrollmentRepository.findByConsentToken(consentToken)
+    ? await enrollmentRepository.findByConsentToken(consentToken, locationId)
     : null;
 
   if (!enrollment) {

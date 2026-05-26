@@ -137,7 +137,7 @@ describe('Webhook Controller - ghlPayment', () => {
 
     await webhookController.ghlPayment(req, res, next);
 
-    expect(mockEnrollmentFindByConsentToken).toHaveBeenCalledWith('tok_abc');
+    expect(mockEnrollmentFindByConsentToken).toHaveBeenCalledWith('tok_abc', 'loc_1');
     expect(mockCompleteEnrollment).toHaveBeenCalledWith(
       expect.objectContaining({
         enrollmentId: 'enr_1',
