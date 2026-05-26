@@ -60,7 +60,7 @@ function createQuery(table: string, rows: any[], _op: string) {
     order: (_col: string, _opts?: any) => chain,
     limit: (_n: number) => chain,
     single: () => ({ data: filtered[0] || null, error: filtered.length === 0 ? { message: 'not found' } : null }),
-    then: undefined as any,
+    then: (resolve: any, reject: any) => Promise.resolve({ data: filtered, error: null }).then(resolve, reject),
   };
   // For update/delete, return success
   if (_op === 'update' || _op === 'delete') {
@@ -324,6 +324,7 @@ describe('Payment Flow Integration', () => {
         {
           id: 'config_stripe',
           merchant_id: 'merchant_1',
+          location_id: 'loc_1',
           processor_type: 'stripe',
           is_active: true,
           is_default: true,
@@ -348,6 +349,7 @@ describe('Payment Flow Integration', () => {
         {
           id: 'config_nmi',
           merchant_id: 'merchant_1',
+          location_id: 'loc_1',
           processor_type: 'nmi',
           is_active: true,
           is_default: true,
@@ -373,6 +375,54 @@ describe('Payment Flow Integration', () => {
 
       await expect(resolveProcessor('merchant_1', 'loc_1')).rejects.toThrow(
         'No processor configured',
+      );
+    });
+
+    it('should not guess a config when multiple configs share one processor type and no default is set', async () => {
+      mockSupabaseData['merchants'] = [
+        { id: 'merchant_1', default_processor: null },
+      ];
+      mockSupabaseData['processor_configs'] = [
+        {
+          id: 'config_nmi_a',
+          merchant_id: 'merchant_1',
+          location_id: 'loc_1',
+          processor_type: 'nmi',
+          is_active: true,
+          is_default: false,
+        },
+        {
+          id: 'config_nmi_b',
+          merchant_id: 'merchant_1',
+          location_id: 'loc_1',
+          processor_type: 'nmi',
+          is_active: true,
+          is_default: false,
+        },
+      ];
+
+      await expect(resolveProcessor('merchant_1', 'loc_1')).rejects.toThrow(
+        'Multiple active processor configs found',
+      );
+    });
+
+    it('should not use the first active config when the default row is missing', async () => {
+      mockSupabaseData['merchants'] = [
+        { id: 'merchant_1', default_processor: 'nmi' },
+      ];
+      mockSupabaseData['processor_configs'] = [
+        {
+          id: 'config_nmi',
+          merchant_id: 'merchant_1',
+          location_id: 'loc_1',
+          processor_type: 'nmi',
+          is_active: true,
+          is_default: false,
+        },
+      ];
+
+      await expect(resolveProcessor('merchant_1', 'loc_1')).rejects.toThrow(
+        'No default active nmi configuration found',
       );
     });
   });

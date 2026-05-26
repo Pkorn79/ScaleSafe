@@ -5,7 +5,6 @@ import { ProcessorInterface } from '../interfaces/processor.interface';
 import { ProcessorType, ProcessorConfig } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
 import { processorConfigService } from './processor-config.service';
-import { logger } from '../utils/logger';
 
 interface OfferProcessorHint {
   processor_override: ProcessorType | null;
@@ -16,10 +15,10 @@ interface OfferProcessorHint {
  * Resolves the correct ProcessorInterface instance for a merchant + offer combination.
  *
  * Resolution order:
- * 1. Offer has processor_override → use that
- * 2. Merchant has default_processor → use that
- * 3. Only one processor connected → use that
- * 4. Both connected, no default → throw config error
+ * 1. Offer has processor_override -> use that processor type.
+ * 2. Merchant has default_processor -> use that processor type.
+ * 3. Exactly one active processor config exists -> use that exact config.
+ * 4. Otherwise throw a configuration error instead of guessing.
  */
 export async function resolveProcessor(
   merchantId: string,
@@ -28,10 +27,8 @@ export async function resolveProcessor(
 ): Promise<{ processorType: ProcessorType; config: ProcessorConfig }> {
   const supabase = getSupabase();
 
-  // Step 1: Check offer-level override
   let targetType: ProcessorType | null = offerHint?.processor_override ?? null;
 
-  // Step 2: If no offer override, check merchant default
   if (!targetType) {
     const { data: merchant, error } = await supabase
       .from('merchants')
@@ -42,7 +39,7 @@ export async function resolveProcessor(
     if (error) {
       throw new ProcessorError(
         `Failed to look up merchant ${merchantId}: ${error.message}`,
-        'nmi', // arbitrary — we don't know the processor yet
+        'nmi',
         'MERCHANT_LOOKUP_FAILED',
       );
     }
@@ -50,12 +47,12 @@ export async function resolveProcessor(
     targetType = merchant.default_processor as ProcessorType | null;
   }
 
-  // Step 3: If still no target, check what's connected
   if (!targetType) {
     const { data: configs, error } = await supabase
       .from('processor_configs')
-      .select('processor_type')
+      .select('*')
       .eq('merchant_id', merchantId)
+      .eq('location_id', locationId)
       .eq('is_active', true);
 
     if (error) {
@@ -66,7 +63,8 @@ export async function resolveProcessor(
       );
     }
 
-    const types = new Set((configs || []).map((c: any) => c.processor_type));
+    const activeConfigs = configs || [];
+    const types = new Set(activeConfigs.map((c: any) => c.processor_type));
 
     if (types.size === 0) {
       throw new ProcessorError(
@@ -76,26 +74,34 @@ export async function resolveProcessor(
       );
     }
 
-    if (types.size === 1) {
-      targetType = types.values().next().value as ProcessorType;
-    } else {
+    if (activeConfigs.length === 1) {
+      const onlyConfig = activeConfigs[0] as ProcessorConfig;
+      return { processorType: onlyConfig.processor_type, config: onlyConfig };
+    }
+
+    if (types.size > 1) {
       throw new ProcessorError(
         'Multiple processors connected but no default set. Configure a default processor in merchant settings.',
         'nmi',
         'NO_DEFAULT_PROCESSOR',
       );
     }
+
+    throw new ProcessorError(
+      'Multiple active processor configs found but no default config is set. Choose a default processor config in merchant settings.',
+      types.values().next().value as ProcessorType,
+      'NO_DEFAULT_PROCESSOR_CONFIG',
+    );
   }
 
-  // Now resolve the specific config row
   let query = supabase
     .from('processor_configs')
     .select('*')
     .eq('merchant_id', merchantId)
+    .eq('location_id', locationId)
     .eq('processor_type', targetType)
     .eq('is_active', true);
 
-  // For NMI, resolve multi-MID routing
   if (targetType === 'nmi' && offerHint?.nmi_processor_id) {
     query = query.eq('nmi_processor_id', offerHint.nmi_processor_id);
   } else {
@@ -105,30 +111,15 @@ export async function resolveProcessor(
   const { data: configRow, error: configError } = await query.single();
 
   if (configError || !configRow) {
-    // Fallback: if no default found, grab the first active one
-    const { data: fallback, error: fbError } = await supabase
-      .from('processor_configs')
-      .select('*')
-      .eq('merchant_id', merchantId)
-      .eq('processor_type', targetType)
-      .eq('is_active', true)
-      .limit(1)
-      .single();
-
-    if (fbError || !fallback) {
-      throw new ProcessorError(
-        `No active ${targetType} configuration found for merchant ${merchantId}.`,
-        targetType,
-        'CONFIG_NOT_FOUND',
-      );
-    }
-
-    logger.warn(
-      { merchantId, processorType: targetType },
-      'No default processor config found, using first active config',
+    throw new ProcessorError(
+      targetType === 'nmi' && offerHint?.nmi_processor_id
+        ? `No active NMI configuration found for processor ID ${offerHint.nmi_processor_id}.`
+        : `No default active ${targetType} configuration found for merchant ${merchantId}.`,
+      targetType,
+      targetType === 'nmi' && offerHint?.nmi_processor_id
+        ? 'CONFIG_NOT_FOUND'
+        : 'DEFAULT_CONFIG_NOT_FOUND',
     );
-
-    return { processorType: targetType, config: fallback as ProcessorConfig };
   }
 
   return { processorType: targetType, config: configRow as ProcessorConfig };
