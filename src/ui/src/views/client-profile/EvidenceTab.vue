@@ -3,9 +3,6 @@
     <div class="flex-between mb-4">
       <div class="card-title" style="margin-bottom:0">Evidence Timeline</div>
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-sm btn-secondary" @click="repairCommunications" :disabled="repairingCommunications">
-          {{ repairingCommunications ? 'Repairing...' : 'Repair Communication Text' }}
-        </button>
         <div class="text-sm text-muted">{{ total }} record{{ total !== 1 ? 's' : '' }}</div>
       </div>
     </div>
@@ -39,7 +36,7 @@
       :title="hasActiveFilters ? 'No matches' : 'No evidence yet'"
       :body="hasActiveFilters
         ? 'No evidence records match the selected type or date range. Clear the filters to see everything.'
-        : 'Evidence is captured automatically as the client progresses — consent, payments, sessions, milestones, and check-ins all land here.'"
+        : 'Evidence is captured automatically as the client progresses - consent, payments, sessions, milestones, and check-ins all land here.'"
     />
 
     <div v-else class="card">
@@ -132,7 +129,6 @@ const linkingItem = ref<any | null>(null);
 const selectedEnrollmentId = ref('');
 const linkSaving = ref(false);
 const linkError = ref('');
-const repairingCommunications = ref(false);
 
 const filterType = ref('');
 const filterFrom = ref('');
@@ -282,14 +278,14 @@ function summarize(item: any): string {
     if (type === 'communication') {
       const direction = d.direction === 'inbound' ? 'Inbound from client' : 'Outbound to client';
       const channel = String(d.comm_type || 'message').toUpperCase();
-      const conversation = d.ghl_conversation_id ? ` · GHL conversation ${String(d.ghl_conversation_id).slice(0, 10)}` : '';
+      const conversation = d.ghl_conversation_id ? ` - GHL conversation ${String(d.ghl_conversation_id).slice(0, 10)}` : '';
       const preview = stripHtml(String(d.summary || d.body_preview || '')).slice(0, 240);
-      return `${direction} · ${channel}${conversation}${preview ? `. Preview: ${preview}` : ''}`;
+      return `${direction} - ${channel}${conversation}${preview ? `. Preview: ${preview}` : ''}`;
     }
     if (type === 'invoice') {
       const invoice = d.invoice_number || d.invoice_id || 'GHL invoice';
       const status = d.invoice_status || d.status || d.invoice_event_type || 'recorded';
-      const amount = d.amount ? ` · $${Number(d.amount).toFixed(2)}` : '';
+      const amount = d.amount ? ` - $${Number(d.amount).toFixed(2)}` : '';
       return `${invoice} - ${formatEvidenceType(String(status))}${amount}`;
     }
     const parts: string[] = [];
@@ -372,18 +368,6 @@ async function saveLink() {
     linkError.value = e.message || 'Failed to link evidence';
   }
   linkSaving.value = false;
-}
-
-async function repairCommunications() {
-  repairingCommunications.value = true;
-  error.value = '';
-  try {
-    await api.post(`/api/evidence/${props.contactId}/repair-communications`);
-    await fetchPage(0, false);
-  } catch (e: any) {
-    error.value = e.message || 'Failed to repair communication evidence';
-  }
-  repairingCommunications.value = false;
 }
 
 async function applyFilters() {

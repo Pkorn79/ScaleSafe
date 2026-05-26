@@ -145,7 +145,7 @@ export interface EnrollmentWithEvidence {
 
 export const phase2EnrollmentService = {
   async completeEnrollment(params: CompleteEnrollmentParams): Promise<void> {
-    const enrollment = await enrollmentRepository.getById(params.enrollmentId);
+    const enrollment = await enrollmentRepository.getById(params.enrollmentId, params.locationId);
 
     // Backfill merchant_id if it was null at consent capture time.
     // consent.service.ts can write merchant_id=null when findByLocationId returns null
@@ -180,7 +180,7 @@ export const phase2EnrollmentService = {
     let enrollmentOffer: any = null;
     if (enrollment.offer_id) {
       try {
-        enrollmentOffer = await offerRepository.getById(enrollment.offer_id);
+        enrollmentOffer = await offerRepository.getById(enrollment.offer_id, params.locationId);
         offerName = enrollmentOffer.offer_name;
       } catch {
         logger.warn({ offerId: enrollment.offer_id }, 'Could not fetch offer for trigger payload');
@@ -194,7 +194,7 @@ export const phase2EnrollmentService = {
       // Get frequency from offer
       try {
         if (enrollment.offer_id) {
-          const ofr = await offerRepository.findById(enrollment.offer_id);
+          const ofr = await offerRepository.findById(enrollment.offer_id, params.locationId);
           if (ofr) {
             const freq = ofr.installment_frequency || 'monthly';
             const next = new Date(enrolledAt);
@@ -226,7 +226,7 @@ export const phase2EnrollmentService = {
       enrolled_at: enrolledAt.toISOString(),
       ...(nextBilling ? { next_billing_date: nextBilling } : {}),
       ...(backfillMerchantId ? { merchant_id: backfillMerchantId } : {}),
-    } as any);
+    } as any, params.locationId);
 
     // 2. Resolve GHL contact FIRST — evidence and payment records need the contactId
     let resolvedContactId = params.contactId;
@@ -241,7 +241,7 @@ export const phase2EnrollmentService = {
               resolvedContactId = existingContactId;
               await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
                 contact_id: resolvedContactId,
-              } as any);
+              } as any, params.locationId);
               logger.info(
                 { resolvedContactId, enrollmentId: params.enrollmentId, email },
                 'Existing GHL contact reused from prior enrollment before evidence insert',
@@ -276,7 +276,7 @@ export const phase2EnrollmentService = {
           if (resolvedContactId) {
             await enrollmentRepository.updateStatus(params.enrollmentId, 'enrolled', {
               contact_id: resolvedContactId,
-            } as any);
+            } as any, params.locationId);
             logger.info({ resolvedContactId, firstName, lastName, enrollmentId: params.enrollmentId }, 'GHL contact resolved before evidence insert');
           }
         }
@@ -429,7 +429,7 @@ export const phase2EnrollmentService = {
           };
           if (bgOfferId) {
             try {
-              const offer = await offerRepository.getById(bgOfferId);
+              const offer = await offerRepository.getById(bgOfferId, bgLocationId);
               applyOfferContactFields(customFields, offer, merchant, bgPaymentType);
               applyPaymentContactFields(customFields, bgPaymentAmount, 1, params.paymentsTotal, enrolledAt);
               pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
@@ -568,7 +568,7 @@ export const phase2EnrollmentService = {
             else next.setMonth(next.getMonth() + 1);
             updates.next_billing_date = next.toISOString().split('T')[0];
           }
-          await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, updates as any);
+          await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, updates as any, params.locationId);
         }
       }
     } catch { /* non-blocking */ }
@@ -841,7 +841,7 @@ export const phase2EnrollmentService = {
     enrollmentId: string,
     locationId: string,
   ): Promise<EnrollmentWithEvidence> {
-    const enrollment = await enrollmentRepository.getById(enrollmentId);
+    const enrollment = await enrollmentRepository.getById(enrollmentId, locationId);
     if (enrollment.location_id !== locationId) {
       throw new NotFoundError(`Enrollment ${enrollmentId}`);
     }

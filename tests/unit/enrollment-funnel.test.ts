@@ -52,9 +52,11 @@ function mockSupabaseChain(returnData: any, returnError: any = null) {
     update: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     in: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     maybeSingle: jest.fn().mockResolvedValue({ data: returnData, error: returnError }),
     single: jest.fn().mockResolvedValue({ data: returnData, error: returnError }),
+    then: jest.fn((resolve) => resolve({ data: returnData ? [returnData] : [], error: returnError })),
   };
   return chain;
 }
@@ -251,6 +253,7 @@ describe('Enrollment Funnel Service', () => {
         id: 'offer-789',
         location_id: 'loc-1',
         active: true,
+        price: 100,
       });
 
       // Existing enrollment found
@@ -292,6 +295,7 @@ describe('Enrollment Funnel Service', () => {
         id: 'offer-789',
         location_id: 'loc-1',
         active: true,
+        price: 100,
       });
 
       // No existing enrollment
@@ -317,6 +321,7 @@ describe('Enrollment Funnel Service', () => {
         id: 'offer-789',
         location_id: 'loc-1',
         active: true,
+        price: 100,
       });
 
       const existingChain = mockSupabaseChain({ id: 'enroll-1' });

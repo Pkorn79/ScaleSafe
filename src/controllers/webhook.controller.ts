@@ -4,6 +4,7 @@ import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
 import { offerRepository } from '../repositories/offer.repository';
+import { getSupabase } from '../clients/supabase.client';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { evidenceService } from '../services/evidence.service';
 import { logger } from '../utils/logger';
@@ -57,7 +58,6 @@ function isGhlActivityWebhook(type: string, body: Record<string, any>): boolean 
     normalized.includes('note') ||
     normalized.includes('task') ||
     normalized.includes('opportunity') ||
-    normalized.includes('contact') ||
     Boolean(body.appointment || body.invoiceNumber || body.invoiceItems || body.messageId || body.conversationId)
   );
 }
@@ -426,6 +426,65 @@ function stableSort(value: unknown): unknown {
 
 // --- Internal handler functions ---
 
+async function findEnrollmentForGhlPayment(
+  body: Record<string, unknown>,
+  statuses: string[] = ['enrolled', 'active', 'consent_captured', 'paid_pending_enrollment'],
+): Promise<any | null> {
+  const locationId = body.locationId as string;
+  const contactId = body.contactId as string;
+  const metadata = (body.metadata as Record<string, unknown>) || {};
+  const explicitEnrollmentId = String(
+    body.enrollmentId
+    || body.enrollment_id
+    || metadata.enrollmentId
+    || metadata.enrollment_id
+    || '',
+  ).trim();
+
+  if (explicitEnrollmentId) {
+    const { data } = await getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('id', explicitEnrollmentId)
+      .maybeSingle();
+    if (data) return data;
+  }
+
+  const subscriptionId = String(body.subscriptionId || (body.subscription as any)?.id || '').trim();
+  if (subscriptionId) {
+    const { data } = await getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('processor_subscription_id', subscriptionId)
+      .maybeSingle();
+    if (data) return data;
+  }
+
+  if (!contactId) return null;
+  const items = (body.items as any[]) || [];
+  for (const item of items) {
+    const productId = item.productId || item.product_id;
+    if (!productId) continue;
+    const offer = await findOfferByProductId(locationId, productId);
+    if (!offer) continue;
+    const { data } = await getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .eq('offer_id', offer.id)
+      .in('status', statuses)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data;
+  }
+
+  return null;
+}
+
 async function handleOrderCompleted(body: Record<string, unknown>): Promise<void> {
   const locationId = body.locationId as string;
   const contactId = body.contactId as string;
@@ -457,7 +516,11 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
     ? await enrollmentRepository.findByConsentToken(consentToken)
     : null;
 
-  // Fallback: match by contactId + product → offer mapping
+  if (!enrollment) {
+    enrollment = await findEnrollmentForGhlPayment(body, ['consent_captured', 'paid_pending_enrollment']);
+  }
+
+  // Product line item match: contactId + GHL product -> ScaleSafe offer.
   if (!enrollment && items.length > 0) {
     for (const item of items) {
       const productId = item.productId || item.product_id;
@@ -520,57 +583,15 @@ async function handleSubscriptionPayment(body: Record<string, unknown>): Promise
   const contactId = body.contactId as string;
   const amount = (body.amount as number) || 0;
   const transactionId = (body.transactionId || '') as string;
-  const subscriptionId = (body.subscriptionId || (body.subscription as any)?.id || '') as string;
-
   if (!contactId) {
     logger.warn({ locationId }, 'SubscriptionPayment missing contactId');
     return;
   }
 
-  // Find enrollment by contact + offer (from product in webhook)
-  const items = (body.items as any[]) || [];
-  let enrollment = null;
-  for (const item of items) {
-    const productId = item.productId || item.product_id;
-    if (productId) {
-      const offer = await findOfferByProductId(locationId, productId);
-      if (offer) {
-        enrollment = await enrollmentRepository.findByContactAndOffer(contactId, offer.id, locationId);
-        if (!enrollment) {
-          // Also check enrolled status (not just consent_captured)
-          const { data } = await (await import('../clients/supabase.client')).getSupabase()
-            .from('enrollments')
-            .select('*')
-            .eq('contact_id', contactId)
-            .eq('offer_id', offer.id)
-            .eq('location_id', locationId)
-            .in('status', ['enrolled', 'active'])
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-          enrollment = data;
-        }
-        if (enrollment) break;
-      }
-    }
-  }
-
-  // Broader fallback: find any active enrollment for this contact at this location
-  if (!enrollment) {
-    const { data } = await (await import('../clients/supabase.client')).getSupabase()
-      .from('enrollments')
-      .select('*')
-      .eq('contact_id', contactId)
-      .eq('location_id', locationId)
-      .in('status', ['enrolled', 'active'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    enrollment = data;
-  }
+  const enrollment = await findEnrollmentForGhlPayment(body, ['enrolled', 'active']);
 
   if (!enrollment) {
-    logger.info({ locationId, contactId }, 'SubscriptionPayment: no enrollment found');
+    logger.info({ locationId, contactId, transactionId }, 'SubscriptionPayment: no confident enrollment match found');
     await paymentEventRepository.create({
       location_id: locationId,
       contact_id: contactId,
@@ -610,16 +631,7 @@ async function handlePaymentFailed(body: Record<string, unknown>): Promise<void>
     return;
   }
 
-  // Find enrollment
-  const { data: enrollment } = await (await import('../clients/supabase.client')).getSupabase()
-    .from('enrollments')
-    .select('*')
-    .eq('contact_id', contactId)
-    .eq('location_id', locationId)
-    .in('status', ['enrolled', 'active', 'at_risk'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+  const enrollment = await findEnrollmentForGhlPayment(body, ['enrolled', 'active', 'at_risk']);
 
   await phase2EnrollmentService.handleFailedPayment({
     locationId,
@@ -645,16 +657,12 @@ async function handleRefund(body: Record<string, unknown>): Promise<void> {
     return;
   }
 
-  // Find enrollment
-  const { data: enrollment } = await (await import('../clients/supabase.client')).getSupabase()
-    .from('enrollments')
-    .select('*')
-    .eq('contact_id', contactId)
-    .eq('location_id', locationId)
-    .in('status', ['enrolled', 'active', 'at_risk'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+  const originalEvent = transactionId
+    ? await paymentEventRepository.findByTransactionId('ghl', transactionId, locationId)
+    : null;
+  const enrollment = originalEvent?.enrollment_id
+    ? await enrollmentRepository.findById(originalEvent.enrollment_id, locationId)
+    : await findEnrollmentForGhlPayment(body, ['enrolled', 'active', 'at_risk']);
 
   await phase2EnrollmentService.handleRefund({
     locationId,

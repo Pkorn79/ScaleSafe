@@ -255,6 +255,31 @@ describe('ghlActivityService', () => {
     expect(normalized.contactId).toBe(expectedContactId);
   });
 
+  test('infers message direction from official event type when omitted', () => {
+    const inbound = ghlActivityService.normalizePayload({
+      type: 'InboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_1',
+      messageId: 'msg_inferred_in',
+      messageType: 'SMS',
+      body: 'I have a question',
+    } as any);
+
+    const outbound = ghlActivityService.normalizePayload({
+      type: 'OutboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_2',
+      messageId: 'msg_inferred_out',
+      messageType: 'Email',
+      body: 'Here is your receipt',
+    } as any);
+
+    expect(inbound.direction).toBe('inbound');
+    expect(outbound.direction).toBe('outbound');
+  });
+
   test('cleans HTML email content before saving communication evidence', async () => {
     const result = await ghlActivityService.handleWebhook({
       type: 'OutboundMessage',

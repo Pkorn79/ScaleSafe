@@ -553,7 +553,7 @@ export const enrollmentService = {
    */
   async handlePaymentWebhook(input: PaymentWebhookInput) {
     const { locationId, contactId, offerId } = input;
-    const offer = await offerRepository.getById(offerId);
+    const offer = await offerRepository.getById(offerId, locationId);
     const merchant = await merchantRepository.getByLocationId(locationId);
     const api = await ghlApi(locationId);
 

@@ -108,15 +108,18 @@ export const enrollmentRepository = {
     id: string,
     status: string,
     additionalData?: Partial<EnrollmentRecord>,
+    locationId?: string,
   ): Promise<EnrollmentRecord> {
     const updates: Record<string, unknown> = { status, ...additionalData };
 
-    const { data, error } = await getSupabase()
+    let query = getSupabase()
       .from('enrollments')
       .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+      .eq('id', id);
+
+    if (locationId) query = query.eq('location_id', locationId);
+
+    const { data, error } = await query.select().single();
 
     if (error) throw error;
     return data;

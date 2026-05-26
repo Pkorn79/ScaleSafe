@@ -127,6 +127,13 @@ function classify(eventType: string, body: Record<string, any>): SourceObject {
   return 'unknown';
 }
 
+function defaultDirectionForEvent(eventType: string): string {
+  const text = eventType.toLowerCase();
+  if (text.includes('inbound')) return 'inbound';
+  if (text.includes('outbound')) return 'outbound';
+  return '';
+}
+
 function inferEventType(body: Record<string, any>): string {
   const explicit = stringValue(body.type, body.event_type, body.eventType);
   if (explicit) return explicit;
@@ -217,7 +224,7 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     invoiceNumber: stringValue(primary.invoiceNumber, primary.invoice_number, body.invoiceNumber, body.invoice_number),
     invoiceDueDate: stringValue(primary.dueDate, primary.due_date, body.dueDate, body.due_date),
     lineItems: arrayValue(primary.lineItems || primary.line_items || primary.invoiceItems || body.lineItems || body.line_items || body.invoiceItems),
-    direction: stringValue(body.direction, primary.direction, nestedMessage.direction),
+    direction: stringValue(body.direction, primary.direction, nestedMessage.direction, defaultDirectionForEvent(eventType)),
     channel: stringValue(body.messageType, body.message_type, body.messageTypeString, body.channel, primary.type, primary.messageType, primary.messageTypeString, nestedMessage.type, nestedMessage.messageType, nestedMessage.messageTypeString),
     body: cleanCommunicationBody(body.plainText, primary.plainText, nestedMessage.plainText, body.text, primary.text, nestedMessage.text, body.message, primary.message, nestedMessage.message, body.body, primary.body, nestedMessage.body, body.html, primary.html, nestedMessage.html),
     sourceRefs,
@@ -317,6 +324,19 @@ export const ghlActivityService = {
     const activity = normalizePayload(payload);
     if (!activity.locationId || !activity.eventType) {
       throw new Error('GHL activity webhook missing locationId or event type');
+    }
+
+    if (activity.sourceObject === 'unknown') {
+      logger.info(
+        { locationId: activity.locationId, eventType: activity.eventType, bodyKeys: Object.keys(payload || {}) },
+        'Unsupported GHL activity event skipped',
+      );
+      return {
+        status: 'skipped',
+        eventType: activity.eventType,
+        sourceObject: activity.sourceObject,
+        actionTaken: 'unsupported_event_skipped',
+      };
     }
 
     const match = await findMappedEnrollment(activity);

@@ -257,7 +257,7 @@
               <strong>{{ rule.label || `${rule.rule_type}: ${rule.source_value}` }}</strong>
               <div class="text-sm text-muted">
                 {{ offerName(rule.offer_id) || 'Client-level only' }}
-                <span v-if="rule.title_keyword"> · "{{ rule.title_keyword }}"</span>
+                <span v-if="rule.title_keyword"> - "{{ rule.title_keyword }}"</span>
               </div>
             </div>
             <button class="btn btn-secondary btn-sm" @click="deactivateGhlActivityRule(rule.id)" :disabled="ghlActivityLoading">Disable</button>
@@ -309,7 +309,7 @@
               <strong>{{ calendarName(mapping.calendar_id) }}</strong>
               <div class="text-sm text-muted">
                 {{ offerName(mapping.offer_id) || 'No program' }}
-                <span v-if="mapping.title_keyword"> · "{{ mapping.title_keyword }}"</span>
+                <span v-if="mapping.title_keyword"> - "{{ mapping.title_keyword }}"</span>
               </div>
             </div>
             <button class="btn btn-secondary btn-sm" @click="deactivateGhlActivityMapping(mapping.id)" :disabled="ghlActivityLoading">Disable</button>
@@ -321,7 +321,7 @@
         <div v-if="ghlUnmatchedActivity.length" class="mt-4">
           <div class="text-sm" style="font-weight:600">Recent client-level activity</div>
           <div v-for="event in ghlUnmatchedActivity.slice(0, 5)" :key="event.id" class="text-sm text-muted unmatched-row">
-            {{ event.source_object }} · {{ event.event_type }} · {{ formatHealthTime(event.created_at) }}
+            {{ event.source_object }} - {{ event.event_type }} - {{ formatHealthTime(event.created_at) }}
           </div>
         </div>
       </div>
@@ -468,7 +468,7 @@
                       {{ row.label }}
                       <span class="mini-badge" :class="`mini-badge-${row.betaStatus}`">{{ row.betaStatus }}</span>
                     </div>
-                    <div class="text-sm text-muted">{{ row.key }} · {{ row.firesFrom }}</div>
+                    <div class="text-sm text-muted">{{ row.key }} - {{ row.firesFrom }}</div>
                   </div>
                   <div class="trigger-health-metrics">
                     <span :class="row.activeSubscriptionCount > 0 ? 'text-green' : 'text-warn'">

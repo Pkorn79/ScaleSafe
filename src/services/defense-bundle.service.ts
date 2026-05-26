@@ -29,7 +29,7 @@ export const defenseBundleService = {
     opts?: { enrollmentId?: string | null },
   ): Promise<string> {
     const supabase = getSupabase();
-    const packet = await defenseRepository.getById(defenseId);
+    const packet = await defenseRepository.getById(defenseId, locationId);
     const merchant = await merchantRepository.getByLocationId(locationId);
 
     // 1. Build the exhibit list (same list that was used for the letter prompt)
@@ -140,7 +140,7 @@ function buildExhibitsSummaryHtml(exhibits: any[], merchantName: string): string
   const rows = exhibits.map(ex =>
     `<div style="margin-bottom:12px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px">
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:4px">Exhibit ${esc(ex.letter)}: ${esc(ex.name)}</div>
-      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${ex.occurredAt ? new Date(ex.occurredAt).toLocaleDateString('en-US', { dateStyle: 'long' }) : ''} · ${esc(ex.category)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">${ex.occurredAt ? new Date(ex.occurredAt).toLocaleDateString('en-US', { dateStyle: 'long' }) : ''} - ${esc(ex.category)}</div>
       <div style="font-size:12px;color:#374151;line-height:1.5">${esc(ex.summary)}</div>
     </div>`,
   ).join('');

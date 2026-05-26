@@ -53,7 +53,7 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
 
     // ─── Verify offer ────────────────────────────────
 
-    const offer = await offerRepository.findById(offerId);
+    const offer = await offerRepository.findById(offerId, locationId);
     if (!offer || !offer.active) {
       res.status(404).json({ error: 'Offer not found or inactive' });
       return;

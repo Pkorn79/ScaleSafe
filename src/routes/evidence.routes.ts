@@ -63,15 +63,4 @@ router.post('/:contactId/link-program', async (req: Request, res: Response, next
   } catch (err) { next(err); }
 });
 
-/** POST /api/evidence/:contactId/repair-communications - manually clean existing GHL communication evidence */
-router.post('/:contactId/repair-communications', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const locationId = resolveLocationId(req);
-    if (!locationId) throw new ValidationError('locationId required');
-
-    const result = await evidenceService.repairCommunicationEvidence(locationId, req.params.contactId);
-    res.json({ status: 'ok', ...result });
-  } catch (err) { next(err); }
-});
-
 export default router;

@@ -308,16 +308,17 @@ describe('Webhook Controller - ghlUnified', () => {
 
   test('acknowledges unsupported default GHL webhook events without failing delivery', async () => {
     const { req, res, next } = mockReqRes({
-      type: 'LocationUpdate',
+      type: 'ContactUpdate',
       locationId: 'loc_1',
-      name: 'Updated Location',
+      contactId: 'contact_1',
+      email: 'test@example.com',
     });
 
     await webhookController.ghlUnified(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(mockGhlActivityHandleWebhook).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true, type: 'LocationUpdate' });
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true, type: 'ContactUpdate' });
   });
 });
 

@@ -27,7 +27,7 @@ export const consentService = {
     enrollmentId: string;
   }> {
     // Validate offer exists and is active
-    const offer = await offerRepository.findById(params.offerId);
+    const offer = await offerRepository.findById(params.offerId, params.locationId);
     if (!offer || !offer.active) {
       throw new ValidationError('Offer not found or inactive');
     }

@@ -97,6 +97,7 @@ describe('Phase 2 Enrollment Service - completeEnrollment', () => {
         payment_transaction_id: 'txn_123',
         payments_made: 1,
       }),
+      'loc_1',
     );
   });
 

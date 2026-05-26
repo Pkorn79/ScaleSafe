@@ -108,17 +108,27 @@ function createMockTable(table: string) {
     }),
     update: (updates: any) => ({
       eq: (col: string, val: any) => {
-        if (table === 'enrollments' && col === 'id') {
-          if (enrollmentStore[val]) {
-            Object.assign(enrollmentStore[val], updates);
-          }
-          return {
-            select: () => ({
-              single: () => ({ data: enrollmentStore[val], error: null }),
-            }),
-          };
-        }
-        return { select: () => ({ single: () => ({ data: null, error: null }) }) };
+        const filters: Record<string, any> = { [col]: val };
+        const chain: any = {
+          eq: (nextCol: string, nextVal: any) => {
+            filters[nextCol] = nextVal;
+            return chain;
+          },
+          select: () => ({
+            single: () => {
+              if (table === 'enrollments' && filters.id) {
+                const existing = enrollmentStore[filters.id];
+                if (!existing || (filters.location_id && existing.location_id !== filters.location_id)) {
+                  return { data: null, error: { code: 'PGRST116' } };
+                }
+                Object.assign(existing, updates);
+                return { data: existing, error: null };
+              }
+              return { data: null, error: null };
+            },
+          }),
+        };
+        return chain;
       },
     }),
   };

@@ -114,8 +114,8 @@ export function buildCommunicationEvidenceSummary(input: CommunicationEvidenceSu
   const subject = cleanCommunicationBody(input.subject || '');
   const { nature, label } = classifyNature(subject, cleanBody, input.direction);
   const preview = cleanBody.slice(0, 240);
-  const idPart = input.conversationId ? ` · GHL conversation ${String(input.conversationId).slice(0, 10)}` : '';
-  const summary = `${directionLabel} · ${sourceChannel} · ${label}${idPart}${preview ? `. Preview: ${preview}` : '.'}`;
+  const idPart = input.conversationId ? ` - GHL conversation ${String(input.conversationId).slice(0, 10)}` : '';
+  const summary = `${directionLabel} - ${sourceChannel} - ${label}${idPart}${preview ? `. Preview: ${preview}` : '.'}`;
   return {
     direction: input.direction,
     channel: input.channel,
