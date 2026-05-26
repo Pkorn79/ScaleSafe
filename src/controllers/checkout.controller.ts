@@ -295,6 +295,17 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     return;
   }
 
+  if (offerId) {
+    const scopedOffer = resolvedOffer?.location_id === merchant.locationId
+      ? resolvedOffer
+      : await offerRepository.findById(offerId, merchant.locationId);
+    if (!scopedOffer || !scopedOffer.active) {
+      res.status(404).json({ success: false, error: 'Offer not found' });
+      return;
+    }
+    resolvedOffer = scopedOffer;
+  }
+
   const clientIp = getClientIp(req);
   const supabase = getSupabase();
 
@@ -304,6 +315,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       .from('enrollments')
       .select('id, status')
       .eq('consent_token', consentToken)
+      .eq('location_id', merchant.locationId)
       .single();
 
     if (!enrollment) {
@@ -316,7 +328,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // Resolve offer hint for per-offer processor override
     let offerHint: { processor_override: 'nmi' | 'stripe' | null; nmi_processor_id: string | null } | undefined;
     if (offerId) {
-      const ofr = resolvedOffer || await offerRepository.findById(offerId);
+      const ofr = resolvedOffer;
       resolvedOffer = ofr || resolvedOffer;
       if (ofr?.processor_override) {
         offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
@@ -648,7 +660,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
       if (offerId) {
         try {
-          const offer = await offerRepository.findById(offerId);
+          const offer = resolvedOffer || await offerRepository.findById(offerId, merchant.locationId);
           const offerPaymentType = (offer as any)?.payment_type || 'one_time';
           if (offerPaymentType === 'installment' || offerPaymentType === 'installments' || offerPaymentType === 'subscription') {
             quickPayPaymentKind = offerPaymentType === 'subscription' ? 'subscription' : 'installment';

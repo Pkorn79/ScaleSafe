@@ -68,6 +68,16 @@ function mockRes(): Response {
 
 const MERCHANT = { merchantId: 'merch-1', locationId: 'loc-1' };
 
+function supabaseSingle(data: any, error: any = null) {
+  const chain: any = {
+    select: jest.fn(() => chain),
+    eq: jest.fn(() => chain),
+    single: jest.fn().mockResolvedValue({ data, error }),
+    maybeSingle: jest.fn().mockResolvedValue({ data, error }),
+  };
+  return chain;
+}
+
 const mockProcessor = {
   processorType: 'nmi',
   charge: jest.fn(),
@@ -238,27 +248,17 @@ describe('Checkout Controller', () => {
         pif_discount_enabled: false,
         processor_override: null,
         nmi_processor_id: null,
+        active: true,
       };
       const merchant = { id: 'merch-1', location_id: 'loc-1' };
 
       mockGetMerchantByPublishableKey.mockResolvedValue(null);
       mockFrom.mockImplementation((table: string) => {
         if (table === 'offers_mirror') {
-          return {
-            select: jest.fn().mockReturnValue({
-              eq: jest.fn().mockReturnThis(),
-              single: jest.fn().mockResolvedValue({ data: offer, error: null }),
-            }),
-          };
+          return supabaseSingle(offer);
         }
         if (table === 'merchants') {
-          return {
-            select: jest.fn().mockReturnValue({
-              eq: jest.fn().mockReturnValue({
-                single: jest.fn().mockResolvedValue({ data: merchant, error: null }),
-              }),
-            }),
-          };
+          return supabaseSingle(merchant);
         }
         return {
           insert: jest.fn().mockResolvedValue({ error: null }),
@@ -288,15 +288,37 @@ describe('Checkout Controller', () => {
       expect(mockProcessor.charge).not.toHaveBeenCalled();
     });
 
+    it('rejects a publishable key paired with an offer from another location', async () => {
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'offers_mirror') return supabaseSingle(null, { code: 'PGRST116' });
+        return {
+          insert: jest.fn().mockResolvedValue({ error: null }),
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: null }),
+            }),
+          }),
+        };
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        offerId: 'offer-other-location',
+        paymentToken: 'tok_card',
+        amount: 10000,
+        currency: 'USD',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Offer not found' });
+      expect(mockProcessor.charge).not.toHaveBeenCalled();
+    });
+
     it('verifies consent token before processing', async () => {
       // Mock enrollment lookup — consent not found
-      mockFrom.mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({ data: null }),
-          }),
-        }),
-      });
+      mockFrom.mockReturnValue(supabaseSingle(null));
 
       const req = mockReq({
         publishableKey: 'pk_test',
