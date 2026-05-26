@@ -400,10 +400,16 @@ export const paymentLifecycleService = {
       let subscriptionId = params.processorSubscriptionId || '';
       try {
         const supabase = getSupabase();
-        const { data: enr } = await supabase.from('enrollments')
+        let enrollmentQuery = supabase.from('enrollments')
           .select('id, offer_id, payments_made, payments_total, processor_type, processor_subscription_id')
-          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId);
+        if (params.enrollmentId) {
+          enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+        } else {
+          enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+        }
+        const { data: enr } = await enrollmentQuery.maybeSingle();
         enrollmentId = enrollmentId || enr?.id || '';
         offerId = offerId || enr?.offer_id || '';
         processor = processor || enr?.processor_type || '';
@@ -467,11 +473,15 @@ export const paymentLifecycleService = {
         const processor = createProcessorClient(procConfig);
 
         // Fetch enrollment + offer for remaining payments and frequency
-        const { data: enr } = await supabase.from('enrollments')
+        let enrollmentQuery = supabase.from('enrollments')
           .select('id, offer_id, payments_made, payments_total')
-          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
-          .eq('processor_subscription_id', params.processorSubscriptionId)
-          .maybeSingle();
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId)
+          .eq('processor_subscription_id', params.processorSubscriptionId);
+        if (params.enrollmentId) {
+          enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+        }
+        const { data: enr } = await enrollmentQuery.maybeSingle();
 
         let interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' = 'monthly';
         let planAmount = 0;
@@ -547,11 +557,17 @@ export const paymentLifecycleService = {
       // No processor subscription — just update enrollment status back to 'enrolled'
       try {
         const supabase = getSupabase();
-        await supabase.from('enrollments')
+        let resumeQuery = supabase.from('enrollments')
           .update({ status: 'enrolled' })
-          .eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId)
-          .eq('status', 'paused');
+          .eq('location_id', params.locationId);
+        if (params.enrollmentId) {
+          resumeQuery = resumeQuery.eq('id', params.enrollmentId);
+        } else {
+          resumeQuery = resumeQuery
+            .eq('contact_id', params.contactId)
+            .eq('status', 'paused');
+        }
+        await resumeQuery;
       } catch {}
     }
 
@@ -598,10 +614,16 @@ export const paymentLifecycleService = {
       let nextBillingDate = '';
       try {
         const supabase = getSupabase();
-        const { data: enr } = await supabase.from('enrollments')
+        let enrollmentQuery = supabase.from('enrollments')
           .select('id, offer_id, payments_made, payments_total, updated_at, next_billing_date, processor_type, processor_subscription_id')
-          .eq('location_id', params.locationId).eq('contact_id', params.contactId)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId);
+        if (params.enrollmentId) {
+          enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+        } else {
+          enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+        }
+        const { data: enr } = await enrollmentQuery.maybeSingle();
         enrollmentId = enrollmentId || enr?.id || '';
         offerId = offerId || enr?.offer_id || '';
         processor = processor || enr?.processor_type || '';

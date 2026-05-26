@@ -4,10 +4,36 @@ import { requireTenant, resolveLocationId } from '../middleware/tenantContext';
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { ValidationError } from '../utils/errors';
+import { getSupabase } from '../clients/supabase.client';
 
 const router = Router();
 
 router.use(ssoAuth, requireTenant);
+
+async function getEnrollmentForLifecycleAction(
+  locationId: string,
+  enrollmentId: string,
+  contactId?: string,
+  allowedStatuses: string[] = [],
+) {
+  let query = getSupabase()
+    .from('enrollments')
+    .select('id, contact_id, offer_id, processor_subscription_id, processor_type, status')
+    .eq('id', enrollmentId)
+    .eq('location_id', locationId);
+
+  if (contactId) {
+    query = query.eq('contact_id', contactId);
+  }
+  if (allowedStatuses.length > 0) {
+    query = query.in('status', allowedStatuses);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (!data) throw new ValidationError('Enrollment not found');
+  return data;
+}
 
 // ─── Subscription Management ────────────────────────────────────
 
@@ -16,13 +42,16 @@ router.post('/subscription/pause', async (req: Request, res: Response, next: Nex
     const locationId = resolveLocationId(req);
     if (!locationId) throw new ValidationError('locationId required');
     const merchant = await merchantRepository.getByLocationId(locationId);
-    const { contactId, offerId, reason, subscriptionId } = req.body;
-    if (!contactId) throw new ValidationError('contactId required');
+    const { enrollmentId, contactId, reason } = req.body;
+    if (!enrollmentId) throw new ValidationError('enrollmentId required');
+    const enrollment = await getEnrollmentForLifecycleAction(locationId, enrollmentId, contactId, ['enrolled', 'active']);
 
     await paymentLifecycleService.pauseSubscription({
-      merchantId: merchant.id, locationId, contactId,
-      offerId: offerId || '', reason: reason || 'Merchant-initiated pause',
-      processorSubscriptionId: subscriptionId,
+      merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
+      offerId: enrollment.offer_id || '', reason: reason || 'Merchant-initiated pause',
+      enrollmentId: enrollment.id,
+      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -33,12 +62,16 @@ router.post('/subscription/resume', async (req: Request, res: Response, next: Ne
     const locationId = resolveLocationId(req);
     if (!locationId) throw new ValidationError('locationId required');
     const merchant = await merchantRepository.getByLocationId(locationId);
-    const { contactId, offerId } = req.body;
-    if (!contactId) throw new ValidationError('contactId required');
+    const { enrollmentId, contactId } = req.body;
+    if (!enrollmentId) throw new ValidationError('enrollmentId required');
+    const enrollment = await getEnrollmentForLifecycleAction(locationId, enrollmentId, contactId, ['paused']);
 
     await paymentLifecycleService.resumeSubscription({
-      merchantId: merchant.id, locationId, contactId,
-      offerId: offerId || '', reason: 'Merchant-initiated resume',
+      merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
+      offerId: enrollment.offer_id || '', reason: 'Merchant-initiated resume',
+      enrollmentId: enrollment.id,
+      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -49,13 +82,16 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
     const locationId = resolveLocationId(req);
     if (!locationId) throw new ValidationError('locationId required');
     const merchant = await merchantRepository.getByLocationId(locationId);
-    const { contactId, offerId, reason, subscriptionId } = req.body;
-    if (!contactId) throw new ValidationError('contactId required');
+    const { enrollmentId, contactId, reason } = req.body;
+    if (!enrollmentId) throw new ValidationError('enrollmentId required');
+    const enrollment = await getEnrollmentForLifecycleAction(locationId, enrollmentId, contactId, ['enrolled', 'active', 'paused']);
 
     await paymentLifecycleService.cancelSubscription({
-      merchantId: merchant.id, locationId, contactId,
-      offerId: offerId || '', reason: reason || 'Merchant-initiated cancellation',
-      processorSubscriptionId: subscriptionId,
+      merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
+      offerId: enrollment.offer_id || '', reason: reason || 'Merchant-initiated cancellation',
+      enrollmentId: enrollment.id,
+      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
   } catch (err) { next(err); }
