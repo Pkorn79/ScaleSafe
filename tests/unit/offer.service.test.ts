@@ -136,12 +136,16 @@ describe('offer tracking ID', () => {
   });
 
   it('stores optional tracking ID on offer update', async () => {
-    await offerService.update('offer-1', {
+    await offerService.update('offer-1', 'loc-1', {
       trackingId: 'CAMPAIGN-A',
     });
 
-    expect(offerRepository.update).toHaveBeenCalledWith('offer-1', expect.objectContaining({
-      tracking_id: 'CAMPAIGN-A',
-    }));
+    expect(offerRepository.update).toHaveBeenCalledWith(
+      'offer-1',
+      expect.objectContaining({
+        tracking_id: 'CAMPAIGN-A',
+      }),
+      'loc-1',
+    );
   });
 });

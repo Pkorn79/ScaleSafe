@@ -125,7 +125,7 @@ describe('Light Checkout Mode', () => {
       Promise.resolve({ id: 'offer-1', ...updates }),
     );
 
-    await offerService.update('offer-1', {
+    await offerService.update('offer-1', 'loc-1', {
       checkoutMode: 'quick_checkout',
       quickCheckoutShowDescription: false,
     });
@@ -136,6 +136,7 @@ describe('Light Checkout Mode', () => {
         checkout_mode: 'quick_checkout',
         quick_checkout_show_description: false,
       }),
+      'loc-1',
     );
   });
 

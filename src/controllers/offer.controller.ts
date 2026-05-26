@@ -43,9 +43,7 @@ export const offerController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
-      await offerService.getById(req.params.id, locationId);
-
-      const offer = await offerService.update(req.params.id, req.body);
+      const offer = await offerService.update(req.params.id, locationId, req.body);
       res.json(offer);
     } catch (err) { next(err); }
   },
@@ -54,9 +52,7 @@ export const offerController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
-      await offerService.getById(req.params.id, locationId);
-
-      await offerService.delete(req.params.id);
+      await offerService.delete(req.params.id, locationId);
       res.status(204).end();
     } catch (err) { next(err); }
   },

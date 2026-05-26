@@ -87,11 +87,12 @@ export const offerRepository = {
     return data;
   },
 
-  async update(id: string, updates: Partial<OfferRecord>): Promise<OfferRecord> {
+  async update(id: string, updates: Partial<OfferRecord>, locationId: string): Promise<OfferRecord> {
     const { data, error } = await getSupabase()
       .from('offers_mirror')
       .update(updates)
       .eq('id', id)
+      .eq('location_id', locationId)
       .select()
       .single();
 
@@ -99,11 +100,12 @@ export const offerRepository = {
     return data;
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, locationId: string): Promise<void> {
     const { error } = await getSupabase()
       .from('offers_mirror')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('location_id', locationId);
 
     if (error) throw error;
   },

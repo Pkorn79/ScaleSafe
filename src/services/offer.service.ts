@@ -334,8 +334,8 @@ export const offerService = {
     return offer;
   },
 
-  async update(offerId: string, updates: Partial<CreateOfferInput>): Promise<OfferRecord> {
-    const existing = await offerRepository.getById(offerId);
+  async update(offerId: string, locationId: string, updates: Partial<CreateOfferInput>): Promise<OfferRecord> {
+    const existing = await offerRepository.getById(offerId, locationId);
     const dbUpdates: Record<string, unknown> = {};
 
     // Auto-calculate installment amount
@@ -417,7 +417,7 @@ export const offerService = {
 
     let offer: OfferRecord;
     try {
-      offer = await offerRepository.update(offerId, dbUpdates as any);
+      offer = await offerRepository.update(offerId, dbUpdates as any, locationId);
     } catch (err: any) {
       if (isOfferConstraintError(err)) {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
@@ -426,7 +426,7 @@ export const offerService = {
       if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err)) {
         logger.warn({ offerId, err: err?.message }, 'Offer update retried without optional offer fields; apply latest migrations');
         try {
-          offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any);
+          offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any, locationId);
         } catch (retryErr: any) {
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update retry rejected by installment frequency constraint');
@@ -449,8 +449,8 @@ export const offerService = {
     return offerRepository.listByLocation(locationId);
   },
 
-  async delete(offerId: string): Promise<void> {
-    return offerRepository.delete(offerId);
+  async delete(offerId: string, locationId: string): Promise<void> {
+    return offerRepository.delete(offerId, locationId);
   },
 
   generateEnrollmentLink(offerId: string, appBaseUrl: string, checkoutMode?: string, funnelBaseUrl?: string): string {
