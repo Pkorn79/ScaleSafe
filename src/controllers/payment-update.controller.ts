@@ -67,27 +67,17 @@ async function resolveMilestoneEnrollment(
   supabase: any,
   params: { locationId: string; contactId: string; enrollmentId?: string | null },
 ): Promise<any | null> {
-  if (params.enrollmentId) {
-    const { data, error } = await supabase
-      .from('enrollments')
-      .select('id, offer_id, current_milestone')
-      .eq('id', params.enrollmentId)
-      .eq('location_id', params.locationId)
-      .eq('contact_id', params.contactId)
-      .in('status', ['enrolled', 'active'])
-      .maybeSingle();
-    if (error) throw error;
-    return data || null;
+  if (!params.enrollmentId) {
+    throw new Error('Enrollment-specific action token required');
   }
 
   const { data, error } = await supabase
     .from('enrollments')
     .select('id, offer_id, current_milestone')
+    .eq('id', params.enrollmentId)
     .eq('location_id', params.locationId)
     .eq('contact_id', params.contactId)
     .in('status', ['enrolled', 'active'])
-    .order('created_at', { ascending: false })
-    .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data || null;
@@ -420,7 +410,13 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
     }
 
     const supabase = getSupabase();
-    const enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
+    let enrollment: any | null;
+    try {
+      enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
+    } catch (lookupErr: any) {
+      res.status(400).json({ error: lookupErr.message || 'Enrollment-specific action token required' });
+      return;
+    }
     if (!enrollment || !enrollment.offer_id) {
       res.status(404).json({ error: 'No active enrollment found' });
       return;
@@ -470,8 +466,13 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
     const supabase = getSupabase();
 
-    // Verify enrollment. New signoff links are enrollment-specific; legacy links keep the old fallback.
-    const enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
+    let enrollment: any | null;
+    try {
+      enrollment = await resolveMilestoneEnrollment(supabase, { locationId, contactId, enrollmentId });
+    } catch (lookupErr: any) {
+      res.status(400).json({ success: false, error: lookupErr.message || 'Enrollment-specific action token required' });
+      return;
+    }
     if (!enrollment) {
       res.status(404).json({ success: false, error: 'No active enrollment' });
       return;

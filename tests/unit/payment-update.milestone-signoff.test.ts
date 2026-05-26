@@ -134,4 +134,32 @@ describe('submitMilestoneSignoff', () => {
     }));
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
+
+  it('rejects milestone signoff tokens that are not enrollment-specific', async () => {
+    const token = createPublicActionToken({
+      action: 'milestone_signoff',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      milestoneNumber: 2,
+    });
+
+    const req: any = {
+      query: { actionToken: token },
+      body: { signature: 'Philip Korniotes' },
+      headers: { 'user-agent': 'Chrome' },
+      socket: { remoteAddress: '5.6.7.8' },
+    };
+    const res: any = mockResponse();
+    const next = jest.fn();
+
+    await submitMilestoneSignoff(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockSupabaseFrom).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'Enrollment-specific action token required',
+    });
+  });
 });
