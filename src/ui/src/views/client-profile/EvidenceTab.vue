@@ -184,7 +184,12 @@ function canLink(item: any): boolean {
 }
 
 function exhibitTitle(item: any): string {
-  return String(item.issuer_exhibit_title || evidenceData(item).issuer_exhibit_title || '').trim();
+  const title = String(item.issuer_exhibit_title || evidenceData(item).issuer_exhibit_title || '').trim();
+  if (evidenceType(item) === 'communication') {
+    const normalized = title.toLowerCase();
+    if (!normalized || normalized === 'communication' || normalized === 'merchant communication') return '';
+  }
+  return title;
 }
 
 function proofRole(item: any): string {
@@ -201,6 +206,7 @@ function evidenceType(item: any): string {
 }
 
 function visibleProofRole(item: any): string {
+  if (evidenceType(item) === 'communication') return '';
   const role = proofRole(item);
   return role && role !== evidenceType(item) ? role : '';
 }

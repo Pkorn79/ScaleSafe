@@ -544,19 +544,13 @@ export const ghlActivityService = {
   },
 
   async getSetup(locationId: string) {
-    const [mappings, rules, offers, unmatched, calendars] = await Promise.all([
-      ghlActivityRepository.listAppointmentMappings(locationId),
-      ghlActivityRepository.listMatchRules(locationId),
-      offerRepository.listByLocation(locationId),
-      ghlActivityRepository.listUnmatched(locationId, 25),
-      this.listCalendars(locationId),
-    ]);
+    const unmatched = await ghlActivityRepository.listUnmatched(locationId, 25);
 
     return {
-      mappings,
-      rules,
-      offers: offers.map((offer) => ({ id: offer.id, name: offer.offer_name, active: offer.active })),
-      calendars,
+      mappings: [],
+      rules: [],
+      offers: [],
+      calendars: [],
       unmatched,
     };
   },
