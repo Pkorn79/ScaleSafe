@@ -745,10 +745,16 @@ export const paymentLifecycleService = {
     let cancelEnrolledAt = '';
     try {
       const supabase = getSupabase();
-      const { data: enr } = await supabase.from('enrollments')
+      let enrollmentQuery = supabase.from('enrollments')
         .select('id, email, first_name, last_name, digital_signature, payments_made, payments_total, enrolled_at')
-        .eq('location_id', params.locationId).eq('contact_id', params.contactId)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId);
+      if (params.enrollmentId) {
+        enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+      } else {
+        enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+      }
+      const { data: enr } = await enrollmentQuery.maybeSingle();
       if (enr) {
         cancelEnrollmentId = enr.id;
         cancelContactName = [enr.first_name, enr.last_name].filter(Boolean).join(' ') || enr.digital_signature || '';
@@ -807,9 +813,16 @@ export const paymentLifecycleService = {
       let offerName = '';
       try {
         const supabase = getSupabase();
-        const { data: enr } = await supabase.from('enrollments')
-          .select('id, enrolled_at, offer_id').eq('location_id', params.locationId).eq('contact_id', params.contactId)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        let enrollmentQuery = supabase.from('enrollments')
+          .select('id, enrolled_at, offer_id')
+          .eq('location_id', params.locationId)
+          .eq('contact_id', params.contactId);
+        if (params.enrollmentId) {
+          enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+        } else {
+          enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+        }
+        const { data: enr } = await enrollmentQuery.maybeSingle();
         enrollmentId = enrollmentId || enr?.id || '';
         enrollmentDate = enr?.enrolled_at || '';
         const resolvedOfferId = params.offerId || enr?.offer_id;

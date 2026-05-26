@@ -314,7 +314,12 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
  */
 export async function cancelSubscriptionPublic(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId } = readPublicActionContext(req, 'subscription_cancel');
+    const { contactId, locationId, enrollmentId } = readPublicActionContext(req, 'subscription_cancel');
+    if (!enrollmentId) {
+      res.status(400).json({ success: false, error: 'Enrollment-specific action token required' });
+      return;
+    }
+
     const { reason } = req.body;
     if (!reason) {
       res.status(400).json({ success: false, error: 'reason is required' });
@@ -330,19 +335,18 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
     const supabase = getSupabase();
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || '';
 
-    // Verify contact belongs to this location (via enrollment)
+    // Verify the token points to an exact enrollment for this contact and location.
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, status, offer_id')
+      .select('id, status, offer_id, processor_type, processor_subscription_id')
+      .eq('id', enrollmentId)
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
-      .in('status', ['enrolled', 'active'])
-      .order('created_at', { ascending: false })
-      .limit(1)
+      .in('status', ['enrolled', 'active', 'paused'])
       .maybeSingle();
 
     if (!enrollment) {
-      res.status(404).json({ success: false, error: 'No active enrollment found' });
+      res.status(404).json({ success: false, error: 'Enrollment not found or not cancellable' });
       return;
     }
 
@@ -352,7 +356,10 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
       merchantId: merchant.id,
       locationId,
       contactId,
+      enrollmentId: enrollment.id,
       offerId: enrollment.offer_id || '',
+      processorType: enrollment.processor_type || undefined,
+      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
       reason: `Client-initiated: ${reason}`,
     });
 
