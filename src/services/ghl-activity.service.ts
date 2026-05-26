@@ -1,5 +1,4 @@
 import { getSupabase } from '../clients/supabase.client';
-import { ghlApi } from '../clients/ghl.client';
 import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
 import { offerRepository } from '../repositories/offer.repository';
 import { evidenceService } from './evidence.service';
@@ -553,65 +552,5 @@ export const ghlActivityService = {
       calendars: [],
       unmatched,
     };
-  },
-
-  async listCalendars(locationId: string): Promise<Array<{ id: string; name: string }>> {
-    try {
-      const api = await ghlApi(locationId);
-      const res = await api.get('/calendars/', { params: { locationId } });
-      const calendars = res.data?.calendars || res.data?.items || (Array.isArray(res.data) ? res.data : []);
-      return (calendars || [])
-        .map((calendar: any) => ({
-          id: String(calendar.id || calendar.calendarId || ''),
-          name: String(calendar.name || calendar.title || calendar.id || 'Calendar'),
-        }))
-        .filter((calendar: { id: string }) => calendar.id);
-    } catch (err: any) {
-      logger.warn({ err: err.message, locationId }, 'Failed to list GHL calendars for activity setup');
-      return [];
-    }
-  },
-
-  async saveAppointmentMapping(locationId: string, payload: Record<string, unknown>) {
-    const calendarId = stringValue(payload.calendar_id, payload.calendarId);
-    if (!calendarId) throw new Error('calendar_id required');
-    return ghlActivityRepository.upsertAppointmentMapping(locationId, {
-      id: stringValue(payload.id) || undefined,
-      calendar_id: calendarId,
-      offer_id: stringValue(payload.offer_id, payload.offerId) || null,
-      staff_user_id: stringValue(payload.staff_user_id, payload.staffUserId) || null,
-      title_keyword: stringValue(payload.title_keyword, payload.titleKeyword) || null,
-      appointment_type: stringValue(payload.appointment_type, payload.appointmentType) || null,
-      delivery_role: stringValue(payload.delivery_role, payload.deliveryRole) || null,
-      is_active: payload.is_active === undefined ? true : payload.is_active === true,
-    });
-  },
-
-  async saveMatchRule(locationId: string, payload: Record<string, unknown>) {
-    const ruleType = stringValue(payload.rule_type, payload.ruleType);
-    const sourceKey = stringValue(payload.source_key, payload.sourceKey);
-    const sourceValue = stringValue(payload.source_value, payload.sourceValue);
-    if (!ruleType || !sourceKey || !sourceValue) throw new Error('rule_type, source_key, and source_value required');
-    return ghlActivityRepository.upsertMatchRule(locationId, {
-      id: stringValue(payload.id) || undefined,
-      rule_type: ruleType,
-      source_key: sourceKey,
-      source_value: sourceValue,
-      offer_id: stringValue(payload.offer_id, payload.offerId) || null,
-      staff_user_id: stringValue(payload.staff_user_id, payload.staffUserId) || null,
-      title_keyword: stringValue(payload.title_keyword, payload.titleKeyword) || null,
-      pipeline_id: stringValue(payload.pipeline_id, payload.pipelineId) || null,
-      pipeline_stage_id: stringValue(payload.pipeline_stage_id, payload.pipelineStageId) || null,
-      label: stringValue(payload.label) || null,
-      is_active: payload.is_active === undefined ? true : payload.is_active === true,
-    });
-  },
-
-  async deactivateMatchRule(locationId: string, id: string) {
-    await ghlActivityRepository.deactivateMatchRule(locationId, id);
-  },
-
-  async deactivateAppointmentMapping(locationId: string, id: string) {
-    await ghlActivityRepository.deactivateAppointmentMapping(locationId, id);
   },
 };

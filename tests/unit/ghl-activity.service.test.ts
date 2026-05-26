@@ -1,12 +1,6 @@
 const mockCreateEventIfNew = jest.fn();
-const mockListAppointmentMappings = jest.fn();
-const mockListMatchRules = jest.fn();
 const mockListRecent = jest.fn();
 const mockListUnmatched = jest.fn();
-const mockUpsertAppointmentMapping = jest.fn();
-const mockDeactivateAppointmentMapping = jest.fn();
-const mockUpsertMatchRule = jest.fn();
-const mockDeactivateMatchRule = jest.fn();
 const mockLinkActivityToEnrollment = jest.fn();
 const mockLogEvidence = jest.fn();
 const mockOfferFindById = jest.fn();
@@ -16,14 +10,8 @@ const mockSupabaseFrom = jest.fn();
 jest.mock('../../src/repositories/ghlActivity.repository', () => ({
   ghlActivityRepository: {
     createEventIfNew: (...args: any[]) => mockCreateEventIfNew(...args),
-    listAppointmentMappings: (...args: any[]) => mockListAppointmentMappings(...args),
-    listMatchRules: (...args: any[]) => mockListMatchRules(...args),
     listRecent: (...args: any[]) => mockListRecent(...args),
     listUnmatched: (...args: any[]) => mockListUnmatched(...args),
-    upsertAppointmentMapping: (...args: any[]) => mockUpsertAppointmentMapping(...args),
-    deactivateAppointmentMapping: (...args: any[]) => mockDeactivateAppointmentMapping(...args),
-    upsertMatchRule: (...args: any[]) => mockUpsertMatchRule(...args),
-    deactivateMatchRule: (...args: any[]) => mockDeactivateMatchRule(...args),
     linkActivityToEnrollment: (...args: any[]) => mockLinkActivityToEnrollment(...args),
   },
 }));
@@ -43,10 +31,6 @@ jest.mock('../../src/repositories/offer.repository', () => ({
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockSupabaseFrom(...args) }),
-}));
-
-jest.mock('../../src/clients/ghl.client', () => ({
-  ghlApi: jest.fn().mockResolvedValue({ get: jest.fn().mockResolvedValue({ data: { calendars: [] } }) }),
 }));
 
 import { ghlActivityService } from '../../src/services/ghl-activity.service';
@@ -88,8 +72,6 @@ function mockEnrollmentQuery(enrollments: any[]) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockListAppointmentMappings.mockResolvedValue([]);
-  mockListMatchRules.mockResolvedValue([]);
   mockListRecent.mockResolvedValue([]);
   mockListUnmatched.mockResolvedValue([]);
   mockOfferFindById.mockResolvedValue({ id: 'offer_1', offer_name: 'Beta Tester' });
