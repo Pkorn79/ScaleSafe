@@ -1226,10 +1226,19 @@ export const paymentLifecycleService = {
    * with action: card_update_requested so the merchant's GHL workflow
    * can send the link via email/SMS.
    */
-  async sendCardUpdateRequest(locationId: string, contactId: string, options: { sendTrigger?: boolean } = {}): Promise<{ success: boolean; link: string }> {
+  async sendCardUpdateRequest(locationId: string, contactId: string, options: { sendTrigger?: boolean; enrollmentId?: string } = {}): Promise<{ success: boolean; link: string }> {
+    if (!options.enrollmentId) {
+      throw new Error('enrollmentId required');
+    }
+
     const { config: appConfig } = require('../config');
     const baseUrl = appConfig.appUrl;
-    const actionToken = createPublicActionToken({ action: 'payment_update', contactId, locationId });
+    const actionToken = createPublicActionToken({
+      action: 'payment_update',
+      contactId,
+      locationId,
+      enrollmentId: options.enrollmentId,
+    });
     const link = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
 
     if (options.sendTrigger !== false) {
@@ -1247,10 +1256,18 @@ export const paymentLifecycleService = {
       try {
         await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
           contact_id: contactId,
+          contactId,
+          enrollment_id: options.enrollmentId,
+          enrollmentId: options.enrollmentId,
           amount: 0,
           failure_reason: 'card_update_requested',
+          failureReason: 'card_update_requested',
           attempt_count: 0,
+          attemptCount: 0,
           next_retry_date: 'none',
+          nextRetryDate: 'none',
+          card_update_link: link,
+          cardUpdateLink: link,
         });
       } catch (err: any) {
         logger.warn({ err: err.message, contactId }, 'Card update request trigger failed');

@@ -83,13 +83,55 @@ async function resolveMilestoneEnrollment(
   return data || null;
 }
 
+async function resolvePaymentUpdateEnrollment(
+  supabase: any,
+  params: { locationId: string; contactId: string; enrollmentId?: string | null },
+): Promise<any | null> {
+  if (!params.enrollmentId) {
+    throw new Error('Enrollment-specific action token required');
+  }
+
+  const { data, error } = await supabase
+    .from('enrollments')
+    .select('id, offer_id, processor_type, email, first_name, last_name')
+    .eq('id', params.enrollmentId)
+    .eq('location_id', params.locationId)
+    .eq('contact_id', params.contactId)
+    .in('status', ['enrolled', 'active', 'paused', 'past_due', 'delinquent'])
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function resolveProcessorForEnrollment(merchantId: string, locationId: string, enrollment: any) {
+  const supabase = getSupabase();
+  let processorOverride = enrollment.processor_type || null;
+  let nmiProcessorId: string | null = null;
+
+  if (enrollment.offer_id) {
+    const { data: offer } = await supabase
+      .from('offers_mirror')
+      .select('processor_override, nmi_processor_id')
+      .eq('id', enrollment.offer_id)
+      .eq('location_id', locationId)
+      .maybeSingle();
+    processorOverride = processorOverride || offer?.processor_override || null;
+    nmiProcessorId = offer?.nmi_processor_id || null;
+  }
+
+  return resolveProcessor(merchantId, locationId, {
+    processor_override: processorOverride,
+    nmi_processor_id: nmiProcessorId,
+  });
+}
+
 /**
  * GET /api/payment-update/config?contactId=X&locationId=Y
  * Public endpoint — called by the payment-update widget to get processor config.
  */
 export async function getPaymentUpdateConfig(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId } = readPublicActionContext(req, ['payment_update', 'subscription_cancel']);
+    const { contactId, locationId, enrollmentId } = readPublicActionContext(req, ['payment_update', 'subscription_cancel']);
 
     const merchant = await merchantRepository.findByLocationId(locationId);
     if (!merchant) {
@@ -102,9 +144,16 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
     let nmiTokenizationKey = '';
     let stripePublishableKey = '';
     let stripeAccountId = '';
+    const supabase = getSupabase();
+    let enrollment: any | null = null;
 
     try {
-      const { config: procConfig } = await resolveProcessor(merchant.id, locationId);
+      enrollment = await resolvePaymentUpdateEnrollment(supabase, { locationId, contactId, enrollmentId });
+      if (!enrollment) {
+        res.status(404).json({ error: 'Enrollment not found or not eligible for payment update', processorType: 'none' });
+        return;
+      }
+      const { config: procConfig } = await resolveProcessorForEnrollment(merchant.id, locationId, enrollment);
       processorType = procConfig.processor_type;
       if (procConfig.processor_type === 'nmi') {
         nmiTokenizationKey = procConfig.nmi_tokenization_key || '';
@@ -115,6 +164,10 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
       }
       logger.info({ locationId, processorType, hasStripeKey: !!stripePublishableKey, hasStripeAcct: !!stripeAccountId, hasNmiKey: !!nmiTokenizationKey }, 'Payment update config resolved');
     } catch (procErr: any) {
+      if (procErr.message === 'Enrollment-specific action token required') {
+        res.status(400).json({ error: procErr.message, processorType: 'none' });
+        return;
+      }
       logger.error({ err: procErr.message, stack: procErr.stack, locationId, merchantId: merchant.id }, 'Payment update: processor resolution failed');
       // Return error details so the widget can display useful info
       res.json({
@@ -136,15 +189,6 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
       contactEmail = contact.email || '';
     } catch {
       // Fall back to enrollment data
-      const supabase = getSupabase();
-      const { data: enrollment } = await supabase
-        .from('enrollments')
-        .select('email, first_name, last_name')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
       if (enrollment) {
         contactName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ');
         contactEmail = enrollment.email || '';
@@ -175,7 +219,7 @@ export async function getPaymentUpdateConfig(req: Request, res: Response, next: 
  */
 export async function updatePaymentMethod(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contactId, locationId } = readPublicActionContext(req, 'payment_update');
+    const { contactId, locationId, enrollmentId } = readPublicActionContext(req, 'payment_update');
     const { token, processorType } = req.body;
     if (!token || !processorType) {
       res.status(400).json({ success: false, error: 'token and processorType are required' });
@@ -191,19 +235,22 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
     const clientIp = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
     const supabase = getSupabase();
+    let enrollment: any | null;
+    try {
+      enrollment = await resolvePaymentUpdateEnrollment(supabase, { locationId, contactId, enrollmentId });
+    } catch (lookupErr: any) {
+      res.status(400).json({ success: false, error: lookupErr.message || 'Enrollment-specific action token required' });
+      return;
+    }
+    if (!enrollment) {
+      res.status(404).json({ success: false, error: 'Enrollment not found or not eligible for payment update' });
+      return;
+    }
 
     // Get contact info for the processor
     let contactEmail = req.body.contactEmail || '';
     let contactName = req.body.contactName || '';
     if (!contactEmail) {
-      const { data: enrollment } = await supabase
-        .from('enrollments')
-        .select('email, first_name, last_name')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
       if (enrollment) {
         contactEmail = enrollment.email || '';
         contactName = contactName || [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ');
@@ -211,7 +258,11 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
     }
 
     // Resolve processor and save the card
-    const { config: procConfig } = await resolveProcessor(merchant.id, locationId);
+    const { config: procConfig } = await resolveProcessorForEnrollment(merchant.id, locationId, enrollment);
+    if (processorType !== procConfig.processor_type) {
+      res.status(400).json({ success: false, error: 'Payment method processor does not match this enrollment' });
+      return;
+    }
     const processor = createProcessorClient(procConfig);
 
     const result = await processor.saveCard({
@@ -245,6 +296,7 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
       await supabase.from('evidence').insert({
         location_id: locationId,
         contact_id: contactId,
+        enrollment_id: enrollment.id,
         evidence_type: 'payment_update',
         data: {
           processor_type: procConfig.processor_type,
@@ -260,9 +312,11 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
           title: 'Client Payment Method Update',
           proofRole: 'billing_update',
           relevance: { tags: ['authorization', 'fraud', 'cancelled_recurring'], priority: 'high', confidence: 'strong' },
+          enrollmentId: enrollment.id,
           metadata: {
             actor: 'client',
             customerIdentity: { ipAddress: clientIp, browser: userAgent },
+            service: { enrollmentId: enrollment.id, offerId: enrollment.offer_id || null },
             transaction: {
               processor: procConfig.processor_type,
               cardBrand: result.cardBrand,

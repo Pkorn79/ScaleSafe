@@ -6,6 +6,7 @@ const mockGetMerchant = jest.fn();
 const mockPauseSubscription = jest.fn();
 const mockResumeSubscription = jest.fn();
 const mockCancelSubscription = jest.fn();
+const mockSendCardUpdateRequest = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockSupabaseFrom(...args) }),
@@ -22,6 +23,7 @@ jest.mock('../../src/services/payment-lifecycle.service', () => ({
     pauseSubscription: (...args: any[]) => mockPauseSubscription(...args),
     resumeSubscription: (...args: any[]) => mockResumeSubscription(...args),
     cancelSubscription: (...args: any[]) => mockCancelSubscription(...args),
+    sendCardUpdateRequest: (...args: any[]) => mockSendCardUpdateRequest(...args),
   },
 }));
 
@@ -67,6 +69,7 @@ describe('payment lifecycle legacy subscription routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetMerchant.mockResolvedValue({ id: 'merchant_1' });
+    mockSendCardUpdateRequest.mockResolvedValue({ success: true, link: 'https://app.test/payment-update?actionToken=token' });
   });
 
   it('requires an exact enrollment for pause requests', async () => {
@@ -179,5 +182,50 @@ describe('payment lifecycle legacy subscription routes', () => {
       processorType: 'stripe',
       reason: 'Merchant-initiated resume',
     }));
+  });
+
+  it('requires an exact enrollment for card update links', async () => {
+    const app = makeApp();
+
+    const res = await request(app)
+      .post('/api/payments/lifecycle/send-card-update')
+      .send({ contactId: 'contact_1' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'enrollmentId required' });
+    expect(mockSupabaseFrom).not.toHaveBeenCalled();
+    expect(mockSendCardUpdateRequest).not.toHaveBeenCalled();
+  });
+
+  it('creates card update links for the exact enrollment only', async () => {
+    const app = makeApp();
+    const enrollmentBuilder = makeBuilder({
+      data: {
+        id: 'enr_4',
+        contact_id: 'contact_4',
+        offer_id: 'offer_4',
+        processor_subscription_id: 'sub_4',
+        processor_type: 'nmi',
+        status: 'past_due',
+      },
+      error: null,
+    });
+    mockSupabaseFrom.mockReturnValue(enrollmentBuilder);
+
+    const res = await request(app)
+      .post('/api/payments/lifecycle/send-card-update')
+      .send({ enrollmentId: 'enr_4', contactId: 'contact_4', sendTrigger: false });
+
+    expect(res.status).toBe(200);
+    expect(enrollmentBuilder.filters).toEqual(expect.arrayContaining([
+      { column: 'id', value: 'enr_4' },
+      { column: 'location_id', value: 'loc_1' },
+      { column: 'contact_id', value: 'contact_4' },
+      { column: 'status', value: ['enrolled', 'active', 'paused', 'past_due', 'delinquent'] },
+    ]));
+    expect(mockSendCardUpdateRequest).toHaveBeenCalledWith('loc_1', 'contact_4', {
+      sendTrigger: false,
+      enrollmentId: 'enr_4',
+    });
   });
 });

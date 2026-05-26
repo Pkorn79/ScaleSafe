@@ -56,7 +56,7 @@ describe('payment lifecycle logging', () => {
     const result = await paymentLifecycleService.sendCardUpdateRequest(
       'loc_1',
       'contact_1',
-      { sendTrigger: false },
+      { sendTrigger: false, enrollmentId: 'enr_1' },
     );
 
     expect(result.link).toContain('/payment-update?actionToken=');

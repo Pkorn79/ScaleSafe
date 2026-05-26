@@ -42,18 +42,13 @@
     <div class="card">
       <div class="flex-between">
         <div class="card-title">Saved Payment Methods</div>
-        <div class="flex gap-2">
-          <button class="btn btn-sm btn-secondary" @click="copyCardUpdateLink" :disabled="cardUpdateSending">
-            Copy Update Link
-          </button>
-          <button class="btn btn-sm btn-primary" @click="sendCardUpdateRequest" :disabled="cardUpdateSending">
-            {{ cardUpdateSending ? 'Sending...' : 'Request Card Update' }}
-          </button>
-        </div>
       </div>
       <div v-if="cardUpdateResult" class="text-sm mt-2" :style="{ color: '#10b981' }">{{ cardUpdateResult }}</div>
       <div v-if="defaultMethodLabel" class="text-sm text-muted mt-2">
         Card update links replace the current default: {{ defaultMethodLabel }}.
+      </div>
+      <div class="text-sm text-muted mt-2">
+        Create card update links from the specific recurring plan below so the link uses that program's processor.
       </div>
       <div v-if="methods.length === 0" class="text-sm text-muted">No saved payment methods.</div>
       <div v-for="m in methods" :key="m.id" class="flex-between" style="padding:8px 0;border-bottom:1px solid #f3f4f6">
@@ -109,6 +104,12 @@
           </div>
         </div>
         <div class="flex gap-2">
+          <button class="btn btn-sm btn-secondary" @click="copyCardUpdateLink(enr)" :disabled="cardUpdateSending">
+            Copy Card Link
+          </button>
+          <button class="btn btn-sm btn-secondary" @click="sendCardUpdateRequest(enr)" :disabled="cardUpdateSending">
+            {{ cardUpdateSending ? 'Sending...' : 'Request Card Update' }}
+          </button>
           <button v-if="canPause(enr)" class="btn btn-sm btn-secondary" @click="openPause(enr)">
             Pause
           </button>
@@ -493,27 +494,35 @@ function formatDateShort(d: string) {
 
 // ─── Card Management ────────────────────────────────────
 
-async function sendCardUpdateRequest() {
+async function sendCardUpdateRequest(enrollment: any) {
   cardUpdateSending.value = true;
   cardUpdateResult.value = '';
   actionError.value = '';
   try {
-    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId, sendTrigger: false });
-    cardUpdateResult.value = 'Card update request sent! Link: ' + (result.link || '').split('?')[0] + '...';
+    await api.post<any>('/api/payments/lifecycle/send-card-update', {
+      contactId,
+      enrollmentId: enrollment.id,
+      sendTrigger: true,
+    });
+    cardUpdateResult.value = `Card update request sent for ${enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 6000);
   } catch (e: any) { actionError.value = e.message || 'Failed to send card update request'; }
   cardUpdateSending.value = false;
 }
 
-async function copyCardUpdateLink() {
+async function copyCardUpdateLink(enrollment: any) {
   cardUpdateSending.value = true;
   cardUpdateResult.value = '';
   actionError.value = '';
   try {
-    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', { contactId });
+    const result = await api.post<any>('/api/payments/lifecycle/send-card-update', {
+      contactId,
+      enrollmentId: enrollment.id,
+      sendTrigger: false,
+    });
     const link = result.link || '';
     await navigator.clipboard.writeText(link);
-    cardUpdateResult.value = 'Link copied to clipboard!';
+    cardUpdateResult.value = `Card update link copied for ${enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 3000);
   } catch (e: any) {
     actionError.value = e.message || 'Failed to create card update link';

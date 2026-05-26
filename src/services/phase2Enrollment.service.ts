@@ -697,12 +697,16 @@ export const phase2EnrollmentService = {
     // Build enriched payload for GHL workflow
     const { config: appConfig } = require('../config');
     const baseUrl = appConfig.appUrl;
-    const actionToken = createPublicActionToken({
-      action: 'payment_update',
-      contactId: params.contactId,
-      locationId: params.locationId,
-    });
-    const cardUpdateLink = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
+    let cardUpdateLink = '';
+    if (params.enrollmentId) {
+      const actionToken = createPublicActionToken({
+        action: 'payment_update',
+        contactId: params.contactId,
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+      });
+      cardUpdateLink = `${baseUrl}/payment-update?actionToken=${encodeURIComponent(actionToken)}`;
+    }
 
     try {
       const api = await ghlApi(params.locationId);
@@ -724,6 +728,8 @@ export const phase2EnrollmentService = {
       locationId: params.locationId,
       contact_id: params.contactId,
       contactId: params.contactId,
+      enrollment_id: params.enrollmentId || '',
+      enrollmentId: params.enrollmentId || '',
       amount: params.amount,
       amount_display: formatMoney(params.amount),
       amountDisplay: formatMoney(params.amount),
@@ -733,6 +739,8 @@ export const phase2EnrollmentService = {
       attemptCount: params.attemptCount || 1,
       next_retry_date: 'none',
       nextRetryDate: 'none',
+      card_update_link: cardUpdateLink,
+      cardUpdateLink,
     });
 
     // Initiate dunning for recurring payment failures

@@ -219,11 +219,20 @@ router.post('/send-card-update', async (req: Request, res: Response, next: NextF
   try {
     const locationId = resolveLocationId(req);
     if (!locationId) throw new ValidationError('locationId required');
-    const { contactId } = req.body;
-    if (!contactId) throw new ValidationError('contactId required');
+    const { enrollmentId, contactId } = req.body;
+    if (!enrollmentId) throw new ValidationError('enrollmentId required');
+    const enrollment = await getEnrollmentForLifecycleAction(
+      locationId,
+      enrollmentId,
+      contactId,
+      ['enrolled', 'active', 'paused', 'past_due', 'delinquent'],
+    );
 
     const sendTrigger = req.body.sendTrigger !== false;
-    const result = await paymentLifecycleService.sendCardUpdateRequest(locationId, contactId, { sendTrigger });
+    const result = await paymentLifecycleService.sendCardUpdateRequest(locationId, enrollment.contact_id, {
+      sendTrigger,
+      enrollmentId: enrollment.id,
+    });
     res.json(result);
   } catch (err) { next(err); }
 });
