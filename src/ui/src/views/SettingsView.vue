@@ -208,6 +208,21 @@
           No setup mapping is required for beta. Messages, appointments, invoices, notes, tasks, and opportunities attach to the client first. When a record should support a specific program, link it from the client Evidence tab.
         </div>
 
+        <div class="activity-status-grid mt-4">
+          <router-link
+            v-for="feature in ghlActivityFeatures"
+            :key="feature.id"
+            :to="`/roadmap/${feature.id}`"
+            class="activity-status-card"
+          >
+            <div>
+              <strong>{{ feature.title }}</strong>
+              <span>{{ feature.currentState || feature.summary }}</span>
+            </div>
+            <FeatureStatusPill :status="feature.status" />
+          </router-link>
+        </div>
+
         <div v-if="ghlUnmatchedActivity.length" class="mt-4">
           <div class="text-sm" style="font-weight:600">Recent client-level activity</div>
           <div v-for="event in ghlUnmatchedActivity.slice(0, 5)" :key="event.id" class="text-sm text-muted unmatched-row">
@@ -453,6 +468,8 @@ import { ref, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
 import SectionHeader from '../components/SectionHeader.vue';
+import FeatureStatusPill from '../components/FeatureStatusPill.vue';
+import { publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 const { loading, error } = api;
@@ -496,6 +513,14 @@ const ghlActivityLoading = ref(false);
 const ghlActivityError = ref('');
 const ghlActivitySaved = ref('');
 const ghlUnmatchedActivity = ref<any[]>([]);
+
+const ghlActivityFeatures = publicFeatureCatalog.filter((feature) => [
+  'ghl-communications',
+  'activity-ledger',
+  'ghl-invoices',
+  'ghl-appointments',
+  'ghl-courses',
+].includes(feature.id));
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',
@@ -1152,6 +1177,39 @@ async function setDefaultProcessor(proc: string) {
   align-items: center;
   padding: 10px 0;
   border-top: 1px solid #f3f4f6;
+}
+
+.activity-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.activity-status-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fafaf7;
+  color: inherit;
+  text-decoration: none;
+}
+
+.activity-status-card strong {
+  display: block;
+  color: var(--ss-navy-900);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.activity-status-card span {
+  display: block;
+  color: var(--ss-navy-500);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .unmatched-row {

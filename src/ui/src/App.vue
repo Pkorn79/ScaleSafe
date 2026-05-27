@@ -2,7 +2,7 @@
 import { ssoSession } from './composables/useApi';
 import {
   LayoutDashboard, Package, Users, CreditCard,
-  Shield, Activity, Settings, ChevronRight,
+  Shield, Activity, Settings, ChevronRight, Map,
 } from 'lucide-vue-next';
 </script>
 
@@ -62,6 +62,9 @@ import {
       </router-link>
       <router-link to="/defense" class="nav-link" :class="{ 'nav-active': $route.path === '/defense' }">
         <Shield :size="16" /> Defense
+      </router-link>
+      <router-link to="/roadmap" class="nav-link" :class="{ 'nav-active': $route.path.startsWith('/roadmap') }">
+        <Map :size="16" /> Roadmap <span class="nav-badge">Coming Soon</span>
       </router-link>
       <router-link to="/risk-health" class="nav-link nav-sub" :class="{ 'nav-active': $route.path === '/risk-health' }">
         <Activity :size="14" /> Stripe Risk Health
@@ -132,6 +135,7 @@ h1, h2, h3, h4 {
   transition: all 0.15s;
   border-left: 3px solid transparent;
 }
+.nav-link svg { flex-shrink: 0; }
 .nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); }
 .nav-active {
   color: #fff !important;
@@ -139,6 +143,17 @@ h1, h2, h3, h4 {
   border-left-color: var(--ss-teal-500) !important;
 }
 .nav-sub { padding-left: 36px; font-size: 13px; }
+
+.nav-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 /* ── Page title ─────────────────────────────────────── */
 .page-title {

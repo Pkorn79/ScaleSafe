@@ -96,6 +96,26 @@
         />
       </div>
     </div>
+
+    <div class="card roadmap-card">
+      <SectionHeader
+        :title="['Product', 'roadmap.']"
+        description="Live, beta, and coming-soon capabilities are mapped so merchants can see where ScaleSafe is going."
+      >
+        <template #actions>
+          <router-link to="/roadmap" class="btn btn-sm btn-secondary">View Roadmap</router-link>
+        </template>
+      </SectionHeader>
+      <div class="roadmap-strip">
+        <router-link v-for="feature in roadmapHighlights" :key="feature.id" :to="`/roadmap/${feature.id}`" class="roadmap-chip">
+          <div>
+            <strong>{{ feature.title }}</strong>
+            <span>{{ feature.summary }}</span>
+          </div>
+          <FeatureStatusPill :status="feature.status" />
+        </router-link>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -107,7 +127,9 @@ import SectionHeader from '../components/SectionHeader.vue';
 import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import Pill from '../components/Pill.vue';
+import FeatureStatusPill from '../components/FeatureStatusPill.vue';
 import { formatTimestamp } from '../utils/humanize';
+import { publicFeatureCatalog } from '../lib/featureCatalog';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const STALE_THRESHOLD_MS = 2 * 60_000;
@@ -128,6 +150,13 @@ let tickTimer: ReturnType<typeof setInterval> | null = null;
 const isStale = computed(() => {
   if (!lastUpdatedAt.value) return false;
   return tickNow.value.getTime() - lastUpdatedAt.value.getTime() > STALE_THRESHOLD_MS;
+});
+
+const roadmapHighlights = computed(() => {
+  const ids = ['ghl-communications', 'nmi-multi-mid', 'ach'];
+  return ids
+    .map((id) => publicFeatureCatalog.find((feature) => feature.id === id))
+    .filter(Boolean);
 });
 
 async function loadData() {
@@ -206,6 +235,38 @@ onBeforeUnmount(() => {
 }
 .spin {
   animation: spin 0.9s linear infinite;
+}
+.roadmap-card {
+  margin-top: 16px;
+}
+.roadmap-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.roadmap-chip {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  padding: 12px;
+  border: 1px solid var(--ss-navy-200);
+  border-radius: 10px;
+  background: var(--ss-cream-50);
+}
+.roadmap-chip strong {
+  display: block;
+  color: var(--ss-navy-900);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+.roadmap-chip span {
+  display: block;
+  color: var(--ss-navy-500);
+  font-size: 12px;
+  line-height: 1.45;
 }
 @keyframes spin {
   from { transform: rotate(0deg); }

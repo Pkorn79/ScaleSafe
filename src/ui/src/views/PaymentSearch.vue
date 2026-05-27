@@ -7,6 +7,16 @@
       </div>
     </div>
 
+    <div class="payment-roadmap mb-4">
+      <router-link v-for="feature in paymentRoadmap" :key="feature.id" :to="`/roadmap/${feature.id}`" class="payment-roadmap-card">
+        <div>
+          <strong>{{ feature.title }}</strong>
+          <span>{{ feature.summary }}</span>
+        </div>
+        <FeatureStatusPill :status="feature.status" />
+      </router-link>
+    </div>
+
     <div class="payment-tabs mb-4">
       <button class="tab-btn" :class="{ active: activeTab === 'ledger' }" @click="activeTab = 'ledger'">
         All Payments
@@ -422,11 +432,20 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { useApi } from '../composables/useApi';
+import FeatureStatusPill from '../components/FeatureStatusPill.vue';
+import { publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 const { loading, error } = api;
 
 const activeTab = ref<'ledger' | 'clients' | 'reconciliation'>('ledger');
+
+const paymentRoadmap = publicFeatureCatalog.filter((feature) => [
+  'nmi-multi-mid',
+  'ach',
+  'whop',
+  'digistore24',
+].includes(feature.id));
 
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
@@ -668,6 +687,39 @@ async function loadNmiTrace(row: any) {
   background: #fff;
   border: 1px solid var(--ss-navy-200);
   border-radius: 10px;
+}
+
+.payment-roadmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.payment-roadmap-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--ss-navy-200);
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.payment-roadmap-card strong {
+  display: block;
+  color: var(--ss-navy-900);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.payment-roadmap-card span {
+  display: block;
+  color: var(--ss-navy-500);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .tab-btn {
