@@ -175,6 +175,16 @@ function evidenceData(item: any): any {
   return item?.data && typeof item.data === 'object' ? item.data : {};
 }
 
+function defenseMetadata(item: any): any {
+  const direct = item?.defense_metadata;
+  const nested = evidenceData(item).defense_metadata;
+  return direct && typeof direct === 'object'
+    ? direct
+    : nested && typeof nested === 'object'
+      ? nested
+      : {};
+}
+
 function linkedEnrollmentId(item: any): string {
   return String(item.enrollment_id || evidenceData(item).enrollment_id || '').trim();
 }
@@ -238,6 +248,13 @@ function sourceLabel(source: string): string {
   return source ? source.replace(/_/g, ' ') : '';
 }
 
+function titleCase(value: string): string {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase())
+    .trim();
+}
+
 function summarize(item: any): string {
   const type = evidenceType(item);
   const defenseSummary = item.defense_summary || evidenceData(item).defense_summary;
@@ -282,11 +299,14 @@ function summarize(item: any): string {
       return `${title} - ${formatEvidenceType(String(status))}${when ? ` on ${formatDate(when)}` : ''}`;
     }
     if (type === 'communication') {
-      const direction = d.direction === 'inbound' ? 'Inbound from client' : 'Outbound to client';
-      const channel = String(d.comm_type || 'message').toUpperCase();
+      const metadata = defenseMetadata(item).communication || {};
+      const directionValue = d.direction || metadata.direction;
+      const direction = directionValue === 'inbound' ? 'Inbound from client' : 'Outbound to client';
+      const channel = metadata.sourceChannel || titleCase(String(d.comm_type || metadata.channel || 'message'));
+      const nature = metadata.natureLabel || metadata.purpose || '';
       const conversation = d.ghl_conversation_id ? ` - GHL conversation ${String(d.ghl_conversation_id).slice(0, 10)}` : '';
       const preview = stripHtml(String(d.summary || d.body_preview || '')).slice(0, 240);
-      return `${direction} - ${channel}${conversation}${preview ? `. Preview: ${preview}` : ''}`;
+      return `${direction} - ${channel}${nature ? ` - ${titleCase(nature)}` : ''}${conversation}${preview ? `. Preview: ${preview}` : ''}`;
     }
     if (type === 'invoice') {
       const invoice = d.invoice_number || d.invoice_id || 'GHL invoice';
