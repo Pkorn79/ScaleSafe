@@ -1160,7 +1160,7 @@ export const dashboardController = {
         })(),
         supabase
           .from('evidence_communication')
-          .select('id, comm_type, comm_date, summary, body_preview, direction, source, ghl_conversation_id, ghl_message_id')
+          .select('id, comm_type, comm_date, subject, summary, body_preview, direction, source, ghl_conversation_id, ghl_message_id, defense_metadata')
           .eq('location_id', locationId)
           .eq('contact_id', contactId)
           .gte('comm_date', windowStart.toISOString())
@@ -1191,6 +1191,17 @@ export const dashboardController = {
           if (appSentMarkers.has(`${channel.toLowerCase()}|outbound|${b}`)) return 'automated';
         }
         return 'manual';
+      }
+
+      function storedSourceMark(row: any): 'automated' | 'manual' | 'ghl' | null {
+        if (row.source === 'app_triggered') return 'automated';
+        if (row.source === 'ghl_webhook') return 'ghl';
+        return row.direction === 'outbound' ? 'manual' : null;
+      }
+
+      function natureLabel(row: any): string {
+        const communication = row.defense_metadata?.communication || {};
+        return String(communication.natureLabel || communication.purpose || '').replace(/_/g, ' ').trim();
       }
 
       // Normalize GHL messages into unified feed items
@@ -1224,7 +1235,9 @@ export const dashboardController = {
           direction: row.direction || 'outbound',
           date: row.comm_date || '',
           body: cleanCommunicationBody(row.summary, row.body_preview),
-          sourceMark: row.source === 'app_triggered' ? 'automated' : row.source === 'ghl_webhook' && row.direction === 'outbound' ? 'manual' : null,
+          subject: cleanCommunicationBody(row.subject || ''),
+          natureLabel: natureLabel(row),
+          sourceMark: storedSourceMark(row),
           evidenceId: row.id,
           conversationId: row.ghl_conversation_id || null,
           messageId: row.ghl_message_id || null,

@@ -26,9 +26,12 @@
           <span v-if="item.direction === 'inbound'" class="badge badge-gray" style="margin-left:4px">Inbound</span>
           <span v-else-if="item.direction === 'outbound'" class="badge badge-gray" style="margin-left:4px">Outbound</span>
           <span v-if="item.sourceMark === 'automated'" class="badge badge-blue" style="margin-left:4px" title="Sent by ScaleSafe">Automated</span>
+          <span v-else-if="item.sourceMark === 'ghl'" class="badge badge-blue" style="margin-left:4px" title="Captured from GHL">GHL</span>
           <span v-else-if="item.sourceMark === 'manual'" class="badge badge-gray" style="margin-left:4px" title="Sent manually in GHL">Manual</span>
+          <span v-if="item.natureLabel" class="badge badge-gray" style="margin-left:4px">{{ item.natureLabel }}</span>
           <span class="text-sm text-muted" style="margin-left:auto">{{ formatDate(item.date) }}</span>
         </div>
+        <div v-if="item.subject" class="comm-subject">{{ item.subject }}</div>
         <div class="comm-body">{{ item.body }}</div>
       </div>
 
@@ -64,7 +67,9 @@ interface CommItem {
   direction: 'inbound' | 'outbound' | 'note';
   date: string;
   body: string;
-  sourceMark?: 'manual' | 'automated' | null;
+  subject?: string;
+  natureLabel?: string;
+  sourceMark?: 'manual' | 'automated' | 'ghl' | null;
 }
 
 const items = ref<CommItem[]>([]);
@@ -144,5 +149,12 @@ onMounted(() => fetchPage(0, false));
   color: var(--ss-navy-800);
   white-space: pre-wrap;
   line-height: 1.5;
+}
+
+.comm-subject {
+  color: var(--ss-navy-900);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 </style>
