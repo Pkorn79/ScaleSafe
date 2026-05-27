@@ -22,14 +22,14 @@ router.post('/ghl/course-activity', requireMerchantWebhookSecret, webhookControl
 router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlForms);
 router.post('/external', requireMerchantWebhookSecret, webhookController.external);
 
-// Stripe webhooks — signature verified inside the handler using req.rawBody
+// Stripe webhooks: signature verified inside the handler using req.rawBody.
 router.post('/stripe/:locationId', handleStripeWebhook);
 router.post('/stripe', handleStripeWebhook);
 
-// NMI Silent Post — no signature; verified by calling verifyTransaction() per notification
+// NMI Silent Post: verified by calling verifyTransaction() per notification.
 router.post('/nmi/silent-post', handleNmiSilentPost);
 
-// NMI official webhooks — signed JSON events. Configure this URL in NMI.
+// NMI official webhooks: signed JSON events. Configure this URL in NMI.
 router.post('/nmi/events/:processorConfigId', handleNmiWebhookEvent);
 
 export default router;

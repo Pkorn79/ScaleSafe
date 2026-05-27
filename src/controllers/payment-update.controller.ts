@@ -479,7 +479,7 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
       return;
     }
     if (!enrollment || !enrollment.offer_id) {
-      res.status(404).json({ error: 'No active enrollment found' });
+      res.status(404).json({ error: 'Enrollment for this sign-off link was not found' });
       return;
     }
 
@@ -535,7 +535,7 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
       return;
     }
     if (!enrollment) {
-      res.status(404).json({ success: false, error: 'No active enrollment' });
+      res.status(404).json({ success: false, error: 'Enrollment for this sign-off link was not found' });
       return;
     }
 
