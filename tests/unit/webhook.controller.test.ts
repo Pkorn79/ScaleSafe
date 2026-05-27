@@ -83,6 +83,24 @@ function mockReqRes(body: Record<string, unknown>) {
   return { req, res, next };
 }
 
+function makeEnrollmentListBuilder(data: any[]) {
+  const builder: any = {
+    filters: [] as Array<{ column: string; value: any }>,
+    select: jest.fn(() => builder),
+    eq: jest.fn((column: string, value: any) => {
+      builder.filters.push({ column, value });
+      return builder;
+    }),
+    in: jest.fn((column: string, value: any) => {
+      builder.filters.push({ column, value });
+      return builder;
+    }),
+    order: jest.fn(() => builder),
+    limit: jest.fn(async () => ({ data, error: null })),
+  };
+  return builder;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockIdempotencyIsDuplicate.mockResolvedValue(false);
@@ -170,6 +188,76 @@ describe('Webhook Controller - ghlPayment', () => {
         processor: 'ghl',
       }),
     );
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok', type: 'OrderCompleted' });
+  });
+
+  test('OrderCompleted product match completes only when exactly one enrollment matches', async () => {
+    mockEnrollmentFindByConsentToken.mockResolvedValue(null);
+    mockOfferListByLocation.mockResolvedValue([{ id: 'offer_1', ghl_product_id: 'prod_1' }]);
+    const enrollmentBuilder = makeEnrollmentListBuilder([{
+      id: 'enr_product_1',
+      offer_id: 'offer_1',
+      status: 'consent_captured',
+      payments_made: 0,
+      payments_total: 1,
+    }]);
+    mockSupabaseFrom.mockReturnValue(enrollmentBuilder);
+
+    const { req, res } = mockReqRes({
+      type: 'OrderCompleted',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      orderId: 'ord_product_1',
+      amount: 100,
+      items: [{ productId: 'prod_1', amount: 100 }],
+      metadata: {},
+    });
+
+    await webhookController.ghlPayment(req, res, jest.fn());
+
+    expect(enrollmentBuilder.filters).toEqual(expect.arrayContaining([
+      { column: 'location_id', value: 'loc_1' },
+      { column: 'contact_id', value: 'contact_1' },
+      { column: 'offer_id', value: 'offer_1' },
+      { column: 'status', value: ['consent_captured', 'paid_pending_enrollment'] },
+    ]));
+    expect(mockEnrollmentFindByContactAndOffer).not.toHaveBeenCalled();
+    expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_product_1',
+      paymentAmount: 100,
+    }));
+    expect(mockPaymentEventCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'ok', type: 'OrderCompleted' });
+  });
+
+  test('OrderCompleted ambiguous product match stays client-level', async () => {
+    mockEnrollmentFindByConsentToken.mockResolvedValue(null);
+    mockOfferListByLocation.mockResolvedValue([{ id: 'offer_1', ghl_product_id: 'prod_1' }]);
+    mockSupabaseFrom.mockReturnValue(makeEnrollmentListBuilder([
+      { id: 'enr_product_1', offer_id: 'offer_1', status: 'consent_captured' },
+      { id: 'enr_product_2', offer_id: 'offer_1', status: 'consent_captured' },
+    ]));
+
+    const { req, res } = mockReqRes({
+      type: 'OrderCompleted',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      orderId: 'ord_product_ambiguous',
+      amount: 100,
+      items: [{ productId: 'prod_1', amount: 100 }],
+      metadata: {},
+    });
+
+    await webhookController.ghlPayment(req, res, jest.fn());
+
+    expect(mockEnrollmentFindByContactAndOffer).not.toHaveBeenCalled();
+    expect(mockCompleteEnrollment).not.toHaveBeenCalled();
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      contact_id: 'contact_1',
+      event_type: 'payment_success',
+      processor: 'ghl',
+      processor_transaction_id: 'ord_product_ambiguous',
+    }));
     expect(res.json).toHaveBeenCalledWith({ status: 'ok', type: 'OrderCompleted' });
   });
 

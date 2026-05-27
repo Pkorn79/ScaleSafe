@@ -442,23 +442,31 @@ async function findEnrollmentForGhlPayment(
   ).trim();
 
   if (explicitEnrollmentId) {
-    const { data } = await getSupabase()
+    let query = getSupabase()
       .from('enrollments')
       .select('*')
       .eq('location_id', locationId)
       .eq('id', explicitEnrollmentId)
-      .maybeSingle();
+      .in('status', statuses);
+    if (contactId) {
+      query = query.eq('contact_id', contactId);
+    }
+    const { data } = await query.maybeSingle();
     if (data) return data;
   }
 
   const subscriptionId = String(body.subscriptionId || (body.subscription as any)?.id || '').trim();
   if (subscriptionId) {
-    const { data } = await getSupabase()
+    let query = getSupabase()
       .from('enrollments')
       .select('*')
       .eq('location_id', locationId)
       .eq('processor_subscription_id', subscriptionId)
-      .maybeSingle();
+      .in('status', statuses);
+    if (contactId) {
+      query = query.eq('contact_id', contactId);
+    }
+    const { data } = await query.maybeSingle();
     if (data) return data;
   }
 
@@ -477,9 +485,15 @@ async function findEnrollmentForGhlPayment(
       .eq('offer_id', offer.id)
       .in('status', statuses)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) return data;
+      .limit(2);
+    const matches = Array.isArray(data) ? data : [];
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      logger.warn(
+        { locationId, contactId, offerId: offer.id, productId, matchCount: matches.length },
+        'GHL payment product match was ambiguous; leaving payment client-level',
+      );
+    }
   }
 
   return null;
@@ -490,7 +504,6 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
   const contactId = body.contactId as string;
   const amount = (body.amount as number) || 0;
   const transactionId = (body.transactionId || body.orderId || '') as string;
-  const items = (body.items as any[]) || [];
   const metadata = (body.metadata as Record<string, unknown>) || {};
   const subscription = body.subscription as Record<string, unknown> | undefined;
 
@@ -518,23 +531,6 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
 
   if (!enrollment) {
     enrollment = await findEnrollmentForGhlPayment(body, ['consent_captured', 'paid_pending_enrollment']);
-  }
-
-  // Product line item match: contactId + GHL product -> ScaleSafe offer.
-  if (!enrollment && items.length > 0) {
-    for (const item of items) {
-      const productId = item.productId || item.product_id;
-      if (productId) {
-        // Look up offer by GHL product ID
-        const offer = await findOfferByProductId(locationId, productId);
-        if (offer) {
-          enrollment = await enrollmentRepository.findByContactAndOffer(
-            contactId, offer.id, locationId,
-          );
-          if (enrollment) break;
-        }
-      }
-    }
   }
 
   if (!enrollment) {
