@@ -287,7 +287,7 @@
                 </td>
                 <td>
                   {{ row.programName || 'Unknown Program' }}
-                  <div class="text-xs text-muted">{{ row.paymentType }} · {{ row.status }}</div>
+                  <div class="text-xs text-muted">{{ row.paymentType }} / {{ row.status }}</div>
                 </td>
                 <td class="txn-cell">{{ row.subscriptionId || '-' }}</td>
                 <td>
@@ -297,7 +297,7 @@
                 <td>
                   <span v-if="row.lastScaleSafePaymentDate">
                     {{ formatDateShort(row.lastScaleSafePaymentDate) }}
-                    <span v-if="row.lastScaleSafePaymentAmount != null"> · ${{ Number(row.lastScaleSafePaymentAmount).toFixed(2) }}</span>
+                    <span v-if="row.lastScaleSafePaymentAmount != null"> / ${{ Number(row.lastScaleSafePaymentAmount).toFixed(2) }}</span>
                   </span>
                   <span v-else>-</span>
                   <div v-if="row.lastScaleSafeTransactionId" class="text-xs text-muted txn-cell">{{ row.lastScaleSafeTransactionId }}</div>
@@ -327,6 +327,9 @@
               <tr v-if="selectedNmiTraceEnrollment === row.enrollmentId">
                 <td colspan="7">
                   <div class="trace-panel">
+                    <div v-if="nmiTrace.summary" class="trace-summary">
+                      {{ nmiTrace.summary.issue }}
+                    </div>
                     <div class="trace-grid">
                       <div>
                         <div class="text-sm font-semibold">Webhook logs</div>
@@ -765,6 +768,17 @@ async function loadNmiTrace(row: any) {
   border: 1px solid var(--ss-border, #e2e8f0);
   border-radius: 6px;
   padding: 12px;
+}
+
+.trace-summary {
+  background: #fff;
+  border: 1px solid var(--ss-border, #e2e8f0);
+  border-radius: 6px;
+  color: var(--ss-navy-700);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding: 10px 12px;
 }
 
 .trace-grid {

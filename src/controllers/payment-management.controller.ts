@@ -374,6 +374,33 @@ function cleanTraceId(value: unknown): string {
   return /^[A-Za-z0-9_.:-]{1,120}$/.test(raw) ? raw : '';
 }
 
+function traceMatchesFilters(payload: Record<string, unknown> | null, filters: { subscriptionId: string; transactionId: string; enrollmentId: string }): boolean {
+  if (!payload) return false;
+  if (filters.subscriptionId && payload.subscription_id === filters.subscriptionId) return true;
+  if (filters.transactionId && payload.transaction_id === filters.transactionId) return true;
+  if (filters.enrollmentId && payload.enrollment_id === filters.enrollmentId) return true;
+  return !filters.subscriptionId && !filters.transactionId && !filters.enrollmentId;
+}
+
+function buildNmiTraceSummary(input: {
+  logs: any[];
+  payments: any[];
+  receiptTriggers: any[];
+}): { received: boolean; matched: boolean; recorded: boolean; receiptSent: boolean; issue: string } {
+  const received = input.logs.length > 0;
+  const matched = input.logs.some((log: any) => log.matched === true || Boolean(log.payment_event_id));
+  const recorded = input.payments.length > 0 || input.logs.some((log: any) => Boolean(log.payment_event_id));
+  const receiptSent = input.receiptTriggers.some((trigger: any) => trigger.status === 'sent' || trigger.status === 'delivered');
+
+  let issue = 'No NMI webhook has been received for this subscription/enrollment yet.';
+  if (received && !matched) issue = 'NMI webhook was received, but ScaleSafe did not match it to this enrollment.';
+  else if (matched && !recorded) issue = 'NMI webhook matched, but no ScaleSafe payment record was found.';
+  else if (recorded && !receiptSent) issue = 'Payment was recorded, but no matching payment receipt trigger was found.';
+  else if (recorded && receiptSent) issue = 'Webhook was received, matched, recorded, and the receipt trigger was sent.';
+
+  return { received, matched, recorded, receiptSent, issue };
+}
+
 export async function getNmiWebhookTrace(req: Request, res: Response, next: NextFunction) {
   try {
     const locationId = resolveLocationId(req);
@@ -385,7 +412,7 @@ export async function getNmiWebhookTrace(req: Request, res: Response, next: Next
 
     let logsQuery: any = supabase
       .from('nmi_silent_post_logs')
-      .select('id, created_at, webhook_kind, event_id, event_type, processor_subscription_id, transaction_id, amount, response_code, response_text, matched, duplicate, verification_status, action, error_message, payment_event_id, signature_verified, raw_keys')
+      .select('id, created_at, webhook_kind, event_id, event_type, enrollment_id, processor_subscription_id, transaction_id, amount, response_code, response_text, matched, duplicate, verification_status, action, error_message, payment_event_id, signature_verified, raw_keys')
       .eq('location_id', locationId)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -424,7 +451,7 @@ export async function getNmiWebhookTrace(req: Request, res: Response, next: Next
         .eq('location_id', locationId)
         .eq('trigger_key', 'ss_payment_received')
         .order('created_at', { ascending: false })
-        .limit(30),
+        .limit(100),
     ]);
 
     if (logsError) throw logsError;
@@ -432,15 +459,9 @@ export async function getNmiWebhookTrace(req: Request, res: Response, next: Next
     if (enrollmentsError) throw enrollmentsError;
     if (triggersError) throw triggersError;
 
-    res.json({
-      filters: { subscriptionId, transactionId, enrollmentId, limit },
-      logs: logs || [],
-      payments: (payments || []).map((row: any) => ({
-        ...row,
-        raw_webhook_payload: safeTracePayload(row.raw_webhook_payload),
-      })),
-      enrollments: enrollments || [],
-      receiptTriggers: (triggers || []).map((row: any) => ({
+    const filters = { subscriptionId, transactionId, enrollmentId, limit };
+    const receiptTriggers = (triggers || [])
+      .map((row: any) => ({
         id: row.id,
         created_at: row.created_at,
         trigger_key: row.trigger_key,
@@ -449,7 +470,25 @@ export async function getNmiWebhookTrace(req: Request, res: Response, next: Next
         attempt_count: row.attempt_count,
         error_message: row.error_message,
         payload: safeTracePayload(row.payload),
-      })),
+      }))
+      .filter((row: any) => traceMatchesFilters(row.payload, filters));
+
+    const safePayments = (payments || []).map((row: any) => ({
+      ...row,
+      raw_webhook_payload: safeTracePayload(row.raw_webhook_payload),
+    }));
+
+    res.json({
+      filters: { subscriptionId, transactionId, enrollmentId, limit },
+      summary: buildNmiTraceSummary({
+        logs: logs || [],
+        payments: safePayments,
+        receiptTriggers,
+      }),
+      logs: logs || [],
+      payments: safePayments,
+      enrollments: enrollments || [],
+      receiptTriggers,
     });
   } catch (err: any) {
     logger.error({ err: err?.message, code: err?.code }, 'NMI webhook trace failed');
