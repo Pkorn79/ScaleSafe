@@ -9,7 +9,7 @@ export const enrollmentController = {
   /** POST /api/enrollment/device-capture — Page 1 widget */
   async deviceCapture(req: Request, res: Response, next: NextFunction) {
     try {
-      const { offerId, email, ipAddress, userAgent, deviceFingerprint, screenResolution, timezone, browserLanguage } = req.body;
+      const { offerId, email, paidEnrollmentToken, ipAddress, userAgent, deviceFingerprint, screenResolution, timezone, browserLanguage } = req.body;
       if (!offerId || !email) {
         res.status(400).json({ error: 'offerId and email are required' });
         return;
@@ -18,6 +18,7 @@ export const enrollmentController = {
       const result = await enrollmentService.captureDevice({
         offerId,
         email,
+        paidEnrollmentToken,
         ipAddress: ipAddress || req.ip || '',
         userAgent: userAgent || req.headers['user-agent'] || '',
         deviceFingerprint: deviceFingerprint || '',
@@ -30,6 +31,10 @@ export const enrollmentController = {
     } catch (err: any) {
       if (err.message === 'Offer not found or inactive') {
         res.status(404).json({ error: 'Offer not found' });
+        return;
+      }
+      if (err.message?.includes('Paid enrollment link')) {
+        res.status(400).json({ error: err.message });
         return;
       }
       logger.error({ err: err.message }, 'Device capture failed');
@@ -59,7 +64,7 @@ export const enrollmentController = {
         offerId, email, consentTimestamp, ipAddress,
         userAgent, deviceFingerprint, screenResolution,
         timezone, browserLanguage, tcVersionHash,
-        digitalSignature, clausesAccepted, scrollDepth,
+        digitalSignature, clausesAccepted, scrollDepth, paidEnrollmentToken,
       } = req.body;
 
       if (!offerId || !email || !digitalSignature) {
@@ -70,6 +75,7 @@ export const enrollmentController = {
       const result = await enrollmentService.captureFunnelConsent({
         offerId,
         email,
+        paidEnrollmentToken,
         consentTimestamp: consentTimestamp || new Date().toISOString(),
         ipAddress: ipAddress || req.ip || '',
         userAgent: userAgent || req.headers['user-agent'] || '',
@@ -87,6 +93,10 @@ export const enrollmentController = {
     } catch (err: any) {
       if (err.message === 'Offer not found or inactive') {
         res.status(404).json({ error: 'Offer not found' });
+        return;
+      }
+      if (err.message?.includes('Paid enrollment link')) {
+        res.status(400).json({ error: err.message });
         return;
       }
       logger.error({ err: err.message }, 'Funnel consent capture failed');

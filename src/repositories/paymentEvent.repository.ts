@@ -23,6 +23,7 @@ export interface PaymentEventRecord {
 }
 
 export interface PaymentEventInsert {
+  merchant_id?: string | null;
   location_id: string;
   contact_id: string;
   enrollment_id?: string | null;

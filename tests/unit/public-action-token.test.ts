@@ -57,6 +57,22 @@ describe('public action tokens', () => {
     expect(() => verifyPublicActionToken(token, 'subscription_cancel')).toThrow('Action token cannot be used');
   });
 
+  it('supports paid enrollment links', () => {
+    const token = createPublicActionToken({
+      action: 'paid_enrollment',
+      locationId: 'loc_123',
+      contactId: 'contact_456',
+      enrollmentId: 'enr_paid_1',
+    });
+
+    expect(verifyPublicActionToken(token, 'paid_enrollment')).toMatchObject({
+      action: 'paid_enrollment',
+      locationId: 'loc_123',
+      contactId: 'contact_456',
+      enrollmentId: 'enr_paid_1',
+    });
+  });
+
   it('rejects tampered tokens', () => {
     const token = createPublicActionToken({
       action: 'payment_update',

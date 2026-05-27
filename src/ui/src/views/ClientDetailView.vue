@@ -25,7 +25,7 @@
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showNoteModal = true">Add Note</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showMessageModal = true">Send Message</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-primary" @click="openSendOffer">Send Offer</button>
-          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openPayFirst">Record Payment</button>
+          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showQuickSaleModal = true">Quick Manual Sale</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openAssignOffer">Assign Offer</button>
           <router-link to="/clients" class="btn btn-sm btn-secondary">Back</router-link>
         </div>
@@ -282,6 +282,13 @@
         </button>
       </template>
     </Modal>
+
+    <QuickManualSaleModal
+      v-model:open="showQuickSaleModal"
+      :initial-client="quickSaleClient"
+      :client-locked="true"
+      @completed="onQuickSaleCompleted"
+    />
   </div>
 </template>
 
@@ -291,6 +298,7 @@ import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import Modal from '../components/Modal.vue';
 import ProfileTabs, { type TabDef } from '../components/ProfileTabs.vue';
+import QuickManualSaleModal from '../components/QuickManualSaleModal.vue';
 import {
   LayoutDashboard, Package, CreditCard, FileText, MessageSquare, Folder,
 } from 'lucide-vue-next';
@@ -374,6 +382,7 @@ const payFirstNote = ref('');
 const payFirstLoading = ref(false);
 const payFirstResult = ref('');
 const payFirstError = ref('');
+const showQuickSaleModal = ref(false);
 
 // Note modal
 const showNoteModal = ref(false);
@@ -427,6 +436,17 @@ const lastActivityShort = computed(() => {
   if (recentActivity.value.length === 0) return '';
   const first = recentActivity.value[0];
   return formatDateShort(first.created_at || first.event_date);
+});
+
+const quickSaleClient = computed(() => {
+  const parts = clientLabel.value.split(' ');
+  return {
+    contactId: contactId.value,
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ') || '',
+    email: clientEmail.value,
+    phone: enrollmentInfo.value?.phone || '',
+  };
 });
 
 // Header actions
@@ -609,6 +629,11 @@ async function reloadEnrollments() {
     enrollments.value = result.enrollments || [];
     enrollmentSummary.value = result.summary || null;
   }
+}
+
+async function onQuickSaleCompleted() {
+  showQuickSaleModal.value = false;
+  await reloadEnrollments();
 }
 
 // Initial load

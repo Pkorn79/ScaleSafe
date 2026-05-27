@@ -24,13 +24,21 @@
   // Try multiple methods to get offerId (widget runs inside iframe)
   var offerId = null;
 
+  var ownParams = new URLSearchParams(window.location.search);
+  var paidEnrollmentToken = ownParams.get('paidEnrollmentToken') || '';
+  try {
+    if (!paidEnrollmentToken) paidEnrollmentToken = sessionStorage.getItem('ss_paid_enrollment_token') || '';
+  } catch (e) { /* silent */ }
+
   // Method 1: Own URL params (when embed code passes it correctly)
-  offerId = new URLSearchParams(window.location.search).get('offerId');
+  offerId = ownParams.get('offerId');
 
   // Method 2: Try parent URL (works if same origin)
   if (!offerId) {
     try {
-      offerId = new URLSearchParams(window.parent.location.search).get('offerId');
+      var parentParams = new URLSearchParams(window.parent.location.search);
+      offerId = parentParams.get('offerId');
+      if (!paidEnrollmentToken) paidEnrollmentToken = parentParams.get('paidEnrollmentToken') || '';
     } catch (e) { /* Cross-origin — expected */ }
   }
 
@@ -39,12 +47,16 @@
     try {
       var refUrl = new URL(document.referrer);
       offerId = refUrl.searchParams.get('offerId');
+      if (!paidEnrollmentToken) paidEnrollmentToken = refUrl.searchParams.get('paidEnrollmentToken') || '';
     } catch (e) { /* ignore */ }
   }
 
   if (!offerId) {
     console.log('[ScaleSafe] No offerId found, device capture skipped');
     return;
+  }
+  if (paidEnrollmentToken) {
+    try { sessionStorage.setItem('ss_paid_enrollment_token', paidEnrollmentToken); } catch (e) { /* silent */ }
   }
 
   async function sha256(text) {
@@ -88,6 +100,7 @@
       var payload = {
         offerId: offerId,
         email: email,
+        paidEnrollmentToken: paidEnrollmentToken,
         ipAddress: ipAddress,
         userAgent: userAgent,
         deviceFingerprint: deviceFingerprint,

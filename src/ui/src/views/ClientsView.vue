@@ -137,14 +137,23 @@
         <label class="form-label">Phone</label>
         <input class="form-input" type="tel" v-model="newClient.phone" placeholder="+1 (555) 000-0000" />
       </div>
+      <label class="inline-check" style="margin-top:8px">
+        <input type="checkbox" v-model="takePaymentNow" />
+        Take payment now
+      </label>
       <div v-if="addClientError" class="text-sm mt-2" style="color:#ef4444">{{ addClientError }}</div>
       <template #footer>
         <button class="btn btn-secondary" @click="showAddModal = false">Cancel</button>
         <button class="btn btn-primary" @click="submitAddClient" :disabled="addClientLoading">
-          {{ addClientLoading ? 'Adding...' : 'Add Client' }}
+          {{ addClientLoading ? 'Adding...' : (takePaymentNow ? 'Continue to Payment' : 'Add Client') }}
         </button>
       </template>
     </Modal>
+    <QuickManualSaleModal
+      v-model:open="showQuickSaleModal"
+      :initial-client="quickSaleClient"
+      @completed="onQuickSaleCompleted"
+    />
   </div>
 </template>
 
@@ -156,6 +165,7 @@ import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
+import QuickManualSaleModal from '../components/QuickManualSaleModal.vue';
 
 const api = useApi();
 const { loading, error } = api;
@@ -173,6 +183,9 @@ const showAddModal = ref(false);
 const addClientLoading = ref(false);
 const addClientError = ref('');
 const newClient = ref({ firstName: '', lastName: '', email: '', phone: '' });
+const takePaymentNow = ref(false);
+const showQuickSaleModal = ref(false);
+const quickSaleClient = ref<any>(null);
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -233,12 +246,19 @@ async function submitAddClient() {
     addClientError.value = 'First name and email are required';
     return;
   }
+  if (takePaymentNow.value) {
+    quickSaleClient.value = { ...newClient.value };
+    showAddModal.value = false;
+    showQuickSaleModal.value = true;
+    return;
+  }
   addClientLoading.value = true;
   addClientError.value = '';
   try {
     await api.post('/api/dashboard/add-client', newClient.value);
     showAddModal.value = false;
     newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
+    takePaymentNow.value = false;
     loadClients();
   } catch (e: any) {
     addClientError.value = e.message || 'Failed to add client';
@@ -246,6 +266,12 @@ async function submitAddClient() {
   addClientLoading.value = false;
 }
 
+function onQuickSaleCompleted() {
+  showQuickSaleModal.value = false;
+  newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
+  takePaymentNow.value = false;
+  loadClients();
+}
+
 onMounted(() => loadClients());
 </script>
-

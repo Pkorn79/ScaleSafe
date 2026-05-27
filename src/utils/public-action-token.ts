@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { config } from '../config';
 
-export type PublicActionType = 'payment_update' | 'subscription_cancel' | 'milestone_signoff';
+export type PublicActionType = 'payment_update' | 'subscription_cancel' | 'milestone_signoff' | 'paid_enrollment';
 
 export interface PublicActionTokenPayload {
   action: PublicActionType;

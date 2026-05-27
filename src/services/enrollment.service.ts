@@ -7,6 +7,7 @@ import { sha256 } from '../utils/crypto';
 import { ValidationError } from '../utils/errors';
 import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { verifyPublicActionToken } from '../utils/public-action-token';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -50,6 +51,7 @@ interface CaptureConsentInput {
 interface DeviceCaptureInput {
   offerId: string;
   email: string;
+  paidEnrollmentToken?: string;
   ipAddress: string;
   userAgent: string;
   deviceFingerprint: string;
@@ -61,6 +63,7 @@ interface DeviceCaptureInput {
 interface FunnelConsentInput {
   offerId: string;
   email: string;
+  paidEnrollmentToken?: string;
   consentTimestamp: string;
   ipAddress: string;
   userAgent: string;
@@ -110,16 +113,35 @@ export const enrollmentService = {
       capturedAt: new Date().toISOString(),
     };
 
+    let paidEnrollmentId = '';
+    if (input.paidEnrollmentToken) {
+      const token = verifyPublicActionToken(input.paidEnrollmentToken, 'paid_enrollment');
+      const { data: paidEnrollment, error: paidError } = await supabase
+        .from('enrollments')
+        .select('id, offer_id, location_id, status')
+        .eq('id', token.enrollmentId || '')
+        .eq('location_id', token.locationId)
+        .eq('offer_id', input.offerId)
+        .eq('status', 'paid_pending_enrollment')
+        .maybeSingle();
+      if (paidError) throw paidError;
+      if (!paidEnrollment) throw new ValidationError('Paid enrollment link is invalid or expired');
+      paidEnrollmentId = paidEnrollment.id;
+    }
+
     // Check for existing record by email + offerId, including pay-first records.
-    const { data: existing } = await supabase
+    const existingQuery = supabase
       .from('enrollments')
-      .select('id, status')
-      .eq('email', input.email)
-      .eq('offer_id', input.offerId)
-      .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .select('id, status');
+    const { data: existing } = paidEnrollmentId
+      ? await existingQuery.eq('id', paidEnrollmentId).maybeSingle()
+      : await existingQuery
+        .eq('email', input.email)
+        .eq('offer_id', input.offerId)
+        .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
     if (existing) {
       // Update existing record
@@ -240,15 +262,37 @@ export const enrollmentService = {
       browserLanguage: input.browserLanguage,
     };
 
+    let paidEnrollmentId = '';
+    if (input.paidEnrollmentToken) {
+      const token = verifyPublicActionToken(input.paidEnrollmentToken, 'paid_enrollment');
+      const { data: paidEnrollment, error: paidError } = await supabase
+        .from('enrollments')
+        .select('id, offer_id, location_id, status')
+        .eq('id', token.enrollmentId || '')
+        .eq('location_id', token.locationId)
+        .eq('offer_id', input.offerId)
+        .eq('status', 'paid_pending_enrollment')
+        .maybeSingle();
+      if (paidError) throw paidError;
+      if (!paidEnrollment) throw new ValidationError('Paid enrollment link is invalid or expired');
+      paidEnrollmentId = paidEnrollment.id;
+    }
+
     // Find existing enrollment (created by device-capture on Page 1)
-    const { data: existingRows } = await supabase
-      .from('enrollments')
-      .select('id, status')
-      .eq('email', input.email)
-      .eq('offer_id', input.offerId)
-      .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
-      .order('created_at', { ascending: false })
-      .limit(5);
+    const { data: existingRows } = paidEnrollmentId
+      ? await supabase
+        .from('enrollments')
+        .select('id, status')
+        .eq('id', paidEnrollmentId)
+        .limit(1)
+      : await supabase
+        .from('enrollments')
+        .select('id, status')
+        .eq('email', input.email)
+        .eq('offer_id', input.offerId)
+        .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
+        .order('created_at', { ascending: false })
+        .limit(5);
     const existing = (existingRows || []).find((row: any) => row.status === 'paid_pending_enrollment')
       || (existingRows || [])[0]
       || null;

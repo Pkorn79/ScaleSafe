@@ -237,13 +237,21 @@
   // Try multiple methods to get offerId (widget runs inside iframe)
   var offerId = null;
 
+  var ownParams = new URLSearchParams(window.location.search);
+  var paidEnrollmentToken = ownParams.get('paidEnrollmentToken') || '';
+  try {
+    if (!paidEnrollmentToken) paidEnrollmentToken = sessionStorage.getItem('ss_paid_enrollment_token') || '';
+  } catch (e) { /* silent */ }
+
   // Method 1: Own URL params (when embed code passes it correctly)
-  offerId = new URLSearchParams(window.location.search).get('offerId');
+  offerId = ownParams.get('offerId');
 
   // Method 2: Try parent URL (works if same origin)
   if (!offerId) {
     try {
-      offerId = new URLSearchParams(window.parent.location.search).get('offerId');
+      var parentParams = new URLSearchParams(window.parent.location.search);
+      offerId = parentParams.get('offerId');
+      if (!paidEnrollmentToken) paidEnrollmentToken = parentParams.get('paidEnrollmentToken') || '';
     } catch (e) { /* Cross-origin — expected */ }
   }
 
@@ -252,15 +260,19 @@
     try {
       var refUrl = new URL(document.referrer);
       offerId = refUrl.searchParams.get('offerId');
+      if (!paidEnrollmentToken) paidEnrollmentToken = refUrl.searchParams.get('paidEnrollmentToken') || '';
     } catch (e) { /* ignore */ }
   }
 
-  var emailParam = new URLSearchParams(window.location.search).get('email') || '';
-  var paymentChoiceParam = new URLSearchParams(window.location.search).get('paymentChoice') || '';
+  var emailParam = ownParams.get('email') || '';
+  var paymentChoiceParam = ownParams.get('paymentChoice') || '';
 
   if (!offerId) {
     root.innerHTML = '<div class="ss-error-msg">Terms not available. Please contact the provider.</div>';
     return;
+  }
+  if (paidEnrollmentToken) {
+    try { sessionStorage.setItem('ss_paid_enrollment_token', paidEnrollmentToken); } catch (e) { /* silent */ }
   }
 
   // ─── Utilities ──────────────────────────────────────────────
@@ -465,6 +477,7 @@
         var payload = {
           offerId: offerId,
           email: email,
+          paidEnrollmentToken: paidEnrollmentToken,
           consentTimestamp: new Date().toISOString(),
           ipAddress: deviceInfo.ipAddress,
           userAgent: deviceInfo.userAgent,
@@ -499,11 +512,14 @@
         }
 
         // Free offer: enrollment is already complete — show completion screen
-        if (data.freeOffer) {
+        if (data.freeOffer || data.paidPendingCompleted) {
+          var completionText = data.paidPendingCompleted
+            ? 'Your enrollment is confirmed. Payment has already been received.'
+            : 'Your enrollment is confirmed. No payment required for this program.';
           root.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
             '<div style="font-size:48px;margin-bottom:16px;">&#10003;</div>' +
             '<h2 style="font-size:22px;font-weight:700;margin-bottom:8px;">You\'re Enrolled!</h2>' +
-            '<p style="font-size:15px;color:var(--ss-muted);">Your enrollment is confirmed. No payment required for this program.</p>' +
+            '<p style="font-size:15px;color:var(--ss-muted);">' + completionText + '</p>' +
             '</div>';
           return;
         }

@@ -1568,4 +1568,43 @@ export const dashboardController = {
       res.json(result);
     } catch (err) { next(err); }
   },
+
+  /** GET /api/dashboard/manual-sale/config - tokenized card-entry config for Quick Manual Sale */
+  async manualSaleConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const result = await payFirstEnrollmentService.getManualSaleConfig(
+        locationId,
+        req.query.offerId ? String(req.query.offerId) : undefined,
+      );
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/manual-sale/charge - charge card and create optional paid-pending enrollment */
+  async chargeManualSale(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+        locationId,
+        offerId: req.body.offerId || undefined,
+        contactId: req.body.contactId || undefined,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        email: req.body.email,
+        phone: req.body.phone,
+        amount: Number(req.body.amount || 0),
+        paymentToken: req.body.paymentToken,
+        paymentType: req.body.paymentType,
+        sendEnrollment: req.body.sendEnrollment !== false,
+        sendVia: req.body.sendVia,
+        recordedBy: String((req as any).tenantContext?.userId || 'merchant'),
+      });
+
+      res.json(result);
+    } catch (err) { next(err); }
+  },
 };
