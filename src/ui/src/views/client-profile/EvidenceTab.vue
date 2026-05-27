@@ -69,6 +69,19 @@
             </td>
             <td class="text-sm evidence-link-cell">
               <span v-if="linkedEnrollmentId(item)" class="badge badge-green">Linked</span>
+              <div v-else-if="isLinking(item)" class="evidence-link-box evidence-link-box-inline">
+                <select class="form-select" v-model="selectedEnrollmentId">
+                  <option value="">Select program...</option>
+                  <option v-for="enrollment in enrollments" :key="enrollment.id" :value="enrollment.id">
+                    {{ enrollment.offer_name || enrollment.offerName || enrollment.program_name || 'Program' }}
+                  </option>
+                </select>
+                <button class="btn btn-sm btn-primary" @click="saveLink" :disabled="linkSaving || !selectedEnrollmentId">
+                  {{ linkSaving ? 'Saving...' : 'Save' }}
+                </button>
+                <button class="btn btn-sm btn-secondary" @click="cancelLink" :disabled="linkSaving">Cancel</button>
+                <span v-if="linkError" class="text-sm" style="color:#dc2626">{{ linkError }}</span>
+              </div>
               <button
                 v-else-if="canLink(item)"
                 class="btn btn-sm btn-secondary"
@@ -77,23 +90,6 @@
                 Link to Program
               </button>
               <span v-else class="text-muted">Client-level</span>
-            </td>
-          </tr>
-          <tr v-if="linkingItem" class="evidence-link-row">
-            <td colspan="4">
-              <div class="evidence-link-box">
-                <select class="form-select" v-model="selectedEnrollmentId">
-                  <option value="">Select program...</option>
-                  <option v-for="enrollment in enrollments" :key="enrollment.id" :value="enrollment.id">
-                    {{ enrollment.offer_name || enrollment.offerName || enrollment.program_name || 'Program' }}
-                  </option>
-                </select>
-                <button class="btn btn-sm btn-primary" @click="saveLink" :disabled="linkSaving || !selectedEnrollmentId">
-                  {{ linkSaving ? 'Saving...' : 'Save Link' }}
-                </button>
-                <button class="btn btn-sm btn-secondary" @click="cancelLink" :disabled="linkSaving">Cancel</button>
-                <span v-if="linkError" class="text-sm" style="color:#dc2626">{{ linkError }}</span>
-              </div>
             </td>
           </tr>
         </tbody>
@@ -191,6 +187,10 @@ function linkedEnrollmentId(item: any): string {
 
 function canLink(item: any): boolean {
   return Boolean(item.id && item.evidence_table && enrollments.value.length > 0);
+}
+
+function isLinking(item: any): boolean {
+  return Boolean(linkingItem.value && linkingItem.value.id === item.id && linkingItem.value.evidence_table === item.evidence_table);
 }
 
 function exhibitTitle(item: any): string {
@@ -447,5 +447,10 @@ onMounted(async () => {
 
 .evidence-link-box .form-select {
   max-width: 320px;
+}
+
+.evidence-link-box-inline {
+  justify-content: flex-end;
+  max-width: 420px;
 }
 </style>

@@ -84,7 +84,7 @@ async function resolveMerchantId(locationId: string): Promise<string> {
   return data?.id || '';
 }
 
-// ─── GET /api/payments/customers ────────────────────────────────
+// GET /api/payments/customers
 
 export async function searchCustomers(req: Request, res: Response, next: NextFunction) {
   try {
@@ -117,8 +117,39 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
     const { data: maps, error } = await query;
     if (error) throw error;
 
-    // Get unique contact IDs from payment_customer_map
-    let contactIds = [...new Set((maps || []).map(m => m.contact_id).filter(Boolean))];
+    const contactIdSet = new Set<string>((maps || []).map(m => m.contact_id).filter(Boolean));
+
+    if (search) {
+      const escaped = cleanPostgrestLikeTerm(search);
+      const [matchingEnrollments, matchingPaymentEvents] = await Promise.allSettled([
+        supabase
+          .from('enrollments')
+          .select('contact_id')
+          .eq('location_id', locationId)
+          .or(`first_name.ilike.%${escaped}%,last_name.ilike.%${escaped}%,email.ilike.%${escaped}%,digital_signature.ilike.%${escaped}%,contact_id.ilike.%${escaped}%`)
+          .limit(100),
+        supabase
+          .from('payment_events')
+          .select('contact_id')
+          .eq('location_id', locationId)
+          .or(`customer_email.ilike.%${escaped}%,contact_id.ilike.%${escaped}%`)
+          .limit(100),
+      ]);
+
+      if (matchingEnrollments.status === 'fulfilled') {
+        for (const row of matchingEnrollments.value.data || []) {
+          if (row.contact_id) contactIdSet.add(row.contact_id);
+        }
+      }
+      if (matchingPaymentEvents.status === 'fulfilled') {
+        for (const row of matchingPaymentEvents.value.data || []) {
+          if (row.contact_id) contactIdSet.add(row.contact_id);
+        }
+      }
+    }
+
+    // Get unique contact IDs from payment records and searchable enrollment/payment profiles.
+    let contactIds = [...contactIdSet];
 
     // Fallback: if no results from payment_customer_map, check payment_events directly
     if (contactIds.length === 0) {
@@ -206,7 +237,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
           }
         }));
       } catch {
-        // GHL API unavailable — fall through to enrollment data
+        // GHL API unavailable: fall through to enrollment data.
       }
     }
 
@@ -246,37 +277,19 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       }
     }
 
-    // Deduplicate by email — multiple contactIds can map to the same person
-    const byEmail = new Map<string, { contactId: string; name: string; email: string; totalCharged: number; totalRefunded: number; lastPaymentDate: string | null; programName: string }>();
-    for (const cid of contactIds) {
+    const customers = contactIds.map((cid) => {
       const t = totals[cid];
       const displayName = t.name || (t.email ? t.email.split('@')[0] : '');
-      const email = (t.email || '').toLowerCase();
-      const key = email || cid; // group by email, fall back to contactId if no email
-
-      const existing = byEmail.get(key);
-      if (existing) {
-        existing.totalCharged += t.charged;
-        existing.totalRefunded += t.refunded;
-        if (t.lastPaymentDate && (!existing.lastPaymentDate || t.lastPaymentDate > existing.lastPaymentDate)) {
-          existing.lastPaymentDate = t.lastPaymentDate;
-        }
-        if (!existing.name && displayName) existing.name = displayName;
-        if (!existing.programName) existing.programName = maps!.find(m => m.contact_id === cid)?.program_name || '';
-      } else {
-        byEmail.set(key, {
-          contactId: cid,
-          name: displayName,
-          email: t.email,
-          totalCharged: t.charged,
-          totalRefunded: t.refunded,
-          lastPaymentDate: t.lastPaymentDate || null,
-          programName: maps!.find(m => m.contact_id === cid)?.program_name || '',
-        });
-      }
-    }
-
-    const customers = [...byEmail.values()]
+      return {
+        contactId: cid,
+        name: displayName,
+        email: t.email,
+        totalCharged: t.charged,
+        totalRefunded: t.refunded,
+        lastPaymentDate: t.lastPaymentDate || null,
+        programName: maps!.find(m => m.contact_id === cid)?.program_name || '',
+      };
+    })
       .filter(c => {
         if (!search) return true;
         const name = c.name.toLowerCase();
@@ -290,7 +303,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
   } catch (err) { next(err); }
 }
 
-// ─── GET /api/payments/manage/ledger ────────────────────────────
+// GET /api/payments/manage/ledger
 
 export async function listPaymentLedger(req: Request, res: Response, next: NextFunction) {
   try {
