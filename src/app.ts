@@ -56,7 +56,7 @@ export function createApp(): express.Application {
     maxAge: '1y',
     immutable: true,
     setHeaders: (res, filePath) => {
-      // index.html must never be cached — it references hashed asset filenames
+      // index.html must never be cached because it references hashed asset filenames.
       if (filePath.endsWith('index.html')) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }

@@ -218,7 +218,7 @@
               {{ reconciliationLoading ? 'Checking...' : 'Run Check' }}
             </button>
             <button class="btn btn-secondary" @click="syncNmiHistory()" :disabled="nmiSyncLoading">
-              {{ nmiSyncLoading ? 'Syncing...' : 'Sync NMI History' }}
+              {{ nmiSyncLoading ? 'Importing...' : 'Manual NMI Import' }}
             </button>
           </div>
         </div>
@@ -320,7 +320,7 @@
                     @click="syncNmiHistory(row.enrollmentId)"
                     :disabled="nmiSyncLoading"
                   >
-                    Sync This
+                    Manual Import
                   </button>
                 </td>
               </tr>
@@ -613,16 +613,20 @@ async function loadNmiDiagnostics() {
 }
 
 async function syncNmiHistory(enrollmentId?: string) {
+  const scope = enrollmentId ? 'this enrollment' : 'all visible NMI recurring enrollments';
+  const confirmed = confirm(`Manual NMI import checks processor history for ${scope}. It records missing approved/failed NMI transactions, but it does not charge cards and does not send customer receipts. Continue?`);
+  if (!confirmed) return;
+
   nmiSyncLoading.value = true;
   nmiSyncMessage.value = '';
   reconciliationError.value = '';
   try {
     const result = await api.post<any>('/api/payments/manage/sync/nmi-recurring', enrollmentId ? { enrollmentId } : {});
     if (enrollmentId) {
-      nmiSyncMessage.value = `NMI sync checked ${result?.checked || 0} transactions, imported ${result?.imported || 0}.`;
+      nmiSyncMessage.value = `Manual NMI import checked ${result?.checked || 0} transactions, imported ${result?.imported || 0}.`;
     } else {
       const imported = (result?.results || []).reduce((sum: number, row: any) => sum + Number(row.imported || 0), 0);
-      nmiSyncMessage.value = `NMI sync checked ${result?.checked || 0} enrollments, imported ${imported} payments.`;
+      nmiSyncMessage.value = `Manual NMI import checked ${result?.checked || 0} enrollments, imported ${imported} payments.`;
     }
     await loadReconciliation();
   } catch (e: any) {
