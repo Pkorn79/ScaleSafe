@@ -25,11 +25,14 @@
     <div class="form-group">
       <label class="form-label">Offer / Program</label>
       <select class="form-select" v-model="selectedOfferId">
-        <option value="">No offer - client-level payment only</option>
+        <option value="">Client-level payment only - no enrollment link</option>
         <option v-for="offer in activeOffers" :key="offer.id" :value="offer.id">
           {{ offer.offer_name }}
         </option>
       </select>
+      <p class="text-sm text-muted mt-2">
+        {{ selectedOfferId ? 'Payment now, enrollment packet after payment.' : 'This records a payment on the client only. No enrollment packet or welcome email is sent.' }}
+      </p>
     </div>
 
     <div class="qms-grid">
@@ -51,13 +54,17 @@
       <input type="checkbox" v-model="sendEnrollment" />
       Send paid enrollment link after payment
     </label>
+    <p v-if="selectedOfferId && sendEnrollment" class="qms-help">
+      Receipt sends after this payment. Welcome/access should send only after the client signs the paid enrollment packet.
+    </p>
 
     <div class="qms-card-section">
       <div class="section-title">Card</div>
       <div v-if="configLoading" class="loading">Loading payment fields...</div>
       <div v-else-if="processorError" class="error-msg">{{ processorError }}</div>
       <template v-else>
-        <div v-show="processorType === 'nmi'" class="qms-nmi">
+        <div v-if="fieldMounting" class="text-sm text-muted mb-2">Preparing secure card fields...</div>
+        <div v-if="processorType === 'nmi'" class="qms-nmi">
           <label class="form-label">Card Number</label>
           <div class="field-wrapper"><div :id="nmiIds.number"></div></div>
           <div class="qms-grid">
@@ -71,9 +78,10 @@
             </div>
           </div>
         </div>
-        <div v-show="processorType === 'stripe'">
+        <div v-else-if="processorType === 'stripe'">
           <div class="field-wrapper"><div :id="stripeElementId"></div></div>
         </div>
+        <div v-else class="error-msg">No processor is configured.</div>
       </template>
     </div>
 
@@ -140,6 +148,8 @@ const paymentChoice = ref('pif');
 const amount = ref<number | null>(null);
 const sendEnrollment = ref(true);
 const configLoading = ref(false);
+const fieldMounting = ref(false);
+const paymentFieldsReady = ref(false);
 const processorType = ref('');
 const processorError = ref('');
 const submitting = ref(false);
@@ -157,6 +167,7 @@ let stripe: any = null;
 let cardElement: any = null;
 let nmiTokenResolver: ((token: string) => void) | null = null;
 let nmiTokenRejecter: ((err: Error) => void) | null = null;
+let processorLoadSeq = 0;
 
 const selectedOffer = computed(() => activeOffers.value.find((offer) => offer.id === selectedOfferId.value) || null);
 const selectedOfferSupportsInstallments = computed(() => {
@@ -168,7 +179,15 @@ const selectedOfferSupportsSubscription = computed(() => {
   return String(offer?.payment_type || '').toLowerCase() === 'subscription';
 });
 const canSubmit = computed(() => {
-  return Boolean(client.firstName && client.email && amount.value && Number(amount.value) > 0 && processorType.value && !processorError.value);
+  return Boolean(
+    client.firstName
+    && client.email
+    && amount.value
+    && Number(amount.value) > 0
+    && processorType.value
+    && paymentFieldsReady.value
+    && !processorError.value,
+  );
 });
 
 function applyInitialClient() {
@@ -213,20 +232,68 @@ function loadScript(src: string, attrs: Record<string, string> = {}) {
   });
 }
 
+function animationFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function cardTargetExists(): boolean {
+  if (processorType.value === 'stripe') return !!document.getElementById(stripeElementId);
+  if (processorType.value === 'nmi') {
+    return Boolean(
+      document.getElementById(nmiIds.number)
+      && document.getElementById(nmiIds.exp)
+      && document.getElementById(nmiIds.cvv),
+    );
+  }
+  return false;
+}
+
+function cleanupPaymentFields() {
+  paymentFieldsReady.value = false;
+  nmiTokenResolver = null;
+  nmiTokenRejecter = null;
+  if (cardElement) {
+    try { cardElement.unmount(); } catch {}
+    try { cardElement.destroy?.(); } catch {}
+    cardElement = null;
+  }
+  stripe = null;
+}
+
+async function loadCollectJs(tokenizationKey: string) {
+  const src = 'https://secure.nmi.com/token/Collect.js';
+  const existing = Array.from(document.scripts).find((script) => script.src === src);
+  if (existing && existing.getAttribute('data-tokenization-key') === tokenizationKey && window.CollectJS) return;
+  if (existing) existing.remove();
+  window.CollectJS = undefined;
+  await loadScript(src, { 'data-tokenization-key': tokenizationKey });
+}
+
 async function loadProcessorConfig() {
+  const seq = ++processorLoadSeq;
   configLoading.value = true;
+  fieldMounting.value = false;
   processorError.value = '';
   processorType.value = '';
+  cleanupPaymentFields();
   try {
     const params = new URLSearchParams();
     if (selectedOfferId.value) params.set('offerId', selectedOfferId.value);
     const cfg = await api.get<any>(`/api/dashboard/manual-sale/config?${params.toString()}`);
+    if (seq !== processorLoadSeq || !props.open) return;
     processorType.value = cfg.processorType || '';
+    configLoading.value = false;
+    fieldMounting.value = true;
     await nextTick();
+    await animationFrame();
+    await animationFrame();
+    if (seq !== processorLoadSeq || !props.open) return;
+    if (!cardTargetExists()) throw new Error('Secure card fields were not ready. Please close and reopen Quick Manual Sale.');
 
     if (processorType.value === 'nmi') {
       if (!cfg.nmiTokenizationKey) throw new Error('NMI tokenization key is missing.');
-      await loadScript('https://secure.nmi.com/token/Collect.js', { 'data-tokenization-key': cfg.nmiTokenizationKey });
+      await loadCollectJs(cfg.nmiTokenizationKey);
+      if (seq !== processorLoadSeq || !props.open) return;
       if (!window.CollectJS) throw new Error('NMI card fields did not load.');
       window.CollectJS.configure({
         variant: 'inline',
@@ -256,22 +323,30 @@ async function loadProcessorConfig() {
           nmiTokenRejecter = null;
         },
       });
+      paymentFieldsReady.value = true;
     } else if (processorType.value === 'stripe') {
       if (!cfg.stripePublishableKey) throw new Error('Stripe publishable key is missing.');
       await loadScript('https://js.stripe.com/v3/');
+      if (seq !== processorLoadSeq || !props.open) return;
       if (!window.Stripe) throw new Error('Stripe card fields did not load.');
       stripe = window.Stripe(cfg.stripePublishableKey, cfg.stripeAccountId ? { stripeAccount: cfg.stripeAccountId } : undefined);
       const elements = stripe.elements();
-      if (cardElement) cardElement.unmount();
       cardElement = elements.create('card', { hidePostalCode: true });
+      cardElement.on('ready', () => {
+        if (seq === processorLoadSeq) paymentFieldsReady.value = true;
+      });
       cardElement.mount(`#${stripeElementId}`);
     } else {
       throw new Error('No processor is configured.');
     }
   } catch (err: any) {
+    if (seq !== processorLoadSeq) return;
     processorError.value = err.message || 'Payment fields could not load.';
   } finally {
-    configLoading.value = false;
+    if (seq === processorLoadSeq) {
+      configLoading.value = false;
+      fieldMounting.value = false;
+    }
   }
 }
 
@@ -291,6 +366,7 @@ function getNmiToken() {
 }
 
 async function tokenizeCard(): Promise<string> {
+  if (!paymentFieldsReady.value) throw new Error('Payment fields are not ready yet.');
   if (processorType.value === 'stripe') {
     const result = await stripe.createPaymentMethod({
       type: 'card',
@@ -346,7 +422,11 @@ function resetTransient() {
 }
 
 watch(() => props.open, async (open) => {
-  if (!open) return;
+  if (!open) {
+    processorLoadSeq++;
+    cleanupPaymentFields();
+    return;
+  }
   applyInitialClient();
   selectedOfferId.value = '';
   paymentChoice.value = 'pif';
@@ -377,7 +457,18 @@ watch(paymentChoice, () => {
 }
 
 .qms-check {
-  margin: 2px 0 16px;
+  margin: 2px 0 8px;
+}
+
+.qms-help {
+  background: var(--ss-primary-50);
+  border: 1px solid var(--ss-primary-100);
+  border-radius: 8px;
+  color: var(--ss-primary-800);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0 0 16px;
+  padding: 9px 11px;
 }
 
 .qms-card-section {
