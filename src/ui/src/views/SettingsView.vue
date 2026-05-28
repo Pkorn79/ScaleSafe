@@ -231,6 +231,21 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:4px">Future App Settings</h3>
+            <p class="text-sm text-muted">
+              Planned setup areas appear here as disabled controls so merchants can see where they will live.
+            </p>
+          </div>
+          <router-link to="/roadmap" class="btn btn-sm btn-secondary">View Roadmap</router-link>
+        </div>
+        <div class="settings-stub-grid">
+          <FeatureSettingStub v-for="feature in futureSettingsFeatures" :key="feature.id" :feature="feature" />
+        </div>
+      </div>
+
       <!-- Engagement Tracking -->
       <div class="card" v-if="config">
         <h3 class="section-title">Engagement Tracking</h3>
@@ -469,6 +484,7 @@ import { useApi } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import FeatureStatusPill from '../components/FeatureStatusPill.vue';
+import FeatureSettingStub from '../components/FeatureSettingStub.vue';
 import { publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
@@ -520,6 +536,11 @@ const ghlActivityFeatures = publicFeatureCatalog.filter((feature) => [
   'ghl-invoices',
   'ghl-appointments',
   'ghl-courses',
+].includes(feature.id));
+const futureSettingsFeatures = publicFeatureCatalog.filter((feature) => [
+  'ai-assistant',
+  'evidence-linking',
+  'quick-manual-sale',
 ].includes(feature.id));
 
 const moduleLabels: Record<string, string> = {
@@ -1182,6 +1203,12 @@ async function setDefaultProcessor(proc: string) {
 .activity-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.settings-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 10px;
 }
 

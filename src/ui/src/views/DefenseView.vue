@@ -20,6 +20,19 @@
       <Stat label="Value Recovered" :value="`$${(summary.totalValueSaved || 0).toLocaleString()}`" accent="emerald" />
     </div>
 
+    <div class="card defense-settings-preview">
+      <div class="flex-between mb-4">
+        <div>
+          <div class="card-title" style="margin-bottom:4px">Defense Settings Preview</div>
+          <p class="text-sm text-muted">Planned dispute tools are shown here as disabled settings until they are ready.</p>
+        </div>
+        <router-link to="/roadmap" class="btn btn-sm btn-secondary">Roadmap</router-link>
+      </div>
+      <div class="settings-stub-grid">
+        <FeatureSettingStub v-for="feature in defenseFeatureSettings" :key="feature.id" :feature="feature" />
+      </div>
+    </div>
+
     <!-- Filters -->
     <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
       <Tabs v-model="activeFilter" :tabs="filters" variant="pill" />
@@ -163,6 +176,8 @@ import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
+import FeatureSettingStub from '../components/FeatureSettingStub.vue';
+import { getFeaturesByArea } from '../lib/featureCatalog';
 import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp, pluralize } from '../utils/humanize';
 
 const api = useApi();
@@ -191,6 +206,7 @@ const filters = [
   { key: 'lost', label: 'Lost' },
   { key: 'withdrawn', label: 'Withdrawn' },
 ];
+const defenseFeatureSettings = getFeaturesByArea('defense');
 
 const emptyBody = computed(() =>
   activeFilter.value === 'all'
@@ -351,6 +367,16 @@ async function compile() {
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.defense-settings-preview {
+  background: var(--ss-cream-50);
+}
+
+.settings-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
 }
 
 .defense-card:hover {

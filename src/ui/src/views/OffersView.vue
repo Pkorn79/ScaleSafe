@@ -34,6 +34,19 @@
       class="mb-4"
     />
 
+    <div class="card offer-settings-preview">
+      <div class="flex-between mb-4">
+        <div>
+          <h3 class="section-title" style="margin-bottom:4px">Offer Settings Preview</h3>
+          <p class="text-sm text-muted">Future offer controls are shown here so merchants know where they will live.</p>
+        </div>
+        <router-link to="/roadmap" class="btn btn-sm btn-secondary">Roadmap</router-link>
+      </div>
+      <div class="settings-stub-grid">
+        <FeatureSettingStub v-for="feature in offerFeatureSettings" :key="feature.id" :feature="feature" />
+      </div>
+    </div>
+
     <div class="card" v-if="filteredOffers.length > 0">
       <table class="table">
         <thead>
@@ -163,6 +176,8 @@ import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
+import FeatureSettingStub from '../components/FeatureSettingStub.vue';
+import { getFeaturesByArea } from '../lib/featureCatalog';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -178,6 +193,7 @@ const offerTabs = computed(() => [
   { key: 'active', label: 'Active', count: activeOffers.value.length },
   { key: 'archived', label: 'Archived', count: archivedOffers.value.length },
 ]);
+const offerFeatureSettings = getFeaturesByArea('offers');
 
 // Send link modal state
 const showSendModal = ref(false);
@@ -299,6 +315,21 @@ async function unarchiveOffer(offer: any) {
 </script>
 
 <style scoped>
+.section-title {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.offer-settings-preview {
+  background: var(--ss-cream-50);
+}
+
+.settings-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+
 .tracking-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;

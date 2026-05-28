@@ -186,6 +186,19 @@
           <span class="text-sm">{{ autoSubmit ? 'Auto-submit enabled — strong evidence packets are submitted automatically' : 'Auto-submit disabled — review every packet before submission' }}</span>
         </label>
       </div>
+
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:4px">Coming Payment Options</h3>
+            <p class="text-sm text-muted">These settings are placeholders for upcoming payment and platform integrations.</p>
+          </div>
+          <router-link to="/roadmap" class="btn btn-sm btn-secondary">View Roadmap</router-link>
+        </div>
+        <div class="settings-stub-grid">
+          <FeatureSettingStub v-for="feature in paymentFeatureSettings" :key="feature.id" :feature="feature" />
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -194,6 +207,8 @@
 import { ref, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
+import FeatureSettingStub from '../components/FeatureSettingStub.vue';
+import { getFeaturesByArea, publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 
@@ -215,6 +230,10 @@ const nmiWebhookSaving = ref(false);
 const nmiWebhookMessage = ref('');
 const nmiWebhookKeyInput = ref('');
 const showNmiWebhookKey = ref(false);
+const paymentFeatureSettings = [
+  ...getFeaturesByArea('payments'),
+  ...publicFeatureCatalog.filter((feature) => ['whop', 'digistore24'].includes(feature.id)),
+];
 
 const nmiForm = ref({
   securityKey: '',
@@ -489,6 +508,12 @@ async function saveAutoSubmit() {
   font-size: 12px;
   color: #334155;
   background: #f8fafc;
+}
+
+.settings-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
 }
 
 .toggle-switch-label {

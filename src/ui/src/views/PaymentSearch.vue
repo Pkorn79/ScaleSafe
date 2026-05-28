@@ -17,6 +17,19 @@
       </router-link>
     </div>
 
+    <div class="card payment-settings-preview">
+      <div class="flex-between mb-4">
+        <div>
+          <div class="card-title" style="margin-bottom:4px">Payment Settings Preview</div>
+          <p class="text-sm text-muted">These options are visible now as planned controls. Disabled items are not active yet.</p>
+        </div>
+        <router-link to="/settings/payments" class="btn btn-sm btn-secondary">Processor Settings</router-link>
+      </div>
+      <div class="settings-stub-grid">
+        <FeatureSettingStub v-for="feature in paymentFeatureSettings" :key="feature.id" :feature="feature" />
+      </div>
+    </div>
+
     <div class="payment-tabs mb-4">
       <button class="tab-btn" :class="{ active: activeTab === 'ledger' }" @click="activeTab = 'ledger'">
         All Payments
@@ -433,7 +446,8 @@
 import { ref, onMounted, watch } from 'vue';
 import { useApi } from '../composables/useApi';
 import FeatureStatusPill from '../components/FeatureStatusPill.vue';
-import { publicFeatureCatalog } from '../lib/featureCatalog';
+import FeatureSettingStub from '../components/FeatureSettingStub.vue';
+import { getFeaturesByArea, publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 const { loading, error } = api;
@@ -446,6 +460,10 @@ const paymentRoadmap = publicFeatureCatalog.filter((feature) => [
   'whop',
   'digistore24',
 ].includes(feature.id));
+const paymentFeatureSettings = [
+  ...getFeaturesByArea('payments'),
+  ...publicFeatureCatalog.filter((feature) => ['whop', 'digistore24'].includes(feature.id)),
+];
 
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
@@ -692,6 +710,16 @@ async function loadNmiTrace(row: any) {
 .payment-roadmap {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.payment-settings-preview {
+  background: var(--ss-cream-50);
+}
+
+.settings-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 10px;
 }
 
