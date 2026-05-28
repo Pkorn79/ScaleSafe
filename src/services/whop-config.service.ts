@@ -86,7 +86,7 @@ export const whopConfigService = {
 
   async upsert(locationId: string, input: {
     companyId: string;
-    apiKey: string;
+    apiKey?: string;
     webhookSecret?: string;
     environment?: WhopEnvironment;
   }): Promise<WhopConfigPublic> {
@@ -94,23 +94,27 @@ export const whopConfigService = {
     const apiKey = String(input.apiKey || '').trim();
     const environment = input.environment || 'production';
     if (!companyId) throw new ValidationError('Whop company ID is required');
-    if (!apiKey) throw new ValidationError('Whop API key is required');
     if (!['production', 'sandbox'].includes(environment)) throw new ValidationError('Invalid Whop environment');
 
     const merchant = await merchantRepository.getByLocationId(locationId);
+    const existing = await this.get(locationId);
+    if (!apiKey && !existing?.api_key_encrypted) {
+      throw new ValidationError('Whop API key is required');
+    }
+
     const payload: Record<string, unknown> = {
       merchant_id: merchant.id,
       location_id: locationId,
       company_id: companyId,
-      api_key_encrypted: encrypt(apiKey),
+      api_key_encrypted: apiKey ? encrypt(apiKey) : existing?.api_key_encrypted,
       environment,
       status: 'connected',
       last_error: null,
       updated_at: new Date().toISOString(),
     };
-    if (input.webhookSecret !== undefined) {
-      const secret = String(input.webhookSecret || '').trim();
-      payload.webhook_secret_encrypted = secret ? encrypt(secret) : null;
+    const secret = String(input.webhookSecret || '').trim();
+    if (secret) {
+      payload.webhook_secret_encrypted = encrypt(secret);
     }
 
     const { data, error } = await getSupabase()

@@ -37,15 +37,21 @@ function metadata(payload: any): Record<string, any> {
 
 function amountCents(payload: any): number {
   const b = body(payload);
-  const raw = b?.amount
+  const centsRaw = b?.amount_cents
+    ?? b?.payment?.amount_cents
     ?? b?.amount_total
-    ?? b?.amount_cents
-    ?? b?.payment?.amount
-    ?? b?.payment?.amount_total
-    ?? b?.payment?.amount_cents;
+    ?? b?.payment?.amount_total;
+  if (centsRaw !== undefined && centsRaw !== null && centsRaw !== '') {
+    const cents = Number(centsRaw);
+    return Number.isFinite(cents) ? Math.round(cents) : 0;
+  }
+
+  const raw = b?.amount ?? b?.payment?.amount;
   const n = Number(raw || 0);
   if (!Number.isFinite(n)) return 0;
-  return n > 10000 && Number.isInteger(n) ? n : Math.round(n * 100);
+  if (typeof raw === 'string' && raw.includes('.')) return Math.round(n * 100);
+  if (Number.isInteger(n)) return n;
+  return Math.round(n * 100);
 }
 
 function paymentId(payload: any): string {
@@ -104,6 +110,56 @@ function paymentTypeForOffer(offer: any): string {
 function paymentsTotalForOffer(offer: any): number | null {
   if (offer?.payment_type === 'installments') return Number(offer.num_payments || 1);
   return null;
+}
+
+async function fireWhopPaymentReceipt(input: {
+  locationId: string;
+  contactId: string;
+  enrollmentId: string;
+  offerId: string | null;
+  offerName: string;
+  transactionId: string;
+  amountDollars: number;
+  paymentKind: string;
+  paymentsTotal: number | null;
+  source: string;
+}): Promise<void> {
+  if (!input.contactId) return;
+  const paymentsRemaining = input.paymentsTotal == null ? null : Math.max(0, input.paymentsTotal - 1);
+  await triggerService.fireTrigger(input.locationId, 'ss_payment_received', {
+    event_type: 'payment_received',
+    location_id: input.locationId,
+    locationId: input.locationId,
+    contact_id: input.contactId,
+    contactId: input.contactId,
+    enrollment_id: input.enrollmentId,
+    enrollmentId: input.enrollmentId,
+    offer_id: input.offerId,
+    offerId: input.offerId,
+    program_name: input.offerName,
+    programName: input.offerName,
+    offer_name: input.offerName,
+    offerName: input.offerName,
+    processor: 'whop',
+    source: input.source,
+    amount: input.amountDollars,
+    amount_display: `$${input.amountDollars.toFixed(2)}`,
+    amountDisplay: `$${input.amountDollars.toFixed(2)}`,
+    transaction_id: input.transactionId,
+    transactionId: input.transactionId,
+    payment_number: 1,
+    paymentNumber: 1,
+    payments_total: input.paymentsTotal,
+    paymentsTotal: input.paymentsTotal,
+    payments_remaining: paymentsRemaining,
+    paymentsRemaining,
+    running_total: input.amountDollars,
+    runningTotal: input.amountDollars,
+    running_total_display: `$${input.amountDollars.toFixed(2)}`,
+    runningTotalDisplay: `$${input.amountDollars.toFixed(2)}`,
+    payment_kind: input.paymentKind,
+    paymentKind: input.paymentKind,
+  });
 }
 
 async function findEnrollment(payload: any, locationId: string): Promise<any | null> {
@@ -225,6 +281,28 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       paymentsTotal: paymentsTotalForOffer(offer),
       processorType: 'whop',
     });
+    const { data: completed } = await getSupabase()
+      .from('enrollments')
+      .select('contact_id, payments_total, payment_type')
+      .eq('id', enrollment.id)
+      .eq('location_id', locationId)
+      .maybeSingle();
+    try {
+      await fireWhopPaymentReceipt({
+        locationId,
+        contactId: completed?.contact_id || enrollment.contact_id || firstString(metadata(payload).contact_id),
+        enrollmentId: enrollment.id,
+        offerId: enrollment.offer_id,
+        offerName: offer?.offer_name || '',
+        transactionId: txnId || `whop_${Date.now()}`,
+        amountDollars: amount / 100,
+        paymentKind: completed?.payment_type || paymentTypeForOffer(offer),
+        paymentsTotal: completed?.payments_total ?? paymentsTotalForOffer(offer),
+        source: 'whop_webhook',
+      });
+    } catch (receiptErr: any) {
+      logger.warn({ err: receiptErr.message, enrollmentId: enrollment.id }, 'Whop initial payment receipt trigger failed');
+    }
     return;
   }
 

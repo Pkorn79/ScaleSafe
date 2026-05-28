@@ -303,16 +303,15 @@
         <label class="radio-card" :class="{ active: form.checkoutType === 'direct' }">
           <input type="radio" v-model="form.checkoutType" value="direct" />
           <div>
-            <strong>Direct Processor</strong>
-            <p class="text-sm text-muted" style="margin-top:4px">ScaleSafe charges through NMI or Stripe. Use this for normal processor-owned checkout.</p>
+            <strong>ScaleSafe Checkout</strong>
+            <p class="text-sm text-muted" style="margin-top:4px">Use the connected NMI or Stripe account for this offer.</p>
           </div>
         </label>
         <label class="radio-card" :class="{ active: form.checkoutType === 'whop', disabled: !whopConnected }">
           <input type="radio" v-model="form.checkoutType" value="whop" :disabled="!whopConnected" />
           <div>
-            <strong>Whop</strong>
-            <span class="badge badge-yellow" style="font-size:10px;margin-left:6px">Merchant of Record</span>
-            <p class="text-sm text-muted" style="margin-top:4px">ScaleSafe captures enrollment and consent, then embeds Whop checkout for payment and recurring billing.</p>
+            <strong>Whop Checkout</strong>
+            <p class="text-sm text-muted" style="margin-top:4px">Use Whop checkout for this offer while ScaleSafe tracks enrollment, payment status, and evidence.</p>
             <p v-if="!whopConnected" class="text-sm" style="margin-top:4px;color:#dc2626">Connect Whop in Payment Settings before using this channel.</p>
           </div>
         </label>

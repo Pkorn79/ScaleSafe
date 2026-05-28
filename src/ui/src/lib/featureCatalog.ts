@@ -183,7 +183,7 @@ export const featureCatalog: FeatureItem[] = [
     title: 'Whop Checkout Channel',
     area: 'integrations',
     status: 'beta',
-    summary: 'Connect Whop as Merchant of Record for selected ScaleSafe offers while keeping ScaleSafe enrollment evidence in front.',
+    summary: 'Use Whop checkout for selected ScaleSafe offers while keeping ScaleSafe enrollment evidence in front.',
     userValue: 'Lets merchants use Whop checkout without losing ScaleSafe consent, evidence, and defense records.',
     workflow: [
       'Merchant connects Whop in Payment Settings.',

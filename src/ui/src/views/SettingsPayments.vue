@@ -177,7 +177,7 @@
         <div class="flex-between mb-4">
           <div>
             <h3 class="section-title" style="margin-bottom:0">Whop</h3>
-            <p class="text-sm text-muted mt-2">Checkout channel for Whop Merchant of Record offers. Whop handles receipts and future billing.</p>
+            <p class="text-sm text-muted mt-2">Connect Whop so selected offers can use Whop checkout while ScaleSafe still tracks payments, enrollment, and evidence.</p>
           </div>
           <span v-if="whopConnected" class="badge badge-green">Connected</span>
           <span v-else class="badge badge-gray">Not Connected</span>
@@ -198,11 +198,11 @@
         </div>
         <div class="form-group">
           <label class="form-label">Company API Key</label>
-          <input class="form-input" v-model="whopForm.apiKey" type="password" :placeholder="whopConnected ? 'Saved. Paste a new key to replace it.' : 'Paste Whop API key'" />
+          <input class="form-input" v-model="whopForm.apiKey" type="password" :placeholder="whopConnected ? 'Saved. Paste a replacement key only if rotating.' : 'Paste Whop API key'" />
         </div>
         <div class="form-group">
           <label class="form-label">Webhook Secret</label>
-          <input class="form-input" v-model="whopForm.webhookSecret" type="password" :placeholder="whopStatus?.hasWebhookSecret ? 'Saved. Paste a new secret to replace it.' : 'Paste Whop webhook secret'" />
+          <input class="form-input" v-model="whopForm.webhookSecret" type="password" :placeholder="whopStatus?.hasWebhookSecret ? 'Saved. Paste a replacement secret only if rotating.' : 'Paste Whop webhook secret'" />
         </div>
         <div class="setup-row">
           <label>Webhook URL</label>
@@ -374,7 +374,7 @@ async function loadWhop() {
 }
 
 async function saveWhop() {
-  if (!whopForm.value.companyId.trim() || !whopForm.value.apiKey.trim()) {
+  if (!whopForm.value.companyId.trim() || (!whopConnected.value && !whopForm.value.apiKey.trim())) {
     loadError.value = 'Whop company ID and API key are required.';
     return;
   }
@@ -382,12 +382,13 @@ async function saveWhop() {
   whopMessage.value = '';
   loadError.value = null;
   try {
-    whopStatus.value = await api.post<any>('/api/processor-config/whop', {
+    const payload: Record<string, string> = {
       companyId: whopForm.value.companyId.trim(),
-      apiKey: whopForm.value.apiKey.trim(),
-      webhookSecret: whopForm.value.webhookSecret.trim(),
       environment: whopForm.value.environment,
-    });
+    };
+    if (whopForm.value.apiKey.trim()) payload.apiKey = whopForm.value.apiKey.trim();
+    if (whopForm.value.webhookSecret.trim()) payload.webhookSecret = whopForm.value.webhookSecret.trim();
+    whopStatus.value = await api.post<any>('/api/processor-config/whop', payload);
     whopConnected.value = true;
     whopForm.value.apiKey = '';
     whopForm.value.webhookSecret = '';

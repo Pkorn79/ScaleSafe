@@ -97,7 +97,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
   const isNmiHistorySync = source === 'nmi_history_sync';
-  const suppressCustomerReceipt = isNmiHistorySync || processorType === 'whop';
+  const suppressCustomerReceipt = isNmiHistorySync;
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
   const { data: incrementRows, error: incrementError } = await supabase.rpc('increment_enrollment_payments_made', {
     p_enrollment_id: enr.id,
@@ -237,9 +237,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   if (suppressCustomerReceipt) {
     logger.info(
       { enrollmentId: enr.id, transactionId, processorType, source },
-      processorType === 'whop'
-        ? 'Whop payment: customer receipt workflow suppressed because Whop is merchant of record'
-        : 'NMI history import: customer receipt workflow suppressed',
+      'NMI history import: customer receipt workflow suppressed',
     );
   } else {
     try {
