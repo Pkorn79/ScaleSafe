@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, processPayment, saveCard } from '../controllers/checkout.controller';
+import { createWhopCheckoutSession, getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, processPayment, saveCard } from '../controllers/checkout.controller';
 
 const router = Router();
 
@@ -9,6 +9,7 @@ router.get('/api/checkout/config', getCheckoutConfig);
 router.get('/api/checkout/config-by-offer/:offerId', getCheckoutConfigByOffer);
 router.get('/api/checkout/config-by-product/:ghlProductId', getCheckoutConfigByProduct);
 router.post('/api/checkout/process-payment', processPayment);
+router.post('/api/checkout/whop/session', createWhopCheckoutSession);
 router.post('/api/checkout/save-card', saveCard);
 
 function createScriptNonce(): string {
@@ -16,7 +17,7 @@ function createScriptNonce(): string {
 }
 
 function checkoutCsp(nonce: string): string {
-  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com`;
+  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com`;
 }
 
 // Serve the checkout page (loaded by GHL in an iframe)
@@ -609,6 +610,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .field-row{display:flex;gap:10px}
 .field-row .field-wrapper{flex:1}
 #card-element{min-height:20px}
+.whop-panel{display:none;background:#f8fafc;border:1px solid #dbeafe;border-radius:8px;padding:14px;margin-bottom:12px}
+.whop-panel.active{display:block}
+.whop-note{font-size:13px;color:#475569;line-height:1.5;margin-bottom:10px}
 .consent-row{display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:14px;color:#374151;line-height:1.5}
 .consent-row input{width:20px;height:20px;margin-top:2px;flex-shrink:0;accent-color:#3b82f6}
 .pay-btn{display:block;width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background .15s}
@@ -693,6 +697,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <div id="stripe-fields" class="hidden">
       <div class="field-wrapper"><div id="card-element"></div></div>
+    </div>
+    <div id="whop-checkout" class="whop-panel">
+      <div class="whop-note">Payment will be completed through Whop. Your enrollment details and consent are still recorded by ScaleSafe.</div>
+      <div id="whop-embed-root"></div>
     </div>
 
     <!-- Terms checkbox (hidden when ?consentToken= is present — accepted on funnel Page 3) -->
@@ -821,6 +829,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadNmi(cfg.nmiTokenizationKey);
         } else if (processorType === 'stripe' && cfg.stripePublishableKey) {
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
+        } else if (processorType === 'whop') {
+          el('whop-checkout').classList.add('active');
+          el('pay-btn').textContent = 'Continue to Whop Checkout';
         } else if (processorType === 'nmi' && !cfg.nmiTokenizationKey) {
           console.error('[ScaleSafe] NMI tokenization key missing');
           el('error-msg').textContent = 'NMI is not fully configured. The tokenization key is missing. Please contact the provider to update their payment settings.';
@@ -955,7 +966,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       note = formatCurrency(offerData.installmentAmount) + ' / ' + (offerData.installmentFrequency || 'month') + ' (ongoing)';
     }
     el('offer-price').textContent = formatCurrency(displayPrice);
-    el('pay-btn').textContent = 'Pay ' + formatCurrency(displayPrice);
+    el('pay-btn').textContent = processorType === 'whop'
+      ? 'Continue to Whop Checkout'
+      : 'Pay ' + formatCurrency(displayPrice);
     if (note) {
       el('installment-note').textContent = note;
       el('installment-note').style.display = 'block';
@@ -991,8 +1004,51 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   el('toggle-pif-btn').addEventListener('click', function() { selectPaymentOption('pif'); });
   el('toggle-inst-btn').addEventListener('click', function() { selectPaymentOption('installments'); });
   function updatePayBtn() {
-    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi');
+    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi' || processorType === 'whop');
     el('pay-btn').disabled = !ready;
+  }
+
+  async function renderWhopCheckout(custName, custEmail) {
+    var sessionRes = await fetch(API_BASE + '/api/checkout/whop/session', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        offerId: offerId,
+        consentToken: consentToken,
+        contactId: prefillContactId || '',
+        contactName: custName,
+        contactEmail: custEmail || enrollmentEmail,
+        checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout'
+      })
+    });
+    var session = await sessionRes.json();
+    if (!session.success) throw new Error(session.error || 'Could not start Whop checkout');
+
+    var root = el('whop-embed-root');
+    root.textContent = '';
+    var mount = document.createElement('div');
+    mount.setAttribute('data-whop-checkout-session', session.sessionId);
+    mount.setAttribute('data-whop-checkout-plan-id', session.planId || '');
+    mount.setAttribute('data-whop-skip-redirect', 'true');
+    root.appendChild(mount);
+
+    var script = document.createElement('script');
+    script.src = session.embedScriptUrl || 'https://js.whop.com/checkout.js';
+    script.async = true;
+    document.head.appendChild(script);
+
+    if (session.checkoutUrl) {
+      var link = document.createElement('a');
+      link.href = session.checkoutUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open Whop checkout';
+      link.style.cssText = 'display:block;text-align:center;margin-top:12px;color:#2563eb;font-weight:600';
+      root.appendChild(link);
+    }
+    el('pay-btn').classList.add('hidden');
+    el('success-msg').textContent = 'Whop checkout is ready below.';
+    el('success-msg').style.display = 'block';
   }
 
   // NMI Collect.js
@@ -1091,6 +1147,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         }
       }
       if (!enrollmentEmail) enrollmentEmail = custEmail;
+
+      if (processorType === 'whop') {
+        await renderWhopCheckout(custName, custEmail);
+        setLoading(false);
+        return;
+      }
 
       var amount = Math.round(chargePrice * 100);
 

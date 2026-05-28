@@ -172,6 +172,54 @@
         </div>
       </div>
 
+      <!-- Whop Checkout Channel -->
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:0">Whop</h3>
+            <p class="text-sm text-muted mt-2">Checkout channel for Whop Merchant of Record offers. Whop handles receipts and future billing.</p>
+          </div>
+          <span v-if="whopConnected" class="badge badge-green">Connected</span>
+          <span v-else class="badge badge-gray">Not Connected</span>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Company ID</label>
+            <input class="form-input" v-model="whopForm.companyId" placeholder="Whop company ID" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Environment</label>
+            <select class="form-select" v-model="whopForm.environment">
+              <option value="production">Production</option>
+              <option value="sandbox">Sandbox</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Company API Key</label>
+          <input class="form-input" v-model="whopForm.apiKey" type="password" :placeholder="whopConnected ? 'Saved. Paste a new key to replace it.' : 'Paste Whop API key'" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Webhook Secret</label>
+          <input class="form-input" v-model="whopForm.webhookSecret" type="password" :placeholder="whopStatus?.hasWebhookSecret ? 'Saved. Paste a new secret to replace it.' : 'Paste Whop webhook secret'" />
+        </div>
+        <div class="setup-row">
+          <label>Webhook URL</label>
+          <div class="copy-line">
+            <input class="form-input mono" :value="whopStatus?.webhookUrl || 'https://dashboard.scalesafe.app/webhooks/whop'" readonly />
+            <button class="btn btn-secondary btn-sm" @click="copyText(whopStatus?.webhookUrl || 'https://dashboard.scalesafe.app/webhooks/whop')">Copy</button>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveWhop" :disabled="whopSaving">{{ whopSaving ? 'Saving...' : 'Save Whop' }}</button>
+          <button class="btn btn-secondary" @click="testWhop" :disabled="whopTesting || !whopConnected">{{ whopTesting ? 'Testing...' : 'Test Connection' }}</button>
+          <button v-if="whopConnected" class="btn btn-danger btn-sm" @click="disconnectWhop">Disconnect</button>
+        </div>
+        <p v-if="whopMessage" class="text-sm mt-2" :style="{ color: whopMessageOk ? '#059669' : '#dc2626' }">{{ whopMessage }}</p>
+        <p v-if="whopStatus?.lastError" class="text-sm mt-2" style="color:#dc2626">{{ whopStatus.lastError }}</p>
+      </div>
+
       <!-- Auto-Submit Toggle -->
       <div v-if="stripeConnected" class="card">
         <h3 class="section-title">Dispute Auto-Submit</h3>
@@ -230,9 +278,21 @@ const nmiWebhookSaving = ref(false);
 const nmiWebhookMessage = ref('');
 const nmiWebhookKeyInput = ref('');
 const showNmiWebhookKey = ref(false);
+const whopStatus = ref<any>(null);
+const whopConnected = ref(false);
+const whopSaving = ref(false);
+const whopTesting = ref(false);
+const whopMessage = ref('');
+const whopMessageOk = ref(true);
+const whopForm = ref({
+  companyId: '',
+  apiKey: '',
+  webhookSecret: '',
+  environment: 'production',
+});
 const paymentFeatureSettings = [
-  ...getFeaturesByArea('payments'),
-  ...publicFeatureCatalog.filter((feature) => ['whop', 'digistore24'].includes(feature.id)),
+  ...getFeaturesByArea('payments').filter((feature) => feature.id !== 'whop'),
+  ...publicFeatureCatalog.filter((feature) => ['digistore24'].includes(feature.id)),
 ];
 
 const nmiForm = ref({
@@ -267,6 +327,7 @@ async function loadProcessorStatus() {
     if (nmiConnected.value) {
       await loadNmiWebhook();
     }
+    await loadWhop();
   } catch (err: any) {
     loadError.value = err.message || 'Failed to load processor status';
   } finally {
@@ -296,6 +357,73 @@ async function connectNmi() {
     loadError.value = err?.message || 'Failed to connect NMI';
   }
   saving.value = false;
+}
+
+async function loadWhop() {
+  try {
+    whopStatus.value = await api.get<any>('/api/processor-config/whop');
+    whopConnected.value = !!whopStatus.value?.connected;
+    whopForm.value.companyId = whopStatus.value?.companyId || '';
+    whopForm.value.environment = whopStatus.value?.environment || 'production';
+    whopForm.value.apiKey = '';
+    whopForm.value.webhookSecret = '';
+  } catch {
+    whopStatus.value = null;
+    whopConnected.value = false;
+  }
+}
+
+async function saveWhop() {
+  if (!whopForm.value.companyId.trim() || !whopForm.value.apiKey.trim()) {
+    loadError.value = 'Whop company ID and API key are required.';
+    return;
+  }
+  whopSaving.value = true;
+  whopMessage.value = '';
+  loadError.value = null;
+  try {
+    whopStatus.value = await api.post<any>('/api/processor-config/whop', {
+      companyId: whopForm.value.companyId.trim(),
+      apiKey: whopForm.value.apiKey.trim(),
+      webhookSecret: whopForm.value.webhookSecret.trim(),
+      environment: whopForm.value.environment,
+    });
+    whopConnected.value = true;
+    whopForm.value.apiKey = '';
+    whopForm.value.webhookSecret = '';
+    whopMessageOk.value = true;
+    whopMessage.value = 'Whop connection saved.';
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to save Whop connection';
+  } finally {
+    whopSaving.value = false;
+  }
+}
+
+async function testWhop() {
+  whopTesting.value = true;
+  whopMessage.value = '';
+  try {
+    const result = await api.post<{ success: boolean; message: string }>('/api/processor-config/whop/test', {});
+    whopMessageOk.value = result.success;
+    whopMessage.value = result.message;
+    await loadWhop();
+  } catch (err: any) {
+    whopMessageOk.value = false;
+    whopMessage.value = err?.message || 'Whop test failed';
+  } finally {
+    whopTesting.value = false;
+  }
+}
+
+async function disconnectWhop() {
+  if (!confirm('Disconnect Whop? Whop checkout offers will stop accepting payment until reconnected.')) return;
+  try {
+    await api.del('/api/processor-config/whop');
+    await loadWhop();
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to disconnect Whop';
+  }
 }
 
 async function loadNmiWebhook() {

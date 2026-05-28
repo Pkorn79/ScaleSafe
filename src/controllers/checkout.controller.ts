@@ -11,6 +11,7 @@ import { triggerService } from '../services/trigger.service';
 import { ghlApi } from '../clients/ghl.client';
 import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { OfferRecord } from '../repositories/offer.repository';
+import { whopService } from '../services/whop.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -143,6 +144,18 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
     return;
   }
 
+  if ((offer as any).checkout_type === 'whop') {
+    res.json({
+      checkoutType: 'whop',
+      processorType: 'whop',
+      merchantName: merchant.business_name || '',
+      publishableKey: merchant.provider_publishable_key || '',
+      whopPlanId: (offer as any).whop_plan_id || '',
+      whopSyncStatus: (offer as any).whop_sync_status || '',
+    });
+    return;
+  }
+
   // Resolve processor using the same logic as charge-time (respects offer override + merchant default)
   try {
     const offerHint = {
@@ -200,6 +213,17 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
   const merchant = await merchantRepository.findByLocationId(offer.location_id);
   if (!merchant) {
     res.status(404).json({ error: 'Merchant not found' });
+    return;
+  }
+
+  if ((offer as any).checkout_type === 'whop') {
+    res.json({
+      checkoutType: 'whop',
+      processorType: 'whop',
+      merchantName: merchant.business_name || '',
+      whopPlanId: offer.whop_plan_id || '',
+      whopSyncStatus: offer.whop_sync_status || '',
+    });
     return;
   }
 
@@ -304,6 +328,13 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       return;
     }
     resolvedOffer = scopedOffer;
+    if ((resolvedOffer as any).checkout_type === 'whop') {
+      res.status(400).json({
+        success: false,
+        error: 'This offer uses Whop checkout. Use the Whop embedded checkout session endpoint instead of direct card processing.',
+      });
+      return;
+    }
   }
 
   const clientIp = getClientIp(req);
@@ -344,6 +375,14 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       if (ofr?.processor_override) {
         offerHint = { processor_override: ofr.processor_override as 'nmi' | 'stripe', nmi_processor_id: ofr.nmi_processor_id || null };
       }
+    }
+
+    if ((resolvedOffer as any)?.checkout_type === 'whop') {
+      res.status(400).json({
+        success: false,
+        error: 'This offer uses Whop checkout. Use the Whop embedded checkout session endpoint instead of direct card processing.',
+      });
+      return;
     }
 
     if (resolvedOffer) {
@@ -1013,6 +1052,79 @@ export async function processPayment(req: Request, res: Response): Promise<void>
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack, merchantId: merchant.merchantId }, 'Checkout payment failed');
     res.status(500).json({ success: false, error: err.message || 'Payment processing error' });
+  }
+}
+
+// ─── POST /api/checkout/whop/session ─────────────────────────────────────────
+
+export async function createWhopCheckoutSession(req: Request, res: Response): Promise<void> {
+  try {
+    const { offerId, consentToken, contactId, contactEmail, contactName, checkoutMode } = req.body || {};
+    if (!offerId) {
+      res.status(400).json({ success: false, error: 'offerId required' });
+      return;
+    }
+
+    const offer = await offerRepository.findById(String(offerId));
+    if (!offer || !offer.active) {
+      res.status(404).json({ success: false, error: 'Offer not found' });
+      return;
+    }
+    if ((offer as any).checkout_type !== 'whop') {
+      res.status(400).json({ success: false, error: 'Offer is not configured for Whop checkout' });
+      return;
+    }
+
+    const supabase = getSupabase();
+    let enrollmentId = '';
+    let resolvedContactId = typeof contactId === 'string' ? contactId : '';
+    let resolvedEmail = typeof contactEmail === 'string' ? contactEmail : '';
+    let resolvedName = typeof contactName === 'string' ? contactName : '';
+    if (consentToken) {
+      const { data: enrollment } = await supabase
+        .from('enrollments')
+        .select('id, location_id, contact_id, email, first_name, last_name, status')
+        .eq('consent_token', consentToken)
+        .eq('location_id', offer.location_id)
+        .maybeSingle();
+      if (!enrollment) {
+        res.status(400).json({ success: false, error: 'Consent verification failed. Please complete enrollment before payment.' });
+        return;
+      }
+      enrollmentId = enrollment.id;
+      resolvedContactId = enrollment.contact_id || resolvedContactId;
+      resolvedEmail = enrollment.email || resolvedEmail;
+      resolvedName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ') || resolvedName;
+    }
+
+    const session = await whopService.createCheckoutSession({
+      locationId: offer.location_id,
+      offer,
+      enrollmentId,
+      contactId: resolvedContactId,
+      contactEmail: resolvedEmail,
+      contactName: resolvedName,
+      consentToken: consentToken || '',
+      checkoutMode: checkoutMode === 'quick_checkout' ? 'quick_checkout' : 'full_enrollment',
+    });
+
+    if (enrollmentId) {
+      await supabase
+        .from('enrollments')
+        .update({
+          checkout_type: 'whop',
+          processor_type: 'whop',
+          whop_checkout_session_id: session.sessionId,
+          whop_checkout_url: session.checkoutUrl || null,
+        } as any)
+        .eq('id', enrollmentId)
+        .eq('location_id', offer.location_id);
+    }
+
+    res.json({ success: true, ...session });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Whop checkout session creation failed');
+    res.status(500).json({ success: false, error: err.message || 'Failed to create Whop checkout session' });
   }
 }
 

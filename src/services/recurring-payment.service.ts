@@ -29,7 +29,7 @@ interface RecurringPaymentParams {
     payment_type: string;
     processor_subscription_id?: string | null;
   };
-  processorType: 'nmi' | 'stripe';
+  processorType: 'nmi' | 'stripe' | 'whop';
   transactionId: string;
   amountCents: number;
   offerName: string;
@@ -46,14 +46,13 @@ interface RecurringFailureParams {
     offer_id: string | null;
     processor_subscription_id?: string | null;
   };
-  processorType: 'nmi' | 'stripe';
+  processorType: 'nmi' | 'stripe' | 'whop';
   transactionId?: string | null;
   amountCents: number;
   errorMessage: string;
   errorCode?: string;
   source: string;
 }
-
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value || '');
@@ -98,6 +97,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
   const isNmiHistorySync = source === 'nmi_history_sync';
+  const suppressCustomerReceipt = isNmiHistorySync || processorType === 'whop';
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
   const { data: incrementRows, error: incrementError } = await supabase.rpc('increment_enrollment_payments_made', {
     p_enrollment_id: enr.id,
@@ -234,8 +234,13 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
 
   // 4. Fire ss_payment_received trigger for live payments only.
   // History sync repairs ScaleSafe records, but should not email clients about old payments.
-  if (source === 'nmi_history_sync') {
-    logger.info({ enrollmentId: enr.id, transactionId }, 'NMI history import: customer receipt workflow suppressed');
+  if (suppressCustomerReceipt) {
+    logger.info(
+      { enrollmentId: enr.id, transactionId, processorType, source },
+      processorType === 'whop'
+        ? 'Whop payment: customer receipt workflow suppressed because Whop is merchant of record'
+        : 'NMI history import: customer receipt workflow suppressed',
+    );
   } else {
     try {
       const paymentKind: 'installment' | 'subscription' = enr.payment_type === 'subscription' ? 'subscription' : 'installment';

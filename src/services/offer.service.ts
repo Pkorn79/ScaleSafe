@@ -2,6 +2,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
+import { whopService } from './whop.service';
 
 interface CreateOfferInput {
   locationId: string;
@@ -34,6 +35,7 @@ interface CreateOfferInput {
   // Per-offer processor selection
   processorOverride?: 'nmi' | 'stripe' | null;
   nmiProcessorId?: string | null;
+  checkoutType?: 'direct' | 'whop';
   pulseCadenceEnabled?: boolean;
   pulseFrequencyDays?: number;
 }
@@ -280,6 +282,7 @@ export const offerService = {
       quick_checkout_show_refund_policy: input.quickCheckoutShowRefundPolicy ?? true,
       processor_override: input.processorOverride || null,
       nmi_processor_id: input.nmiProcessorId || null,
+      checkout_type: input.checkoutType || 'direct',
       pulse_cadence_enabled: input.pulseCadenceEnabled ?? (input.checkoutMode !== 'quick_checkout'),
       pulse_frequency_days: normalizePulseFrequency(input.pulseFrequencyDays),
     };
@@ -331,6 +334,10 @@ export const offerService = {
     }
 
     logger.info({ offerId: offer.id, ghlProductId, locationId }, 'Offer created');
+    if ((input.checkoutType || 'direct') === 'whop') {
+      offer = await whopService.syncOffer(locationId, offer);
+      logger.info({ offerId: offer.id, whopProductId: offer.whop_product_id, whopPlanId: offer.whop_plan_id }, 'Whop offer synced');
+    }
     return offer;
   },
 
@@ -378,6 +385,13 @@ export const offerService = {
     if (updates.quickCheckoutShowRefundPolicy !== undefined) dbUpdates.quick_checkout_show_refund_policy = updates.quickCheckoutShowRefundPolicy;
     if (updates.processorOverride !== undefined) dbUpdates.processor_override = updates.processorOverride || null;
     if (updates.nmiProcessorId !== undefined) dbUpdates.nmi_processor_id = updates.nmiProcessorId || null;
+    if (updates.checkoutType !== undefined) {
+      dbUpdates.checkout_type = updates.checkoutType || 'direct';
+      if (updates.checkoutType === 'whop') {
+        dbUpdates.processor_override = null;
+        dbUpdates.nmi_processor_id = null;
+      }
+    }
     if (updates.pulseCadenceEnabled !== undefined) dbUpdates.pulse_cadence_enabled = updates.pulseCadenceEnabled;
     if (updates.pulseFrequencyDays !== undefined) dbUpdates.pulse_frequency_days = normalizePulseFrequency(updates.pulseFrequencyDays);
 
@@ -437,6 +451,11 @@ export const offerService = {
       } else {
         throw err;
       }
+    }
+    const effectiveCheckoutType = (updates.checkoutType || (offer as any).checkout_type || 'direct') as 'direct' | 'whop';
+    if (effectiveCheckoutType === 'whop') {
+      offer = await whopService.syncOffer(locationId, offer);
+      logger.info({ offerId: offer.id, whopProductId: offer.whop_product_id, whopPlanId: offer.whop_plan_id }, 'Whop offer synced after update');
     }
     return offer;
   },

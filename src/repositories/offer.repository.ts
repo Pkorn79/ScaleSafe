@@ -28,6 +28,12 @@ export interface OfferRecord {
   tc_clause_overrides: Record<string, boolean>;
   processor_override: string | null;
   nmi_processor_id: string | null;
+  checkout_type: 'direct' | 'whop';
+  whop_product_id: string | null;
+  whop_plan_id: string | null;
+  whop_sync_status: string | null;
+  whop_sync_error: string | null;
+  whop_last_synced_at: string | null;
   pulse_cadence_enabled: boolean;
   pulse_frequency_days: number | null;
   redirect_slug: string | null;

@@ -297,9 +297,39 @@
         </div>
       </div>
 
+      <!-- Checkout Channel -->
+      <h3 class="mt-4 mb-4">Checkout Channel</h3>
+      <div class="checkout-mode-group mb-4">
+        <label class="radio-card" :class="{ active: form.checkoutType === 'direct' }">
+          <input type="radio" v-model="form.checkoutType" value="direct" />
+          <div>
+            <strong>Direct Processor</strong>
+            <p class="text-sm text-muted" style="margin-top:4px">ScaleSafe charges through NMI or Stripe. Use this for normal processor-owned checkout.</p>
+          </div>
+        </label>
+        <label class="radio-card" :class="{ active: form.checkoutType === 'whop', disabled: !whopConnected }">
+          <input type="radio" v-model="form.checkoutType" value="whop" :disabled="!whopConnected" />
+          <div>
+            <strong>Whop</strong>
+            <span class="badge badge-yellow" style="font-size:10px;margin-left:6px">Merchant of Record</span>
+            <p class="text-sm text-muted" style="margin-top:4px">ScaleSafe captures enrollment and consent, then embeds Whop checkout for payment and recurring billing.</p>
+            <p v-if="!whopConnected" class="text-sm" style="margin-top:4px;color:#dc2626">Connect Whop in Payment Settings before using this channel.</p>
+          </div>
+        </label>
+      </div>
+      <div v-if="form.checkoutType === 'whop' && isEdit" class="form-group whop-sync-panel">
+        <label class="form-label">Whop Sync</label>
+        <p class="text-sm text-muted">Product: {{ whopProductId || 'not synced' }}</p>
+        <p class="text-sm text-muted">Plan: {{ whopPlanId || 'not synced' }}</p>
+        <p class="text-sm" :style="{ color: whopSyncStatus === 'error' ? '#dc2626' : '#059669' }">
+          Status: {{ whopSyncStatus || 'not synced' }}
+        </p>
+        <p v-if="whopSyncError" class="text-sm" style="color:#dc2626">{{ whopSyncError }}</p>
+      </div>
+
       <!-- Payment Processor Override -->
-      <h3 class="mt-4 mb-4">Payment Processor</h3>
-      <div class="grid grid-2">
+      <h3 v-if="form.checkoutType === 'direct'" class="mt-4 mb-4">Payment Processor</h3>
+      <div v-if="form.checkoutType === 'direct'" class="grid grid-2">
         <div class="form-group">
           <label class="form-label">Payment Processor</label>
           <select class="form-select" v-model="form.processorOverride">
@@ -389,6 +419,11 @@ const defaultProcessorLabel = computed(() => {
   return map[defaultProcessor.value] || '';
 });
 const stripeConnected = ref(false);
+const whopConnected = ref(false);
+const whopProductId = ref('');
+const whopPlanId = ref('');
+const whopSyncStatus = ref('');
+const whopSyncError = ref('');
 const nmiProcessorIds = ref<Array<{ id: string; label: string }>>([]);
 
 const standardClauses = [
@@ -432,6 +467,7 @@ const form = ref({
   milestones: Array.from({ length: 8 }, () => ({ name: '', delivers: '', clientDoes: '' })),
   processorOverride: '' as string,
   nmiProcessorId: '' as string,
+  checkoutType: 'direct' as 'direct' | 'whop',
   checkoutMode: 'full_enrollment' as string,
   quickCheckoutConsentText: '',
   quickCheckoutShowDescription: true,
@@ -469,6 +505,12 @@ onMounted(async () => {
     stripeConnected.value = pc.stripeConnected || false;
   } catch {
     // Processor config may not exist yet
+  }
+  try {
+    const whop = await api.get<any>('/api/processor-config/whop');
+    whopConnected.value = !!whop?.connected;
+  } catch {
+    whopConnected.value = false;
   }
 
   // Clear any 404 errors from optional config fetches above
@@ -520,6 +562,11 @@ onMounted(async () => {
 
       form.value.processorOverride = offer.processor_override || '';
       form.value.nmiProcessorId = offer.nmi_processor_id || '';
+      form.value.checkoutType = offer.checkout_type || 'direct';
+      whopProductId.value = offer.whop_product_id || '';
+      whopPlanId.value = offer.whop_plan_id || '';
+      whopSyncStatus.value = offer.whop_sync_status || '';
+      whopSyncError.value = offer.whop_sync_error || '';
       form.value.checkoutMode = offer.checkout_mode || 'full_enrollment';
       form.value.quickCheckoutConsentText = offer.quick_checkout_consent_text || '';
       form.value.quickCheckoutShowDescription = offer.quick_checkout_show_description ?? true;
@@ -527,6 +574,13 @@ onMounted(async () => {
       form.value.pulseCadenceEnabled = offer.pulse_cadence_enabled ?? true;
       form.value.pulseFrequencyDays = offer.pulse_frequency_days || 30;
     } catch {}
+  }
+});
+
+watch(() => form.value.checkoutType, (checkoutType) => {
+  if (checkoutType === 'whop') {
+    form.value.processorOverride = '';
+    form.value.nmiProcessorId = '';
   }
 });
 
@@ -573,8 +627,9 @@ async function save() {
     tcUrl: form.value.tcHasOwn ? form.value.tcUrl : '',
     clauses,
     milestones: form.value.milestones.filter(m => m.name),
-    processorOverride: form.value.processorOverride || null,
-    nmiProcessorId: form.value.nmiProcessorId || null,
+    checkoutType: form.value.checkoutType,
+    processorOverride: form.value.checkoutType === 'direct' ? form.value.processorOverride || null : null,
+    nmiProcessorId: form.value.checkoutType === 'direct' ? form.value.nmiProcessorId || null : null,
     checkoutMode: form.value.checkoutMode,
     quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
     quickCheckoutShowDescription: form.value.quickCheckoutShowDescription,
@@ -668,6 +723,11 @@ async function save() {
   background: var(--ss-primary-50);
 }
 
+.radio-card.disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .radio-card input[type="radio"] {
   width: 18px;
   height: 18px;
@@ -680,5 +740,10 @@ async function save() {
   border-left: 3px solid var(--ss-primary-500);
   padding-left: 16px;
   margin-left: 8px;
+}
+
+.whop-sync-panel {
+  border-left: 3px solid #f59e0b;
+  padding-left: 16px;
 }
 </style>

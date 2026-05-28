@@ -180,15 +180,15 @@ export const featureCatalog: FeatureItem[] = [
   },
   {
     id: 'whop',
-    title: 'Whop Integration',
+    title: 'Whop Checkout Channel',
     area: 'integrations',
-    status: 'coming_soon',
-    summary: 'Explore Whop order, access, and membership evidence for merchants using Whop.',
-    userValue: 'Lets ScaleSafe support creators and communities already selling through Whop.',
+    status: 'beta',
+    summary: 'Connect Whop as Merchant of Record for selected ScaleSafe offers while keeping ScaleSafe enrollment evidence in front.',
+    userValue: 'Lets merchants use Whop checkout without losing ScaleSafe consent, evidence, and defense records.',
     workflow: [
-      'Merchant connects Whop.',
-      'ScaleSafe imports relevant order/access events.',
-      'Evidence and defense packets can include Whop proof.',
+      'Merchant connects Whop in Payment Settings.',
+      'Merchant selects Whop as the offer checkout channel.',
+      'ScaleSafe captures enrollment evidence, embeds Whop checkout, and records Whop payment/membership webhooks.',
     ],
   },
   {
