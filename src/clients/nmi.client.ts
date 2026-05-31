@@ -55,12 +55,19 @@ export class NmiClient implements ProcessorInterface {
   // ─── charge ────────────────────────────────────────────────
 
   async charge(request: ChargeRequest): Promise<ChargeResult> {
+    const paymentMethodType = request.paymentMethodType === 'ach' ? 'ach' : 'card';
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('type', 'sale');
     params.set('amount', centsToDollars(request.amount));
     params.set('currency', (request.currency || 'USD').toUpperCase());
     params.set('payment_token', request.paymentToken);
+    if (paymentMethodType === 'ach') {
+      params.set('payment', 'check');
+      params.set('sec_code', request.achSecCode || 'WEB');
+      params.set('account_holder_type', request.achAccountHolderType || 'personal');
+      params.set('account_type', request.achAccountType || 'checking');
+    }
 
     // Atomic vault: charge + vault in a single NMI API call.
     // NMI tokens are single-use — if we charge first then try to vault separately,
@@ -80,11 +87,23 @@ export class NmiClient implements ProcessorInterface {
 
     const nmi = await this.postTransact(params);
     const result = this.toChargeResult(nmi);
+    if (paymentMethodType === 'ach' && result.success) {
+      result.status = 'processing';
+    }
 
     // If vault succeeded, populate vault metadata on the result
+    result.amount = request.amount;
+    result.currency = (request.currency || 'usd').toLowerCase();
+
     if (result.success && nmi.customer_vault_id) {
       result.vaultedCustomerId = nmi.customer_vault_id;
       logger.debug({ responseKeys: Object.keys(nmi) }, 'NMI vault created');
+      if (paymentMethodType === 'ach') {
+        result.vaultedBankLastFour = this.extractBankLastFour(nmi);
+        result.vaultedBankAccountType = request.achAccountType || nmi.account_type || 'checking';
+        result.vaultedBankHolderType = request.achAccountHolderType || nmi.account_holder_type || 'personal';
+        return result;
+      }
       try {
         const cardInfo = await this.queryVaultCard(nmi.customer_vault_id);
         result.vaultedCardLastFour = cardInfo.lastFour;
@@ -142,11 +161,18 @@ export class NmiClient implements ProcessorInterface {
   // ─── saveCard ──────────────────────────────────────────────
 
   async saveCard(request: SaveCardRequest): Promise<SaveCardResult> {
+    const paymentMethodType = request.paymentMethodType === 'ach' ? 'ach' : 'card';
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('customer_vault', 'add_customer');
     params.set('payment_token', request.paymentToken);
     params.set('email', request.customerEmail);
+    if (paymentMethodType === 'ach') {
+      params.set('payment', 'check');
+      params.set('sec_code', request.achSecCode || 'WEB');
+      params.set('account_holder_type', request.achAccountHolderType || 'personal');
+      params.set('account_type', request.achAccountType || 'checking');
+    }
 
     if (request.customerName) {
       const [first, ...rest] = request.customerName.split(' ');
@@ -165,6 +191,22 @@ export class NmiClient implements ProcessorInterface {
     }
 
     const vaultId = nmi.customer_vault_id;
+
+    if (paymentMethodType === 'ach') {
+      return {
+        success: true,
+        paymentMethodId: vaultId,
+        customerId: vaultId,
+        cardLastFour: '',
+        cardBrand: 'bank',
+        cardExpMonth: 0,
+        cardExpYear: 0,
+        paymentMethodKind: 'ach',
+        bankLastFour: this.extractBankLastFour(nmi),
+        bankAccountType: request.achAccountType || nmi.account_type || 'checking',
+        bankHolderType: request.achAccountHolderType || nmi.account_holder_type || 'personal',
+      };
+    }
 
     // Query the vault for canonical display data, but seed from the transact
     // response so NMI test-mode cards can still show real details if the query
@@ -558,13 +600,15 @@ export class NmiClient implements ProcessorInterface {
 
   private toChargeResult(nmi: Record<string, string>): ChargeResult {
     const approved = nmi.response === '1';
+    const isAch = String(nmi.payment || nmi.payment_type || '').toLowerCase() === 'check'
+      || Boolean(nmi.check_hash || nmi.check_account || nmi.account_type || nmi.sec_code);
 
     return {
       success: approved,
       transactionId: nmi.transactionid || '',
       amount: 0, // caller knows the amount
       currency: 'usd',
-      status: approved ? 'approved' : (nmi.response === '2' ? 'declined' : 'error'),
+      status: approved ? (isAch ? 'processing' : 'approved') : (nmi.response === '2' ? 'declined' : 'error'),
       errorMessage: !approved ? nmi.responsetext : undefined,
       errorCode: !approved ? nmi.response_code : undefined,
       avsResponse: nmi.avsresponse,
@@ -586,6 +630,14 @@ export class NmiClient implements ProcessorInterface {
       expMonth: exp.month,
       expYear: exp.year,
     };
+  }
+
+  private extractBankLastFour(nmi: Record<string, string>): string {
+    const raw = nmi.check_account || nmi.account_number || nmi.checkaccount || '';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 4) return digits.slice(-4);
+    const hash = nmi.check_hash || nmi.checkhash || '';
+    return hash ? 'bank' : '';
   }
 
   /**

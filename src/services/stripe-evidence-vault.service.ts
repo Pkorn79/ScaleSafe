@@ -209,6 +209,21 @@ export const stripeEvidenceVaultService = {
     return file.id;
   },
 
+  // #12: vault rows are keyed by Stripe customer id, but callers pass a GHL contact id. Translate
+  // via payment_methods so the UPDATEs/RPC actually match rows (they were silently matching zero
+  // and dropping merchant-uploaded evidence). Returns null when the contact has no Stripe customer.
+  async resolveStripeCustomerId(merchantId: string, contactId: string): Promise<string | null> {
+    const { data } = await getSupabase()
+      .from('payment_methods')
+      .select('stripe_customer_id')
+      .eq('merchant_id', merchantId)
+      .eq('contact_id', contactId)
+      .not('stripe_customer_id', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    return (data as any)?.stripe_customer_id || null;
+  },
+
   async uploadContractFile(params: {
     merchantId: string;
     stripeUserId: string;
@@ -219,18 +234,27 @@ export const stripeEvidenceVaultService = {
   }): Promise<string | null> {
     if (!params.stripeUserId) return null;
 
+    const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
+    if (!stripeCustomerId) {
+      logger.warn({ merchantId: params.merchantId, contactId: params.clientContactId }, 'Evidence vault: no Stripe customer for contact — contract not linked');
+      return null;
+    }
+
     const stripe = new Stripe(config.stripe.secretKey);
     const file = await stripe.files.create({
       purpose: 'dispute_evidence',
       file: { data: params.fileBuffer, name: params.fileName, type: 'application/pdf' },
     }, { stripeAccount: params.stripeUserId });
 
-    await getSupabase()
+    const { data: updated, error } = await getSupabase()
       .from('stripe_evidence_vault')
       .update({ contract_signed: true, contract_file_id: file.id })
       .eq('merchant_id', params.merchantId)
       .eq('offer_id', params.offerId)
-      .eq('stripe_customer_id', params.clientContactId);
+      .eq('stripe_customer_id', stripeCustomerId)
+      .select('id');
+    if (error) logger.error({ err: error.message, contactId: params.clientContactId }, 'Evidence vault: contract update failed');
+    else if (!updated?.length) logger.warn({ merchantId: params.merchantId, offerId: params.offerId, stripeCustomerId }, 'Evidence vault: contract update matched 0 rows');
 
     await this.refreshEvidenceScoresForClient(params.merchantId, params.clientContactId);
     return file.id;
@@ -256,11 +280,16 @@ export const stripeEvidenceVaultService = {
       file: { data: pdfBuffer, name: `session_log_${params.sessionDate}.pdf`, type: 'application/pdf' },
     }, { stripeAccount: params.stripeUserId });
 
-    // Append to session_file_ids array
+    const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
+    if (!stripeCustomerId) {
+      logger.warn({ merchantId: params.merchantId, contactId: params.clientContactId }, 'Evidence vault: no Stripe customer for contact — session log not linked');
+      return null;
+    }
+    // Append to session_file_ids array (RPC matches on the Stripe customer id).
     await getSupabase().rpc('append_session_file_id', {
       p_merchant_id: params.merchantId,
       p_offer_id: params.offerId,
-      p_customer_id: params.clientContactId,
+      p_customer_id: stripeCustomerId,
       p_file_id: file.id,
     });
 
@@ -286,12 +315,20 @@ export const stripeEvidenceVaultService = {
       file: { data: pdfBuffer, name: `communication_trail_${params.clientContactId}.pdf`, type: 'application/pdf' },
     }, { stripeAccount: params.stripeUserId });
 
-    await getSupabase()
+    const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
+    if (!stripeCustomerId) {
+      logger.warn({ merchantId: params.merchantId, contactId: params.clientContactId }, 'Evidence vault: no Stripe customer for contact — communication trail not linked');
+      return null;
+    }
+    const { data: updated, error } = await getSupabase()
       .from('stripe_evidence_vault')
       .update({ communication_file_id: file.id })
       .eq('merchant_id', params.merchantId)
       .eq('offer_id', params.offerId)
-      .eq('stripe_customer_id', params.clientContactId);
+      .eq('stripe_customer_id', stripeCustomerId)
+      .select('id');
+    if (error) logger.error({ err: error.message, contactId: params.clientContactId }, 'Evidence vault: communication update failed');
+    else if (!updated?.length) logger.warn({ merchantId: params.merchantId, offerId: params.offerId, stripeCustomerId }, 'Evidence vault: communication update matched 0 rows');
 
     await this.refreshEvidenceScoresForClient(params.merchantId, params.clientContactId);
     return file.id;
@@ -300,11 +337,23 @@ export const stripeEvidenceVaultService = {
   // ─── Evidence gaps + status ────────────────────────────
 
   async getVaultEntryForCharge(stripeChargeId: string): Promise<any | null> {
-    const { data } = await getSupabase()
+    const supabase = getSupabase();
+    const { data } = await supabase
       .from('stripe_evidence_vault')
       .select('*')
       .eq('stripe_charge_id', stripeChargeId)
       .single();
+    if (!data) return data;
+    // #17: surface the offer's terms file id on the entry so getEvidenceGaps (which checks
+    // entry.stripe_terms_file_id) doesn't always report "Offer terms not uploaded".
+    if ((data as any).offer_id) {
+      const { data: offer } = await supabase
+        .from('offers_mirror')
+        .select('stripe_terms_file_id')
+        .eq('id', (data as any).offer_id)
+        .maybeSingle();
+      (data as any).stripe_terms_file_id = (offer as any)?.stripe_terms_file_id || null;
+    }
     return data;
   },
 
@@ -356,17 +405,33 @@ export const stripeEvidenceVaultService = {
 
   async refreshEvidenceScoresForClient(merchantId: string, clientContactId: string): Promise<void> {
     const supabase = getSupabase();
+    // #12: translate GHL contact id -> Stripe customer id (vault key).
+    const stripeCustomerId = await this.resolveStripeCustomerId(merchantId, clientContactId);
+    if (!stripeCustomerId) return;
+
     const { data: entries } = await supabase
       .from('stripe_evidence_vault')
       .select('*')
       .eq('merchant_id', merchantId)
-      .eq('stripe_customer_id', clientContactId);
+      .eq('stripe_customer_id', stripeCustomerId);
 
     if (!entries) return;
 
     for (const entry of entries) {
+      // #17: offer terms live on offers_mirror.stripe_terms_file_id, never on the vault row, so
+      // the client refresh must join the offer (like refreshEvidenceScoresForOffer) — otherwise
+      // the score is ~20pts lower and differs depending on which refresh ran last.
+      let offerTermsFileId: string | null = null;
+      if (entry.offer_id) {
+        const { data: offer } = await supabase
+          .from('offers_mirror')
+          .select('stripe_terms_file_id')
+          .eq('id', entry.offer_id)
+          .maybeSingle();
+        offerTermsFileId = (offer as any)?.stripe_terms_file_id || null;
+      }
       const newScore = this.computeEvidenceScore({
-        hasTermsFile: !!entry.terms_file_id,
+        hasTermsFile: !!(entry.terms_file_id || offerTermsFileId),
         hasContractFile: !!entry.contract_file_id,
         hasSessionLogs: entry.session_file_ids?.length > 0,
         hasCommunicationFile: !!entry.communication_file_id,

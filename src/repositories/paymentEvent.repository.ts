@@ -41,6 +41,14 @@ export interface PaymentEventInsert {
   raw_webhook_payload?: Record<string, unknown>;
   source?: string;
   is_recurring?: boolean;
+  payment_status?: string;
+  payment_method_type?: string;
+  selected_payment_method?: string;
+  settled_at?: string | null;
+  returned_at?: string | null;
+  return_reason?: string | null;
+  card_uplift_percent?: number | null;
+  processor_deduction_percent?: number | null;
   external_payment_source?: string | null;
   external_payment_reference?: string | null;
   external_payment_method?: string | null;
@@ -49,6 +57,13 @@ export interface PaymentEventInsert {
 }
 
 const COMPATIBILITY_COLUMNS = [
+  'payment_status',
+  'selected_payment_method',
+  'settled_at',
+  'returned_at',
+  'return_reason',
+  'card_uplift_percent',
+  'processor_deduction_percent',
   'external_payment_source',
   'external_payment_reference',
   'external_payment_method',

@@ -4,6 +4,7 @@ import { merchantService } from '../services/merchant.service';
 import { config } from '../config';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
+import { dualPricingService } from '../services/dual-pricing.service';
 
 export const offerController = {
   async create(req: Request, res: Response, next: NextFunction) {
@@ -36,6 +37,35 @@ export const offerController = {
 
       const offers = await offerService.listByLocation(locationId);
       res.json(offers);
+    } catch (err) { next(err); }
+  },
+
+  async dualPricingConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const control = await dualPricingService.getActiveControl();
+      res.json({
+        enabled: !!control,
+        cardUpliftPercent: control?.card_uplift_percent || 0,
+        processorDeductionPercent: control?.processor_deduction_percent || 0,
+        enabledProcessors: control?.enabled_processors || [],
+        effectiveAt: control?.effective_at || null,
+      });
+    } catch (err) { next(err); }
+  },
+
+  async quote(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { offerId, paymentChoice, paymentMethod } = req.body;
+      if (!offerId) throw new ValidationError('offerId required');
+      const offer = await offerService.getById(String(offerId), locationId);
+      const quote = await dualPricingService.quoteOffer(
+        offer,
+        paymentChoice,
+        paymentMethod === 'ach' ? 'ach' : 'card',
+      );
+      res.json(quote);
     } catch (err) { next(err); }
   },
 

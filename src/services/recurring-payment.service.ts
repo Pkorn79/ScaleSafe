@@ -28,6 +28,7 @@ interface RecurringPaymentParams {
     payments_total: number | null;
     payment_type: string;
     processor_subscription_id?: string | null;
+    next_billing_date?: string | null;
   };
   processorType: 'nmi' | 'stripe' | 'whop';
   transactionId: string;
@@ -35,6 +36,10 @@ interface RecurringPaymentParams {
   offerName: string;
   installmentFrequency: string;
   source: string; // 'recurring_billing' | 'stripe_webhook' | 'nmi_silent_post'
+  // Processor-resolved next billing date (event payload or subscription API lookup).
+  // When omitted, the RPC anchors an estimate and marks the schedule 'estimated'.
+  nextBillingDate?: string | null;
+  rawPayload?: any;
 }
 
 interface RecurringFailureParams {
@@ -92,6 +97,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   paymentEventId: string | null;
   isFinal: boolean;
   newPaymentsMade: number;
+  duplicate: boolean;
 }> {
   const { enrollment: enr, processorType, transactionId, amountCents, offerName, installmentFrequency, source } = params;
   const supabase = getSupabase();
@@ -99,77 +105,51 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const isNmiHistorySync = source === 'nmi_history_sync';
   const suppressCustomerReceipt = isNmiHistorySync;
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
-  const { data: incrementRows, error: incrementError } = await supabase.rpc('increment_enrollment_payments_made', {
+
+  // Atomic record: insert the ledger row (deduped on the partial unique index from
+  // migration 072), then increment payments_made and advance the schedule — all in one
+  // transaction. On a duplicate webhook delivery the RPC returns is_duplicate=true and
+  // performs NO increment. next_billing_date is processor-resolved by the caller; when
+  // absent the RPC anchors an estimate from the prior schedule and marks it 'estimated'.
+  const resolvedNextBillingDate = params.nextBillingDate ?? null;
+  const { data: rpcData, error: rpcError } = await supabase.rpc('record_recurring_payment', {
     p_enrollment_id: enr.id,
     p_location_id: enr.location_id,
+    p_processor: processorType,
+    p_transaction_id: transactionId,
+    p_amount: amountDollars,
+    p_next_billing_date: resolvedNextBillingDate,
+    p_next_billing_source: resolvedNextBillingDate ? 'processor' : 'estimated',
+    p_interval: installmentFrequency || 'monthly',
+    p_source: source,
+    p_raw_payload: params.rawPayload ?? null,
   });
-  if (incrementError) throw incrementError;
+  if (rpcError) throw rpcError;
 
-  const incremented = Array.isArray(incrementRows) ? incrementRows[0] : null;
-  const newPaymentsMade = Number(incremented?.payments_made || (enr.payments_made || 0) + 1);
+  const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  if (!row) {
+    throw new Error(`record_recurring_payment returned no row for enrollment ${enr.id}`);
+  }
+
+  if (row.is_duplicate) {
+    logger.info(
+      { enrollmentId: enr.id, transactionId, processorType, source },
+      'Recurring payment: duplicate webhook delivery ignored (ledger row already exists)',
+    );
+    return {
+      paymentEventId: null,
+      isFinal: false,
+      newPaymentsMade: Number(row.payments_made || 0),
+      duplicate: true,
+    };
+  }
+
+  const newPaymentsMade = Number(row.payments_made || (enr.payments_made || 0) + 1);
   const paymentsRemaining = isFiniteInstallment
     ? Math.max(0, Number(enr.payments_total) - newPaymentsMade)
     : null;
-  const isFinal = isFiniteInstallment && paymentsRemaining === 0;
-
-  // 1. Log payment_events row.
-  // The insert error must NOT be silently swallowed — earlier this function destructured
-  // only `data` and continued to step 2, which left enrollment.payments_made advancing
-  // (and even flipping to status='completed') while the ledger row was missing entirely.
-  const { data: insertedEvent, error: insertError } = await supabase
-    .from('payment_events')
-    .insert({
-      merchant_id: enr.merchant_id,
-      location_id: enr.location_id,
-      contact_id: enr.contact_id,
-      enrollment_id: enr.id,
-      event_type: 'sale',
-      processor: processorType,
-      processor_transaction_id: transactionId,
-      processor_subscription_id: enr.processor_subscription_id || null,
-      amount: amountDollars,
-      currency: 'usd',
-      payment_number: newPaymentsMade,
-      payments_total: isFiniteInstallment ? Number(enr.payments_total) : null,
-      source,
-      is_recurring: true,
-    })
-    .select('id')
-    .single();
-
-  if (insertError) {
-    logger.error({
-      err: insertError.message,
-      code: insertError.code,
-      details: insertError.details,
-      enrollmentId: enr.id,
-      merchantId: enr.merchant_id,
-      processor: processorType,
-      transactionId,
-      amountCents,
-      source,
-    }, 'Recurring payment: payment_events insert failed — enrollment will still advance, ledger row missing');
-  }
-
-  // 2. Advance billing schedule/final state. payments_made was already incremented atomically above.
-  const updates: any = {};
-
-  if (isFinal) {
-    updates.next_billing_date = null;
-    updates.billing_completed_at = new Date().toISOString();
-  } else {
-    const next = new Date();
-    const freq = (installmentFrequency || 'monthly').toLowerCase();
-    if (freq === 'daily') next.setDate(next.getDate() + 1);
-    else if (freq === 'weekly') next.setDate(next.getDate() + 7);
-    else if (freq === 'bi_weekly' || freq === 'biweekly') next.setDate(next.getDate() + 14);
-    else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
-    else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
-    else next.setMonth(next.getMonth() + 1);
-    updates.next_billing_date = next.toISOString().split('T')[0];
-  }
-
-  await supabase.from('enrollments').update(updates).eq('id', enr.id).eq('location_id', enr.location_id);
+  const isFinal = Boolean(row.is_final);
+  const paymentEventId: string | null = row.payment_event_id || null;
 
   // 3. Log evidence (non-blocking)
   try {
@@ -276,6 +256,10 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
         offerName,
         processor: processorType,
         source,
+        payment_source: source,
+        paymentSource: source,
+        payment_timing: 'recurring',
+        paymentTiming: 'recurring',
         amount: amountDollars,
         amount_display: formatMoney(amountDollars),
         amountDisplay: formatMoney(amountDollars),
@@ -293,6 +277,12 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
         runningTotalDisplay: formatMoney(runningTotal),
         payment_kind: paymentKind,
         paymentKind,
+        receipt_only: true,
+        receiptOnly: true,
+        send_receipt: true,
+        sendReceipt: true,
+        send_welcome: false,
+        sendWelcome: false,
         support_email: merchantIdentity.supportEmail,
         supportEmail: merchantIdentity.supportEmail,
         business_name: merchantIdentity.businessName,
@@ -308,7 +298,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     logger.info({ enrollmentId: enr.id, totalPayments: newPaymentsMade }, 'Recurring payment: final installment collected; billing marked complete');
   }
 
-  return { paymentEventId: insertedEvent?.id || null, isFinal, newPaymentsMade };
+  return { paymentEventId, isFinal, newPaymentsMade, duplicate: false };
 }
 
 /**
@@ -356,22 +346,24 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
     }, 'Recurring failure: payment_events insert failed — dunning will not initiate');
   }
 
-  if (failedEvent?.id) {
-    try {
-      await paymentLifecycleService.initiateDunning({
-        merchantId: enr.merchant_id,
-        locationId: enr.location_id,
-        contactId: enr.contact_id,
-        offerId: enr.offer_id || '',
-        paymentEventId: failedEvent.id,
-        failureReason: errorMessage || 'Recurring charge failed',
-        failureCode: errorCode,
-        amountCents,
-        attemptCount: 0,
-      });
-    } catch (dunErr: any) {
-      logger.error({ err: dunErr.message, enrollmentId: enr.id }, 'Recurring payment: initiateDunning threw');
-    }
+  // #6: initiate dunning even when the ledger insert failed. A transient DB blip must not
+  // cost the customer-facing recovery sequence (past_due workflow, card-update link,
+  // ss_payment_failed trigger). With a null paymentEventId, initiateDunning fires the comms
+  // but cannot schedule the saved-card auto-retry (which needs the event row).
+  try {
+    await paymentLifecycleService.initiateDunning({
+      merchantId: enr.merchant_id,
+      locationId: enr.location_id,
+      contactId: enr.contact_id,
+      offerId: enr.offer_id || '',
+      paymentEventId: failedEvent?.id || null,
+      failureReason: errorMessage || 'Recurring charge failed',
+      failureCode: errorCode,
+      amountCents,
+      attemptCount: 0,
+    });
+  } catch (dunErr: any) {
+    logger.error({ err: dunErr.message, enrollmentId: enr.id }, 'Recurring payment: initiateDunning threw');
   }
 
   return { paymentEventId: failedEvent?.id || null };

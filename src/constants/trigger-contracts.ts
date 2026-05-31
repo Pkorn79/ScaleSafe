@@ -34,7 +34,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'checkout',
     audience: 'contact',
     betaStatus: 'critical',
-    requiredPayloadFields: ['contact_id', 'enrollment_id', 'offer_id', 'offer_name', 'amount', 'payment_type'],
+    requiredPayloadFields: ['contact_id', 'enrollment_id', 'offer_id', 'offer_name', 'send_receipt', 'send_welcome', 'access_ready'],
   },
   ss_cancellation_requested: {
     key: 'ss_cancellation_requested',
@@ -114,7 +114,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'webhook',
     audience: 'contact',
     betaStatus: 'critical',
-    requiredPayloadFields: ['contact_id', 'amount', 'transaction_id', 'payment_kind'],
+    requiredPayloadFields: ['contact_id', 'amount', 'amount_display', 'transaction_id', 'payment_kind', 'payment_source', 'payment_timing', 'send_receipt', 'send_welcome'],
   },
   ss_payment_failed: {
     key: 'ss_payment_failed',
@@ -124,7 +124,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'webhook',
     audience: 'contact',
     betaStatus: 'critical',
-    requiredPayloadFields: ['contact_id', 'amount', 'failure_reason', 'attempt_count'],
+    requiredPayloadFields: ['contact_id', 'amount', 'failure_reason', 'attempt_count', 'dunning_stage'],
   },
   ss_refund_processed: {
     key: 'ss_refund_processed',
@@ -194,7 +194,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'manual',
     audience: 'contact',
     betaStatus: 'important',
-    requiredPayloadFields: ['contact_id', 'offer_id', 'offer_name', 'enrollment_url'],
+    requiredPayloadFields: ['contact_id', 'offer_id', 'offer_name', 'enrollment_url', 'enrollment_status', 'send_welcome'],
   },
   ss_subscription_paused: {
     key: 'ss_subscription_paused',

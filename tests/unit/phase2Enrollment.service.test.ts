@@ -4,6 +4,7 @@ const mockEnrollmentIncrementPayments = jest.fn();
 const mockEvidenceCreate = jest.fn();
 const mockPaymentEventCreate = jest.fn();
 const mockPaymentEventFindByEnrollment = jest.fn();
+const mockPaymentEventFindByTransactionId = jest.fn();
 const mockEvidenceFindByEnrollment = jest.fn();
 const mockOfferGetById = jest.fn();
 const mockFireTrigger = jest.fn();
@@ -12,8 +13,9 @@ function flushBackgroundTasks(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
+const mockSupabaseRpc = jest.fn();
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({}),
+  getSupabase: () => ({ rpc: (...args: any[]) => mockSupabaseRpc(...args) }),
 }));
 
 jest.mock('../../src/repositories/enrollment.repository', () => ({
@@ -35,12 +37,14 @@ jest.mock('../../src/repositories/paymentEvent.repository', () => ({
   paymentEventRepository: {
     create: (...args: any[]) => mockPaymentEventCreate(...args),
     findByEnrollment: (...args: any[]) => mockPaymentEventFindByEnrollment(...args),
+    findByTransactionId: (...args: any[]) => mockPaymentEventFindByTransactionId(...args),
   },
 }));
 
 jest.mock('../../src/repositories/offer.repository', () => ({
   offerRepository: {
     getById: (...args: any[]) => mockOfferGetById(...args),
+    findById: (...args: any[]) => mockOfferGetById(...args),
   },
 }));
 
@@ -72,6 +76,64 @@ beforeEach(() => {
   mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
   mockEvidenceFindByEnrollment.mockResolvedValue([]);
   mockPaymentEventFindByEnrollment.mockResolvedValue([]);
+  mockPaymentEventFindByTransactionId.mockResolvedValue(null);
+  mockSupabaseRpc.mockResolvedValue({ data: [{ payments_made: 1, payments_total: 3, billing_completed_at: null, next_billing_date: '2026-07-01' }], error: null });
+});
+
+describe('Phase 2 Enrollment Service - handleRecurringPayment idempotency (#8)', () => {
+  const recurringParams = {
+    locationId: 'loc_1',
+    contactId: 'contact_1',
+    enrollmentId: 'enr_1',
+    amount: 100,
+    transactionId: 'txn_recur_1',
+    paymentNumber: 2,
+    paymentsRemaining: 4,
+  };
+
+  test('increments payments_made exactly once for a new transaction', async () => {
+    mockPaymentEventFindByTransactionId.mockResolvedValue(null);
+
+    await phase2EnrollmentService.handleRecurringPayment(recurringParams);
+
+    expect(mockEnrollmentIncrementPayments).toHaveBeenCalledTimes(1);
+    expect(mockEnrollmentIncrementPayments).toHaveBeenCalledWith('enr_1', 'loc_1');
+  });
+
+  test('does not increment when the transaction id is missing (avoids double-count)', async () => {
+    await phase2EnrollmentService.handleRecurringPayment({ ...recurringParams, transactionId: '' });
+
+    expect(mockEnrollmentIncrementPayments).not.toHaveBeenCalled();
+    // The raw event is still recorded for diagnostics.
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ processor: 'ghl', processor_transaction_id: '' }),
+    );
+  });
+
+  test('does not increment on a duplicate transaction delivery', async () => {
+    mockPaymentEventFindByTransactionId.mockResolvedValue({ id: 'pe_existing' });
+
+    await phase2EnrollmentService.handleRecurringPayment(recurringParams);
+
+    expect(mockEnrollmentIncrementPayments).not.toHaveBeenCalled();
+  });
+
+  test('anchors next_billing_date to the prior schedule, not now() (#20)', async () => {
+    mockEnrollmentGetById.mockResolvedValue({
+      id: 'enr_1', location_id: 'loc_1', contact_id: 'contact_1', offer_id: 'offer_1',
+      status: 'enrolled', payments_made: 1, payments_total: 6, payment_type: 'installment',
+      next_billing_date: '2026-06-01',
+    });
+    mockOfferGetById.mockResolvedValue({ id: 'offer_1', offer_name: 'P', installment_frequency: 'monthly' });
+
+    await phase2EnrollmentService.handleRecurringPayment(recurringParams);
+
+    expect(mockEnrollmentUpdateStatus).toHaveBeenCalledWith(
+      'enr_1', 'enrolled',
+      expect.objectContaining({ next_billing_date: '2026-07-01', next_billing_date_source: 'estimated' }),
+      'loc_1',
+    );
+  });
 });
 
 describe('Phase 2 Enrollment Service - completeEnrollment', () => {
@@ -237,6 +299,33 @@ describe('Phase 2 Enrollment Service - handleRefund', () => {
         reason: 'customer_request',
       }),
     );
+  });
+
+  test('reverses the enrollment ledger via decrement RPC when an enrollment is linked (#7)', async () => {
+    await phase2EnrollmentService.handleRefund({
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      enrollmentId: 'enr_1',
+      amount: 100,
+      reason: 'customer_request',
+    });
+
+    expect(mockSupabaseRpc).toHaveBeenCalledWith('decrement_enrollment_payments_made', {
+      p_enrollment_id: 'enr_1',
+      p_location_id: 'loc_1',
+    });
+  });
+
+  test('does not decrement when the refund is not linked to an enrollment', async () => {
+    await phase2EnrollmentService.handleRefund({
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      enrollmentId: null,
+      amount: 100,
+      reason: 'customer_request',
+    });
+
+    expect(mockSupabaseRpc).not.toHaveBeenCalled();
   });
 });
 

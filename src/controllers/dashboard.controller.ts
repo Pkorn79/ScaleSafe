@@ -1460,7 +1460,9 @@ export const dashboardController = {
       const supabase = getSupabase();
 
       // Validate offer
-      const { data: offer } = await supabase.from('offers_mirror').select('id, offer_name, price, payment_type, location_id').eq('id', offerId).eq('active', true).single();
+      // #19: scope the offer lookup to the caller's location — without it an authenticated
+      // merchant who knows a foreign offer UUID can enroll a contact against another tenant's offer.
+      const { data: offer } = await supabase.from('offers_mirror').select('id, offer_name, price, payment_type, location_id').eq('id', offerId).eq('location_id', locationId).eq('active', true).single();
       if (!offer) throw new ValidationError('Offer not found or inactive');
 
       // Get merchant
@@ -1599,6 +1601,10 @@ export const dashboardController = {
         amount: Number(req.body.amount || 0),
         paymentToken: req.body.paymentToken,
         paymentType: req.body.paymentType,
+        paymentMethod: req.body.paymentMethod === 'ach' ? 'ach' : 'card',
+        achSecCode: req.body.achSecCode,
+        achAccountHolderType: req.body.achAccountHolderType,
+        achAccountType: req.body.achAccountType,
         sendEnrollment: req.body.sendEnrollment !== false,
         sendVia: req.body.sendVia,
         recordedBy: String((req as any).tenantContext?.userId || 'merchant'),

@@ -24,10 +24,13 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { runPaymentReminderCheck } from '../../src/jobs/payment-reminder-check';
 
+let enrollmentBillingStatus = 'ok';
+
 describe('payment reminder check', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers().setSystemTime(new Date('2026-05-11T15:00:00.000Z'));
+    enrollmentBillingStatus = 'ok';
     mockIdempotencyExists.mockResolvedValue(false);
     mockIdempotencyRecord.mockResolvedValue(undefined);
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
@@ -43,18 +46,25 @@ describe('payment reminder check', () => {
           payment_type: 'installment',
           payments_made: 1,
           payments_total: 2,
+          billing_setup_status: enrollmentBillingStatus,
         };
+        // Honour the .eq('billing_setup_status', 'ok') filter added in Batch H.
+        let billingOk = true;
+        const resolveData = (targetDate: string) => ({
+          data: targetDate === '2026-05-12' && billingOk ? [enrollment] : [],
+          error: null,
+        });
         const query: any = {};
         query.in = jest.fn(() => query);
-        query.eq = jest.fn((_column: string, targetDate: string) => Promise.resolve({
-          data: targetDate === '2026-05-12' ? [enrollment] : [],
-          error: null,
-        }));
+        query.eq = jest.fn((column: string, value: string) => {
+          if (column === 'billing_setup_status') {
+            billingOk = enrollment.billing_setup_status === value;
+            return query;
+          }
+          return Promise.resolve(resolveData(value));
+        });
         query.gte = jest.fn(() => query);
-        query.lte = jest.fn((_column: string, targetDate: string) => Promise.resolve({
-          data: targetDate === '2026-05-12' ? [enrollment] : [],
-          error: null,
-        }));
+        query.lte = jest.fn((_column: string, targetDate: string) => Promise.resolve(resolveData(targetDate)));
         return {
           select: jest.fn(() => query),
         };
@@ -120,6 +130,15 @@ describe('payment reminder check', () => {
 
     expect(result.sent).toBe(0);
     expect(result.skipped).toBe(1);
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+  });
+
+  test('does not remind an enrollment whose processor billing setup did not complete (Batch H)', async () => {
+    enrollmentBillingStatus = 'failed';
+
+    const result = await runPaymentReminderCheck();
+
+    expect(result.sent).toBe(0);
     expect(mockFireTrigger).not.toHaveBeenCalled();
   });
 });

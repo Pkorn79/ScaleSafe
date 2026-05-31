@@ -36,6 +36,9 @@ interface CreateOfferInput {
   processorOverride?: 'nmi' | 'stripe' | null;
   nmiProcessorId?: string | null;
   checkoutType?: 'direct' | 'whop';
+  dualPricingEnabled?: boolean;
+  achEnabled?: boolean;
+  achAccessPolicy?: 'after_settlement' | 'after_submission';
   pulseCadenceEnabled?: boolean;
   pulseFrequencyDays?: number;
 }
@@ -129,6 +132,17 @@ function isMissingTrackingColumnError(err: any): boolean {
     && message.includes('tracking_id');
 }
 
+function isMissingDualPricingColumnError(err: any): boolean {
+  const message = String(err?.message || '');
+  return (err?.code === '42703' || err?.code === 'PGRST204')
+    && (
+      message.includes('dual_pricing_enabled')
+      || message.includes('ach_enabled')
+      || message.includes('dual_pricing_control_id')
+      || message.includes('ach_access_policy')
+    );
+}
+
 function stripPulseCadenceFields(record: Record<string, unknown>): Record<string, unknown> {
   const next = { ...record };
   delete next.pulse_cadence_enabled;
@@ -142,10 +156,19 @@ function stripTrackingFields(record: Record<string, unknown>): Record<string, un
   return next;
 }
 
+function stripDualPricingFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  delete next.dual_pricing_enabled;
+  delete next.ach_enabled;
+  delete next.ach_access_policy;
+  return next;
+}
+
 function stripCompatibilityFields(record: Record<string, unknown>, err: any): Record<string, unknown> {
   let next = record;
   if (isMissingPulseCadenceColumnError(err)) next = stripPulseCadenceFields(next);
   if (isMissingTrackingColumnError(err)) next = stripTrackingFields(next);
+  if (isMissingDualPricingColumnError(err)) next = stripDualPricingFields(next);
   return next;
 }
 
@@ -283,6 +306,9 @@ export const offerService = {
       processor_override: input.processorOverride || null,
       nmi_processor_id: input.nmiProcessorId || null,
       checkout_type: input.checkoutType || 'direct',
+      dual_pricing_enabled: input.dualPricingEnabled === true,
+      ach_enabled: input.achEnabled === true,
+      ach_access_policy: input.achAccessPolicy || 'after_settlement',
       pulse_cadence_enabled: input.pulseCadenceEnabled ?? (input.checkoutMode !== 'quick_checkout'),
       pulse_frequency_days: normalizePulseFrequency(input.pulseFrequencyDays),
     };
@@ -317,7 +343,7 @@ export const offerService = {
         logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err)) {
+      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err) || isMissingDualPricingColumnError(err)) {
         logger.warn({ locationId, err: err?.message }, 'Offer create retried without optional offer fields; apply latest migrations');
         try {
           offer = await offerRepository.create(stripCompatibilityFields(record, err) as any);
@@ -390,8 +416,13 @@ export const offerService = {
       if (updates.checkoutType === 'whop') {
         dbUpdates.processor_override = null;
         dbUpdates.nmi_processor_id = null;
+        dbUpdates.dual_pricing_enabled = false;
+        dbUpdates.ach_enabled = false;
       }
     }
+    if (updates.dualPricingEnabled !== undefined) dbUpdates.dual_pricing_enabled = updates.dualPricingEnabled === true;
+    if (updates.achEnabled !== undefined) dbUpdates.ach_enabled = updates.achEnabled === true;
+    if (updates.achAccessPolicy !== undefined) dbUpdates.ach_access_policy = updates.achAccessPolicy || 'after_settlement';
     if (updates.pulseCadenceEnabled !== undefined) dbUpdates.pulse_cadence_enabled = updates.pulseCadenceEnabled;
     if (updates.pulseFrequencyDays !== undefined) dbUpdates.pulse_frequency_days = normalizePulseFrequency(updates.pulseFrequencyDays);
 
@@ -437,7 +468,7 @@ export const offerService = {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err)) {
+      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err) || isMissingDualPricingColumnError(err)) {
         logger.warn({ offerId, err: err?.message }, 'Offer update retried without optional offer fields; apply latest migrations');
         try {
           offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any, locationId);
@@ -500,6 +531,12 @@ export const offerService = {
     const skipKeys = new Set([
       'id', 'ghl_product_id', 'ghl_price_ids', 'ghl_custom_object_id',
       'created_at', 'updated_at', 'redirect_slug',
+      // #13: processor-side Whop resource IDs must NOT be shared — copying them makes editing
+      // the clone mutate the SOURCE's live Whop product/plan and bills clone checkouts against
+      // the wrong plan. The clone provisions its own on first sync.
+      'whop_product_id', 'whop_plan_id', 'whop_sync_status', 'whop_sync_error', 'whop_last_synced_at',
+      // #31: tracking_id must be unique per offer or tracking-id reports conflate the two.
+      'tracking_id',
     ]);
 
     for (const [key, value] of Object.entries(source)) {
@@ -512,6 +549,10 @@ export const offerService = {
     clone.ghl_product_id = null;
     clone.ghl_price_ids = {};
     clone.ghl_custom_object_id = null;
+    clone.whop_product_id = null;
+    clone.whop_plan_id = null;
+    clone.whop_sync_status = null;
+    clone.tracking_id = null;
     clone.active = false;
 
     const newOffer = await offerRepository.create(clone as any);

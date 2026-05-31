@@ -565,7 +565,11 @@ function dateBoundary(value: string, endOfDay = false): string {
   return new Date(`${value}${time}`).toISOString();
 }
 
+// #32: monotonic request sequence — on a financial reconciliation screen, an earlier ledger
+// request that resolves after a later one must not overwrite the newer rows/summary/total.
+let ledgerLoadSeq = 0;
 async function loadLedger() {
+  const seq = ++ledgerLoadSeq;
   ledgerLoading.value = true;
   ledgerError.value = '';
   try {
@@ -579,13 +583,15 @@ async function loadLedger() {
       else params.set(key, value);
     }
     const result = await api.get<any>(`/api/payments/manage/ledger?${params.toString()}`);
+    if (seq !== ledgerLoadSeq) return; // a newer request superseded this one
     ledgerRows.value = result?.payments || [];
     ledgerSummary.value = result?.summary || { totalCharged: 0, totalRefunded: 0, failedAmount: 0 };
     ledgerTotal.value = result?.total || ledgerRows.value.length;
   } catch (e: any) {
+    if (seq !== ledgerLoadSeq) return;
     ledgerError.value = e.message || 'Failed to load payment ledger';
   } finally {
-    ledgerLoading.value = false;
+    if (seq === ledgerLoadSeq) ledgerLoading.value = false;
   }
 }
 

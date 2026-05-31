@@ -218,6 +218,9 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
   }
 
   const customerId = pm.nmi_customer_vault_id || pm.stripe_customer_id || '';
+  // #10: the processor token must come from the looked-up row, NOT the ScaleSafe DB UUID echoed
+  // back by GHL (Stripe rejects a UUID as payment_method). The UUID is only the lookup key.
+  const storedToken = pm.stripe_payment_method_id || pm.nmi_customer_vault_id || '';
 
   const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId, {
     processor_override: pm.processor_type as 'nmi' | 'stripe',
@@ -225,10 +228,10 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
   });
   const processor = createProcessorClient(config);
 
-  const result = await processor.chargeStoredCard(customerId, paymentMethodId, {
+  const result = await processor.chargeStoredCard(customerId, storedToken, {
     amount: amountCents,
     currency: (currency || 'USD').toLowerCase(),
-    paymentToken: '', // not needed for stored card
+    paymentToken: storedToken,
     description: chargeDescription,
   });
 
@@ -306,6 +309,8 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
   }
 
   const customerId = pm.nmi_customer_vault_id || pm.stripe_customer_id || '';
+  // #10: pass the processor's payment-method token (not the customer id) as paymentMethodId.
+  const storedToken = pm.stripe_payment_method_id || pm.nmi_customer_vault_id || '';
   const { config } = await resolveProcessor(merchant.merchantId, merchant.locationId, {
     processor_override: pm.processor_type as 'nmi' | 'stripe',
     nmi_processor_id: null,
@@ -313,7 +318,7 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
   const processor = createProcessorClient(config);
 
   const subResult = await processor.createSubscription({
-    paymentMethodId: customerId,
+    paymentMethodId: storedToken,
     customerId,
     planAmount: recurringCents,
     interval,

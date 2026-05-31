@@ -143,7 +143,12 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   try {
     await routeWebhookEvent(event, merchant);
   } catch (err: any) {
-    logger.error({ err: err.message, eventType: event.type, merchantId: merchant.id }, 'Webhook handler error');
+    // #4: return 5xx so Stripe retries instead of silently losing a failed write (a missed
+    // recurring increment or an unpersisted dispute). Safe to retry — recurring recording is
+    // idempotent (payment_events unique constraint + record_recurring_payment dedup).
+    logger.error({ err: err.message, eventType: event.type, merchantId: merchant.id }, 'Webhook handler error — returning 500 so Stripe retries');
+    res.status(500).json({ received: false, error: 'handler_failed' });
+    return;
   }
 
   res.status(200).json({ received: true });
@@ -238,8 +243,10 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
 
   switch (event.type) {
     case 'charge.dispute.created': {
-      // Upsert the raw dispute record
-      await supabase
+      // Upsert the raw dispute record. #4: a failed persist must NOT be swallowed — throw so the
+      // handler returns 500 and Stripe retries, otherwise the auto-submit deadline is silently
+      // missed and the merchant loses the dispute by default.
+      const { error: disputeUpsertError } = await supabase
         .from('dispute_events')
         .upsert({
           merchant_id: merchant.id,
@@ -256,6 +263,9 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
             : null,
           raw_dispute_object: event.data.object,
         }, { onConflict: 'stripe_dispute_id' });
+      if (disputeUpsertError) {
+        throw new Error(`Failed to persist dispute ${dispute.id}: ${disputeUpsertError.message}`);
+      }
 
       // Triage the dispute
       const result = await stripeDisputeService.triageDispute(dispute, merchant);
@@ -374,6 +384,20 @@ async function handleEfwEvent(event: any, merchant: any): Promise<void> {
 // ─── Subscription recurring billing handlers ────────────
 
 /**
+ * Derive the next billing date (YYYY-MM-DD) from a Stripe subscription-cycle invoice.
+ * The last line's period.end is the end of the cycle this invoice covers, i.e. when the
+ * next invoice fires. Returns null when absent so the caller falls back to an estimate.
+ */
+export function stripeInvoiceNextBillingDate(invoice: any): string | null {
+  const lines = invoice?.lines?.data;
+  const end = Array.isArray(lines) && lines.length
+    ? lines[lines.length - 1]?.period?.end
+    : undefined;
+  if (end === undefined || end === null || !Number.isFinite(Number(end))) return null;
+  return new Date(Number(end) * 1000).toISOString().split('T')[0];
+}
+
+/**
  * Stripe invoice.payment_succeeded — a subscription cycle payment landed.
  * Skip the initial invoice (billing_reason='subscription_create') since the
  * first payment is handled as a one-off charge in checkout.
@@ -444,6 +468,9 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     offerName,
     installmentFrequency,
     source: 'stripe_webhook',
+    // Processor truth: the cycle end on the invoice is the next billing date.
+    nextBillingDate: stripeInvoiceNextBillingDate(invoice),
+    rawPayload: { invoiceId: invoice.id, subscriptionId, chargeId },
   });
 
   logger.info({

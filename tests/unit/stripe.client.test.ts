@@ -294,7 +294,9 @@ describe('StripeClient', () => {
       expect(result.status).toBe('settled');
       expect(result.amount).toBe(3000);
 
-      const [_id, opts] = mockStripe.paymentIntents.retrieve.mock.calls[0];
+      // #15: stripeAccount must be the 3rd (options) arg, not the 2nd (params) arg.
+      const [_id, params, opts] = mockStripe.paymentIntents.retrieve.mock.calls[0];
+      expect(params).toBeUndefined();
       expect(opts.stripeAccount).toBe('acct_test123');
     });
   });

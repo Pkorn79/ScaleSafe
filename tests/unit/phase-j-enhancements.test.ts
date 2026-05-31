@@ -417,6 +417,7 @@ describe('Payment Management Controller', () => {
     expect(mockNotifyRefundProcessed).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
       success: true,
+      status: 'refunded', // #11: surfaces processing/refunded state
       refundId: 'refund-2',
       paymentEventId: 'refund-event-1',
     });

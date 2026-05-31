@@ -147,6 +147,42 @@
         </div>
       </div>
 
+      <!-- Dual Pricing -->
+      <h3 class="mt-4 mb-4">Dual Pricing</h3>
+      <div class="form-group dual-pricing-panel">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="form.dualPricingEnabled" />
+          Show Card and Bank Transfer prices
+        </label>
+        <p class="text-sm text-muted mt-2">
+          ScaleSafe controls the card/ACH pricing spread. Merchants can enable the display but cannot edit the internal fee table.
+        </p>
+        <div v-if="form.dualPricingEnabled" class="dual-pricing-details">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="form.achEnabled" />
+            Allow Bank Transfer / ACH as the lower-price option
+          </label>
+          <div class="grid grid-2 mt-4">
+            <div class="form-group">
+              <label class="form-label">ACH Access Timing</label>
+              <select class="form-select" v-model="form.achAccessPolicy">
+                <option value="after_settlement">After ACH settles</option>
+                <option value="after_submission">After ACH is submitted</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Internal Rate</label>
+              <input class="form-input readonly-field" type="text" :value="dualPricingRateLabel" readonly />
+            </div>
+          </div>
+          <div v-if="dualPricingPreview" class="dual-preview">
+            <div><span>Bank Transfer price</span><strong>{{ dualPricingPreview.ach }}</strong></div>
+            <div><span>Card price</span><strong>{{ dualPricingPreview.card }}</strong></div>
+            <p class="text-sm text-muted mt-2">Deduction rate: {{ dualPricingPreview.deduction }} from gross card volume.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Refund Policy -->
       <h3 class="mt-4 mb-4">Refund Policy</h3>
       <div class="grid grid-2">
@@ -467,6 +503,9 @@ const form = ref({
   processorOverride: '' as string,
   nmiProcessorId: '' as string,
   checkoutType: 'direct' as 'direct' | 'whop',
+  dualPricingEnabled: false,
+  achEnabled: false,
+  achAccessPolicy: 'after_settlement' as 'after_settlement' | 'after_submission',
   checkoutMode: 'full_enrollment' as string,
   quickCheckoutConsentText: '',
   quickCheckoutShowDescription: true,
@@ -486,6 +525,33 @@ const calculatedInstallment = computed(() => {
     return (Math.round((form.value.price / form.value.numPayments) * 100) / 100).toFixed(2);
   }
   return '';
+});
+
+const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
+const dualPricingRateLabel = computed(() => {
+  const cfg = dualPricingConfig.value;
+  if (!cfg?.enabled) return 'Not configured';
+  return `${Number(cfg.cardUpliftPercent || 0).toFixed(2)}% card price uplift`;
+});
+
+const dualPricingPreview = computed(() => {
+  const cfg = dualPricingConfig.value;
+  if (!form.value.dualPricingEnabled || !form.value.achEnabled || !cfg?.enabled) return null;
+  let cardAmount = Number(form.value.price || 0);
+  if (form.value.paymentType === 'installments') {
+    cardAmount = Number(calculatedInstallment.value || form.value.installmentAmount || form.value.price || 0);
+  } else if (form.value.paymentType === 'subscription') {
+    cardAmount = Number(form.value.installmentAmount || form.value.price || 0);
+  } else if (form.value.pifDiscountEnabled && form.value.pifPrice) {
+    cardAmount = Number(form.value.pifPrice || 0);
+  }
+  const uplift = Number(cfg.cardUpliftPercent || 0);
+  const achAmount = uplift > 0 ? cardAmount / (1 + uplift / 100) : cardAmount;
+  return {
+    card: `$${cardAmount.toFixed(2)}`,
+    ach: `$${achAmount.toFixed(2)}`,
+    deduction: `${Number(cfg.processorDeductionPercent || 0).toFixed(4)}%`,
+  };
 });
 
 onMounted(async () => {
@@ -510,6 +576,11 @@ onMounted(async () => {
     whopConnected.value = !!whop?.connected;
   } catch {
     whopConnected.value = false;
+  }
+  try {
+    dualPricingConfig.value = await api.get<any>('/api/offers/dual-pricing/config');
+  } catch {
+    dualPricingConfig.value = null;
   }
 
   // Clear any 404 errors from optional config fetches above
@@ -562,6 +633,9 @@ onMounted(async () => {
       form.value.processorOverride = offer.processor_override || '';
       form.value.nmiProcessorId = offer.nmi_processor_id || '';
       form.value.checkoutType = offer.checkout_type || 'direct';
+      form.value.dualPricingEnabled = offer.dual_pricing_enabled ?? false;
+      form.value.achEnabled = offer.ach_enabled ?? false;
+      form.value.achAccessPolicy = offer.ach_access_policy || 'after_settlement';
       whopProductId.value = offer.whop_product_id || '';
       whopPlanId.value = offer.whop_plan_id || '';
       whopSyncStatus.value = offer.whop_sync_status || '';
@@ -580,7 +654,13 @@ watch(() => form.value.checkoutType, (checkoutType) => {
   if (checkoutType === 'whop') {
     form.value.processorOverride = '';
     form.value.nmiProcessorId = '';
+    form.value.dualPricingEnabled = false;
+    form.value.achEnabled = false;
   }
+});
+
+watch(() => form.value.dualPricingEnabled, (enabled) => {
+  if (!enabled) form.value.achEnabled = false;
 });
 
 watch(() => form.value.checkoutMode, (mode) => {
@@ -629,6 +709,9 @@ async function save() {
     checkoutType: form.value.checkoutType,
     processorOverride: form.value.checkoutType === 'direct' ? form.value.processorOverride || null : null,
     nmiProcessorId: form.value.checkoutType === 'direct' ? form.value.nmiProcessorId || null : null,
+    dualPricingEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled,
+    achEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled && form.value.achEnabled,
+    achAccessPolicy: form.value.achAccessPolicy,
     checkoutMode: form.value.checkoutMode,
     quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
     quickCheckoutShowDescription: form.value.quickCheckoutShowDescription,
@@ -694,6 +777,34 @@ async function save() {
   background: var(--ss-navy-100) !important;
   color: var(--ss-navy-500) !important;
   cursor: not-allowed;
+}
+
+.dual-pricing-panel {
+  border-left: 3px solid var(--ss-primary-500);
+  padding-left: 16px;
+}
+
+.dual-pricing-details {
+  margin-top: 12px;
+}
+
+.dual-preview {
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.dual-preview div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.dual-preview strong {
+  color: #111827;
 }
 
 .checkout-mode-group {

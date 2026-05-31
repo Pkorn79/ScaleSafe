@@ -12,6 +12,7 @@ import { ghlApi } from '../clients/ghl.client';
 import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { OfferRecord } from '../repositories/offer.repository';
 import { whopService } from '../services/whop.service';
+import { dualPricingService } from '../services/dual-pricing.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -49,28 +50,32 @@ async function findExistingContactIdByEmail(locationId: string, email: string): 
   return data?.contact_id || '';
 }
 
-function dollarsToCents(value: number | null | undefined): number | null {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
-  return Math.round(Number(value) * 100);
-}
-
-function expectedOfferAmountCents(offer: OfferRecord, paymentChoice?: string): number | null {
-  const paymentType = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif').toLowerCase());
-  if (paymentType === 'installment' || paymentType === 'subscription') {
-    return dollarsToCents(offer.installment_amount ?? offer.price);
-  }
-  return dollarsToCents(
-    offer.pif_discount_enabled && offer.pif_price !== null && offer.pif_price !== undefined
-      ? offer.pif_price
-      : offer.price,
-  );
-}
-
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
     || req.headers['x-real-ip']?.toString()
     || req.socket.remoteAddress
     || '';
+}
+
+export async function getCheckoutQuote(req: Request, res: Response): Promise<void> {
+  const offerId = String(req.query.offerId || '');
+  if (!offerId) {
+    res.status(400).json({ error: 'Missing offerId' });
+    return;
+  }
+
+  const offer = await offerRepository.findById(offerId);
+  if (!offer || !offer.active) {
+    res.status(404).json({ error: 'Offer not found' });
+    return;
+  }
+
+  const quote = await dualPricingService.quoteOffer(
+    offer,
+    req.query.paymentChoice || 'pif',
+    req.query.paymentMethod === 'ach' ? 'ach' : 'card',
+  );
+  res.json(quote);
 }
 
 type BillingSetupIssue = {
@@ -165,6 +170,7 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
     const { config: procConfig } = await resolveProcessor(merchant.id, offer.location_id, offerHint);
 
     const response: Record<string, any> = {
+      offerId: offer.id,
       processorType: procConfig.processor_type,
       merchantName: merchant.business_name || '',
       publishableKey: merchant.provider_publishable_key || '',
@@ -243,6 +249,7 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
     }, 'config-by-product: resolved processor for GHL product');
 
     const response: Record<string, any> = {
+      offerId: offer.id,
       processorType: procConfig.processor_type,
       merchantName: merchant.business_name || '',
     };
@@ -385,13 +392,15 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       return;
     }
 
+    const paymentMethod = req.body.paymentMethod === 'ach' ? 'ach' : 'card';
     if (resolvedOffer) {
-      const expectedAmount = expectedOfferAmountCents(resolvedOffer, req.body.paymentChoice);
-      if (expectedAmount !== null && expectedAmount !== amount) {
+      const quote = await dualPricingService.quoteOffer(resolvedOffer, req.body.paymentChoice, paymentMethod);
+      if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== amount) {
         logger.warn({
           offerId: resolvedOffer.id,
           submittedAmount: amount,
-          expectedAmount,
+          expectedAmount: quote.selectedAmountCents,
+          paymentMethod,
         }, 'Rejected checkout amount mismatch');
         res.status(400).json({ success: false, error: 'Payment amount does not match selected offer' });
         return;
@@ -414,6 +423,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // - Stripe: setup_future_usage='off_session' saves card for recurring
     const isRecurringPaymentType = ['installments', 'installment', 'subscription']
       .includes(String(req.body.paymentChoice || '').toLowerCase());
+    if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
+      res.status(400).json({
+        success: false,
+        error: 'Bank transfer is currently available only for NMI offers. Stripe ACH requires a separate bank-account checkout flow.',
+      });
+      return;
+    }
+    if (paymentMethod === 'ach' && isRecurringPaymentType) {
+      res.status(400).json({
+        success: false,
+        error: 'Bank-transfer installments and subscriptions require settlement-gated recurring setup and are not enabled yet. Use card for this payment plan.',
+      });
+      return;
+    }
     const shouldVaultDuringCharge = !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
@@ -421,6 +444,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       amount,
       currency: normalizedCurrency,
       paymentToken,
+      paymentMethodType: paymentMethod,
+      achSecCode: req.body.achSecCode === 'TEL' || req.body.achSecCode === 'PPD' || req.body.achSecCode === 'CCD'
+        ? req.body.achSecCode
+        : 'WEB',
+      achAccountHolderType: req.body.achAccountHolderType === 'business' ? 'business' : 'personal',
+      achAccountType: req.body.achAccountType === 'savings' ? 'savings' : 'checking',
       description: productDetails?.[0]?.name || 'ScaleSafe Payment',
       metadata: {
         scalesafe_offer_id: offerId || '',
@@ -444,7 +473,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       customerName: shouldVaultDuringCharge ? contactName : undefined,
     });
 
-    const shouldSaveCard = result.success && !!contactEmail
+    const paymentSettled = result.success && result.status !== 'processing';
+    const paymentProcessing = result.success && result.status === 'processing';
+    const shouldSaveCard = paymentSettled && !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
     // Card persistence is deferred until AFTER the consent-token / quick-pay
@@ -488,6 +519,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       processor_transaction_id: result.transactionId,
       amount: amount / 100, // store in dollars in DB
       currency: (currency || 'usd').toLowerCase(),
+      payment_method_type: paymentMethod,
+      selected_payment_method: paymentMethod,
+      payment_status: paymentProcessing ? 'processing' : (result.success ? 'succeeded' : 'failed'),
       customer_email: contactEmail || null,
       consent_token: consentToken || null,
       failure_reason: result.errorMessage || null,
@@ -499,8 +533,26 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     });
 
     // ─── Complete enrollment + create GHL records ──────
-    logger.info({ hasConsent: !!consentToken, paymentSuccess: result.success }, 'POST-PAYMENT: checking enrollment completion eligibility');
-    if (result.success && consentToken) {
+    logger.info({ hasConsent: !!consentToken, paymentSuccess: result.success, paymentProcessing }, 'POST-PAYMENT: checking enrollment completion eligibility');
+    if (paymentProcessing && consentToken) {
+      try {
+        await supabase.from('enrollments')
+          .update({
+            status: 'payment_processing',
+            payment_amount: amount / 100,
+            payment_type: normalizePaymentType(req.body.paymentChoice),
+            payment_transaction_id: result.transactionId || result.chargeId || '',
+            processor_type: procConfig.processor_type,
+            initial_payment_status: 'processing',
+            initial_payment_method: paymentMethod,
+          } as any)
+          .eq('consent_token', consentToken)
+          .eq('location_id', merchant.locationId);
+      } catch (markErr: any) {
+        logger.warn({ err: markErr.message, consentToken }, 'ACH processing status update failed');
+      }
+    }
+    if (paymentSettled && consentToken) {
       try {
         const { data: enrollment, error: enrollLookupErr } = await supabase
           .from('enrollments')
@@ -614,7 +666,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
 
     // For payments WITHOUT consent token: upsert GHL contact from customer fields
-    if (result.success && !consentToken) {
+    if (paymentSettled && !consentToken) {
       const quickPayEmail = contactEmail || req.body.contactEmail || '';
       const quickPayName = contactName || req.body.contactName || '';
       const quickPayPhone = req.body.contactPhone || '';
@@ -740,6 +792,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     payments_made: 1,
                     payments_total: quickPayPaymentsTotal,
                     next_billing_date: nextBilling,
+                    // Batch H: a recurring enrollment starts 'pending' until its processor
+                    // subscription is confirmed; a single-payment installment is already 'ok'.
+                    billing_setup_status: quickPayBillingComplete ? 'ok' : 'pending',
                     ...(quickPayBillingComplete ? { billing_completed_at: enrolledAt } : {}),
                     enrolled_at: enrolledAt,
                   } as any)
@@ -804,12 +859,28 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             amountDisplay: `$${Number(amount / 100).toFixed(2)}`,
             transaction_id: result.transactionId,
             transactionId: result.transactionId,
+            enrollment_id: finalEnrollmentId || '',
+            enrollmentId: finalEnrollmentId || '',
+            offer_id: offerId || '',
+            offerId: offerId || '',
+            processor: procConfig.processor_type,
+            source: 'quick_checkout',
+            payment_source: 'quick_checkout',
+            paymentSource: 'quick_checkout',
+            payment_timing: quickPayEnrollmentId ? 'quick_enrollment' : 'client_level',
+            paymentTiming: quickPayEnrollmentId ? 'quick_enrollment' : 'client_level',
             payments_remaining: quickPayPaymentsRemaining,
             paymentsRemaining: quickPayPaymentsRemaining,
             running_total: amount / 100,
             runningTotal: amount / 100,
             payment_kind: quickPayPaymentKind,
             paymentKind: quickPayPaymentKind,
+            receipt_only: true,
+            receiptOnly: true,
+            send_receipt: true,
+            sendReceipt: true,
+            send_welcome: false,
+            sendWelcome: false,
           });
         } catch (trigErr: any) {
           logger.warn({ err: trigErr.message, contactId: resolvedQuickPayContact }, 'Quick Pay: ss_payment_received trigger fire failed (non-fatal)');
@@ -829,7 +900,19 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         logger.warn({ contactEmail }, 'CARD-SAVE: skipped - could not resolve contactId for recurring payment');
       } else {
         try {
-          let saveResult: { success: boolean; paymentMethodId: string; customerId: string; cardLastFour: string; cardBrand: string; cardExpMonth: number; cardExpYear: number };
+          let saveResult: {
+            success: boolean;
+            paymentMethodId: string;
+            customerId: string;
+            cardLastFour: string;
+            cardBrand: string;
+            cardExpMonth: number;
+            cardExpYear: number;
+            paymentMethodKind?: 'card' | 'ach';
+            bankLastFour?: string;
+            bankAccountType?: string;
+            bankHolderType?: string;
+          };
 
           if (result.vaultedCustomerId) {
             // Atomic vault succeeded during charge — no separate saveCard needed
@@ -860,12 +943,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             locationId: merchant.locationId,
             contactId: finalContactId,
             processorType: procConfig.processor_type,
+            paymentMethodKind: paymentMethod,
             customerId: saveResult.customerId,
             paymentMethodId: saveResult.paymentMethodId,
             cardLastFour: saveResult.cardLastFour,
             cardBrand: saveResult.cardBrand,
             cardExpMonth: saveResult.cardExpMonth,
             cardExpYear: saveResult.cardExpYear,
+            bankLastFour: saveResult.bankLastFour,
+            bankAccountType: saveResult.bankAccountType,
+            bankHolderType: saveResult.bankHolderType,
             makeDefault: true,
           });
 
@@ -1009,15 +1096,40 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           }, 'CARD-SAVE: failed - payment still succeeded but recurring billing will not run');
         }
       }
-    } else if (result.success && isRecurringPaymentType) {
+    } else if (paymentSettled && isRecurringPaymentType) {
       billingSetupIssue = {
         code: 'card_not_saved_for_recurring_setup',
         message: 'Payment was received, but the payment method was not saved for recurring billing.',
       };
     }
 
+    // Batch H: persist the billing-setup outcome on the enrollment so a recurring enrollment
+    // whose processor subscription did not complete STOPS looking healthy. No fallback billing —
+    // a failed setup is surfaced (status + nulled schedule) for the merchant to repair.
+    if (isRecurringPaymentType && finalEnrollmentId) {
+      try {
+        if (billingSetupIssue) {
+          // The processor subscription was created but its ID could not be saved -> the
+          // processor WILL bill; flag for reconciliation rather than as a dead enrollment.
+          const needsReconciliation = billingSetupIssue.code === 'processor_subscription_save_failed';
+          await supabase.from('enrollments').update({
+            billing_setup_status: needsReconciliation ? 'needs_reconciliation' : 'failed',
+            billing_setup_error: billingSetupIssue.message || billingSetupIssue.code,
+            next_billing_date: null, // stop reminders / active views treating it as scheduled
+          }).eq('id', finalEnrollmentId).eq('location_id', merchant.locationId);
+        } else if (recurringSubscriptionId) {
+          await supabase.from('enrollments').update({
+            billing_setup_status: 'ok',
+            next_billing_date_source: 'processor',
+          }).eq('id', finalEnrollmentId).eq('location_id', merchant.locationId);
+        }
+      } catch (markErr: any) {
+        logger.warn({ err: markErr.message, enrollmentId: finalEnrollmentId }, 'Failed to persist billing_setup_status (non-fatal)');
+      }
+    }
+
     // Flag payment without consent (do NOT block — just warn)
-    if (result.success && !consentToken && offerId) {
+    if (paymentSettled && !consentToken && offerId) {
       logger.warn({
         event: 'payment_without_consent',
         merchantId: merchant.merchantId,
@@ -1044,6 +1156,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     res.json({
       success: result.success,
       chargeId: result.chargeId || result.transactionId,
+      paymentStatus: paymentProcessing ? 'processing' : (result.success ? 'succeeded' : 'failed'),
+      paymentMethod,
       subscriptionId: recurringSubscriptionId || undefined,
       billingIssue: billingSetupIssue || undefined,
       error: result.errorMessage,

@@ -656,11 +656,14 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
     });
     const processor = createProcessorClient(procConfig);
 
-    const token = method.nmi_customer_vault_id || method.stripe_payment_method_id || '';
-    const result = await processor.charge({
+    // #9: charge the saved card via chargeStoredCard (customerId + paymentMethodId), not
+    // charge() with a vault id in paymentToken — the latter fails on both NMI and Stripe.
+    const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
+    const storedPaymentMethodId = method.stripe_payment_method_id || method.nmi_customer_vault_id || '';
+    const result = await processor.chargeStoredCard(customerId, storedPaymentMethodId, {
       amount: Math.round(amount * 100),
       currency: 'usd',
-      paymentToken: token,
+      paymentToken: storedPaymentMethodId,
       description: description || 'One-time charge',
       metadata: { contact_id: contactId, source: 'payment_management' },
     });
@@ -759,11 +762,15 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       amount: requestedAmountCents,
     });
 
-    if (!result.success) {
+    // #11: a 'pending' refund is ACCEPTED by the processor (it will settle), not a failure.
+    // Treat only a genuine failure as a hard stop; record pending refunds so the refundable
+    // balance reflects them and a re-issue cannot double-refund.
+    if (!result.success && result.status !== 'pending') {
       logger.warn({ paymentEventId, amount, reason, error: result.errorMessage }, 'Refund failed');
       res.json({ success: false, error: result.errorMessage || 'Refund failed' });
       return;
     }
+    const refundPending = result.status === 'pending';
 
     const refundTransactionId = result.refundId || originalEvent.processor_transaction_id;
     const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
@@ -811,7 +818,12 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       subscriptionId: originalEvent.processor_subscription_id || null,
     });
 
-    logger.info({ paymentEventId, amount, reason }, 'Refund processed');
-    res.json({ success: true, refundId: refundTransactionId, paymentEventId: refundEvent?.id || null });
+    logger.info({ paymentEventId, amount, reason, pending: refundPending }, 'Refund processed');
+    res.json({
+      success: true,
+      status: refundPending ? 'processing' : 'refunded',
+      refundId: refundTransactionId,
+      paymentEventId: refundEvent?.id || null,
+    });
   } catch (err) { next(err); }
 }

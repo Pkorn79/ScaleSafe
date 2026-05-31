@@ -29,6 +29,10 @@ export interface OfferRecord {
   processor_override: string | null;
   nmi_processor_id: string | null;
   checkout_type: 'direct' | 'whop';
+  dual_pricing_enabled: boolean;
+  ach_enabled: boolean;
+  dual_pricing_control_id: string | null;
+  ach_access_policy: 'after_settlement' | 'after_submission';
   whop_product_id: string | null;
   whop_plan_id: string | null;
   whop_sync_status: string | null;

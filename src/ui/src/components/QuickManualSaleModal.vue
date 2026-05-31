@@ -49,6 +49,11 @@
         <input class="form-input" type="number" min="0" step="0.01" v-model.number="amount" />
       </div>
     </div>
+    <div v-if="dualPricingPreview" class="qms-dual-preview">
+      <div><span>Bank Transfer price</span><strong>{{ dualPricingPreview.ach }}</strong></div>
+      <div><span>Card price</span><strong>{{ dualPricingPreview.card }}</strong></div>
+      <p>Choose Bank Transfer to charge the lower bank price. ACH receipts complete after processor settlement.</p>
+    </div>
 
     <label v-if="selectedOfferId" class="inline-check qms-check">
       <input type="checkbox" v-model="sendEnrollment" />
@@ -59,22 +64,46 @@
     </p>
 
     <div class="qms-card-section">
-      <div class="section-title">Card</div>
+      <div class="section-title">Payment Method</div>
+      <div v-if="achAllowedForSelection" class="qms-method-toggle">
+        <button type="button" :class="{ active: paymentMethod === 'ach' }" @click="paymentMethod = 'ach'">Bank Transfer</button>
+        <button type="button" :class="{ active: paymentMethod === 'card' }" @click="paymentMethod = 'card'">Card</button>
+      </div>
       <div v-if="configLoading" class="loading">Loading payment fields...</div>
       <div v-else-if="processorError" class="error-msg">{{ processorError }}</div>
       <template v-else>
         <div v-if="fieldMounting" class="text-sm text-muted mb-2">Preparing secure card fields...</div>
         <div v-if="processorType === 'nmi'" class="qms-nmi">
-          <label class="form-label">Card Number</label>
-          <div class="field-wrapper"><div :id="nmiIds.number"></div></div>
-          <div class="qms-grid">
-            <div>
-              <label class="form-label">Exp Date</label>
-              <div class="field-wrapper"><div :id="nmiIds.exp"></div></div>
+          <div v-show="paymentMethod === 'card'">
+            <label class="form-label">Card Number</label>
+            <div class="field-wrapper"><div :id="nmiIds.number"></div></div>
+            <div class="qms-grid">
+              <div>
+                <label class="form-label">Exp Date</label>
+                <div class="field-wrapper"><div :id="nmiIds.exp"></div></div>
+              </div>
+              <div>
+                <label class="form-label">CVV</label>
+                <div class="field-wrapper"><div :id="nmiIds.cvv"></div></div>
+              </div>
             </div>
-            <div>
-              <label class="form-label">CVV</label>
-              <div class="field-wrapper"><div :id="nmiIds.cvv"></div></div>
+          </div>
+          <div v-show="paymentMethod === 'ach'">
+            <label class="form-label">Name on Bank Account</label>
+            <div class="field-wrapper"><div :id="nmiIds.checkName"></div></div>
+            <label class="form-label">Routing Number</label>
+            <div class="field-wrapper"><div :id="nmiIds.checkAba"></div></div>
+            <label class="form-label">Account Number</label>
+            <div class="field-wrapper"><div :id="nmiIds.checkAccount"></div></div>
+            <div class="qms-grid">
+              <select class="form-select" v-model="achAccountHolderType">
+                <option value="personal">Personal account</option>
+                <option value="business">Business account</option>
+              </select>
+              <select class="form-select" v-model="achAccountType">
+                <option value="checking">Checking</option>
+                <option value="savings">Savings</option>
+              </select>
             </div>
           </div>
         </div>
@@ -145,6 +174,9 @@ const clientLocked = computed(() => props.clientLocked === true);
 const activeOffers = ref<any[]>([]);
 const selectedOfferId = ref('');
 const paymentChoice = ref('pif');
+const paymentMethod = ref<'card' | 'ach'>('card');
+const achAccountHolderType = ref<'personal' | 'business'>('personal');
+const achAccountType = ref<'checking' | 'savings'>('checking');
 const amount = ref<number | null>(null);
 const sendEnrollment = ref(true);
 const configLoading = ref(false);
@@ -155,12 +187,16 @@ const processorError = ref('');
 const submitting = ref(false);
 const submitError = ref('');
 const resultMessage = ref('');
+const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
 
 const nonce = Math.random().toString(36).slice(2);
 const nmiIds = {
   number: `qms-cc-number-${nonce}`,
   exp: `qms-cc-exp-${nonce}`,
   cvv: `qms-cc-cvv-${nonce}`,
+  checkName: `qms-check-name-${nonce}`,
+  checkAba: `qms-check-aba-${nonce}`,
+  checkAccount: `qms-check-account-${nonce}`,
 };
 const stripeElementId = `qms-card-element-${nonce}`;
 let stripe: any = null;
@@ -207,6 +243,37 @@ function defaultAmountForOffer(offer: any, choice: string): number | null {
   return Number(offer.price || 0);
 }
 
+function dualPricingQuoteForOffer(offer: any, choice: string) {
+  const cfg = dualPricingConfig.value;
+  if (!offer || !cfg?.enabled || !offer.dual_pricing_enabled || !offer.ach_enabled) return null;
+  const cardAmount = defaultAmountForOffer(offer, choice) || 0;
+  const uplift = Number(cfg.cardUpliftPercent || 0);
+  const achAmount = uplift > 0 ? cardAmount / (1 + uplift / 100) : cardAmount;
+  return { cardAmount, achAmount };
+}
+
+function selectedAmountForOffer(offer: any, choice: string): number | null {
+  const base = defaultAmountForOffer(offer, choice);
+  const quote = dualPricingQuoteForOffer(offer, choice);
+  if (!quote) return base;
+  return paymentMethod.value === 'ach' ? Number(quote.achAmount.toFixed(2)) : Number(quote.cardAmount.toFixed(2));
+}
+
+const dualPricingPreview = computed(() => {
+  const quote = dualPricingQuoteForOffer(selectedOffer.value, paymentChoice.value);
+  if (!quote) return null;
+  return {
+    card: `$${quote.cardAmount.toFixed(2)}`,
+    ach: `$${quote.achAmount.toFixed(2)}`,
+  };
+});
+const achAllowedForSelection = computed(() => {
+  return Boolean(dualPricingPreview.value
+    && processorType.value === 'nmi'
+    && paymentChoice.value !== 'installments'
+    && paymentChoice.value !== 'subscription');
+});
+
 function normalizeOfferChoice(offer: any): string {
   const type = String(offer?.payment_type || '').toLowerCase();
   if (type === 'installment' || type === 'installments') return 'installments';
@@ -217,6 +284,11 @@ function normalizeOfferChoice(offer: any): string {
 async function loadOffers() {
   const offers = await api.get<any[]>('/api/offers');
   activeOffers.value = (offers || []).filter((offer) => offer.active);
+  try {
+    dualPricingConfig.value = await api.get<any>('/api/offers/dual-pricing/config');
+  } catch {
+    dualPricingConfig.value = null;
+  }
 }
 
 function loadScript(src: string, attrs: Record<string, string> = {}) {
@@ -242,7 +314,10 @@ function cardTargetExists(): boolean {
     return Boolean(
       document.getElementById(nmiIds.number)
       && document.getElementById(nmiIds.exp)
-      && document.getElementById(nmiIds.cvv),
+      && document.getElementById(nmiIds.cvv)
+      && document.getElementById(nmiIds.checkName)
+      && document.getElementById(nmiIds.checkAba)
+      && document.getElementById(nmiIds.checkAccount),
     );
   }
   return false;
@@ -282,6 +357,7 @@ async function loadProcessorConfig() {
     const cfg = await api.get<any>(`/api/dashboard/manual-sale/config?${params.toString()}`);
     if (seq !== processorLoadSeq || !props.open) return;
     processorType.value = cfg.processorType || '';
+    if (processorType.value !== 'nmi') paymentMethod.value = 'card';
     configLoading.value = false;
     fieldMounting.value = true;
     await nextTick();
@@ -301,6 +377,9 @@ async function loadProcessorConfig() {
           ccnumber: { selector: `#${nmiIds.number}`, placeholder: 'Card Number' },
           ccexp: { selector: `#${nmiIds.exp}`, placeholder: 'MM/YY' },
           cvv: { selector: `#${nmiIds.cvv}`, placeholder: 'CVV' },
+          checkname: { selector: `#${nmiIds.checkName}`, placeholder: 'Name on account' },
+          checkaba: { selector: `#${nmiIds.checkAba}`, placeholder: 'Routing number' },
+          checkaccount: { selector: `#${nmiIds.checkAccount}`, placeholder: 'Account number' },
         },
         customCss: {
           border: 'none',
@@ -402,12 +481,16 @@ async function submit() {
       amount: amount.value,
       paymentToken,
       paymentType: paymentChoice.value,
+      paymentMethod: paymentMethod.value,
+      achAccountHolderType: paymentMethod.value === 'ach' ? achAccountHolderType.value : undefined,
+      achAccountType: paymentMethod.value === 'ach' ? achAccountType.value : undefined,
+      achSecCode: paymentMethod.value === 'ach' ? 'WEB' : undefined,
       sendEnrollment: selectedOfferId.value ? sendEnrollment.value : false,
       sendVia: ['email'],
     });
     resultMessage.value = selectedOfferId.value
-      ? 'Payment received. Paid enrollment link is ready.'
-      : 'Payment received and saved to the client.';
+      ? (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Enrollment will complete after settlement.' : 'Payment received. Paid enrollment link is ready.')
+      : (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Receipt will send after settlement.' : 'Payment received and saved to the client.');
     emit('completed', result);
   } catch (err: any) {
     submitError.value = err.message || 'Payment failed.';
@@ -430,6 +513,9 @@ watch(() => props.open, async (open) => {
   applyInitialClient();
   selectedOfferId.value = '';
   paymentChoice.value = 'pif';
+  paymentMethod.value = 'card';
+  achAccountHolderType.value = 'personal';
+  achAccountType.value = 'checking';
   amount.value = null;
   sendEnrollment.value = true;
   resetTransient();
@@ -440,12 +526,21 @@ watch(() => props.open, async (open) => {
 watch(selectedOfferId, async () => {
   const offer = selectedOffer.value;
   paymentChoice.value = offer ? normalizeOfferChoice(offer) : 'pif';
-  amount.value = offer ? defaultAmountForOffer(offer, paymentChoice.value) : null;
+  amount.value = offer ? selectedAmountForOffer(offer, paymentChoice.value) : null;
   if (props.open) await loadProcessorConfig();
 });
 
 watch(paymentChoice, () => {
-  if (selectedOffer.value) amount.value = defaultAmountForOffer(selectedOffer.value, paymentChoice.value);
+  if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
+});
+
+watch(paymentMethod, () => {
+  if (!achAllowedForSelection.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
+  if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
+});
+
+watch(achAllowedForSelection, (allowed) => {
+  if (!allowed && paymentMethod.value === 'ach') paymentMethod.value = 'card';
 });
 </script>
 
@@ -474,6 +569,56 @@ watch(paymentChoice, () => {
 .qms-card-section {
   border-top: 1px solid #f1f5f9;
   padding-top: 14px;
+}
+
+.qms-method-toggle {
+  display: flex;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.qms-method-toggle button {
+  flex: 1;
+  border: 0;
+  background: #f8fafc;
+  color: #374151;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 650;
+  padding: 10px;
+}
+
+.qms-method-toggle button.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.qms-dual-preview {
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 13px;
+  margin: 0 0 14px;
+  padding: 11px;
+}
+
+.qms-dual-preview div {
+  display: flex;
+  justify-content: space-between;
+  margin: 3px 0;
+}
+
+.qms-dual-preview strong {
+  color: #111827;
+}
+
+.qms-dual-preview p {
+  color: #64748b;
+  line-height: 1.4;
+  margin: 7px 0 0;
 }
 
 .section-title {

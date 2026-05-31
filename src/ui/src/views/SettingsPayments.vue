@@ -222,16 +222,18 @@
 
       <!-- Auto-Submit Toggle -->
       <div v-if="stripeConnected" class="card">
-        <h3 class="section-title">Dispute Auto-Submit</h3>
-        <p class="text-sm text-muted mb-4">When enabled, ScaleSafe automatically submits evidence for disputes with strong evidence (score 60+). Disable to review each packet before submission.</p>
+        <h3 class="section-title">Dispute Auto-Submit <span class="text-xs text-muted">(coming soon)</span></h3>
+        <p class="text-sm text-muted mb-4">When enabled, ScaleSafe will automatically submit evidence for disputes with strong evidence (score 60+). For now, every dispute packet is reviewed manually before submission.</p>
+        <!-- #30: the persistence endpoint is not built yet — disable the control so merchants are
+             not misled into believing auto-submit is active (it currently resets to OFF silently). -->
         <label class="toggle-switch-label">
           <span class="toggle-container">
-            <input type="checkbox" v-model="autoSubmit" @change="saveAutoSubmit" />
+            <input type="checkbox" v-model="autoSubmit" disabled />
             <span class="toggle-track" :class="{ active: autoSubmit }">
               <span class="toggle-thumb" :class="{ active: autoSubmit }"></span>
             </span>
           </span>
-          <span class="text-sm">{{ autoSubmit ? 'Auto-submit enabled — strong evidence packets are submitted automatically' : 'Auto-submit disabled — review every packet before submission' }}</span>
+          <span class="text-sm">Auto-submit is not yet available — every dispute packet is reviewed manually before submission.</span>
         </label>
       </div>
 

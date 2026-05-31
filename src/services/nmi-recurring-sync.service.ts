@@ -361,10 +361,12 @@ export const nmiRecurringSyncService = {
         ? supabase.from('offers_mirror').select('id, offer_name').in('id', offerIds)
         : Promise.resolve({ data: [] }),
       enrollmentIds.length
-        ? supabase.from('payment_events').select('id, enrollment_id, created_at, amount, processor_transaction_id').in('enrollment_id', enrollmentIds).order('created_at', { ascending: false })
+        ? supabase.from('payment_events').select('id, enrollment_id, created_at, amount, processor_transaction_id').eq('location_id', locationId).in('enrollment_id', enrollmentIds).order('created_at', { ascending: false })
         : Promise.resolve({ data: [] }),
       subscriptionIds.length
-        ? supabase.from('nmi_silent_post_logs').select('id, enrollment_id, processor_subscription_id, transaction_id, amount, action, verification_status, created_at').in('processor_subscription_id', subscriptionIds).order('created_at', { ascending: false })
+        // #18: scope by location_id — processor_subscription_id is an NMI-gateway sequential id and
+        // can collide across merchants on shared/different gateways (cross-tenant metadata leak).
+        ? supabase.from('nmi_silent_post_logs').select('id, enrollment_id, processor_subscription_id, transaction_id, amount, action, verification_status, created_at').eq('location_id', locationId).in('processor_subscription_id', subscriptionIds).order('created_at', { ascending: false })
         : Promise.resolve({ data: [] }),
     ]);
 

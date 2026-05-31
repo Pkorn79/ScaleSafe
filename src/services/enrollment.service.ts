@@ -8,6 +8,7 @@ import { ValidationError } from '../utils/errors';
 import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { verifyPublicActionToken } from '../utils/public-action-token';
+import { dualPricingService } from './dual-pricing.service';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -186,6 +187,7 @@ export const enrollmentService = {
 
     // Get merchant info
     const merchant = await merchantRepository.findByLocationId(offer.location_id);
+    const dualPricingControl = await dualPricingService.getActiveControl();
 
     // Build milestones array (skip nulls)
     const milestones = [];
@@ -225,6 +227,13 @@ export const enrollmentService = {
       installmentCount: offer.num_payments,
       pifPrice: offer.pif_price,
       pifDiscountEnabled: offer.pif_discount_enabled,
+      dualPricingEnabled: Boolean((offer as any).dual_pricing_enabled && (offer as any).ach_enabled && dualPricingControl),
+      achEnabled: Boolean((offer as any).ach_enabled),
+      dualPricing: dualPricingControl && (offer as any).dual_pricing_enabled && (offer as any).ach_enabled ? {
+        cardUpliftPercent: Number(dualPricingControl.card_uplift_percent || 0),
+        processorDeductionPercent: Number(dualPricingControl.processor_deduction_percent || 0),
+        achAccessPolicy: (offer as any).ach_access_policy || 'after_settlement',
+      } : null,
       checkoutType: (offer as any).checkout_type || 'direct',
       whopPlanId: (offer as any).whop_plan_id || null,
       whopSyncStatus: (offer as any).whop_sync_status || null,
@@ -478,6 +487,9 @@ export const enrollmentService = {
       numPayments: offer.num_payments,
       pifPrice: offer.pif_price,
       pifDiscountEnabled: offer.pif_discount_enabled,
+      dualPricingEnabled: Boolean((offer as any).dual_pricing_enabled),
+      achEnabled: Boolean((offer as any).ach_enabled),
+      achAccessPolicy: (offer as any).ach_access_policy || 'after_settlement',
       refundPolicy: offer.refund_window_text,
       milestones: Array.from({ length: 8 }, (_, i) => {
         const name = (offer as any)[`m${i + 1}_name`];

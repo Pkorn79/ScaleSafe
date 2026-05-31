@@ -7,7 +7,9 @@ export interface DunningParams {
   locationId: string;
   contactId: string;
   offerId: string;
-  paymentEventId: string;
+  // Null when the failed-payment ledger insert failed (#6): dunning comms still fire, but the
+  // saved-card auto-retry cannot be scheduled without an event row.
+  paymentEventId: string | null;
   failureReason: string;
   failureCode?: string;
   amountCents: number;

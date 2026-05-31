@@ -149,3 +149,25 @@ describe('offer tracking ID', () => {
     );
   });
 });
+
+describe('offerService.cloneOffer (#13/#31)', () => {
+  it('does not copy Whop processor IDs or tracking_id into the clone', async () => {
+    (offerRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'offer-src', location_id: 'loc-1', offer_name: 'Coaching',
+      price: 6000, num_payments: 6, checkout_type: 'whop',
+      whop_product_id: 'prod_live', whop_plan_id: 'plan_live', whop_sync_status: 'synced',
+      tracking_id: 'trk_123',
+    });
+
+    await offerService.cloneOffer('offer-src', 'loc-1');
+
+    expect(offerRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      whop_product_id: null,
+      whop_plan_id: null,
+      whop_sync_status: null,
+      tracking_id: null,
+      checkout_type: 'whop', // still a Whop offer — provisions its own product/plan on first sync
+      active: false,
+    }));
+  });
+});

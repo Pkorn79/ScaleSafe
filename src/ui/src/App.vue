@@ -78,7 +78,10 @@ import {
     </nav>
     <main class="flex-1 overflow-y-auto bg-slate-50">
       <div class="page-shell">
-        <router-view />
+        <!-- #22/#26: key by full path so a param-only navigation (e.g. /clients/A -> /clients/B,
+             or one payment-management contact -> another) remounts the view and reloads data,
+             instead of showing the previously viewed client on a money-handling screen. -->
+        <router-view :key="$route.fullPath" />
       </div>
     </main>
   </div>

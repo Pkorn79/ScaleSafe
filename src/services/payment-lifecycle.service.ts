@@ -65,13 +65,18 @@ export const paymentLifecycleService = {
       ? new Date(Date.now() + retryDays[0] * 24 * 60 * 60 * 1000).toISOString()
       : null;
 
-    // Update payment event with dunning metadata
-    await supabase.from('payment_events').update({
-      dunning_status: 'active',
-      dunning_retry_count: 0,
-      dunning_next_retry: nextRetryDate,
-      dunning_started_at: new Date().toISOString(),
-    }).eq('id', params.paymentEventId);
+    // Update payment event with dunning metadata. Skipped when the ledger insert failed (#6):
+    // the customer-facing recovery comms below still fire, but auto-retry can't be scheduled.
+    if (params.paymentEventId) {
+      await supabase.from('payment_events').update({
+        dunning_status: 'active',
+        dunning_retry_count: 0,
+        dunning_next_retry: nextRetryDate,
+        dunning_started_at: new Date().toISOString(),
+      }).eq('id', params.paymentEventId);
+    } else {
+      logger.warn({ locationId: params.locationId, contactId: params.contactId }, 'Dunning initiated without a payment_events row — comms only, no auto-retry scheduled');
+    }
 
     const failedPaymentCount = Math.max(1, params.attemptCount || 1);
     try {
@@ -106,6 +111,8 @@ export const paymentLifecycleService = {
         attemptCount: failedPaymentCount,
         next_retry_date: nextRetryDate || 'none',
         nextRetryDate: nextRetryDate || 'none',
+        dunning_stage: 'initial',
+        dunningStage: 'initial',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId: params.contactId }, 'Dunning trigger failed');
@@ -161,6 +168,21 @@ export const paymentLifecycleService = {
 
     // Attempt charge
     try {
+      // Idempotency lock (#2): atomically claim the retry. Only one request can move the
+      // event from 'active' to 'retrying'; a concurrent /dunning/retry (double-click, retry
+      // storm) finds 0 rows and bails without charging. The claim is released back to
+      // 'active' on failure/exception so legitimate scheduled retries still run (no poisoning).
+      const { data: claimedRows } = await supabase
+        .from('payment_events')
+        .update({ dunning_status: 'retrying', dunning_started_at: new Date().toISOString() })
+        .eq('id', paymentEventId)
+        .eq('dunning_status', 'active')
+        .select('id');
+      if (!Array.isArray(claimedRows) || claimedRows.length === 0) {
+        logger.info({ paymentEventId, contactId }, 'Dunning retry skipped — already in progress or no longer eligible');
+        return { success: false, error: 'Retry already in progress or no longer eligible' };
+      }
+
       const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
         processor_override: method.processor_type || null,
         nmi_processor_id: null,
@@ -170,26 +192,57 @@ export const paymentLifecycleService = {
       const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
 
       const result = await processor.chargeStoredCard(customerId, token, {
-        amount: Number(originalEvent.amount) * 100, // convert to cents
+        amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
         currency: originalEvent.currency || 'usd',
         paymentToken: token,
         description: 'Dunning retry payment',
       });
 
       if (result.success) {
-        // Record successful payment
-        await supabase.from('payment_events').insert({
-          merchant_id: merchantId,
-          location_id: locationId,
-          contact_id: contactId,
-          event_type: 'sale',
-          processor: procConfig.processor_type,
-          processor_transaction_id: result.transactionId,
-          amount: originalEvent.amount,
-          currency: originalEvent.currency || 'usd',
-          source: 'dunning_retry',
-          is_recurring: true,
-        });
+        // #5: record the recovered installment atomically — insert the ledger row, increment
+        // payments_made, and advance next_billing_date — so the recurring schedule reflects the
+        // recovery and the enrollment is not re-billed by the cron or shown as overdue.
+        if (originalEvent.enrollment_id) {
+          let interval = 'monthly';
+          try {
+            const { data: enrRow } = await supabase.from('enrollments')
+              .select('offer_id').eq('id', originalEvent.enrollment_id).eq('location_id', locationId).single();
+            if (enrRow?.offer_id) {
+              const { data: ofr } = await supabase.from('offers_mirror')
+                .select('installment_frequency').eq('id', enrRow.offer_id).eq('location_id', locationId).single();
+              if (ofr?.installment_frequency) interval = ofr.installment_frequency;
+            }
+          } catch { /* default monthly for the schedule estimate */ }
+          const { error: recordErr } = await supabase.rpc('record_recurring_payment', {
+            p_enrollment_id: originalEvent.enrollment_id,
+            p_location_id: locationId,
+            p_processor: procConfig.processor_type,
+            p_transaction_id: result.transactionId,
+            p_amount: originalEvent.amount,
+            p_next_billing_date: null,
+            p_next_billing_source: 'estimated',
+            p_interval: interval,
+            p_source: 'dunning_retry',
+            p_raw_payload: { dunning_retry: true, original_payment_event_id: paymentEventId },
+          });
+          if (recordErr) {
+            logger.error({ err: recordErr.message, enrollmentId: originalEvent.enrollment_id, paymentEventId }, 'Dunning retry: record_recurring_payment failed');
+          }
+        } else {
+          // No enrollment link — record the standalone recovered sale (legacy behaviour).
+          await supabase.from('payment_events').insert({
+            merchant_id: merchantId,
+            location_id: locationId,
+            contact_id: contactId,
+            event_type: 'sale',
+            processor: procConfig.processor_type,
+            processor_transaction_id: result.transactionId,
+            amount: originalEvent.amount,
+            currency: originalEvent.currency || 'usd',
+            source: 'dunning_retry',
+            is_recurring: true,
+          });
+        }
 
         // Resolve dunning
         await supabase.from('payment_events').update({
@@ -230,9 +283,33 @@ export const paymentLifecycleService = {
         // Fire success trigger
         try {
           await triggerService.fireTrigger(locationId, 'ss_payment_received', {
-            contact_id: contactId, amount: originalEvent.amount,
-            transaction_id: result.transactionId, action: 'dunning_resolved',
+            event_type: 'payment_received',
+            location_id: locationId,
+            locationId,
+            contact_id: contactId,
+            contactId,
+            enrollment_id: originalEvent.enrollment_id || '',
+            enrollmentId: originalEvent.enrollment_id || '',
+            offer_id: originalEvent.offer_id || '',
+            offerId: originalEvent.offer_id || '',
+            amount: originalEvent.amount,
+            amount_display: formatMoney(originalEvent.amount),
+            amountDisplay: formatMoney(originalEvent.amount),
+            transaction_id: result.transactionId,
+            transactionId: result.transactionId,
+            action: 'dunning_resolved',
             payment_kind: 'dunning_recovery',
+            paymentKind: 'dunning_recovery',
+            payment_source: 'dunning_retry',
+            paymentSource: 'dunning_retry',
+            payment_timing: 'dunning_recovery',
+            paymentTiming: 'dunning_recovery',
+            receipt_only: true,
+            receiptOnly: true,
+            send_receipt: true,
+            sendReceipt: true,
+            send_welcome: false,
+            sendWelcome: false,
           });
         } catch { /* non-blocking */ }
 
@@ -256,6 +333,7 @@ export const paymentLifecycleService = {
         : null;
 
       await supabase.from('payment_events').update({
+        dunning_status: 'active', // release the claim so scheduled retries can run
         dunning_retry_count: retryCount,
         dunning_next_retry: nextRetry,
       }).eq('id', paymentEventId);
@@ -266,6 +344,10 @@ export const paymentLifecycleService = {
 
       return { success: false, error: result.errorMessage || 'Charge declined' };
     } catch (err: any) {
+      // Release the claim so the event is not stuck in 'retrying'.
+      try {
+        await supabase.from('payment_events').update({ dunning_status: 'active' }).eq('id', paymentEventId);
+      } catch { /* best effort */ }
       logger.error({ err: err.message, contactId, paymentEventId }, 'Dunning retry charge failed');
       return { success: false, error: err.message };
     }
@@ -285,13 +367,23 @@ export const paymentLifecycleService = {
       dunning_status: 'escalated',
     }).eq('id', paymentEventId);
 
+    const { data: paymentEvent } = await supabase
+      .from('payment_events')
+      .select('amount, failure_reason, dunning_retry_count, enrollment_id, offer_id')
+      .eq('id', paymentEventId)
+      .eq('location_id', locationId)
+      .maybeSingle();
+
+    const amount = Number(paymentEvent?.amount || 0);
+    const attemptCount = Number(paymentEvent?.dunning_retry_count || 0) + 1;
+
     // Log evidence of collection attempts
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.FAILED_PAYMENT, locationId, contactId, 'dunning_escalation',
       {
         failure_date: new Date().toISOString(),
         decline_reason: 'Max retries reached',
-        attempt_count: null,
+        attempt_count: attemptCount,
         payment_event_id: paymentEventId,
         raw_payload: { action: 'dunning_escalated', reason: 'Max retries reached' },
         ...buildDefenseEvidenceFields({
@@ -315,9 +407,42 @@ export const paymentLifecycleService = {
       await api.put(`/contacts/${contactId}`, {
         customField: {
           [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'delinquent',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: 'Delinquent',
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT]: attemptCount,
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE]: today(),
+          [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amount),
         },
       });
-    } catch { /* non-blocking */ }
+    } catch (err: any) {
+      logger.warn({ err: err.message, contactId }, 'Dunning escalation contact field sync failed');
+    }
+
+    try {
+      await triggerService.fireTrigger(locationId, 'ss_payment_failed', {
+        event_type: 'payment_failed',
+        location_id: locationId,
+        locationId,
+        contact_id: contactId,
+        contactId,
+        enrollment_id: paymentEvent?.enrollment_id || '',
+        enrollmentId: paymentEvent?.enrollment_id || '',
+        offer_id: paymentEvent?.offer_id || '',
+        offerId: paymentEvent?.offer_id || '',
+        amount,
+        amount_display: formatMoney(amount),
+        amountDisplay: formatMoney(amount),
+        failure_reason: paymentEvent?.failure_reason || 'Max retries reached',
+        failureReason: paymentEvent?.failure_reason || 'Max retries reached',
+        attempt_count: attemptCount,
+        attemptCount,
+        next_retry_date: 'none',
+        nextRetryDate: 'none',
+        dunning_stage: 'escalated',
+        dunningStage: 'escalated',
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message, contactId }, 'Dunning escalation trigger failed');
+    }
 
     logger.info({ contactId, paymentEventId }, 'Dunning escalated — client marked delinquent');
   },
@@ -1116,12 +1241,39 @@ export const paymentLifecycleService = {
         },
       });
       await triggerService.fireTrigger(locationId, 'ss_payment_received', {
+        event_type: 'payment_received',
+        location_id: locationId,
+        locationId,
         contact_id: contactId,
+        contactId,
+        enrollment_id: '',
+        enrollmentId: '',
+        offer_id: '',
+        offerId: '',
         amount: data.amount,
+        amount_display: formatMoney(data.amount),
+        amountDisplay: formatMoney(data.amount),
         transaction_id: data.transactionId,
+        transactionId: data.transactionId,
         payments_remaining: data.paymentsRemaining ?? 0,
+        paymentsRemaining: data.paymentsRemaining ?? 0,
         running_total: data.runningTotal ?? data.amount,
+        runningTotal: data.runningTotal ?? data.amount,
+        running_total_display: formatMoney(data.runningTotal ?? data.amount),
+        runningTotalDisplay: formatMoney(data.runningTotal ?? data.amount),
         action: data.action || 'payment_received',
+        payment_kind: data.action || 'payment_received',
+        paymentKind: data.action || 'payment_received',
+        payment_source: 'payment_lifecycle',
+        paymentSource: 'payment_lifecycle',
+        payment_timing: 'manual',
+        paymentTiming: 'manual',
+        receipt_only: true,
+        receiptOnly: true,
+        send_receipt: true,
+        sendReceipt: true,
+        send_welcome: false,
+        sendWelcome: false,
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId }, 'Payment success notification trigger failed');
@@ -1160,6 +1312,8 @@ export const paymentLifecycleService = {
         attemptCount: data.attemptCount || 1,
         next_retry_date: data.nextRetryDate || 'none',
         nextRetryDate: data.nextRetryDate || 'none',
+        dunning_stage: (data.attemptCount || 1) > 1 ? 'retry_failed' : 'initial',
+        dunningStage: (data.attemptCount || 1) > 1 ? 'retry_failed' : 'initial',
       });
     } catch (err: any) {
       logger.warn({ err: err.message, contactId }, 'Payment failed notification trigger failed');
@@ -1266,6 +1420,8 @@ export const paymentLifecycleService = {
           attemptCount: 0,
           next_retry_date: 'none',
           nextRetryDate: 'none',
+          dunning_stage: 'card_update_requested',
+          dunningStage: 'card_update_requested',
           card_update_link: link,
           cardUpdateLink: link,
         });

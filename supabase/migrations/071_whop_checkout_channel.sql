@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS whop_configs (
   UNIQUE (merchant_id, location_id)
 );
 
+ALTER TABLE whop_configs ENABLE ROW LEVEL SECURITY;
+
 CREATE INDEX IF NOT EXISTS idx_whop_configs_location
   ON whop_configs(location_id);
 

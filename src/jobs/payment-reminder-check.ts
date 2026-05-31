@@ -64,7 +64,10 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
     .from('enrollments')
     .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, payments_made, payments_total')
     .in('status', ['enrolled', 'active'])
-    .in('payment_type', ['installments', 'installment', 'subscription']);
+    .in('payment_type', ['installments', 'installment', 'subscription'])
+    // Batch H: never remind for an enrollment whose processor billing setup did not complete
+    // (failed / needs_reconciliation / still pending) — those have no live subscription.
+    .eq('billing_setup_status', 'ok');
 
   const { data: enrollments, error } = window.type === 'next_24_hours'
     ? await baseQuery

@@ -5,6 +5,115 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Bug-hunt Batches A–H (complete; pending review/merge)
+
+> **Deploy ordering:** migrations `072`/`073`/`074` (pushed) + `077` MUST be applied in Supabase **before**
+> this code is deployed. `handleRecurringPaymentSuccess` calls `record_recurring_payment`, the
+> dunning-retry/refund paths call `record_recurring_payment`/`decrement_enrollment_payments_made`;
+> without the migrations, live recurring webhooks, refunds, and dunning retries will throw.
+
+### Added
+- **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC
+  (migration `073`) inserts the `payment_events` ledger row, increments `payments_made`, and
+  advances `next_billing_date` in one transaction. Dedupe is enforced by a partial UNIQUE index
+  on `payment_events(location_id, processor, processor_transaction_id)` (migration `072`); a
+  duplicate webhook delivery returns `is_duplicate=true` and performs no increment. Closes the
+  TOCTOU double-increment race across the NMI/Stripe/Whop/GHL recurring paths (bug hunt #3).
+- **Schedule-source tracking.** `enrollments.next_billing_date_source` (`processor` |
+  `estimated` | `complete`) records whether the next billing date came from the processor or an
+  anchored fallback estimate; estimates are flagged for verification rather than treated as
+  healthy (bug hunt #20). New `billing_setup_status` / `billing_setup_error` columns
+  (migration `074`) prepare Batch H surfacing of failed processor-subscription setup.
+
+### Changed
+- **`handleRecurringPaymentSuccess` no longer computes `next_billing_date` from `now()`** and no
+  longer performs a separate increment → manual insert → manual update sequence. The schedule is
+  anchored to the prior date (or the processor-resolved date passed by the caller), never the
+  processing timestamp.
+
+### Fixed (Batch B — ledger accounting symmetry)
+- **Refunds now reverse the enrollment ledger (#7).** `handleRefund` calls the new
+  `decrement_enrollment_payments_made` RPC (migration `077`), floors `payments_made` at 0, clears
+  `billing_completed_at`, and re-syncs `PAYMENTS_MADE`/`PAYMENTS_REMAINING` contact fields — so a
+  refunded installment no longer overstates `TOTAL_PAID`/running-total defense evidence.
+- **Dunning retry success now advances the schedule (#5).** A recovered installment is recorded
+  via `record_recurring_payment` (insert + increment `payments_made` + advance `next_billing_date`)
+  instead of a bare ledger insert, so the cron no longer re-bills it and reconciliation no longer
+  flags it overdue.
+- **Dunning now initiates even when the failed-payment insert fails (#6).** `initiateDunning`
+  tolerates a null `paymentEventId`: the past-due workflow, card-update link, and
+  `ss_payment_failed` trigger still fire (auto-retry is skipped without an event row).
+- **GHL recurring `next_billing_date` is anchored to the prior schedule, not `now()` (#20).** Late
+  or replayed GHL webhooks no longer drift the schedule forward; the estimate is marked
+  `next_billing_date_source='estimated'`.
+- **Dunning retry amount uses `Math.round` (#14)** and the retry is guarded by an atomic
+  `dunning_status` claim that is released on failure (#2) — no concurrent double-charge, no poisoned
+  retries. *(shipped with Batch A; noted here for completeness.)*
+
+### Fixed (Batch C — Stripe processor-client correctness)
+- **Stripe `subscriptions` cancel_at uses calendar arithmetic (#16).** `stripeCancelAtSeconds`
+  adds real calendar months/years (not a 30-day approximation) so an installment plan can no
+  longer overshoot into one extra invoice on short-month / end-of-month anchors.
+- **`paymentIntents.retrieve` / `customers.retrieve` use the 3-arg form (#15)** so the
+  `stripeAccount` is sent as the options arg (header), not serialized as params — verification &
+  card listing on connected accounts no longer fail.
+- **Manual "charge saved card" uses `chargeStoredCard` (#9)** instead of `charge()` with a vault
+  id in `paymentToken` — manual collections now work on both NMI and Stripe.
+- **GHL queryUrl charge/subscription derive the processor token from the payment-method row (#10)**
+  instead of passing the ScaleSafe DB UUID as the Stripe `payment_method`.
+- **Pending refunds are recorded, not reported as failures (#11).** A Stripe `pending` refund is
+  treated as accepted (status `processing`), so the refundable balance reflects it and a re-issue
+  cannot double-refund.
+
+### Fixed (Batch D — webhook reliability + dispute recording)
+- **Stripe webhook returns 5xx on handler failure (#4)** instead of always 200, so a transient
+  failed write (missed recurring increment, unpersisted dispute) is retried by Stripe rather than
+  lost. Safe because recurring recording is idempotent. The `charge.dispute.created` upsert error
+  is now checked and thrown (was silently swallowed → missed dispute deadline).
+- **Whop disputes are recorded in `dispute_events`, not `payment_events` (#28).** `'chargeback'`
+  is not a valid `payment_events` event_type (the insert failed the CHECK and was lost); Whop
+  disputes now persist to `dispute_events` with `processor='whop'` (migration `078` extends the
+  processor CHECK) and a `needs_response` status.
+- **NMI chargeback-ratio trigger fires once on crossing, not every day (#23).** `checkNmiRatio`
+  now persists an `account_health_snapshots` row (`processor='nmi'`) before evaluating thresholds,
+  so the crossing-guard compares against yesterday's rate instead of a perpetual 0.
+
+### Fixed (Batch F — multi-tenant scope + offer integrity)
+- **NMI diagnostics queries are location-scoped (#18).** `diagnostics()` adds `.eq('location_id', …)`
+  to the `payment_events` and `nmi_silent_post_logs` lookups, closing a cross-tenant
+  payment-metadata leak on NMI subscription-id collisions.
+- **`assignOffer` scopes the offer lookup to the caller's location (#19)** — an authenticated
+  merchant can no longer enroll a contact against another tenant's offer by guessing its UUID.
+- **`cloneOffer` no longer copies processor-side IDs (#13/#31).** Whop `product_id`/`plan_id`/
+  `sync_status` and `tracking_id` are excluded and nulled, so editing a clone no longer mutates the
+  source's live Whop product/plan and per-offer tracking reports no longer conflate the two.
+
+### Fixed (Batch E — evidence vault correctness)
+- **Evidence vault lookups translate GHL contact id → Stripe customer id (#12).** Contract,
+  session-log, and communication-trail uploads (and the client score refresh) were filtering the
+  vault by `stripe_customer_id` using a GHL contact id, silently matching zero rows and dropping
+  merchant-uploaded chargeback evidence. They now resolve the Stripe customer via `payment_methods`
+  and log when an update matches no rows.
+- **Offer-terms evidence is scored consistently (#17).** The client-side score refresh and
+  `getVaultEntryForCharge`/`getEvidenceGaps` now read the offer's `stripe_terms_file_id`
+  (terms live on `offers_mirror`, never on the vault row), so the "terms not uploaded" gap no
+  longer always fires and `evidence_score` is deterministic.
+
+### Fixed (Batch G — frontend)
+- **Param-only navigation reloads money/defense screens (#22/#26).** `<router-view :key="$route.fullPath">`
+  remounts the view on `/clients/A → /clients/B` (and payment-management contact switches), so a
+  charge/refund/card action can no longer target the previously viewed customer.
+- **Malformed numeric HTML entities no longer crash communication-evidence ingestion (#27).**
+  `decodeHtmlEntities` clamps code points to the valid Unicode range before `String.fromCodePoint`,
+  so a spam message like `&#9999999999;` can't drop a message's evidence or 500 the feed.
+- **Scorer-flagged At Risk clients can auto-clear (#29).** `disengagement.service` writes a
+  `disengagement_flagged` custom_event so the re-engagement detector recognises non-payment At Risk
+  clients and fires the "Client Re-Engaged" workflow on their return.
+- **Dispute Auto-Submit toggle is disabled until its endpoint exists (#30)** so merchants are not
+  misled into believing strong-evidence disputes are auto-filed when they are not.
+- **PaymentSearch ledger load has a request-sequence guard (#32)** so an out-of-order async response
+  cannot show rows/totals that don't match the active filters.
+
 ## 2026-05-07
 
 ### Changed

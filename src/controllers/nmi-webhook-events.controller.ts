@@ -3,6 +3,8 @@ import { Request, Response } from 'express';
 import { getSupabase } from '../clients/supabase.client';
 import { createProcessorClient } from '../services/processor.factory';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
+import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
+import { triggerService } from '../services/trigger.service';
 import { nmiDiagnosticLogService } from '../services/nmi-diagnostic-log.service';
 import { processorConfigService } from '../services/processor-config.service';
 import { ProcessorConfig, VerifyResult } from '../types/processor.types';
@@ -15,6 +17,14 @@ const TRANSACTION_AUTH_SUCCESS = 'transaction.auth.success';
 const TRANSACTION_CAPTURE_SUCCESS = 'transaction.capture.success';
 const TRANSACTION_REFUND_SUCCESS = 'transaction.refund.success';
 const TRANSACTION_VOID_SUCCESS = 'transaction.void.success';
+const TRANSACTION_CHECK_SETTLE = 'transaction.check.status.settle';
+const TRANSACTION_CHECK_RETURN = 'transaction.check.status.return';
+const TRANSACTION_CHECK_LATE_RETURN = 'transaction.check.status.latereturn';
+const TRANSACTION_CHECK_STATUS_EVENTS = new Set([
+  TRANSACTION_CHECK_SETTLE,
+  TRANSACTION_CHECK_RETURN,
+  TRANSACTION_CHECK_LATE_RETURN,
+]);
 const TRANSACTION_REVERSAL_FAILURES = new Set([
   'transaction.refund.failure',
   'transaction.void.failure',
@@ -25,6 +35,10 @@ const TRANSACTION_LOG_ONLY_EVENTS = new Set([
   'transaction.auth.failure',
   'transaction.capture.failure',
 ]);
+
+function formatMoney(amount: number): string {
+  return `$${Number(amount || 0).toFixed(2)}`;
+}
 
 type SupabaseClient = ReturnType<typeof getSupabase>;
 
@@ -557,6 +571,152 @@ async function processMatchedReversalEvent(
   });
 }
 
+async function processAchStatusEvent(
+  supabase: SupabaseClient,
+  config: ProcessorConfig,
+  payload: any,
+  logId: string | null,
+): Promise<void> {
+  const eventType = getEventType(payload);
+  const transactionId = getTransactionId(payload);
+  if (!transactionId) {
+    await updateDiagnosticLog(logId, {
+      action: 'ignored_ach_status_missing_transaction_id',
+      verification_status: 'failed',
+      error_message: 'NMI ACH status event did not include a transaction id',
+    });
+    return;
+  }
+
+  const { data: payment } = await supabase
+    .from('payment_events')
+    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, amount, currency, customer_email, payment_status, source')
+    .eq('location_id', config.location_id)
+    .eq('processor', 'nmi')
+    .eq('processor_transaction_id', transactionId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!payment) {
+    await updateDiagnosticLog(logId, {
+      matched: false,
+      action: 'ach_status_unmatched_payment',
+      verification_status: 'skipped',
+      error_message: `No ScaleSafe payment matched NMI ACH transaction ${transactionId}`,
+    });
+    return;
+  }
+
+  const isSettle = eventType === TRANSACTION_CHECK_SETTLE;
+  const isLateReturn = eventType === TRANSACTION_CHECK_LATE_RETURN;
+  const paymentStatus = isSettle ? 'settled' : (isLateReturn ? 'late_return' : 'returned');
+  const timestampColumn = isSettle ? 'settled_at' : 'returned_at';
+  const now = new Date().toISOString();
+  const returnReason = isSettle ? null : (getResponseText(payload) || getResponseCode(payload) || eventType);
+
+  const updatePayload: Record<string, unknown> = {
+    payment_status: paymentStatus,
+    [timestampColumn]: now,
+    return_reason: returnReason,
+    raw_webhook_payload: payload,
+  };
+  const { error: updateErr } = await supabase
+    .from('payment_events')
+    .update(updatePayload)
+    .eq('id', payment.id);
+  if (updateErr) {
+    await updateDiagnosticLog(logId, {
+      action: 'ach_status_payment_update_failed',
+      verification_status: 'failed',
+      payment_event_id: payment.id,
+      error_message: updateErr.message,
+    });
+    return;
+  }
+
+  let enrollment: any = null;
+  if (payment.enrollment_id) {
+    const { data } = await supabase
+      .from('enrollments')
+      .select('id, location_id, contact_id, email, payment_type, payments_total, processor_type, status')
+      .eq('id', payment.enrollment_id)
+      .eq('location_id', config.location_id)
+      .maybeSingle();
+    enrollment = data || null;
+
+    if (enrollment) {
+      await supabase.from('enrollments').update({
+        initial_payment_status: paymentStatus,
+        initial_payment_settled_at: isSettle ? now : null,
+        initial_payment_returned_at: isSettle ? null : now,
+        initial_payment_return_reason: returnReason,
+        ...(isSettle ? {} : { status: 'payment_returned' }),
+      } as any).eq('id', enrollment.id).eq('location_id', config.location_id);
+    }
+  }
+
+  if (isSettle) {
+    if (enrollment && ['payment_processing', 'consent_captured'].includes(String(enrollment.status || ''))) {
+      await phase2EnrollmentService.completeEnrollment({
+        enrollmentId: enrollment.id,
+        locationId: enrollment.location_id,
+        contactId: enrollment.contact_id || payment.contact_id || '',
+        contactEmail: payment.customer_email || enrollment.email || '',
+        paymentAmount: Number(payment.amount || 0),
+        paymentType: enrollment.payment_type || 'pif',
+        transactionId,
+        paymentsTotal: enrollment.payments_total || null,
+        processorType: 'nmi',
+        paymentSource: 'nmi_ach_settlement',
+      });
+    } else if (!payment.enrollment_id && payment.contact_id) {
+      const { offerName } = await offerDetails(supabase, payment.offer_id || null);
+      await triggerService.fireTrigger(payment.location_id, 'ss_payment_received', {
+        event_type: 'payment_received',
+        location_id: payment.location_id,
+        locationId: payment.location_id,
+        contact_id: payment.contact_id,
+        contactId: payment.contact_id,
+        offer_id: payment.offer_id || '',
+        offerId: payment.offer_id || '',
+        program_name: offerName,
+        programName: offerName,
+        offer_name: offerName,
+        offerName,
+        processor: 'nmi',
+        source: 'nmi_ach_settlement',
+        payment_source: 'nmi_ach_settlement',
+        paymentSource: 'nmi_ach_settlement',
+        payment_timing: 'settlement',
+        paymentTiming: 'settlement',
+        amount: Number(payment.amount || 0),
+        amount_display: formatMoney(Number(payment.amount || 0)),
+        amountDisplay: formatMoney(Number(payment.amount || 0)),
+        transaction_id: transactionId,
+        transactionId,
+        payment_kind: 'manual_sale',
+        paymentKind: 'manual_sale',
+        receipt_only: true,
+        receiptOnly: true,
+        send_receipt: true,
+        sendReceipt: true,
+        send_welcome: false,
+        sendWelcome: false,
+      });
+    }
+  }
+
+  await updateDiagnosticLog(logId, {
+    matched: true,
+    action: `ach_${paymentStatus}_recorded`,
+    verification_status: 'verified',
+    payment_event_id: payment.id,
+    enrollment_id: payment.enrollment_id || null,
+    error_message: returnReason,
+  });
+}
+
 async function processTransactionEvent(
   supabase: SupabaseClient,
   config: ProcessorConfig,
@@ -574,6 +734,11 @@ async function processTransactionEvent(
       verification_status: 'skipped',
       error_message: `${eventType} logged for diagnostics only`,
     });
+    return;
+  }
+
+  if (TRANSACTION_CHECK_STATUS_EVENTS.has(eventType)) {
+    await processAchStatusEvent(supabase, config, effectivePayload, logId);
     return;
   }
 

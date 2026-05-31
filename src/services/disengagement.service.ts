@@ -206,6 +206,20 @@ export const disengagementService = {
                 customField: { [fields.ENGAGEMENT_STATUS]: 'At Risk' },
               });
             } catch { /* non-blocking */ }
+
+            // #29: record a custom_event so the re-engagement detector (evidence.service) can
+            // later recognise this contact was flagged At Risk by the scorer and fire the
+            // "Client Re-Engaged" workflow on their return. Previously only payment-failure
+            // dunning was detectable; scorer-only At Risk clients never auto-cleared.
+            try {
+              const { phase2EvidenceRepository } = require('../repositories/phase2Evidence.repository');
+              await phase2EvidenceRepository.create({
+                location_id: locationId,
+                contact_id: contactId,
+                evidence_type: 'custom_event',
+                data: { event_type: 'disengagement_flagged', flagged_at: new Date().toISOString() },
+              });
+            } catch { /* non-blocking */ }
           }
         }
       } catch (err) {

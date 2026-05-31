@@ -15,6 +15,27 @@ import { logger } from '../utils/logger';
 // Use require() for clean instantiation — types come from inference.
 const Stripe = require('stripe');
 
+/**
+ * Compute a subscription cancel_at (epoch seconds) that yields exactly `totalPayments`
+ * calendar cycles. Uses calendar arithmetic (real month lengths / leap years) rather than a
+ * fixed 30-day approximation, then backs off 1h so cancel_at lands between the Nth and (N+1)th
+ * billing anchors (bug hunt #16). Returns undefined for open-ended subscriptions.
+ */
+export function stripeCancelAtSeconds(startMs: number, interval: string, totalPayments: number): number | undefined {
+  if (!(totalPayments > 0)) return undefined;
+  const d = new Date(startMs);
+  switch (interval) {
+    case 'daily': d.setUTCDate(d.getUTCDate() + totalPayments); break;
+    case 'weekly': d.setUTCDate(d.getUTCDate() + 7 * totalPayments); break;
+    case 'biweekly': d.setUTCDate(d.getUTCDate() + 14 * totalPayments); break;
+    case 'quarterly': d.setUTCMonth(d.getUTCMonth() + 3 * totalPayments); break;
+    case 'annual': d.setUTCFullYear(d.getUTCFullYear() + totalPayments); break;
+    case 'monthly':
+    default: d.setUTCMonth(d.getUTCMonth() + totalPayments); break;
+  }
+  return Math.floor(d.getTime() / 1000) - 3600;
+}
+
 export class StripeClient implements ProcessorInterface {
   readonly processorType = 'stripe' as const;
 
@@ -35,6 +56,17 @@ export class StripeClient implements ProcessorInterface {
   // ─── charge ────────────────────────────────────────────────
 
   async charge(request: ChargeRequest): Promise<ChargeResult> {
+    if (request.paymentMethodType === 'ach') {
+      return {
+        success: false,
+        transactionId: '',
+        amount: request.amount,
+        currency: request.currency || 'usd',
+        status: 'error',
+        errorMessage: 'Stripe ACH requires the bank-account Payment Element flow and is not enabled in this checkout path yet.',
+        errorCode: 'STRIPE_ACH_NOT_ENABLED',
+      };
+    }
     try {
       const params: Record<string, any> = {
         amount: request.amount,
@@ -144,6 +176,13 @@ export class StripeClient implements ProcessorInterface {
   // ─── saveCard ──────────────────────────────────────────────
 
   async saveCard(request: SaveCardRequest): Promise<SaveCardResult> {
+    if (request.paymentMethodType === 'ach') {
+      throw new ProcessorError(
+        'Stripe ACH requires the bank-account SetupIntent flow and is not enabled in this saved-payment path yet.',
+        'stripe',
+        'STRIPE_ACH_NOT_ENABLED',
+      );
+    }
     try {
       const customer = await this.findOrCreateCustomer(
         request.customerEmail,
@@ -182,7 +221,8 @@ export class StripeClient implements ProcessorInterface {
         this.acct,
       );
 
-      const customer = await this.stripe.customers.retrieve(customerId, this.acct);
+      // 3-arg form: stripeAccount must be the options arg, not params (bug hunt #15).
+      const customer = await this.stripe.customers.retrieve(customerId, undefined, this.acct);
       const defaultPmId = customer.invoice_settings?.default_payment_method;
 
       return methods.data.map((pm: any) => ({
@@ -260,7 +300,6 @@ export class StripeClient implements ProcessorInterface {
       // double-billing the customer (PMG symptom: $1.00 charged on enrollment day
       // for a $0.50/2-pay offer instead of $0.50). proration_behavior=none keeps
       // the implicit gap from "now" to "billing_cycle_anchor" from being prorated.
-      const intervalSeconds = this.getIntervalSeconds(request.interval);
       const startMs = request.startDate
         ? new Date(request.startDate).getTime()
         : Date.now();
@@ -272,10 +311,11 @@ export class StripeClient implements ProcessorInterface {
         subParams.proration_behavior = 'none';
       }
 
-      // Stripe doesn't have "stop after N" — use cancel_at timestamp.
-      // cancel_at = first-cycle anchor + (N * interval) gives exactly N cycles.
-      if (request.totalPayments > 0) {
-        subParams.cancel_at = startSec + (request.totalPayments * intervalSeconds);
+      // Stripe doesn't have "stop after N" — use a cancel_at timestamp computed with calendar
+      // arithmetic so it cannot overshoot into an extra invoice (bug hunt #16).
+      const cancelAt = stripeCancelAtSeconds(startMs, request.interval, request.totalPayments);
+      if (cancelAt !== undefined) {
+        subParams.cancel_at = cancelAt;
       }
 
       const subscription = await this.stripe.subscriptions.create(subParams, this.acct);
@@ -355,7 +395,8 @@ export class StripeClient implements ProcessorInterface {
 
   async verifyTransaction(transactionId: string): Promise<VerifyResult> {
     try {
-      const pi = await this.stripe.paymentIntents.retrieve(transactionId, this.acct);
+      // 3-arg form: stripeAccount must be the options arg, not params (bug hunt #15).
+      const pi = await this.stripe.paymentIntents.retrieve(transactionId, undefined, this.acct);
 
       const statusMap: Record<string, VerifyResult['status']> = {
         succeeded: 'settled',
@@ -505,14 +546,4 @@ export class StripeClient implements ProcessorInterface {
     return new ProcessorError(err.message, 'stripe', 'UNKNOWN');
   }
 
-  private getIntervalSeconds(interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual'): number {
-    switch (interval) {
-      case 'daily': return 86400;
-      case 'weekly': return 7 * 86400;
-      case 'biweekly': return 14 * 86400;
-      case 'monthly': return 30 * 86400;
-      case 'quarterly': return 91 * 86400;
-      case 'annual': return 365 * 86400;
-    }
-  }
 }

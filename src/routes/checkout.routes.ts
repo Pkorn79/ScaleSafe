@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { createWhopCheckoutSession, getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, processPayment, saveCard } from '../controllers/checkout.controller';
+import { createWhopCheckoutSession, getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, getCheckoutQuote, processPayment, saveCard } from '../controllers/checkout.controller';
 
 const router = Router();
 
@@ -8,6 +8,7 @@ const router = Router();
 router.get('/api/checkout/config', getCheckoutConfig);
 router.get('/api/checkout/config-by-offer/:offerId', getCheckoutConfigByOffer);
 router.get('/api/checkout/config-by-product/:ghlProductId', getCheckoutConfigByProduct);
+router.get('/api/checkout/quote', getCheckoutQuote);
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/whop/session', createWhopCheckoutSession);
 router.post('/api/checkout/save-card', saveCard);
@@ -603,6 +604,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .offer-price{font-size:24px;font-weight:700;color:#3b82f6}
 .offer-desc{font-size:14px;color:#6b7280;line-height:1.5;margin-bottom:8px}
 .offer-refund{font-size:13px;color:#6b7280;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-top:8px}
+.dual-pricing-box{background:#f8fafc;border:1px solid #dbeafe;border-radius:8px;padding:12px;margin:10px 0 12px}
+.dual-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;margin:3px 0}
+.dual-row strong{font-size:14px;color:#111827}
+.dual-note{font-size:12px;color:#64748b;line-height:1.35;margin-top:6px}
+.method-toggle{display:none;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:12px}
+.method-toggle.active{display:flex}
+.method-option{flex:1;border:0;background:#f9fafb;color:#374151;padding:10px;font-size:14px;font-weight:600;cursor:pointer}
+.method-option.active{background:#2563eb;color:#fff}
+.method-option:disabled{color:#9ca3af;cursor:not-allowed;background:#f3f4f6}
 .divider{height:1px;background:#e5e7eb;margin:20px 0}
 .section-title{font-size:14px;font-weight:600;color:#374151;margin-bottom:12px}
 .field-wrapper{border:1px solid #d1d5db;border-radius:8px;padding:12px;margin-bottom:10px;min-height:44px;background:#fff;transition:border-color .15s}
@@ -656,6 +666,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
     <div id="installment-note" class="hidden" style="display:none;font-size:12px;color:#6b7280;text-align:center;margin-bottom:8px"></div>
+    <div id="dual-pricing-box" class="dual-pricing-box hidden">
+      <div class="dual-row"><span>Bank transfer price</span><strong id="dual-ach-price"></strong></div>
+      <div class="dual-row"><span>Card price</span><strong id="dual-card-price"></strong></div>
+      <div class="dual-note">Bank transfer is the lower price. Card payments use the card price shown here.</div>
+    </div>
 
     <div class="divider"></div>
 
@@ -681,18 +696,43 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
 
     <div class="section-title">Payment Information</div>
+    <div id="payment-method-toggle" class="method-toggle">
+      <button type="button" id="method-ach" class="method-option">Bank Transfer</button>
+      <button type="button" id="method-card" class="method-option active">Card</button>
+    </div>
     <div id="nmi-fields" class="hidden">
-      <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Card Number</label>
-      <div class="field-wrapper"><div id="ccnumber"></div></div>
-      <div class="field-row">
-        <div>
-          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Exp Date</label>
-          <div class="field-wrapper"><div id="ccexp"></div></div>
+      <div id="nmi-card-fields">
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Card Number</label>
+        <div class="field-wrapper"><div id="ccnumber"></div></div>
+        <div class="field-row">
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Exp Date</label>
+            <div class="field-wrapper"><div id="ccexp"></div></div>
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">CVV</label>
+            <div class="field-wrapper"><div id="cvv"></div></div>
+          </div>
         </div>
-        <div>
-          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">CVV</label>
-          <div class="field-wrapper"><div id="cvv"></div></div>
+      </div>
+      <div id="nmi-ach-fields" class="hidden">
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Name on Bank Account</label>
+        <div class="field-wrapper"><div id="checkname"></div></div>
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Routing Number</label>
+        <div class="field-wrapper"><div id="checkaba"></div></div>
+        <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">Account Number</label>
+        <div class="field-wrapper"><div id="checkaccount"></div></div>
+        <div class="field-row">
+          <select id="ach-holder-type" class="field-wrapper" style="height:44px;padding:8px">
+            <option value="personal">Personal account</option>
+            <option value="business">Business account</option>
+          </select>
+          <select id="ach-account-type" class="field-wrapper" style="height:44px;padding:8px">
+            <option value="checking">Checking</option>
+            <option value="savings">Savings</option>
+          </select>
         </div>
+        <div class="dual-note">ACH is submitted for bank processing. Receipt and access are completed after the processor confirms settlement.</div>
       </div>
     </div>
     <div id="stripe-fields" class="hidden">
@@ -735,6 +775,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var consentToken = params.get('consentToken') || '';
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
+  var selectedPaymentMethod = 'card';
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
@@ -953,19 +994,84 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
   }
 
-  function updatePricingDisplay() {
+  function baseDisplayPrice() {
     var displayPrice = offerData.price;
-    var note = '';
     if (paymentChoice === 'pif' && offerData.pifPrice != null) {
       displayPrice = offerData.pifPrice;
     } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
       displayPrice = offerData.installmentAmount;
-      note = offerData.installmentCount + ' ' + (offerData.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(offerData.installmentAmount);
     } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
       displayPrice = offerData.installmentAmount;
-      note = formatCurrency(offerData.installmentAmount) + ' / ' + (offerData.installmentFrequency || 'month') + ' (ongoing)';
+    }
+    return Number(displayPrice || 0);
+  }
+
+  function priceQuote() {
+    var cardPrice = baseDisplayPrice();
+    var dual = offerData.dualPricing || null;
+    if (!dual || !offerData.dualPricingEnabled) {
+      return { cardPrice: cardPrice, achPrice: cardPrice, selectedPrice: cardPrice, enabled: false };
+    }
+    var uplift = Number(dual.cardUpliftPercent || 0);
+    var achPrice = uplift > 0 ? Math.round((cardPrice / (1 + uplift / 100)) * 100) / 100 : cardPrice;
+    return {
+      cardPrice: cardPrice,
+      achPrice: achPrice,
+      selectedPrice: selectedPaymentMethod === 'ach' ? achPrice : cardPrice,
+      enabled: true
+    };
+  }
+
+  function achSelectable() {
+    return !!(offerData
+      && offerData.dualPricingEnabled
+      && offerData.achEnabled
+      && processorType === 'nmi'
+      && paymentChoice !== 'installments'
+      && paymentChoice !== 'subscription');
+  }
+
+  function setPaymentMethod(method) {
+    if (method === 'ach' && !achSelectable()) return;
+    selectedPaymentMethod = method === 'ach' ? 'ach' : 'card';
+    updatePaymentMethodUi();
+    updatePricingDisplay();
+  }
+
+  function updatePaymentMethodUi() {
+    var toggle = el('payment-method-toggle');
+    if (toggle) {
+      toggle.classList.toggle('active', achSelectable());
+    }
+    if (!achSelectable()) selectedPaymentMethod = 'card';
+    var achButton = el('method-ach');
+    var cardButton = el('method-card');
+    if (achButton) achButton.classList.toggle('active', selectedPaymentMethod === 'ach');
+    if (cardButton) cardButton.classList.toggle('active', selectedPaymentMethod === 'card');
+    var cardFields = el('nmi-card-fields');
+    var achFields = el('nmi-ach-fields');
+    if (cardFields) cardFields.classList.toggle('hidden', selectedPaymentMethod === 'ach');
+    if (achFields) achFields.classList.toggle('hidden', selectedPaymentMethod !== 'ach');
+  }
+
+  function updatePricingDisplay() {
+    var note = '';
+    var quote = priceQuote();
+    var displayPrice = quote.selectedPrice;
+    if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
+      note = offerData.installmentCount + ' ' + (offerData.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(displayPrice);
+    } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
+      note = formatCurrency(displayPrice) + ' / ' + (offerData.installmentFrequency || 'month') + ' (ongoing)';
     }
     el('offer-price').textContent = formatCurrency(displayPrice);
+    if (quote.enabled) {
+      el('dual-ach-price').textContent = formatCurrency(quote.achPrice);
+      el('dual-card-price').textContent = formatCurrency(quote.cardPrice);
+      el('dual-pricing-box').classList.remove('hidden');
+    } else {
+      el('dual-pricing-box').classList.add('hidden');
+    }
+    updatePaymentMethodUi();
     el('pay-btn').textContent = processorType === 'whop'
       ? 'Continue to Whop Checkout'
       : 'Pay ' + formatCurrency(displayPrice);
@@ -1003,6 +1109,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   el('consent-cb').addEventListener('change', updatePayBtn);
   el('toggle-pif-btn').addEventListener('click', function() { selectPaymentOption('pif'); });
   el('toggle-inst-btn').addEventListener('click', function() { selectPaymentOption('installments'); });
+  el('method-ach').addEventListener('click', function() { setPaymentMethod('ach'); });
+  el('method-card').addEventListener('click', function() { setPaymentMethod('card'); });
   function updatePayBtn() {
     var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi' || processorType === 'whop');
     el('pay-btn').disabled = !ready;
@@ -1065,7 +1173,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             fields: {
               ccnumber: {selector:'#ccnumber',placeholder:'Card Number'},
               ccexp: {selector:'#ccexp',placeholder:'MM/YY'},
-              cvv: {selector:'#cvv',placeholder:'CVV'}
+              cvv: {selector:'#cvv',placeholder:'CVV'},
+              checkname: {selector:'#checkname',placeholder:'Name on account'},
+              checkaba: {selector:'#checkaba',placeholder:'Routing number'},
+              checkaccount: {selector:'#checkaccount',placeholder:'Account number'}
             },
             customCss: {
               'border': 'none',
@@ -1124,14 +1235,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     try {
       var token = paymentToken;
       // Use payment choice to determine charge amount
-      var chargePrice = offerData.price;
-      if (paymentChoice === 'pif' && offerData.pifPrice != null) {
-        chargePrice = offerData.pifPrice;
-      } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
-        chargePrice = offerData.installmentAmount;
-      } else if (paymentChoice === 'subscription') {
-        chargePrice = offerData.installmentAmount != null ? offerData.installmentAmount : offerData.price;
-      }
+      var chargePrice = priceQuote().selectedPrice;
       // Validate customer fields. Phone is only required on Quick Pay (no consent token);
       // on the full funnel path the contact already exists in GHL with phone from Page 1.
       var custName = el('cust-name').value.trim();
@@ -1186,6 +1290,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           contactEmail: custEmail || enrollmentEmail,
           contactPhone: custPhone,
           paymentChoice: paymentChoice || 'pif',
+          paymentMethod: selectedPaymentMethod,
+          achAccountHolderType: selectedPaymentMethod === 'ach' ? el('ach-holder-type').value : undefined,
+          achAccountType: selectedPaymentMethod === 'ach' ? el('ach-account-type').value : undefined,
+          achSecCode: selectedPaymentMethod === 'ach' ? 'WEB' : undefined,
           deviceFingerprint: navigator.userAgent,
           browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
         })
@@ -1198,7 +1306,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('pay-btn').classList.add('hidden');
       el('success-msg').textContent = data.billingIssue
         ? 'Payment received. Recurring billing setup needs merchant attention.'
-        : 'Payment Successful!';
+        : data.paymentStatus === 'processing'
+          ? 'Bank transfer submitted. Receipt and enrollment completion will happen after settlement.'
+          : 'Payment Successful!';
       el('success-msg').style.display = 'block';
 
       // In GHL iframe: notify parent

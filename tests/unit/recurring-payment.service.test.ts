@@ -26,71 +26,162 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { handleRecurringPaymentSuccess } from '../../src/services/recurring-payment.service';
 
-describe('recurring payment lifecycle', () => {
-  const paymentEventInserts: any[] = [];
-  const enrollmentUpdates: any[] = [];
+const baseEnrollment = {
+  id: 'enr_1',
+  merchant_id: 'merchant_1',
+  location_id: 'loc_1',
+  contact_id: 'contact_1',
+  offer_id: 'offer_1',
+  payments_made: 1,
+  payments_total: 2,
+  payment_type: 'installment',
+  processor_subscription_id: 'sub_1',
+  next_billing_date: '2026-06-01',
+};
+
+describe('recurring payment lifecycle (atomic record_recurring_payment)', () => {
+  let rpcResult: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    paymentEventInserts.length = 0;
-    enrollmentUpdates.length = 0;
 
+    // Default: a genuinely new, non-final payment.
+    rpcResult = {
+      is_duplicate: false,
+      payment_event_id: 'pe_1',
+      payments_made: 2,
+      payments_total: 2,
+      is_final: false,
+      billing_completed_at: null,
+      next_billing_date: '2026-07-01',
+      next_billing_source: 'processor',
+    };
+
+    // The service should perform NO direct table writes for the ledger/enrollment —
+    // the RPC is authoritative. Only the merchants lookup remains.
     mockFrom.mockImplementation((table: string) => {
-      if (table === 'payment_events') {
+      if (table === 'merchants') {
         return {
-          insert: jest.fn((payload: any) => {
-            paymentEventInserts.push(payload);
-            return {
-              select: jest.fn(() => ({
-                single: jest.fn().mockResolvedValue({ data: { id: 'pe_1' }, error: null }),
-              })),
-            };
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                single: () => Promise.resolve({
+                  data: { business_name: 'Biz', support_email: 'help@biz.com' },
+                  error: null,
+                }),
+              }),
+            }),
           }),
         };
       }
-
-      if (table === 'enrollments') {
-        return {
-          update: jest.fn((updates: any) => ({
-            eq: jest.fn().mockReturnValue({
-              eq: jest.fn((column: string, id: string) => {
-                enrollmentUpdates.push({ column, id, updates });
-                return Promise.resolve({ error: null });
-              }),
-            }),
-          })),
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+      throw new Error(`Unexpected table write in handleRecurringPaymentSuccess: ${table}`);
     });
 
-    mockRpc.mockImplementation((_fn: string, params: any) => {
-      const madeByEnrollment: Record<string, number> = {
-        enr_1: 2,
-        enr_sub: 5,
-        enr_history: 2,
-      };
-      return Promise.resolve({
-        data: [{ payments_made: madeByEnrollment[params.p_enrollment_id] || 1 }],
-        error: null,
-      });
+    mockRpc.mockImplementation((fn: string) => {
+      if (fn === 'record_recurring_payment') {
+        return Promise.resolve({ data: [rpcResult], error: null });
+      }
+      throw new Error(`Unexpected RPC: ${fn}`);
     });
   });
 
-  it('marks a final installment as billing complete without completing the program', async () => {
+  it('records a new recurring payment atomically via the record_recurring_payment RPC', async () => {
     const result = await handleRecurringPaymentSuccess({
-      enrollment: {
-        id: 'enr_1',
-        merchant_id: 'merchant_1',
-        location_id: 'loc_1',
-        contact_id: 'contact_1',
-        offer_id: 'offer_1',
-        payments_made: 1,
-        payments_total: 2,
-        payment_type: 'installment',
-        processor_subscription_id: 'sub_1',
-      },
+      enrollment: baseEnrollment,
+      processorType: 'stripe',
+      transactionId: 'ch_2',
+      amountCents: 5000,
+      offerName: 'Test Offer',
+      installmentFrequency: 'weekly',
+      source: 'stripe_webhook',
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('record_recurring_payment', expect.objectContaining({
+      p_enrollment_id: 'enr_1',
+      p_location_id: 'loc_1',
+      p_processor: 'stripe',
+      p_transaction_id: 'ch_2',
+      p_amount: 50,
+      p_source: 'stripe_webhook',
+    }));
+    expect(result.paymentEventId).toBe('pe_1');
+    expect(result.newPaymentsMade).toBe(2);
+    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.objectContaining({
+      payment_number: 2,
+      payments_remaining: 0,
+      payment_kind: 'installment',
+    }));
+  });
+
+  it('skips increment, evidence, contact sync, and triggers on a duplicate webhook delivery', async () => {
+    rpcResult = {
+      is_duplicate: true,
+      payment_event_id: null,
+      payments_made: 2,
+      payments_total: 2,
+      is_final: false,
+      billing_completed_at: null,
+      next_billing_date: '2026-07-01',
+      next_billing_source: 'processor',
+    };
+
+    const result = await handleRecurringPaymentSuccess({
+      enrollment: baseEnrollment,
+      processorType: 'stripe',
+      transactionId: 'ch_2',
+      amountCents: 5000,
+      offerName: 'Test Offer',
+      installmentFrequency: 'weekly',
+      source: 'stripe_webhook',
+    });
+
+    expect(result.duplicate).toBe(true);
+    expect(result.paymentEventId).toBeNull();
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+    expect(mockLogEvidence).not.toHaveBeenCalled();
+    expect(mockGhlPut).not.toHaveBeenCalled();
+  });
+
+  it('passes the processor-resolved next billing date and source to the RPC', async () => {
+    await handleRecurringPaymentSuccess({
+      enrollment: baseEnrollment,
+      processorType: 'stripe',
+      transactionId: 'ch_2',
+      amountCents: 5000,
+      offerName: 'Test Offer',
+      installmentFrequency: 'monthly',
+      source: 'stripe_webhook',
+      nextBillingDate: '2026-08-15',
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('record_recurring_payment', expect.objectContaining({
+      p_next_billing_date: '2026-08-15',
+      p_next_billing_source: 'processor',
+    }));
+  });
+
+  it('falls back to an estimated source when no processor date is available', async () => {
+    await handleRecurringPaymentSuccess({
+      enrollment: baseEnrollment,
+      processorType: 'nmi',
+      transactionId: 'txn_2',
+      amountCents: 5000,
+      offerName: 'Test Offer',
+      installmentFrequency: 'monthly',
+      source: 'nmi_silent_post',
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('record_recurring_payment', expect.objectContaining({
+      p_next_billing_date: null,
+      p_next_billing_source: 'estimated',
+    }));
+  });
+
+  it('reports a final installment without firing program completion', async () => {
+    rpcResult = { ...rpcResult, is_final: true, billing_completed_at: '2026-06-15T00:00:00Z', next_billing_date: null, next_billing_source: 'complete' };
+
+    const result = await handleRecurringPaymentSuccess({
+      enrollment: baseEnrollment,
       processorType: 'stripe',
       transactionId: 'ch_2',
       amountCents: 5000,
@@ -100,82 +191,13 @@ describe('recurring payment lifecycle', () => {
     });
 
     expect(result.isFinal).toBe(true);
-    expect(enrollmentUpdates[0].updates).toEqual(expect.objectContaining({
-      next_billing_date: null,
-    }));
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
-    expect(enrollmentUpdates[0].updates.billing_completed_at).toEqual(expect.any(String));
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('status');
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('completed_at');
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('pulse_cadence_enabled');
-
-    expect(paymentEventInserts[0]).toEqual(expect.objectContaining({
-      processor: 'stripe',
-      processor_subscription_id: 'sub_1',
-      payment_number: 2,
-      payments_total: 2,
-      source: 'stripe_webhook',
-      is_recurring: true,
-    }));
-    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.objectContaining({
-      event_type: 'payment_received',
-      contact_id: 'contact_1',
-      contactId: 'contact_1',
-      enrollment_id: 'enr_1',
-      enrollmentId: 'enr_1',
-      offer_id: 'offer_1',
-      offerId: 'offer_1',
-      processor: 'stripe',
-      source: 'stripe_webhook',
-      payment_number: 2,
-      payments_total: 2,
-      payments_remaining: 0,
-      payment_kind: 'installment',
-    }));
+    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
   });
 
-  it('does not treat subscription payments as final program completion', async () => {
-    const result = await handleRecurringPaymentSuccess({
-      enrollment: {
-        id: 'enr_sub',
-        merchant_id: 'merchant_1',
-        location_id: 'loc_1',
-        contact_id: 'contact_1',
-        offer_id: 'offer_1',
-        payments_made: 4,
-        payments_total: 5,
-        payment_type: 'subscription',
-        processor_subscription_id: 'sub_live',
-      },
-      processorType: 'nmi',
-      transactionId: 'txn_5',
-      amountCents: 1000,
-      offerName: 'Subscription Offer',
-      installmentFrequency: 'monthly',
-      source: 'nmi_silent_post',
-    });
-
-    expect(result.isFinal).toBe(false);
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
-    expect(enrollmentUpdates[0].updates.next_billing_date).toEqual(expect.any(String));
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('billing_completed_at');
-    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
-  });
-
-  it('imports NMI history payments without firing a customer receipt workflow', async () => {
-    const result = await handleRecurringPaymentSuccess({
-      enrollment: {
-        id: 'enr_history',
-        merchant_id: 'merchant_1',
-        location_id: 'loc_1',
-        contact_id: 'contact_1',
-        offer_id: 'offer_1',
-        payments_made: 1,
-        payments_total: 3,
-        payment_type: 'installment',
-        processor_subscription_id: 'sub_nmi',
-      },
+  it('does not fire a customer receipt for NMI history-sync imports', async () => {
+    await handleRecurringPaymentSuccess({
+      enrollment: { ...baseEnrollment, id: 'enr_history', payments_total: 3 },
       processorType: 'nmi',
       transactionId: '12061861902',
       amountCents: 3300,
@@ -184,13 +206,6 @@ describe('recurring payment lifecycle', () => {
       source: 'nmi_history_sync',
     });
 
-    expect(result.paymentEventId).toBe('pe_1');
-    expect(paymentEventInserts[0]).toEqual(expect.objectContaining({
-      processor: 'nmi',
-      processor_transaction_id: '12061861902',
-      source: 'nmi_history_sync',
-    }));
-    expect(enrollmentUpdates[0].updates).not.toHaveProperty('payments_made');
     expect(mockGhlPut).not.toHaveBeenCalled();
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
   });

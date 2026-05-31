@@ -143,7 +143,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **ENROLLMENT (2):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Enrollment Complete | `enrollment_complete` | Client completes payment | contact_id, offer_id, offer_name, amount, payment_type, bump_1_accepted, bump_2_accepted |
+| Enrollment Complete | `enrollment_complete` | Client completes terms/signature and enrollment is finalized; welcome/access can send | contact_id, enrollment_id, offer_id, offer_name, payment_type, send_receipt=false, send_welcome=true, access_ready=true |
 | Cancellation Requested | `ss_cancellation_requested` | Client requests cancellation | contact_id, offer_id, reason, refund_eligibility, enrollment_date |
 
 **SESSION & DELIVERY (4):**
@@ -163,7 +163,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **PAYMENT (3):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Payment Received | `ss_payment_received` | Successful payment | contact_id, amount, transaction_id, payments_remaining, running_total, payment_kind (`one_off` \| `installment` \| `subscription` \| `dunning_recovery`) |
+| Payment Received | `ss_payment_received` | Successful payment; receipt only | contact_id, enrollment_id, offer_id, amount_display, transaction_id, payment_kind, payment_source, payment_timing, send_receipt=true, send_welcome=false |
 | Payment Failed | `ss_payment_failed` | Payment attempt fails | contact_id, amount, failure_reason, attempt_count, next_retry_date |
 | Refund Processed | `ss_refund_processed` | Refund issued | contact_id, amount, refund_type, reason |
 

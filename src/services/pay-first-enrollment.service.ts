@@ -15,6 +15,7 @@ import { ValidationError } from '../utils/errors';
 import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
 import type { ProcessorType } from '../types/processor.types';
+import { dualPricingService } from './dual-pricing.service';
 
 interface RecordPayFirstInput {
   locationId: string;
@@ -45,6 +46,10 @@ interface ChargeManualSaleInput {
   amount: number;
   paymentToken: string;
   paymentType?: string;
+  paymentMethod?: 'card' | 'ach';
+  achSecCode?: 'WEB' | 'PPD' | 'CCD' | 'TEL';
+  achAccountHolderType?: 'personal' | 'business';
+  achAccountType?: 'checking' | 'savings';
   sendEnrollment?: boolean;
   sendVia?: string[];
   recordedBy?: string;
@@ -175,17 +180,40 @@ export const payFirstEnrollmentService = {
       : undefined;
     const { config: procConfig } = await resolveProcessor(merchant.id, input.locationId, offerHint);
     const processor = createProcessorClient(procConfig);
+    if (offer) {
+      const quote = await dualPricingService.quoteOffer(
+        offer,
+        input.paymentType,
+        input.paymentMethod === 'ach' ? 'ach' : 'card',
+      );
+      if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== dollarsToCents(input.amount)) {
+        throw new ValidationError('Payment amount does not match selected offer');
+      }
+    }
     const amountCents = dollarsToCents(input.amount);
     if (amountCents <= 0) throw new ValidationError('Amount must be greater than zero');
 
     const paymentType = offer ? normalizePaymentType(input.paymentType, offer) : 'one_off';
     const paymentsTotal = offer ? paymentsTotalFor(paymentType, offer) : null;
     const recordedAt = new Date().toISOString();
+    const paymentMethod = input.paymentMethod === 'ach' ? 'ach' : 'card';
+    if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
+      throw new ValidationError('Bank transfer is currently available only for NMI offers.');
+    }
+    if (paymentMethod === 'ach' && ['installment', 'installments', 'subscription'].includes(paymentType)) {
+      throw new ValidationError('Bank-transfer installments and subscriptions require settlement-gated recurring setup and are not enabled yet.');
+    }
 
     const charge = await processor.charge({
       amount: amountCents,
       currency: 'usd',
       paymentToken: input.paymentToken,
+      paymentMethodType: paymentMethod,
+      achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
+        ? input.achSecCode
+        : 'WEB',
+      achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
+      achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
       description: offer?.offer_name || 'Quick Manual Sale',
       metadata: {
         source: 'quick_manual_sale',
@@ -202,6 +230,7 @@ export const payFirstEnrollmentService = {
     if (!charge.success) {
       throw new ValidationError(charge.errorMessage || 'Card charge failed');
     }
+    const paymentProcessing = charge.status === 'processing';
 
     let saveResult: {
       success: boolean;
@@ -211,6 +240,10 @@ export const payFirstEnrollmentService = {
       cardBrand: string;
       cardExpMonth: number;
       cardExpYear: number;
+      paymentMethodKind?: 'card' | 'ach';
+      bankLastFour?: string;
+      bankAccountType?: string;
+      bankHolderType?: string;
     };
 
     if (charge.vaultedCustomerId) {
@@ -222,10 +255,20 @@ export const payFirstEnrollmentService = {
         cardBrand: charge.vaultedCardBrand || 'unknown',
         cardExpMonth: charge.vaultedCardExpMonth || 0,
         cardExpYear: charge.vaultedCardExpYear || 0,
+        paymentMethodKind: paymentMethod,
+        bankLastFour: charge.vaultedBankLastFour,
+        bankAccountType: charge.vaultedBankAccountType,
+        bankHolderType: charge.vaultedBankHolderType,
       };
     } else {
       saveResult = await processor.saveCard({
         paymentToken: input.paymentToken,
+        paymentMethodType: paymentMethod,
+        achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
+          ? input.achSecCode
+          : 'WEB',
+        achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
+        achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
         contactId,
         customerEmail: input.email,
         customerName,
@@ -237,12 +280,16 @@ export const payFirstEnrollmentService = {
       locationId: input.locationId,
       contactId,
       processorType: procConfig.processor_type,
+      paymentMethodKind: paymentMethod,
       customerId: saveResult.customerId,
       paymentMethodId: saveResult.paymentMethodId,
       cardLastFour: saveResult.cardLastFour,
       cardBrand: saveResult.cardBrand,
       cardExpMonth: saveResult.cardExpMonth,
       cardExpYear: saveResult.cardExpYear,
+      bankLastFour: saveResult.bankLastFour,
+      bankAccountType: saveResult.bankAccountType,
+      bankHolderType: saveResult.bankHolderType,
       makeDefault: true,
     });
 
@@ -259,11 +306,13 @@ export const payFirstEnrollmentService = {
           email: input.email,
           first_name: name.firstName || null,
           last_name: name.lastName || null,
-          status: 'paid_pending_enrollment',
+          status: paymentProcessing ? 'payment_processing' : 'paid_pending_enrollment',
           payment_amount: input.amount,
           payment_type: paymentType,
           payment_transaction_id: charge.transactionId || charge.chargeId || '',
           processor_type: procConfig.processor_type,
+          initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
+          initial_payment_method: paymentMethod,
           payments_made: 1,
           payments_total: paymentsTotal,
           enrolled_at: null,
@@ -298,6 +347,9 @@ export const payFirstEnrollmentService = {
       payments_remaining: paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1),
       source: 'quick_manual_sale',
       is_recurring: false,
+      payment_status: paymentProcessing ? 'processing' : 'succeeded',
+      payment_method_type: paymentMethod,
+      selected_payment_method: paymentMethod,
       raw_webhook_payload: {
         source: 'quick_manual_sale',
         processor: procConfig.processor_type,
@@ -324,7 +376,7 @@ export const payFirstEnrollmentService = {
       },
     });
 
-    if (offer && input.sendEnrollment !== false) {
+    if (!paymentProcessing && offer && input.sendEnrollment !== false) {
       try {
         const api = await ghlApi(input.locationId);
         await api.put(`/contacts/${contactId}`, {
@@ -376,7 +428,7 @@ export const payFirstEnrollmentService = {
       });
     }
 
-    await triggerService.fireTrigger(input.locationId, 'ss_payment_received', {
+    if (!paymentProcessing) await triggerService.fireTrigger(input.locationId, 'ss_payment_received', {
       event_type: 'payment_received',
       location_id: input.locationId,
       locationId: input.locationId,
@@ -416,7 +468,9 @@ export const payFirstEnrollmentService = {
       contactId,
       enrollmentId,
       enrollmentUrl,
-      status: offer ? 'paid_pending_enrollment' : 'paid_client_payment',
+      status: paymentProcessing ? 'payment_processing' : (offer ? 'paid_pending_enrollment' : 'paid_client_payment'),
+      paymentStatus: paymentProcessing ? 'processing' : 'succeeded',
+      paymentMethod,
       transactionId: charge.transactionId || charge.chargeId || '',
       processorType: procConfig.processor_type,
       cardLastFour: saveResult.cardLastFour,

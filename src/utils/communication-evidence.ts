@@ -39,7 +39,11 @@ function decodeHtmlEntities(value: string): string {
     if (key[0] === '#') {
       const hex = key.startsWith('#x');
       const parsed = Number.parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
-      return Number.isFinite(parsed) ? String.fromCodePoint(parsed) : '';
+      // #27: clamp to the valid Unicode range — String.fromCodePoint throws RangeError for
+      // values > 0x10FFFF (e.g. a spam message with &#9999999999;), which would drop the whole
+      // message's evidence and 500 the client-communications feed.
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 0x10ffff) return '';
+      return String.fromCodePoint(parsed);
     }
     return ENTITY_MAP[key] ?? `&${entity};`;
   });

@@ -60,6 +60,10 @@ The following copy is still a cleaner long-term direction, but it is no longer a
 
 ### SS - Welcome Sequence
 
+Trigger: `enrollment_complete`.
+
+Intent: welcome/access only after terms and signature are complete. Do not include receipt copy.
+
 Subject:
 
 ```text
@@ -106,6 +110,10 @@ Log in to ScaleSafe to view the enrollment details.
 
 ### SS - Enrollment Payment Receipt
 
+Trigger: `ss_payment_received`.
+
+Intent: payment receipt only. Do not include welcome/access or enrollment packet copy.
+
 Subject:
 
 ```text
@@ -134,7 +142,11 @@ Thank you,
 {{contact.offer_business_name}}
 ```
 
-### SS - Recurring Payment Reciept
+### SS - Recurring Payment Receipt
+
+Trigger: `ss_payment_received`.
+
+Intent: recurring/installment payment receipt only. Do not include welcome/access copy.
 
 Subject:
 

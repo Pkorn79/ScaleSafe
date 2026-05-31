@@ -140,6 +140,33 @@ async function checkNmiRatio(merchantId: string, locationId: string): Promise<vo
 
   const ratio = (disputeCount || 0) / txCount;
 
+  // #23: persist today's NMI snapshot BEFORE evaluating thresholds so the crossing-guard in
+  // checkRatioThresholds compares against yesterday's rate (prevSnapshots[1]). Without this,
+  // no NMI snapshot ever exists, prevRate is always 0, and the chargeback-ratio trigger
+  // re-fires every daily run instead of once when the ratio crosses the threshold.
+  await supabase.from('account_health_snapshots').insert({
+    merchant_id: merchantId,
+    location_id: locationId,
+    processor: 'nmi',
+    computed_at: new Date().toISOString(),
+    period_days: 30,
+    total_charges: txCount,
+    total_disputes: disputeCount || 0,
+    total_efws: 0,
+    dispute_rate: ratio,
+    efw_rate: 0,
+    disputes_won: 0,
+    disputes_lost: 0,
+    disputes_pending: 0,
+    recovery_rate: 0,
+    financial_exposure_cents: 0,
+    avg_evidence_score: 0,
+    reason_code_breakdown: {},
+    risk_level: 'unknown',
+    vamp_status: 'safe',
+    mc_status: 'safe',
+  } as any);
+
   await checkRatioThresholds(locationId, 'nmi', {
     dispute_rate: ratio,
     dispute_count: disputeCount || 0,

@@ -135,6 +135,7 @@ interface CompleteEnrollmentParams {
   transactionId: string;
   paymentsTotal: number | null;
   processorType?: string;
+  paymentSource?: string;
 }
 
 export interface EnrollmentWithEvidence {
@@ -372,9 +373,13 @@ export const phase2EnrollmentService = {
     const bgOfferId = enrollment.offer_id;
     const bgPaymentAmount = params.paymentAmount;
     const bgPaymentType = params.paymentType;
+    const bgProcessorType = params.processorType || 'ghl';
+    const bgPaymentSource = params.paymentSource || 'checkout';
+    const bgTransactionId = params.transactionId;
+    const bgPaymentsTotal = params.paymentsTotal;
 
     Promise.resolve().then(async () => {
-      // 6. Fire enrollment_complete trigger
+      // 6. Fire receipt and enrollment-complete triggers.
       try {
         let triggerSupportEmail = '';
         let triggerBusinessName = '';
@@ -383,6 +388,59 @@ export const phase2EnrollmentService = {
           triggerSupportEmail = merchantSupportEmail(merchant);
           triggerBusinessName = (merchant as any)?.dba_name || (merchant as any)?.business_name || '';
         } catch {}
+        if (bgPaymentAmount > 0 && bgTransactionId) {
+          const paymentsRemaining = bgPaymentsTotal == null ? 0 : Math.max(0, Number(bgPaymentsTotal) - 1);
+          await triggerService.fireTrigger(bgLocationId, 'ss_payment_received', {
+            event_type: 'payment_received',
+            location_id: bgLocationId,
+            locationId: bgLocationId,
+            contact_id: bgContactId,
+            contactId: bgContactId,
+            contact_email: params.contactEmail || (enrollment as any).email || '',
+            contactEmail: params.contactEmail || (enrollment as any).email || '',
+            enrollment_id: bgEnrollmentId,
+            enrollmentId: bgEnrollmentId,
+            offer_id: bgOfferId,
+            offerId: bgOfferId,
+            program_name: offerName,
+            programName: offerName,
+            offer_name: offerName,
+            offerName,
+            processor: bgProcessorType,
+            source: bgPaymentSource,
+            payment_source: bgPaymentSource,
+            paymentSource: bgPaymentSource,
+            payment_timing: 'during_enrollment',
+            paymentTiming: 'during_enrollment',
+            amount: bgPaymentAmount,
+            amount_display: formatMoney(bgPaymentAmount),
+            amountDisplay: formatMoney(bgPaymentAmount),
+            transaction_id: bgTransactionId,
+            transactionId: bgTransactionId,
+            payment_number: 1,
+            paymentNumber: 1,
+            payments_total: bgPaymentsTotal,
+            paymentsTotal: bgPaymentsTotal,
+            payments_remaining: paymentsRemaining,
+            paymentsRemaining: paymentsRemaining,
+            running_total: bgPaymentAmount,
+            runningTotal: bgPaymentAmount,
+            running_total_display: formatMoney(bgPaymentAmount),
+            runningTotalDisplay: formatMoney(bgPaymentAmount),
+            payment_kind: bgPaymentType,
+            paymentKind: bgPaymentType,
+            receipt_only: true,
+            receiptOnly: true,
+            send_receipt: true,
+            sendReceipt: true,
+            send_welcome: false,
+            sendWelcome: false,
+            support_email: triggerSupportEmail,
+            supportEmail: triggerSupportEmail,
+            business_name: triggerBusinessName,
+            businessName: triggerBusinessName,
+          });
+        }
         await triggerService.fireTrigger(bgLocationId, 'enrollment_complete', {
           event_type: 'enrollment_complete',
           location_id: bgLocationId,
@@ -404,6 +462,16 @@ export const phase2EnrollmentService = {
           amountDisplay: formatMoney(bgPaymentAmount),
           payment_type: bgPaymentType,
           paymentType: bgPaymentType,
+          pay_first: false,
+          payFirst: false,
+          payment_already_received: true,
+          paymentAlreadyReceived: true,
+          send_receipt: false,
+          sendReceipt: false,
+          send_welcome: true,
+          sendWelcome: true,
+          access_ready: true,
+          accessReady: true,
           support_email: triggerSupportEmail,
           supportEmail: triggerSupportEmail,
           business_name: triggerBusinessName,
@@ -529,19 +597,65 @@ export const phase2EnrollmentService = {
     paymentsRemaining?: number;
     rawPayload?: Record<string, unknown>;
   }): Promise<void> {
-    // Create payment_event
-    await paymentEventRepository.create({
-      location_id: params.locationId,
-      contact_id: params.contactId,
-      enrollment_id: params.enrollmentId,
-      event_type: 'payment_success',
-      processor: 'ghl',
-      processor_transaction_id: params.transactionId,
-      amount: params.amount,
-      payment_number: params.paymentNumber,
-      payments_remaining: params.paymentsRemaining,
-      raw_webhook_payload: params.rawPayload,
-    });
+    // Idempotency (#8): a stable transaction id is required to safely advance state.
+    // Without one, a retried GHL webhook would double-count payments_made. Record the
+    // raw event for diagnostics but do NOT increment.
+    if (!params.transactionId) {
+      logger.warn(
+        { enrollmentId: params.enrollmentId, locationId: params.locationId },
+        'GHL recurring payment missing transaction id — recording without incrementing to avoid double-count',
+      );
+      await paymentEventRepository.create({
+        location_id: params.locationId,
+        contact_id: params.contactId,
+        enrollment_id: params.enrollmentId,
+        event_type: 'payment_success',
+        processor: 'ghl',
+        processor_transaction_id: '',
+        amount: params.amount,
+        payment_number: params.paymentNumber,
+        payments_remaining: params.paymentsRemaining,
+        raw_webhook_payload: params.rawPayload,
+      });
+      return;
+    }
+
+    // Dedupe: a duplicate delivery for the same transaction must not increment again.
+    const duplicate = await paymentEventRepository.findByTransactionId('ghl', params.transactionId, params.locationId);
+    if (duplicate) {
+      logger.info(
+        { transactionId: params.transactionId, enrollmentId: params.enrollmentId },
+        'GHL recurring payment duplicate delivery — skipping increment',
+      );
+      return;
+    }
+
+    // Create the ledger row FIRST. The partial unique index on
+    // payment_events(location_id, processor, processor_transaction_id) (migration 072)
+    // backstops a concurrent duplicate: the second insert fails (23505) and we skip the increment.
+    try {
+      await paymentEventRepository.create({
+        location_id: params.locationId,
+        contact_id: params.contactId,
+        enrollment_id: params.enrollmentId,
+        event_type: 'payment_success',
+        processor: 'ghl',
+        processor_transaction_id: params.transactionId,
+        amount: params.amount,
+        payment_number: params.paymentNumber,
+        payments_remaining: params.paymentsRemaining,
+        raw_webhook_payload: params.rawPayload,
+      });
+    } catch (e: any) {
+      if (e?.code === '23505') {
+        logger.info(
+          { transactionId: params.transactionId, enrollmentId: params.enrollmentId },
+          'GHL recurring payment duplicate (unique violation) — skipping increment',
+        );
+        return;
+      }
+      throw e;
+    }
 
     // Increment payments_made + advance or finish billing.
     await enrollmentRepository.incrementPaymentsMade(params.enrollmentId, params.locationId);
@@ -559,14 +673,20 @@ export const phase2EnrollmentService = {
             updates.billing_completed_at = new Date().toISOString();
           } else {
             const freq = ofr.installment_frequency || 'monthly';
-            const next = new Date();
-            if (freq === 'daily') next.setDate(next.getDate() + 1);
-            else if (freq === 'weekly') next.setDate(next.getDate() + 7);
-            else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
-            else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
-            else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
-            else next.setMonth(next.getMonth() + 1);
-            updates.next_billing_date = next.toISOString().split('T')[0];
+            // #20: anchor to the prior schedule (not now()) so a late/replayed webhook does not
+            // drift the schedule forward. GHL gives us no processor next-charge date, so the
+            // result is an estimate (marked needs-verification).
+            const base = (enr as any).next_billing_date
+              ? new Date(`${(enr as any).next_billing_date}T00:00:00.000Z`)
+              : new Date();
+            if (freq === 'daily') base.setUTCDate(base.getUTCDate() + 1);
+            else if (freq === 'weekly') base.setUTCDate(base.getUTCDate() + 7);
+            else if (freq === 'bi_weekly') base.setUTCDate(base.getUTCDate() + 14);
+            else if (freq === 'quarterly') base.setUTCMonth(base.getUTCMonth() + 3);
+            else if (freq === 'annual') base.setUTCFullYear(base.getUTCFullYear() + 1);
+            else base.setUTCMonth(base.getUTCMonth() + 1);
+            updates.next_billing_date = base.toISOString().split('T')[0];
+            updates.next_billing_date_source = 'estimated';
           }
           await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, updates as any, params.locationId);
         }
@@ -631,6 +751,10 @@ export const phase2EnrollmentService = {
       amountDisplay: formatMoney(params.amount),
       transaction_id: params.transactionId,
       transactionId: params.transactionId,
+      payment_source: 'recurring_webhook',
+      paymentSource: 'recurring_webhook',
+      payment_timing: 'recurring',
+      paymentTiming: 'recurring',
       payments_remaining: params.paymentsRemaining,
       paymentsRemaining: params.paymentsRemaining,
       running_total: runningTotal,
@@ -639,6 +763,12 @@ export const phase2EnrollmentService = {
       runningTotalDisplay: formatMoney(runningTotal),
       payment_kind: paymentKind,
       paymentKind,
+      receipt_only: true,
+      receiptOnly: true,
+      send_receipt: true,
+      sendReceipt: true,
+      send_welcome: false,
+      sendWelcome: false,
       support_email: supportEmail,
       supportEmail,
       business_name: businessName,
@@ -739,6 +869,8 @@ export const phase2EnrollmentService = {
       attemptCount: params.attemptCount || 1,
       next_retry_date: 'none',
       nextRetryDate: 'none',
+      dunning_stage: (params.attemptCount || 1) > 1 ? 'retry_failed' : 'initial',
+      dunningStage: (params.attemptCount || 1) > 1 ? 'retry_failed' : 'initial',
       card_update_link: cardUpdateLink,
       cardUpdateLink,
     });
@@ -812,6 +944,29 @@ export const phase2EnrollmentService = {
       });
     }
 
+    // #7: reverse the enrollment ledger so a refunded recurring installment is not counted —
+    // keeps TOTAL_PAID / running-total defense evidence accurate and reopens billing
+    // (clears billing_completed_at). No fund movement here; this only corrects ScaleSafe state.
+    let refundedPaymentsMade: number | null = null;
+    let refundedPaymentsRemaining: number | null = null;
+    if (params.enrollmentId) {
+      try {
+        const { data: decRows } = await getSupabase().rpc('decrement_enrollment_payments_made', {
+          p_enrollment_id: params.enrollmentId,
+          p_location_id: params.locationId,
+        });
+        const dec = Array.isArray(decRows) ? decRows[0] : decRows;
+        if (dec) {
+          refundedPaymentsMade = Number(dec.payments_made);
+          refundedPaymentsRemaining = dec.payments_total != null
+            ? Math.max(0, Number(dec.payments_total) - Number(dec.payments_made))
+            : null;
+        }
+      } catch (decErr: any) {
+        logger.warn({ err: decErr.message, enrollmentId: params.enrollmentId }, 'Refund ledger reversal failed (non-fatal)');
+      }
+    }
+
     try {
       const api = await ghlApi(params.locationId);
       await api.put(`/contacts/${params.contactId}`, {
@@ -819,6 +974,8 @@ export const phase2EnrollmentService = {
           [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_AMOUNT]: formatMoney(params.amount),
           [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_DATE]: formatDate(),
           [WORKFLOW_PAYMENT_CONTACT_FIELDS.REFUND_TRANSACTION_ID]: params.transactionId || '',
+          ...(refundedPaymentsMade != null ? { [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: refundedPaymentsMade } : {}),
+          ...(refundedPaymentsRemaining != null ? { [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: refundedPaymentsRemaining } : {}),
         },
       });
     } catch (err: any) {

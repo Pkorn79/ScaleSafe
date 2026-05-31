@@ -7,6 +7,10 @@ export interface ChargeRequest {
   amount: number; // in cents
   currency: string;
   paymentToken: string; // NMI payment_token from Collect.js OR Stripe PaymentMethod ID
+  paymentMethodType?: 'card' | 'ach';
+  achSecCode?: 'WEB' | 'PPD' | 'CCD' | 'TEL';
+  achAccountHolderType?: 'personal' | 'business';
+  achAccountType?: 'checking' | 'savings';
   customerId?: string;
   description?: string;
   metadata?: Record<string, string>;
@@ -24,7 +28,7 @@ export interface ChargeResult {
   chargeId?: string; // Stripe charge ID
   amount: number;
   currency: string;
-  status: 'approved' | 'declined' | 'error' | 'pending_3ds';
+  status: 'approved' | 'processing' | 'declined' | 'error' | 'pending_3ds';
   errorMessage?: string;
   errorCode?: string;
   avsResponse?: string;
@@ -37,6 +41,9 @@ export interface ChargeResult {
   vaultedCardBrand?: string;
   vaultedCardExpMonth?: number;
   vaultedCardExpYear?: number;
+  vaultedBankLastFour?: string;
+  vaultedBankAccountType?: string;
+  vaultedBankHolderType?: string;
 }
 
 // ============================================================
@@ -61,6 +68,10 @@ export interface RefundResult {
 // ============================================================
 export interface SaveCardRequest {
   paymentToken: string;
+  paymentMethodType?: 'card' | 'ach';
+  achSecCode?: 'WEB' | 'PPD' | 'CCD' | 'TEL';
+  achAccountHolderType?: 'personal' | 'business';
+  achAccountType?: 'checking' | 'savings';
   contactId: string;
   customerEmail: string;
   customerName?: string;
@@ -74,6 +85,10 @@ export interface SaveCardResult {
   cardBrand: string;
   cardExpMonth: number;
   cardExpYear: number;
+  paymentMethodKind?: 'card' | 'ach';
+  bankLastFour?: string;
+  bankAccountType?: string;
+  bankHolderType?: string;
 }
 
 export interface StoredCard {

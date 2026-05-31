@@ -8,12 +8,16 @@ interface SavePaymentMethodParams {
   locationId: string;
   contactId: string;
   processorType: ProcessorType;
+  paymentMethodKind?: 'card' | 'ach';
   customerId: string;
   paymentMethodId: string;
   cardLastFour?: string;
   cardBrand?: string;
   cardExpMonth?: number;
   cardExpYear?: number;
+  bankLastFour?: string;
+  bankAccountType?: string;
+  bankHolderType?: string;
   makeDefault?: boolean;
 }
 
@@ -29,6 +33,20 @@ function isColumnCompatibilityError(error: any): boolean {
     || text.includes('schema cache')
     || text.includes('could not find')
     || (text.includes('column') && text.includes('does not exist'));
+}
+
+const NEW_PAYMENT_METHOD_COLUMNS = new Set([
+  'payment_method_kind',
+  'bank_last_four',
+  'bank_account_type',
+  'bank_holder_type',
+  'archived_at',
+]);
+
+function withoutNewPaymentMethodColumns(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  for (const column of NEW_PAYMENT_METHOD_COLUMNS) delete next[column];
+  return next;
 }
 
 function tokenColumn(processorType: ProcessorType): 'nmi_customer_vault_id' | 'stripe_payment_method_id' {
@@ -81,8 +99,8 @@ async function updatePaymentMethodWithArchivedFallback(id: string, values: Recor
   const { error } = await supabase.from('payment_methods').update(values).eq('id', id);
   if (!error) return;
 
-  if (values.archived_at !== undefined && isColumnCompatibilityError(error)) {
-    const { archived_at: _archivedAt, ...fallbackValues } = values;
+  if (isColumnCompatibilityError(error)) {
+    const fallbackValues = withoutNewPaymentMethodColumns(values);
     if (Object.keys(fallbackValues).length > 0) {
       const { error: fallbackError } = await supabase.from('payment_methods').update(fallbackValues).eq('id', id);
       if (fallbackError) throw fallbackError;
@@ -177,6 +195,7 @@ export async function saveOrReusePaymentMethod(params: SavePaymentMethodParams):
 
   const payload: Record<string, unknown> = {
     processor_type: params.processorType,
+    payment_method_kind: params.paymentMethodKind || 'card',
     nmi_customer_vault_id: params.processorType === 'nmi' ? params.customerId : null,
     stripe_customer_id: params.processorType === 'stripe' ? params.customerId : null,
     stripe_payment_method_id: params.processorType === 'stripe' ? params.paymentMethodId : null,
@@ -184,6 +203,9 @@ export async function saveOrReusePaymentMethod(params: SavePaymentMethodParams):
     card_brand: params.cardBrand || 'unknown',
     card_exp_month: params.cardExpMonth || 0,
     card_exp_year: params.cardExpYear || 0,
+    bank_last_four: params.bankLastFour || null,
+    bank_account_type: params.bankAccountType || null,
+    bank_holder_type: params.bankHolderType || null,
     is_default: makeDefault,
     archived_at: null,
   };
@@ -202,7 +224,7 @@ export async function saveOrReusePaymentMethod(params: SavePaymentMethodParams):
 
   let inserted = await supabase.from('payment_methods').insert(insertPayload).select().single();
   if (inserted.error && isColumnCompatibilityError(inserted.error)) {
-    const { archived_at: _archivedAt, ...fallbackPayload } = insertPayload;
+    const fallbackPayload = withoutNewPaymentMethodColumns(insertPayload);
     inserted = await supabase.from('payment_methods').insert(fallbackPayload).select().single();
   }
   if (inserted.error) throw inserted.error;

@@ -578,7 +578,9 @@ async function handleSubscriptionPayment(body: Record<string, unknown>): Promise
   const locationId = body.locationId as string;
   const contactId = body.contactId as string;
   const amount = (body.amount as number) || 0;
-  const transactionId = (body.transactionId || '') as string;
+  // Resolve a stable id consistently with the top-level dedupe (transactionId then orderId)
+  // so the recurring handler can dedupe; an empty id means "do not increment" (#8).
+  const transactionId = (body.transactionId || body.orderId || '') as string;
   if (!contactId) {
     logger.warn({ locationId }, 'SubscriptionPayment missing contactId');
     return;

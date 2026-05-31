@@ -10,6 +10,8 @@ router.use(ssoAuth, requireTenant);
 
 router.post('/', offerController.create);
 router.get('/', offerController.list);
+router.get('/dual-pricing/config', offerController.dualPricingConfig);
+router.post('/quote', offerController.quote);
 router.get('/:id', offerController.getById);
 router.put('/:id', offerController.update);
 router.delete('/:id', offerController.delete);
