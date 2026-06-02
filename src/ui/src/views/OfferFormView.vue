@@ -164,11 +164,13 @@
           </label>
           <div class="grid grid-2 mt-4">
             <div class="form-group">
-              <label class="form-label">ACH Access Timing</label>
-              <select class="form-select" v-model="form.achAccessPolicy">
-                <option value="after_settlement">After ACH settles</option>
-                <option value="after_submission">After ACH is submitted</option>
-              </select>
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="achReleaseAfterSubmission" />
+                Release access after ACH is submitted
+              </label>
+              <p class="text-sm text-muted mt-2">
+                Leave unchecked to send receipts and welcome/access only after Stripe confirms the bank payment succeeded. Check this only if you are comfortable giving access while ACH is still processing.
+              </p>
             </div>
             <div class="form-group">
               <label class="form-label">Internal Rate</label>
@@ -552,6 +554,13 @@ const dualPricingPreview = computed(() => {
     ach: `$${achAmount.toFixed(2)}`,
     deduction: `${Number(cfg.processorDeductionPercent || 0).toFixed(4)}%`,
   };
+});
+
+const achReleaseAfterSubmission = computed({
+  get: () => form.value.achAccessPolicy === 'after_submission',
+  set: (checked: boolean) => {
+    form.value.achAccessPolicy = checked ? 'after_submission' : 'after_settlement';
+  },
 });
 
 onMounted(async () => {

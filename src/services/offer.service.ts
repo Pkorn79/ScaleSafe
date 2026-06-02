@@ -464,15 +464,39 @@ export const offerService = {
     try {
       offer = await offerRepository.update(offerId, dbUpdates as any, locationId);
     } catch (err: any) {
+      const updateContext = {
+        offerId,
+        locationId,
+        checkoutMode: updates.checkoutMode,
+        checkoutType: updates.checkoutType,
+        processorOverride: updates.processorOverride,
+        nmiProcessorId: updates.nmiProcessorId,
+        dualPricingEnabled: updates.dualPricingEnabled,
+        achEnabled: updates.achEnabled,
+        achAccessPolicy: updates.achAccessPolicy,
+        errorMessage: err?.message,
+        errorCode: err?.code,
+        errorDetails: err?.details,
+        errorHint: err?.hint,
+        dbColumns: Object.keys(dbUpdates),
+      };
+      logger.error(updateContext, 'Offer update failed');
       if (isOfferConstraintError(err)) {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
       if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err) || isMissingDualPricingColumnError(err)) {
-        logger.warn({ offerId, err: err?.message }, 'Offer update retried without optional offer fields; apply latest migrations');
+        logger.warn(updateContext, 'Offer update retried without optional offer fields; apply latest migrations');
         try {
           offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any, locationId);
         } catch (retryErr: any) {
+          logger.error({
+            ...updateContext,
+            retryErrorMessage: retryErr?.message,
+            retryErrorCode: retryErr?.code,
+            retryErrorDetails: retryErr?.details,
+            retryErrorHint: retryErr?.hint,
+          }, 'Offer update compatibility retry failed');
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update retry rejected by installment frequency constraint');
             throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');

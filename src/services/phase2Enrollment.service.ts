@@ -136,6 +136,7 @@ interface CompleteEnrollmentParams {
   paymentsTotal: number | null;
   processorType?: string;
   paymentSource?: string;
+  skipPaymentEvent?: boolean;
 }
 
 export interface EnrollmentWithEvidence {
@@ -306,7 +307,7 @@ export const phase2EnrollmentService = {
       }
     }
 
-    await Promise.allSettled([
+    const completionWrites: Promise<unknown>[] = [
       phase2EvidenceRepository.create({
         location_id: params.locationId,
         contact_id: resolvedContactId,
@@ -335,7 +336,9 @@ export const phase2EnrollmentService = {
           timestamp: new Date().toISOString(),
         },
       }),
-      paymentEventRepository.create({
+    ];
+    if (!params.skipPaymentEvent) {
+      completionWrites.push(paymentEventRepository.create({
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
@@ -347,8 +350,10 @@ export const phase2EnrollmentService = {
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
         source: 'checkout',
         is_recurring: false,
-      }),
-    ]).then(results => {
+      }));
+    }
+
+    await Promise.allSettled(completionWrites).then(results => {
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
           const labels = ['Consent evidence', 'Payment evidence', 'Payment event'];

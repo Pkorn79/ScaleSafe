@@ -5,7 +5,7 @@ import { evidenceService } from '../services/evidence.service';
 import { disengagementService } from '../services/disengagement.service';
 import { selectProcessorPaymentMethod } from '../services/payment-methods.service';
 import { resolveLocationId } from '../middleware/tenantContext';
-import { ValidationError } from '../utils/errors';
+import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
 import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
@@ -16,6 +16,8 @@ import { isSafeOrFilterSearchInput } from '../utils/search-input';
 import { ghlActivityRepository } from '../repositories/ghlActivity.repository';
 import { payFirstEnrollmentService } from '../services/pay-first-enrollment.service';
 import { cleanCommunicationBody } from '../utils/communication-evidence';
+import { createProcessorClient, resolveProcessor } from '../services/processor.factory';
+import { stripeAchService } from '../services/stripe-ach.service';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -1611,6 +1613,82 @@ export const dashboardController = {
       });
 
       res.json(result);
+    } catch (err: any) {
+      if (err?.name === 'ProcessorError') {
+        logger.warn(
+          { processor: err.processor, code: err.code, message: err.message },
+          'Quick Manual Sale processor error',
+        );
+        return next(new ExternalServiceError(
+          String(err.processor || 'processor'),
+          err.message || 'Payment processor error',
+        ));
+      }
+      next(err);
+    }
+  },
+
+  async createManualSaleStripeAchIntent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await payFirstEnrollmentService.createStripeAchManualSaleIntent({
+        locationId,
+        offerId: req.body.offerId || undefined,
+        contactId: req.body.contactId || undefined,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        email: req.body.email,
+        phone: req.body.phone,
+        amount: Number(req.body.amount || 0),
+        paymentType: req.body.paymentType,
+        paymentMethod: 'ach',
+        sendEnrollment: req.body.sendEnrollment !== false,
+        sendVia: req.body.sendVia,
+        recordedBy: String((req as any).tenantContext?.userId || 'merchant'),
+      });
+
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
+  async finalizeManualSaleStripeAch(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const paymentIntentId = String(req.body.paymentIntentId || '');
+      if (!paymentIntentId) throw new ValidationError('paymentIntentId required');
+
+      const { data: merchant } = await getSupabase()
+        .from('merchants')
+        .select('*')
+        .eq('location_id', locationId)
+        .single();
+      if (!merchant) throw new ValidationError('Merchant not found');
+
+      const { config: procConfig } = await resolveProcessor(merchant.id, locationId, { processor_override: 'stripe', nmi_processor_id: null });
+      const stripeClient = createProcessorClient(procConfig) as any;
+      const paymentIntent = await stripeClient.retrievePaymentIntent(paymentIntentId);
+      if (paymentIntent.metadata?.location_id !== locationId || paymentIntent.metadata?.checkout_mode !== 'quick_manual_sale') {
+        throw new ValidationError('Stripe ACH payment does not match this manual sale');
+      }
+
+      const result = await stripeAchService.recordPaymentIntentState({
+        merchant,
+        paymentIntent,
+        source: 'stripe_ach_manual_sale',
+      });
+
+      res.json({
+        success: result.paymentStatus !== 'failed',
+        paymentStatus: result.paymentStatus,
+        contactId: paymentIntent.metadata?.contact_id || '',
+        enrollmentId: result.enrollmentId || paymentIntent.metadata?.enrollment_id || null,
+        transactionId: paymentIntent.id,
+        processorType: 'stripe',
+        paymentMethod: 'ach',
+      });
     } catch (err) { next(err); }
   },
 };

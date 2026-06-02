@@ -154,6 +154,21 @@
         <div v-if="!stripeConnected">
           <p class="text-sm text-muted mb-4">Connect your existing Stripe account to enable payment processing and dispute defense.</p>
           <p class="text-sm mb-4" style="color: var(--ss-primary-700)">Connecting Stripe gives you instant access to your risk profile and defense tools.</p>
+          <div class="stripe-ach-setup mb-4">
+            <h4 class="subsection-title">ACH setup in Stripe</h4>
+            <ol class="setup-list">
+              <li>Open Stripe Dashboard, then click the gear icon.</li>
+              <li>Under Product settings, open Payments > Payment methods.</li>
+              <li>Select Default if Stripe shows that option.</li>
+              <li>If ACH is not visible, scroll through Regional and international payment options.</li>
+              <li>Under United States, turn on ACH Direct Debit / US bank account.</li>
+              <li>Complete any business verification Stripe asks for so ACH can move to active.</li>
+              <li>After ACH is active, connect Stripe here and enable dual pricing on eligible offers.</li>
+            </ol>
+            <p class="text-sm text-muted mt-2">
+              For Standard Stripe accounts, this is handled in the merchant's Stripe Dashboard. For Express or Custom connected accounts, Stripe requires the ACH capability named us_bank_account_ach_payments.
+            </p>
+          </div>
           <button class="btn btn-primary" @click="connectStripe">
             Connect with Stripe
           </button>
@@ -161,6 +176,25 @@
 
         <div v-else>
           <p class="text-sm text-muted">Stripe account connected: {{ stripeAccountId }}</p>
+          <div class="stripe-ach-setup mt-4">
+            <h4 class="subsection-title">Enable ACH Direct Debit</h4>
+            <ol class="setup-list">
+              <li>In Stripe, click the gear icon.</li>
+              <li>Under Product settings, open Payments > Payment methods.</li>
+              <li>Select Default if Stripe shows that option.</li>
+              <li>If ACH is not visible, scroll through Regional and international payment options.</li>
+              <li>Under United States, turn on ACH Direct Debit / US bank account.</li>
+              <li>Finish Stripe verification until ACH is active on the account.</li>
+              <li>In ScaleSafe, open an offer, enable dual pricing, and allow Bank Transfer / ACH.</li>
+            </ol>
+            <p class="text-sm text-muted mt-2">
+              ScaleSafe uses Stripe's bank-account collection, mandate, and webhook status updates. ACH payments can process for several business days, so each offer controls whether access waits for settlement or is released after submission.
+            </p>
+            <div class="doc-links">
+              <a href="https://docs.stripe.com/payments/ach-direct-debit" target="_blank" rel="noreferrer">Stripe ACH guide</a>
+              <a href="https://docs.stripe.com/connect/account-capabilities" target="_blank" rel="noreferrer">ACH capability docs</a>
+            </div>
+          </div>
           <div v-if="riskAudit" class="mt-2">
             <p class="text-sm">
               Risk Level: <strong :class="'risk-level-' + riskAudit.overallRiskLevel">{{ riskAudit.overallRiskLevel }}</strong>
@@ -596,6 +630,34 @@ async function saveAutoSubmit() {
 .webhook-panel {
   border-top: 1px solid #e5e7eb;
   padding-top: 16px;
+}
+
+.stripe-ach-setup {
+  border: 1px solid #dbeafe;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.setup-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.doc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.doc-links a {
+  color: var(--ss-primary-700);
+  font-weight: 600;
 }
 
 .setup-row {

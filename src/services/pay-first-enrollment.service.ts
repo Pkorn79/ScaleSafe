@@ -478,6 +478,115 @@ export const payFirstEnrollmentService = {
     };
   },
 
+  async createStripeAchManualSaleIntent(input: Omit<ChargeManualSaleInput, 'paymentToken'>) {
+    if (!input.locationId || !input.email || !input.amount) {
+      throw new ValidationError('locationId, email, and amount required');
+    }
+
+    const merchant = await merchantRepository.getByLocationId(input.locationId);
+    const offer = input.offerId ? await offerRepository.findById(input.offerId, input.locationId) : null;
+    if (input.offerId && (!offer || !offer.active)) throw new ValidationError('Offer not found or inactive');
+
+    const contactId = await upsertContact(input.locationId, input);
+    const name = splitName(input.firstName, input.lastName, input.email);
+    const customerName = [name.firstName, name.lastName].filter(Boolean).join(' ');
+    const offerHint = offer
+      ? { processor_override: (offer.processor_override || null) as ProcessorType | null, nmi_processor_id: offer.nmi_processor_id || null }
+      : undefined;
+    const { config: procConfig } = await resolveProcessor(merchant.id, input.locationId, offerHint);
+    if (procConfig.processor_type !== 'stripe') {
+      throw new ValidationError('This sale is not configured for Stripe ACH.');
+    }
+
+    const amountCents = dollarsToCents(input.amount);
+    if (amountCents <= 0) throw new ValidationError('Amount must be greater than zero');
+
+    const paymentType = offer ? normalizePaymentType(input.paymentType, offer) : 'one_off';
+    const paymentsTotal = offer ? paymentsTotalFor(paymentType, offer) : null;
+    if (offer) {
+      const quote = await dualPricingService.quoteOffer(
+        offer,
+        paymentType,
+        'ach',
+      );
+      if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== amountCents) {
+        throw new ValidationError('Payment amount does not match selected offer');
+      }
+    }
+
+    let enrollmentId: string | null = null;
+    if (offer) {
+      const { data: enrollment, error: enrollmentError } = await getSupabase()
+        .from('enrollments')
+        .insert({
+          location_id: input.locationId,
+          merchant_id: merchant.id,
+          contact_id: contactId,
+          offer_id: input.offerId,
+          email: input.email,
+          first_name: name.firstName || null,
+          last_name: name.lastName || null,
+          status: 'payment_processing',
+          payment_amount: input.amount,
+          payment_type: paymentType,
+          processor_type: 'stripe',
+          initial_payment_status: 'processing',
+          initial_payment_method: 'ach',
+          payments_made: 1,
+          payments_total: paymentsTotal,
+          billing_setup_status: ['installment', 'subscription'].includes(paymentType) ? 'pending' : 'ok',
+          next_billing_date: null,
+          enrolled_at: null,
+        } as any)
+        .select('id')
+        .single();
+      if (enrollmentError) throw enrollmentError;
+      enrollmentId = enrollment.id as string;
+    }
+
+    const stripeClient = createProcessorClient(procConfig) as any;
+    const intent = await stripeClient.createAchPaymentIntent({
+      amount: amountCents,
+      currency: 'usd',
+      customerEmail: input.email,
+      customerName,
+      description: offer?.offer_name || 'Quick Manual Sale',
+      metadata: {
+        scalesafe_ach: 'true',
+        checkout_mode: 'quick_manual_sale',
+        location_id: input.locationId,
+        merchant_id: merchant.id,
+        offer_id: input.offerId || '',
+        scalesafe_offer_id: input.offerId || '',
+        enrollment_id: enrollmentId || '',
+        contact_id: contactId,
+        customer_email: input.email,
+        first_name: name.firstName || '',
+        last_name: name.lastName || '',
+        payment_choice: paymentType,
+        payment_method: 'ach',
+        send_enrollment: input.sendEnrollment === false ? 'false' : 'true',
+      },
+      setupFutureUsage: ['installment', 'subscription'].includes(paymentType),
+    });
+
+    if (enrollmentId) {
+      await getSupabase().from('enrollments').update({
+        payment_transaction_id: intent.paymentIntentId,
+      }).eq('id', enrollmentId).eq('location_id', input.locationId);
+    }
+
+    return {
+      success: true,
+      contactId,
+      enrollmentId,
+      clientSecret: intent.clientSecret,
+      paymentIntentId: intent.paymentIntentId,
+      stripeAccountId: intent.stripeAccountId,
+      stripePublishableKey: config.stripe.publishableKey,
+    };
+  },
+
   async recordPaymentAndSendEnrollment(input: RecordPayFirstInput) {
     if (!input.locationId || !input.offerId || !input.email || !input.amount) {
       throw new ValidationError('locationId, offerId, email, and amount required');

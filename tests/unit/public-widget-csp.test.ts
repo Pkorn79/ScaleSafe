@@ -8,6 +8,8 @@ jest.mock('../../src/controllers/checkout.controller', () => ({
   getCheckoutConfigByOffer: jest.fn(),
   getCheckoutConfigByProduct: jest.fn(),
   getCheckoutQuote: jest.fn(),
+  createStripeAchPaymentIntent: jest.fn(),
+  finalizeStripeAchPayment: jest.fn(),
   createWhopCheckoutSession: jest.fn(),
   processPayment: jest.fn(),
   saveCard: jest.fn(),

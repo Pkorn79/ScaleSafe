@@ -420,6 +420,72 @@ export class StripeClient implements ProcessorInterface {
 
   // ─── testConnection ────────────────────────────────────────
 
+  async createAchPaymentIntent(request: {
+    amount: number;
+    currency?: string;
+    customerEmail: string;
+    customerName?: string;
+    description?: string;
+    metadata?: Record<string, string>;
+    setupFutureUsage?: boolean;
+  }): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    status: string;
+    customerId: string;
+    stripeAccountId: string;
+  }> {
+    try {
+      const customer = await this.findOrCreateCustomer(
+        request.customerEmail,
+        request.customerName,
+      );
+
+      const params: Record<string, any> = {
+        amount: request.amount,
+        currency: request.currency || 'usd',
+        customer: customer.id,
+        payment_method_types: ['us_bank_account'],
+        payment_method_options: {
+          us_bank_account: {
+            financial_connections: {
+              permissions: ['payment_method'],
+            },
+          },
+        },
+        description: request.description,
+        metadata: request.metadata || {},
+      };
+
+      if (request.setupFutureUsage) {
+        params.setup_future_usage = 'off_session';
+      }
+
+      const pi = await this.stripe.paymentIntents.create(params, this.acct);
+      return {
+        paymentIntentId: pi.id,
+        clientSecret: pi.client_secret,
+        status: pi.status,
+        customerId: customer.id,
+        stripeAccountId: this.stripeAccountId,
+      };
+    } catch (err) {
+      throw this.toProcessorError(err);
+    }
+  }
+
+  async retrievePaymentIntent(paymentIntentId: string): Promise<any> {
+    try {
+      return this.stripe.paymentIntents.retrieve(
+        paymentIntentId,
+        { expand: ['payment_method', 'latest_charge'] },
+        this.acct,
+      );
+    } catch (err) {
+      throw this.toProcessorError(err);
+    }
+  }
+
   async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
       const account = await this.stripe.accounts.retrieve(this.stripeAccountId);
@@ -520,6 +586,17 @@ export class StripeClient implements ProcessorInterface {
         status: 'declined',
         errorMessage: err.message,
         errorCode: (err as any).code,
+      };
+    }
+    if (err instanceof Error && (err as any).type === 'StripeInvalidRequestError') {
+      return {
+        success: false,
+        transactionId: '',
+        amount: 0,
+        currency: 'usd',
+        status: 'error',
+        errorMessage: err.message,
+        errorCode: (err as any).code || 'stripe_invalid_request',
       };
     }
     throw this.toProcessorError(err);

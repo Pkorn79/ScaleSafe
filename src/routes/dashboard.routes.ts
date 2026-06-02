@@ -24,6 +24,8 @@ router.post('/add-client', dashboardController.addClient);
 router.post('/assign-offer', dashboardController.assignOffer);
 router.post('/pay-first-enrollment', dashboardController.recordPayFirstEnrollment);
 router.get('/manual-sale/config', dashboardController.manualSaleConfig);
+router.post('/manual-sale/stripe-ach/intent', dashboardController.createManualSaleStripeAchIntent);
+router.post('/manual-sale/stripe-ach/finalize', dashboardController.finalizeManualSaleStripeAch);
 router.post('/manual-sale/charge', dashboardController.chargeManualSale);
 
 export default router;

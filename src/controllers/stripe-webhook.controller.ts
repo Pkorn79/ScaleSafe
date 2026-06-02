@@ -7,6 +7,7 @@ import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '..
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { decrypt } from '../services/processor-config.service';
+import { stripeAchService } from '../services/stripe-ach.service';
 
 const Stripe = require('stripe');
 
@@ -173,6 +174,10 @@ async function routeWebhookEvent(event: any, merchant: any): Promise<void> {
       await handlePaymentSuccess(event, merchant);
       break;
 
+    case 'payment_intent.processing':
+      await handlePaymentProcessing(event, merchant);
+      break;
+
     case 'payment_intent.payment_failed':
       await handlePaymentFailure(event, merchant);
       break;
@@ -207,6 +212,15 @@ async function routeWebhookEvent(event: any, merchant: any): Promise<void> {
 
 async function handlePaymentSuccess(event: any, merchant: any): Promise<void> {
   const obj = event.data.object;
+  if (event.type === 'payment_intent.succeeded' && obj.metadata?.scalesafe_ach === 'true') {
+    await stripeAchService.recordPaymentIntentState({
+      merchant,
+      paymentIntent: obj,
+      source: 'stripe_ach_webhook',
+    });
+    return;
+  }
+
   // For charge.succeeded, the object is a Charge; for payment_intent.succeeded, it's a PaymentIntent
   const paymentIntentId = obj.payment_intent || obj.id;
 
@@ -225,8 +239,27 @@ async function handlePaymentSuccess(event: any, merchant: any): Promise<void> {
   await stripeEvidenceVaultService.createVaultEntryFromWebhook(obj, merchant);
 }
 
+async function handlePaymentProcessing(event: any, merchant: any): Promise<void> {
+  const pi = event.data.object;
+  if (pi.metadata?.scalesafe_ach === 'true') {
+    await stripeAchService.recordPaymentIntentState({
+      merchant,
+      paymentIntent: pi,
+      source: 'stripe_ach_webhook',
+    });
+  }
+}
+
 async function handlePaymentFailure(event: any, merchant: any): Promise<void> {
   const pi = event.data.object;
+  if (pi.metadata?.scalesafe_ach === 'true') {
+    await stripeAchService.recordPaymentIntentState({
+      merchant,
+      paymentIntent: pi,
+      source: 'stripe_ach_webhook',
+    });
+    return;
+  }
   logger.info(
     { merchantId: merchant.id, piId: pi.id, error: pi.last_payment_error?.message },
     'Payment failed',
@@ -265,6 +298,38 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         }, { onConflict: 'stripe_dispute_id' });
       if (disputeUpsertError) {
         throw new Error(`Failed to persist dispute ${dispute.id}: ${disputeUpsertError.message}`);
+      }
+
+      if (dispute.payment_intent) {
+        const paymentIntentId = typeof dispute.payment_intent === 'string'
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id;
+        if (paymentIntentId) {
+          const { data: achPayment } = await supabase
+            .from('payment_events')
+            .select('id, enrollment_id')
+            .eq('location_id', merchant.location_id)
+            .eq('processor', 'stripe')
+            .eq('processor_transaction_id', paymentIntentId)
+            .eq('selected_payment_method', 'ach')
+            .maybeSingle();
+          if (achPayment?.id) {
+            const now = new Date().toISOString();
+            await supabase.from('payment_events').update({
+              payment_status: 'late_return',
+              returned_at: now,
+              return_reason: dispute.reason || 'Stripe ACH dispute/late return',
+            }).eq('id', achPayment.id);
+            if (achPayment.enrollment_id) {
+              await supabase.from('enrollments').update({
+                status: 'payment_returned',
+                initial_payment_status: 'late_return',
+                initial_payment_returned_at: now,
+                initial_payment_return_reason: dispute.reason || 'Stripe ACH dispute/late return',
+              }).eq('id', achPayment.enrollment_id).eq('location_id', merchant.location_id);
+            }
+          }
+        }
       }
 
       // Triage the dispute

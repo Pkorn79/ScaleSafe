@@ -1,6 +1,16 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { createWhopCheckoutSession, getCheckoutConfig, getCheckoutConfigByOffer, getCheckoutConfigByProduct, getCheckoutQuote, processPayment, saveCard } from '../controllers/checkout.controller';
+import {
+  createStripeAchPaymentIntent,
+  createWhopCheckoutSession,
+  finalizeStripeAchPayment,
+  getCheckoutConfig,
+  getCheckoutConfigByOffer,
+  getCheckoutConfigByProduct,
+  getCheckoutQuote,
+  processPayment,
+  saveCard,
+} from '../controllers/checkout.controller';
 
 const router = Router();
 
@@ -9,6 +19,8 @@ router.get('/api/checkout/config', getCheckoutConfig);
 router.get('/api/checkout/config-by-offer/:offerId', getCheckoutConfigByOffer);
 router.get('/api/checkout/config-by-product/:ghlProductId', getCheckoutConfigByProduct);
 router.get('/api/checkout/quote', getCheckoutQuote);
+router.post('/api/checkout/stripe-ach/intent', createStripeAchPaymentIntent);
+router.post('/api/checkout/stripe-ach/finalize', finalizeStripeAchPayment);
 router.post('/api/checkout/process-payment', processPayment);
 router.post('/api/checkout/whop/session', createWhopCheckoutSession);
 router.post('/api/checkout/save-card', saveCard);
@@ -1026,9 +1038,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return !!(offerData
       && offerData.dualPricingEnabled
       && offerData.achEnabled
-      && processorType === 'nmi'
-      && paymentChoice !== 'installments'
-      && paymentChoice !== 'subscription');
+      && (processorType === 'stripe'
+        || (processorType === 'nmi'
+          && paymentChoice !== 'installments'
+          && paymentChoice !== 'subscription')));
   }
 
   function setPaymentMethod(method) {
@@ -1260,6 +1273,65 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       var amount = Math.round(chargePrice * 100);
 
+      var data;
+
+      if (processorType === 'stripe' && selectedPaymentMethod === 'ach') {
+        if (!stripe || !stripe.collectBankAccountForPayment) {
+          throw new Error('Stripe bank transfer is not available. Please refresh and try again.');
+        }
+
+        var intentRes = await fetch(API_BASE + '/api/checkout/stripe-ach/intent', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            publishableKey: publishableKey,
+            offerId: offerId,
+            amount: amount,
+            currency: 'usd',
+            consentToken: consentToken,
+            contactId: prefillContactId || '',
+            contactName: custName,
+            contactEmail: custEmail || enrollmentEmail,
+            paymentChoice: paymentChoice || 'pif',
+            checkoutMode: consentMode ? 'full_enrollment' : 'quick_checkout'
+          })
+        });
+        var intentData = await intentRes.json();
+        if (!intentData.success) throw new Error(intentData.error || 'Could not start bank transfer.');
+
+        var bankResult = await stripe.collectBankAccountForPayment({
+          clientSecret: intentData.clientSecret,
+          params: {
+            payment_method_type: 'us_bank_account',
+            payment_method_data: {
+              billing_details: {
+                name: custName,
+                email: custEmail || enrollmentEmail
+              }
+            }
+          },
+          expand: ['payment_method']
+        });
+        if (bankResult.error) throw new Error(bankResult.error.message);
+
+        var finalIntent = bankResult.paymentIntent;
+        if (finalIntent && finalIntent.status === 'requires_confirmation') {
+          var confirmResult = await stripe.confirmUsBankAccountPayment(intentData.clientSecret);
+          if (confirmResult.error) throw new Error(confirmResult.error.message);
+          finalIntent = confirmResult.paymentIntent;
+        }
+
+        var finalizeRes = await fetch(API_BASE + '/api/checkout/stripe-ach/finalize', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            offerId: offerId,
+            paymentIntentId: (finalIntent && finalIntent.id) || intentData.paymentIntentId
+          })
+        });
+        data = await finalizeRes.json();
+        if (!data.success) throw new Error(data.error || 'Bank transfer failed.');
+      } else {
       // For Stripe, create PaymentMethod first
       if (processorType === 'stripe' && cardElement) {
         var result = await stripe.createPaymentMethod({type:'card', card: cardElement});
@@ -1299,13 +1371,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         })
       });
 
-      var data = await res.json();
+      data = await res.json();
       if (!data.success) throw new Error(data.error || 'Payment failed');
+      }
 
       // Success
       el('pay-btn').classList.add('hidden');
       el('success-msg').textContent = data.billingIssue
         ? 'Payment received. Recurring billing setup needs merchant attention.'
+        : data.requiresVerification
+          ? 'Bank account verification is pending. Stripe will email verification instructions; receipt and enrollment completion happen after the bank payment succeeds.'
         : data.paymentStatus === 'processing'
           ? 'Bank transfer submitted. Receipt and enrollment completion will happen after settlement.'
           : 'Payment Successful!';

@@ -13,6 +13,7 @@ import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { OfferRecord } from '../repositories/offer.repository';
 import { whopService } from '../services/whop.service';
 import { dualPricingService } from '../services/dual-pricing.service';
+import { stripeAchService } from '../services/stripe-ach.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -76,6 +77,187 @@ export async function getCheckoutQuote(req: Request, res: Response): Promise<voi
     req.query.paymentMethod === 'ach' ? 'ach' : 'card',
   );
   res.json(quote);
+}
+
+export async function createStripeAchPaymentIntent(req: Request, res: Response): Promise<void> {
+  try {
+    const {
+      offerId, amount, currency, consentToken, contactId, contactEmail, contactName,
+      paymentChoice, checkoutMode, publishableKey,
+    } = req.body || {};
+    if (!offerId || !amount || !contactEmail || !contactName) {
+      res.status(400).json({ success: false, error: 'offerId, amount, contactName, and contactEmail are required' });
+      return;
+    }
+
+    const offer = await offerRepository.findById(String(offerId));
+    if (!offer || !offer.active) {
+      res.status(404).json({ success: false, error: 'Offer not found' });
+      return;
+    }
+    if ((offer as any).checkout_type === 'whop') {
+      res.status(400).json({ success: false, error: 'This offer uses Whop checkout.' });
+      return;
+    }
+
+    const normalizedCurrency = String(currency || 'usd').toLowerCase();
+    if (normalizedCurrency !== 'usd') {
+      res.status(400).json({ success: false, error: 'Invalid currency' });
+      return;
+    }
+
+    const normalizedChoice = normalizePaymentType(String(paymentChoice || 'pif'));
+    const isRecurringPaymentType = ['installment', 'installments', 'subscription'].includes(normalizedChoice);
+
+    const submittedAmount = Number(amount);
+    if (!Number.isFinite(submittedAmount) || submittedAmount <= 0 || submittedAmount > 99999999) {
+      res.status(400).json({ success: false, error: 'Invalid amount' });
+      return;
+    }
+
+    const quote = await dualPricingService.quoteOffer(offer, normalizedChoice, 'ach');
+    if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== submittedAmount) {
+      logger.warn({
+        offerId: offer.id,
+        submittedAmount,
+        expectedAmount: quote.selectedAmountCents,
+      }, 'Rejected Stripe ACH amount mismatch');
+      res.status(400).json({ success: false, error: 'Payment amount does not match selected offer' });
+      return;
+    }
+
+    const merchantRow = await merchantRepository.findByLocationId(offer.location_id);
+    if (!merchantRow) {
+      res.status(404).json({ success: false, error: 'Merchant not found' });
+      return;
+    }
+
+    if (publishableKey) {
+      const publicMerchant = await paymentProviderService.getMerchantByPublishableKey(String(publishableKey));
+      if (!publicMerchant || publicMerchant.locationId !== offer.location_id) {
+        res.status(401).json({ success: false, error: 'Merchant verification failed' });
+        return;
+      }
+    }
+
+    if (consentToken) {
+      const { data: enrollment } = await getSupabase()
+        .from('enrollments')
+        .select('id, location_id')
+        .eq('consent_token', consentToken)
+        .eq('location_id', offer.location_id)
+        .maybeSingle();
+      if (!enrollment) {
+        res.status(400).json({ success: false, error: 'Consent verification failed. Please complete the enrollment process.' });
+        return;
+      }
+    }
+
+    const { config: procConfig } = await resolveProcessor(merchantRow.id, offer.location_id, {
+      processor_override: ((offer as any).processor_override || null) as 'nmi' | 'stripe' | null,
+      nmi_processor_id: (offer as any).nmi_processor_id || null,
+    });
+    if (procConfig.processor_type !== 'stripe') {
+      res.status(400).json({ success: false, error: 'This offer is not configured for Stripe ACH.' });
+      return;
+    }
+
+    const stripeClient = createProcessorClient(procConfig) as any;
+    const nameParts = String(contactName || '').trim().split(/\s+/);
+    const intent = await stripeClient.createAchPaymentIntent({
+      amount: submittedAmount,
+      currency: normalizedCurrency,
+      customerEmail: String(contactEmail),
+      customerName: String(contactName),
+      description: offer.offer_name || 'ScaleSafe ACH Payment',
+      metadata: {
+        scalesafe_ach: 'true',
+        checkout_mode: String(checkoutMode || 'checkout'),
+        location_id: offer.location_id,
+        merchant_id: merchantRow.id,
+        offer_id: offer.id,
+        scalesafe_offer_id: offer.id,
+        consent_token: String(consentToken || ''),
+        contact_id: String(contactId || ''),
+        customer_email: String(contactEmail),
+        first_name: nameParts[0] || '',
+        last_name: nameParts.slice(1).join(' '),
+        payment_choice: normalizedChoice,
+        payment_method: 'ach',
+      },
+      setupFutureUsage: isRecurringPaymentType,
+    });
+
+    res.json({
+      success: true,
+      clientSecret: intent.clientSecret,
+      paymentIntentId: intent.paymentIntentId,
+      status: intent.status,
+      stripeAccountId: intent.stripeAccountId,
+      stripePublishableKey: config.stripe.publishableKey,
+    });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Stripe ACH payment intent creation failed');
+    res.status(500).json({ success: false, error: err.message || 'Stripe ACH setup failed' });
+  }
+}
+
+export async function finalizeStripeAchPayment(req: Request, res: Response): Promise<void> {
+  try {
+    const { offerId, paymentIntentId } = req.body || {};
+    if (!offerId || !paymentIntentId) {
+      res.status(400).json({ success: false, error: 'offerId and paymentIntentId are required' });
+      return;
+    }
+
+    const offer = await offerRepository.findById(String(offerId));
+    if (!offer || !offer.active) {
+      res.status(404).json({ success: false, error: 'Offer not found' });
+      return;
+    }
+    const merchantRow = await merchantRepository.findByLocationId(offer.location_id);
+    if (!merchantRow) {
+      res.status(404).json({ success: false, error: 'Merchant not found' });
+      return;
+    }
+
+    const { config: procConfig } = await resolveProcessor(merchantRow.id, offer.location_id, {
+      processor_override: ((offer as any).processor_override || null) as 'nmi' | 'stripe' | null,
+      nmi_processor_id: (offer as any).nmi_processor_id || null,
+    });
+    if (procConfig.processor_type !== 'stripe') {
+      res.status(400).json({ success: false, error: 'This offer is not configured for Stripe ACH.' });
+      return;
+    }
+
+    const stripeClient = createProcessorClient(procConfig) as any;
+    const paymentIntent = await stripeClient.retrievePaymentIntent(String(paymentIntentId));
+    if (String(paymentIntent.metadata?.offer_id || '') !== String(offerId)) {
+      res.status(400).json({ success: false, error: 'Stripe ACH payment does not match this offer' });
+      return;
+    }
+
+    const result = await stripeAchService.recordPaymentIntentState({
+      merchant: merchantRow,
+      paymentIntent,
+      source: 'stripe_ach_checkout',
+    });
+
+    res.json({
+      success: result.paymentStatus !== 'failed',
+      paymentStatus: result.paymentStatus,
+      requiresVerification: paymentIntent.status === 'requires_action',
+      verificationUrl: paymentIntent.next_action?.verify_with_microdeposits?.hosted_verification_url || undefined,
+      chargeId: paymentIntent.id,
+      paymentIntentId: paymentIntent.id,
+      error: result.paymentStatus === 'failed'
+        ? paymentIntent.last_payment_error?.message || 'Stripe ACH payment failed'
+        : undefined,
+    });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'Stripe ACH payment finalization failed');
+    res.status(500).json({ success: false, error: err.message || 'Stripe ACH finalization failed' });
+  }
 }
 
 type BillingSetupIssue = {

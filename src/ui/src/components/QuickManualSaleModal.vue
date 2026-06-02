@@ -120,7 +120,7 @@
     <template #footer>
       <button class="btn btn-secondary" @click="openProxy = false" :disabled="submitting">Close</button>
       <button class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
-        {{ submitting ? 'Charging...' : 'Charge Card' }}
+        {{ submitting ? 'Submitting...' : (paymentMethod === 'ach' ? 'Submit Bank Payment' : 'Charge Card') }}
       </button>
     </template>
   </Modal>
@@ -269,9 +269,10 @@ const dualPricingPreview = computed(() => {
 });
 const achAllowedForSelection = computed(() => {
   return Boolean(dualPricingPreview.value
-    && processorType.value === 'nmi'
-    && paymentChoice.value !== 'installments'
-    && paymentChoice.value !== 'subscription');
+    && (processorType.value === 'stripe'
+      || (processorType.value === 'nmi'
+        && paymentChoice.value !== 'installments'
+        && paymentChoice.value !== 'subscription')));
 });
 
 function normalizeOfferChoice(offer: any): string {
@@ -357,7 +358,7 @@ async function loadProcessorConfig() {
     const cfg = await api.get<any>(`/api/dashboard/manual-sale/config?${params.toString()}`);
     if (seq !== processorLoadSeq || !props.open) return;
     processorType.value = cfg.processorType || '';
-    if (processorType.value !== 'nmi') paymentMethod.value = 'card';
+    if (processorType.value !== 'nmi' && processorType.value !== 'stripe') paymentMethod.value = 'card';
     configLoading.value = false;
     fieldMounting.value = true;
     await nextTick();
@@ -446,6 +447,9 @@ function getNmiToken() {
 
 async function tokenizeCard(): Promise<string> {
   if (!paymentFieldsReady.value) throw new Error('Payment fields are not ready yet.');
+  if (processorType.value === 'stripe' && paymentMethod.value === 'ach') {
+    return '';
+  }
   if (processorType.value === 'stripe') {
     const result = await stripe.createPaymentMethod({
       type: 'card',
@@ -470,6 +474,55 @@ async function submit() {
   submitError.value = '';
   resultMessage.value = '';
   try {
+    if (processorType.value === 'stripe' && paymentMethod.value === 'ach') {
+      if (!stripe || !stripe.collectBankAccountForPayment) throw new Error('Stripe bank transfer is not ready.');
+      const intent = await api.post<any>('/api/dashboard/manual-sale/stripe-ach/intent', {
+        contactId: client.contactId || undefined,
+        firstName: client.firstName,
+        lastName: client.lastName,
+        email: client.email,
+        phone: client.phone,
+        offerId: selectedOfferId.value || undefined,
+        amount: amount.value,
+        paymentType: paymentChoice.value,
+        paymentMethod: 'ach',
+        sendEnrollment: selectedOfferId.value ? sendEnrollment.value : false,
+        sendVia: ['email'],
+      });
+
+      const bankResult = await stripe.collectBankAccountForPayment({
+        clientSecret: intent.clientSecret,
+        params: {
+          payment_method_type: 'us_bank_account',
+          payment_method_data: {
+            billing_details: {
+              name: [client.firstName, client.lastName].filter(Boolean).join(' '),
+              email: client.email,
+              phone: client.phone || undefined,
+            },
+          },
+        },
+        expand: ['payment_method'],
+      });
+      if (bankResult.error) throw new Error(bankResult.error.message);
+
+      let paymentIntent = bankResult.paymentIntent;
+      if (paymentIntent && paymentIntent.status === 'requires_confirmation') {
+        const confirmResult = await stripe.confirmUsBankAccountPayment(intent.clientSecret);
+        if (confirmResult.error) throw new Error(confirmResult.error.message);
+        paymentIntent = confirmResult.paymentIntent;
+      }
+
+      const finalized = await api.post<any>('/api/dashboard/manual-sale/stripe-ach/finalize', {
+        paymentIntentId: paymentIntent?.id || intent.paymentIntentId,
+      });
+      resultMessage.value = finalized.paymentStatus === 'settled'
+        ? (selectedOfferId.value ? 'Bank payment settled. Paid enrollment link is ready.' : 'Bank payment settled and saved to the client.')
+        : 'Bank transfer submitted. Receipt and enrollment link send after Stripe confirms success.';
+      emit('completed', finalized);
+      return;
+    }
+
     const paymentToken = await tokenizeCard();
     const result = await api.post<any>('/api/dashboard/manual-sale/charge', {
       contactId: client.contactId || undefined,
