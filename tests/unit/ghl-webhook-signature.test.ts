@@ -71,6 +71,30 @@ describe('GHL webhook signature middleware', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('allows unsigned GHL trigger subscription lifecycle callbacks', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS;
+    const req = createReq(
+      {},
+      {
+        triggerData: {
+          name: 'ScaleSafe App Event',
+          eventType: 'CREATED',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow_123',
+        },
+        extras: { locationId: 'loc_123' },
+      },
+    );
+    req.path = '/ghl/triggers';
+    const res = createRes();
+    const next = jest.fn();
+
+    requireGhlWebhookSignature(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed signatures even outside production', () => {
     process.env.NODE_ENV = 'test';
     const req = createReq({ 'x-ghl-signature': 'not-valid-base64' });

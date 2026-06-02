@@ -27,6 +27,23 @@ function getPayload(req: Request): Buffer {
     : Buffer.from(JSON.stringify(req.body || {}), 'utf8');
 }
 
+function isTriggerSubscriptionLifecycle(req: Request): boolean {
+  const body = req.body || {};
+  return Boolean(
+    req.path === '/ghl/triggers' ||
+    body.triggerKey ||
+    body.trigger_key ||
+    body.triggerData?.key ||
+    body.triggerData?.triggerKey ||
+    body.triggerData?.name ||
+    body.meta?.key ||
+    body.subscriptionUrl ||
+    body.subscription_url ||
+    body.triggerData?.targetUrl ||
+    body.triggerData?.subscriptionUrl,
+  );
+}
+
 export function verifyGhlWebhookRequest(req: Request): { ok: boolean; reason?: string; algorithm?: string } {
   const payload = getPayload(req);
   const ghlSignature = req.headers['x-ghl-signature']?.toString();
@@ -61,6 +78,12 @@ export function requireGhlWebhookSignature(req: Request, res: Response, next: Ne
 
   if (!result.ok && allowUnsigned && result.reason === 'Missing GHL webhook signature') {
     logger.warn({ path: req.path }, 'Allowing unsigned GHL webhook with explicit override');
+    next();
+    return;
+  }
+
+  if (!result.ok && result.reason === 'Missing GHL webhook signature' && isTriggerSubscriptionLifecycle(req)) {
+    logger.warn({ path: req.path }, 'Allowing unsigned GHL trigger subscription lifecycle callback');
     next();
     return;
   }
