@@ -10,6 +10,8 @@ const mockHandleRefund = jest.fn();
 const mockSupabaseFrom = jest.fn();
 const mockIdempotencyIsDuplicate = jest.fn().mockResolvedValue(false);
 const mockGhlActivityHandleWebhook = jest.fn();
+const mockTriggerUpsertSubscription = jest.fn();
+const mockTriggerDeactivateSubscription = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -40,6 +42,13 @@ jest.mock('../../src/repositories/enrollment.repository', () => ({
 jest.mock('../../src/repositories/offer.repository', () => ({
   offerRepository: {
     listByLocation: (...args: any[]) => mockOfferListByLocation(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/trigger.repository', () => ({
+  triggerRepository: {
+    upsertSubscription: (...args: any[]) => mockTriggerUpsertSubscription(...args),
+    deactivateSubscription: (...args: any[]) => mockTriggerDeactivateSubscription(...args),
   },
 }));
 
@@ -111,6 +120,8 @@ beforeEach(() => {
   mockHandleRecurring.mockResolvedValue(undefined);
   mockHandleFailed.mockResolvedValue(undefined);
   mockHandleRefund.mockResolvedValue(undefined);
+  mockTriggerUpsertSubscription.mockResolvedValue({});
+  mockTriggerDeactivateSubscription.mockResolvedValue(undefined);
   mockGhlActivityHandleWebhook.mockResolvedValue({
     status: 'matched',
     eventType: 'AppointmentCreate',
@@ -345,6 +356,27 @@ describe('Webhook Controller - ghlPayment', () => {
 });
 
 describe('Webhook Controller - ghlUnified', () => {
+  test('routes trigger subscription callbacks from the default GHL webhook URL', async () => {
+    const { req, res, next } = mockReqRes({
+      triggerData: {
+        name: 'ScaleSafe App Event',
+        eventType: 'CREATED',
+        subscriptionUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/274dtgl30b7x2HG8hn69/workflow_123',
+      },
+      extras: { locationId: '274dtgl30b7x2HG8hn69' },
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockTriggerUpsertSubscription).toHaveBeenCalledWith(
+      '274dtgl30b7x2HG8hn69',
+      'ss_app_event',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/274dtgl30b7x2HG8hn69/workflow_123',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   test('routes appointment events from the default GHL webhook URL to activity processing', async () => {
     const body = {
       type: 'AppointmentCreate',

@@ -22,10 +22,22 @@ function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
     body.triggerKey ||
     body.trigger_key ||
     body.triggerData?.key ||
+    body.triggerData?.triggerKey ||
+    body.triggerData?.trigger_key ||
+    body.triggerData?.name ||
+    body.triggerData?.label ||
     body.meta?.key ||
+    body.meta?.triggerKey ||
+    body.meta?.name ||
+    body.meta?.label ||
     body.subscriptionUrl ||
     body.subscription_url ||
-    body.triggerData?.targetUrl,
+    body.targetUrl ||
+    body.target_url ||
+    body.triggerData?.targetUrl ||
+    body.triggerData?.target_url ||
+    body.triggerData?.subscriptionUrl ||
+    body.triggerData?.subscription_url,
   );
 }
 
