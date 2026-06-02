@@ -1,9 +1,38 @@
 import { Request, Response, NextFunction } from 'express';
 import { triggerRepository } from '../repositories/trigger.repository';
-import { isValidTriggerKey } from '../constants/trigger-keys';
+import { normalizeTriggerKey } from '../constants/trigger-keys';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { isAllowedTriggerSubscriptionUrl } from '../utils/trigger-subscription-url';
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function findTriggerKey(body: Record<string, any>): string {
+  return firstString(
+    body.triggerKey,
+    body.trigger_key,
+    body.triggerData?.key,
+    body.triggerData?.triggerKey,
+    body.triggerData?.trigger_key,
+    body.triggerData?.name,
+    body.triggerData?.label,
+    body.meta?.key,
+    body.meta?.triggerKey,
+    body.meta?.name,
+    body.meta?.label,
+    body.eventType,
+    body.event_type,
+    body.filters?.eventType,
+    body.filters?.event_type,
+    body.filter?.eventType,
+    body.filter?.event_type,
+  );
+}
 
 export const triggerController = {
   /**
@@ -15,9 +44,32 @@ export const triggerController = {
       const body = req.body || {};
       const eventType = body.type || body.triggerData?.eventType;
       const type = String(eventType || '').toLowerCase();
-      const locationId = body.locationId || body.location_id || body.extras?.locationId || body.extras?.location_id;
-      const triggerKey = body.triggerKey || body.trigger_key || body.triggerData?.key || body.meta?.key;
-      const subscriptionUrl = body.subscriptionUrl || body.subscription_url || body.triggerData?.targetUrl;
+      const locationId = firstString(
+        body.locationId,
+        body.location_id,
+        body.location?.id,
+        body.extras?.locationId,
+        body.extras?.location_id,
+        body.triggerData?.locationId,
+        body.triggerData?.location_id,
+        body.meta?.locationId,
+        body.meta?.location_id,
+      );
+      const rawTriggerKey = findTriggerKey(body);
+      const triggerKey = normalizeTriggerKey(rawTriggerKey);
+      const subscriptionUrl = firstString(
+        body.subscriptionUrl,
+        body.subscription_url,
+        body.targetUrl,
+        body.target_url,
+        body.webhookUrl,
+        body.webhook_url,
+        body.url,
+        body.triggerData?.targetUrl,
+        body.triggerData?.target_url,
+        body.triggerData?.subscriptionUrl,
+        body.triggerData?.subscription_url,
+      );
 
       if (!type || !locationId || !triggerKey || !subscriptionUrl) {
         logger.warn(
@@ -26,14 +78,12 @@ export const triggerController = {
             triggerDataKeys: body.triggerData ? Object.keys(body.triggerData) : [],
             extrasKeys: body.extras ? Object.keys(body.extras) : [],
             metaKeys: body.meta ? Object.keys(body.meta) : [],
+            rawTriggerKey,
+            normalizedTriggerKey: triggerKey,
           },
           'Invalid trigger subscription payload',
         );
-        throw new ValidationError('type, locationId, triggerKey, subscriptionUrl required');
-      }
-
-      if (!isValidTriggerKey(triggerKey)) {
-        throw new ValidationError(`Invalid trigger key: ${triggerKey}`);
+        throw new ValidationError('type, locationId, valid triggerKey, subscriptionUrl required');
       }
 
       if (!isAllowedTriggerSubscriptionUrl(String(subscriptionUrl))) {
@@ -43,10 +93,10 @@ export const triggerController = {
 
       if (type === 'subscribe' || type === 'created' || type === 'updated') {
         await triggerRepository.upsertSubscription(locationId, triggerKey, subscriptionUrl);
-        logger.info({ locationId, triggerKey, subscriptionUrl, type }, 'Trigger subscribed');
+        logger.info({ locationId, triggerKey, rawTriggerKey, subscriptionUrl, type }, 'Trigger subscribed');
       } else if (type === 'unsubscribe' || type === 'deleted') {
         await triggerRepository.deactivateSubscription(locationId, triggerKey, subscriptionUrl);
-        logger.info({ locationId, triggerKey, subscriptionUrl, type }, 'Trigger unsubscribed');
+        logger.info({ locationId, triggerKey, rawTriggerKey, subscriptionUrl, type }, 'Trigger unsubscribed');
       } else {
         throw new ValidationError(`Invalid subscription type: ${type}`);
       }

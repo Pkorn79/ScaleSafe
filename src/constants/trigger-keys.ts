@@ -33,3 +33,28 @@ export type TriggerKey = typeof VALID_TRIGGER_KEYS[number];
 export function isValidTriggerKey(key: string): key is TriggerKey {
   return (VALID_TRIGGER_KEYS as readonly string[]).includes(key);
 }
+
+const TRIGGER_KEY_ALIASES: Record<string, TriggerKey> = {
+  scalesafeappevent: 'ss_app_event',
+  appcontrolledscalesafeeventforworkflowautomation: 'ss_app_event',
+  upcomingpaymentreminder: 'ss_app_event',
+  upcoming_payment_reminder: 'ss_app_event',
+  pulsecheckdue: 'ss_app_event',
+  pulse_check_due: 'ss_app_event',
+};
+
+function normalizeAliasKey(value: string): string {
+  const trimmed = String(value || '').trim();
+  const lower = trimmed.toLowerCase();
+  return TRIGGER_KEY_ALIASES[lower] ? lower : lower.replace(/[^a-z0-9_]/g, '');
+}
+
+export function normalizeTriggerKey(value: unknown): TriggerKey | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (isValidTriggerKey(raw)) return raw;
+
+  const normalized = normalizeAliasKey(raw);
+  if (isValidTriggerKey(normalized)) return normalized;
+  return TRIGGER_KEY_ALIASES[normalized] || null;
+}

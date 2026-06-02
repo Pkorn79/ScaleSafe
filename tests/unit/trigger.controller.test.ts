@@ -74,6 +74,56 @@ describe('triggerController.handleSubscription', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
+  it('subscribes the shared app event when HighLevel sends the trigger label', async () => {
+    const req = {
+      body: {
+        triggerData: {
+          name: 'ScaleSafe App Event',
+          eventType: 'CREATED',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+        },
+        extras: { locationId: 'loc_123' },
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
+
+    await triggerController.handleSubscription(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockUpsertSubscription).toHaveBeenCalledWith(
+      'loc_123',
+      'ss_app_event',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('subscribes the shared app event when HighLevel sends the reminder filter value', async () => {
+    const req = {
+      body: {
+        type: 'subscribe',
+        location: { id: 'loc_123' },
+        triggerData: {
+          key: 'Upcoming Payment Reminder',
+          subscriptionUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+        },
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
+
+    await triggerController.handleSubscription(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockUpsertSubscription).toHaveBeenCalledWith(
+      'loc_123',
+      'ss_app_event',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   it('rejects non-GHL subscription URLs', async () => {
     const req = {
       body: {
