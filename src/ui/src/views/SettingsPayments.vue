@@ -32,6 +32,43 @@
         </div>
       </div>
 
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:0">Dual Pricing Rate</h3>
+            <p class="text-sm text-muted mt-2">Applies only to this merchant. Offers still turn dual pricing on or off individually.</p>
+          </div>
+          <span v-if="dualPricingConfig.locationScoped" class="badge badge-green">Merchant rate</span>
+          <span v-else class="badge badge-yellow">Default rate</span>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Card price uplift (%)</label>
+            <input
+              class="form-input"
+              v-model="dualPricingForm.cardUpliftPercent"
+              type="number"
+              min="0"
+              max="10"
+              step="0.01"
+              placeholder="3.00"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Processor deduction</label>
+            <input class="form-input readonly-field" :value="dualPricingDeductionLabel" readonly />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveDualPricing" :disabled="dualPricingSaving">
+            {{ dualPricingSaving ? 'Saving...' : 'Save Rate' }}
+          </button>
+        </div>
+        <p v-if="dualPricingMessage" class="text-sm mt-2" :style="{ color: dualPricingMessageOk ? '#059669' : '#dc2626' }">
+          {{ dualPricingMessage }}
+        </p>
+      </div>
+
       <!-- NMI Connection -->
       <div class="card">
         <div class="flex-between mb-4">
@@ -288,7 +325,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
 import FeatureSettingStub from '../components/FeatureSettingStub.vue';
@@ -326,6 +363,26 @@ const whopForm = ref({
   webhookSecret: '',
   environment: 'production',
 });
+const dualPricingConfig = ref({
+  enabled: false,
+  locationScoped: false,
+  cardUpliftPercent: 0,
+  processorDeductionPercent: 0,
+  enabledProcessors: [] as string[],
+  effectiveAt: null as string | null,
+});
+const dualPricingForm = ref({
+  cardUpliftPercent: '',
+});
+const dualPricingSaving = ref(false);
+const dualPricingMessage = ref('');
+const dualPricingMessageOk = ref(true);
+const dualPricingDeductionLabel = computed(() => {
+  const uplift = Number(dualPricingForm.value.cardUpliftPercent || 0);
+  if (!Number.isFinite(uplift) || uplift < 0) return 'Enter a valid rate';
+  const deduction = uplift > 0 ? (uplift / (100 + uplift)) * 100 : 0;
+  return `${deduction.toFixed(4)}%`;
+});
 const paymentFeatureSettings = [
   ...getFeaturesByArea('payments').filter((feature) => feature.id !== 'whop'),
   ...publicFeatureCatalog.filter((feature) => ['digistore24'].includes(feature.id)),
@@ -351,6 +408,7 @@ async function loadProcessorStatus() {
     nmiConnected.value = data.nmiConnected || false;
     nmiProcessorId.value = data.nmiProcessorId || '';
     defaultProcessor.value = data.defaultProcessor || '';
+    await loadDualPricing();
 
     if (stripeConnected.value) {
       try {
@@ -368,6 +426,58 @@ async function loadProcessorStatus() {
     loadError.value = err.message || 'Failed to load processor status';
   } finally {
     pageLoading.value = false;
+  }
+}
+
+async function loadDualPricing() {
+  try {
+    const cfg = await api.get<any>('/api/offers/dual-pricing/config');
+    dualPricingConfig.value = {
+      enabled: !!cfg.enabled,
+      locationScoped: !!cfg.locationScoped,
+      cardUpliftPercent: Number(cfg.cardUpliftPercent || 0),
+      processorDeductionPercent: Number(cfg.processorDeductionPercent || 0),
+      enabledProcessors: Array.isArray(cfg.enabledProcessors) ? cfg.enabledProcessors : [],
+      effectiveAt: cfg.effectiveAt || null,
+    };
+    dualPricingForm.value.cardUpliftPercent = Number(cfg.cardUpliftPercent || 0).toFixed(2);
+  } catch (err: any) {
+    dualPricingMessageOk.value = false;
+    dualPricingMessage.value = err?.message || 'Failed to load dual pricing rate.';
+  }
+}
+
+async function saveDualPricing() {
+  const cardUpliftPercent = Number(dualPricingForm.value.cardUpliftPercent);
+  if (!Number.isFinite(cardUpliftPercent) || cardUpliftPercent < 0 || cardUpliftPercent > 10) {
+    dualPricingMessageOk.value = false;
+    dualPricingMessage.value = 'Card price uplift must be between 0 and 10%.';
+    return;
+  }
+
+  dualPricingSaving.value = true;
+  dualPricingMessage.value = '';
+  try {
+    const cfg = await api.put<any>('/api/offers/dual-pricing/config', {
+      cardUpliftPercent,
+      enabledProcessors: ['stripe', 'nmi'],
+    });
+    dualPricingConfig.value = {
+      enabled: !!cfg.enabled,
+      locationScoped: !!cfg.locationScoped,
+      cardUpliftPercent: Number(cfg.cardUpliftPercent || 0),
+      processorDeductionPercent: Number(cfg.processorDeductionPercent || 0),
+      enabledProcessors: Array.isArray(cfg.enabledProcessors) ? cfg.enabledProcessors : [],
+      effectiveAt: cfg.effectiveAt || null,
+    };
+    dualPricingForm.value.cardUpliftPercent = Number(cfg.cardUpliftPercent || 0).toFixed(2);
+    dualPricingMessageOk.value = true;
+    dualPricingMessage.value = 'Dual pricing rate saved for this merchant.';
+  } catch (err: any) {
+    dualPricingMessageOk.value = false;
+    dualPricingMessage.value = err?.message || 'Failed to save dual pricing rate.';
+  } finally {
+    dualPricingSaving.value = false;
   }
 }
 

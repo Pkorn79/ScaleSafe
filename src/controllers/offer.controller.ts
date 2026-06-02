@@ -42,13 +42,36 @@ export const offerController = {
 
   async dualPricingConfig(req: Request, res: Response, next: NextFunction) {
     try {
-      const control = await dualPricingService.getActiveControl();
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const control = await dualPricingService.getActiveControl(locationId);
       res.json({
         enabled: !!control,
+        locationScoped: !!control?.location_id,
         cardUpliftPercent: control?.card_uplift_percent || 0,
         processorDeductionPercent: control?.processor_deduction_percent || 0,
         enabledProcessors: control?.enabled_processors || [],
         effectiveAt: control?.effective_at || null,
+      });
+    } catch (err) { next(err); }
+  },
+
+  async updateDualPricingConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const control = await dualPricingService.saveLocationControl(locationId, {
+        cardUpliftPercent: req.body?.cardUpliftPercent,
+        enabledProcessors: req.body?.enabledProcessors,
+        updatedBy: 'settings',
+      });
+      res.json({
+        enabled: true,
+        locationScoped: true,
+        cardUpliftPercent: control.card_uplift_percent,
+        processorDeductionPercent: control.processor_deduction_percent,
+        enabledProcessors: control.enabled_processors,
+        effectiveAt: control.effective_at,
       });
     } catch (err) { next(err); }
   },

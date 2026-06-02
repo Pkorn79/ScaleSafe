@@ -6,6 +6,7 @@ export type PaymentMethod = 'card' | 'ach';
 
 export interface DualPricingControl {
   id: string;
+  location_id?: string | null;
   card_uplift_percent: number;
   processor_deduction_percent: number;
   enabled_processors: string[];
@@ -97,28 +98,96 @@ export function buildDualPricingQuote(
 }
 
 export const dualPricingService = {
-  async getActiveControl(): Promise<DualPricingControl | null> {
-    try {
-      const { data, error } = await getSupabase()
+  async getActiveControl(locationId?: string | null): Promise<DualPricingControl | null> {
+    const selectFields = 'id, location_id, card_uplift_percent, processor_deduction_percent, enabled_processors, effective_at';
+    const supabase = getSupabase();
+
+    async function fetchForLocation(targetLocationId: string): Promise<DualPricingControl | null> {
+      const { data, error } = await supabase
         .from('dual_pricing_controls')
-        .select('id, card_uplift_percent, processor_deduction_percent, enabled_processors, effective_at')
+        .select(selectFields)
         .eq('active', true)
+        .eq('location_id', targetLocationId)
         .lte('effective_at', new Date().toISOString())
         .order('effective_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (error) {
-        const message = String(error.message || '');
-        if (error.code === '42P01' || message.includes('dual_pricing_controls')) return null;
-        throw error;
-      }
+      if (error) throw error;
       return data as DualPricingControl | null;
+    }
+
+    async function fetchGlobal(): Promise<DualPricingControl | null> {
+      const { data, error } = await supabase
+        .from('dual_pricing_controls')
+        .select(selectFields)
+        .eq('active', true)
+        .is('location_id', null)
+        .lte('effective_at', new Date().toISOString())
+        .order('effective_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as DualPricingControl | null;
+    }
+
+    try {
+      if (locationId) {
+        const scoped = await fetchForLocation(locationId);
+        if (scoped) return scoped;
+      }
+      return await fetchGlobal();
     } catch (err: any) {
       const message = String(err?.message || '');
-      if (message.includes('dual_pricing_controls') || message.includes('.lte is not a function')) return null;
+      if (
+        err?.code === '42P01'
+        || message.includes('dual_pricing_controls')
+        || message.includes('location_id')
+        || message.includes('.eq is not a function')
+        || message.includes('.lte is not a function')
+        || message.includes('.is is not a function')
+      ) return null;
       throw err;
     }
+  },
+
+  async saveLocationControl(
+    locationId: string,
+    input: { cardUpliftPercent: unknown; enabledProcessors?: unknown; updatedBy?: string },
+  ): Promise<DualPricingControl> {
+    const cardUpliftPercent = Number(input.cardUpliftPercent);
+    if (!Number.isFinite(cardUpliftPercent) || cardUpliftPercent < 0 || cardUpliftPercent > 10) {
+      throw new Error('Card price uplift must be between 0 and 10%.');
+    }
+
+    const allowedProcessors = new Set(['stripe', 'nmi']);
+    const requestedProcessors = Array.isArray(input.enabledProcessors)
+      ? input.enabledProcessors.map((value) => String(value).toLowerCase()).filter((value) => allowedProcessors.has(value))
+      : ['stripe', 'nmi'];
+    const enabledProcessors = requestedProcessors.length ? Array.from(new Set(requestedProcessors)) : ['stripe', 'nmi'];
+    const supabase = getSupabase();
+
+    const { error: deactivateError } = await supabase
+      .from('dual_pricing_controls')
+      .update({ active: false, updated_at: new Date().toISOString(), updated_by: input.updatedBy || 'app' })
+      .eq('location_id', locationId)
+      .eq('active', true);
+    if (deactivateError) throw deactivateError;
+
+    const { data, error } = await supabase
+      .from('dual_pricing_controls')
+      .insert({
+        location_id: locationId,
+        active: true,
+        card_uplift_percent: cardUpliftPercent,
+        enabled_processors: enabledProcessors,
+        internal_notes: 'Merchant-specific dual-pricing control.',
+        created_by: input.updatedBy || 'app',
+        updated_by: input.updatedBy || 'app',
+      })
+      .select('id, location_id, card_uplift_percent, processor_deduction_percent, enabled_processors, effective_at')
+      .single();
+    if (error) throw error;
+    return data as DualPricingControl;
   },
 
   async quoteOffer(
@@ -126,7 +195,7 @@ export const dualPricingService = {
     paymentChoice?: unknown,
     paymentMethod: PaymentMethod = 'card',
   ): Promise<DualPricingQuote> {
-    const control = await this.getActiveControl();
+    const control = await this.getActiveControl(offer.location_id);
     return buildDualPricingQuote(offer, control, paymentChoice, paymentMethod);
   },
 };

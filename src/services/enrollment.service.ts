@@ -187,7 +187,7 @@ export const enrollmentService = {
 
     // Get merchant info
     const merchant = await merchantRepository.findByLocationId(offer.location_id);
-    const dualPricingControl = await dualPricingService.getActiveControl();
+    const dualPricingControl = await dualPricingService.getActiveControl(offer.location_id);
 
     // Build milestones array (skip nulls)
     const milestones = [];
