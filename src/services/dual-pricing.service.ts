@@ -1,5 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import type { OfferRecord } from '../repositories/offer.repository';
+import { AppError, ValidationError } from '../utils/errors';
 
 export type PaymentChoice = 'pif' | 'installment' | 'installments' | 'subscription';
 export type PaymentMethod = 'card' | 'ach';
@@ -97,6 +98,24 @@ export function buildDualPricingQuote(
   };
 }
 
+function toDualPricingSettingsError(error: any): Error {
+  const message = String(error?.message || '');
+  if (
+    error?.code === '42703'
+    || error?.code === '42P01'
+    || message.includes('dual_pricing_controls')
+    || message.includes('location_id')
+    || message.includes('updated_by')
+  ) {
+    return new AppError(
+      'Dual pricing settings are not ready. Run migration 079_dual_pricing_location_controls.sql, then try again.',
+      500,
+      'DUAL_PRICING_MIGRATION_REQUIRED',
+    );
+  }
+  return error;
+}
+
 export const dualPricingService = {
   async getActiveControl(locationId?: string | null): Promise<DualPricingControl | null> {
     const selectFields = 'id, location_id, card_uplift_percent, processor_deduction_percent, enabled_processors, effective_at';
@@ -156,7 +175,7 @@ export const dualPricingService = {
   ): Promise<DualPricingControl> {
     const cardUpliftPercent = Number(input.cardUpliftPercent);
     if (!Number.isFinite(cardUpliftPercent) || cardUpliftPercent < 0 || cardUpliftPercent > 10) {
-      throw new Error('Card price uplift must be between 0 and 10%.');
+      throw new ValidationError('Card price uplift must be between 0 and 10%.');
     }
 
     const allowedProcessors = new Set(['stripe', 'nmi']);
@@ -171,7 +190,7 @@ export const dualPricingService = {
       .update({ active: false, updated_at: new Date().toISOString(), updated_by: input.updatedBy || 'app' })
       .eq('location_id', locationId)
       .eq('active', true);
-    if (deactivateError) throw deactivateError;
+    if (deactivateError) throw toDualPricingSettingsError(deactivateError);
 
     const { data, error } = await supabase
       .from('dual_pricing_controls')
@@ -186,7 +205,7 @@ export const dualPricingService = {
       })
       .select('id, location_id, card_uplift_percent, processor_deduction_percent, enabled_processors, effective_at')
       .single();
-    if (error) throw error;
+    if (error) throw toDualPricingSettingsError(error);
     return data as DualPricingControl;
   },
 
