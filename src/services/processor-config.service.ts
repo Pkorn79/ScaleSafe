@@ -25,6 +25,9 @@ export const NMI_WEBHOOK_EVENTS = [
   'transaction.sale.success',
   'transaction.sale.failure',
   'transaction.sale.unknown',
+  'transaction.check.status.settle',
+  'transaction.check.status.return',
+  'transaction.check.status.latereturn',
   'recurring.subscription.add',
   'recurring.subscription.update',
   'recurring.subscription.delete',
@@ -361,11 +364,13 @@ export const processorConfigService = {
     const callbackUrl = nmiUnifiedWebhookCallbackUrl();
     const advancedCallbackUrl = nmiWebhookCallbackUrl(config.id);
     const hasKey = !!config.nmi_webhook_secret_encrypted;
+    const storedEvents = Array.isArray(config.nmi_webhook_events) ? config.nmi_webhook_events : [];
+    const configuredEvents = Array.from(new Set([...storedEvents, ...NMI_WEBHOOK_EVENTS]));
 
     const patch: Record<string, unknown> = {};
     if (config.nmi_webhook_callback_url !== callbackUrl) patch.nmi_webhook_callback_url = callbackUrl;
-    if (!Array.isArray(config.nmi_webhook_events) || config.nmi_webhook_events.length === 0) {
-      patch.nmi_webhook_events = NMI_WEBHOOK_EVENTS;
+    if (configuredEvents.length !== storedEvents.length) {
+      patch.nmi_webhook_events = configuredEvents;
     }
     if (!config.nmi_webhook_status || config.nmi_webhook_status === 'not_configured') {
       patch.nmi_webhook_status = 'manual_setup_required';
@@ -384,9 +389,7 @@ export const processorConfigService = {
       callbackUrl,
       advancedCallbackUrl,
       hasKey,
-      events: Array.isArray(config.nmi_webhook_events) && config.nmi_webhook_events.length
-        ? config.nmi_webhook_events
-        : NMI_WEBHOOK_EVENTS,
+      events: configuredEvents,
       status: String(patch.nmi_webhook_status || config.nmi_webhook_status || 'manual_setup_required'),
       lastVerifiedAt: config.nmi_webhook_last_verified_at || null,
       lastError: config.nmi_webhook_last_error || null,

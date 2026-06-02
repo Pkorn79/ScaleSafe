@@ -152,36 +152,16 @@
       <div class="form-group dual-pricing-panel">
         <label class="checkbox-label">
           <input type="checkbox" v-model="form.dualPricingEnabled" />
-          Show Card and Bank Transfer prices
+          Dual pricing
         </label>
-        <p class="text-sm text-muted mt-2">
-          ScaleSafe controls the card/ACH pricing spread. Merchants can enable the display but cannot edit the internal fee table.
-        </p>
         <div v-if="form.dualPricingEnabled" class="dual-pricing-details">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="form.achEnabled" />
-            Allow Bank Transfer / ACH as the lower-price option
+            <input type="checkbox" v-model="achReleaseAfterSubmission" />
+            Release access after ACH is submitted
           </label>
-          <div class="grid grid-2 mt-4">
-            <div class="form-group">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="achReleaseAfterSubmission" />
-                Release access after ACH is submitted
-              </label>
-              <p class="text-sm text-muted mt-2">
-                Leave unchecked to send receipts and welcome/access only after Stripe confirms the bank payment succeeded. Check this only if you are comfortable giving access while ACH is still processing.
-              </p>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Internal Rate</label>
-              <input class="form-input readonly-field" type="text" :value="dualPricingRateLabel" readonly />
-            </div>
-          </div>
-          <div v-if="dualPricingPreview" class="dual-preview">
-            <div><span>Bank Transfer price</span><strong>{{ dualPricingPreview.ach }}</strong></div>
-            <div><span>Card price</span><strong>{{ dualPricingPreview.card }}</strong></div>
-            <p class="text-sm text-muted mt-2">Deduction rate: {{ dualPricingPreview.deduction }} from gross card volume.</p>
-          </div>
+          <p class="text-sm text-muted mt-2">
+            Otherwise access waits for bank payment confirmation.
+          </p>
         </div>
       </div>
 
@@ -529,33 +509,6 @@ const calculatedInstallment = computed(() => {
   return '';
 });
 
-const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
-const dualPricingRateLabel = computed(() => {
-  const cfg = dualPricingConfig.value;
-  if (!cfg?.enabled) return 'Not configured';
-  return `${Number(cfg.cardUpliftPercent || 0).toFixed(2)}% card price uplift`;
-});
-
-const dualPricingPreview = computed(() => {
-  const cfg = dualPricingConfig.value;
-  if (!form.value.dualPricingEnabled || !form.value.achEnabled || !cfg?.enabled) return null;
-  let cardAmount = Number(form.value.price || 0);
-  if (form.value.paymentType === 'installments') {
-    cardAmount = Number(calculatedInstallment.value || form.value.installmentAmount || form.value.price || 0);
-  } else if (form.value.paymentType === 'subscription') {
-    cardAmount = Number(form.value.installmentAmount || form.value.price || 0);
-  } else if (form.value.pifDiscountEnabled && form.value.pifPrice) {
-    cardAmount = Number(form.value.pifPrice || 0);
-  }
-  const uplift = Number(cfg.cardUpliftPercent || 0);
-  const achAmount = uplift > 0 ? cardAmount / (1 + uplift / 100) : cardAmount;
-  return {
-    card: `$${cardAmount.toFixed(2)}`,
-    ach: `$${achAmount.toFixed(2)}`,
-    deduction: `${Number(cfg.processorDeductionPercent || 0).toFixed(4)}%`,
-  };
-});
-
 const achReleaseAfterSubmission = computed({
   get: () => form.value.achAccessPolicy === 'after_submission',
   set: (checked: boolean) => {
@@ -585,11 +538,6 @@ onMounted(async () => {
     whopConnected.value = !!whop?.connected;
   } catch {
     whopConnected.value = false;
-  }
-  try {
-    dualPricingConfig.value = await api.get<any>('/api/offers/dual-pricing/config');
-  } catch {
-    dualPricingConfig.value = null;
   }
 
   // Clear any 404 errors from optional config fetches above
@@ -669,7 +617,7 @@ watch(() => form.value.checkoutType, (checkoutType) => {
 });
 
 watch(() => form.value.dualPricingEnabled, (enabled) => {
-  if (!enabled) form.value.achEnabled = false;
+  form.value.achEnabled = enabled;
 });
 
 watch(() => form.value.checkoutMode, (mode) => {
@@ -719,7 +667,7 @@ async function save() {
     processorOverride: form.value.checkoutType === 'direct' ? form.value.processorOverride || null : null,
     nmiProcessorId: form.value.checkoutType === 'direct' ? form.value.nmiProcessorId || null : null,
     dualPricingEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled,
-    achEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled && form.value.achEnabled,
+    achEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled,
     achAccessPolicy: form.value.achAccessPolicy,
     checkoutMode: form.value.checkoutMode,
     quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
@@ -736,7 +684,9 @@ async function save() {
       await api.post('/api/offers', payload);
     }
     routerNav.push('/offers');
-  } catch {}
+  } catch (err: any) {
+    error.value = err?.message || 'Offer could not be saved.';
+  }
 }
 </script>
 

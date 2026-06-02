@@ -17,6 +17,7 @@ const WEBHOOK_EVENTS: string[] = [
   // Early Fraud Warnings
   'radar.early_fraud_warning.created',
   // Payment failures
+  'payment_intent.processing',
   'payment_intent.payment_failed',
   // Charge events (for evidence vault)
   'charge.succeeded',
