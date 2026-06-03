@@ -612,13 +612,6 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       });
       return;
     }
-    if (paymentMethod === 'ach' && isRecurringPaymentType) {
-      res.status(400).json({
-        success: false,
-        error: 'Bank-transfer installments and subscriptions require settlement-gated recurring setup and are not enabled yet. Use card for this payment plan.',
-      });
-      return;
-    }
     const shouldVaultDuringCharge = !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
@@ -657,7 +650,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     const paymentSettled = result.success && result.status !== 'processing';
     const paymentProcessing = result.success && result.status === 'processing';
-    const shouldSaveCard = paymentSettled && !!contactEmail
+    const shouldSaveCard = result.success && !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
 
     // Card persistence is deferred until AFTER the consent-token / quick-pay
@@ -718,7 +711,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     logger.info({ hasConsent: !!consentToken, paymentSuccess: result.success, paymentProcessing }, 'POST-PAYMENT: checking enrollment completion eligibility');
     if (paymentProcessing && consentToken) {
       try {
-        await supabase.from('enrollments')
+        const { data: processingEnrollment } = await supabase.from('enrollments')
           .update({
             status: 'payment_processing',
             payment_amount: amount / 100,
@@ -727,9 +720,17 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             processor_type: procConfig.processor_type,
             initial_payment_status: 'processing',
             initial_payment_method: paymentMethod,
+            billing_setup_status: isRecurringPaymentType ? 'pending' : 'ok',
+            ...(isRecurringPaymentType ? { next_billing_date: null } : {}),
           } as any)
           .eq('consent_token', consentToken)
-          .eq('location_id', merchant.locationId);
+          .eq('location_id', merchant.locationId)
+          .select('id, contact_id')
+          .maybeSingle();
+        if (processingEnrollment?.id) {
+          finalEnrollmentId = processingEnrollment.id;
+          if (processingEnrollment.contact_id) finalContactId = processingEnrollment.contact_id;
+        }
       } catch (markErr: any) {
         logger.warn({ err: markErr.message, consentToken }, 'ACH processing status update failed');
       }
@@ -848,7 +849,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
 
     // For payments WITHOUT consent token: upsert GHL contact from customer fields
-    if (paymentSettled && !consentToken) {
+    if ((paymentSettled || paymentProcessing) && !consentToken) {
       const quickPayEmail = contactEmail || req.body.contactEmail || '';
       const quickPayName = contactName || req.body.contactName || '';
       const quickPayPhone = req.body.contactPhone || '';
@@ -966,11 +967,13 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     contact_id: resolvedQuickPayContact,
                     offer_id: offerId,
                     email: quickPayEmail || null,
-                    status: 'enrolled',
+                    status: paymentProcessing ? 'payment_processing' : 'enrolled',
                     payment_amount: amount / 100,
                     payment_type: quickPayPaymentKind,
                     payment_transaction_id: result.transactionId,
                     processor_type: procConfig.processor_type,
+                    initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
+                    initial_payment_method: paymentMethod,
                     payments_made: 1,
                     payments_total: quickPayPaymentsTotal,
                     next_billing_date: nextBilling,
@@ -1024,7 +1027,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
       // Fire Quick Pay receipt — ss_payment_received with payment_kind so the
       // PMG Recurring Payment Receipt workflow can branch on one-off vs installment copy.
-      if (resolvedQuickPayContact) {
+      if (paymentSettled && resolvedQuickPayContact) {
         try {
           await triggerService.fireTrigger(merchant.locationId, 'ss_payment_received', {
             event_type: 'payment_received',
@@ -1108,6 +1111,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               cardBrand: result.vaultedCardBrand || 'unknown',
               cardExpMonth: result.vaultedCardExpMonth || 0,
               cardExpYear: result.vaultedCardExpYear || 0,
+              paymentMethodKind: paymentMethod,
+              bankLastFour: result.vaultedBankLastFour,
+              bankAccountType: result.vaultedBankAccountType,
+              bankHolderType: result.vaultedBankHolderType,
             };
             logger.info({ customerId: result.vaultedCustomerId, processor: procConfig.processor_type, contactId: finalContactId }, 'CARD-SAVE: using vault from atomic charge');
           } else {
@@ -1167,7 +1174,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               } else {
                 const { data: subOffer } = await supabase
                   .from('offers_mirror')
-                  .select('offer_name, price, payment_type, installment_amount, installment_frequency')
+                  .select('id, location_id, offer_name, price, payment_type, installment_amount, installment_frequency, dual_pricing_enabled, ach_enabled, ach_access_policy')
                   .eq('id', enrForSub.offer_id)
                   .single();
 
@@ -1178,10 +1185,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   };
                 } else {
                   const recurringPaymentType = String(enrForSub.payment_type || subOffer.payment_type || '').toLowerCase();
-                  const recurringAmount = recurringPaymentType === 'subscription'
-                    ? Number(subOffer.price || subOffer.installment_amount || 0)
-                    : Number(subOffer.installment_amount || subOffer.price || 0);
-                  const subAmountCents = Math.round(recurringAmount * 100);
+                  const recurringQuote = await dualPricingService.quoteOffer(subOffer as any, recurringPaymentType, paymentMethod);
+                  const subAmountCents = recurringQuote.selectedAmountCents;
                   const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
                   const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
                     freq === 'daily' ? 'daily' :
@@ -1278,7 +1283,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           }, 'CARD-SAVE: failed - payment still succeeded but recurring billing will not run');
         }
       }
-    } else if (paymentSettled && isRecurringPaymentType) {
+    } else if (result.success && isRecurringPaymentType) {
       billingSetupIssue = {
         code: 'card_not_saved_for_recurring_setup',
         message: 'Payment was received, but the payment method was not saved for recurring billing.',

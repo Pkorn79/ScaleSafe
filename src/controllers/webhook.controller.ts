@@ -18,9 +18,24 @@ function webhookType(body: Record<string, any>): string {
 }
 
 function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
-  return Boolean(
+  const hasTriggerIdentity = Boolean(
     body.triggerKey ||
     body.trigger_key ||
+    body.triggerName ||
+    body.trigger_name ||
+    body.name ||
+    body.label ||
+    body.workflowTriggerName ||
+    body.workflow_trigger_name ||
+    body.trigger?.key ||
+    body.trigger?.triggerKey ||
+    body.trigger?.trigger_key ||
+    body.trigger?.name ||
+    body.trigger?.label ||
+    body.event?.triggerKey ||
+    body.event?.trigger_key ||
+    body.event?.name ||
+    body.event?.label ||
     body.triggerData?.key ||
     body.triggerData?.triggerKey ||
     body.triggerData?.trigger_key ||
@@ -29,16 +44,31 @@ function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
     body.meta?.key ||
     body.meta?.triggerKey ||
     body.meta?.name ||
-    body.meta?.label ||
+    body.meta?.label
+  );
+  const hasSubscriptionTarget = Boolean(
     body.subscriptionUrl ||
     body.subscription_url ||
     body.targetUrl ||
     body.target_url ||
+    body.trigger?.subscriptionUrl ||
+    body.trigger?.subscription_url ||
+    body.trigger?.targetUrl ||
+    body.trigger?.target_url ||
+    body.event?.subscriptionUrl ||
+    body.event?.subscription_url ||
+    body.event?.targetUrl ||
+    body.event?.target_url ||
+    body.data?.subscriptionUrl ||
+    body.data?.subscription_url ||
+    body.data?.targetUrl ||
+    body.data?.target_url ||
     body.triggerData?.targetUrl ||
     body.triggerData?.target_url ||
     body.triggerData?.subscriptionUrl ||
-    body.triggerData?.subscription_url,
+    body.triggerData?.subscription_url
   );
+  return hasTriggerIdentity && hasSubscriptionTarget;
 }
 
 function isGhlPaymentWebhook(type: string): boolean {

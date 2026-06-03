@@ -52,7 +52,6 @@
     <div v-if="dualPricingPreview" class="qms-dual-preview">
       <div><span>Bank Transfer price</span><strong>{{ dualPricingPreview.ach }}</strong></div>
       <div><span>Card price</span><strong>{{ dualPricingPreview.card }}</strong></div>
-      <p>Choose Bank Transfer to charge the lower bank price. ACH receipts complete after processor settlement.</p>
     </div>
 
     <label v-if="selectedOfferId" class="inline-check qms-check">
@@ -107,8 +106,11 @@
             </div>
           </div>
         </div>
-        <div v-else-if="processorType === 'stripe'">
+        <div v-else-if="processorType === 'stripe' && paymentMethod === 'card'">
           <div class="field-wrapper"><div :id="stripeElementId"></div></div>
+        </div>
+        <div v-else-if="processorType === 'stripe' && paymentMethod === 'ach'" class="qms-ach-placeholder">
+          Bank account collection opens after you submit.
         </div>
         <div v-else class="error-msg">No processor is configured.</div>
       </template>
@@ -246,9 +248,9 @@ function defaultAmountForOffer(offer: any, choice: string): number | null {
 function dualPricingQuoteForOffer(offer: any, choice: string) {
   const cfg = dualPricingConfig.value;
   if (!offer || !cfg?.enabled || !offer.dual_pricing_enabled || !offer.ach_enabled) return null;
-  const cardAmount = defaultAmountForOffer(offer, choice) || 0;
+  const achAmount = defaultAmountForOffer(offer, choice) || 0;
   const uplift = Number(cfg.cardUpliftPercent || 0);
-  const achAmount = uplift > 0 ? cardAmount / (1 + uplift / 100) : cardAmount;
+  const cardAmount = uplift > 0 ? achAmount * (1 + uplift / 100) : achAmount;
   return { cardAmount, achAmount };
 }
 
@@ -269,10 +271,7 @@ const dualPricingPreview = computed(() => {
 });
 const achAllowedForSelection = computed(() => {
   return Boolean(dualPricingPreview.value
-    && (processorType.value === 'stripe'
-      || (processorType.value === 'nmi'
-        && paymentChoice.value !== 'installments'
-        && paymentChoice.value !== 'subscription')));
+    && (processorType.value === 'stripe' || processorType.value === 'nmi'));
 });
 
 function normalizeOfferChoice(offer: any): string {
@@ -668,10 +667,13 @@ watch(achAllowedForSelection, (allowed) => {
   color: #111827;
 }
 
-.qms-dual-preview p {
-  color: #64748b;
-  line-height: 1.4;
-  margin: 7px 0 0;
+.qms-ach-placeholder {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 13px;
+  padding: 12px;
 }
 
 .section-title {

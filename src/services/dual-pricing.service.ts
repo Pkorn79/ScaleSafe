@@ -52,7 +52,7 @@ export function calculateProcessorDeductionPercent(cardUpliftPercent: number): n
   return (uplift / (100 + uplift)) * 100;
 }
 
-export function baseCardAmountCents(offer: OfferRecord, paymentChoice?: unknown): number {
+export function basePaymentAmountCents(offer: OfferRecord, paymentChoice?: unknown): number {
   const choice = normalizePaymentChoice(paymentChoice, offer);
   if (choice === 'installment' || choice === 'subscription') {
     return toCents(offer.installment_amount ?? offer.price);
@@ -63,6 +63,8 @@ export function baseCardAmountCents(offer: OfferRecord, paymentChoice?: unknown)
   return toCents(offer.price);
 }
 
+export const baseCardAmountCents = basePaymentAmountCents;
+
 export function buildDualPricingQuote(
   offer: OfferRecord,
   control: DualPricingControl | null,
@@ -70,15 +72,16 @@ export function buildDualPricingQuote(
   paymentMethod: PaymentMethod = 'card',
 ): DualPricingQuote {
   const choice = normalizePaymentChoice(paymentChoice, offer);
-  const cardAmountCents = baseCardAmountCents(offer, choice);
+  const baseAmountCents = basePaymentAmountCents(offer, choice);
   const enabled = Boolean((offer as any).dual_pricing_enabled && (offer as any).ach_enabled && control);
   const cardUpliftPercent = enabled ? Number(control?.card_uplift_percent || 0) : 0;
   const processorDeductionPercent = enabled
     ? Number(control?.processor_deduction_percent ?? calculateProcessorDeductionPercent(cardUpliftPercent))
     : 0;
-  const achAmountCents = enabled
-    ? Math.round(cardAmountCents / (1 + (cardUpliftPercent / 100)))
-    : cardAmountCents;
+  const achAmountCents = baseAmountCents;
+  const cardAmountCents = enabled
+    ? Math.round(baseAmountCents * (1 + (cardUpliftPercent / 100)))
+    : baseAmountCents;
   const normalizedMethod: PaymentMethod = paymentMethod === 'ach' ? 'ach' : 'card';
   const selectedAmountCents = normalizedMethod === 'ach' ? achAmountCents : cardAmountCents;
 

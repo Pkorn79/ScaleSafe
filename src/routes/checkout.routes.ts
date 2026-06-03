@@ -681,7 +681,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div id="dual-pricing-box" class="dual-pricing-box hidden">
       <div class="dual-row"><span>Bank transfer price</span><strong id="dual-ach-price"></strong></div>
       <div class="dual-row"><span>Card price</span><strong id="dual-card-price"></strong></div>
-      <div class="dual-note">Bank transfer is the lower price. Card payments use the card price shown here.</div>
     </div>
 
     <div class="divider"></div>
@@ -1019,13 +1018,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   }
 
   function priceQuote() {
-    var cardPrice = baseDisplayPrice();
+    var basePrice = baseDisplayPrice();
     var dual = offerData.dualPricing || null;
     if (!dual || !offerData.dualPricingEnabled) {
-      return { cardPrice: cardPrice, achPrice: cardPrice, selectedPrice: cardPrice, enabled: false };
+      return { cardPrice: basePrice, achPrice: basePrice, selectedPrice: basePrice, enabled: false };
     }
     var uplift = Number(dual.cardUpliftPercent || 0);
-    var achPrice = uplift > 0 ? Math.round((cardPrice / (1 + uplift / 100)) * 100) / 100 : cardPrice;
+    var achPrice = basePrice;
+    var cardPrice = uplift > 0 ? Math.round((basePrice * (1 + uplift / 100)) * 100) / 100 : basePrice;
     return {
       cardPrice: cardPrice,
       achPrice: achPrice,
@@ -1038,10 +1038,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return !!(offerData
       && offerData.dualPricingEnabled
       && offerData.achEnabled
-      && (processorType === 'stripe'
-        || (processorType === 'nmi'
-          && paymentChoice !== 'installments'
-          && paymentChoice !== 'subscription')));
+      && (processorType === 'stripe' || processorType === 'nmi'));
   }
 
   function setPaymentMethod(method) {
@@ -1065,6 +1062,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var achFields = el('nmi-ach-fields');
     if (cardFields) cardFields.classList.toggle('hidden', selectedPaymentMethod === 'ach');
     if (achFields) achFields.classList.toggle('hidden', selectedPaymentMethod !== 'ach');
+    var stripeFields = el('stripe-fields');
+    if (stripeFields && processorType === 'stripe') {
+      stripeFields.classList.toggle('hidden', selectedPaymentMethod === 'ach');
+    }
   }
 
   function updatePricingDisplay() {

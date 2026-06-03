@@ -91,7 +91,10 @@
             <span v-else>Card: not linked to this processor</span>
             <span v-if="enr.cardOnFile?.detailLabel"> - {{ enr.cardOnFile.detailLabel }}</span>
           </div>
-          <div v-if="!enr.controlVerified" class="text-xs control-warning mt-1">
+          <div v-if="enr.billingIssue" class="text-xs control-warning mt-1">
+            {{ enr.billingIssue.label }}
+          </div>
+          <div v-else-if="!enr.controlVerified" class="text-xs control-warning mt-1">
             Subscription ID missing; billing controls may only update ScaleSafe.
           </div>
           <div class="text-sm text-muted mt-1">

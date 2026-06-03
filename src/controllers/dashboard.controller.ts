@@ -207,8 +207,19 @@ function enrollmentBillingIssue(enrollment: any, lastPayment: any | null, lastNm
   const paymentType = String(enrollment?.payment_type || '').toLowerCase();
   const status = String(enrollment?.status || '').toLowerCase();
   const recurring = ['installment', 'installments', 'subscription'].includes(paymentType);
-  const active = ['enrolled', 'active', 'paused', 'consent_captured'].includes(status);
+  const active = ['enrolled', 'active', 'paused', 'consent_captured', 'paid_pending_enrollment', 'payment_processing'].includes(status);
   if (!recurring || !active || enrollment?.billing_completed_at) return null;
+
+  const billingSetupStatus = String(enrollment?.billing_setup_status || 'ok').toLowerCase();
+  if (billingSetupStatus === 'failed') {
+    return { code: 'billing_setup_failed', label: enrollment?.billing_setup_error || 'Recurring billing setup failed' };
+  }
+  if (billingSetupStatus === 'needs_reconciliation') {
+    return { code: 'billing_setup_needs_reconciliation', label: enrollment?.billing_setup_error || 'Recurring billing needs reconciliation' };
+  }
+  if (billingSetupStatus === 'pending') {
+    return { code: 'billing_setup_pending', label: 'Recurring billing setup pending' };
+  }
 
   if (processor === 'nmi' && !enrollment?.processor_subscription_id) {
     return { code: 'missing_nmi_subscription', label: 'Missing NMI subscription ID' };
@@ -642,7 +653,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -726,6 +737,8 @@ export const dashboardController = {
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
           processorType: e.processor_type || null,
           processorSubscriptionId: e.processor_subscription_id || null,
+          billingSetupStatus: e.billing_setup_status || 'ok',
+          billingSetupError: e.billing_setup_error || null,
           cardOnFile: cardSummary(matchedCard),
           controlVerified: Boolean(e.processor_subscription_id),
           paymentAmount: e.payment_amount || 0,

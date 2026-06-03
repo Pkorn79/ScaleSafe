@@ -182,6 +182,11 @@ async function routeWebhookEvent(event: any, merchant: any): Promise<void> {
       await handlePaymentFailure(event, merchant);
       break;
 
+    case 'setup_intent.succeeded':
+    case 'setup_intent.setup_failed':
+      logger.info({ merchantId: merchant.id, eventType: event.type, setupIntentId: event.data.object?.id }, 'Stripe setup intent webhook received');
+      break;
+
     case 'charge.refunded':
       logger.info({ merchantId: merchant.id, eventType: event.type }, 'Charge refunded event received');
       break;

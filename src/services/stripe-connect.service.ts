@@ -19,6 +19,8 @@ const WEBHOOK_EVENTS: string[] = [
   // Payment failures
   'payment_intent.processing',
   'payment_intent.payment_failed',
+  'setup_intent.succeeded',
+  'setup_intent.setup_failed',
   // Charge events (for evidence vault)
   'charge.succeeded',
   'payment_intent.succeeded',

@@ -7,11 +7,11 @@ import {
 const offer: any = {
   id: 'offer_1',
   payment_type: 'installments',
-  price: 103,
-  installment_amount: 51.5,
+  price: 100,
+  installment_amount: 50,
   num_payments: 2,
   pif_discount_enabled: true,
-  pif_price: 100,
+  pif_price: 97,
   dual_pricing_enabled: true,
   ach_enabled: true,
   ach_access_policy: 'after_settlement',
@@ -30,23 +30,23 @@ describe('dual-pricing service', () => {
     expect(calculateProcessorDeductionPercent(3)).toBeCloseTo(2.912621, 6);
   });
 
-  it('uses the current offer amount as the card amount', () => {
-    expect(baseCardAmountCents(offer, 'pif')).toBe(10000);
-    expect(baseCardAmountCents(offer, 'installments')).toBe(5150);
+  it('uses the current offer amount as the bank/base amount', () => {
+    expect(baseCardAmountCents(offer, 'pif')).toBe(9700);
+    expect(baseCardAmountCents(offer, 'installments')).toBe(5000);
   });
 
-  it('quotes ACH below the card amount when dual pricing is enabled', () => {
+  it('quotes card above the bank/base amount when dual pricing is enabled', () => {
     const quote = buildDualPricingQuote(offer, control, 'pif', 'ach');
-    expect(quote.cardAmountCents).toBe(10000);
-    expect(quote.achAmountCents).toBe(9709);
-    expect(quote.selectedAmountCents).toBe(9709);
+    expect(quote.achAmountCents).toBe(9700);
+    expect(quote.cardAmountCents).toBe(9991);
+    expect(quote.selectedAmountCents).toBe(9700);
     expect(quote.processorDeductionPercent).toBeCloseTo(2.912621, 6);
   });
 
   it('keeps card selected by default', () => {
     const quote = buildDualPricingQuote(offer, control, 'installments', 'card');
-    expect(quote.cardAmountCents).toBe(5150);
     expect(quote.achAmountCents).toBe(5000);
+    expect(quote.cardAmountCents).toBe(5150);
     expect(quote.selectedAmountCents).toBe(5150);
   });
 });

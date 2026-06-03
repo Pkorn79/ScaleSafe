@@ -103,6 +103,10 @@ function dollarsToCents(amount: number): number {
   return Math.round(Number(amount || 0) * 100);
 }
 
+function isRecurringPaymentType(paymentType: string): boolean {
+  return ['installment', 'installments', 'subscription'].includes(String(paymentType || '').toLowerCase());
+}
+
 async function fireManualSaleTrigger(
   locationId: string,
   triggerKey: Parameters<typeof triggerService.fireTrigger>[1],
@@ -210,15 +214,16 @@ export const payFirstEnrollmentService = {
 
     const paymentType = offer ? normalizePaymentType(input.paymentType, offer) : 'one_off';
     const paymentsTotal = offer ? paymentsTotalFor(paymentType, offer) : null;
+    const finiteBillingComplete = offer && paymentType !== 'subscription'
+      && paymentsTotal != null
+      && Number(paymentsTotal) <= 1;
+    const recurringManualSale = Boolean(offer && isRecurringPaymentType(paymentType) && !finiteBillingComplete);
+    const nextBillingDate = recurringManualSale ? computeNextBillingDate(offer?.installment_frequency) : null;
     const recordedAt = new Date().toISOString();
     const paymentMethod = input.paymentMethod === 'ach' ? 'ach' : 'card';
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
       throw new ValidationError('Bank transfer is currently available only for NMI offers.');
     }
-    if (paymentMethod === 'ach' && ['installment', 'installments', 'subscription'].includes(paymentType)) {
-      throw new ValidationError('Bank-transfer installments and subscriptions require settlement-gated recurring setup and are not enabled yet.');
-    }
-
     const charge = await processor.charge({
       amount: amountCents,
       currency: 'usd',
@@ -310,6 +315,11 @@ export const payFirstEnrollmentService = {
 
     let enrollmentId: string | null = null;
     let enrollmentUrl = '';
+    let processorSubscriptionId = '';
+    let billingSetupIssue: { code: string; message: string } | null = null;
+    const releaseAchOnSubmission = paymentProcessing
+      && paymentMethod === 'ach'
+      && offer?.ach_access_policy === 'after_submission';
     if (offer) {
       const { data: enrollment, error: enrollmentError } = await getSupabase()
         .from('enrollments')
@@ -330,6 +340,9 @@ export const payFirstEnrollmentService = {
           initial_payment_method: paymentMethod,
           payments_made: 1,
           payments_total: paymentsTotal,
+          next_billing_date: nextBillingDate,
+          billing_setup_status: recurringManualSale ? 'pending' : 'ok',
+          next_billing_date_source: recurringManualSale ? 'processor' : null,
           enrolled_at: null,
         } as any)
         .select('id')
@@ -346,6 +359,90 @@ export const payFirstEnrollmentService = {
         ttlSeconds: 30 * 24 * 60 * 60,
       });
       enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId!, paidToken);
+
+      if (releaseAchOnSubmission) {
+        await getSupabase().from('enrollments').update({
+          status: 'paid_pending_enrollment',
+          billing_setup_status: recurringManualSale ? 'pending' : 'ok',
+        }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+      }
+
+      if (!paymentProcessing && recurringManualSale) {
+        try {
+          const recurringQuote = await dualPricingService.quoteOffer(offer, paymentType, paymentMethod);
+          const subAmountCents = recurringQuote.selectedAmountCents;
+          const remainingPayments = paymentType === 'subscription'
+            ? 0
+            : Math.max(0, Number(paymentsTotal || 0) - 1);
+
+          if (subAmountCents > 0 && (paymentType === 'subscription' || remainingPayments > 0) && nextBillingDate) {
+            const subResult = await processor.createSubscription({
+              paymentMethodId: saveResult.paymentMethodId || saveResult.customerId,
+              customerId: saveResult.customerId,
+              planAmount: subAmountCents,
+              interval: processorInterval(offer.installment_frequency),
+              totalPayments: remainingPayments,
+              startDate: nextBillingDate,
+              description: offer.offer_name || 'ScaleSafe Recurring Plan',
+              metadata: {
+                enrollment_id: createdEnrollmentId,
+                offer_id: input.offerId || '',
+                contact_id: contactId,
+                location_id: input.locationId,
+                payment_type: paymentType,
+                payment_source: 'quick_manual_sale',
+              },
+            });
+
+            if (subResult.success && subResult.subscriptionId) {
+              processorSubscriptionId = subResult.subscriptionId;
+              const { error: subSaveError } = await getSupabase()
+                .from('enrollments')
+                .update({
+                  processor_subscription_id: subResult.subscriptionId,
+                  processor_type: procConfig.processor_type,
+                  billing_setup_status: 'ok',
+                  billing_setup_error: null,
+                  next_billing_date_source: 'processor',
+                })
+                .eq('id', createdEnrollmentId)
+                .eq('location_id', input.locationId);
+              if (subSaveError) {
+                billingSetupIssue = {
+                  code: 'processor_subscription_save_failed',
+                  message: subSaveError.message || 'The processor subscription was created, but ScaleSafe could not save the subscription ID.',
+                };
+                await getSupabase().from('enrollments').update({
+                  billing_setup_status: 'needs_reconciliation',
+                  billing_setup_error: billingSetupIssue.message,
+                  next_billing_date: null,
+                }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+              }
+            } else {
+              billingSetupIssue = {
+                code: 'processor_subscription_creation_failed',
+                message: subResult.errorMessage || 'Payment was received, but recurring billing setup failed at the processor.',
+              };
+              await getSupabase().from('enrollments').update({
+                billing_setup_status: 'failed',
+                billing_setup_error: billingSetupIssue.message,
+                next_billing_date: null,
+              }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+            }
+          }
+        } catch (err: any) {
+          billingSetupIssue = {
+            code: 'processor_subscription_creation_error',
+            message: err?.message || 'Payment was received, but recurring billing setup failed.',
+          };
+          await getSupabase().from('enrollments').update({
+            billing_setup_status: 'failed',
+            billing_setup_error: billingSetupIssue.message,
+            next_billing_date: null,
+          }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+          logger.error({ err: err?.message || String(err), enrollmentId: createdEnrollmentId }, 'Quick Manual Sale recurring setup failed');
+        }
+      }
     }
 
     await paymentEventRepository.create({
@@ -370,6 +467,9 @@ export const payFirstEnrollmentService = {
         processor: procConfig.processor_type,
         recordedAt,
         offerId: input.offerId || null,
+        sendEnrollment: input.sendEnrollment !== false,
+        first_name: name.firstName || '',
+        last_name: name.lastName || '',
       },
     });
 
@@ -391,7 +491,7 @@ export const payFirstEnrollmentService = {
       },
     });
 
-    if (!paymentProcessing && offer && input.sendEnrollment !== false) {
+    if ((!paymentProcessing || releaseAchOnSubmission) && offer && input.sendEnrollment !== false) {
       try {
         const api = await ghlApi(input.locationId);
         await api.put(`/contacts/${contactId}`, {
@@ -432,6 +532,8 @@ export const payFirstEnrollmentService = {
         send_welcome: false,
         sendWelcome: false,
         amount: input.amount,
+        ach_payment_status: paymentProcessing ? 'processing' : 'settled',
+        achPaymentStatus: paymentProcessing ? 'processing' : 'settled',
         send_via: input.sendVia || ['email'],
         sendVia: input.sendVia || ['email'],
         first_name: name.firstName || '',
@@ -443,7 +545,7 @@ export const payFirstEnrollmentService = {
       });
     }
 
-    if (!paymentProcessing) await fireManualSaleTrigger(input.locationId, 'ss_payment_received', {
+    if (!paymentProcessing || releaseAchOnSubmission) await fireManualSaleTrigger(input.locationId, 'ss_payment_received', {
       event_type: 'payment_received',
       location_id: input.locationId,
       locationId: input.locationId,
@@ -476,6 +578,8 @@ export const payFirstEnrollmentService = {
       sendReceipt: true,
       send_welcome: false,
       sendWelcome: false,
+      ach_payment_status: paymentProcessing ? 'processing' : 'settled',
+      achPaymentStatus: paymentProcessing ? 'processing' : 'settled',
     });
 
     return {
@@ -483,11 +587,13 @@ export const payFirstEnrollmentService = {
       contactId,
       enrollmentId,
       enrollmentUrl,
-      status: paymentProcessing ? 'payment_processing' : (offer ? 'paid_pending_enrollment' : 'paid_client_payment'),
+      status: paymentProcessing && !releaseAchOnSubmission ? 'payment_processing' : (offer ? 'paid_pending_enrollment' : 'paid_client_payment'),
       paymentStatus: paymentProcessing ? 'processing' : 'succeeded',
       paymentMethod,
       transactionId: charge.transactionId || charge.chargeId || '',
       processorType: procConfig.processor_type,
+      subscriptionId: processorSubscriptionId || undefined,
+      billingIssue: billingSetupIssue || undefined,
       cardLastFour: saveResult.cardLastFour,
       cardBrand: saveResult.cardBrand,
     };
@@ -819,9 +925,9 @@ export const payFirstEnrollmentService = {
       .eq('id', params.enrollmentId);
     if (updateError) throw updateError;
 
-    let processorSubscriptionId = '';
+    let processorSubscriptionId = enrollment.processor_subscription_id || '';
     let billingSetupIssue: { code: string; message: string } | null = null;
-    if (offer && ['installment', 'subscription'].includes(paymentType) && nextBillingDate) {
+    if (offer && ['installment', 'subscription'].includes(paymentType) && nextBillingDate && !enrollment.processor_subscription_id) {
       try {
         const processorType = String(enrollment.processor_type || '').toLowerCase() as ProcessorType;
         if (processorType !== 'nmi' && processorType !== 'stripe') {
