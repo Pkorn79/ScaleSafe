@@ -27,6 +27,7 @@ export interface PaymentEventInsert {
   location_id: string;
   contact_id: string;
   enrollment_id?: string | null;
+  offer_id?: string | null;
   event_type: string;
   processor?: string;
   processor_transaction_id?: string;
@@ -111,6 +112,75 @@ export const paymentEventRepository = {
 
     if (error) throw error;
     return result;
+  },
+
+  async createOrReuseByTransaction(data: PaymentEventInsert): Promise<PaymentEventRecord> {
+    if (!data.processor_transaction_id) return this.create(data);
+
+    const existing = await this.findByTransactionId(
+      data.processor || 'ghl',
+      data.processor_transaction_id,
+      data.location_id,
+    );
+
+    if (existing?.id) {
+      const update: Record<string, unknown> = {};
+      const fields = [
+        'merchant_id',
+        'contact_id',
+        'enrollment_id',
+        'offer_id',
+        'processor_subscription_id',
+        'payment_number',
+        'payments_total',
+        'source',
+        'raw_webhook_payload',
+        'payment_status',
+        'payment_method_type',
+        'selected_payment_method',
+      ] as const;
+
+      for (const field of fields) {
+        const value = data[field as keyof PaymentEventInsert];
+        if (value !== undefined && value !== null && value !== '') update[field] = value;
+      }
+
+      if (Object.keys(update).length > 0) {
+        let updated = await getSupabase()
+          .from('payment_events')
+          .update(update)
+          .eq('id', existing.id)
+          .select()
+          .single();
+
+        if (updated.error && isMissingColumnError(updated.error)) {
+          updated = await getSupabase()
+            .from('payment_events')
+            .update(withoutCompatibilityColumns(update))
+            .eq('id', existing.id)
+            .select()
+            .single();
+        }
+
+        if (updated.error) throw updated.error;
+        return updated.data;
+      }
+
+      return existing;
+    }
+
+    try {
+      return await this.create(data);
+    } catch (err: any) {
+      if (err?.code !== '23505') throw err;
+      const duplicate = await this.findByTransactionId(
+        data.processor || 'ghl',
+        data.processor_transaction_id,
+        data.location_id,
+      );
+      if (duplicate) return duplicate;
+      throw err;
+    }
   },
 
   async findByEnrollment(enrollmentId: string): Promise<PaymentEventRecord[]> {

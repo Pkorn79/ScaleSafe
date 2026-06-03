@@ -546,9 +546,15 @@ async function submit() {
       sendEnrollment: selectedOfferId.value ? sendEnrollment.value : false,
       sendVia: ['email'],
     });
-    resultMessage.value = selectedOfferId.value
-      ? (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Enrollment will complete after settlement.' : 'Payment received. Paid enrollment link is ready.')
-      : (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Receipt will send after settlement.' : 'Payment received and saved to the client.');
+    if (result.billingIssue?.message) {
+      resultMessage.value = `Payment received, but subscription setup failed: ${result.billingIssue.message}`;
+    } else if (result.recordingIssue?.message) {
+      resultMessage.value = `Payment received, but ScaleSafe could not finish recording: ${result.recordingIssue.message}`;
+    } else {
+      resultMessage.value = selectedOfferId.value
+        ? (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Enrollment will complete after settlement.' : 'Payment received. Paid enrollment link is ready.')
+        : (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Receipt will send after settlement.' : 'Payment received and saved to the client.');
+    }
     emit('completed', result);
   } catch (err: any) {
     submitError.value = err.message || 'Payment failed.';

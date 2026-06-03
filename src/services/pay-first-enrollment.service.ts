@@ -55,6 +55,12 @@ interface ChargeManualSaleInput {
   recordedBy?: string;
 }
 
+interface ManualSaleIssue {
+  code: string;
+  message: string;
+  step: string;
+}
+
 function normalizePaymentType(input: unknown, offer: any): string {
   const raw = String(input || offer.payment_type || '').toLowerCase();
   if (raw === 'installments') return 'installment';
@@ -105,6 +111,10 @@ function dollarsToCents(amount: number): number {
 
 function isRecurringPaymentType(paymentType: string): boolean {
   return ['installment', 'installments', 'subscription'].includes(String(paymentType || '').toLowerCase());
+}
+
+function errorMessage(err: any): string {
+  return err?.message || err?.details || err?.hint || String(err || 'Unknown error');
 }
 
 async function fireManualSaleTrigger(
@@ -251,6 +261,15 @@ export const payFirstEnrollmentService = {
       throw new ValidationError(charge.errorMessage || 'Card charge failed');
     }
     const paymentProcessing = charge.status === 'processing';
+    const transactionId = charge.transactionId || charge.chargeId || '';
+    const postChargeIssues: ManualSaleIssue[] = [];
+    const logContext: Record<string, unknown> = {
+      locationId: input.locationId,
+      contactId,
+      offerId: input.offerId || null,
+      processor: procConfig.processor_type,
+      transactionId,
+    };
 
     let saveResult: {
       success: boolean;
@@ -264,54 +283,66 @@ export const payFirstEnrollmentService = {
       bankLastFour?: string;
       bankAccountType?: string;
       bankHolderType?: string;
+    } = {
+      success: Boolean(charge.vaultedCustomerId),
+      paymentMethodId: procConfig.processor_type === 'stripe' ? input.paymentToken : (charge.vaultedCustomerId || ''),
+      customerId: charge.vaultedCustomerId || '',
+      cardLastFour: charge.vaultedCardLastFour || (paymentMethod === 'ach' ? '' : '****'),
+      cardBrand: charge.vaultedCardBrand || (paymentMethod === 'ach' ? 'bank' : 'unknown'),
+      cardExpMonth: charge.vaultedCardExpMonth || 0,
+      cardExpYear: charge.vaultedCardExpYear || 0,
+      paymentMethodKind: paymentMethod,
+      bankLastFour: charge.vaultedBankLastFour,
+      bankAccountType: charge.vaultedBankAccountType,
+      bankHolderType: charge.vaultedBankHolderType,
     };
 
-    if (charge.vaultedCustomerId) {
-      saveResult = {
-        success: true,
-        paymentMethodId: procConfig.processor_type === 'stripe' ? input.paymentToken : charge.vaultedCustomerId,
-        customerId: charge.vaultedCustomerId,
-        cardLastFour: charge.vaultedCardLastFour || '****',
-        cardBrand: charge.vaultedCardBrand || 'unknown',
-        cardExpMonth: charge.vaultedCardExpMonth || 0,
-        cardExpYear: charge.vaultedCardExpYear || 0,
-        paymentMethodKind: paymentMethod,
-        bankLastFour: charge.vaultedBankLastFour,
-        bankAccountType: charge.vaultedBankAccountType,
-        bankHolderType: charge.vaultedBankHolderType,
-      };
-    } else {
-      saveResult = await processor.saveCard({
-        paymentToken: input.paymentToken,
-        paymentMethodType: paymentMethod,
-        achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
-          ? input.achSecCode
-          : 'WEB',
-        achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
-        achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
-        contactId,
-        customerEmail: input.email,
-        customerName,
-      });
-    }
+    try {
+      if (!charge.vaultedCustomerId) {
+        saveResult = await processor.saveCard({
+          paymentToken: input.paymentToken,
+          paymentMethodType: paymentMethod,
+          achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
+            ? input.achSecCode
+            : 'WEB',
+          achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
+          achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
+          contactId,
+          customerEmail: input.email,
+          customerName,
+        });
+      }
 
-    await saveOrReusePaymentMethod({
-      merchantId: merchant.id,
-      locationId: input.locationId,
-      contactId,
-      processorType: procConfig.processor_type,
-      paymentMethodKind: paymentMethod,
-      customerId: saveResult.customerId,
-      paymentMethodId: saveResult.paymentMethodId,
-      cardLastFour: saveResult.cardLastFour,
-      cardBrand: saveResult.cardBrand,
-      cardExpMonth: saveResult.cardExpMonth,
-      cardExpYear: saveResult.cardExpYear,
-      bankLastFour: saveResult.bankLastFour,
-      bankAccountType: saveResult.bankAccountType,
-      bankHolderType: saveResult.bankHolderType,
-      makeDefault: true,
-    });
+      if (!saveResult.customerId || !saveResult.paymentMethodId) {
+        throw new Error('Processor approved the charge but did not return a saved payment method reference.');
+      }
+
+      await saveOrReusePaymentMethod({
+        merchantId: merchant.id,
+        locationId: input.locationId,
+        contactId,
+        processorType: procConfig.processor_type,
+        paymentMethodKind: paymentMethod,
+        customerId: saveResult.customerId,
+        paymentMethodId: saveResult.paymentMethodId,
+        cardLastFour: saveResult.cardLastFour,
+        cardBrand: saveResult.cardBrand,
+        cardExpMonth: saveResult.cardExpMonth,
+        cardExpYear: saveResult.cardExpYear,
+        bankLastFour: saveResult.bankLastFour,
+        bankAccountType: saveResult.bankAccountType,
+        bankHolderType: saveResult.bankHolderType,
+        makeDefault: true,
+      });
+    } catch (err: any) {
+      const issue = {
+        code: 'payment_method_recording_failed',
+        message: `Payment was received, but ScaleSafe could not save the payment method: ${errorMessage(err)}`,
+        step: 'save_payment_method',
+      };
+      postChargeIssues.push(issue);
+      logger.error({ ...logContext, err: errorMessage(err), step: issue.step }, 'Quick Manual Sale post-charge step failed');
+    }
 
     let enrollmentId: string | null = null;
     let enrollmentUrl = '';
@@ -321,53 +352,65 @@ export const payFirstEnrollmentService = {
       && paymentMethod === 'ach'
       && offer?.ach_access_policy === 'after_submission';
     if (offer) {
-      const { data: enrollment, error: enrollmentError } = await getSupabase()
-        .from('enrollments')
-        .insert({
-          location_id: input.locationId,
-          merchant_id: merchant.id,
-          contact_id: contactId,
-          offer_id: input.offerId,
-          email: input.email,
-          first_name: name.firstName || null,
-          last_name: name.lastName || null,
-          status: paymentProcessing ? 'payment_processing' : 'paid_pending_enrollment',
-          payment_amount: input.amount,
-          payment_type: paymentType,
-          payment_transaction_id: charge.transactionId || charge.chargeId || '',
-          processor_type: procConfig.processor_type,
-          initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
-          initial_payment_method: paymentMethod,
-          payments_made: 1,
-          payments_total: paymentsTotal,
-          next_billing_date: nextBillingDate,
-          billing_setup_status: recurringManualSale ? 'pending' : 'ok',
-          next_billing_date_source: recurringManualSale ? 'processor' : null,
-          enrolled_at: null,
-        } as any)
-        .select('id')
-        .single();
-      if (enrollmentError) throw enrollmentError;
-      const createdEnrollmentId = enrollment.id as string;
-      enrollmentId = createdEnrollmentId;
+      try {
+        const { data: enrollment, error: enrollmentError } = await getSupabase()
+          .from('enrollments')
+          .insert({
+            location_id: input.locationId,
+            merchant_id: merchant.id,
+            contact_id: contactId,
+            offer_id: input.offerId,
+            email: input.email,
+            first_name: name.firstName || null,
+            last_name: name.lastName || null,
+            status: paymentProcessing ? 'payment_processing' : 'paid_pending_enrollment',
+            payment_amount: input.amount,
+            payment_type: paymentType,
+            payment_transaction_id: transactionId,
+            processor_type: procConfig.processor_type,
+            initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
+            initial_payment_method: paymentMethod,
+            payments_made: 1,
+            payments_total: paymentsTotal,
+            next_billing_date: nextBillingDate,
+            billing_setup_status: recurringManualSale ? 'pending' : 'ok',
+            next_billing_date_source: recurringManualSale ? 'processor' : null,
+            enrolled_at: null,
+          } as any)
+          .select('id')
+          .single();
+        if (enrollmentError) throw enrollmentError;
+        const createdEnrollmentId = enrollment.id as string;
+        enrollmentId = createdEnrollmentId;
+        logContext.enrollmentId = enrollmentId;
 
-      const paidToken = createPublicActionToken({
-        action: 'paid_enrollment',
-        locationId: input.locationId,
-        contactId,
-        enrollmentId: createdEnrollmentId,
-        ttlSeconds: 30 * 24 * 60 * 60,
-      });
-      enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId!, paidToken);
+        const paidToken = createPublicActionToken({
+          action: 'paid_enrollment',
+          locationId: input.locationId,
+          contactId,
+          enrollmentId: createdEnrollmentId,
+          ttlSeconds: 30 * 24 * 60 * 60,
+        });
+        enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId!, paidToken);
 
-      if (releaseAchOnSubmission) {
-        await getSupabase().from('enrollments').update({
-          status: 'paid_pending_enrollment',
-          billing_setup_status: recurringManualSale ? 'pending' : 'ok',
-        }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+        if (releaseAchOnSubmission) {
+          const { error: releaseError } = await getSupabase().from('enrollments').update({
+            status: 'paid_pending_enrollment',
+            billing_setup_status: recurringManualSale ? 'pending' : 'ok',
+          }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+          if (releaseError) throw releaseError;
+        }
+      } catch (err: any) {
+        const issue = {
+          code: 'enrollment_recording_failed',
+          message: `Payment was received, but ScaleSafe could not create the paid enrollment: ${errorMessage(err)}`,
+          step: 'create_enrollment',
+        };
+        postChargeIssues.push(issue);
+        logger.error({ ...logContext, err: errorMessage(err), step: issue.step }, 'Quick Manual Sale post-charge step failed');
       }
 
-      if (!paymentProcessing && recurringManualSale) {
+      if (enrollmentId && !paymentProcessing && recurringManualSale) {
         try {
           const recurringQuote = await dualPricingService.quoteOffer(offer, paymentType, paymentMethod);
           const subAmountCents = recurringQuote.selectedAmountCents;
@@ -375,7 +418,17 @@ export const payFirstEnrollmentService = {
             ? 0
             : Math.max(0, Number(paymentsTotal || 0) - 1);
 
-          if (subAmountCents > 0 && (paymentType === 'subscription' || remainingPayments > 0) && nextBillingDate) {
+          if (!saveResult.customerId || !saveResult.paymentMethodId) {
+            billingSetupIssue = {
+              code: 'processor_payment_method_missing',
+              message: 'Payment was received, but recurring billing setup could not start because the saved payment method was not available.',
+            };
+            await getSupabase().from('enrollments').update({
+              billing_setup_status: 'failed',
+              billing_setup_error: billingSetupIssue.message,
+              next_billing_date: null,
+            }).eq('id', enrollmentId).eq('location_id', input.locationId);
+          } else if (subAmountCents > 0 && (paymentType === 'subscription' || remainingPayments > 0) && nextBillingDate) {
             const subResult = await processor.createSubscription({
               paymentMethodId: saveResult.paymentMethodId || saveResult.customerId,
               customerId: saveResult.customerId,
@@ -385,7 +438,7 @@ export const payFirstEnrollmentService = {
               startDate: nextBillingDate,
               description: offer.offer_name || 'ScaleSafe Recurring Plan',
               metadata: {
-                enrollment_id: createdEnrollmentId,
+                enrollment_id: enrollmentId,
                 offer_id: input.offerId || '',
                 contact_id: contactId,
                 location_id: input.locationId,
@@ -405,7 +458,7 @@ export const payFirstEnrollmentService = {
                   billing_setup_error: null,
                   next_billing_date_source: 'processor',
                 })
-                .eq('id', createdEnrollmentId)
+                .eq('id', enrollmentId)
                 .eq('location_id', input.locationId);
               if (subSaveError) {
                 billingSetupIssue = {
@@ -416,7 +469,7 @@ export const payFirstEnrollmentService = {
                   billing_setup_status: 'needs_reconciliation',
                   billing_setup_error: billingSetupIssue.message,
                   next_billing_date: null,
-                }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+                }).eq('id', enrollmentId).eq('location_id', input.locationId);
               }
             } else {
               billingSetupIssue = {
@@ -427,7 +480,7 @@ export const payFirstEnrollmentService = {
                 billing_setup_status: 'failed',
                 billing_setup_error: billingSetupIssue.message,
                 next_billing_date: null,
-              }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
+              }).eq('id', enrollmentId).eq('location_id', input.locationId);
             }
           }
         } catch (err: any) {
@@ -439,59 +492,82 @@ export const payFirstEnrollmentService = {
             billing_setup_status: 'failed',
             billing_setup_error: billingSetupIssue.message,
             next_billing_date: null,
-          }).eq('id', createdEnrollmentId).eq('location_id', input.locationId);
-          logger.error({ err: err?.message || String(err), enrollmentId: createdEnrollmentId }, 'Quick Manual Sale recurring setup failed');
+          }).eq('id', enrollmentId).eq('location_id', input.locationId);
+          logger.error({ ...logContext, err: err?.message || String(err), enrollmentId }, 'Quick Manual Sale recurring setup failed');
         }
       }
     }
 
-    await paymentEventRepository.create({
-      merchant_id: merchant.id,
-      location_id: input.locationId,
-      contact_id: contactId,
-      enrollment_id: enrollmentId || undefined,
-      event_type: 'sale',
-      processor: procConfig.processor_type,
-      processor_transaction_id: charge.transactionId || charge.chargeId || '',
-      amount: input.amount,
-      payment_number: 1,
-      payments_total: paymentsTotal,
-      payments_remaining: paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1),
-      source: 'quick_manual_sale',
-      is_recurring: false,
-      payment_status: paymentProcessing ? 'processing' : 'succeeded',
-      payment_method_type: paymentMethod,
-      selected_payment_method: paymentMethod,
-      raw_webhook_payload: {
-        source: 'quick_manual_sale',
+    try {
+      await paymentEventRepository.createOrReuseByTransaction({
+        merchant_id: merchant.id,
+        location_id: input.locationId,
+        contact_id: contactId,
+        enrollment_id: enrollmentId || undefined,
+        offer_id: input.offerId || null,
+        event_type: 'sale',
         processor: procConfig.processor_type,
-        recordedAt,
-        offerId: input.offerId || null,
-        sendEnrollment: input.sendEnrollment !== false,
-        first_name: name.firstName || '',
-        last_name: name.lastName || '',
-      },
-    });
-
-    await phase2EvidenceRepository.create({
-      location_id: input.locationId,
-      contact_id: contactId,
-      enrollment_id: enrollmentId || undefined,
-      merchant_id: merchant.id,
-      evidence_type: 'enrollment_payment',
-      data: {
+        processor_transaction_id: transactionId,
+        processor_subscription_id: processorSubscriptionId || null,
         amount: input.amount,
-        payment_type: paymentType,
-        transaction_id: charge.transactionId || charge.chargeId || '',
+        payment_number: 1,
+        payments_total: paymentsTotal,
+        payments_remaining: paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1),
         source: 'quick_manual_sale',
-        processor: procConfig.processor_type,
-        card_brand: saveResult.cardBrand,
-        card_last_four: saveResult.cardLastFour,
-        timestamp: recordedAt,
-      },
-    });
+        is_recurring: false,
+        payment_status: paymentProcessing ? 'processing' : 'succeeded',
+        payment_method_type: paymentMethod,
+        selected_payment_method: paymentMethod,
+        raw_webhook_payload: {
+          source: 'quick_manual_sale',
+          processor: procConfig.processor_type,
+          recordedAt,
+          offerId: input.offerId || null,
+          enrollmentId,
+          sendEnrollment: input.sendEnrollment !== false,
+          first_name: name.firstName || '',
+          last_name: name.lastName || '',
+        },
+      });
+    } catch (err: any) {
+      const issue = {
+        code: 'payment_event_recording_failed',
+        message: `Payment was received, but ScaleSafe could not record the payment event: ${errorMessage(err)}`,
+        step: 'record_payment_event',
+      };
+      postChargeIssues.push(issue);
+      logger.error({ ...logContext, err: errorMessage(err), step: issue.step }, 'Quick Manual Sale post-charge step failed');
+    }
 
-    if ((!paymentProcessing || releaseAchOnSubmission) && offer && input.sendEnrollment !== false) {
+    try {
+      await phase2EvidenceRepository.create({
+        location_id: input.locationId,
+        contact_id: contactId,
+        enrollment_id: enrollmentId || undefined,
+        merchant_id: merchant.id,
+        evidence_type: 'enrollment_payment',
+        data: {
+          amount: input.amount,
+          payment_type: paymentType,
+          transaction_id: transactionId,
+          source: 'quick_manual_sale',
+          processor: procConfig.processor_type,
+          card_brand: saveResult.cardBrand,
+          card_last_four: saveResult.cardLastFour,
+          timestamp: recordedAt,
+        },
+      });
+    } catch (err: any) {
+      const issue = {
+        code: 'evidence_recording_failed',
+        message: `Payment was received, but ScaleSafe could not record evidence: ${errorMessage(err)}`,
+        step: 'record_evidence',
+      };
+      postChargeIssues.push(issue);
+      logger.error({ ...logContext, err: errorMessage(err), step: issue.step }, 'Quick Manual Sale post-charge step failed');
+    }
+
+    if ((!paymentProcessing || releaseAchOnSubmission) && offer && enrollmentId && enrollmentUrl && input.sendEnrollment !== false) {
       try {
         const api = await ghlApi(input.locationId);
         await api.put(`/contacts/${contactId}`, {
@@ -562,16 +638,16 @@ export const payFirstEnrollmentService = {
       amount: input.amount,
       amount_display: `$${Number(input.amount).toFixed(2)}`,
       amountDisplay: `$${Number(input.amount).toFixed(2)}`,
-      transaction_id: charge.transactionId || charge.chargeId || '',
-      transactionId: charge.transactionId || charge.chargeId || '',
+      transaction_id: transactionId,
+      transactionId,
       payment_kind: offer ? paymentType : 'manual_sale',
       paymentKind: offer ? paymentType : 'manual_sale',
       payment_source: 'quick_manual_sale',
       paymentSource: 'quick_manual_sale',
       payment_timing: offer ? 'before_enrollment' : 'client_level',
       paymentTiming: offer ? 'before_enrollment' : 'client_level',
-      enrollment_status: offer ? 'paid_pending_enrollment' : 'paid_client_payment',
-      enrollmentStatus: offer ? 'paid_pending_enrollment' : 'paid_client_payment',
+      enrollment_status: offer && enrollmentId ? 'paid_pending_enrollment' : 'paid_client_payment',
+      enrollmentStatus: offer && enrollmentId ? 'paid_pending_enrollment' : 'paid_client_payment',
       receipt_only: true,
       receiptOnly: true,
       send_receipt: true,
@@ -582,18 +658,24 @@ export const payFirstEnrollmentService = {
       achPaymentStatus: paymentProcessing ? 'processing' : 'settled',
     });
 
+    if (postChargeIssues.length > 0) {
+      logger.warn({ ...logContext, issues: postChargeIssues }, 'Quick Manual Sale completed with post-charge issues');
+    }
+
     return {
       success: true,
       contactId,
       enrollmentId,
       enrollmentUrl,
-      status: paymentProcessing && !releaseAchOnSubmission ? 'payment_processing' : (offer ? 'paid_pending_enrollment' : 'paid_client_payment'),
+      status: paymentProcessing && !releaseAchOnSubmission ? 'payment_processing' : (offer && enrollmentId ? 'paid_pending_enrollment' : 'paid_client_payment'),
       paymentStatus: paymentProcessing ? 'processing' : 'succeeded',
       paymentMethod,
-      transactionId: charge.transactionId || charge.chargeId || '',
+      transactionId,
       processorType: procConfig.processor_type,
       subscriptionId: processorSubscriptionId || undefined,
       billingIssue: billingSetupIssue || undefined,
+      recordingIssue: postChargeIssues[0] || undefined,
+      recordingIssues: postChargeIssues.length ? postChargeIssues : undefined,
       cardLastFour: saveResult.cardLastFour,
       cardBrand: saveResult.cardBrand,
     };
