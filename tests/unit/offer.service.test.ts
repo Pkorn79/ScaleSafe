@@ -148,6 +148,53 @@ describe('offer tracking ID', () => {
       'loc-1',
     );
   });
+
+  it('normalizes blank refund policy to null on offer update', async () => {
+    await offerService.update('offer-1', 'loc-1', {
+      refundPolicyType: '',
+    } as any);
+
+    expect(offerRepository.update).toHaveBeenCalledWith(
+      'offer-1',
+      expect.objectContaining({
+        refund_policy_type: null,
+      }),
+      'loc-1',
+    );
+  });
+
+  it('retries direct offer update without checkout-channel fields when schema cache is stale', async () => {
+    (offerRepository.update as jest.Mock)
+      .mockRejectedValueOnce({
+        code: 'PGRST204',
+        message: "Could not find the 'checkout_type' column of 'offers_mirror' in the schema cache",
+      })
+      .mockResolvedValueOnce({ id: 'offer-1', checkout_mode: 'quick_checkout' });
+
+    await offerService.update('offer-1', 'loc-1', {
+      checkoutType: 'direct',
+      checkoutMode: 'quick_checkout',
+      trackingId: 'TAG',
+    });
+
+    expect(offerRepository.update).toHaveBeenNthCalledWith(
+      2,
+      'offer-1',
+      expect.not.objectContaining({
+        checkout_type: expect.anything(),
+      }),
+      'loc-1',
+    );
+    expect(offerRepository.update).toHaveBeenNthCalledWith(
+      2,
+      'offer-1',
+      expect.objectContaining({
+        checkout_mode: 'quick_checkout',
+        tracking_id: 'TAG',
+      }),
+      'loc-1',
+    );
+  });
 });
 
 describe('offerService.cloneOffer (#13/#31)', () => {

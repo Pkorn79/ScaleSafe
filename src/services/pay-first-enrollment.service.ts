@@ -103,6 +103,21 @@ function dollarsToCents(amount: number): number {
   return Math.round(Number(amount || 0) * 100);
 }
 
+async function fireManualSaleTrigger(
+  locationId: string,
+  triggerKey: Parameters<typeof triggerService.fireTrigger>[1],
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await triggerService.fireTrigger(locationId, triggerKey, payload);
+  } catch (err: any) {
+    logger.error(
+      { err: err?.message || String(err), locationId, triggerKey },
+      'Quick Manual Sale trigger failed after payment was recorded',
+    );
+  }
+}
+
 async function buildEnrollmentUrl(locationId: string, offerId: string, paidEnrollmentToken?: string): Promise<string> {
   let funnelBaseUrl = '';
   try {
@@ -390,7 +405,7 @@ export const payFirstEnrollmentService = {
         logger.warn({ err: err.message, contactId }, 'Quick manual sale contact field sync failed');
       }
 
-      await triggerService.fireTrigger(input.locationId, 'ss_send_enrollment_link', {
+      await fireManualSaleTrigger(input.locationId, 'ss_send_enrollment_link', {
         event_type: 'send_enrollment_link',
         location_id: input.locationId,
         locationId: input.locationId,
@@ -428,7 +443,7 @@ export const payFirstEnrollmentService = {
       });
     }
 
-    if (!paymentProcessing) await triggerService.fireTrigger(input.locationId, 'ss_payment_received', {
+    if (!paymentProcessing) await fireManualSaleTrigger(input.locationId, 'ss_payment_received', {
       event_type: 'payment_received',
       location_id: input.locationId,
       locationId: input.locationId,

@@ -115,9 +115,19 @@ function normalizePulseFrequency(days?: number): number {
   return Math.min(365, Math.max(1, Math.round(parsed)));
 }
 
+function normalizeNullableText(value: unknown): string | null {
+  const text = String(value || '').trim();
+  return text || null;
+}
+
 function isOfferConstraintError(err: any): boolean {
   return err?.code === '23514'
     && String(err?.message || '').includes('offers_mirror_installment_frequency_check');
+}
+
+function isRefundPolicyConstraintError(err: any): boolean {
+  return err?.code === '23514'
+    && String(err?.message || '').includes('offers_mirror_refund_policy_type_check');
 }
 
 function isMissingPulseCadenceColumnError(err: any): boolean {
@@ -143,6 +153,19 @@ function isMissingDualPricingColumnError(err: any): boolean {
     );
 }
 
+function isMissingCheckoutChannelColumnError(err: any): boolean {
+  const message = String(err?.message || '');
+  return (err?.code === '42703' || err?.code === 'PGRST204')
+    && (
+      message.includes('checkout_type')
+      || message.includes('whop_product_id')
+      || message.includes('whop_plan_id')
+      || message.includes('whop_sync_status')
+      || message.includes('whop_sync_error')
+      || message.includes('whop_last_synced_at')
+    );
+}
+
 function stripPulseCadenceFields(record: Record<string, unknown>): Record<string, unknown> {
   const next = { ...record };
   delete next.pulse_cadence_enabled;
@@ -164,11 +187,23 @@ function stripDualPricingFields(record: Record<string, unknown>): Record<string,
   return next;
 }
 
+function stripCheckoutChannelFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  delete next.checkout_type;
+  delete next.whop_product_id;
+  delete next.whop_plan_id;
+  delete next.whop_sync_status;
+  delete next.whop_sync_error;
+  delete next.whop_last_synced_at;
+  return next;
+}
+
 function stripCompatibilityFields(record: Record<string, unknown>, err: any): Record<string, unknown> {
   let next = record;
   if (isMissingPulseCadenceColumnError(err)) next = stripPulseCadenceFields(next);
   if (isMissingTrackingColumnError(err)) next = stripTrackingFields(next);
   if (isMissingDualPricingColumnError(err)) next = stripDualPricingFields(next);
+  if (isMissingCheckoutChannelColumnError(err)) next = stripCheckoutChannelFields(next);
   return next;
 }
 
@@ -294,7 +329,7 @@ export const offerService = {
       program_duration_value: input.programDurationValue || null,
       program_duration_unit: input.programDurationUnit || null,
       auto_complete_on_duration_end: input.autoCompleteOnDurationEnd ?? false,
-      refund_policy_type: input.refundPolicyType || null,
+      refund_policy_type: normalizeNullableText(input.refundPolicyType),
       refund_policy_days: input.refundPolicyDays || null,
       refund_window_text: refundText,
       tc_url: input.tcUrl || null,
@@ -343,7 +378,18 @@ export const offerService = {
         logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err) || isMissingDualPricingColumnError(err)) {
+      if (isRefundPolicyConstraintError(err)) {
+        throw new ValidationError('Refund policy is invalid. Choose a refund policy or leave it blank.');
+      }
+      if (
+        isMissingPulseCadenceColumnError(err)
+        || isMissingTrackingColumnError(err)
+        || isMissingDualPricingColumnError(err)
+        || isMissingCheckoutChannelColumnError(err)
+      ) {
+        if ((input.checkoutType || 'direct') === 'whop' && isMissingCheckoutChannelColumnError(err)) {
+          throw new ValidationError('Whop checkout columns are not ready. Apply migration 071_whop_checkout_channel.sql, then try again.');
+        }
         logger.warn({ locationId, err: err?.message }, 'Offer create retried without optional offer fields; apply latest migrations');
         try {
           offer = await offerRepository.create(stripCompatibilityFields(record, err) as any);
@@ -351,6 +397,9 @@ export const offerService = {
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ locationId, installmentFrequency: input.installmentFrequency }, 'Offer create retry rejected by installment frequency constraint');
             throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+          }
+          if (isRefundPolicyConstraintError(retryErr)) {
+            throw new ValidationError('Refund policy is invalid. Choose a refund policy or leave it blank.');
           }
           throw retryErr;
         }
@@ -402,7 +451,7 @@ export const offerService = {
     if (updates.programDurationValue !== undefined) dbUpdates.program_duration_value = updates.programDurationValue;
     if (updates.programDurationUnit !== undefined) dbUpdates.program_duration_unit = updates.programDurationUnit;
     if (updates.autoCompleteOnDurationEnd !== undefined) dbUpdates.auto_complete_on_duration_end = updates.autoCompleteOnDurationEnd;
-    if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = updates.refundPolicyType;
+    if (updates.refundPolicyType !== undefined) dbUpdates.refund_policy_type = normalizeNullableText(updates.refundPolicyType);
     if (updates.refundPolicyDays !== undefined) dbUpdates.refund_policy_days = updates.refundPolicyDays;
     if (updates.tcUrl !== undefined) dbUpdates.tc_url = updates.tcUrl || null;
     if (updates.checkoutMode !== undefined) dbUpdates.checkout_mode = updates.checkoutMode;
@@ -485,7 +534,18 @@ export const offerService = {
         logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update rejected by installment frequency constraint');
         throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
       }
-      if (isMissingPulseCadenceColumnError(err) || isMissingTrackingColumnError(err) || isMissingDualPricingColumnError(err)) {
+      if (isRefundPolicyConstraintError(err)) {
+        throw new ValidationError('Refund policy is invalid. Choose a refund policy or leave it blank.');
+      }
+      if (
+        isMissingPulseCadenceColumnError(err)
+        || isMissingTrackingColumnError(err)
+        || isMissingDualPricingColumnError(err)
+        || isMissingCheckoutChannelColumnError(err)
+      ) {
+        if ((updates.checkoutType || 'direct') === 'whop' && isMissingCheckoutChannelColumnError(err)) {
+          throw new ValidationError('Whop checkout columns are not ready. Apply migration 071_whop_checkout_channel.sql, then try again.');
+        }
         logger.warn(updateContext, 'Offer update retried without optional offer fields; apply latest migrations');
         try {
           offer = await offerRepository.update(offerId, stripCompatibilityFields(dbUpdates, err) as any, locationId);
@@ -500,6 +560,9 @@ export const offerService = {
           if (isOfferConstraintError(retryErr)) {
             logger.warn({ offerId, installmentFrequency: updates.installmentFrequency }, 'Offer update retry rejected by installment frequency constraint');
             throw new ValidationError('Unsupported installment frequency. Apply the latest daily billing test migration, then try again.');
+          }
+          if (isRefundPolicyConstraintError(retryErr)) {
+            throw new ValidationError('Refund policy is invalid. Choose a refund policy or leave it blank.');
           }
           throw retryErr;
         }
