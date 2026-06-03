@@ -352,9 +352,11 @@ export class NmiClient implements ProcessorInterface {
       };
     }
 
+    const subscriptionId = nmi.subscription_id || nmi.subscriptionid || nmi.recurring_subscription_id || '';
+
     return {
       success: true,
-      subscriptionId: nmi.subscription_id || '',
+      subscriptionId,
       status: 'active',
     };
   }

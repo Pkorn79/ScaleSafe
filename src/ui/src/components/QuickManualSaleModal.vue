@@ -309,7 +309,9 @@ function animationFrame() {
 }
 
 function cardTargetExists(): boolean {
-  if (processorType.value === 'stripe') return !!document.getElementById(stripeElementId);
+  if (processorType.value === 'stripe') {
+    return paymentMethod.value === 'ach' || !!document.getElementById(stripeElementId);
+  }
   if (processorType.value === 'nmi') {
     return Boolean(
       document.getElementById(nmiIds.number)
@@ -409,12 +411,16 @@ async function loadProcessorConfig() {
       if (seq !== processorLoadSeq || !props.open) return;
       if (!window.Stripe) throw new Error('Stripe card fields did not load.');
       stripe = window.Stripe(cfg.stripePublishableKey, cfg.stripeAccountId ? { stripeAccount: cfg.stripeAccountId } : undefined);
-      const elements = stripe.elements();
-      cardElement = elements.create('card', { hidePostalCode: true });
-      cardElement.on('ready', () => {
-        if (seq === processorLoadSeq) paymentFieldsReady.value = true;
-      });
-      cardElement.mount(`#${stripeElementId}`);
+      if (paymentMethod.value === 'ach') {
+        paymentFieldsReady.value = true;
+      } else {
+        const elements = stripe.elements();
+        cardElement = elements.create('card', { hidePostalCode: true });
+        cardElement.on('ready', () => {
+          if (seq === processorLoadSeq) paymentFieldsReady.value = true;
+        });
+        cardElement.mount(`#${stripeElementId}`);
+      }
     } else {
       throw new Error('No processor is configured.');
     }
@@ -586,9 +592,10 @@ watch(paymentChoice, () => {
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
 });
 
-watch(paymentMethod, () => {
+watch(paymentMethod, async () => {
   if (!achAllowedForSelection.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
+  if (props.open && processorType.value === 'stripe') await loadProcessorConfig();
 });
 
 watch(achAllowedForSelection, (allowed) => {
