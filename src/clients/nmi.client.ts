@@ -32,6 +32,14 @@ function formatNmiQueryDate(value: string): string {
   return `${yyyy}${mm}${dd}${hh}${min}${ss}`;
 }
 
+function nmiCustomerVaultId(nmi: Record<string, string>): string {
+  return nmi.customer_vault_id
+    || nmi.customer_vaultid
+    || nmi.customervaultid
+    || nmi.customerVaultId
+    || '';
+}
+
 export class NmiClient implements ProcessorInterface {
   readonly processorType = 'nmi' as const;
 
@@ -95,8 +103,9 @@ export class NmiClient implements ProcessorInterface {
     result.amount = request.amount;
     result.currency = (request.currency || 'usd').toLowerCase();
 
-    if (result.success && nmi.customer_vault_id) {
-      result.vaultedCustomerId = nmi.customer_vault_id;
+    const customerVaultId = nmiCustomerVaultId(nmi);
+    if (result.success && customerVaultId) {
+      result.vaultedCustomerId = customerVaultId;
       logger.debug({ responseKeys: Object.keys(nmi) }, 'NMI vault created');
       if (paymentMethodType === 'ach') {
         result.vaultedBankLastFour = this.extractBankLastFour(nmi);
@@ -105,7 +114,7 @@ export class NmiClient implements ProcessorInterface {
         return result;
       }
       try {
-        const cardInfo = await this.queryVaultCard(nmi.customer_vault_id);
+        const cardInfo = await this.queryVaultCard(customerVaultId);
         result.vaultedCardLastFour = cardInfo.lastFour;
         result.vaultedCardBrand = cardInfo.brand;
         result.vaultedCardExpMonth = cardInfo.expMonth;
@@ -182,7 +191,8 @@ export class NmiClient implements ProcessorInterface {
 
     const nmi = await this.postTransact(params);
 
-    if (nmi.response !== '1' || !nmi.customer_vault_id) {
+    const customerVaultId = nmiCustomerVaultId(nmi);
+    if (nmi.response !== '1' || !customerVaultId) {
       throw new ProcessorError(
         `Failed to save card: ${nmi.responsetext || 'Unknown error'}`,
         'nmi',
@@ -190,7 +200,7 @@ export class NmiClient implements ProcessorInterface {
       );
     }
 
-    const vaultId = nmi.customer_vault_id;
+    const vaultId = customerVaultId;
 
     if (paymentMethodType === 'ach') {
       return {

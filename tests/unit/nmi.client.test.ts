@@ -265,6 +265,30 @@ describe('NmiClient', () => {
       expect(params.get('email')).toBe('jane@test.com');
     });
 
+    it('captures dashed customer vault id aliases from charge responses', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: 'response=1&responsetext=SUCCESS&transactionid=TXN004&customer-vault-id=VAULT-DASH&cc_number=5xxxxxxxxxxx4444&cc_exp=0431&cc_type=mastercard',
+      });
+      mockedAxios.post.mockRejectedValueOnce(new Error('query unavailable'));
+
+      const result = await client.charge({
+        amount: 103,
+        currency: 'usd',
+        paymentToken: NMI_TEST_TOKEN,
+        shouldVault: true,
+        customerEmail: 'client@example.com',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.vaultedCustomerId).toBe('VAULT-DASH');
+      expect(result.vaultedCardLastFour).toBe('4444');
+      expect(result.vaultedCardBrand).toBe('mastercard');
+
+      const postBody = mockedAxios.post.mock.calls[0][1] as string;
+      const params = new URLSearchParams(postBody);
+      expect(params.get('customer_vault')).toBe('add_customer');
+    });
+
     it('returns declined result on response=2', async () => {
       mockedAxios.post.mockResolvedValueOnce({
         data: 'response=2&responsetext=DECLINE&transactionid=TXN002&response_code=200',
@@ -401,6 +425,25 @@ describe('NmiClient', () => {
       expect(result.cardBrand).toBe('visa');
       expect(result.cardExpMonth).toBe(10);
       expect(result.cardExpYear).toBe(2027);
+    });
+
+    it('accepts customer vault id aliases when saving a payment method', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: 'response=1&responsetext=Customer Added&customer-vault-id=VAULT-DASH&cc_number=5xxxxxxxxxxx4444&cc_exp=0431&cc_type=mastercard',
+      });
+      mockedAxios.post.mockRejectedValueOnce(new Error('query unavailable'));
+
+      const result = await client.saveCard({
+        paymentToken: NMI_TEST_TOKEN,
+        contactId: 'contact_123',
+        customerEmail: 'jane@test.com',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.paymentMethodId).toBe('VAULT-DASH');
+      expect(result.customerId).toBe('VAULT-DASH');
+      expect(result.cardLastFour).toBe('4444');
+      expect(result.cardBrand).toBe('mastercard');
     });
   });
 
