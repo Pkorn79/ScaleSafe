@@ -35,6 +35,12 @@ function cleanCardDisplay(card: {
   };
 }
 
+function isBankMethod(method: any): boolean {
+  return method?.payment_method_kind === 'ach'
+    || !!method?.bank_last_four
+    || String(method?.card_brand || '').toLowerCase() === 'bank';
+}
+
 function processorLabel(processor?: string | null): string {
   const value = String(processor || '').toLowerCase();
   if (value === 'nmi') return 'NMI';
@@ -44,6 +50,12 @@ function processorLabel(processor?: string | null): string {
 }
 
 function paymentMethodLabel(method: any) {
+  if (isBankMethod(method)) {
+    const processor = processorLabel(method.processor_type);
+    const last4 = String(method.bank_last_four || method.card_last_four || '').trim();
+    const ending = /^\d{4}$/.test(last4) ? ` ending in ${last4}` : '';
+    return `${processor} bank account${ending}`.trim();
+  }
   const display = cleanCardDisplay(method);
   const processor = processorLabel(method.processor_type);
   const brand = display.brand || 'card on file';
@@ -52,6 +64,15 @@ function paymentMethodLabel(method: any) {
 }
 
 function paymentMethodDetail(method: any) {
+  if (isBankMethod(method)) {
+    const pieces: string[] = [];
+    if (method.bank_account_type) pieces.push(String(method.bank_account_type));
+    if (method.bank_holder_type) pieces.push(String(method.bank_holder_type));
+    if (method.processor_type === 'nmi' && method.nmi_customer_vault_id) pieces.push(`NMI vault ${method.nmi_customer_vault_id}`);
+    if (method.processor_type === 'stripe' && method.stripe_payment_method_id) pieces.push(`Stripe PM ${method.stripe_payment_method_id}`);
+    else if (method.processor_type === 'stripe' && method.stripe_customer_id) pieces.push(`Stripe customer ${method.stripe_customer_id}`);
+    return pieces.join(' - ');
+  }
   const display = cleanCardDisplay(method);
   const pieces: string[] = [];
   if (display.expMonth && display.expYear) pieces.push(`exp ${display.expMonth}/${display.expYear}`);
@@ -604,6 +625,10 @@ export async function getPaymentMethods(req: Request, res: Response, next: NextF
         isDefault: m.is_default,
         processorType: m.processor_type,
         processorLabel: processorLabel(m.processor_type),
+        paymentMethodKind: m.payment_method_kind || (isBankMethod(m) ? 'ach' : 'card'),
+        bankLastFour: m.bank_last_four || null,
+        bankAccountType: m.bank_account_type || null,
+        bankHolderType: m.bank_holder_type || null,
         displayLabel: paymentMethodLabel(m),
         detailLabel: paymentMethodDetail(m),
         processorReference: m.nmi_customer_vault_id || m.stripe_payment_method_id || m.stripe_customer_id || '',
@@ -657,7 +682,7 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
     const processor = createProcessorClient(procConfig);
 
     // #9: charge the saved card via chargeStoredCard (customerId + paymentMethodId), not
-    // charge() with a vault id in paymentToken — the latter fails on both NMI and Stripe.
+    // charge() with a vault id in paymentToken; the latter fails on both NMI and Stripe.
     const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
     const storedPaymentMethodId = method.stripe_payment_method_id || method.nmi_customer_vault_id || '';
     const result = await processor.chargeStoredCard(customerId, storedPaymentMethodId, {

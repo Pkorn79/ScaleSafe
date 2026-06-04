@@ -26,7 +26,7 @@
             <span v-if="dunningEvent.dunning_next_retry"> - Next retry: {{ formatDate(dunningEvent.dunning_next_retry) }}</span>
           </div>
           <div v-if="dunningEvent.dunning_status === 'escalated'" class="text-sm" style="color:#ef4444;margin-top:4px;font-weight:500">
-            Max retries reached - contact is delinquent. Request card update or escalate manually.
+            Max retries reached - contact is delinquent. Request a payment method update or escalate manually.
           </div>
         </div>
         <button v-if="dunningEvent.dunning_status !== 'resolved'" class="btn btn-sm btn-primary" @click="retryDunning" :disabled="dunningRetrying">
@@ -45,10 +45,10 @@
       </div>
       <div v-if="cardUpdateResult" class="text-sm mt-2" :style="{ color: '#10b981' }">{{ cardUpdateResult }}</div>
       <div v-if="defaultMethodLabel" class="text-sm text-muted mt-2">
-        Card update links replace the current default: {{ defaultMethodLabel }}.
+        Payment method update links replace the current default: {{ defaultMethodLabel }}.
       </div>
       <div class="text-sm text-muted mt-2">
-        Create card update links from the specific recurring plan below so the link uses that program's processor.
+        Create update links from the specific recurring plan below so the link uses that program's processor.
       </div>
       <div v-if="methods.length === 0" class="text-sm text-muted">No saved payment methods.</div>
       <div v-for="m in methods" :key="m.id" class="flex-between" style="padding:8px 0;border-bottom:1px solid #f3f4f6">
@@ -87,8 +87,8 @@
             <span v-else>No processor subscription ID on file</span>
           </div>
           <div class="text-sm text-muted mt-1">
-            <span v-if="enr.cardOnFile">Card: {{ enr.cardOnFile.displayLabel }}</span>
-            <span v-else>Card: not linked to this processor</span>
+            <span v-if="enr.cardOnFile">Payment method: {{ enr.cardOnFile.displayLabel }}</span>
+            <span v-else>Payment method: not linked to this processor</span>
             <span v-if="enr.cardOnFile?.detailLabel"> - {{ enr.cardOnFile.detailLabel }}</span>
           </div>
           <div v-if="enr.billingIssue" class="text-xs control-warning mt-1">
@@ -108,10 +108,10 @@
         </div>
         <div class="flex gap-2">
           <button class="btn btn-sm btn-secondary" @click="copyCardUpdateLink(enr)" :disabled="cardUpdateSending">
-            Copy Card Link
+            Copy Update Link
           </button>
           <button class="btn btn-sm btn-secondary" @click="sendCardUpdateRequest(enr)" :disabled="cardUpdateSending">
-            {{ cardUpdateSending ? 'Sending...' : 'Request Card Update' }}
+            {{ cardUpdateSending ? 'Sending...' : 'Request Payment Update' }}
           </button>
           <button v-if="canPause(enr)" class="btn btn-sm btn-secondary" @click="openPause(enr)">
             Pause
@@ -130,9 +130,9 @@
     <!-- Quick Actions -->
     <div class="flex gap-2 mb-4">
       <button class="btn btn-primary" @click="showChargeModal = true" :disabled="methods.length === 0">
-        + Charge Card
+        + Charge Saved Method
       </button>
-      <span v-if="methods.length === 0" class="text-sm text-muted" style="align-self:center">No card on file — send a card update request first</span>
+      <span v-if="methods.length === 0" class="text-sm text-muted" style="align-self:center">No saved payment method - send an update request first</span>
     </div>
 
     <!-- Payment History -->
@@ -214,7 +214,7 @@
       <template #footer>
         <button class="btn btn-secondary" @click="showChargeModal = false">Cancel</button>
         <button class="btn btn-primary" @click="submitCharge" :disabled="chargeLoading">
-          {{ chargeLoading ? 'Processing...' : 'Charge Card' }}
+          {{ chargeLoading ? 'Processing...' : 'Charge Payment Method' }}
         </button>
       </template>
     </Modal>
@@ -348,7 +348,7 @@ const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reaso
 function cardLabel(method: any) {
   if (method?.displayLabel) return method.displayLabel;
   const processor = method?.processorLabel || processorLabel(method?.processorType);
-  const brand = method?.brand || 'Card on file';
+  const brand = method?.brand || 'saved payment method';
   const ending = method?.last4 ? ` ending in ${method.last4}` : '';
   return `${processor} ${brand}${ending}`.trim();
 }
@@ -495,7 +495,7 @@ function formatDateShort(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// ─── Card Management ────────────────────────────────────
+// Payment method management
 
 async function sendCardUpdateRequest(enrollment: any) {
   cardUpdateSending.value = true;
@@ -507,9 +507,9 @@ async function sendCardUpdateRequest(enrollment: any) {
       enrollmentId: enrollment.id,
       sendTrigger: true,
     });
-    cardUpdateResult.value = `Card update request sent for ${enrollment.offerName || 'program'}.`;
+    cardUpdateResult.value = `Payment method update request sent for ${enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 6000);
-  } catch (e: any) { actionError.value = e.message || 'Failed to send card update request'; }
+  } catch (e: any) { actionError.value = e.message || 'Failed to send payment method update request'; }
   cardUpdateSending.value = false;
 }
 
@@ -525,10 +525,10 @@ async function copyCardUpdateLink(enrollment: any) {
     });
     const link = result.link || '';
     await navigator.clipboard.writeText(link);
-    cardUpdateResult.value = `Card update link copied for ${enrollment.offerName || 'program'}.`;
+    cardUpdateResult.value = `Payment method update link copied for ${enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 3000);
   } catch (e: any) {
-    actionError.value = e.message || 'Failed to create card update link';
+    actionError.value = e.message || 'Failed to create payment method update link';
   }
   cardUpdateSending.value = false;
 }
@@ -539,7 +539,7 @@ async function setDefaultCard(cardId: string) {
   try {
     await api.post(`/api/payments/lifecycle/cards/${contactId}/default`, { cardId });
     await loadMethods();
-  } catch (e: any) { actionError.value = e.message || 'Failed to set default card'; }
+  } catch (e: any) { actionError.value = e.message || 'Failed to set default payment method'; }
   cardActionLoading.value = false;
 }
 
@@ -552,7 +552,7 @@ async function removeCard(method: any) {
   try {
     await api.del(`/api/payments/lifecycle/cards/${contactId}/${cardId}`);
     await loadMethods();
-  } catch (e: any) { actionError.value = e.message || 'Failed to remove card'; }
+  } catch (e: any) { actionError.value = e.message || 'Failed to remove payment method'; }
   cardActionLoading.value = false;
 }
 

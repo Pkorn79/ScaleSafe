@@ -5,17 +5,17 @@
       <router-link :to="`/payments/${contactId}`" class="btn btn-sm btn-secondary">Full Payment Page</router-link>
     </div>
 
-    <!-- Card on file -->
+    <!-- Payment method on file -->
     <div class="card">
-      <div class="card-title">Card on File</div>
+      <div class="card-title">Payment Method on File</div>
       <div v-if="enrollmentInfo?.cardOnFile" class="text-sm">
         <strong>{{ cardLabel(enrollmentInfo.cardOnFile) }}</strong>
         <span v-if="enrollmentInfo.cardOnFile.last4"> ending in {{ enrollmentInfo.cardOnFile.last4 }}</span>
         <span v-if="hasExpiry(enrollmentInfo.cardOnFile)" class="text-muted">(exp {{ enrollmentInfo.cardOnFile.expMonth }}/{{ enrollmentInfo.cardOnFile.expYear }})</span>
       </div>
-      <div v-else class="text-sm text-muted">No card on file</div>
+      <div v-else class="text-sm text-muted">No saved payment method</div>
       <div v-if="enrollmentInfo?.dunningActive" class="text-sm mt-2" style="color:#ef4444;font-weight:500">
-        Dunning active — failed payment being retried.
+        Dunning active - failed payment being retried.
       </div>
     </div>
 
@@ -75,10 +75,10 @@
           Subscription ID: {{ enr.processorSubscriptionId }}
         </div>
         <div v-if="enr.cardOnFile" class="text-muted text-xs" style="margin-top:2px">
-          Card: {{ enr.cardOnFile.displayLabel }}
+          Payment method: {{ enr.cardOnFile.displayLabel }}
         </div>
         <div v-else class="text-muted text-xs" style="margin-top:2px">
-          Card: not linked to this processor
+          Payment method: not linked to this processor
         </div>
         <div v-if="enr.billingIssue" class="billing-warning">
           {{ enr.billingIssue.label }}
@@ -145,8 +145,9 @@ const props = defineProps<{
 }>();
 
 function cardLabel(card: any) {
+  if (card?.displayLabel) return card.displayLabel;
   const processor = processorLabel(card?.processorType);
-  const brand = card?.brand || 'Card on file';
+  const brand = card?.brand || 'saved payment method';
   return `${processor} ${brand}`.trim();
 }
 
