@@ -71,7 +71,7 @@
       <div v-if="configLoading" class="loading">Loading payment fields...</div>
       <div v-else-if="processorError" class="error-msg">{{ processorError }}</div>
       <template v-else>
-        <div v-if="fieldMounting" class="text-sm text-muted mb-2">Preparing secure card fields...</div>
+        <div v-if="fieldMounting" class="text-sm text-muted mb-2">{{ fieldPrepMessage }}</div>
         <div v-if="processorType === 'nmi'" class="qms-nmi">
           <div v-show="paymentMethod === 'card'">
             <label class="form-label">Card Number</label>
@@ -110,7 +110,7 @@
           <div class="field-wrapper"><div :id="stripeElementId"></div></div>
         </div>
         <div v-else-if="processorType === 'stripe' && paymentMethod === 'ach'" class="qms-ach-placeholder">
-          Bank account collection opens after you submit.
+          Stripe opens secure bank account collection after you submit.
         </div>
         <div v-else class="error-msg">No processor is configured.</div>
       </template>
@@ -269,6 +269,11 @@ const dualPricingPreview = computed(() => {
     ach: `$${quote.achAmount.toFixed(2)}`,
   };
 });
+const fieldPrepMessage = computed(() => (
+  paymentMethod.value === 'ach'
+    ? 'Preparing secure bank payment...'
+    : 'Preparing secure card fields...'
+));
 const achAllowedForSelection = computed(() => {
   return Boolean(dualPricingPreview.value
     && (processorType.value === 'stripe' || processorType.value === 'nmi'));
@@ -481,6 +486,7 @@ async function submit() {
   try {
     if (processorType.value === 'stripe' && paymentMethod.value === 'ach') {
       if (!stripe || !stripe.collectBankAccountForPayment) throw new Error('Stripe bank transfer is not ready.');
+      resultMessage.value = 'Opening secure Stripe bank account collection...';
       const intent = await api.post<any>('/api/dashboard/manual-sale/stripe-ach/intent', {
         contactId: client.contactId || undefined,
         firstName: client.firstName,
@@ -512,15 +518,28 @@ async function submit() {
       if (bankResult.error) throw new Error(bankResult.error.message);
 
       let paymentIntent = bankResult.paymentIntent;
+      if (!paymentIntent) throw new Error('Stripe did not return a bank payment intent. Please try again.');
+      if (['requires_payment_method', 'canceled'].includes(String(paymentIntent.status || ''))) {
+        throw new Error('Bank account collection was not completed.');
+      }
       if (paymentIntent && paymentIntent.status === 'requires_confirmation') {
+        resultMessage.value = 'Confirming bank payment with Stripe...';
         const confirmResult = await stripe.confirmUsBankAccountPayment(intent.clientSecret);
         if (confirmResult.error) throw new Error(confirmResult.error.message);
         paymentIntent = confirmResult.paymentIntent;
       }
+      if (!paymentIntent?.id) throw new Error('Stripe did not return a confirmed bank payment. Please try again.');
+      if (['requires_payment_method', 'requires_confirmation', 'canceled'].includes(String(paymentIntent.status || ''))) {
+        throw new Error('Bank payment was not submitted. Please complete the Stripe bank account flow and try again.');
+      }
 
+      resultMessage.value = 'Recording bank payment in ScaleSafe...';
       const finalized = await api.post<any>('/api/dashboard/manual-sale/stripe-ach/finalize', {
         paymentIntentId: paymentIntent?.id || intent.paymentIntentId,
       });
+      if (finalized.success === false || finalized.paymentStatus === 'failed') {
+        throw new Error(finalized.error || 'Stripe bank payment was not accepted.');
+      }
       resultMessage.value = finalized.paymentStatus === 'settled'
         ? (selectedOfferId.value ? 'Bank payment settled. Paid enrollment link is ready.' : 'Bank payment settled and saved to the client.')
         : 'Bank transfer submitted. Receipt and enrollment link send after Stripe confirms success.';
