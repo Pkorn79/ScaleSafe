@@ -9,6 +9,10 @@ export function parseNmiResponse(responseBody: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of params.entries()) {
     result[key] = value;
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalized && normalized !== key && result[normalized] === undefined) {
+      result[normalized] = value;
+    }
   }
   return result;
 }

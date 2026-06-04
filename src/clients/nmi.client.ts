@@ -352,7 +352,21 @@ export class NmiClient implements ProcessorInterface {
       };
     }
 
-    const subscriptionId = nmi.subscription_id || nmi.subscriptionid || nmi.recurring_subscription_id || '';
+    const subscriptionId = nmi.subscription_id
+      || nmi.subscriptionid
+      || nmi.subscriptionId
+      || nmi.recurring_subscription_id
+      || nmi.recurringsubscriptionid
+      || '';
+
+    if (!subscriptionId) {
+      return {
+        success: false,
+        subscriptionId: '',
+        status: 'failed',
+        errorMessage: `NMI approved recurring setup but did not return a subscription ID. Response: ${nmi.responsetext || 'Unknown response'}`,
+      };
+    }
 
     return {
       success: true,

@@ -482,6 +482,16 @@ export const payFirstEnrollmentService = {
                 next_billing_date: null,
               }).eq('id', enrollmentId).eq('location_id', input.locationId);
             }
+          } else {
+            billingSetupIssue = {
+              code: 'processor_subscription_not_attempted',
+              message: 'Payment was received, but recurring billing setup could not start because the recurring amount or next billing date was missing.',
+            };
+            await getSupabase().from('enrollments').update({
+              billing_setup_status: 'failed',
+              billing_setup_error: billingSetupIssue.message,
+              next_billing_date: null,
+            }).eq('id', enrollmentId).eq('location_id', input.locationId);
           }
         } catch (err: any) {
           billingSetupIssue = {

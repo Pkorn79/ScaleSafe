@@ -72,6 +72,15 @@ describe('NMI Utilities', () => {
 
       expect(result.customer_vault_id).toBe('ABC123');
     });
+
+    it('adds normalized keys for gateway response aliases', () => {
+      const raw = 'response=1&subscription-id=SUB-DASH&recurring_subscription_id=SUB_UNDERSCORE';
+      const result = parseNmiResponse(raw);
+
+      expect(result['subscription-id']).toBe('SUB-DASH');
+      expect(result.subscriptionid).toBe('SUB-DASH');
+      expect(result.recurringsubscriptionid).toBe('SUB_UNDERSCORE');
+    });
   });
 
   describe('centsToDollars', () => {
@@ -484,6 +493,40 @@ describe('NmiClient', () => {
       const postBody = mockedAxios.post.mock.calls[0][1] as string;
       const params = new URLSearchParams(postBody);
       expect(params.get('day_frequency')).toBe('7');
+    });
+
+    it('accepts NMI subscription id aliases', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: 'response=1&responsetext=Subscription Added&subscription-id=SUB-DASH',
+      });
+
+      const result = await client.createSubscription({
+        paymentMethodId: 'VAULT999',
+        customerId: 'VAULT999',
+        planAmount: 10000,
+        interval: 'weekly',
+        totalPayments: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.subscriptionId).toBe('SUB-DASH');
+    });
+
+    it('fails loudly when NMI approves recurring setup without a subscription id', async () => {
+      mockedAxios.post.mockResolvedValue({
+        data: 'response=1&responsetext=Subscription Added',
+      });
+
+      const result = await client.createSubscription({
+        paymentMethodId: 'VAULT999',
+        customerId: 'VAULT999',
+        planAmount: 10000,
+        interval: 'weekly',
+        totalPayments: 2,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errorMessage).toContain('did not return a subscription ID');
     });
   });
 
