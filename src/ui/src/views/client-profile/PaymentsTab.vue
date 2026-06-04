@@ -65,7 +65,7 @@
           Next: {{ formatDateShort(enr.nextBillingDate) }}
         </div>
         <div v-if="enr.lastPaymentDate" class="text-muted text-xs" style="margin-top:2px">
-          Last paid: {{ formatDateShort(enr.lastPaymentDate) }}
+          Last paid: {{ formatDate(enr.lastPaymentDate) }}
           <span v-if="enr.lastPaymentAmount"> (${{ Number(enr.lastPaymentAmount).toFixed(2) }})</span>
         </div>
         <div v-if="paymentDateSummary(enr)" class="text-muted text-xs" style="margin-top:2px">
@@ -128,7 +128,7 @@
         </tbody>
       </table>
       <div v-if="recentPayments.length >= 5" class="text-sm mt-2">
-        <router-link :to="`/payments/${contactId}`" style="color:#3b82f6">View full history →</router-link>
+        <router-link :to="`/payments/${contactId}`" style="color:#3b82f6">View full history -></router-link>
       </div>
     </div>
   </div>
@@ -232,7 +232,7 @@ function paymentDateSummary(enr: any): string {
   if (dates.length === 0) return '';
   return dates
     .slice(-4)
-    .map((p: any) => formatDateShort(p.date))
+    .map((p: any) => formatDate(p.date))
     .join(', ');
 }
 

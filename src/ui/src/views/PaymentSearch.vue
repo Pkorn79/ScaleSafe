@@ -319,14 +319,14 @@
                 </td>
                 <td>
                   <span v-if="row.lastScaleSafePaymentDate">
-                    {{ formatDateShort(row.lastScaleSafePaymentDate) }}
+                    {{ formatDate(row.lastScaleSafePaymentDate) }}
                     <span v-if="row.lastScaleSafePaymentAmount != null"> / ${{ Number(row.lastScaleSafePaymentAmount).toFixed(2) }}</span>
                   </span>
                   <span v-else>-</span>
                   <div v-if="row.lastScaleSafeTransactionId" class="text-xs text-muted txn-cell">{{ row.lastScaleSafeTransactionId }}</div>
                 </td>
                 <td>
-                  <span v-if="row.lastNmiPostDate">{{ formatDateShort(row.lastNmiPostDate) }}</span>
+                  <span v-if="row.lastNmiPostDate">{{ formatDate(row.lastNmiPostDate) }}</span>
                   <span v-else>-</span>
                   <div v-if="row.lastNmiPostAction" class="text-xs text-muted">{{ row.lastNmiPostAction }}</div>
                   <div v-if="row.lastNmiPostTransactionId" class="text-xs text-muted txn-cell">{{ row.lastNmiPostTransactionId }}</div>

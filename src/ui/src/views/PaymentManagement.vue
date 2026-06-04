@@ -23,10 +23,10 @@
           </div>
           <div class="text-sm text-muted" style="margin-top:4px">
             Retry {{ dunningEvent.dunning_retry_count || 0 }} of 3
-            <span v-if="dunningEvent.dunning_next_retry"> · Next retry: {{ formatDate(dunningEvent.dunning_next_retry) }}</span>
+            <span v-if="dunningEvent.dunning_next_retry"> - Next retry: {{ formatDate(dunningEvent.dunning_next_retry) }}</span>
           </div>
           <div v-if="dunningEvent.dunning_status === 'escalated'" class="text-sm" style="color:#ef4444;margin-top:4px;font-weight:500">
-            Max retries reached — contact is delinquent. Request card update or escalate manually.
+            Max retries reached - contact is delinquent. Request card update or escalate manually.
           </div>
         </div>
         <button v-if="dunningEvent.dunning_status !== 'resolved'" class="btn btn-sm btn-primary" @click="retryDunning" :disabled="dunningRetrying">
@@ -71,7 +71,7 @@
       </div>
     </div>
 
-    <!-- Subscription Status (recurring plans only — installments + subscriptions) -->
+    <!-- Subscription Status (recurring plans only - installments + subscriptions) -->
     <div v-if="recurringEnrollments.length > 0" class="card">
       <div class="card-title">Recurring Plans</div>
       <div v-for="enr in recurringEnrollments" :key="enr.id" class="recurring-plan">
