@@ -42,8 +42,166 @@ type ReminderWindow = {
   daysUntilPayment: 1 | 3;
 };
 
+export interface PaymentReminderWindowDiagnostic {
+  type: ReminderWindow['type'];
+  daysUntilPayment: 1 | 3;
+  targetDate: string;
+  dueCount: number;
+  eligibleCount: number;
+  billingNotReadyCount: number;
+  missingProcessorSubscriptionCount: number;
+  idempotencySkippedCount: number;
+  triggerMissingCount: number;
+}
+
+export interface PaymentReminderDiagnosticReport {
+  activeAppEventSubscriptions: number;
+  recentReminderSentAt: string | null;
+  recentReminderNoSubscriptionAt: string | null;
+  windows: PaymentReminderWindowDiagnostic[];
+  totalDueCount: number;
+  totalEligibleCount: number;
+  totalBillingNotReadyCount: number;
+  totalIdempotencySkippedCount: number;
+  status: 'ready' | 'needs_setup' | 'no_due_payments';
+  message: string;
+}
+
 function dateOnly(date: Date): string {
   return date.toISOString().split('T')[0];
+}
+
+function reminderWindows(now = new Date()): Array<ReminderWindow & { targetDate: string }> {
+  return [
+    { type: 'three_day', daysUntilPayment: 3, targetDate: dateOnly(new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)) },
+    { type: 'next_24_hours', daysUntilPayment: 1, targetDate: dateOnly(new Date(now.getTime() + 24 * 60 * 60 * 1000)) },
+  ];
+}
+
+function enrollmentInWindow(enrollment: any, window: ReminderWindow & { targetDate: string }, todayStr: string): boolean {
+  const nextDate = String(enrollment.next_billing_date || '');
+  if (!nextDate) return false;
+  if (window.type === 'three_day') return nextDate === window.targetDate;
+  return nextDate >= todayStr && nextDate <= window.targetDate;
+}
+
+function isBillingReady(enrollment: any): boolean {
+  return String(enrollment.billing_setup_status || 'ok').toLowerCase() === 'ok';
+}
+
+function needsProcessorSubscription(enrollment: any): boolean {
+  const processor = String(enrollment.processor_type || '').toLowerCase();
+  return ['stripe', 'nmi', 'whop'].includes(processor) && !enrollment.processor_subscription_id;
+}
+
+export async function getPaymentReminderDiagnostics(locationId: string): Promise<PaymentReminderDiagnosticReport> {
+  const supabase = getSupabase();
+  const now = new Date();
+  const todayStr = dateOnly(now);
+  const windows = reminderWindows(now);
+  const maxTargetDate = windows.reduce((max, window) => window.targetDate > max ? window.targetDate : max, todayStr);
+
+  const [
+    enrollmentRes,
+    subscriptionRes,
+    idempotencyRes,
+    logsRes,
+  ] = await Promise.all([
+    supabase
+      .from('enrollments')
+      .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, billing_setup_status, status')
+      .eq('location_id', locationId)
+      .in('status', ['enrolled', 'active'])
+      .in('payment_type', ['installments', 'installment', 'subscription'])
+      .gte('next_billing_date', todayStr)
+      .lte('next_billing_date', maxTargetDate),
+    supabase
+      .from('trigger_subscriptions')
+      .select('id')
+      .eq('location_id', locationId)
+      .eq('trigger_key', 'ss_app_event')
+      .eq('is_active', true),
+    supabase
+      .from('idempotency_keys')
+      .select('event_id, processed_at')
+      .eq('location_id', locationId)
+      .eq('source', 'payment_reminder')
+      .order('processed_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('trigger_delivery_logs')
+      .select('status, payload, created_at')
+      .eq('location_id', locationId)
+      .eq('trigger_key', 'ss_app_event')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ]);
+
+  if (enrollmentRes.error) throw enrollmentRes.error;
+  if (subscriptionRes.error) throw subscriptionRes.error;
+  if (idempotencyRes.error) throw idempotencyRes.error;
+  if (logsRes.error) throw logsRes.error;
+
+  const enrollments = enrollmentRes.data || [];
+  const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
+  const idempotencyIds = new Set((idempotencyRes.data || []).map((row: any) => row.event_id));
+  const logs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'upcoming_payment_reminder');
+  const recentReminderSentAt = logs.find((log: any) => log.status === 'sent')?.created_at || null;
+  const recentReminderNoSubscriptionAt = logs.find((log: any) => log.status === 'no_subscription')?.created_at || null;
+
+  const windowDiagnostics = windows.map((window) => {
+    const due = enrollments.filter((enrollment: any) => enrollmentInWindow(enrollment, window, todayStr));
+    const billingReady = due.filter(isBillingReady);
+    const idempotencySkippedCount = billingReady.filter((enrollment: any) => idempotencyIds.has([
+      'payment-reminder',
+      enrollment.location_id,
+      enrollment.id,
+      enrollment.next_billing_date,
+      window.type,
+    ].join(':'))).length;
+    const eligibleCount = billingReady.length - idempotencySkippedCount;
+    return {
+      type: window.type,
+      daysUntilPayment: window.daysUntilPayment,
+      targetDate: window.targetDate,
+      dueCount: due.length,
+      eligibleCount,
+      billingNotReadyCount: due.filter((enrollment: any) => !isBillingReady(enrollment)).length,
+      missingProcessorSubscriptionCount: due.filter(needsProcessorSubscription).length,
+      idempotencySkippedCount,
+      triggerMissingCount: activeAppEventSubscriptions === 0 && eligibleCount > 0 ? eligibleCount : 0,
+    };
+  });
+
+  const totalDueCount = windowDiagnostics.reduce((sum, item) => sum + item.dueCount, 0);
+  const totalEligibleCount = windowDiagnostics.reduce((sum, item) => sum + item.eligibleCount, 0);
+  const totalBillingNotReadyCount = windowDiagnostics.reduce((sum, item) => sum + item.billingNotReadyCount, 0);
+  const totalIdempotencySkippedCount = windowDiagnostics.reduce((sum, item) => sum + item.idempotencySkippedCount, 0);
+  const status = totalDueCount === 0
+    ? 'no_due_payments'
+    : activeAppEventSubscriptions === 0 || totalBillingNotReadyCount > 0
+      ? 'needs_setup'
+      : 'ready';
+  const message = totalDueCount === 0
+    ? 'No recurring payments are currently inside the reminder windows.'
+    : activeAppEventSubscriptions === 0
+      ? 'Recurring payments are due, but the ScaleSafe App Event workflow is not subscribed.'
+      : totalBillingNotReadyCount > 0
+        ? `${totalBillingNotReadyCount} due payment(s) are waiting on processor billing setup.`
+        : `${totalEligibleCount} reminder(s) are eligible to send.`;
+
+  return {
+    activeAppEventSubscriptions,
+    recentReminderSentAt,
+    recentReminderNoSubscriptionAt,
+    windows: windowDiagnostics,
+    totalDueCount,
+    totalEligibleCount,
+    totalBillingNotReadyCount,
+    totalIdempotencySkippedCount,
+    status,
+    message,
+  };
 }
 
 async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, window: ReminderWindow): Promise<{

@@ -66,13 +66,14 @@ describe('debug routes hardening', () => {
       .expect(404);
   });
 
-  it('does not include stack traces in debug error responses', async () => {
+  it('returns structured warnings instead of crashing on partial debug data failures', async () => {
     const response = await request(app())
       .get('/api/debug/clients-data/loc_1')
       .set('x-admin-debug-token', 'debug-token')
-      .expect(500);
+      .expect(200);
 
-    expect(response.body.error).toEqual(expect.any(String));
+    expect(response.body.status).toBe('warn');
+    expect(response.body.warnings).toContain('Could not load enrollment contacts.');
     expect(response.body.stack).toBeUndefined();
   });
 

@@ -7,6 +7,7 @@ import { STANDARD_CLAUSES, StandardClauseKey } from '../constants/standard-claus
 import { getSupabase } from '../clients/supabase.client';
 import { triggerHealthService } from './trigger-health.service';
 import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
+import { getPaymentReminderDiagnostics } from '../jobs/payment-reminder-check';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -425,6 +426,44 @@ export const merchantService = {
       });
     }
 
+    try {
+      const reminderDiagnostics = await getPaymentReminderDiagnostics(locationId);
+      add({
+        key: 'payment_reminder_diagnostics',
+        label: 'Payment reminder readiness',
+        status: reminderDiagnostics.status === 'needs_setup' ? 'warn' : 'pass',
+        message: reminderDiagnostics.message,
+        details: reminderDiagnostics as unknown as Record<string, unknown>,
+      });
+    } catch (err: any) {
+      add({
+        key: 'payment_reminder_diagnostics',
+        label: 'Payment reminder readiness',
+        status: 'warn',
+        message: 'Could not inspect payment reminder eligibility.',
+        details: { error: err.message || String(err) },
+      });
+    }
+
+    try {
+      const pulseDiagnostics = await this.getPulseReadiness(locationId, merchant);
+      add({
+        key: 'pulse_diagnostics',
+        label: 'Pulse check readiness',
+        status: pulseDiagnostics.status === 'needs_setup' ? 'warn' : 'pass',
+        message: pulseDiagnostics.message,
+        details: pulseDiagnostics as unknown as Record<string, unknown>,
+      });
+    } catch (err: any) {
+      add({
+        key: 'pulse_diagnostics',
+        label: 'Pulse check readiness',
+        status: 'warn',
+        message: 'Could not inspect pulse check readiness.',
+        details: { error: err.message || String(err) },
+      });
+    }
+
     const overallStatus = items.some((item) => item.status === 'fail')
       ? 'fail'
       : items.some((item) => item.status === 'warn')
@@ -432,6 +471,83 @@ export const merchantService = {
         : 'pass';
 
     return { locationId, overallStatus, checkedAt, items };
+  },
+
+  async getPulseReadiness(locationId: string, merchant: MerchantRecord): Promise<Record<string, unknown> & {
+    status: 'ready' | 'needs_setup' | 'no_due_pulses';
+    message: string;
+  }> {
+    const supabase = getSupabase();
+    const config = merchant.config || {};
+    let formUrl = String(config.pulse_form_url || process.env.PULSE_FORM_URL || '');
+    const cvIds = merchant.custom_value_ids || {};
+    if (!formUrl && cvIds.PULSE_FORM_URL) {
+      const values = await this.readGhlCustomValues(locationId);
+      formUrl = String(values[cvIds.PULSE_FORM_URL] || '');
+    }
+
+    const [dueRes, subscriptionRes, logsRes] = await Promise.all([
+      supabase
+        .from('enrollments')
+        .select('id')
+        .eq('location_id', locationId)
+        .eq('pulse_cadence_enabled', true)
+        .lte('next_pulse_due_at', new Date().toISOString())
+        .in('status', ['enrolled', 'active']),
+      supabase
+        .from('trigger_subscriptions')
+        .select('id')
+        .eq('location_id', locationId)
+        .eq('trigger_key', 'ss_app_event')
+        .eq('is_active', true),
+      supabase
+        .from('trigger_delivery_logs')
+        .select('status, payload, created_at')
+        .eq('location_id', locationId)
+        .eq('trigger_key', 'ss_app_event')
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ]);
+
+    if (dueRes.error) throw dueRes.error;
+    if (subscriptionRes.error) throw subscriptionRes.error;
+    if (logsRes.error) throw logsRes.error;
+
+    const dueCount = (dueRes.data || []).length;
+    const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
+    const pulseLogs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'pulse_check_due');
+    const pulseEnabled = merchant.module_pulse !== false;
+    const formUrlConfigured = Boolean(formUrl);
+    const status = dueCount === 0
+      ? 'no_due_pulses'
+      : !pulseEnabled || !formUrlConfigured || activeAppEventSubscriptions === 0
+        ? 'needs_setup'
+        : 'ready';
+    const message = dueCount === 0
+      ? 'No pulse check-ins are currently due.'
+      : !pulseEnabled
+        ? 'Pulse is disabled for this merchant.'
+        : !formUrlConfigured
+          ? 'Pulse check-ins are due, but the pulse form URL is not configured.'
+          : activeAppEventSubscriptions === 0
+            ? 'Pulse check-ins are due, but the ScaleSafe App Event workflow is not subscribed.'
+            : `${dueCount} pulse check-in(s) are due and ready to send.`;
+
+    return {
+      pulseEnabled,
+      formUrlConfigured,
+      activeAppEventSubscriptions,
+      dueCount,
+      recentPulseSentAt: pulseLogs.find((log: any) => log.status === 'sent')?.created_at || null,
+      recentPulseNoSubscriptionAt: pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null,
+      lastSkippedReason: dueCount > 0 && !formUrlConfigured
+        ? 'pulse_form_url_missing'
+        : dueCount > 0 && activeAppEventSubscriptions === 0
+          ? 'ss_app_event_subscription_missing'
+          : null,
+      status,
+      message,
+    };
   },
 
   /**

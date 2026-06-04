@@ -398,6 +398,40 @@
                     <span v-if="row.lastNoSubscriptionAt" class="text-warn">No subscription: {{ formatHealthTime(row.lastNoSubscriptionAt) }}</span>
                     <span v-if="row.lastFailedAt" class="text-red">Failed: {{ formatHealthTime(row.lastFailedAt) }}</span>
                   </div>
+                  <div v-if="row.appEventUses?.length" class="trigger-health-uses">
+                    <div v-for="eventUse in row.appEventUses" :key="eventUse.eventType" class="text-sm text-muted">
+                      <strong>{{ eventUse.label }}:</strong>
+                      Last sent {{ formatHealthTime(eventUse.lastSentAt) }}
+                      <span v-if="eventUse.lastNoSubscriptionAt" class="text-warn"> · No subscription {{ formatHealthTime(eventUse.lastNoSubscriptionAt) }}</span>
+                      <span v-if="eventUse.lastFailedAt" class="text-red"> · Failed {{ formatHealthTime(eventUse.lastFailedAt) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="item.key === 'payment_reminder_diagnostics' && item.details?.windows" class="job-diagnostics-grid">
+                <div v-for="window in item.details.windows" :key="window.type" class="job-diagnostic-row">
+                  <strong>{{ window.type === 'three_day' ? '3-day reminder' : 'Next 24 hours' }}</strong>
+                  <span>Due: {{ window.dueCount }}</span>
+                  <span>Eligible: {{ window.eligibleCount }}</span>
+                  <span>Billing not ready: {{ window.billingNotReadyCount }}</span>
+                  <span>Already sent: {{ window.idempotencySkippedCount }}</span>
+                  <span v-if="window.triggerMissingCount" class="text-warn">Trigger missing: {{ window.triggerMissingCount }}</span>
+                </div>
+                <div class="text-sm text-muted">
+                  App Event subscriptions: {{ item.details.activeAppEventSubscriptions || 0 }}
+                  · Last reminder sent: {{ formatHealthTime(item.details.recentReminderSentAt) }}
+                </div>
+              </div>
+              <div v-if="item.key === 'pulse_diagnostics'" class="job-diagnostics-grid">
+                <div class="job-diagnostic-row">
+                  <strong>Pulse setup</strong>
+                  <span>Due: {{ item.details?.dueCount || 0 }}</span>
+                  <span>Form URL: {{ item.details?.formUrlConfigured ? 'Present' : 'Missing' }}</span>
+                  <span>App Event subscriptions: {{ item.details?.activeAppEventSubscriptions || 0 }}</span>
+                  <span v-if="item.details?.lastSkippedReason" class="text-warn">Skipped: {{ item.details.lastSkippedReason }}</span>
+                </div>
+                <div class="text-sm text-muted">
+                  Last pulse sent: {{ formatHealthTime(item.details?.recentPulseSentAt) }}
                 </div>
               </div>
               <div v-if="item.key === 'field_automation_health' && item.details?.fieldAutomations" class="field-automation-list">
@@ -1148,6 +1182,26 @@ async function setDefaultProcessor(proc: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
+  font-size: 12px;
+  color: #526176;
+}
+
+.trigger-health-uses,
+.job-diagnostics-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.job-diagnostic-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px;
+  border: 1px solid #eef2f7;
+  border-radius: 6px;
+  background: #f8fafc;
   font-size: 12px;
   color: #526176;
 }

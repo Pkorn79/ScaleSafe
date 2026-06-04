@@ -6,6 +6,18 @@ import { logger } from '../utils/logger';
 
 const DEFAULT_PULSE_FREQUENCY_DAYS = 30;
 
+export interface PulseCadenceDiagnosticReport {
+  pulseEnabled: boolean;
+  formUrlConfigured: boolean;
+  activeAppEventSubscriptions: number;
+  dueCount: number;
+  recentPulseSentAt: string | null;
+  recentPulseNoSubscriptionAt: string | null;
+  lastSkippedReason: string | null;
+  status: 'ready' | 'needs_setup' | 'no_due_pulses';
+  message: string;
+}
+
 export async function runPulseCadenceCheck(): Promise<void> {
   const supabase = getSupabase();
   const now = new Date();
@@ -97,6 +109,79 @@ export async function runPulseCadenceCheck(): Promise<void> {
   }
 
   logger.info({ total: enrollments.length, sent, skipped }, 'Pulse cadence check complete');
+}
+
+export async function getPulseCadenceDiagnostics(locationId: string): Promise<PulseCadenceDiagnosticReport> {
+  const supabase = getSupabase();
+  const now = new Date();
+  const merchant = await merchantRepository.getByLocationId(locationId);
+  const pulseConfig = await resolvePulseConfig(locationId, merchant);
+
+  const [dueRes, subscriptionRes, logsRes] = await Promise.all([
+    supabase
+      .from('enrollments')
+      .select('id')
+      .eq('location_id', locationId)
+      .eq('pulse_cadence_enabled', true)
+      .lte('next_pulse_due_at', now.toISOString())
+      .in('status', ['enrolled', 'active']),
+    supabase
+      .from('trigger_subscriptions')
+      .select('id')
+      .eq('location_id', locationId)
+      .eq('trigger_key', 'ss_app_event')
+      .eq('is_active', true),
+    supabase
+      .from('trigger_delivery_logs')
+      .select('status, payload, created_at')
+      .eq('location_id', locationId)
+      .eq('trigger_key', 'ss_app_event')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ]);
+
+  if (dueRes.error) throw dueRes.error;
+  if (subscriptionRes.error) throw subscriptionRes.error;
+  if (logsRes.error) throw logsRes.error;
+
+  const dueCount = (dueRes.data || []).length;
+  const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
+  const pulseLogs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'pulse_check_due');
+  const recentPulseSentAt = pulseLogs.find((log: any) => log.status === 'sent')?.created_at || null;
+  const recentPulseNoSubscriptionAt = pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null;
+  const pulseEnabled = merchant.module_pulse !== false;
+  const formUrlConfigured = Boolean(pulseConfig.formUrl);
+  const lastSkippedReason = dueCount > 0 && !formUrlConfigured
+    ? 'pulse_form_url_missing'
+    : dueCount > 0 && activeAppEventSubscriptions === 0
+      ? 'ss_app_event_subscription_missing'
+      : null;
+  const status = dueCount === 0
+    ? 'no_due_pulses'
+    : !pulseEnabled || !formUrlConfigured || activeAppEventSubscriptions === 0
+      ? 'needs_setup'
+      : 'ready';
+  const message = dueCount === 0
+    ? 'No pulse check-ins are currently due.'
+    : !pulseEnabled
+      ? 'Pulse is disabled for this merchant.'
+      : !formUrlConfigured
+        ? 'Pulse check-ins are due, but the pulse form URL is not configured.'
+        : activeAppEventSubscriptions === 0
+          ? 'Pulse check-ins are due, but the ScaleSafe App Event workflow is not subscribed.'
+          : `${dueCount} pulse check-in(s) are due and ready to send.`;
+
+  return {
+    pulseEnabled,
+    formUrlConfigured,
+    activeAppEventSubscriptions,
+    dueCount,
+    recentPulseSentAt,
+    recentPulseNoSubscriptionAt,
+    lastSkippedReason,
+    status,
+    message,
+  };
 }
 
 async function resolvePulseConfig(

@@ -40,6 +40,13 @@ export interface TriggerHealthRow {
   lastPayloadAt: string | null;
   lastErrorMessage: string | null;
   missingFieldsInLastPayload: string[];
+  appEventUses?: Array<{
+    eventType: string;
+    label: string;
+    lastSentAt: string | null;
+    lastFailedAt: string | null;
+    lastNoSubscriptionAt: string | null;
+  }>;
 }
 
 export interface TriggerHealthReport {
@@ -82,6 +89,12 @@ function buildRow(
   const missingFields = last
     ? contract.requiredPayloadFields.filter((field) => !hasField(last.payload, field))
     : [];
+  const appEventUses = contract.key === 'ss_app_event'
+    ? [
+        buildAppEventUse(logs, 'upcoming_payment_reminder', 'Upcoming Payment Reminder'),
+        buildAppEventUse(logs, 'pulse_check_due', 'Pulse Check Due'),
+      ]
+    : undefined;
 
   return {
     key: contract.key,
@@ -100,6 +113,18 @@ function buildRow(
     lastPayloadAt: last?.created_at || null,
     lastErrorMessage: lastFailed?.error_message || lastNoSubscription?.error_message || null,
     missingFieldsInLastPayload: missingFields,
+    appEventUses,
+  };
+}
+
+function buildAppEventUse(logs: TriggerDeliveryLogRow[], eventType: string, label: string) {
+  const eventLogs = logs.filter((log) => log.trigger_key === 'ss_app_event' && log.payload?.event_type === eventType);
+  return {
+    eventType,
+    label,
+    lastSentAt: eventLogs.find((log) => log.status === 'sent')?.created_at || null,
+    lastFailedAt: eventLogs.find((log) => log.status === 'failed')?.created_at || null,
+    lastNoSubscriptionAt: eventLogs.find((log) => log.status === 'no_subscription')?.created_at || null,
   };
 }
 

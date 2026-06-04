@@ -268,14 +268,29 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
     const locationId = req.params.locationId;
     const supabase = getSupabase();
 
-    const [{ data: evidenceContacts }, { data: enrolledContacts }] = await Promise.all([
-      supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId),
-      supabase
+    const warnings: string[] = [];
+    const [evidenceResult, enrollmentResult] = await Promise.allSettled([
+      Promise.resolve().then(() => supabase.from('evidence_timeline').select('contact_id').eq('location_id', locationId)),
+      Promise.resolve().then(() => supabase
         .from('enrollments')
         .select('id, contact_id, email, status, created_at')
         .eq('location_id', locationId)
-        .in('status', ['enrolled', 'consent_captured', 'completed']),
+        .in('status', ['enrolled', 'consent_captured', 'completed'])),
     ]);
+
+    const evidenceContacts = evidenceResult.status === 'fulfilled' && !evidenceResult.value.error
+      ? evidenceResult.value.data
+      : [];
+    if (evidenceResult.status === 'rejected' || (evidenceResult.status === 'fulfilled' && evidenceResult.value.error)) {
+      warnings.push('Could not load evidence timeline contacts.');
+    }
+
+    const enrolledContacts = enrollmentResult.status === 'fulfilled' && !enrollmentResult.value.error
+      ? enrollmentResult.value.data
+      : [];
+    if (enrollmentResult.status === 'rejected' || (enrollmentResult.status === 'fulfilled' && enrollmentResult.value.error)) {
+      warnings.push('Could not load enrollment contacts.');
+    }
 
     const evidenceIds = (evidenceContacts || []).map(c => c.contact_id).filter(Boolean);
 
@@ -329,6 +344,8 @@ router.get('/api/debug/clients-data/:locationId', async (req: Request, res: Resp
     res.json({
       _debug: true,
       _source: 'evidenceHealth mirror',
+      status: warnings.length > 0 ? 'warn' : 'pass',
+      warnings,
       _rawCounts: {
         evidenceContacts: (evidenceContacts || []).length,
         enrolledContacts: (enrolledContacts || []).length,
