@@ -51,6 +51,9 @@ function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
     body.subscription_url ||
     body.targetUrl ||
     body.target_url ||
+    body.webhookUrl ||
+    body.webhook_url ||
+    body.url ||
     body.trigger?.subscriptionUrl ||
     body.trigger?.subscription_url ||
     body.trigger?.targetUrl ||
@@ -66,7 +69,13 @@ function isTriggerSubscriptionWebhook(body: Record<string, any>): boolean {
     body.triggerData?.targetUrl ||
     body.triggerData?.target_url ||
     body.triggerData?.subscriptionUrl ||
-    body.triggerData?.subscription_url
+    body.triggerData?.subscription_url ||
+    body.triggerData?.url ||
+    body.meta?.subscriptionUrl ||
+    body.meta?.subscription_url ||
+    body.meta?.targetUrl ||
+    body.meta?.target_url ||
+    body.meta?.url
   );
   return hasTriggerIdentity && hasSubscriptionTarget;
 }

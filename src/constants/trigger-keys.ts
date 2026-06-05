@@ -47,6 +47,8 @@ const TRIGGER_KEY_ALIASES: Record<string, TriggerKey> = {
   paymentfailed: 'ss_payment_failed',
   refundprocessed: 'ss_refund_processed',
   chargebackdetected: 'ss_chargeback_detected',
+  chargeback_detected: 'ss_chargeback_detected',
+  chargeback: 'ss_chargeback_detected',
   defenseready: 'ss_defense_ready',
   evidencemilestone: 'ss_evidence_milestone',
   chargebackratiowarning: 'ss_chargeback_ratio_warning',

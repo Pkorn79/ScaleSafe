@@ -124,6 +124,31 @@ describe('triggerController.handleSubscription', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
+  it('subscribes Chargeback Detected when HighLevel sends compact key and url', async () => {
+    const req = {
+      body: {
+        eventType: 'created',
+        locationId: 'loc_123',
+        triggerData: {
+          key: 'ChargebackDetected',
+        },
+        url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      },
+    } as any;
+    const res = createRes();
+    const next = jest.fn();
+
+    await triggerController.handleSubscription(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockUpsertSubscription).toHaveBeenCalledWith(
+      'loc_123',
+      'ss_chargeback_detected',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   it('rejects non-GHL subscription URLs', async () => {
     const req = {
       body: {

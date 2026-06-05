@@ -377,6 +377,27 @@ describe('Webhook Controller - ghlUnified', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
+  test('routes Chargeback Detected subscription callbacks with top-level url from the default GHL webhook URL', async () => {
+    const { req, res, next } = mockReqRes({
+      eventType: 'created',
+      locationId: 'loc_chargeback',
+      triggerData: {
+        key: 'ChargebackDetected',
+      },
+      url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_chargeback/workflow_chargeback',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mockTriggerUpsertSubscription).toHaveBeenCalledWith(
+      'loc_chargeback',
+      'ss_chargeback_detected',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_chargeback/workflow_chargeback',
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   test('routes appointment events from the default GHL webhook URL to activity processing', async () => {
     const body = {
       type: 'AppointmentCreate',

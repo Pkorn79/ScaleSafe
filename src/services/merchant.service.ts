@@ -32,6 +32,7 @@ export interface MerchantFullConfig {
   shortDescription: string;
 
   enrollmentFunnelUrl: string;
+  pulseFormUrl: string;
 
   stripeConnected: boolean;
   stripeUserId: string;
@@ -89,6 +90,7 @@ export interface MerchantConfigUpdate {
   customClause2Text?: string;
 
   enrollmentFunnelUrl?: string;
+  pulseFormUrl?: string;
 
   modules?: {
     sessions?: boolean;
@@ -479,11 +481,15 @@ export const merchantService = {
   }> {
     const supabase = getSupabase();
     const config = merchant.config || {};
-    let formUrl = String(config.pulse_form_url || process.env.PULSE_FORM_URL || '');
+    const merchantConfigPulseUrl = String(config.pulse_form_url || '');
+    const envPulseUrl = String(process.env.PULSE_FORM_URL || '');
+    let ghlCustomValuePulseUrl = '';
+    let formUrl = merchantConfigPulseUrl || envPulseUrl;
     const cvIds = merchant.custom_value_ids || {};
     if (!formUrl && cvIds.PULSE_FORM_URL) {
       const values = await this.readGhlCustomValues(locationId);
-      formUrl = String(values[cvIds.PULSE_FORM_URL] || '');
+      ghlCustomValuePulseUrl = String(values[cvIds.PULSE_FORM_URL] || '');
+      formUrl = ghlCustomValuePulseUrl;
     }
 
     const [dueRes, subscriptionRes, logsRes] = await Promise.all([
@@ -528,7 +534,7 @@ export const merchantService = {
       : !pulseEnabled
         ? 'Pulse is disabled for this merchant.'
         : !formUrlConfigured
-          ? 'Pulse check-ins are due, but the pulse form URL is not configured.'
+          ? 'Pulse check-ins are due, but the Pulse Form URL is missing. Checked merchant settings, environment fallback, and the GHL custom value.'
           : activeAppEventSubscriptions === 0
             ? 'Pulse check-ins are due, but the ScaleSafe App Event workflow is not subscribed.'
             : `${dueCount} pulse check-in(s) are due and ready to send.`;
@@ -536,6 +542,11 @@ export const merchantService = {
     return {
       pulseEnabled,
       formUrlConfigured,
+      formUrlSources: {
+        merchantConfig: Boolean(merchantConfigPulseUrl),
+        environment: Boolean(envPulseUrl),
+        ghlCustomValue: Boolean(ghlCustomValuePulseUrl),
+      },
       activeAppEventSubscriptions,
       dueCount,
       recentPulseSentAt: pulseLogs.find((log: any) => log.status === 'sent')?.created_at || null,
@@ -993,6 +1004,7 @@ export const merchantService = {
       logoUrl: merchant.logo_url || gv('LOGO_URL') || '',
       shortDescription: gv('SHORT_DESCRIPTION') || (cfg as any).short_description || '',
       enrollmentFunnelUrl: gv('WEBSITE_BASE_URL') || (cfg as any).enrollment_funnel_url || '',
+      pulseFormUrl: (cfg as any).pulse_form_url || gv('PULSE_FORM_URL') || '',
 
       stripeConnected: merchant.stripe_connected || false,
       stripeUserId: merchant.stripe_user_id || '',
@@ -1072,6 +1084,7 @@ export const merchantService = {
     if (updates.businessState !== undefined) configUpdates.business_state = updates.businessState;
     if (updates.primaryServiceType !== undefined) configUpdates.primary_service_type = updates.primaryServiceType;
     if (updates.shortDescription !== undefined) configUpdates.short_description = updates.shortDescription;
+    if (updates.pulseFormUrl !== undefined) configUpdates.pulse_form_url = updates.pulseFormUrl;
     if (updates.tcHasOwn !== undefined) configUpdates.tc_has_own = updates.tcHasOwn;
     if (updates.tcDocumentUrl !== undefined) configUpdates.tc_document_url = updates.tcDocumentUrl;
     if (updates.tcCustomHtml !== undefined) configUpdates.tc_custom_html = updates.tcCustomHtml;
@@ -1223,6 +1236,7 @@ export const merchantService = {
 
     // Enrollment funnel URL
     if (updates.enrollmentFunnelUrl !== undefined) push('WEBSITE_BASE_URL', updates.enrollmentFunnelUrl);
+    if (updates.pulseFormUrl !== undefined) push('PULSE_FORM_URL', updates.pulseFormUrl);
 
     // Evidence module toggles
     if (updates.modules) {

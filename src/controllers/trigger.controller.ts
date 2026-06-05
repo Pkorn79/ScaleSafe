@@ -12,6 +12,21 @@ function firstString(...values: unknown[]): string {
   return '';
 }
 
+function stringCandidates(...values: unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+}
+
+function urlDebug(value: string): Record<string, string> | null {
+  try {
+    const url = new URL(value);
+    return { protocol: url.protocol, host: url.hostname, path: url.pathname };
+  } catch {
+    return null;
+  }
+}
+
 function findTriggerKey(body: Record<string, any>): string {
   return firstString(
     body.triggerKey,
@@ -49,6 +64,24 @@ function findTriggerKey(body: Record<string, any>): string {
   );
 }
 
+function findLifecycleType(body: Record<string, any>): string {
+  return firstString(
+    body.type,
+    body.eventType,
+    body.event_type,
+    body.action,
+    body.triggerData?.eventType,
+    body.triggerData?.event_type,
+    body.triggerData?.type,
+    body.event?.type,
+    body.event?.eventType,
+    body.event?.event_type,
+    body.meta?.eventType,
+    body.meta?.event_type,
+    body.meta?.type,
+  );
+}
+
 export const triggerController = {
   /**
    * POST /webhooks/ghl/triggers
@@ -57,8 +90,7 @@ export const triggerController = {
   async handleSubscription(req: Request, res: Response, next: NextFunction) {
     try {
       const body = req.body || {};
-      const eventType = body.type || body.triggerData?.eventType;
-      const type = String(eventType || '').toLowerCase();
+      const type = findLifecycleType(body).toLowerCase();
       const locationId = firstString(
         body.locationId,
         body.location_id,
@@ -102,9 +134,47 @@ export const triggerController = {
         body.triggerData?.target_url,
         body.triggerData?.subscriptionUrl,
         body.triggerData?.subscription_url,
+        body.triggerData?.url,
+        body.meta?.subscriptionUrl,
+        body.meta?.subscription_url,
+        body.meta?.targetUrl,
+        body.meta?.target_url,
+        body.meta?.url,
       );
 
       if (!type || !locationId || !triggerKey || !subscriptionUrl) {
+        const lifecycleTypeCandidates = stringCandidates(
+          body.type,
+          body.eventType,
+          body.event_type,
+          body.action,
+          body.triggerData?.eventType,
+          body.triggerData?.event_type,
+          body.triggerData?.type,
+          body.event?.type,
+          body.event?.eventType,
+          body.event?.event_type,
+          body.meta?.eventType,
+          body.meta?.event_type,
+          body.meta?.type,
+        );
+        const locationIdCandidates = stringCandidates(
+          body.locationId,
+          body.location_id,
+          body.location?.id,
+          body.trigger?.locationId,
+          body.trigger?.location_id,
+          body.event?.locationId,
+          body.event?.location_id,
+          body.extras?.locationId,
+          body.extras?.location_id,
+          body.data?.locationId,
+          body.data?.location_id,
+          body.triggerData?.locationId,
+          body.triggerData?.location_id,
+          body.meta?.locationId,
+          body.meta?.location_id,
+        );
         logger.warn(
           {
             bodyKeys: Object.keys(body),
@@ -113,6 +183,9 @@ export const triggerController = {
             metaKeys: body.meta ? Object.keys(body.meta) : [],
             rawTriggerKey,
             normalizedTriggerKey: triggerKey,
+            lifecycleTypeCandidates,
+            locationIdCandidates,
+            subscriptionUrlDebug: subscriptionUrl ? urlDebug(subscriptionUrl) : null,
           },
           'Invalid trigger subscription payload',
         );
@@ -120,7 +193,13 @@ export const triggerController = {
       }
 
       if (!isAllowedTriggerSubscriptionUrl(String(subscriptionUrl))) {
-        logger.warn({ locationId, triggerKey, type }, 'Rejected unsupported trigger subscription URL');
+        logger.warn({
+          locationId,
+          triggerKey,
+          rawTriggerKey,
+          type,
+          subscriptionUrlDebug: urlDebug(String(subscriptionUrl)),
+        }, 'Rejected unsupported trigger subscription URL');
         throw new ValidationError('Unsupported trigger subscription URL');
       }
 
