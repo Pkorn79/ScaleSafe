@@ -71,6 +71,13 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
       funnelBaseUrl = mc.enrollmentFunnelUrl || '';
     } catch {}
 
+    if (checkoutMode !== 'quick_checkout' && !funnelBaseUrl) {
+      res.status(400).json({
+        error: 'Full enrollment links require an Enrollment Funnel URL in Settings. Add the merchant funnel URL or switch this offer to Quick Checkout before sending.',
+      });
+      return;
+    }
+
     const enrollmentUrl = offerService.generateEnrollmentLink(offerId, appBaseUrl, checkoutMode, funnelBaseUrl);
 
     // ─── Upsert GHL contact ─────────────────────────

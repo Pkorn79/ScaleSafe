@@ -126,7 +126,16 @@ export const offerController = {
         } catch {}
       }
 
-      const link = offerService.generateEnrollmentLink(offer.id, appBaseUrl, (offer as any).checkout_mode, funnelBaseUrl);
+      const checkoutMode = (offer as any).checkout_mode || 'full_enrollment';
+      if (checkoutMode !== 'quick_checkout' && !funnelBaseUrl) {
+        res.status(400).json({
+          error: 'Full enrollment links require an Enrollment Funnel URL in Settings. Add the merchant funnel URL or switch this offer to Quick Checkout before copying.',
+          funnelConfigured: false,
+        });
+        return;
+      }
+
+      const link = offerService.generateEnrollmentLink(offer.id, appBaseUrl, checkoutMode, funnelBaseUrl);
       res.json({ link, funnelConfigured: !!funnelBaseUrl });
     } catch (err) { next(err); }
   },

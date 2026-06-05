@@ -213,7 +213,9 @@ const sendForm = ref({
 onMounted(async () => {
   try {
     offers.value = await api.get<any[]>('/api/offers');
-  } catch {}
+  } catch (err: any) {
+    showToast(err?.message || 'Could not load offers.');
+  }
 });
 
 function showToast(msg: string) {
@@ -225,13 +227,15 @@ async function copyLink(offerId: string) {
   copyingOfferId.value = offerId;
   try {
     const result = await api.get<{ link: string; funnelConfigured: boolean }>(`/api/offers/${offerId}/enrollment-link`);
-    await navigator.clipboard.writeText(result.link);
     if (!result.funnelConfigured) {
-      showToast('Link copied (set your funnel URL in Settings for production links)');
-    } else {
-      showToast('Enrollment link copied!');
+      showToast('Add your Enrollment Funnel URL in Settings before copying this link.');
+      return;
     }
-  } catch {}
+    await navigator.clipboard.writeText(result.link);
+    showToast('Enrollment link copied!');
+  } catch (err: any) {
+    showToast(err?.message || 'Could not copy enrollment link.');
+  }
   copyingOfferId.value = '';
 }
 
@@ -311,7 +315,7 @@ async function unarchiveOffer(offer: any) {
 }
 
 // TODO: Phase L+ - Add bulk send capability
-// Select multiple contacts from GHL → send enrollment link to all
+// Select multiple contacts from GHL -> send enrollment link to all
 </script>
 
 <style scoped>

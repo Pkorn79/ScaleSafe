@@ -21,6 +21,13 @@ jest.mock('../../src/services/trigger.service', () => ({
   triggerService: { fireTrigger: mockFireTrigger },
 }));
 
+const mockGetFullConfig = jest.fn();
+jest.mock('../../src/services/merchant.service', () => ({
+  merchantService: {
+    getFullConfig: mockGetFullConfig,
+  },
+}));
+
 jest.mock('../../src/config', () => ({
   config: {
     ghl: { clientId: '', clientSecret: '', ssoKey: '', apiDomain: '' },
@@ -61,7 +68,10 @@ function mockRes(): any {
 // ─── Tests ──────────────────────────────────────────────────────
 
 describe('Send Enrollment Link', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetFullConfig.mockResolvedValue({ enrollmentFunnelUrl: 'https://merchant.example.com' });
+  });
 
   it('should upsert GHL contact, write fields, and fire trigger', async () => {
     mockFindById.mockResolvedValue({
@@ -189,9 +199,35 @@ describe('Send Enrollment Link', () => {
 
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
-        enrollmentUrl: 'https://scalesafe-production.up.railway.app/enrollment?offerId=offer-abc',
+        enrollmentUrl: 'https://merchant.example.com/welcome?offerId=offer-abc',
       }),
     );
+  });
+
+  it('should reject full enrollment sends when no funnel URL is configured', async () => {
+    mockGetFullConfig.mockResolvedValue({ enrollmentFunnelUrl: '' });
+    mockFindById.mockResolvedValue({
+      id: 'offer-full',
+      location_id: 'loc-1',
+      active: true,
+      offer_name: 'Full Enrollment Product',
+      checkout_mode: 'full_enrollment',
+    });
+
+    const req = mockReq({
+      offerId: 'offer-full',
+      firstName: 'Jane',
+      email: 'jane@test.com',
+      sendVia: ['email'],
+    });
+    const res = mockRes();
+    await sendEnrollmentLink(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      error: expect.stringContaining('Enrollment Funnel URL'),
+    }));
+    expect(mockGhlPost).not.toHaveBeenCalled();
   });
 
   it('should use quick-checkout URL for quick_checkout offers', async () => {
