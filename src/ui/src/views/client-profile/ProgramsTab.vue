@@ -70,7 +70,7 @@
             Subscription ID: {{ enr.processorSubscriptionId }}
           </div>
           <div v-if="enr.cardOnFile" class="payment-detail-line">
-            Card: {{ enr.cardOnFile.displayLabel }}
+            Payment method: {{ enr.cardOnFile.displayLabel }}
           </div>
           <div v-if="enr.billingIssue" class="billing-warning">
             {{ enr.billingIssue.label }}

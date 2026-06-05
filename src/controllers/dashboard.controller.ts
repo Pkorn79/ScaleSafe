@@ -157,10 +157,39 @@ function processorLabel(processor?: string | null): string {
   return processor || 'Unknown';
 }
 
+function isBankMethod(method: any): boolean {
+  return method?.payment_method_kind === 'ach'
+    || !!method?.bank_last_four
+    || String(method?.card_brand || '').toLowerCase() === 'bank';
+}
+
 function cardSummary(method: any) {
   if (!method) return null;
-  const display = cleanCardDisplay(method);
   const processor = processorLabel(method.processor_type);
+  if (isBankMethod(method)) {
+    const last4 = String(method.bank_last_four || method.card_last_four || '').trim();
+    const ending = /^\d{4}$/.test(last4) ? ` ending in ${last4}` : '';
+    const detailParts: string[] = [];
+    if (method.bank_account_type) detailParts.push(String(method.bank_account_type));
+    if (method.bank_holder_type) detailParts.push(String(method.bank_holder_type));
+    if (method.processor_type === 'nmi' && method.nmi_customer_vault_id) detailParts.push(`NMI vault ${method.nmi_customer_vault_id}`);
+    if (method.processor_type === 'stripe' && method.stripe_payment_method_id) detailParts.push(`Stripe PM ${method.stripe_payment_method_id}`);
+    else if (method.processor_type === 'stripe' && method.stripe_customer_id) detailParts.push(`Stripe customer ${method.stripe_customer_id}`);
+
+    return {
+      id: method.id || null,
+      processorType: method.processor_type || '',
+      displayLabel: `${processor} bank account${ending}`.trim(),
+      detailLabel: detailParts.join(' - '),
+      isDefault: Boolean(method.is_default),
+      last4: /^\d{4}$/.test(last4) ? last4 : '',
+      brand: 'bank',
+      expMonth: null,
+      expYear: null,
+    };
+  }
+
+  const display = cleanCardDisplay(method);
   const brand = display.brand || 'card on file';
   const ending = display.last4 ? ` ending in ${display.last4}` : '';
   const detailParts: string[] = [];
@@ -578,12 +607,12 @@ export const dashboardController = {
         if (enrollment?.digital_signature) name = enrollment.digital_signature;
       }
 
-      // Get offer name, card on file, payment summary in parallel
+      // Get offer name, saved payment method, payment summary in parallel
       const [offerResult, cardResult, paymentSummaryResult, dunningResult] = await Promise.allSettled([
         enrollment?.offer_id
           ? supabase.from('offers_mirror').select('offer_name, payment_type, num_payments, installment_amount, installment_frequency').eq('id', enrollment.offer_id).single()
           : Promise.resolve({ data: null }),
-        supabase.from('payment_methods').select('card_last_four, card_brand, card_exp_month, card_exp_year, is_default, processor_type')
+        supabase.from('payment_methods').select('*')
           .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
         supabase.from('payment_events').select('amount, event_type, created_at')
           .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null),
@@ -620,7 +649,7 @@ export const dashboardController = {
         offerName: offer?.offer_name || '',
         signature: enrollment?.digital_signature || '',
         // Payment enrichment
-        cardOnFile: card ? { ...cleanCardDisplay(card), processorType: card.processor_type || '' } : null,
+        cardOnFile: cardSummary(card),
         totalCharged,
         totalRefunded,
         totalPayments: paymentEvents.filter((e: any) => e.event_type === 'sale').length,
