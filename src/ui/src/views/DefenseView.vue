@@ -285,7 +285,9 @@ onMounted(async () => {
     const data = await api.get<any>('/api/dashboard/defense-history');
     packets.value = data?.packets || [];
     summary.value = data?.summary || null;
-  } catch {}
+  } catch (err: any) {
+    error.value = err.message || 'Failed to load defense packets.';
+  }
 });
 
 // Customer search

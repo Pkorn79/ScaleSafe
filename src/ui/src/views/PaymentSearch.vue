@@ -195,7 +195,7 @@
         </div>
       </div>
 
-      <div v-if="error" class="error-msg">{{ error }}</div>
+      <div v-if="clientSearchError || error" class="error-msg">{{ clientSearchError || error }}</div>
       <div v-if="loading" class="loading">Searching...</div>
 
       <div v-if="customers.length === 0 && searched && !loading" class="empty-state">
@@ -468,6 +468,7 @@ const paymentFeatureSettings = [
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
 const searched = ref(false);
+const clientSearchError = ref('');
 
 const ledgerRows = ref<any[]>([]);
 const ledgerSummary = ref<any>({ totalCharged: 0, totalRefunded: 0, failedAmount: 0 });
@@ -617,12 +618,16 @@ async function prevLedgerPage() {
 }
 
 async function search() {
+  clientSearchError.value = '';
   try {
     searched.value = true;
     const params = searchQuery.value ? `?search=${encodeURIComponent(searchQuery.value)}` : '';
     const result = await api.get<any>(`/api/payments/manage/customers${params}`);
     customers.value = result?.customers || [];
-  } catch {}
+  } catch (e: any) {
+    customers.value = [];
+    clientSearchError.value = e.message || 'Failed to search payment customers.';
+  }
 }
 
 async function loadReconciliation() {

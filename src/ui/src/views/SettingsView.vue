@@ -609,7 +609,9 @@ onMounted(async () => {
     if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending' || config.value.snapshotStatus === 'partial')) {
       retryProvision();
     }
-  } catch {}
+  } catch (err: any) {
+    error.value = err.message || 'Failed to load merchant settings.';
+  }
 });
 
 async function loadWebhookSecret() {
@@ -754,16 +756,20 @@ async function handleLogoUpload(event: Event) {
 
 async function retryProvision() {
   provisionRetrying.value = true;
+  error.value = null;
   try {
     await api.post<any>('/api/merchants/provision');
     // Wait a moment then refresh config to get updated status
     setTimeout(async () => {
       try {
         config.value = await api.get<any>('/api/merchants/config');
-      } catch {}
+      } catch (err: any) {
+        error.value = err.message || 'Provisioning finished, but settings could not refresh.';
+      }
       provisionRetrying.value = false;
     }, 3000);
-  } catch {
+  } catch (err: any) {
+    error.value = err.message || 'Provisioning retry failed.';
     provisionRetrying.value = false;
   }
 }
@@ -771,6 +777,7 @@ async function retryProvision() {
 async function saveSettings() {
   saving.value = true;
   saved.value = false;
+  error.value = null;
   try {
     const result = await api.put<any>('/api/merchants/config', {
       businessName: config.value.businessName,
@@ -794,8 +801,11 @@ async function saveSettings() {
     config.value = result;
     saved.value = true;
     setTimeout(() => { saved.value = false; }, 3000);
-  } catch {}
-  saving.value = false;
+  } catch (err: any) {
+    error.value = err.message || 'Failed to save settings.';
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function runReconciliation() {
@@ -804,8 +814,11 @@ async function runReconciliation() {
   try {
     const result = await api.post<any>('/api/admin/reconciliation/run');
     adminResult.value = `Reconciliation complete: ${result.eventsReceived} events, ${result.evidenceLogged} evidence, ${result.mismatches.length} mismatches`;
-  } catch {}
-  running.value = false;
+  } catch (err: any) {
+    adminResult.value = err.message || 'Reconciliation failed.';
+  } finally {
+    running.value = false;
+  }
 }
 
 async function runDisengagement() {
@@ -814,8 +827,11 @@ async function runDisengagement() {
   try {
     const result = await api.post<any>('/api/admin/disengagement/run');
     adminResult.value = `Disengagement check complete: ${result.flagged} client(s) flagged at-risk`;
-  } catch {}
-  running.value = false;
+  } catch (err: any) {
+    adminResult.value = err.message || 'Disengagement check failed.';
+  } finally {
+    running.value = false;
+  }
 }
 
 async function cleanupKeys() {
@@ -824,8 +840,11 @@ async function cleanupKeys() {
   try {
     const result = await api.post<any>('/api/admin/idempotency/cleanup');
     adminResult.value = `Cleanup complete: ${result.purged} old keys purged`;
-  } catch {}
-  running.value = false;
+  } catch (err: any) {
+    adminResult.value = err.message || 'Idempotency cleanup failed.';
+  } finally {
+    running.value = false;
+  }
 }
 
 let stripeMessageHandler: ((event: MessageEvent) => void) | null = null;
