@@ -3,6 +3,7 @@
     <div class="card-title mb-4">Letter Version History</div>
 
     <div v-if="loading" class="loading">Loading versions...</div>
+    <div v-else-if="error" class="error-msg">{{ error }}</div>
     <div v-else-if="versions.length === 0" class="text-sm text-muted">No letter generated yet.</div>
 
     <div v-for="v in versions" :key="v.id" class="version-card" :class="{ 'version-submitted': v.is_submitted_version }">
@@ -38,6 +39,7 @@ const props = defineProps<{
 const api = useApi();
 const versions = ref<any[]>([]);
 const loading = ref(false);
+const error = ref('');
 const expandedVersion = ref<string | null>(null);
 
 function formatDate(d: string): string {
@@ -47,9 +49,13 @@ function formatDate(d: string): string {
 
 onMounted(async () => {
   loading.value = true;
+  error.value = '';
   try {
     versions.value = await api.get<any[]>(`/api/defense/${props.defenseId}/versions`) || [];
-  } catch {}
+  } catch (e: any) {
+    versions.value = [];
+    error.value = e.message || 'Failed to load letter versions.';
+  }
   loading.value = false;
 });
 </script>

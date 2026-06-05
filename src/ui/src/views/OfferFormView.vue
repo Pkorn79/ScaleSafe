@@ -603,7 +603,9 @@ onMounted(async () => {
       form.value.quickCheckoutShowRefundPolicy = offer.quick_checkout_show_refund_policy ?? true;
       form.value.pulseCadenceEnabled = offer.pulse_cadence_enabled ?? true;
       form.value.pulseFrequencyDays = offer.pulse_frequency_days || 30;
-    } catch {}
+    } catch (err: any) {
+      error.value = err?.message || 'Failed to load offer.';
+    }
   }
 });
 

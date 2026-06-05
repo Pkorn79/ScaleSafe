@@ -167,7 +167,9 @@ function formatDate(d: string): string {
 async function refresh() {
   try {
     packet.value = await api.get<any>(`/api/defense/${route.params.id}`);
-  } catch {}
+  } catch (e: any) {
+    error.value = e.message || 'Failed to refresh defense packet.';
+  }
 }
 
 async function markSubmitted() {
