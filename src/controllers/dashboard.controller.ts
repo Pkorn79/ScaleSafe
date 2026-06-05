@@ -1524,7 +1524,12 @@ export const dashboardController = {
         contactEmail = contact.email || '';
         contactFirstName = contact.firstName || '';
         contactLastName = contact.lastName || '';
-      } catch {}
+      } catch (err: any) {
+        logger.warn(
+          { err: err?.message || String(err), locationId, contactId, offerId },
+          'Manual offer assignment could not load GHL contact details',
+        );
+      }
 
       // Create enrollment
       const { data: enrollment, error: insertErr } = await supabase.from('enrollments').insert({
@@ -1571,7 +1576,12 @@ export const dashboardController = {
             }),
           },
         );
-      } catch {}
+      } catch (err: any) {
+        logger.warn(
+          { err: err?.message || String(err), locationId, contactId, offerId, enrollmentId: enrollment?.id },
+          'Manual offer assignment evidence logging failed',
+        );
+      }
 
       // Update GHL contact status
       try {
@@ -1582,7 +1592,12 @@ export const dashboardController = {
         await api.post(`/contacts/${contactId}/notes`, {
           body: `Manually enrolled in ${offer.offer_name} by merchant.`,
         });
-      } catch {}
+      } catch (err: any) {
+        logger.warn(
+          { err: err?.message || String(err), locationId, contactId, offerId, enrollmentId: enrollment?.id },
+          'Manual offer assignment GHL contact update failed',
+        );
+      }
 
       res.json({ success: true, enrollmentId: enrollment?.id });
     } catch (err) { next(err); }

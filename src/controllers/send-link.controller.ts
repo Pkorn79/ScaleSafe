@@ -69,7 +69,12 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
     try {
       const mc = await merchantService.getFullConfig(locationId);
       funnelBaseUrl = mc.enrollmentFunnelUrl || '';
-    } catch {}
+    } catch (err: any) {
+      logger.warn(
+        { err: err?.message || String(err), locationId, offerId },
+        'Failed to load merchant funnel URL for send-link',
+      );
+    }
 
     if (checkoutMode !== 'quick_checkout' && !funnelBaseUrl) {
       res.status(400).json({

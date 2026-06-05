@@ -98,7 +98,12 @@ async function buildPaidEnrollmentUrl(params: {
   try {
     const merchantConfig = await merchantService.getFullConfig(params.locationId);
     funnelBaseUrl = merchantConfig.enrollmentFunnelUrl || '';
-  } catch {}
+  } catch (err: any) {
+    logger.warn(
+      { err: err?.message || String(err), locationId: params.locationId, offerId: params.offerId, enrollmentId: params.enrollmentId },
+      'Failed to load merchant funnel URL for NMI paid enrollment link',
+    );
+  }
   const link = offerService.generateEnrollmentLink(params.offerId, appConfig.appUrl, 'full_enrollment', funnelBaseUrl);
   const paidToken = createPublicActionToken({
     action: 'paid_enrollment',

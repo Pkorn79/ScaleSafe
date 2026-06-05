@@ -137,7 +137,12 @@ async function buildEnrollmentUrl(locationId: string, offerId: string, paidEnrol
   try {
     const mc = await merchantService.getFullConfig(locationId);
     funnelBaseUrl = mc.enrollmentFunnelUrl || '';
-  } catch {}
+  } catch (err: any) {
+    logger.warn(
+      { err: errorMessage(err), locationId, offerId },
+      'Failed to load merchant funnel URL for paid enrollment link',
+    );
+  }
   const link = offerService.generateEnrollmentLink(offerId, config.appUrl, 'full_enrollment', funnelBaseUrl);
   if (!paidEnrollmentToken) return link;
   const url = new URL(link);

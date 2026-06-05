@@ -5,6 +5,7 @@ import { config } from '../config';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 import { dualPricingService } from '../services/dual-pricing.service';
+import { logger } from '../utils/logger';
 
 export const offerController = {
   async create(req: Request, res: Response, next: NextFunction) {
@@ -123,7 +124,12 @@ export const offerController = {
         try {
           const mc = await merchantService.getFullConfig(locationId);
           funnelBaseUrl = mc.enrollmentFunnelUrl || '';
-        } catch {}
+        } catch (err: any) {
+          logger.warn(
+            { err: err?.message || String(err), locationId, offerId: req.params.id },
+            'Failed to load merchant funnel URL for offer enrollment link',
+          );
+        }
       }
 
       const checkoutMode = (offer as any).checkout_mode || 'full_enrollment';
