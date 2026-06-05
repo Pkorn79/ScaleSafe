@@ -53,7 +53,7 @@
             <th>Status</th>
             <th>Payment</th>
             <th>Last Activity</th>
-            <th>Card</th>
+            <th>Payment Method</th>
             <th></th>
           </tr>
         </thead>
@@ -79,7 +79,7 @@
             </td>
             <td class="text-sm">{{ c.lastActivityDate ? formatDate(c.lastActivityDate) : '—' }}</td>
             <td>
-              <span v-if="c.hasCard" class="badge badge-green" style="font-size:11px">Card</span>
+              <span v-if="c.hasPaymentMethod || c.hasCard" class="badge badge-green" style="font-size:11px">Saved</span>
               <span v-else class="text-sm text-muted">—</span>
             </td>
             <td>

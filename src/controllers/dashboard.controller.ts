@@ -1408,6 +1408,7 @@ export const dashboardController = {
         enrolledAt: r.enrolled_at || null,
         lastActivityDate: r.last_activity_date || null,
         hasCard: r.has_card || false,
+        hasPaymentMethod: r.has_card || false,
         nextBillingDate: r.next_billing_date || null,
         paymentsMade: r.payments_made || 0,
         paymentsTotal: r.payments_total || null,
