@@ -285,17 +285,24 @@ export const merchantService = {
       },
     });
 
+    const hasDirectProcessor = Boolean(merchant.default_processor || merchant.stripe_connected);
+    const hasGhlPaymentProvider = Boolean(merchant.payment_provider_registered && merchant.provider_api_key);
+
     add({
       key: 'payment_provider',
       label: 'GHL custom payment provider',
-      status: merchant.payment_provider_registered && merchant.provider_api_key ? 'pass' : 'warn',
-      message: merchant.payment_provider_registered && merchant.provider_api_key
-        ? 'Payment provider registration and API key are present.'
-        : 'Payment provider registration or API key is missing; retry provisioning if this is a fresh install.',
+      status: hasGhlPaymentProvider || hasDirectProcessor ? 'pass' : 'warn',
+      message: hasGhlPaymentProvider
+        ? 'GHL custom payment provider registration and API key are present.'
+        : hasDirectProcessor
+          ? 'Not required for direct ScaleSafe checkout; Stripe/NMI processor configuration is present.'
+          : 'GHL custom payment provider registration or API key is missing.',
       details: {
         registered: merchant.payment_provider_registered,
         hasApiKey: Boolean(merchant.provider_api_key),
         hasPublishableKey: Boolean(merchant.provider_publishable_key),
+        requiredForDirectCheckout: false,
+        directProcessorConfigured: hasDirectProcessor,
       },
     });
 
