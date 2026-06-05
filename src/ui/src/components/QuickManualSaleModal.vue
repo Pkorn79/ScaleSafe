@@ -65,8 +65,8 @@
     <div class="qms-card-section">
       <div class="section-title">Payment Method</div>
       <div v-if="achToggleVisible" class="qms-method-toggle">
-        <button type="button" :class="{ active: paymentMethod === 'ach' }" @click="paymentMethod = 'ach'">Bank Transfer</button>
-        <button type="button" :class="{ active: paymentMethod === 'card' }" @click="paymentMethod = 'card'">Card</button>
+        <button type="button" :disabled="submitting" :class="{ active: paymentMethod === 'ach' }" @click="paymentMethod = 'ach'">Bank Transfer</button>
+        <button type="button" :disabled="submitting" :class="{ active: paymentMethod === 'card' }" @click="paymentMethod = 'card'">Card</button>
       </div>
       <div v-if="configLoading" class="loading">Loading payment fields...</div>
       <div v-else-if="processorError" class="error-msg">{{ processorError }}</div>
@@ -107,7 +107,7 @@
           </div>
         </div>
         <div v-else-if="processorType === 'stripe' && paymentMethod === 'card'">
-          <div class="field-wrapper"><div :id="stripeElementId"></div></div>
+          <div class="field-wrapper"><div :id="stripeElementId" :key="stripeMountKey"></div></div>
         </div>
         <div v-else-if="processorType === 'stripe' && paymentMethod === 'ach'" class="qms-ach-placeholder">
           Stripe opens secure bank account collection after you submit.
@@ -190,6 +190,7 @@ const submitting = ref(false);
 const submitError = ref('');
 const resultMessage = ref('');
 const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
+const completedSuccessfully = ref(false);
 
 const nonce = Math.random().toString(36).slice(2);
 const nmiIds = {
@@ -201,6 +202,7 @@ const nmiIds = {
   checkAccount: `qms-check-account-${nonce}`,
 };
 const stripeElementId = `qms-card-element-${nonce}`;
+const stripeMountKey = ref(0);
 let stripe: any = null;
 let cardElement: any = null;
 let nmiTokenResolver: ((token: string) => void) | null = null;
@@ -224,7 +226,8 @@ const canSubmit = computed(() => {
     && Number(amount.value) > 0
     && processorType.value
     && paymentFieldsReady.value
-    && !processorError.value,
+    && !processorError.value
+    && !completedSuccessfully.value,
   );
 });
 
@@ -346,6 +349,7 @@ function cleanupPaymentFields() {
     cardElement = null;
   }
   stripe = null;
+  stripeMountKey.value += 1;
 }
 
 async function loadCollectJs(tokenizationKey: string) {
@@ -550,6 +554,7 @@ async function submit() {
       resultMessage.value = finalized.paymentStatus === 'settled'
         ? (selectedOfferId.value ? 'Bank payment settled. Paid enrollment link is ready.' : 'Bank payment settled and saved to the client.')
         : 'Bank transfer submitted. Receipt and enrollment link send after Stripe confirms success.';
+      completedSuccessfully.value = true;
       emit('completed', finalized);
       return;
     }
@@ -581,17 +586,20 @@ async function submit() {
         ? (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Enrollment will complete after settlement.' : 'Payment received. Paid enrollment link is ready.')
         : (result.paymentStatus === 'processing' ? 'Bank transfer submitted. Receipt will send after settlement.' : 'Payment received and saved to the client.');
     }
+    completedSuccessfully.value = true;
     emit('completed', result);
   } catch (err: any) {
     submitError.value = err.message || 'Payment failed.';
   } finally {
-    submitting.value = false;
+    if (!completedSuccessfully.value) submitting.value = false;
   }
 }
 
 function resetTransient() {
   submitError.value = '';
   resultMessage.value = '';
+  completedSuccessfully.value = false;
+  submitting.value = false;
 }
 
 watch(() => props.open, async (open) => {
@@ -614,6 +622,7 @@ watch(() => props.open, async (open) => {
 });
 
 watch(selectedOfferId, async () => {
+  resetTransient();
   const offer = selectedOffer.value;
   paymentChoice.value = offer ? normalizeOfferChoice(offer) : 'pif';
   amount.value = offer ? selectedAmountForOffer(offer, paymentChoice.value) : null;
@@ -621,10 +630,12 @@ watch(selectedOfferId, async () => {
 });
 
 watch(paymentChoice, () => {
+  resetTransient();
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
 });
 
 watch(paymentMethod, async () => {
+  resetTransient();
   if (!achAllowedForSelection.value && !processorLoading.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
   if (props.open && processorType.value === 'stripe') await loadProcessorConfig();
