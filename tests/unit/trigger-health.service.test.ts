@@ -57,11 +57,39 @@ describe('trigger health service', () => {
     expect(report.recentNoSubscriptionTriggers).not.toContain('ss_app_event');
   });
 
-  it('keeps fresh no-subscription logs in the recent warning list', async () => {
+  it('does not warn on fresh no-subscription logs after the trigger is active again', async () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'trigger_subscriptions') {
         return thenableQuery({
           data: [{ trigger_key: 'ss_app_event', subscription_url: 'https://example.test/hook', is_active: true }],
+          error: null,
+        });
+      }
+      if (table === 'trigger_delivery_logs') {
+        return thenableQuery({
+          data: [{
+            trigger_key: 'ss_app_event',
+            subscription_url: 'no_subscription',
+            status: 'no_subscription',
+            payload: { event_type: 'upcoming_payment_reminder' },
+            created_at: '2026-06-04T15:00:00.000Z',
+          }],
+          error: null,
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const report = await triggerHealthService.getHealth('loc_1');
+
+    expect(report.recentNoSubscriptionTriggers).not.toContain('ss_app_event');
+  });
+
+  it('keeps fresh no-subscription logs in the warning list when the trigger is still inactive', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'trigger_subscriptions') {
+        return thenableQuery({
+          data: [],
           error: null,
         });
       }

@@ -163,7 +163,7 @@ export const triggerHealthService = {
       .map((row) => row.key);
     const now = Date.now();
     const recentNoSubscriptionTriggers = rows
-      .filter((row) => isRecentTimestamp(row.lastNoSubscriptionAt, now))
+      .filter((row) => row.activeSubscriptionCount === 0 && isRecentTimestamp(row.lastNoSubscriptionAt, now))
       .map((row) => row.key);
 
     return {
