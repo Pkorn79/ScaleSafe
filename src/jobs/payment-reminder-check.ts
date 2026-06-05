@@ -152,14 +152,21 @@ export async function getPaymentReminderDiagnostics(locationId: string): Promise
   const windowDiagnostics = windows.map((window) => {
     const due = enrollments.filter((enrollment: any) => enrollmentInWindow(enrollment, window, todayStr));
     const billingReady = due.filter(isBillingReady);
-    const idempotencySkippedCount = billingReady.filter((enrollment: any) => idempotencyIds.has([
+    const processorReady = billingReady.filter((enrollment: any) => !needsProcessorSubscription(enrollment));
+    const idempotencySkippedCount = processorReady.filter((enrollment: any) => idempotencyIds.has([
       'payment-reminder',
       enrollment.location_id,
       enrollment.id,
       enrollment.next_billing_date,
       window.type,
     ].join(':'))).length;
-    const eligibleCount = billingReady.length - idempotencySkippedCount;
+    const eligibleCount = processorReady.filter((enrollment: any) => !idempotencyIds.has([
+      'payment-reminder',
+      enrollment.location_id,
+      enrollment.id,
+      enrollment.next_billing_date,
+      window.type,
+    ].join(':'))).length;
     return {
       type: window.type,
       daysUntilPayment: window.daysUntilPayment,
@@ -220,7 +227,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
 
   const baseQuery = supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, payments_made, payments_total')
+    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, payments_made, payments_total')
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription'])
     // Batch H: never remind for an enrollment whose processor billing setup did not complete
@@ -253,6 +260,21 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
         enr.next_billing_date,
         window.type,
       ].join(':');
+      if (needsProcessorSubscription(enr)) {
+        skipped++;
+        logger.warn(
+          {
+            enrollmentId: enr.id,
+            locationId: enr.location_id,
+            processor: enr.processor_type,
+            daysUntilPayment: window.daysUntilPayment,
+            reminderWindow: window.type,
+            nextBillingDate: enr.next_billing_date,
+          },
+          'Payment reminder skipped because processor subscription ID is missing',
+        );
+        continue;
+      }
       if (await idempotencyRepository.exists(reminderEventId, 'payment_reminder', enr.location_id)) {
         skipped++;
         continue;

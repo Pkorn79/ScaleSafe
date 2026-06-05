@@ -44,6 +44,11 @@ export async function runPulseCadenceCheck(): Promise<void> {
   for (const enrollment of enrollments) {
     try {
       const merchant = await merchantRepository.getByLocationId(enrollment.location_id);
+      if (merchant.module_pulse === false) {
+        skipped++;
+        logger.warn({ locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse due but pulse module is disabled');
+        continue;
+      }
       const pulseConfig = await resolvePulseConfig(enrollment.location_id, merchant);
       if (!pulseConfig.formUrl) {
         skipped++;
@@ -151,7 +156,9 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
   const recentPulseNoSubscriptionAt = pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null;
   const pulseEnabled = merchant.module_pulse !== false;
   const formUrlConfigured = Boolean(pulseConfig.formUrl);
-  const lastSkippedReason = dueCount > 0 && !formUrlConfigured
+  const lastSkippedReason = dueCount > 0 && !pulseEnabled
+    ? 'pulse_module_disabled'
+    : dueCount > 0 && !formUrlConfigured
     ? 'pulse_form_url_missing'
     : dueCount > 0 && activeAppEventSubscriptions === 0
       ? 'ss_app_event_subscription_missing'

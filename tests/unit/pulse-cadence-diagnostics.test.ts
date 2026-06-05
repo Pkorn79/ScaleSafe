@@ -64,4 +64,18 @@ describe('pulse cadence diagnostics', () => {
     expect(report.formUrlConfigured).toBe(false);
     expect(report.lastSkippedReason).toBe('pulse_form_url_missing');
   });
+
+  it('reports due pulse check-ins as setup-needed when pulse is disabled', async () => {
+    mockMerchant.mockResolvedValue({
+      module_pulse: false,
+      config: {},
+      custom_value_ids: {},
+    });
+
+    const report = await getPulseCadenceDiagnostics('loc_1');
+
+    expect(report.status).toBe('needs_setup');
+    expect(report.pulseEnabled).toBe(false);
+    expect(report.lastSkippedReason).toBe('pulse_module_disabled');
+  });
 });

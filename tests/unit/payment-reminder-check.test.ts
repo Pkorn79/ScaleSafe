@@ -25,12 +25,16 @@ jest.mock('../../src/utils/logger', () => ({
 import { runPaymentReminderCheck } from '../../src/jobs/payment-reminder-check';
 
 let enrollmentBillingStatus = 'ok';
+let enrollmentProcessorType = '';
+let enrollmentProcessorSubscriptionId: string | null = null;
 
 describe('payment reminder check', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers().setSystemTime(new Date('2026-05-11T15:00:00.000Z'));
     enrollmentBillingStatus = 'ok';
+    enrollmentProcessorType = '';
+    enrollmentProcessorSubscriptionId = null;
     mockIdempotencyExists.mockResolvedValue(false);
     mockIdempotencyRecord.mockResolvedValue(undefined);
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
@@ -47,6 +51,8 @@ describe('payment reminder check', () => {
           payments_made: 1,
           payments_total: 2,
           billing_setup_status: enrollmentBillingStatus,
+          processor_type: enrollmentProcessorType,
+          processor_subscription_id: enrollmentProcessorSubscriptionId,
         };
         // Honour the .eq('billing_setup_status', 'ok') filter added in Batch H.
         let billingOk = true;
@@ -139,6 +145,17 @@ describe('payment reminder check', () => {
     const result = await runPaymentReminderCheck();
 
     expect(result.sent).toBe(0);
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+  });
+
+  test('does not remind a processor-backed enrollment missing a subscription ID', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = null;
+
+    const result = await runPaymentReminderCheck();
+
+    expect(result.sent).toBe(0);
+    expect(result.skipped).toBe(1);
     expect(mockFireTrigger).not.toHaveBeenCalled();
   });
 });
