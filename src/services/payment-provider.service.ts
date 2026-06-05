@@ -19,6 +19,8 @@ export const paymentProviderService = {
         locationId,
         queryUrl: `${config.appUrl}/api/payments/query`,
         paymentsUrl: `${config.appUrl}/checkout`,
+      }, {
+        params: { locationId },
       });
 
       logger.info({ locationId }, 'Registered as custom payment provider in GHL');
@@ -105,6 +107,8 @@ export const paymentProviderService = {
         apiKey: merchant.provider_api_key,
         publishableKey: merchant.provider_publishable_key,
       },
+    }, {
+      params: { locationId },
     });
 
     // Mark merchant as payment provider registered

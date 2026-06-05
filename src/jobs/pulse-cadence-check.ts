@@ -83,6 +83,8 @@ export async function runPulseCadenceCheck(): Promise<void> {
         formUrl: pulseUrl,
         pulse_frequency_days: frequencyDays,
         pulseFrequencyDays: frequencyDays,
+        pulse_interval_label: formatPulseIntervalLabel(frequencyDays),
+        pulseIntervalLabel: formatPulseIntervalLabel(frequencyDays),
         pulse_due_at: enrollment.next_pulse_due_at,
         pulseDueAt: enrollment.next_pulse_due_at,
         sent_at: now.toISOString(),
@@ -188,4 +190,14 @@ function normalizeFrequency(days: unknown): number {
   const parsed = Number(days || DEFAULT_PULSE_FREQUENCY_DAYS);
   if (!Number.isFinite(parsed)) return DEFAULT_PULSE_FREQUENCY_DAYS;
   return Math.min(365, Math.max(1, Math.round(parsed)));
+}
+
+function formatPulseIntervalLabel(days: number): string {
+  if (days === 1) return 'daily';
+  if (days === 7) return 'weekly';
+  if (days === 14) return 'every 2 weeks';
+  if (days >= 28 && days <= 31) return 'monthly';
+  if (days >= 89 && days <= 92) return 'quarterly';
+  if (days === 365) return 'yearly';
+  return `every ${days} days`;
 }
