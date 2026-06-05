@@ -302,7 +302,7 @@
           <div style="padding-top:24px">
             <div class="text-sm text-muted">
               <strong>Retry schedule:</strong> Soft declines (insufficient funds) are retried at 3, 7, and 14 day intervals.
-              Hard declines (expired/invalid card) trigger merchant notification — no automatic retry.
+              Hard declines (expired/invalid card) trigger merchant notification - no automatic retry.
             </div>
           </div>
         </div>
@@ -402,8 +402,8 @@
                     <div v-for="eventUse in row.appEventUses" :key="eventUse.eventType" class="text-sm text-muted">
                       <strong>{{ eventUse.label }}:</strong>
                       Last sent {{ formatHealthTime(eventUse.lastSentAt) }}
-                      <span v-if="eventUse.lastNoSubscriptionAt" class="text-warn"> · No subscription {{ formatHealthTime(eventUse.lastNoSubscriptionAt) }}</span>
-                      <span v-if="eventUse.lastFailedAt" class="text-red"> · Failed {{ formatHealthTime(eventUse.lastFailedAt) }}</span>
+                      <span v-if="eventUse.lastNoSubscriptionAt" class="text-warn"> - No subscription {{ formatHealthTime(eventUse.lastNoSubscriptionAt) }}</span>
+                      <span v-if="eventUse.lastFailedAt" class="text-red"> - Failed {{ formatHealthTime(eventUse.lastFailedAt) }}</span>
                     </div>
                   </div>
                 </div>
@@ -419,7 +419,7 @@
                 </div>
                 <div class="text-sm text-muted">
                   App Event subscriptions: {{ item.details.activeAppEventSubscriptions || 0 }}
-                  · Last reminder sent: {{ formatHealthTime(item.details.recentReminderSentAt) }}
+                  - Last reminder sent: {{ formatHealthTime(item.details.recentReminderSentAt) }}
                 </div>
               </div>
               <div v-if="item.key === 'pulse_diagnostics'" class="job-diagnostics-grid">
@@ -842,7 +842,7 @@ async function connectStripe() {
   if (stripePopup && !stripePopup.closed) stripePopup.close();
 
   try {
-    // Open Stripe OAuth in a popup — Stripe refuses to load inside an iframe,
+    // Open Stripe OAuth in a popup because Stripe refuses to load inside an iframe,
     // so the SPA stays inside GHL (preserving SSO) and the popup handles OAuth.
     const connect = await api.get<{ url: string }>('/auth/stripe/connect-url');
     const url = connect.url;
@@ -904,7 +904,7 @@ async function setDefaultProcessor(proc: string) {
     defaultProcessorSaved.value = true;
     setTimeout(() => { defaultProcessorSaved.value = false; }, 3000);
   } catch {
-    // Silently fail — the select will revert on next load
+    // Silently fail; the select will revert on next load
   }
 }
 </script>

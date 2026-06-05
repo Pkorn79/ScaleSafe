@@ -5,7 +5,7 @@ import { logger } from '../utils/logger';
 
 /**
  * Frequent job: scan enrollments for upcoming installment/subscription payments
- * due in 3 days and within the next 24 hours. Fires the shared ss_app_event
+ * due in 3 days or within the next 24 hours. Fires the shared ss_app_event
  * trigger with event_type=upcoming_payment_reminder for each. Idempotency keys
  * prevent duplicate reminders when the job runs hourly.
  */
@@ -224,7 +224,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription'])
     // Batch H: never remind for an enrollment whose processor billing setup did not complete
-    // (failed / needs_reconciliation / still pending) — those have no live subscription.
+    // (failed / needs_reconciliation / still pending); those have no live subscription.
     .eq('billing_setup_status', 'ok');
 
   const { data: enrollments, error } = window.type === 'next_24_hours'

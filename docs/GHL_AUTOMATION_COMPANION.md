@@ -1,6 +1,6 @@
 # GHL Automation Companion
 
-**Version:** 1.0 — March 25, 2026
+**Version:** 1.0 - March 25, 2026
 **Companion to:** SCALESAFE_APP_BLUEPRINT_v2.1.docx
 **Purpose:** Exhaustive list of everything that must exist inside GHL for the ScaleSafe app to function. This includes custom triggers, workflows, forms, pipeline stages, custom fields, custom objects, custom values, and Snapshot package contents.
 
@@ -12,7 +12,7 @@
 
 ## 1. Snapshot Package (Auto-Installed on Merchant Install)
 
-When a merchant installs ScaleSafe from the GHL Marketplace, the app pushes a Snapshot that pre-configures their GHL sub-account. Everything below gets installed automatically — no manual merchant setup.
+When a merchant installs ScaleSafe from the GHL Marketplace, the app pushes a Snapshot that pre-configures their GHL sub-account. Everything below gets installed automatically - no manual merchant setup.
 
 ### 1A. Pipeline: Client Milestones
 
@@ -117,10 +117,10 @@ These workflows run inside GHL and either: (a) send data to the app via webhook,
 
 | Workflow ID | Name | Trigger | What It Does | Sends Data To App? |
 |------------|------|---------|-------------|-------------------|
-| WF-01 | No-Show Logger | Missed appointment event | Logs no-show to contact, fires webhook to app with attendance data | Yes — POST /webhooks/ghl/forms |
-| WF-02 | Module Progress Logger | SYS2-08 form submission | Fires webhook to app with module progress data | Yes — POST /webhooks/ghl/forms |
-| WF-D1 | Client Onboarding Prep | Enrollment completed (custom trigger) | Sets up initial pipeline opportunity, sends welcome sequence | No — pure GHL |
-| SS--Pulse-Check-Cadence | Pulse Check Cadence | Timer/schedule per contact | Sends periodic check-in request (email/SMS) to client | No — pure GHL |
+| WF-01 | No-Show Logger | Missed appointment event | Logs no-show to contact, fires webhook to app with attendance data | Yes - POST /webhooks/ghl/forms |
+| WF-02 | Module Progress Logger | SYS2-08 form submission | Fires webhook to app with module progress data | Yes - POST /webhooks/ghl/forms |
+| WF-D1 | Client Onboarding Prep | Enrollment completed (custom trigger) | Sets up initial pipeline opportunity, sends welcome sequence | No - pure GHL |
+| SS--Pulse-Check-Cadence | Pulse Check Cadence | Timer/schedule per contact | Sends periodic check-in request (email/SMS) to client | No - pure GHL |
 
 ### 1G. Custom Values (Location-Level Settings)
 
@@ -136,7 +136,7 @@ Custom Values store location-level configuration that GHL workflows and forms ca
 
 ---
 
-## 2. Custom Workflow Triggers (18 Total — ALL REGISTERED AND APPROVED)
+## 2. Custom Workflow Triggers (18 Total - ALL REGISTERED AND APPROVED)
 
 All 18 triggers were registered in the GHL Marketplace developer portal on 2026-03-30 and approved. All keys use `ss_` prefix EXCEPT `enrollment_complete` (submitted before prefix convention). The app fires these triggers; GHL workflows listen for them.
 
@@ -191,11 +191,11 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 **PAYMENT REMINDERS (1):**
 | Trigger Name | Key | Fired When | Data Payload |
 |-------------|-----|-----------|-------------|
-| Upcoming Payment Reminder | `ss_app_event` with `event_type = upcoming_payment_reminder` | 3 days before scheduled payment and within the next 24 hours | contact_id, amount, next_billing_date, payments_remaining, offer_name |
+| Upcoming Payment Reminder | `ss_app_event` with `event_type = upcoming_payment_reminder` | 3 days before scheduled payment and again inside the next-24-hour window | contact_id, amount, next_billing_date, payments_remaining, offer_name |
 
 **Subscription URL (all triggers):** `https://dashboard.scalesafe.app/webhooks/ghl/triggers`
 
-**Who builds the response workflows?** The Snapshot includes default notification workflows for each trigger (22 total — see GHL_SNAPSHOT_PLAN.md Section 4A). Merchants can customize these workflows in GHL after install.
+**Who builds the response workflows?** The Snapshot includes default notification workflows for each trigger (22 total - see GHL_SNAPSHOT_PLAN.md Section 4A). Merchants can customize these workflows in GHL after install.
 
 ---
 
@@ -215,7 +215,7 @@ A 4-page funnel that clients go through to enroll in a merchant's program.
 **App interaction:**
 - App creates the GHL Product + Prices when merchant saves the offer
 - Pages 2-3 call the app API to fetch offer data and record consent
-- Page 4 is pure GHL native checkout — app does not touch it
+- Page 4 is pure GHL native checkout - app does not touch it
 - After payment success, GHL fires webhook → app completes enrollment
 
 ---
@@ -254,7 +254,7 @@ These are the GHL workflows that respond to the custom triggers the app fires. I
 ### 5A. Chargeback Alert Workflow
 - **Trigger:** Chargeback Detected
 - **Actions:**
-  1. Send email to merchant: "Chargeback filed for [Client Name] — $[Amount] — Reason: [Code]"
+  1. Send email to merchant: "Chargeback filed for [Client Name] - $[Amount] - Reason: [Code]"
   2. Send SMS to merchant: "URGENT: Chargeback filed. Check ScaleSafe dashboard."
   3. Add tag "chargeback-active" to contact
   4. Create task for merchant: "Review defense packet by [deadline]"
@@ -283,7 +283,7 @@ These are the GHL workflows that respond to the custom triggers the app fires. I
 ### 5E. Payment Failed Workflow
 - **Trigger:** Payment Failed
 - **Actions:**
-  1. Send email to merchant: "Payment failed for [Client Name] — $[Amount]"
+  1. Send email to merchant: "Payment failed for [Client Name] - $[Amount]"
   2. Optionally notify client (merchant-configurable): "Your payment didn't go through"
   3. Add tag "payment-failed" to contact
   4. If repeat failure (attempt_count > 2): escalate notification
@@ -324,7 +324,7 @@ For clarity, these are handled by the app or Supabase, NOT GHL:
 
 ---
 
-## 8. Existing GHL Components (Test Location — PMG)
+## 8. Existing GHL Components (Test Location - PMG)
 
 These already exist in the test GHL location from the Make.com era. They need to be evaluated and either kept (with webhook URL updates) or rebuilt for the Snapshot.
 
