@@ -167,7 +167,7 @@ const activeRecurringEnrollments = computed(() => {
   return props.enrollments.filter(e => {
     const status = String(e.status || '').toLowerCase();
     const type = String(e.paymentType || '').toLowerCase();
-    const isActive = ['enrolled', 'active', 'consent_captured'].includes(status);
+    const isActive = ['enrolled', 'active', 'consent_captured', 'paid_pending_enrollment', 'payment_processing'].includes(status);
     const isRecurring = ['installments', 'installment', 'subscription'].includes(type);
     return isActive && isRecurring;
   });
@@ -197,6 +197,7 @@ function processorLabel(proc?: string | null): string {
   if (value === 'nmi') return 'NMI';
   if (value === 'stripe') return 'Stripe';
   if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return proc || 'Unknown';
 }
 
@@ -205,6 +206,7 @@ function processorBadge(proc?: string | null): string {
   if (value === 'nmi') return 'badge-blue';
   if (value === 'stripe') return 'badge-purple';
   if (value === 'ghl') return 'badge-gray';
+  if (value === 'whop') return 'badge-blue';
   return 'badge-gray';
 }
 

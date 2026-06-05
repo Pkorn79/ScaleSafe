@@ -315,7 +315,7 @@ function enrollmentBadge(status: string): string {
   if (status === 'completed') return 'badge-blue';
   if (status === 'cancelled') return 'badge-red';
   if (status === 'paused') return 'badge-yellow';
-  if (['consent_captured', 'device_captured', 'pending'].includes(status)) return 'badge-yellow';
+  if (['consent_captured', 'device_captured', 'pending', 'paid_pending_enrollment', 'payment_processing'].includes(status)) return 'badge-yellow';
   return 'badge-gray';
 }
 
@@ -324,6 +324,7 @@ function processorLabel(proc?: string | null): string {
   if (value === 'nmi') return 'NMI';
   if (value === 'stripe') return 'Stripe';
   if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return proc || 'Unknown';
 }
 
@@ -332,6 +333,7 @@ function processorBadge(proc?: string | null): string {
   if (value === 'nmi') return 'badge-blue';
   if (value === 'stripe') return 'badge-purple';
   if (value === 'ghl') return 'badge-gray';
+  if (value === 'whop') return 'badge-blue';
   return 'badge-gray';
 }
 

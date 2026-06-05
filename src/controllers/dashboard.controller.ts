@@ -154,6 +154,7 @@ function processorLabel(processor?: string | null): string {
   if (value === 'nmi') return 'NMI';
   if (value === 'stripe') return 'Stripe';
   if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return processor || 'Unknown';
 }
 
@@ -250,8 +251,8 @@ function enrollmentBillingIssue(enrollment: any, lastPayment: any | null, lastNm
     return { code: 'billing_setup_pending', label: 'Recurring billing setup pending' };
   }
 
-  if (processor === 'nmi' && !enrollment?.processor_subscription_id) {
-    return { code: 'missing_nmi_subscription', label: 'Missing NMI subscription ID' };
+  if (['stripe', 'nmi', 'whop'].includes(processor) && !enrollment?.processor_subscription_id) {
+    return { code: `missing_${processor}_subscription`, label: `Missing ${processorLabel(processor)} subscription ID` };
   }
 
   if (processor === 'nmi') {

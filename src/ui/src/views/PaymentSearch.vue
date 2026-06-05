@@ -520,16 +520,20 @@ function formatDateShort(d: string) {
 }
 
 function processorLabel(proc: string): string {
-  if (proc === 'nmi') return 'NMI';
-  if (proc === 'stripe') return 'Stripe';
-  if (proc === 'ghl') return 'GHL';
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'NMI';
+  if (value === 'stripe') return 'Stripe';
+  if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return proc || 'Unknown';
 }
 
 function processorBadge(proc: string): string {
-  if (proc === 'nmi') return 'badge-blue';
-  if (proc === 'stripe') return 'badge-gray';
-  if (proc === 'ghl') return 'badge-yellow';
+  const value = String(proc || '').toLowerCase();
+  if (value === 'nmi') return 'badge-blue';
+  if (value === 'stripe') return 'badge-gray';
+  if (value === 'ghl') return 'badge-yellow';
+  if (value === 'whop') return 'badge-blue';
   return 'badge-gray';
 }
 

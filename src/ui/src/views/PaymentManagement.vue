@@ -362,6 +362,7 @@ function processorLabel(proc?: string | null): string {
   if (value === 'nmi') return 'NMI';
   if (value === 'stripe') return 'Stripe';
   if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return proc || 'Unknown';
 }
 
@@ -370,6 +371,7 @@ function processorBadge(proc?: string | null): string {
   if (value === 'nmi') return 'badge-blue';
   if (value === 'stripe') return 'badge-gray';
   if (value === 'ghl') return 'badge-yellow';
+  if (value === 'whop') return 'badge-blue';
   return 'badge-gray';
 }
 
@@ -401,7 +403,7 @@ function paymentTypeLabel(type?: string | null): string {
 function statusBadge(status?: string | null): string {
   const value = String(status || '').toLowerCase();
   if (value === 'enrolled' || value === 'active') return 'badge-green';
-  if (value === 'paused') return 'badge-yellow';
+  if (['paused', 'consent_captured', 'pending', 'paid_pending_enrollment', 'payment_processing'].includes(value)) return 'badge-yellow';
   if (value === 'cancelled' || value === 'delinquent') return 'badge-red';
   return 'badge-gray';
 }

@@ -46,6 +46,7 @@ function processorLabel(processor?: string | null): string {
   if (value === 'nmi') return 'NMI';
   if (value === 'stripe') return 'Stripe';
   if (value === 'ghl') return 'GHL';
+  if (value === 'whop') return 'Whop';
   return processor || 'Unknown';
 }
 
