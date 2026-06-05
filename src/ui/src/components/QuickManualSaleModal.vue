@@ -64,7 +64,7 @@
 
     <div class="qms-card-section">
       <div class="section-title">Payment Method</div>
-      <div v-if="achAllowedForSelection" class="qms-method-toggle">
+      <div v-if="achToggleVisible" class="qms-method-toggle">
         <button type="button" :class="{ active: paymentMethod === 'ach' }" @click="paymentMethod = 'ach'">Bank Transfer</button>
         <button type="button" :class="{ active: paymentMethod === 'card' }" @click="paymentMethod = 'card'">Card</button>
       </div>
@@ -274,10 +274,16 @@ const fieldPrepMessage = computed(() => (
     ? 'Preparing secure bank payment...'
     : 'Preparing secure card fields...'
 ));
+const processorLoading = computed(() => configLoading.value || fieldMounting.value);
 const achAllowedForSelection = computed(() => {
   return Boolean(dualPricingPreview.value
     && (processorType.value === 'stripe' || processorType.value === 'nmi'));
 });
+const achToggleVisible = computed(() => Boolean(dualPricingPreview.value && (
+  processorType.value === 'stripe'
+  || processorType.value === 'nmi'
+  || (processorLoading.value && paymentMethod.value === 'ach')
+)));
 
 function normalizeOfferChoice(offer: any): string {
   const type = String(offer?.payment_type || '').toLowerCase();
@@ -618,13 +624,13 @@ watch(paymentChoice, () => {
 });
 
 watch(paymentMethod, async () => {
-  if (!achAllowedForSelection.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
+  if (!achAllowedForSelection.value && !processorLoading.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
   if (props.open && processorType.value === 'stripe') await loadProcessorConfig();
 });
 
 watch(achAllowedForSelection, (allowed) => {
-  if (!allowed && paymentMethod.value === 'ach') paymentMethod.value = 'card';
+  if (!allowed && !processorLoading.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
 });
 </script>
 
