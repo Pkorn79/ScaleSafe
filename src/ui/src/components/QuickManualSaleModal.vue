@@ -486,6 +486,7 @@ async function tokenizeCard(): Promise<string> {
 }
 
 async function submit() {
+  if (submitting.value) return;
   submitting.value = true;
   submitError.value = '';
   resultMessage.value = '';

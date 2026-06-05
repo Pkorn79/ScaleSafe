@@ -444,6 +444,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (state.processorType === 'nmi') {
       // Trigger Collect.js tokenization — callback calls doSubmit
       if (typeof CollectJS !== 'undefined') {
+        state.processing = true;
         el('pay-btn').disabled = true;
         el('pay-btn').textContent = 'Processing...';
         CollectJS.startPaymentRequest();
@@ -787,6 +788,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
   var selectedPaymentMethod = 'card';
+  var paymentInFlight = false;
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
@@ -1242,7 +1244,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   // Payment submission
   el('pay-btn').addEventListener('click', async function() {
+    if (paymentInFlight) return;
     if (!offerData) return;
+    paymentInFlight = true;
     setLoading(true);
     el('error-msg').style.display = 'none';
 
@@ -1268,6 +1272,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       if (processorType === 'whop') {
         await renderWhopCheckout(custName, custEmail);
+        paymentInFlight = false;
         setLoading(false);
         return;
       }
@@ -1417,8 +1422,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     } catch(err) {
       el('error-msg').textContent = err.message || 'Payment failed. Please try again.';
       el('error-msg').style.display = 'block';
+      paymentInFlight = false;
+      setLoading(false);
     }
-    setLoading(false);
   });
 
   function setLoading(on) {

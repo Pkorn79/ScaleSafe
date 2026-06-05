@@ -58,6 +58,22 @@ function getClientIp(req: Request): string {
     || '';
 }
 
+const inFlightCheckoutPayments = new Set<string>();
+
+function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
+  return parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|');
+}
+
+function claimPaymentAttempt(key: string): boolean {
+  if (inFlightCheckoutPayments.has(key)) return false;
+  inFlightCheckoutPayments.add(key);
+  return true;
+}
+
+function releasePaymentAttempt(key: string): void {
+  if (key) inFlightCheckoutPayments.delete(key);
+}
+
 export async function getCheckoutQuote(req: Request, res: Response): Promise<void> {
   const offerId = String(req.query.offerId || '');
   if (!offerId) {
@@ -544,6 +560,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
   }
 
+  let claimedPaymentAttemptKey = '';
   try {
     // Resolve offer hint for per-offer processor override
     let offerHint: { processor_override: 'nmi' | 'stripe' | null; nmi_processor_id: string | null } | undefined;
@@ -614,6 +631,22 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
     const shouldVaultDuringCharge = !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
+
+    const checkoutAttemptKey = paymentAttemptKey([
+      merchant.locationId,
+      offerId || ghlProductId || '',
+      consentToken || '',
+      contactId || contactEmail || '',
+      paymentToken,
+      amount,
+      paymentMethod,
+      req.body.paymentChoice || '',
+    ]);
+    if (!claimPaymentAttempt(checkoutAttemptKey)) {
+      res.status(409).json({ success: false, error: 'Payment is already processing. Please wait.' });
+      return;
+    }
+    claimedPaymentAttemptKey = checkoutAttemptKey;
 
     const result = await processor.charge({
       amount,
@@ -1353,6 +1386,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack, merchantId: merchant.merchantId }, 'Checkout payment failed');
     res.status(500).json({ success: false, error: err.message || 'Payment processing error' });
+  } finally {
+    releasePaymentAttempt(claimedPaymentAttemptKey);
   }
 }
 

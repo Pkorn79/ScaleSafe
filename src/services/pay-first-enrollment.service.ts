@@ -117,6 +117,22 @@ function errorMessage(err: any): string {
   return err?.message || err?.details || err?.hint || String(err || 'Unknown error');
 }
 
+const inFlightManualSalePayments = new Set<string>();
+
+function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
+  return parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|');
+}
+
+function claimPaymentAttempt(key: string): boolean {
+  if (inFlightManualSalePayments.has(key)) return false;
+  inFlightManualSalePayments.add(key);
+  return true;
+}
+
+function releasePaymentAttempt(key: string): void {
+  if (key) inFlightManualSalePayments.delete(key);
+}
+
 async function fireManualSaleTrigger(
   locationId: string,
   triggerKey: Parameters<typeof triggerService.fireTrigger>[1],
@@ -239,28 +255,45 @@ export const payFirstEnrollmentService = {
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
       throw new ValidationError('Stripe bank transfer uses the secure bank-account manual-sale flow.');
     }
-    const charge = await processor.charge({
-      amount: amountCents,
-      currency: 'usd',
-      paymentToken: input.paymentToken,
-      paymentMethodType: paymentMethod,
-      achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
-        ? input.achSecCode
-        : 'WEB',
-      achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
-      achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
-      description: offer?.offer_name || 'Quick Manual Sale',
-      metadata: {
-        source: 'quick_manual_sale',
-        scalesafe_offer_id: input.offerId || '',
-        customer_email: input.email,
-        contact_id: contactId,
-        location_id: input.locationId,
-      },
-      shouldVault: true,
-      customerEmail: input.email,
-      customerName,
-    });
+    const attemptKey = paymentAttemptKey([
+      input.locationId,
+      input.offerId || '',
+      contactId || input.email,
+      input.paymentToken,
+      amountCents,
+      paymentMethod,
+      paymentType,
+    ]);
+    if (!claimPaymentAttempt(attemptKey)) {
+      throw new ValidationError('Payment is already processing. Please wait.');
+    }
+    let charge;
+    try {
+      charge = await processor.charge({
+        amount: amountCents,
+        currency: 'usd',
+        paymentToken: input.paymentToken,
+        paymentMethodType: paymentMethod,
+        achSecCode: input.achSecCode === 'TEL' || input.achSecCode === 'PPD' || input.achSecCode === 'CCD'
+          ? input.achSecCode
+          : 'WEB',
+        achAccountHolderType: input.achAccountHolderType === 'business' ? 'business' : 'personal',
+        achAccountType: input.achAccountType === 'savings' ? 'savings' : 'checking',
+        description: offer?.offer_name || 'Quick Manual Sale',
+        metadata: {
+          source: 'quick_manual_sale',
+          scalesafe_offer_id: input.offerId || '',
+          customer_email: input.email,
+          contact_id: contactId,
+          location_id: input.locationId,
+        },
+        shouldVault: true,
+        customerEmail: input.email,
+        customerName,
+      });
+    } finally {
+      releasePaymentAttempt(attemptKey);
+    }
 
     if (!charge.success) {
       throw new ValidationError(charge.errorMessage || 'Card charge failed');
