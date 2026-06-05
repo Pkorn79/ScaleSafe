@@ -193,7 +193,7 @@ All 18 triggers were registered in the GHL Marketplace developer portal on 2026-
 |-------------|-----|-----------|-------------|
 | Upcoming Payment Reminder | `ss_app_event` with `event_type = upcoming_payment_reminder` | 3 days before scheduled payment and within the next 24 hours | contact_id, amount, next_billing_date, payments_remaining, offer_name |
 
-**Subscription URL (all triggers):** `https://scalesafe-production.up.railway.app/webhooks/ghl/triggers`
+**Subscription URL (all triggers):** `https://dashboard.scalesafe.app/webhooks/ghl/triggers`
 
 **Who builds the response workflows?** The Snapshot includes default notification workflows for each trigger (22 total — see GHL_SNAPSHOT_PLAN.md Section 4A). Merchants can customize these workflows in GHL after install.
 

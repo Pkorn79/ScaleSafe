@@ -1,4 +1,4 @@
-// ─── Mocks ───���──────────────────────────────────────────────────
+// Mocks
 
 const mockGhlPost = jest.fn();
 const mockGhlPut = jest.fn();

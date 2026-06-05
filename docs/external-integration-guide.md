@@ -15,7 +15,7 @@ By connecting external platforms to ScaleSafe, you can maintain a unified view o
 All external events should be sent to:
 
 ```
-https://scalesafe-production.up.railway.app/webhooks/external
+https://dashboard.scalesafe.app/webhooks/external
 ```
 
 Use the ScaleSafe app endpoint directly. Do not route new external integrations through Make.com.
@@ -249,12 +249,12 @@ Fired when a payment is made, refunded, or when payment terms are updated.
 ### Calendly Integration
 
 1. Log into your Calendly account
-2. Navigate to **Integrations** â†’ **Webhooks**
+2. Navigate to **Integrations** -> **Webhooks**
 3. Click **Add Webhook**
-4. Set the webhook URL to: `https://scalesafe-production.up.railway.app/webhooks/external`
+4. Set the webhook URL to: `https://dashboard.scalesafe.app/webhooks/external`
 5. Select the events you want to track:
-   - **Invitee Created** â†’ maps to `session_completed` (once confirmed)
-   - **Invitee Cancelled** â†’ maps to `no_show`
+   - **Invitee Created** -> maps to `session_completed` (once confirmed)
+   - **Invitee Cancelled** -> maps to `no_show`
 6. For each webhook event, Calendly will send participant details automatically
 7. Transform the Calendly payload to match the ScaleSafe schema using a direct adapter or Zapier
 
@@ -262,11 +262,11 @@ Fired when a payment is made, refunded, or when payment terms are updated.
 
 1. Log into your learning platform
 2. Navigate to **Integrations** or **Webhooks** settings
-3. Create a new webhook with URL: `https://scalesafe-production.up.railway.app/webhooks/external`
+3. Create a new webhook with URL: `https://dashboard.scalesafe.app/webhooks/external`
 4. Select the events to track:
-   - **Course Completed** â†’ maps to `module_completed`
-   - **Lesson Completed** â†’ maps to `module_completed`
-   - **Quiz Passed** â†’ can map to `module_completed` with score data
+   - **Course Completed** -> maps to `module_completed`
+   - **Lesson Completed** -> maps to `module_completed`
+   - **Quiz Passed** -> can map to `module_completed` with score data
 5. Ensure the webhook includes:
    - Student email address
    - Student name
@@ -278,12 +278,12 @@ Fired when a payment is made, refunded, or when payment terms are updated.
 ### Zoom Integration
 
 1. Log into Zoom with admin credentials
-2. Go to **App Marketplace** â†’ **Webhooks**
+2. Go to **App Marketplace** -> **Webhooks**
 3. Create a new webhook application
-4. Set webhook URL to: `https://scalesafe-production.up.railway.app/webhooks/external`
+4. Set webhook URL to: `https://dashboard.scalesafe.app/webhooks/external`
 5. Subscribe to the following events:
-   - **Webinar Ended** â†’ triggers `session_completed`
-   - **Meeting Ended** â†’ triggers `session_completed`
+   - **Webinar Ended** -> triggers `session_completed`
+   - **Meeting Ended** -> triggers `session_completed`
 6. Zoom will send participant attendance data
 7. Use your direct integration adapter to:
    - Extract attendee email and name from Zoom payload
@@ -300,19 +300,19 @@ Zapier can connect virtually any platform to ScaleSafe:
    - Select the event type (form submission, payment received, etc.)
 
 2. **Action Setup:**
-   - Select **Webhooks by Zapier** â†’ **POST**
-   - Set URL: `https://scalesafe-production.up.railway.app/webhooks/external`
+   - Select **Webhooks by Zapier** -> **POST**
+   - Set URL: `https://dashboard.scalesafe.app/webhooks/external`
    - Set method: POST
    - Set Content Type: application/json
 
 3. **Payload Mapping:**
    - Map source fields to ScaleSafe required fields:
-     - `source` â†’ hardcode the app name (e.g., "google_forms")
-     - `event_type` â†’ set based on the action type
-     - `contact_email` â†’ map from source contact email field
-     - `contact_name` â†’ map from source name field
-     - `location_id` â†’ hardcode "274dtgl30b7x2HG8hn69"
-     - `data` â†’ map event-specific fields
+     - `source` -> hardcode the app name (e.g., "google_forms")
+     - `event_type` -> set based on the action type
+     - `contact_email` -> map from source contact email field
+     - `contact_name` -> map from source name field
+     - `location_id` -> hardcode "274dtgl30b7x2HG8hn69"
+     - `data` -> map event-specific fields
 
 4. **Test and Activate:**
    - Send a test event
@@ -324,7 +324,7 @@ Zapier can connect virtually any platform to ScaleSafe:
 If you're building a custom application:
 
 1. **Prepare your payload** according to the schema above
-2. **Send a POST request** to: `https://scalesafe-production.up.railway.app/webhooks/external`
+2. **Send a POST request** to: `https://dashboard.scalesafe.app/webhooks/external`
 3. **Headers:**
    ```
    Content-Type: application/json
@@ -332,7 +332,7 @@ If you're building a custom application:
    ```
 4. **Example cURL:**
    ```bash
-   curl -X POST https://scalesafe-production.up.railway.app/webhooks/external \
+   curl -X POST https://dashboard.scalesafe.app/webhooks/external \
      -H "Content-Type: application/json" \
      -H "x-scalesafe-webhook-secret: <merchant webhook secret>" \
      -d '{
@@ -368,7 +368,7 @@ S13 Service Access Tracking monitors participant engagement with digital learnin
 
 **Webhook URL:**
 ```
-https://scalesafe-production.up.railway.app/webhooks/external
+https://dashboard.scalesafe.app/webhooks/external
 ```
 
 **Required Fields for S13 Access Events:**
@@ -389,8 +389,8 @@ https://scalesafe-production.up.railway.app/webhooks/external
 #### Kajabi
 
 1. Log into Kajabi admin dashboard
-2. Go to **Settings** â†’ **Integrations** â†’ **Webhooks**
-3. Add webhook URL: `https://scalesafe-production.up.railway.app/webhooks/external`
+2. Go to **Settings** -> **Integrations** -> **Webhooks**
+3. Add webhook URL: `https://dashboard.scalesafe.app/webhooks/external`
 4. Enable events:
    - Course Enrollment
    - Lesson Started
@@ -402,9 +402,9 @@ https://scalesafe-production.up.railway.app/webhooks/external
 #### Skool
 
 1. Log into Skool community dashboard
-2. Navigate to **Settings** â†’ **API & Integrations**
+2. Navigate to **Settings** -> **API & Integrations**
 3. Create a new webhook
-4. Set URL: `https://scalesafe-production.up.railway.app/webhooks/external`
+4. Set URL: `https://dashboard.scalesafe.app/webhooks/external`
 5. Subscribe to:
    - Member joined course
    - Member completed lesson
@@ -416,8 +416,8 @@ https://scalesafe-production.up.railway.app/webhooks/external
 
 1. In GHL account, navigate to **Memberships**
 2. Select the membership site
-3. Go to **Settings** â†’ **Integrations**
-4. Add webhook: `https://scalesafe-production.up.railway.app/webhooks/external`
+3. Go to **Settings** -> **Integrations**
+4. Add webhook: `https://dashboard.scalesafe.app/webhooks/external`
 5. Enable events:
    - Member Access
    - Course Progress Updated
@@ -428,8 +428,8 @@ https://scalesafe-production.up.railway.app/webhooks/external
 #### Teachable
 
 1. Log into Teachable
-2. Go to **Settings** â†’ **Webhooks**
-3. Add endpoint: `https://scalesafe-production.up.railway.app/webhooks/external`
+2. Go to **Settings** -> **Webhooks**
+3. Add endpoint: `https://dashboard.scalesafe.app/webhooks/external`
 4. Select events:
    - User Enrolled in Course
    - User Completed Course
