@@ -23,6 +23,8 @@ interface TriggerDeliveryLogRow {
   created_at: string;
 }
 
+const RECENT_NO_SUBSCRIPTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 export interface TriggerHealthRow {
   key: string;
   label: string;
@@ -74,6 +76,12 @@ function newestForStatus(
 
 function newestLog(logs: TriggerDeliveryLogRow[], triggerKey: string): TriggerDeliveryLogRow | null {
   return logs.find((log) => log.trigger_key === triggerKey) || null;
+}
+
+function isRecentTimestamp(value: string | null | undefined, now = Date.now()): boolean {
+  if (!value) return false;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) && now - parsed <= RECENT_NO_SUBSCRIPTION_WINDOW_MS;
 }
 
 function buildRow(
@@ -153,8 +161,9 @@ export const triggerHealthService = {
     const criticalMissingSubscriptions = rows
       .filter((row) => row.betaStatus === 'critical' && row.activeSubscriptionCount === 0)
       .map((row) => row.key);
+    const now = Date.now();
     const recentNoSubscriptionTriggers = rows
-      .filter((row) => Boolean(row.lastNoSubscriptionAt))
+      .filter((row) => isRecentTimestamp(row.lastNoSubscriptionAt, now))
       .map((row) => row.key);
 
     return {

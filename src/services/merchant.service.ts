@@ -540,7 +540,9 @@ export const merchantService = {
       dueCount,
       recentPulseSentAt: pulseLogs.find((log: any) => log.status === 'sent')?.created_at || null,
       recentPulseNoSubscriptionAt: pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null,
-      lastSkippedReason: dueCount > 0 && !formUrlConfigured
+      lastSkippedReason: dueCount > 0 && !pulseEnabled
+        ? 'pulse_module_disabled'
+        : dueCount > 0 && !formUrlConfigured
         ? 'pulse_form_url_missing'
         : dueCount > 0 && activeAppEventSubscriptions === 0
           ? 'ss_app_event_subscription_missing'
