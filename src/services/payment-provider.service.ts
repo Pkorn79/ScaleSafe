@@ -59,6 +59,29 @@ export const paymentProviderService = {
   },
 
   /**
+   * Ensure this merchant has a stable provider API key pair without rotating
+   * existing credentials. Used by provisioning repair flows.
+   */
+  async ensureProviderApiKey(locationId: string): Promise<{ apiKey: string; publishableKey: string }> {
+    const supabase = getSupabase();
+    const { data: merchant, error } = await supabase
+      .from('merchants')
+      .select('provider_api_key, provider_publishable_key')
+      .eq('location_id', locationId)
+      .single();
+
+    if (error) throw error;
+    if (merchant?.provider_api_key && merchant?.provider_publishable_key) {
+      return {
+        apiKey: merchant.provider_api_key,
+        publishableKey: merchant.provider_publishable_key,
+      };
+    }
+
+    return this.generateProviderApiKey(locationId);
+  },
+
+  /**
    * Submit credentials to GHL so the provider is marked as connected.
    * Called after merchant connects a processor (NMI or Stripe).
    */
@@ -91,6 +114,12 @@ export const paymentProviderService = {
       .eq('location_id', locationId);
 
     logger.info({ locationId }, 'Provider config connected with GHL');
+  },
+
+  async repairProvider(locationId: string): Promise<void> {
+    await this.registerProvider(locationId);
+    await this.ensureProviderApiKey(locationId);
+    await this.connectConfig(locationId);
   },
 
   /**

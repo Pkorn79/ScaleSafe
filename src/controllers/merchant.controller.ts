@@ -78,6 +78,17 @@ export const merchantController = {
     } catch (err) { next(err); }
   },
 
+  /** POST /api/merchants/provisioning-health/repair-payment-provider - register/connect GHL custom payment provider */
+  async repairPaymentProvider(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const report = await merchantService.repairPaymentProvider(locationId);
+      res.json(report);
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/merchants/provisioning-health/custom-field-cleanup - dry run by default; deletes only with confirmDelete=true */
   async cleanupWorkflowCustomFields(req: Request, res: Response, next: NextFunction) {
     try {

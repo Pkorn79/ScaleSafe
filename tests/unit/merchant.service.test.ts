@@ -25,6 +25,7 @@ const mockFindByLocationId = jest.fn();
 const mockGetByLocationId = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
+const mockRepairProvider = jest.fn();
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -37,6 +38,12 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ eq: jest.fn().mockReturnValue({ single: jest.fn() }) }) }) }),
+}));
+
+jest.mock('../../src/services/payment-provider.service', () => ({
+  paymentProviderService: {
+    repairProvider: (...args: any[]) => mockRepairProvider(...args),
+  },
 }));
 
 import { merchantService } from '../../src/services/merchant.service';
@@ -59,6 +66,7 @@ beforeEach(() => {
     return merchantState;
   });
   mockUpdateSnapshotStatus.mockResolvedValue(undefined);
+  mockRepairProvider.mockResolvedValue(undefined);
 });
 
 describe('Pipeline Lookup', () => {
@@ -198,5 +206,13 @@ describe('Full Provisioning', () => {
 
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+});
+
+describe('Payment Provider Repair', () => {
+  test('registerPaymentProvider repairs provider registration, keys, and GHL connection', async () => {
+    await merchantService.registerPaymentProvider('loc_1');
+
+    expect(mockRepairProvider).toHaveBeenCalledWith('loc_1');
   });
 });

@@ -375,6 +375,9 @@
             <button class="btn btn-secondary btn-sm" @click="repairWebhookSecretCustomValue" :disabled="provisioningHealthLoading">
               {{ provisioningHealthLoading ? 'Working...' : 'Repair Webhook Secret' }}
             </button>
+            <button class="btn btn-secondary btn-sm" @click="repairPaymentProvider" :disabled="provisioningHealthLoading">
+              {{ provisioningHealthLoading ? 'Working...' : 'Repair Payment Provider' }}
+            </button>
             <button class="btn btn-secondary btn-sm" @click="loadProvisioningHealth" :disabled="provisioningHealthLoading">
               {{ provisioningHealthLoading ? 'Checking...' : 'Run Check' }}
             </button>
@@ -727,6 +730,18 @@ async function repairWorkflowCustomFields() {
     provisioningHealth.value = await api.post<any>('/api/merchants/provisioning-health/repair-custom-fields');
   } catch (err: any) {
     provisioningHealthError.value = err.message || 'Failed to repair workflow fields';
+  }
+  provisioningHealthLoading.value = false;
+}
+
+async function repairPaymentProvider() {
+  provisioningHealthLoading.value = true;
+  provisioningHealthError.value = '';
+  try {
+    provisioningHealth.value = await api.post<any>('/api/merchants/provisioning-health/repair-payment-provider');
+    config.value = await api.get<any>('/api/merchants/config');
+  } catch (err: any) {
+    provisioningHealthError.value = err.message || 'Failed to repair payment provider registration';
   }
   provisioningHealthLoading.value = false;
 }

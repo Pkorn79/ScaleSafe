@@ -569,9 +569,13 @@ export const merchantService = {
    * happens when the merchant connects a processor (NMI/Stripe).
    */
   async registerPaymentProvider(locationId: string): Promise<void> {
-    await paymentProviderService.registerProvider(locationId);
-    await paymentProviderService.generateProviderApiKey(locationId);
+    await paymentProviderService.repairProvider(locationId);
     logger.info({ locationId }, 'Payment provider registered and API keys generated');
+  },
+
+  async repairPaymentProvider(locationId: string): Promise<ProvisioningHealthReport> {
+    await paymentProviderService.repairProvider(locationId);
+    return this.getProvisioningHealth(locationId);
   },
 
   async ensureWorkflowWebhookSecret(locationId: string): Promise<string | null> {
