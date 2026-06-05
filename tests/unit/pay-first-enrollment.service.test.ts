@@ -3,7 +3,9 @@ import { getSupabase } from '../../src/clients/supabase.client';
 import { offerRepository } from '../../src/repositories/offer.repository';
 import { phase2EvidenceRepository } from '../../src/repositories/phase2Evidence.repository';
 import { triggerService } from '../../src/services/trigger.service';
-import { createProcessorClient } from '../../src/services/processor.factory';
+import { createProcessorClient, resolveProcessor } from '../../src/services/processor.factory';
+import { merchantRepository } from '../../src/repositories/merchant.repository';
+import { ghlApi } from '../../src/clients/ghl.client';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: jest.fn(),
@@ -58,6 +60,14 @@ const mockFindOffer = offerRepository.findById as jest.Mock;
 const mockEvidenceCreate = phase2EvidenceRepository.create as jest.Mock;
 const mockFireTrigger = triggerService.fireTrigger as jest.Mock;
 const mockCreateProcessorClient = createProcessorClient as jest.Mock;
+const mockResolveProcessor = resolveProcessor as jest.Mock;
+const mockGhlApi = ghlApi as jest.Mock;
+
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    getByLocationId: jest.fn(),
+  },
+}));
 
 function queryResult(result: any) {
   const chain: any = {
@@ -154,5 +164,48 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
         processor_subscription_id: 'sub_existing_123',
       }),
     );
+  });
+});
+
+describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (merchantRepository.getByLocationId as jest.Mock).mockResolvedValue({
+      id: 'merch_1',
+      location_id: 'loc_1',
+    });
+    mockGhlApi.mockResolvedValue({
+      post: jest.fn().mockResolvedValue({ data: { contact: { id: 'contact_1' } } }),
+    });
+    mockFindOffer.mockResolvedValue({
+      id: 'offer_1',
+      active: true,
+      offer_name: 'ScaleSafe Beta',
+      payment_type: 'pif',
+      price: 100,
+      processor_override: 'stripe',
+    });
+    mockResolveProcessor.mockResolvedValue({
+      config: { processor_type: 'stripe' },
+    });
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn(),
+    });
+  });
+
+  it('directs Stripe bank payments to the dedicated manual-sale ACH flow', async () => {
+    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1',
+      offerId: 'offer_1',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentToken: 'tok_bank',
+      paymentType: 'pif',
+      paymentMethod: 'ach',
+    } as any)).rejects.toThrow('Stripe bank transfer uses the secure bank-account manual-sale flow.');
+
+    expect(mockCreateProcessorClient.mock.results[0].value.charge).not.toHaveBeenCalled();
   });
 });

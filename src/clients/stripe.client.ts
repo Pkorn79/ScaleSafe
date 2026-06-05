@@ -63,7 +63,7 @@ export class StripeClient implements ProcessorInterface {
         amount: request.amount,
         currency: request.currency || 'usd',
         status: 'error',
-        errorMessage: 'Stripe ACH requires the bank-account Payment Element flow and is not enabled in this checkout path yet.',
+        errorMessage: 'Stripe bank transfer uses the secure bank-account checkout flow.',
         errorCode: 'STRIPE_ACH_NOT_ENABLED',
       };
     }
@@ -178,7 +178,7 @@ export class StripeClient implements ProcessorInterface {
   async saveCard(request: SaveCardRequest): Promise<SaveCardResult> {
     if (request.paymentMethodType === 'ach') {
       throw new ProcessorError(
-        'Stripe ACH requires the bank-account SetupIntent flow and is not enabled in this saved-payment path yet.',
+        'Stripe bank transfer uses the secure bank-account setup flow.',
         'stripe',
         'STRIPE_ACH_NOT_ENABLED',
       );

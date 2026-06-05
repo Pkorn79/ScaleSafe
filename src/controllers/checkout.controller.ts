@@ -608,7 +608,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
       res.status(400).json({
         success: false,
-        error: 'Bank transfer is currently available only for NMI offers. Stripe ACH requires a separate bank-account checkout flow.',
+        error: 'Stripe bank transfer uses the secure bank-account checkout flow. Please restart checkout and choose Bank Transfer.',
       });
       return;
     }

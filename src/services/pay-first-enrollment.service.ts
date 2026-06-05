@@ -232,7 +232,7 @@ export const payFirstEnrollmentService = {
     const recordedAt = new Date().toISOString();
     const paymentMethod = input.paymentMethod === 'ach' ? 'ach' : 'card';
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
-      throw new ValidationError('Bank transfer is currently available only for NMI offers.');
+      throw new ValidationError('Stripe bank transfer uses the secure bank-account manual-sale flow.');
     }
     const charge = await processor.charge({
       amount: amountCents,
