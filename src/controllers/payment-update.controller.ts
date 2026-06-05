@@ -83,6 +83,26 @@ async function resolveMilestoneEnrollment(
   return data || null;
 }
 
+async function resolvePulseEnrollment(
+  supabase: any,
+  params: { locationId: string; contactId: string; enrollmentId?: string | null },
+): Promise<any | null> {
+  if (!params.enrollmentId) {
+    throw new Error('Enrollment-specific action token required');
+  }
+
+  const { data, error } = await supabase
+    .from('enrollments')
+    .select('id, offer_id, first_name, last_name, email')
+    .eq('id', params.enrollmentId)
+    .eq('location_id', params.locationId)
+    .eq('contact_id', params.contactId)
+    .in('status', ['enrolled', 'active'])
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
 async function resolvePaymentUpdateEnrollment(
   supabase: any,
   params: { locationId: string; contactId: string; enrollmentId?: string | null },
@@ -648,5 +668,147 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     }
     logger.error({ err: err.message }, 'Milestone signoff failed');
     res.status(500).json({ success: false, error: err.message || 'Sign-off failed' });
+  }
+}
+
+/**
+ * GET /api/pulse-check/config - details for the ScaleSafe pulse check-in widget
+ */
+export async function getPulseCheckConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { contactId, locationId, enrollmentId } = readPublicActionContext(req, 'pulse_checkin');
+    const supabase = getSupabase();
+    let enrollment: any | null;
+    try {
+      enrollment = await resolvePulseEnrollment(supabase, { locationId, contactId, enrollmentId });
+    } catch (lookupErr: any) {
+      res.status(400).json({ error: lookupErr.message || 'Enrollment-specific action token required' });
+      return;
+    }
+    if (!enrollment) {
+      res.status(404).json({ error: 'Enrollment for this pulse check-in link was not found' });
+      return;
+    }
+
+    const { data: offer } = enrollment.offer_id
+      ? await supabase
+        .from('offers_mirror')
+        .select('offer_name')
+        .eq('id', enrollment.offer_id)
+        .eq('location_id', locationId)
+        .maybeSingle()
+      : { data: null };
+    const merchant = await merchantRepository.findByLocationId(locationId);
+
+    res.json({
+      contactId,
+      locationId,
+      enrollmentId: enrollment.id,
+      offerId: enrollment.offer_id || '',
+      offerName: offer?.offer_name || '',
+      merchantName: merchant?.business_name || '',
+      clientName: [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' '),
+    });
+  } catch (err) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ error: (err as Error).message });
+      return;
+    }
+    next(err);
+  }
+}
+
+/**
+ * POST /api/pulse-check/submit - client pulse check-in evidence
+ */
+export async function submitPulseCheckin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { contactId, locationId, enrollmentId } = readPublicActionContext(req, 'pulse_checkin');
+    const satisfaction = Number(req.body.satisfaction);
+    const goingWell = String(req.body.goingWell || '').trim();
+    const concerns = String(req.body.concerns || '').trim();
+    const followUpNeeded = req.body.followUpNeeded === true || req.body.followUpNeeded === 'true';
+
+    if (!Number.isInteger(satisfaction) || satisfaction < 1 || satisfaction > 5) {
+      res.status(400).json({ success: false, error: 'Satisfaction score is required.' });
+      return;
+    }
+
+    const supabase = getSupabase();
+    let enrollment: any | null;
+    try {
+      enrollment = await resolvePulseEnrollment(supabase, { locationId, contactId, enrollmentId });
+    } catch (lookupErr: any) {
+      res.status(400).json({ success: false, error: lookupErr.message || 'Enrollment-specific action token required' });
+      return;
+    }
+    if (!enrollment) {
+      res.status(404).json({ success: false, error: 'Enrollment for this pulse check-in link was not found' });
+      return;
+    }
+
+    const checkinAt = new Date().toISOString();
+    const feedback = [goingWell ? `Going well: ${goingWell}` : '', concerns ? `Concerns: ${concerns}` : '']
+      .filter(Boolean)
+      .join('\n');
+    const clientName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ');
+
+    const { error } = await supabase.from('evidence_pulse_checkins').insert({
+      location_id: locationId,
+      contact_id: contactId,
+      enrollment_id: enrollment.id,
+      source: 'scalesafe_pulse_widget',
+      checkin_date: checkinAt.slice(0, 10),
+      sentiment_score: satisfaction,
+      feedback_text: feedback || null,
+      follow_up_needed: followUpNeeded,
+      follow_up_action: followUpNeeded ? 'Merchant follow-up requested from pulse check-in' : null,
+      contact_name: clientName || null,
+      contact_email: enrollment.email || null,
+      raw_payload: {
+        contactId,
+        locationId,
+        enrollmentId: enrollment.id,
+        offerId: enrollment.offer_id || null,
+        satisfaction,
+        goingWell,
+        concerns,
+        followUpNeeded,
+        submittedAt: checkinAt,
+        ipAddress: getClientIp(req),
+      },
+      ...buildDefenseEvidenceFields({
+        title: 'Client Pulse Check-In',
+        summary: `${clientName || 'Client'} submitted a pulse check-in with satisfaction ${satisfaction}/5.${goingWell ? ` Going well: ${goingWell.slice(0, 160)}.` : ''}${concerns ? ` Concerns: ${concerns.slice(0, 160)}.` : ''}`,
+        proofRole: 'service_delivery',
+        relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: followUpNeeded ? 'high' : 'medium', confidence: 'moderate' },
+        enrollmentId: enrollment.id,
+        metadata: {
+          actor: 'client',
+          customerIdentity: {
+            name: clientName || null,
+            email: enrollment.email || null,
+            ipAddress: getClientIp(req) || null,
+          },
+          service: {
+            enrollmentId: enrollment.id,
+            offerId: enrollment.offer_id || null,
+            serviceDate: checkinAt,
+          },
+          source: { system: 'scalesafe_pulse_widget', rawEventType: 'pulse_checkin_submitted' },
+        },
+      }),
+    });
+    if (error) throw error;
+
+    logger.info({ contactId, enrollmentId: enrollment.id, satisfaction, followUpNeeded }, 'Pulse check-in submitted');
+    res.json({ success: true });
+  } catch (err: any) {
+    if (isPublicActionTokenError(err)) {
+      res.status(401).json({ success: false, error: err.message });
+      return;
+    }
+    logger.error({ err: err.message }, 'Pulse check-in failed');
+    res.status(500).json({ success: false, error: err.message || 'Pulse check-in failed' });
   }
 }

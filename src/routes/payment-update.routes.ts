@@ -1,6 +1,14 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getPaymentUpdateConfig, updatePaymentMethod, cancelSubscriptionPublic, getMilestoneConfig, submitMilestoneSignoff } from '../controllers/payment-update.controller';
+import {
+  getPaymentUpdateConfig,
+  updatePaymentMethod,
+  cancelSubscriptionPublic,
+  getMilestoneConfig,
+  submitMilestoneSignoff,
+  getPulseCheckConfig,
+  submitPulseCheckin,
+} from '../controllers/payment-update.controller';
 
 const router = Router();
 
@@ -10,6 +18,8 @@ router.post('/api/payment-update/update-method', updatePaymentMethod);
 router.post('/api/payment-update/cancel-subscription', cancelSubscriptionPublic);
 router.get('/api/milestone-signoff/config', getMilestoneConfig);
 router.post('/api/milestone-signoff/submit', submitMilestoneSignoff);
+router.get('/api/pulse-check/config', getPulseCheckConfig);
+router.post('/api/pulse-check/submit', submitPulseCheckin);
 
 // Widget page (loaded in GHL funnel iframe or standalone)
 function createScriptNonce(): string {
@@ -499,6 +509,14 @@ router.get('/milestone-signoff', (_req: Request, res: Response) => {
   res.send(milestoneSignoffHtml(nonce));
 });
 
+router.get('/pulse-check', (_req: Request, res: Response) => {
+  const nonce = createScriptNonce();
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Content-Security-Policy', widgetCsp(nonce));
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(pulseCheckHtml(nonce));
+});
+
 function milestoneSignoffHtml(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -623,6 +641,141 @@ async function submitSignoff() {
 }
 
 document.getElementById('submit-btn').addEventListener('click', submitSignoff);
+</script>
+</body>
+</html>`;
+}
+
+function pulseCheckHtml(nonce: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pulse Check-In</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #1f2937; padding: 24px 16px; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 650; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 20px; line-height: 1.4; }
+  .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; margin-bottom: 16px; }
+  .program { font-size: 14px; color: #374151; margin-bottom: 16px; }
+  .field-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; display: block; }
+  .field-row { margin-bottom: 16px; }
+  textarea { width: 100%; min-height: 92px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; font-family: inherit; resize: vertical; }
+  textarea:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .score-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .score-btn { border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 8px; padding: 12px 0; font-size: 16px; font-weight: 650; cursor: pointer; }
+  .score-btn.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+  .checkbox-label { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; color: #374151; }
+  .checkbox-label input { width: 18px; height: 18px; margin-top: 1px; accent-color: #3b82f6; }
+  .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px; font-weight: 650; cursor: pointer; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .status { text-align: center; padding: 16px; border-radius: 8px; margin-top: 16px; font-size: 14px; }
+  .status-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .status-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .loading { text-align: center; padding: 40px 0; color: #6b7280; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Pulse Check-In</h1>
+<p class="subtitle" id="merchant-name"></p>
+<div id="loading" class="loading">Loading...</div>
+<div id="form-section" class="hidden">
+  <div class="program" id="program-name"></div>
+  <div class="card">
+    <div class="field-row">
+      <label class="field-label">How are things going?</label>
+      <div class="score-row" id="score-row">
+        <button type="button" class="score-btn" data-score="1">1</button>
+        <button type="button" class="score-btn" data-score="2">2</button>
+        <button type="button" class="score-btn" data-score="3">3</button>
+        <button type="button" class="score-btn" data-score="4">4</button>
+        <button type="button" class="score-btn" data-score="5">5</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <label class="field-label">What is going well?</label>
+      <textarea id="going-well" placeholder="Share a quick update"></textarea>
+    </div>
+    <div class="field-row">
+      <label class="field-label">Any concerns or blockers?</label>
+      <textarea id="concerns" placeholder="Optional"></textarea>
+    </div>
+    <label class="checkbox-label">
+      <input type="checkbox" id="follow-up" />
+      I would like the team to follow up with me
+    </label>
+  </div>
+  <button class="btn btn-primary" id="submit-btn" disabled>Submit Check-In</button>
+</div>
+<div id="success-msg" class="status status-success hidden">Check-in submitted. Thank you.</div>
+<div id="error-msg" class="status status-error hidden"></div>
+<script nonce="${nonce}">
+var API_BASE = window.location.origin;
+var params = new URLSearchParams(window.location.search);
+var actionToken = params.get('actionToken') || params.get('token') || '';
+var selectedScore = 0;
+function showError(message) {
+  document.getElementById('error-msg').textContent = message;
+  document.getElementById('error-msg').classList.remove('hidden');
+}
+(async function() {
+  if (!actionToken) {
+    document.getElementById('loading').classList.add('hidden');
+    showError('Invalid link.');
+    return;
+  }
+  try {
+    var res = await fetch(API_BASE + '/api/pulse-check/config?actionToken=' + encodeURIComponent(actionToken));
+    var data = await res.json();
+    document.getElementById('loading').classList.add('hidden');
+    if (data.error) { showError(data.error); return; }
+    document.getElementById('merchant-name').textContent = data.merchantName || '';
+    document.getElementById('program-name').textContent = data.offerName ? 'Program: ' + data.offerName : '';
+    document.getElementById('form-section').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('loading').classList.add('hidden');
+    showError('Failed to load. Please try again.');
+  }
+})();
+Array.prototype.forEach.call(document.querySelectorAll('.score-btn'), function(btn) {
+  btn.addEventListener('click', function() {
+    selectedScore = parseInt(btn.getAttribute('data-score'), 10);
+    Array.prototype.forEach.call(document.querySelectorAll('.score-btn'), function(other) { other.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('submit-btn').disabled = false;
+  });
+});
+async function submitPulse() {
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').textContent = 'Submitting...';
+  document.getElementById('error-msg').classList.add('hidden');
+  try {
+    var res = await fetch(API_BASE + '/api/pulse-check/submit', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        actionToken: actionToken,
+        satisfaction: selectedScore,
+        goingWell: document.getElementById('going-well').value.trim(),
+        concerns: document.getElementById('concerns').value.trim(),
+        followUpNeeded: document.getElementById('follow-up').checked
+      })
+    });
+    var data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+    document.getElementById('form-section').classList.add('hidden');
+    document.getElementById('success-msg').classList.remove('hidden');
+  } catch (e) {
+    showError(e.message || 'Check-in failed.');
+    document.getElementById('submit-btn').disabled = false;
+    document.getElementById('submit-btn').textContent = 'Submit Check-In';
+  }
+}
+document.getElementById('submit-btn').addEventListener('click', submitPulse);
 </script>
 </body>
 </html>`;

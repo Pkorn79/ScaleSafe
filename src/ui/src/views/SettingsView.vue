@@ -101,20 +101,6 @@
             Enrollment links will use this domain + /welcome path.
           </p>
         </div>
-        <div class="form-group">
-          <label class="form-label">Pulse Form URL</label>
-          <div class="flex gap-2">
-            <input class="form-input" v-model="config.pulseFormUrl" placeholder="https://yourdomain.com/pulse-check" />
-            <button class="btn btn-secondary" @click="savePulseFormUrl" :disabled="pulseFormSaving">
-              {{ pulseFormSaving ? 'Saving...' : 'Save' }}
-            </button>
-          </div>
-          <p class="text-sm text-muted mt-2">
-            Used when ScaleSafe sends pulse check-in links.
-          </p>
-          <div v-if="pulseFormSaved" class="success-msg mt-2">{{ pulseFormSaved }}</div>
-          <div v-if="pulseFormError" class="error-msg mt-2">{{ pulseFormError }}</div>
-        </div>
 
         <div class="text-sm text-muted mt-2">
           Location ID: {{ config.locationId }}
@@ -584,9 +570,6 @@ const webhookSecretError = ref('');
 const provisioningHealth = ref<any>(null);
 const provisioningHealthLoading = ref(false);
 const provisioningHealthError = ref('');
-const pulseFormSaving = ref(false);
-const pulseFormSaved = ref('');
-const pulseFormError = ref('');
 const ghlActivityLoading = ref(false);
 const ghlActivityError = ref('');
 const ghlActivitySaved = ref('');
@@ -746,26 +729,6 @@ async function repairPaymentProvider() {
   provisioningHealthLoading.value = false;
 }
 
-async function savePulseFormUrl() {
-  if (!config.value) return;
-  pulseFormSaving.value = true;
-  pulseFormSaved.value = '';
-  pulseFormError.value = '';
-  try {
-    const result = await api.put<any>('/api/merchants/config', {
-      pulseFormUrl: config.value.pulseFormUrl || '',
-    });
-    config.value = result;
-    pulseFormSaved.value = 'Pulse Form URL saved and synced to GHL.';
-    await loadProvisioningHealth();
-    setTimeout(() => { pulseFormSaved.value = ''; }, 3000);
-  } catch (err: any) {
-    pulseFormError.value = err.message || 'Failed to save Pulse Form URL.';
-  } finally {
-    pulseFormSaving.value = false;
-  }
-}
-
 function healthStatusLabel(status: string) {
   if (status === 'pass') return 'Install health looks good';
   if (status === 'fail') return 'Install needs attention';
@@ -852,7 +815,6 @@ async function saveSettings() {
       logoUrl: config.value.logoUrl,
       shortDescription: config.value.shortDescription,
       enrollmentFunnelUrl: config.value.enrollmentFunnelUrl,
-      pulseFormUrl: config.value.pulseFormUrl,
       modules: config.value.modules,
       dunningEnabled: config.value.dunningEnabled,
       dunningMaxRetries: config.value.dunningMaxRetries,

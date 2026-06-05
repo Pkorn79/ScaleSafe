@@ -11,12 +11,6 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
   },
 }));
 
-jest.mock('../../src/services/merchant.service', () => ({
-  merchantService: {
-    readGhlCustomValues: jest.fn().mockResolvedValue({}),
-  },
-}));
-
 jest.mock('../../src/services/trigger.service', () => ({
   triggerService: { fireTrigger: jest.fn() },
 }));
@@ -56,13 +50,28 @@ describe('pulse cadence diagnostics', () => {
     });
   });
 
-  it('reports due pulse check-ins as setup-needed when the pulse form URL is missing', async () => {
+  it('reports due pulse check-ins as ready when the app-event workflow is subscribed', async () => {
+    const report = await getPulseCadenceDiagnostics('loc_1');
+
+    expect(report.status).toBe('ready');
+    expect(report.dueCount).toBe(1);
+    expect(report.formUrlConfigured).toBe(true);
+    expect(report.lastSkippedReason).toBeNull();
+  });
+
+  it('reports due pulse check-ins as setup-needed when the app-event workflow is not subscribed', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') return thenableQuery({ data: [{ id: 'enr_1' }], error: null });
+      if (table === 'trigger_subscriptions') return thenableQuery({ data: [], error: null });
+      if (table === 'trigger_delivery_logs') return thenableQuery({ data: [], error: null });
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
     const report = await getPulseCadenceDiagnostics('loc_1');
 
     expect(report.status).toBe('needs_setup');
-    expect(report.dueCount).toBe(1);
-    expect(report.formUrlConfigured).toBe(false);
-    expect(report.lastSkippedReason).toBe('pulse_form_url_missing');
+    expect(report.formUrlConfigured).toBe(true);
+    expect(report.lastSkippedReason).toBe('ss_app_event_subscription_missing');
   });
 
   it('reports due pulse check-ins as setup-needed when pulse is disabled', async () => {

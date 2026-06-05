@@ -241,5 +241,4 @@ export const CUSTOM_VALUE_REGISTRY: readonly CustomValueDef[] = [
   { key: 'WEBHOOK_SECRET',     defaultName: 'ScaleSafe Webhook Secret',  fieldKeyMatch: 'scalesafe_webhook_secret' },
   // Pulse cadence runtime config
   { key: 'PULSE_WORKFLOW_WEBHOOK_URL', defaultName: 'ScaleSafe Pulse Workflow Webhook URL', fieldKeyMatch: 'scalesafe_pulse_workflow_webhook_url' },
-  { key: 'PULSE_FORM_URL',             defaultName: 'ScaleSafe Pulse Form URL',             fieldKeyMatch: 'scalesafe_pulse_form_url' },
 ] as const;

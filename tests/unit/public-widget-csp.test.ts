@@ -21,6 +21,8 @@ jest.mock('../../src/controllers/payment-update.controller', () => ({
   cancelSubscriptionPublic: jest.fn(),
   getMilestoneConfig: jest.fn(),
   submitMilestoneSignoff: jest.fn(),
+  getPulseCheckConfig: jest.fn(),
+  submitPulseCheckin: jest.fn(),
 }));
 
 function app() {
@@ -37,6 +39,7 @@ describe('public widget CSP', () => {
     '/payment-update',
     '/subscription-cancel',
     '/milestone-signoff',
+    '/pulse-check',
   ];
 
   it.each(pages)('%s uses nonce-based scripts without unsafe inline handlers', async (path) => {

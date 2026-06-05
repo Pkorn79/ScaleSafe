@@ -480,18 +480,6 @@ export const merchantService = {
     message: string;
   }> {
     const supabase = getSupabase();
-    const config = merchant.config || {};
-    const merchantConfigPulseUrl = String(config.pulse_form_url || '');
-    const envPulseUrl = String(process.env.PULSE_FORM_URL || '');
-    let ghlCustomValuePulseUrl = '';
-    let formUrl = merchantConfigPulseUrl || envPulseUrl;
-    const cvIds = merchant.custom_value_ids || {};
-    if (!formUrl && cvIds.PULSE_FORM_URL) {
-      const values = await this.readGhlCustomValues(locationId);
-      ghlCustomValuePulseUrl = String(values[cvIds.PULSE_FORM_URL] || '');
-      formUrl = ghlCustomValuePulseUrl;
-    }
-
     const [dueRes, subscriptionRes, logsRes] = await Promise.all([
       supabase
         .from('enrollments')
@@ -523,29 +511,25 @@ export const merchantService = {
     const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
     const pulseLogs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'pulse_check_due');
     const pulseEnabled = merchant.module_pulse !== false;
-    const formUrlConfigured = Boolean(formUrl);
+    const formUrlConfigured = true;
     const status = dueCount === 0
       ? 'no_due_pulses'
-      : !pulseEnabled || !formUrlConfigured || activeAppEventSubscriptions === 0
+      : !pulseEnabled || activeAppEventSubscriptions === 0
         ? 'needs_setup'
         : 'ready';
     const message = dueCount === 0
       ? 'No pulse check-ins are currently due.'
       : !pulseEnabled
         ? 'Pulse is disabled for this merchant.'
-        : !formUrlConfigured
-          ? 'Pulse check-ins are due, but the Pulse Form URL is missing. Checked merchant settings, environment fallback, and the GHL custom value.'
-          : activeAppEventSubscriptions === 0
-            ? 'Pulse check-ins are due, but the ScaleSafe App Event workflow is not subscribed.'
-            : `${dueCount} pulse check-in(s) are due and ready to send.`;
+        : activeAppEventSubscriptions === 0
+          ? 'Pulse check-ins are due, but the ScaleSafe App Event workflow is not subscribed.'
+          : `${dueCount} pulse check-in(s) are due and ready to send.`;
 
     return {
       pulseEnabled,
       formUrlConfigured,
       formUrlSources: {
-        merchantConfig: Boolean(merchantConfigPulseUrl),
-        environment: Boolean(envPulseUrl),
-        ghlCustomValue: Boolean(ghlCustomValuePulseUrl),
+        hardwiredScaleSafePage: true,
       },
       activeAppEventSubscriptions,
       dueCount,
@@ -553,8 +537,6 @@ export const merchantService = {
       recentPulseNoSubscriptionAt: pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null,
       lastSkippedReason: dueCount > 0 && !pulseEnabled
         ? 'pulse_module_disabled'
-        : dueCount > 0 && !formUrlConfigured
-        ? 'pulse_form_url_missing'
         : dueCount > 0 && activeAppEventSubscriptions === 0
           ? 'ss_app_event_subscription_missing'
           : null,
