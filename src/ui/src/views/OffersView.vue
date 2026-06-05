@@ -235,8 +235,9 @@ async function copyLink(offerId: string) {
     showToast('Enrollment link copied!');
   } catch (err: any) {
     showToast(err?.message || 'Could not copy enrollment link.');
+  } finally {
+    copyingOfferId.value = '';
   }
-  copyingOfferId.value = '';
 }
 
 async function cloneOffer(offer: any) {
@@ -246,7 +247,9 @@ async function cloneOffer(offer: any) {
     if (result?.offer?.id) {
       routerNav.push(`/offers/${result.offer.id}/edit`);
     }
-  } catch {}
+  } catch (err: any) {
+    showToast(err?.message || 'Could not clone offer.');
+  }
 }
 
 // --- Send Link --------------------------------------
@@ -303,7 +306,9 @@ async function archiveOffer(offer: any) {
     await api.put(`/api/offers/${offer.id}`, { active: false });
     offer.active = false;
     showToast('Offer archived');
-  } catch {}
+  } catch (err: any) {
+    showToast(err?.message || 'Could not archive offer.');
+  }
 }
 
 async function unarchiveOffer(offer: any) {
@@ -311,7 +316,9 @@ async function unarchiveOffer(offer: any) {
     await api.put(`/api/offers/${offer.id}`, { active: true });
     offer.active = true;
     showToast('Offer activated');
-  } catch {}
+  } catch (err: any) {
+    showToast(err?.message || 'Could not activate offer.');
+  }
 }
 
 // TODO: Phase L+ - Add bulk send capability
