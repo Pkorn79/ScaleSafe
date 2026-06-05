@@ -556,7 +556,7 @@ async function removeCard(method: any) {
   cardActionLoading.value = false;
 }
 
-// ─── Subscription Management ────────────────────────────
+// --- Subscription Management ----------------------------
 
 function openPause(enrollment: any) {
   selectedEnrollment.value = enrollment;
@@ -613,7 +613,7 @@ async function cancelEnrollment() {
   selectedEnrollment.value = null;
 }
 
-// ─── Dunning ────────────────────────────────────────────
+// --- Dunning --------------------------------------------
 
 async function retryDunning() {
   if (!dunningEvent.value) return;
@@ -634,7 +634,7 @@ async function retryDunning() {
   dunningRetrying.value = false;
 }
 
-// ─── Charge & Refund ────────────────────────────────────
+// --- Charge & Refund ------------------------------------
 
 function openRefund(payment: any) {
   refundForm.value = {

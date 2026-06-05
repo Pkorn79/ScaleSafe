@@ -39,8 +39,8 @@
     <!-- Summary -->
     <div v-if="!loading && totalClients > 0" class="text-sm text-muted mb-4">
       {{ totalClients }} client{{ totalClients !== 1 ? 's' : '' }}
-      <span v-if="statusFilter"> · Filtered: {{ statusFilter }}</span>
-      <span v-if="searchInput"> · Search: "{{ searchInput }}"</span>
+      <span v-if="statusFilter"> - Filtered: {{ statusFilter }}</span>
+      <span v-if="searchInput"> - Search: "{{ searchInput }}"</span>
     </div>
 
     <!-- Client Table -->
@@ -65,7 +65,7 @@
               </router-link>
               <div v-if="c.email" class="text-sm text-muted">{{ c.email }}</div>
             </td>
-            <td class="text-sm">{{ c.offerName || '—' }}</td>
+            <td class="text-sm">{{ c.offerName || '-' }}</td>
             <td>
               <span class="badge" :class="statusBadge(c.status)">{{ c.status }}</span>
             </td>
@@ -75,12 +75,12 @@
                 {{ c.paymentsMade || 0 }}/{{ c.paymentsTotal || '?' }}
               </span>
               <span v-else-if="c.paymentType === 'subscription'">Sub</span>
-              <span v-else>—</span>
+              <span v-else>-</span>
             </td>
-            <td class="text-sm">{{ c.lastActivityDate ? formatDate(c.lastActivityDate) : '—' }}</td>
+            <td class="text-sm">{{ c.lastActivityDate ? formatDate(c.lastActivityDate) : '-' }}</td>
             <td>
               <span v-if="c.hasPaymentMethod || c.hasCard" class="badge badge-green" style="font-size:11px">Saved</span>
-              <span v-else class="text-sm text-muted">—</span>
+              <span v-else class="text-sm text-muted">-</span>
             </td>
             <td>
               <router-link :to="`/clients/${c.contactId}`" class="btn btn-sm btn-secondary">View</router-link>
@@ -206,7 +206,7 @@ function statusBadge(status: string): string {
 }
 
 function formatDate(d: string): string {
-  if (!d) return '—';
+  if (!d) return '-';
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 

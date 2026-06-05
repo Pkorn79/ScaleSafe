@@ -14,7 +14,7 @@
           :title="lastUpdatedAt ? `Last updated ${formatTimestamp(lastUpdatedAt, 'relative', tickNow)}` : ''"
         >
           <RefreshCw :size="14" :class="{ 'spin': refreshing }" style="margin-right: 6px; vertical-align: -2px;" />
-          {{ refreshing ? 'Refreshing…' : 'Refresh' }}
+          {{ refreshing ? 'Refreshing...' : 'Refresh' }}
         </button>
       </template>
     </SectionHeader>

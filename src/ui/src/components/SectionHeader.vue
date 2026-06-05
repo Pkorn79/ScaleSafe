@@ -26,7 +26,7 @@
 defineProps<{
   /** Small-caps emerald label sitting above the title. e.g. "Defense" */
   eyebrow?: string;
-  /** Title — string for solid color, or [navy, emerald] tuple for two-tone heading. */
+  /** Title - string for solid color, or [navy, emerald] tuple for two-tone heading. */
   title: string | [string, string];
   description?: string;
 }>();

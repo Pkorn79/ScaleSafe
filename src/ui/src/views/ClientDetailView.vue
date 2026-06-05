@@ -36,7 +36,7 @@
         <div class="summary-cell" @click="activeTab = 'overview'" role="button">
           <div class="summary-label">Readiness</div>
           <div class="summary-value" :style="{ color: scoreColor(score?.score || 0) }">
-            {{ score?.score ?? '—' }}
+            {{ score?.score ?? '-' }}
           </div>
         </div>
         <div class="summary-cell">
@@ -49,11 +49,11 @@
         </div>
         <div class="summary-cell">
           <div class="summary-label">Next Billing</div>
-          <div class="summary-value-sm">{{ nextBillingShort || '—' }}</div>
+          <div class="summary-value-sm">{{ nextBillingShort || '-' }}</div>
         </div>
         <div class="summary-cell">
           <div class="summary-label">Last Activity</div>
-          <div class="summary-value-sm">{{ lastActivityShort || '—' }}</div>
+          <div class="summary-value-sm">{{ lastActivityShort || '-' }}</div>
         </div>
       </div>
 
@@ -123,7 +123,7 @@
           <select class="form-select" v-model="selectedOfferId">
             <option value="">Choose an offer...</option>
             <option v-for="o in activeOffers" :key="o.id" :value="o.id">
-              {{ o.offer_name }} — ${{ o.price }}
+              {{ o.offer_name }} - ${{ o.price }}
             </option>
           </select>
         </div>
@@ -167,7 +167,7 @@
           <select class="form-select" v-model="assignOfferId">
             <option value="">Choose an offer...</option>
             <option v-for="o in activeOffers" :key="o.id" :value="o.id">
-              {{ o.offer_name }} — ${{ o.price || 0 }}
+              {{ o.offer_name }} - ${{ o.price || 0 }}
             </option>
           </select>
         </div>
@@ -316,7 +316,7 @@ const { error } = api;
 
 const contactId = computed(() => route.params.contactId as string);
 
-// Shared state — header-owned
+// Shared state - header-owned
 const score = ref<any>(null);
 const enrollmentInfo = ref<any>(null);
 const clientEmail = ref('');
@@ -340,7 +340,7 @@ const tabs: TabDef[] = [
   { key: 'files',          label: 'Files',          icon: Folder },
 ];
 
-// Active tab — persist to URL hash
+// Active tab - persist to URL hash
 function initialTab(): string {
   const hash = (typeof window !== 'undefined' && window.location.hash || '').replace('#', '');
   return tabs.some(t => t.key === hash) ? hash : 'overview';
@@ -645,7 +645,7 @@ onMounted(async () => {
     document.body.classList.add('ss-profile-open');
   }
 
-  // Core header data — always fetched
+  // Core header data - always fetched
   const [scoreResult, enrollmentResult, enrollmentsResult] = await Promise.allSettled([
     api.get<any>(`/api/evidence/${cid}/score`),
     api.get<any>(`/api/dashboard/client-info/${cid}`),
@@ -665,7 +665,7 @@ onMounted(async () => {
     enrollmentSummary.value = enrollmentsResult.value.summary || null;
   }
 
-  // Overview data — bundled endpoint (built in Sub-phase C)
+  // Overview data - bundled endpoint (built in Sub-phase C)
   try {
     pageLoading.value = false;
     const activity = await api.get<any>(`/api/dashboard/client-activity/${cid}?limit=5`);
@@ -673,7 +673,7 @@ onMounted(async () => {
     recentNote.value = activity?.recentNote || null;
     atRisk.value = activity?.atRisk || null;
   } catch {
-    // Endpoint not available — leave as defaults; OverviewTab handles empty state.
+    // Endpoint not available - leave as defaults; OverviewTab handles empty state.
   }
 
   pageLoading.value = false;
@@ -688,7 +688,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .client-profile {
-  /* Root container — header sticks, body scrolls */
+  /* Root container - header sticks, body scrolls */
 }
 
 .profile-header {

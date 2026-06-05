@@ -111,7 +111,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Installment Amount</label>
-            <input class="form-input readonly-field" type="text" :value="calculatedInstallment ? '$' + calculatedInstallment : '—'" readonly />
+            <input class="form-input readonly-field" type="text" :value="calculatedInstallment ? '$' + calculatedInstallment : '-'" readonly />
             <p class="text-sm text-muted mt-2" v-if="calculatedInstallment">
               Auto-calculated: ${{ form.price }} / {{ form.numPayments }} payments
             </p>
@@ -372,7 +372,7 @@
       <!-- Milestones (progressive disclosure: show filled rows + one blank, up to 8) -->
       <h3 class="mt-4 mb-4">Milestones</h3>
       <p class="text-sm text-muted mb-4">
-        Define up to 8 program milestones. Add one at a time — only the rows you fill in are saved.
+        Define up to 8 program milestones. Add one at a time - only the rows you fill in are saved.
       </p>
       <div v-for="i in visibleMilestoneCount" :key="i - 1" class="grid grid-3 mb-4" style="align-items:end">
         <div class="form-group">
@@ -397,7 +397,7 @@
         + Add milestone
       </button>
 
-      <!-- Save / Cancel handled by sticky save bar below — no inline buttons. -->
+      <!-- Save / Cancel handled by sticky save bar below - no inline buttons. -->
     </form>
 
     <StickySaveBar

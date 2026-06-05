@@ -12,7 +12,7 @@
             <div class="defense-meta">
               <span class="badge" :class="lifecycleBadge">{{ humanizeEventType(packet.lifecycleStatus || packet.lifecycle_status || 'pending_submission') }}</span>
               <span class="badge" :class="statusBadge(packet.status)">{{ humanizeEventType(packet.status) }}</span>
-              <span class="text-sm text-muted">{{ packet.reason_code }} — {{ humanizeReasonCode(packet.reason_code) }} · ${{ Number(packet.dispute_amount || 0).toFixed(2) }}</span>
+              <span class="text-sm text-muted">{{ packet.reason_code }} - {{ humanizeReasonCode(packet.reason_code) }} - ${{ Number(packet.dispute_amount || 0).toFixed(2) }}</span>
             </div>
           </div>
           <div class="flex gap-2">

@@ -295,7 +295,7 @@
       <div v-if="stripeConnected" class="card">
         <h3 class="section-title">Dispute Auto-Submit <span class="text-xs text-muted">(coming soon)</span></h3>
         <p class="text-sm text-muted mb-4">When enabled, ScaleSafe will automatically submit evidence for disputes with strong evidence (score 60+). For now, every dispute packet is reviewed manually before submission.</p>
-        <!-- #30: the persistence endpoint is not built yet — disable the control so merchants are
+        <!-- #30: the persistence endpoint is not built yet - disable the control so merchants are
              not misled into believing auto-submit is active (it currently resets to OFF silently). -->
         <label class="toggle-switch-label">
           <span class="toggle-container">
@@ -304,7 +304,7 @@
               <span class="toggle-thumb" :class="{ active: autoSubmit }"></span>
             </span>
           </span>
-          <span class="text-sm">Auto-submit is not yet available — every dispute packet is reviewed manually before submission.</span>
+          <span class="text-sm">Auto-submit is not yet available - every dispute packet is reviewed manually before submission.</span>
         </label>
       </div>
 
@@ -651,7 +651,7 @@ async function connectStripe() {
   if (stripePopup && !stripePopup.closed) stripePopup.close();
 
   try {
-    // Open Stripe OAuth in a popup — Stripe refuses to load inside an iframe,
+    // Open Stripe OAuth in a popup - Stripe refuses to load inside an iframe,
     // so the SPA stays inside GHL (preserving SSO) and the popup handles OAuth.
     // The /auth/stripe/callback endpoint renders a page that postMessages the
     // result back here and self-closes.

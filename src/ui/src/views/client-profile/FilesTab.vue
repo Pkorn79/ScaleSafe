@@ -55,10 +55,10 @@
           <tbody>
             <tr v-for="(s, i) in signoffs" :key="i">
               <td>
-                <strong>#{{ s.milestoneNumber }}: {{ s.milestoneName || '—' }}</strong>
+                <strong>#{{ s.milestoneNumber }}: {{ s.milestoneName || '-' }}</strong>
               </td>
               <td class="text-sm">{{ formatDate(s.signedAt) }}</td>
-              <td class="text-sm">{{ s.signedBy || '—' }}</td>
+              <td class="text-sm">{{ s.signedBy || '-' }}</td>
             </tr>
           </tbody>
         </table>

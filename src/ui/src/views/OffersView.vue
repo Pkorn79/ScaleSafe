@@ -245,7 +245,7 @@ async function cloneOffer(offer: any) {
   } catch {}
 }
 
-// ─── Send Link ──────────────────────────────────────
+// --- Send Link --------------------------------------
 
 function openSendLink(offer: any) {
   sendForm.value = {
@@ -310,7 +310,7 @@ async function unarchiveOffer(offer: any) {
   } catch {}
 }
 
-// TODO: Phase L+ — Add bulk send capability
+// TODO: Phase L+ - Add bulk send capability
 // Select multiple contacts from GHL → send enrollment link to all
 </script>
 

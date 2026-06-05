@@ -565,7 +565,7 @@ function dateBoundary(value: string, endOfDay = false): string {
   return new Date(`${value}${time}`).toISOString();
 }
 
-// #32: monotonic request sequence — on a financial reconciliation screen, an earlier ledger
+// #32: monotonic request sequence - on a financial reconciliation screen, an earlier ledger
 // request that resolves after a later one must not overwrite the newer rows/summary/total.
 let ledgerLoadSeq = 0;
 async function loadLedger() {

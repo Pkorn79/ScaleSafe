@@ -15,7 +15,7 @@ import {
     </div>
   </div>
 
-  <!-- SSO failed — friendly error page -->
+  <!-- SSO failed - friendly error page -->
   <div v-else-if="ssoSession.error || !ssoSession.locationId" class="flex items-center justify-center min-h-screen bg-slate-50 p-6">
     <div class="bg-white rounded-xl p-10 max-w-md w-full shadow-sm text-center">
       <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 text-2xl font-bold flex items-center justify-center mx-auto mb-4">!</div>
@@ -89,16 +89,16 @@ import {
 
 <style>
 /*
- * Global utility layer — used by every view.
+ * Global utility layer - used by every view.
  * Brand tokens are defined in src/ui/src/style.css (:root). This file consumes them.
- * Phase 4a (brand-systematization workstream): repointed to brand tokens —
+ * Phase 4a (brand-systematization workstream): repointed to brand tokens -
  *   .btn-primary  blue  → emerald (engagement CTA)
  *   .nav-active   blue  → teal    (sidebar active state)
  *   .form-input   blue  → emerald (focus ring)
  *   body bg       slate → cream
  */
 
-/* ── Base reset ─────────────────────────────────────── */
+/* -- Base reset --------------------------------------- */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -112,7 +112,7 @@ h1, h2, h3, h4 {
   letter-spacing: -0.01em;
 }
 
-/* ── Page shell — content gutter (no max-width cap) ──────────── */
+/* -- Page shell - content gutter (no max-width cap) ------------ */
 /* Padding stays small (~1/3 inch desktop) so content sits close to the sidebar
    without touching it. No max-width: wide screens use the full available width. */
 .page-shell {
@@ -125,7 +125,7 @@ h1, h2, h3, h4 {
   .page-shell { padding: 20px 16px; }
 }
 
-/* ── Sidebar nav ────────────────────────────────────── */
+/* -- Sidebar nav -------------------------------------- */
 .nav-link {
   display: flex;
   align-items: center;
@@ -158,7 +158,7 @@ h1, h2, h3, h4 {
   white-space: nowrap;
 }
 
-/* ── Page title ─────────────────────────────────────── */
+/* -- Page title --------------------------------------- */
 .page-title {
   font-family: 'Manrope', 'Inter', sans-serif;
   font-size: 26px;
@@ -168,7 +168,7 @@ h1, h2, h3, h4 {
   letter-spacing: -0.02em;
 }
 
-/* ── Card — white surface with subtle lift ──────────── */
+/* -- Card - white surface with subtle lift ------------ */
 .card {
   background: #fff;
   border-radius: 16px;
@@ -201,7 +201,7 @@ h1, h2, h3, h4 {
 .grid-3 { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .grid-2 { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
 
-/* ── Buttons — brand primary is emerald, pill shape ── */
+/* -- Buttons - brand primary is emerald, pill shape -- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -231,7 +231,7 @@ h1, h2, h3, h4 {
   border-color: var(--ss-primary-600);
 }
 
-/* Funnel orange — top-of-funnel only (enrollment funnel, customer checkout). DO NOT use in-app. */
+/* Funnel orange - top-of-funnel only (enrollment funnel, customer checkout). DO NOT use in-app. */
 .btn-funnel {
   background: var(--ss-funnel-500);
   color: #fff;
@@ -253,7 +253,7 @@ h1, h2, h3, h4 {
   color: var(--ss-primary-800);
 }
 
-/* Tertiary — text-only, used for low-emphasis links inline with text */
+/* Tertiary - text-only, used for low-emphasis links inline with text */
 .btn-tertiary {
   background: transparent;
   color: var(--ss-primary-700);
@@ -264,7 +264,7 @@ h1, h2, h3, h4 {
   color: var(--ss-primary-800);
 }
 
-/* Destructive — red ghost. Cancel program, Archive, Delete, Disconnect. */
+/* Destructive - red ghost. Cancel program, Archive, Delete, Disconnect. */
 .btn-danger {
   background: transparent;
   color: #b91c1c;
@@ -277,7 +277,7 @@ h1, h2, h3, h4 {
 }
 .btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25); }
 
-/* Success — used in archived-list "Activate" action. Same as primary at the moment. */
+/* Success - used in archived-list "Activate" action. Same as primary at the moment. */
 .btn-success {
   background: var(--ss-primary-500);
   color: #fff;
@@ -290,7 +290,7 @@ h1, h2, h3, h4 {
 
 .btn-sm { padding: 5px 12px; font-size: 12px; }
 
-/* ── Badges (pill-shaped status labels) ─────────────── */
+/* -- Badges (pill-shaped status labels) --------------- */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -305,11 +305,11 @@ h1, h2, h3, h4 {
 .badge-green  { background: var(--ss-primary-50); color: var(--ss-primary-800); }
 .badge-yellow { background: #fef3c7;              color: #92400e; }
 .badge-red    { background: #fee2e2;              color: #991b1b; }
-.badge-blue   { background: var(--ss-teal-50);    color: var(--ss-teal-700); }   /* repurposed: was blue, now teal accent — preserves "informational tone" semantics */
+.badge-blue   { background: var(--ss-teal-50);    color: var(--ss-teal-700); }   /* repurposed: was blue, now teal accent - preserves "informational tone" semantics */
 .badge-gray   { background: var(--ss-navy-100);   color: var(--ss-navy-600); }
 .badge-purple { background: var(--ss-navy-100);   color: var(--ss-navy-700); }   /* deprecated; renamed to navy semantically. callers should migrate to badge-gray */
 
-/* ── Tables ─────────────────────────────────────────── */
+/* -- Tables ------------------------------------------- */
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -329,7 +329,7 @@ h1, h2, h3, h4 {
 }
 .table tr:hover td { background: var(--ss-cream-50); }
 
-/* ── Forms ──────────────────────────────────────────── */
+/* -- Forms -------------------------------------------- */
 .form-group { margin-bottom: 16px; }
 
 .form-label {
@@ -341,7 +341,7 @@ h1, h2, h3, h4 {
   letter-spacing: 0.01em;
 }
 
-/* Required-field asterisk — visually distinct red, not blended with label. */
+/* Required-field asterisk - visually distinct red, not blended with label. */
 .form-label-required::after {
   content: ' *';
   color: #dc2626;
@@ -365,7 +365,7 @@ h1, h2, h3, h4 {
 }
 .form-textarea { min-height: 80px; resize: vertical; }
 
-/* ── Page-level states ──────────────────────────────── */
+/* -- Page-level states -------------------------------- */
 .loading {
   color: var(--ss-navy-500);
   padding: 40px;
@@ -389,7 +389,7 @@ h1, h2, h3, h4 {
   color: var(--ss-navy-500);
 }
 
-/* ── Score bar (used by Defense Readiness Score widget) — preserve, this is a "Win to Amplify" ── */
+/* -- Score bar (used by Defense Readiness Score widget) - preserve, this is a "Win to Amplify" -- */
 .score-bar {
   height: 8px;
   background: var(--ss-navy-200);
@@ -403,7 +403,7 @@ h1, h2, h3, h4 {
   transition: width 0.3s;
 }
 
-/* ── Layout helpers ─────────────────────────────────── */
+/* -- Layout helpers ----------------------------------- */
 .flex { display: flex; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .gap-2 { gap: 8px; }

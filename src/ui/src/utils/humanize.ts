@@ -2,12 +2,12 @@
  * Humanize internal slugs, timestamps, and identifiers for merchant-facing UI.
  *
  * Single source of truth for slug→label mapping. Phase 4 view substitutions all
- * route through these helpers — no inline slug rendering in templates.
+ * route through these helpers - no inline slug rendering in templates.
  */
 
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 /* Event-type slugs → human labels                                          */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   // Enrollment
@@ -62,9 +62,9 @@ export function humanizeEventType(slug: string | null | undefined): string {
     .join(' ');
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 /* Timestamps                                                                */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 
 const MS = { sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
 
@@ -72,7 +72,7 @@ const MS = { sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
  * Format a timestamp for merchant-facing UI.
  *
  * - "relative":  "Just now" / "3 minutes ago" / "Yesterday" / "Apr 24" (>7d)
- * - "absolute":  "Apr 24, 2026 · 2:14 PM"
+ * - "absolute":  "Apr 24, 2026 - 2:14 PM"
  * - "short":     "Apr 24"
  *
  * Invalid / null / undefined inputs return the empty string.
@@ -89,7 +89,7 @@ export function formatTimestamp(
   if (mode === 'absolute') {
     const datePart = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const timePart = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    return `${datePart} · ${timePart}`;
+    return `${datePart} - ${timePart}`;
   }
 
   if (mode === 'short') {
@@ -99,7 +99,7 @@ export function formatTimestamp(
   // relative
   const diff = now.getTime() - date.getTime();
   if (diff < 0) {
-    // Future date — fall through to short.
+    // Future date - fall through to short.
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
   if (diff < MS.min) return 'Just now';
@@ -116,16 +116,16 @@ export function formatTimestamp(
     const d = Math.floor(diff / MS.day);
     return `${d} days ago`;
   }
-  // > 7 days — show short date with year if not current year
+  // > 7 days - show short date with year if not current year
   const sameYear = date.getFullYear() === now.getFullYear();
   return date.toLocaleDateString('en-US', sameYear
     ? { month: 'short', day: 'numeric' }
     : { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 /* Reason codes                                                              */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 
 const REASON_CODES: Record<string, string> = {
   // Visa
@@ -137,10 +137,10 @@ const REASON_CODES: Record<string, string> = {
   '13.7': 'Cancelled Merchandise/Services',
   '13.8': 'Original Credit Not Accepted',
   '13.9': 'Non-Receipt of Cash or Load Transaction Value',
-  '10.4': 'Other Fraud — Card Absent Environment',
+  '10.4': 'Other Fraud - Card Absent Environment',
   // Mastercard
   '4853': 'Cardholder Dispute',
-  '4854': 'Cardholder Dispute — Not Elsewhere Classified',
+  '4854': 'Cardholder Dispute - Not Elsewhere Classified',
   '4855': 'Goods/Services Not Provided',
   '4859': 'Services Not Rendered',
   '4860': 'Credit Not Processed',
@@ -167,9 +167,9 @@ export function humanizeReasonCode(code: string | null | undefined): string {
   return REASON_CODES[trimmed] ?? trimmed;
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 /* Transaction IDs                                                           */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 
 /**
  * Mask a transaction ID for display: first 4 + ellipsis + last 4 characters.
@@ -181,12 +181,12 @@ export function maskTransactionId(txId: string | null | undefined): string {
   if (!txId) return '';
   const s = String(txId).trim();
   if (s.length < 12) return s;
-  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+  return `${s.slice(0, 4)}...${s.slice(-4)}`;
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 /* Pluralization                                                             */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ------------------------------------------------------------------------ */
 
 const IRREGULAR_PLURALS: Record<string, string> = {
   child: 'children',

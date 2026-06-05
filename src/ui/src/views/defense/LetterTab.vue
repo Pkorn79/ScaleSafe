@@ -10,7 +10,7 @@
           {{ saving ? 'Saving...' : 'Save Edit' }}
         </button>
       </div>
-      <span v-else class="badge badge-blue">Locked — submitted</span>
+      <span v-else class="badge badge-blue">Locked - submitted</span>
     </div>
 
     <div v-if="!letterText && status === 'processing'" class="loading">AI is generating the defense letter... this may take 1-2 minutes.</div>
@@ -26,7 +26,7 @@
       <div v-else class="letter-readonly" v-html="renderMarkdown(letterText)"></div>
 
       <div class="flex-between mt-2" style="color: var(--ss-navy-500); font-size: 12px">
-        <span>{{ editableText.length.toLocaleString() }} characters · Version {{ versionNumber }}</span>
+        <span>{{ editableText.length.toLocaleString() }} characters - Version {{ versionNumber }}</span>
       </div>
     </div>
 
@@ -45,7 +45,7 @@ const props = defineProps<{
   lifecycleStatus: string;
   versionNumber: number;
   // inputTokens / outputTokens kept on the prop signature for API compatibility,
-  // but no longer surfaced to the merchant — moved to support-only diagnostic view.
+  // but no longer surfaced to the merchant - moved to support-only diagnostic view.
   inputTokens?: number;
   outputTokens?: number;
   regenerating: boolean;

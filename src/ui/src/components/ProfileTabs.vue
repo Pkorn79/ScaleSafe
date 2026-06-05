@@ -59,10 +59,10 @@ function select(key: string) {
 
 <style>
 .ss-profile-tabs-wrapper {
-  /* Wrapper — desktop tabs are rendered inline, mobile nav is fixed */
+  /* Wrapper - desktop tabs are rendered inline, mobile nav is fixed */
 }
 
-/* ── Desktop tabs ───────────────────────────────────────────── */
+/* -- Desktop tabs --------------------------------------------- */
 .ss-profile-tabs-desktop {
   display: flex;
   gap: 4px;
@@ -101,7 +101,7 @@ function select(key: string) {
   border-bottom-color: var(--ss-teal-500);
 }
 
-/* ── Mobile bottom-nav ──────────────────────────────────────── */
+/* -- Mobile bottom-nav ---------------------------------------- */
 .ss-profile-tabs-mobile {
   display: none;
 }

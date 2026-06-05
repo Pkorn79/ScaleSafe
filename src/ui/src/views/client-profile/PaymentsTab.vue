@@ -51,7 +51,7 @@
         <div v-if="enr.paymentType !== 'subscription'" class="text-sm mt-1">
           {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} paid
           <span v-if="enrProgramTotal(enr) > 0">
-            · ${{ enrAmountPaid(enr) }} of ${{ enrProgramTotal(enr).toFixed(2) }}
+            - ${{ enrAmountPaid(enr) }} of ${{ enrProgramTotal(enr).toFixed(2) }}
           </span>
         </div>
         <div v-else class="text-sm mt-1">

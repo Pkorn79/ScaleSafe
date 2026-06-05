@@ -5,10 +5,10 @@
         <div class="card-title" style="margin-bottom:0">Programs &amp; Enrollments</div>
         <div v-if="summary" class="text-sm text-muted" style="margin-top:2px">
           {{ summary.total }} program{{ summary.total !== 1 ? 's' : '' }}
-          <span v-if="summary.active"> · {{ summary.active }} active</span>
-          <span v-if="summary.completed"> · {{ summary.completed }} completed</span>
-          <span v-if="summary.cancelled"> · {{ summary.cancelled }} cancelled</span>
-          <span v-if="summary.clientSince"> · Client since {{ formatDateShort(summary.clientSince) }}</span>
+          <span v-if="summary.active"> - {{ summary.active }} active</span>
+          <span v-if="summary.completed"> - {{ summary.completed }} completed</span>
+          <span v-if="summary.cancelled"> - {{ summary.cancelled }} cancelled</span>
+          <span v-if="summary.clientSince"> - Client since {{ formatDateShort(summary.clientSince) }}</span>
         </div>
       </div>
       <button class="btn btn-sm btn-primary" @click="$emit('send-offer')">Send Offer</button>
@@ -18,7 +18,7 @@
       v-if="enrollments.length === 0"
       :icon="GraduationCap"
       title="No enrollments yet"
-      body="This client hasn't been enrolled in any program. Send them an offer to get started — the enrollment funnel handles consent capture and payment automatically."
+      body="This client hasn't been enrolled in any program. Send them an offer to get started - the enrollment funnel handles consent capture and payment automatically."
       cta-label="Send Offer"
       @cta-click="$emit('send-offer')"
     />
@@ -87,7 +87,7 @@
           <div class="text-sm">
             <strong>Milestones:</strong> {{ enr.currentMilestone || 0 }} of {{ enr.milestones.length }} complete
             <span v-if="(enr.currentMilestone || 0) < enr.milestones.length && enr.milestones[enr.currentMilestone || 0]" class="text-muted">
-              — Next: {{ enr.milestones[enr.currentMilestone || 0].name }}
+              - Next: {{ enr.milestones[enr.currentMilestone || 0].name }}
             </span>
           </div>
           <button v-if="(enr.currentMilestone || 0) < enr.milestones.length && ['enrolled','active'].includes(enr.status)"

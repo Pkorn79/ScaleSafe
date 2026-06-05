@@ -21,7 +21,7 @@ describe('humanizeEventType', () => {
     expect(humanizeEventType('SHOUTING_SLUG')).toBe('Shouting Slug');
   });
 
-  test('empty / null / undefined → empty string', () => {
+  test('empty / null / undefined -> empty string', () => {
     expect(humanizeEventType('')).toBe('');
     expect(humanizeEventType(null)).toBe('');
     expect(humanizeEventType(undefined)).toBe('');
@@ -31,61 +31,61 @@ describe('humanizeEventType', () => {
 describe('formatTimestamp', () => {
   const now = new Date('2026-04-26T12:00:00Z');
 
-  test('relative — just now (<1 min)', () => {
+  test('relative - just now (<1 min)', () => {
     const ts = new Date(now.getTime() - 30_000); // 30s ago
     expect(formatTimestamp(ts, 'relative', now)).toBe('Just now');
   });
 
-  test('relative — minutes ago', () => {
+  test('relative - minutes ago', () => {
     const ts = new Date(now.getTime() - 5 * 60_000);
     expect(formatTimestamp(ts, 'relative', now)).toBe('5 minutes ago');
   });
 
-  test('relative — singular minute', () => {
+  test('relative - singular minute', () => {
     const ts = new Date(now.getTime() - 60_000);
     expect(formatTimestamp(ts, 'relative', now)).toBe('1 minute ago');
   });
 
-  test('relative — hours ago', () => {
+  test('relative - hours ago', () => {
     const ts = new Date(now.getTime() - 3 * 3_600_000);
     expect(formatTimestamp(ts, 'relative', now)).toBe('3 hours ago');
   });
 
-  test('relative — yesterday', () => {
+  test('relative - yesterday', () => {
     const ts = new Date(now.getTime() - 1.5 * 86_400_000);
     expect(formatTimestamp(ts, 'relative', now)).toBe('Yesterday');
   });
 
-  test('relative — days ago (within week)', () => {
+  test('relative - days ago (within week)', () => {
     const ts = new Date(now.getTime() - 4 * 86_400_000);
     expect(formatTimestamp(ts, 'relative', now)).toBe('4 days ago');
   });
 
-  test('relative — old date returns short date (current year)', () => {
+  test('relative - old date returns short date (current year)', () => {
     const ts = new Date('2026-01-15T10:00:00Z');
     const result = formatTimestamp(ts, 'relative', now);
     expect(result).toMatch(/Jan 1[45]/); // tolerant of TZ
   });
 
-  test('relative — old date includes year if different', () => {
+  test('relative - old date includes year if different', () => {
     const ts = new Date('2025-08-01T10:00:00Z');
     const result = formatTimestamp(ts, 'relative', now);
     expect(result).toMatch(/Aug 1, 2025/);
   });
 
-  test('absolute — formatted with date and time', () => {
+  test('absolute - formatted with date and time', () => {
     const ts = new Date('2026-04-24T19:14:00Z');
     const result = formatTimestamp(ts, 'absolute', now);
     expect(result).toContain('Apr 24, 2026');
-    expect(result).toContain('·');
+    expect(result).toContain('-');
   });
 
-  test('short — month + day only', () => {
+  test('short - month + day only', () => {
     const ts = new Date('2026-04-24T10:00:00Z');
     expect(formatTimestamp(ts, 'short', now)).toMatch(/Apr 2[34]/);
   });
 
-  test('null / invalid / empty input → empty string', () => {
+  test('null / invalid / empty input -> empty string', () => {
     expect(formatTimestamp(null)).toBe('');
     expect(formatTimestamp(undefined)).toBe('');
     expect(formatTimestamp('')).toBe('');
@@ -107,7 +107,7 @@ describe('humanizeReasonCode', () => {
 
   test('known Visa code', () => {
     expect(humanizeReasonCode('13.1')).toBe('Merchandise/Services Not Received');
-    expect(humanizeReasonCode('10.4')).toBe('Other Fraud — Card Absent Environment');
+    expect(humanizeReasonCode('10.4')).toBe('Other Fraud - Card Absent Environment');
   });
 
   test('known Amex code', () => {
@@ -123,7 +123,7 @@ describe('humanizeReasonCode', () => {
     expect(humanizeReasonCode('  4855  ')).toBe('Goods/Services Not Provided');
   });
 
-  test('null / undefined / empty → empty string', () => {
+  test('null / undefined / empty -> empty string', () => {
     expect(humanizeReasonCode(null)).toBe('');
     expect(humanizeReasonCode(undefined)).toBe('');
     expect(humanizeReasonCode('')).toBe('');
@@ -132,8 +132,8 @@ describe('humanizeReasonCode', () => {
 
 describe('maskTransactionId', () => {
   test('long ID gets first 4 + ellipsis + last 4', () => {
-    expect(maskTransactionId('pi_3Q8aZxLkdIwHu7ix0aBcDeFg')).toBe('pi_3…DeFg');
-    expect(maskTransactionId('txn_abcdef0123456789')).toBe('txn_…6789');
+    expect(maskTransactionId('pi_3Q8aZxLkdIwHu7ix0aBcDeFg')).toBe('pi_3...DeFg');
+    expect(maskTransactionId('txn_abcdef0123456789')).toBe('txn_...6789');
   });
 
   test('short ID returned unchanged', () => {
@@ -141,18 +141,18 @@ describe('maskTransactionId', () => {
     expect(maskTransactionId('exactly11ch')).toBe('exactly11ch'); // 11 chars
   });
 
-  test('boundary — exactly 12 chars gets masked', () => {
-    expect(maskTransactionId('abcdefghijkl')).toBe('abcd…ijkl');
+  test('boundary - exactly 12 chars gets masked', () => {
+    expect(maskTransactionId('abcdefghijkl')).toBe('abcd...ijkl');
   });
 
-  test('null / undefined / empty → empty string', () => {
+  test('null / undefined / empty -> empty string', () => {
     expect(maskTransactionId(null)).toBe('');
     expect(maskTransactionId(undefined)).toBe('');
     expect(maskTransactionId('')).toBe('');
   });
 
   test('whitespace trimmed', () => {
-    expect(maskTransactionId('  pi_3Q8aZxLkdIwHu7ix0aBcDeFg  ')).toBe('pi_3…DeFg');
+    expect(maskTransactionId('  pi_3Q8aZxLkdIwHu7ix0aBcDeFg  ')).toBe('pi_3...DeFg');
   });
 });
 
@@ -179,7 +179,7 @@ describe('pluralize', () => {
     expect(pluralize(3, 'weeks')).toBe('3 weeks');
   });
 
-  test('-y → -ies for consonant-preceded y', () => {
+  test('-y -> -ies for consonant-preceded y', () => {
     expect(pluralize(2, 'story')).toBe('2 stories');
     expect(pluralize(1, 'story')).toBe('1 story');
   });
@@ -195,13 +195,13 @@ describe('pluralize', () => {
     expect(pluralize(5, 'person')).toBe('5 people');
   });
 
-  test('null / undefined / empty count → empty string', () => {
+  test('null / undefined / empty count -> empty string', () => {
     expect(pluralize(null, 'day')).toBe('');
     expect(pluralize(undefined, 'day')).toBe('');
     expect(pluralize('', 'day')).toBe('');
   });
 
-  test('non-numeric count → empty string', () => {
+  test('non-numeric count -> empty string', () => {
     expect(pluralize('not-a-number', 'day')).toBe('');
   });
 
@@ -210,7 +210,7 @@ describe('pluralize', () => {
     expect(pluralize('5', 'day')).toBe('5 days');
   });
 
-  test('null / empty unit → just the count', () => {
+  test('null / empty unit -> just the count', () => {
     expect(pluralize(5, null)).toBe('5');
     expect(pluralize(5, '')).toBe('5');
     expect(pluralize(5, '   ')).toBe('5');

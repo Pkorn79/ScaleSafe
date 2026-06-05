@@ -88,7 +88,7 @@ withDefaults(defineProps<{
   color: var(--ss-navy-500);
 }
 
-/* Accent — left border stripe matching the brand role of this stat */
+/* Accent - left border stripe matching the brand role of this stat */
 .ss-stat-emerald { border-left: 3px solid var(--ss-primary-500); }
 .ss-stat-navy    { border-left: 3px solid var(--ss-navy-700); }
 .ss-stat-teal    { border-left: 3px solid var(--ss-teal-500); }

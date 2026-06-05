@@ -86,7 +86,7 @@ function select(key: string) {
   color: var(--ss-teal-700);
 }
 
-/* ── underline variant (default — matches ProfileTabs aesthetic, with teal active) ── */
+/* -- underline variant (default - matches ProfileTabs aesthetic, with teal active) -- */
 .ss-tabs-underline {
   border-bottom: 1px solid var(--ss-navy-200);
   gap: 0;
@@ -101,7 +101,7 @@ function select(key: string) {
   border-bottom-color: var(--ss-teal-500);
 }
 
-/* ── pill variant (segmented buttons, each fully rounded) ── */
+/* -- pill variant (segmented buttons, each fully rounded) -- */
 .ss-tabs-pill { gap: 6px; }
 .ss-tabs-pill .ss-tab {
   padding: 7px 14px;
@@ -117,7 +117,7 @@ function select(key: string) {
   border-color: var(--ss-primary-200);
 }
 
-/* ── segmented variant (single rounded container, tabs share borders) ── */
+/* -- segmented variant (single rounded container, tabs share borders) -- */
 .ss-tabs-segmented {
   background: var(--ss-navy-100);
   padding: 4px;

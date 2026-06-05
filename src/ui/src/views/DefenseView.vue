@@ -110,7 +110,7 @@
         <select v-else class="form-select" v-model="selectedTransactionId" @change="onTransactionSelected">
           <option value="">Manual entry (no specific transaction)</option>
           <option v-for="t in transactions" :key="t.id" :value="t.id">
-            {{ formatTimestamp(t.date, 'short') }} — ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' — ' + t.offerName : '' }}{{ t.transactionId ? ' — ' + maskTransactionId(t.transactionId) : '' }}
+            {{ formatTimestamp(t.date, 'short') }} - ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' - ' + t.offerName : '' }}{{ t.transactionId ? ' - ' + maskTransactionId(t.transactionId) : '' }}
           </option>
         </select>
         <div v-if="transactions.length === 0 && !transactionsLoading && compileForm.contactId" class="text-sm text-muted mt-2">
@@ -122,15 +122,15 @@
         <label class="form-label">Reason Code *</label>
         <select class="form-select" v-model="compileForm.reasonCode">
           <option value="">Select...</option>
-          <option value="10.4">10.4 — Fraud (Visa)</option>
-          <option value="13.1">13.1 — Services Not Provided (Visa)</option>
-          <option value="13.3">13.3 — Not As Described (Visa)</option>
-          <option value="13.6">13.6 — Credit Not Processed (Visa)</option>
-          <option value="10.1">10.1 — Authorization (Visa)</option>
-          <option value="4837">4837 — Fraud (MC)</option>
-          <option value="4855">4855 — Services Not Provided (MC)</option>
-          <option value="4853">4853 — Not As Described (MC)</option>
-          <option value="4860">4860 — Credit Not Processed (MC)</option>
+          <option value="10.4">10.4 - Fraud (Visa)</option>
+          <option value="13.1">13.1 - Services Not Provided (Visa)</option>
+          <option value="13.3">13.3 - Not As Described (Visa)</option>
+          <option value="13.6">13.6 - Credit Not Processed (Visa)</option>
+          <option value="10.1">10.1 - Authorization (Visa)</option>
+          <option value="4837">4837 - Fraud (MC)</option>
+          <option value="4855">4855 - Services Not Provided (MC)</option>
+          <option value="4853">4853 - Not As Described (MC)</option>
+          <option value="4860">4860 - Credit Not Processed (MC)</option>
         </select>
       </div>
       <div class="grid grid-2">
@@ -329,7 +329,7 @@ async function selectCustomer(customer: { contactId: string; name?: string; emai
 function onTransactionSelected() {
   const txId = selectedTransactionId.value;
   if (!txId) {
-    // Manual entry fallback — clear auto-filled fields
+    // Manual entry fallback - clear auto-filled fields
     compileForm.value.paymentEventId = '';
     compileForm.value.enrollmentId = '';
     return;

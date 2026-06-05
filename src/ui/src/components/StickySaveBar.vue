@@ -28,7 +28,7 @@ import Button from './Button.vue';
 const props = withDefaults(defineProps<{
   /** Show the bar. Typically bound to "form has been mounted and scroll is past the form top". */
   visible?: boolean;
-  /** Whether the form has unsaved changes — controls the dot indicator and Save button enabled-state. */
+  /** Whether the form has unsaved changes - controls the dot indicator and Save button enabled-state. */
   dirty?: boolean;
   /** Save action in flight. */
   loading?: boolean;

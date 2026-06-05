@@ -40,11 +40,11 @@
           </div>
           <div class="text-sm text-muted" style="margin-top:4px">
             <span v-if="nextBillingDisplay">Next: {{ nextBillingDisplay }}</span>
-            <span v-else>—</span>
+            <span v-else>-</span>
           </div>
         </div>
         <div v-else class="card-value" style="font-size:18px">
-          {{ nextBillingDisplay || '—' }}
+          {{ nextBillingDisplay || '-' }}
         </div>
       </div>
     </div>
@@ -82,7 +82,7 @@
       <div v-if="atRisk?.flagged" style="margin-top:8px">
         <span class="badge badge-red">At Risk</span>
         <div class="text-sm text-muted" style="margin-top:6px">
-          <div v-for="(factor, i) in atRisk.riskFactors || []" :key="i">· {{ factor }}</div>
+          <div v-for="(factor, i) in atRisk.riskFactors || []" :key="i">- {{ factor }}</div>
         </div>
       </div>
       <div v-else style="margin-top:8px">
@@ -140,7 +140,7 @@ function summarize(item: any): string {
     if (d.summary) return String(d.summary).slice(0, 80);
     if (d.digital_signature) return `Signed: ${d.digital_signature}`;
     const keys = Object.keys(d).filter(k => d[k] != null && d[k] !== '');
-    return keys.slice(0, 2).map(k => String(d[k]).slice(0, 30)).join(' · ') || '';
+    return keys.slice(0, 2).map(k => String(d[k]).slice(0, 30)).join(' - ') || '';
   }
   return '';
 }

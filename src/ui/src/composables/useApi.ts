@@ -137,7 +137,7 @@ function initSso(): Promise<void> {
     setTimeout(() => {
       window.removeEventListener('message', handler);
       if (!ssoSession.ready) {
-        ssoSession.error = 'SSO handshake timed out — GHL did not respond';
+        ssoSession.error = 'SSO handshake timed out - GHL did not respond';
         ssoSession.ready = true;
         resolve();
       }

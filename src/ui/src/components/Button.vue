@@ -75,7 +75,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
 .ss-btn-md { padding: 9px 20px;  font-size: 14px; min-height: 40px; }
 .ss-btn-lg { padding: 12px 26px; font-size: 15px; min-height: 48px; }
 
-/* Variant — primary (emerald fill, in-app engagement) */
+/* Variant - primary (emerald fill, in-app engagement) */
 .ss-btn-primary {
   background: var(--ss-primary-500);
   color: #fff;
@@ -86,7 +86,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
   border-color: var(--ss-primary-600);
 }
 
-/* Variant — funnel (orange fill, top-of-funnel CTAs only) */
+/* Variant - funnel (orange fill, top-of-funnel CTAs only) */
 .ss-btn-funnel {
   background: var(--ss-funnel-500);
   color: #fff;
@@ -97,7 +97,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
   border-color: var(--ss-funnel-600);
 }
 
-/* Variant — secondary (emerald outline) */
+/* Variant - secondary (emerald outline) */
 .ss-btn-secondary {
   background: transparent;
   color: var(--ss-primary-700);
@@ -109,7 +109,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
   color: var(--ss-primary-800);
 }
 
-/* Variant — tertiary (text-only, no border) */
+/* Variant - tertiary (text-only, no border) */
 .ss-btn-tertiary {
   background: transparent;
   color: var(--ss-primary-700);
@@ -120,7 +120,7 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
   color: var(--ss-primary-800);
 }
 
-/* Variant — destructive (red ghost — Cancel program, Archive, Delete) */
+/* Variant - destructive (red ghost - Cancel program, Archive, Delete) */
 .ss-btn-destructive {
   background: transparent;
   color: #b91c1c;
