@@ -1065,10 +1065,30 @@ export const payFirstEnrollmentService = {
             processorSubscriptionId = subResult.subscriptionId;
             const { error: subSaveError } = await supabase
               .from('enrollments')
-              .update({ processor_subscription_id: subResult.subscriptionId, processor_type: procConfig.processor_type })
+              .update({
+                processor_subscription_id: subResult.subscriptionId,
+                processor_type: procConfig.processor_type,
+                billing_setup_status: 'ok',
+                billing_setup_error: null,
+                next_billing_date_source: 'processor',
+              })
               .eq('id', params.enrollmentId)
               .eq('location_id', params.locationId);
-            if (subSaveError) throw subSaveError;
+            if (subSaveError) {
+              billingSetupIssue = {
+                code: 'recurring_subscription_save_failed_after_paid_enrollment',
+                message: `Processor subscription ${subResult.subscriptionId} was created, but ScaleSafe could not save it: ${subSaveError.message}`,
+              };
+              await supabase
+                .from('enrollments')
+                .update({
+                  billing_setup_status: 'needs_reconciliation',
+                  billing_setup_error: billingSetupIssue.message,
+                  next_billing_date: null,
+                })
+                .eq('id', params.enrollmentId)
+                .eq('location_id', params.locationId);
+            }
           } else {
             throw new Error(subResult.errorMessage || 'Processor subscription creation failed');
           }
@@ -1078,6 +1098,15 @@ export const payFirstEnrollmentService = {
           code: 'recurring_setup_failed_after_paid_enrollment',
           message: err?.message || 'Recurring billing setup failed after enrollment consent.',
         };
+        await supabase
+          .from('enrollments')
+          .update({
+            billing_setup_status: 'failed',
+            billing_setup_error: billingSetupIssue.message,
+            next_billing_date: null,
+          })
+          .eq('id', params.enrollmentId)
+          .eq('location_id', params.locationId);
         logger.error({ err: err?.message || String(err), enrollmentId: params.enrollmentId }, 'Paid pending recurring setup failed');
       }
     }
