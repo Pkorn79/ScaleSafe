@@ -333,6 +333,9 @@ export const phase2EnrollmentService = {
           payment_type: params.paymentType,
           transaction_id: params.transactionId,
           payments_total: params.paymentsTotal,
+          line_items: Array.isArray((enrollment as any).selected_checkout_items)
+            ? (enrollment as any).selected_checkout_items
+            : [],
           timestamp: new Date().toISOString(),
         },
       }),
@@ -346,6 +349,9 @@ export const phase2EnrollmentService = {
         processor: params.processorType || 'ghl',
         processor_transaction_id: params.transactionId,
         amount: params.paymentAmount,
+        line_items: Array.isArray((enrollment as any).selected_checkout_items)
+          ? (enrollment as any).selected_checkout_items
+          : [],
         payment_number: 1,
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
         source: 'checkout',

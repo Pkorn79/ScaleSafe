@@ -65,6 +65,7 @@ export const enrollmentController = {
         userAgent, deviceFingerprint, screenResolution,
         timezone, browserLanguage, tcVersionHash,
         digitalSignature, clausesAccepted, scrollDepth, paidEnrollmentToken,
+        selectedAddonIds,
       } = req.body;
 
       if (!offerId || !email || !digitalSignature) {
@@ -87,6 +88,7 @@ export const enrollmentController = {
         digitalSignature,
         clausesAccepted: clausesAccepted || [],
         scrollDepth: typeof scrollDepth === 'number' ? scrollDepth : 0,
+        selectedAddonIds: Array.isArray(selectedAddonIds) ? selectedAddonIds : [],
       });
 
       res.json(result);
@@ -172,7 +174,7 @@ export const enrollmentController = {
       const supabase = getSupabase();
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('email, contact_id, first_name, last_name, digital_signature')
+        .select('email, contact_id, first_name, last_name, digital_signature, selected_checkout_items')
         .eq('consent_token', consentToken)
         .maybeSingle();
 
@@ -187,6 +189,7 @@ export const enrollmentController = {
         lastName: enrollment.last_name || '',
         contactId: enrollment.contact_id || '',
         digitalSignature: enrollment.digital_signature || '',
+        selectedCheckoutItems: Array.isArray(enrollment.selected_checkout_items) ? enrollment.selected_checkout_items : [],
       });
     } catch (err) { next(err); }
   },

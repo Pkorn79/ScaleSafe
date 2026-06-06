@@ -3,6 +3,7 @@ import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { whopService } from './whop.service';
+import { checkoutCartService, CheckoutAddonInput } from './checkout-cart.service';
 
 interface CreateOfferInput {
   locationId: string;
@@ -41,6 +42,7 @@ interface CreateOfferInput {
   achAccessPolicy?: 'after_settlement' | 'after_submission';
   pulseCadenceEnabled?: boolean;
   pulseFrequencyDays?: number;
+  checkoutAddons?: CheckoutAddonInput[];
 }
 
 function extractId(data: any, objectKey?: string): string {
@@ -216,6 +218,15 @@ function isDailyGhlRecurringPriceError(err: any): boolean {
 }
 
 export const offerService = {
+  async withCheckoutAddons<T extends OfferRecord | OfferRecord[]>(offerOrOffers: T): Promise<T> {
+    const offers = Array.isArray(offerOrOffers) ? offerOrOffers : [offerOrOffers];
+    await Promise.all(offers.map(async (offer: any) => {
+      offer.checkout_addons = await checkoutCartService.listAddons(offer.id, offer.location_id, false);
+      offer.checkoutAddons = offer.checkout_addons;
+    }));
+    return offerOrOffers;
+  },
+
   async create(input: CreateOfferInput): Promise<OfferRecord> {
     const { locationId } = input;
 
@@ -409,11 +420,14 @@ export const offerService = {
     }
 
     logger.info({ offerId: offer.id, ghlProductId, locationId }, 'Offer created');
+    if (input.checkoutAddons !== undefined) {
+      await checkoutCartService.replaceOfferAddons(locationId, offer.id, input.checkoutAddons);
+    }
     if ((input.checkoutType || 'direct') === 'whop') {
       offer = await whopService.syncOffer(locationId, offer);
       logger.info({ offerId: offer.id, whopProductId: offer.whop_product_id, whopPlanId: offer.whop_plan_id }, 'Whop offer synced');
     }
-    return offer;
+    return this.withCheckoutAddons(offer);
   },
 
   async update(offerId: string, locationId: string, updates: Partial<CreateOfferInput>): Promise<OfferRecord> {
@@ -571,19 +585,22 @@ export const offerService = {
       }
     }
     const effectiveCheckoutType = (updates.checkoutType || (offer as any).checkout_type || 'direct') as 'direct' | 'whop';
+    if (updates.checkoutAddons !== undefined) {
+      await checkoutCartService.replaceOfferAddons(locationId, offer.id, updates.checkoutAddons);
+    }
     if (effectiveCheckoutType === 'whop') {
       offer = await whopService.syncOffer(locationId, offer);
       logger.info({ offerId: offer.id, whopProductId: offer.whop_product_id, whopPlanId: offer.whop_plan_id }, 'Whop offer synced after update');
     }
-    return offer;
+    return this.withCheckoutAddons(offer);
   },
 
   async getById(offerId: string, locationId?: string): Promise<OfferRecord> {
-    return offerRepository.getById(offerId, locationId);
+    return this.withCheckoutAddons(await offerRepository.getById(offerId, locationId));
   },
 
   async listByLocation(locationId: string): Promise<OfferRecord[]> {
-    return offerRepository.listByLocation(locationId);
+    return this.withCheckoutAddons(await offerRepository.listByLocation(locationId));
   },
 
   async delete(offerId: string, locationId: string): Promise<void> {

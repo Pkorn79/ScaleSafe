@@ -165,6 +165,42 @@
         </div>
       </div>
 
+      <!-- Checkout Add-Ons -->
+      <h3 class="mt-4 mb-4">Checkout Add-Ons</h3>
+      <div class="addon-list">
+        <div v-for="(addon, idx) in form.checkoutAddons" :key="addon.localId" class="addon-row">
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select class="form-select" v-model="addon.kind">
+                <option value="order_bump">Order bump</option>
+                <option value="pre_payment_upsell">Pre-payment upsell</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">One-time Price</label>
+              <input class="form-input" type="number" min="0" step="0.01" v-model.number="addon.price" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title</label>
+            <input class="form-input" v-model="addon.title" placeholder="e.g., VIP onboarding call" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-textarea" v-model="addon.description" rows="2"></textarea>
+          </div>
+          <div class="addon-row-footer">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="addon.active" />
+              Active
+            </label>
+            <button type="button" class="btn btn-sm btn-outline" @click="removeCheckoutAddon(idx)">Remove</button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary" @click="addCheckoutAddon">Add add-on</button>
+      </div>
+
       <!-- Refund Policy -->
       <h3 class="mt-4 mb-4">Refund Policy</h3>
       <div class="grid grid-2">
@@ -488,6 +524,15 @@ const form = ref({
   dualPricingEnabled: false,
   achEnabled: false,
   achAccessPolicy: 'after_settlement' as 'after_settlement' | 'after_submission',
+  checkoutAddons: [] as Array<{
+    id?: string;
+    localId: string;
+    kind: 'order_bump' | 'pre_payment_upsell';
+    title: string;
+    description: string;
+    price: number;
+    active: boolean;
+  }>,
   checkoutMode: 'full_enrollment' as string,
   quickCheckoutConsentText: '',
   quickCheckoutShowDescription: true,
@@ -500,6 +545,26 @@ const visibleMilestoneCount = ref(1);
 
 function addMilestone() {
   if (visibleMilestoneCount.value < 8) visibleMilestoneCount.value += 1;
+}
+
+function makeAddon(overrides: Partial<(typeof form.value.checkoutAddons)[number]> = {}) {
+  return {
+    localId: overrides.localId || overrides.id || `addon-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: overrides.id,
+    kind: overrides.kind || 'order_bump',
+    title: overrides.title || '',
+    description: overrides.description || '',
+    price: Number(overrides.price || 0),
+    active: overrides.active ?? true,
+  } as (typeof form.value.checkoutAddons)[number];
+}
+
+function addCheckoutAddon() {
+  form.value.checkoutAddons.push(makeAddon());
+}
+
+function removeCheckoutAddon(index: number) {
+  form.value.checkoutAddons.splice(index, 1);
 }
 
 const calculatedInstallment = computed(() => {
@@ -593,6 +658,19 @@ onMounted(async () => {
       form.value.dualPricingEnabled = offer.dual_pricing_enabled ?? false;
       form.value.achEnabled = offer.ach_enabled ?? false;
       form.value.achAccessPolicy = offer.ach_access_policy || 'after_settlement';
+      const checkoutAddons = Array.isArray(offer.checkout_addons)
+        ? offer.checkout_addons
+        : Array.isArray(offer.checkoutAddons)
+          ? offer.checkoutAddons
+          : [];
+      form.value.checkoutAddons = checkoutAddons.map((addon: any) => makeAddon({
+        id: addon.id,
+        kind: addon.kind,
+        title: addon.title,
+        description: addon.description,
+        price: addon.price,
+        active: addon.active,
+      }));
       whopProductId.value = offer.whop_product_id || '';
       whopPlanId.value = offer.whop_plan_id || '';
       whopSyncStatus.value = offer.whop_sync_status || '';
@@ -677,6 +755,17 @@ async function save() {
     quickCheckoutShowRefundPolicy: form.value.quickCheckoutShowRefundPolicy,
     pulseCadenceEnabled: form.value.pulseCadenceEnabled,
     pulseFrequencyDays: form.value.pulseFrequencyDays,
+    checkoutAddons: form.value.checkoutAddons
+      .filter(addon => addon.title && Number(addon.price) >= 0)
+      .map((addon, index) => ({
+        id: addon.id,
+        kind: addon.kind,
+        title: addon.title.trim(),
+        description: addon.description || '',
+        price: Number(addon.price || 0),
+        active: addon.active,
+        sortOrder: index,
+      })),
   };
 
   try {
@@ -747,6 +836,25 @@ async function save() {
 
 .dual-pricing-details {
   margin-top: 12px;
+}
+
+.addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.addon-row {
+  border-left: 3px solid var(--ss-primary-500);
+  background: #f8fafc;
+  padding: 14px 16px;
+}
+
+.addon-row-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .dual-preview {

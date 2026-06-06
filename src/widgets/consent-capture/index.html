@@ -459,6 +459,14 @@
 
       try {
         var email = emailParam || (emailInput ? emailInput.value.trim() : '');
+        var selectedAddonIds = [];
+        try {
+          var storedAddons = sessionStorage.getItem('ss_selected_addons_' + offerId) || sessionStorage.getItem('ss_selected_addons') || '[]';
+          var parsedAddons = JSON.parse(storedAddons);
+          if (Array.isArray(parsedAddons)) selectedAddonIds = parsedAddons.filter(Boolean);
+        } catch (e) {
+          selectedAddonIds = [];
+        }
 
         // Compute T&C version hash
         var tcVersionHash = '';
@@ -488,6 +496,7 @@
           tcVersionHash: tcVersionHash,
           digitalSignature: sigInput.value.trim(),
           clausesAccepted: clausesAccepted,
+          selectedAddonIds: selectedAddonIds,
           scrollDepth: maxScrollDepth
         };
 

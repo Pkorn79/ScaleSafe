@@ -14,6 +14,7 @@ import { OfferRecord } from '../repositories/offer.repository';
 import { whopService } from '../services/whop.service';
 import { dualPricingService } from '../services/dual-pricing.service';
 import { stripeAchService } from '../services/stripe-ach.service';
+import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-cart.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -87,8 +88,13 @@ export async function getCheckoutQuote(req: Request, res: Response): Promise<voi
     return;
   }
 
-  const quote = await dualPricingService.quoteOffer(
+  const selectedAddonIds = String(req.query.selectedAddonIds || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const quote = await checkoutCartService.quoteOffer(
     offer,
+    selectedAddonIds,
     req.query.paymentChoice || 'pif',
     req.query.paymentMethod === 'ach' ? 'ach' : 'card',
   );
@@ -99,7 +105,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
   try {
     const {
       offerId, amount, currency, consentToken, contactId, contactEmail, contactName,
-      paymentChoice, checkoutMode, publishableKey,
+      paymentChoice, checkoutMode, publishableKey, selectedAddonIds,
     } = req.body || {};
     if (!offerId || !amount || !contactEmail || !contactName) {
       res.status(400).json({ success: false, error: 'offerId, amount, contactName, and contactEmail are required' });
@@ -131,7 +137,10 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       return;
     }
 
-    const quote = await dualPricingService.quoteOffer(offer, normalizedChoice, 'ach');
+    const cartSelectedAddonIds = consentToken
+      ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
+      : checkoutCartService.normalizeAddonIds(selectedAddonIds);
+    const quote = await checkoutCartService.quoteOffer(offer, cartSelectedAddonIds, normalizedChoice, 'ach');
     if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== submittedAmount) {
       logger.warn({
         offerId: offer.id,
@@ -193,6 +202,8 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
         merchant_id: merchantRow.id,
         offer_id: offer.id,
         scalesafe_offer_id: offer.id,
+        selected_addon_ids: cartSelectedAddonIds.join(','),
+        line_items: JSON.stringify(quote.lineItems),
         consent_token: String(consentToken || ''),
         contact_id: String(contactId || ''),
         customer_email: String(contactEmail),
@@ -474,7 +485,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     orderId, transactionId, subscriptionId,
     offerId, ghlProductId, consentToken, saveCard,
     deviceFingerprint, browserInfo,
-    productDetails, requestThreeDSecure,
+    productDetails, requestThreeDSecure, selectedAddonIds,
   } = req.body;
 
   if (!paymentToken || !amount) {
@@ -561,6 +572,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
   }
 
   let claimedPaymentAttemptKey = '';
+  let cartQuote: CheckoutCartQuote | null = null;
   try {
     // Resolve offer hint for per-offer processor override
     let offerHint: { processor_override: 'nmi' | 'stripe' | null; nmi_processor_id: string | null } | undefined;
@@ -593,12 +605,15 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     const paymentMethod = req.body.paymentMethod === 'ach' ? 'ach' : 'card';
     if (resolvedOffer) {
-      const quote = await dualPricingService.quoteOffer(resolvedOffer, req.body.paymentChoice, paymentMethod);
-      if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== amount) {
+      const cartSelectedAddonIds = consentToken
+        ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
+        : checkoutCartService.normalizeAddonIds(selectedAddonIds);
+      cartQuote = await checkoutCartService.quoteOffer(resolvedOffer, cartSelectedAddonIds, req.body.paymentChoice, paymentMethod);
+      if (cartQuote.selectedAmountCents > 0 && cartQuote.selectedAmountCents !== amount) {
         logger.warn({
           offerId: resolvedOffer.id,
           submittedAmount: amount,
-          expectedAmount: quote.selectedAmountCents,
+          expectedAmount: cartQuote.selectedAmountCents,
           paymentMethod,
         }, 'Rejected checkout amount mismatch');
         res.status(400).json({ success: false, error: 'Payment amount does not match selected offer' });
@@ -661,6 +676,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       description: productDetails?.[0]?.name || 'ScaleSafe Payment',
       metadata: {
         scalesafe_offer_id: offerId || '',
+        selected_addon_ids: (cartQuote?.lineItems || []).filter((item) => item.addonId).map((item) => item.addonId).join(','),
+        line_items: cartQuote ? JSON.stringify(cartQuote.lineItems) : '',
         consent_token: consentToken || '',
         ghl_transaction_id: transactionId || '',
         ghl_order_id: orderId || '',
@@ -738,6 +755,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       browser_info: browserInfo || null,
       source: 'checkout',
       is_recurring: false,
+      line_items: cartQuote?.lineItems || [],
     });
 
     // ─── Complete enrollment + create GHL records ──────
@@ -1075,6 +1093,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             amount: amount / 100,
             amount_display: `$${Number(amount / 100).toFixed(2)}`,
             amountDisplay: `$${Number(amount / 100).toFixed(2)}`,
+            line_items: cartQuote?.lineItems || [],
+            lineItems: cartQuote?.lineItems || [],
             transaction_id: result.transactionId,
             transactionId: result.transactionId,
             enrollment_id: finalEnrollmentId || '',

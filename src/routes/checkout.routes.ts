@@ -621,6 +621,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .dual-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;margin:3px 0}
 .dual-row strong{font-size:14px;color:#111827}
 .dual-note{font-size:12px;color:#64748b;line-height:1.35;margin-top:6px}
+.addon-box{margin-top:12px}
+.addon-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff}
+.addon-option input{width:18px;height:18px;margin-top:3px;accent-color:#2563eb;flex-shrink:0}
+.addon-copy{flex:1}
+.addon-copy strong{display:block;font-size:14px;color:#111827}
+.addon-copy p{font-size:13px;color:#6b7280;line-height:1.4;margin-top:4px}
+.addon-kind{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.addon-price{font-size:14px;color:#2563eb;white-space:nowrap}
 .method-toggle{display:none;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:12px}
 .method-toggle.active{display:flex}
 .method-option{flex:1;border:0;background:#f9fafb;color:#374151;padding:10px;font-size:14px;font-weight:600;cursor:pointer}
@@ -683,6 +691,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="dual-row"><span>Bank transfer price</span><strong id="dual-ach-price"></strong></div>
       <div class="dual-row"><span>Card price</span><strong id="dual-card-price"></strong></div>
     </div>
+    <div id="checkout-addons" class="addon-box hidden"></div>
 
     <div class="divider"></div>
 
@@ -788,6 +797,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
   var selectedPaymentMethod = 'card';
+  var selectedAddonIds = [];
   var paymentInFlight = false;
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
@@ -802,6 +812,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var prefillPhone = params.get('contactPhone') || '';
 
   function el(id) { return document.getElementById(id); }
+
+  function readStoredAddonIds() {
+    try {
+      var stored = sessionStorage.getItem('ss_selected_addons_' + offerId) || sessionStorage.getItem('ss_selected_addons') || '[]';
+      var parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function persistAddonIds() {
+    try {
+      sessionStorage.setItem('ss_selected_addons_' + offerId, JSON.stringify(selectedAddonIds));
+      sessionStorage.setItem('ss_selected_addons', JSON.stringify(selectedAddonIds));
+    } catch(e) {}
+  }
 
   // Apply prefill on load
   (function() {
@@ -918,6 +945,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             if (el('cust-name') && fullName) el('cust-name').value = fullName;
             if (el('cust-email') && consentData.email) el('cust-email').value = consentData.email;
             if (consentData.contactId) prefillContactId = consentData.contactId;
+            if (Array.isArray(consentData.selectedCheckoutItems)) {
+              selectedAddonIds = consentData.selectedCheckoutItems
+                .map(function(item) { return item && item.addonId ? String(item.addonId) : ''; })
+                .filter(Boolean);
+              persistAddonIds();
+            }
           }
         } catch(e) { /* silent */ }
       }
@@ -980,6 +1013,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('offer-refund').textContent = offerData.refundWindowText;
       el('offer-refund').classList.remove('hidden');
     }
+    renderCheckoutAddons();
 
     // Update consent label with T&C link (source order: per-offer tcUrl → default text)
     var consentLabel = el('consent-text');
@@ -1007,6 +1041,78 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
   }
 
+  function renderCheckoutAddons() {
+    var box = el('checkout-addons');
+    if (!box) return;
+    var addons = Array.isArray(offerData.checkoutAddons)
+      ? offerData.checkoutAddons.filter(function(addon) { return addon && addon.active !== false; })
+      : [];
+    if (consentMode) {
+      selectedAddonIds = readStoredAddonIds();
+    }
+    if (!addons.length) {
+      box.classList.add('hidden');
+      box.textContent = '';
+      selectedAddonIds = [];
+      persistAddonIds();
+      return;
+    }
+
+    box.textContent = '';
+    var title = document.createElement('div');
+    title.className = 'section-title';
+    title.textContent = 'Optional Add-Ons';
+    box.appendChild(title);
+    addons.forEach(function(addon, idx) {
+      var checked = selectedAddonIds.indexOf(String(addon.id)) !== -1;
+      var kindLabel = addon.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
+      var label = document.createElement('label');
+      label.className = 'addon-option';
+      label.setAttribute('for', 'checkout-addon-' + idx);
+      var input = document.createElement('input');
+      input.type = 'checkbox';
+      input.className = 'checkout-addon-cb';
+      input.id = 'checkout-addon-' + idx;
+      input.setAttribute('data-addon-id', String(addon.id || ''));
+      input.checked = checked;
+      input.disabled = consentMode;
+      var copy = document.createElement('div');
+      copy.className = 'addon-copy';
+      var kind = document.createElement('div');
+      kind.className = 'addon-kind';
+      kind.textContent = kindLabel;
+      var name = document.createElement('strong');
+      name.textContent = addon.title || 'Add-on';
+      copy.appendChild(kind);
+      copy.appendChild(name);
+      if (addon.description) {
+        var desc = document.createElement('p');
+        desc.textContent = addon.description;
+        copy.appendChild(desc);
+      }
+      var price = document.createElement('strong');
+      price.className = 'addon-price';
+      price.textContent = formatCurrency(Number(addon.price || 0));
+      label.appendChild(input);
+      label.appendChild(copy);
+      label.appendChild(price);
+      box.appendChild(label);
+    });
+    box.classList.remove('hidden');
+
+    var addonCbs = box.querySelectorAll('.checkout-addon-cb');
+    addonCbs.forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        selectedAddonIds = [];
+        addonCbs.forEach(function(inner) {
+          if (inner.checked) selectedAddonIds.push(inner.getAttribute('data-addon-id'));
+        });
+        persistAddonIds();
+        updatePricingDisplay();
+      });
+    });
+  }
+
   function baseDisplayPrice() {
     var displayPrice = offerData.price;
     if (paymentChoice === 'pif' && offerData.pifPrice != null) {
@@ -1019,8 +1125,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return Number(displayPrice || 0);
   }
 
+  function selectedAddonTotal() {
+    var addons = Array.isArray(offerData && offerData.checkoutAddons) ? offerData.checkoutAddons : [];
+    var total = 0;
+    addons.forEach(function(addon) {
+      if (addon && addon.active !== false && selectedAddonIds.indexOf(String(addon.id)) !== -1) {
+        total += Number(addon.price || 0);
+      }
+    });
+    return Math.round(total * 100) / 100;
+  }
+
   function priceQuote() {
-    var basePrice = baseDisplayPrice();
+    var basePrice = Math.round((baseDisplayPrice() + selectedAddonTotal()) * 100) / 100;
     var dual = offerData.dualPricing || null;
     if (!dual || !offerData.dualPricingEnabled) {
       return { cardPrice: basePrice, achPrice: basePrice, selectedPrice: basePrice, enabled: false };
@@ -1299,7 +1416,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             contactName: custName,
             contactEmail: custEmail || enrollmentEmail,
             paymentChoice: paymentChoice || 'pif',
-            checkoutMode: consentMode ? 'full_enrollment' : 'quick_checkout'
+            checkoutMode: consentMode ? 'full_enrollment' : 'quick_checkout',
+            selectedAddonIds: selectedAddonIds
           })
         });
         var intentData = await intentRes.json();
@@ -1369,6 +1487,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           contactPhone: custPhone,
           paymentChoice: paymentChoice || 'pif',
           paymentMethod: selectedPaymentMethod,
+          selectedAddonIds: selectedAddonIds,
           achAccountHolderType: selectedPaymentMethod === 'ach' ? el('ach-holder-type').value : undefined,
           achAccountType: selectedPaymentMethod === 'ach' ? el('ach-account-type').value : undefined,
           achSecCode: selectedPaymentMethod === 'ach' ? 'WEB' : undefined,

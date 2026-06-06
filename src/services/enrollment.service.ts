@@ -9,6 +9,7 @@ import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { verifyPublicActionToken } from '../utils/public-action-token';
 import { dualPricingService } from './dual-pricing.service';
+import { checkoutCartService } from './checkout-cart.service';
 import {
   SS_CONTACT_FIELDS,
   OFFER_CONTACT_FIELDS,
@@ -76,6 +77,7 @@ interface FunnelConsentInput {
   digitalSignature: string;
   clausesAccepted: string[];
   scrollDepth: number;
+  selectedAddonIds?: string[];
 }
 
 interface PaymentWebhookInput {
@@ -188,6 +190,7 @@ export const enrollmentService = {
     // Get merchant info
     const merchant = await merchantRepository.findByLocationId(offer.location_id);
     const dualPricingControl = await dualPricingService.getActiveControl(offer.location_id);
+    const checkoutAddons = await checkoutCartService.listAddons(offer.id, offer.location_id, true);
 
     // Build milestones array (skip nulls)
     const milestones = [];
@@ -249,6 +252,13 @@ export const enrollmentService = {
       merchantName: merchant?.business_name || '',
       merchantSupportEmail: merchant?.support_email || '',
       merchantLogoUrl: merchant?.logo_url || null,
+      checkoutAddons: checkoutAddons.map((addon) => ({
+        id: addon.id,
+        kind: addon.kind,
+        title: addon.title,
+        description: addon.description || '',
+        price: addon.price,
+      })),
     };
   },
 
@@ -313,6 +323,13 @@ export const enrollmentService = {
     const sigParts = (input.digitalSignature || '').trim().split(/\s+/);
     const firstName = sigParts[0] || '';
     const lastName = sigParts.slice(1).join(' ') || '';
+    const cartQuote = await checkoutCartService.quoteOffer(
+      offer,
+      input.selectedAddonIds || [],
+      'pif',
+      'card',
+    );
+    const selectedCheckoutItems = checkoutCartService.lineItemsToSelectedCheckoutItems(cartQuote.lineItems);
 
     if (existing && (existing as any).status === 'paid_pending_enrollment') {
       const { payFirstEnrollmentService } = await import('./pay-first-enrollment.service');
@@ -350,6 +367,7 @@ export const enrollmentService = {
           scroll_depth: input.scrollDepth,
           first_name: firstName,
           last_name: lastName,
+          selected_checkout_items: selectedCheckoutItems,
         })
         .eq('id', existing.id);
 
@@ -358,7 +376,7 @@ export const enrollmentService = {
       logger.info({ enrollmentId: existing.id, offerId: input.offerId }, 'Funnel consent captured (updated)');
 
       // Free offer: complete enrollment immediately (skip checkout)
-      const isFreeOffer = !offer.price || Number(offer.price) === 0;
+      const isFreeOffer = (!offer.price || Number(offer.price) === 0) && cartQuote.addonAmountCents === 0;
       if (isFreeOffer) {
         try {
           const { phase2EnrollmentService } = require('./phase2Enrollment.service');
@@ -399,6 +417,7 @@ export const enrollmentService = {
         scroll_depth: input.scrollDepth,
         first_name: firstName,
         last_name: lastName,
+        selected_checkout_items: selectedCheckoutItems,
       })
       .select('id')
       .single();
@@ -408,7 +427,7 @@ export const enrollmentService = {
     logger.info({ enrollmentId: created.id, offerId: input.offerId }, 'Funnel consent captured (new)');
 
     // Free offer: complete enrollment immediately (skip checkout)
-    const isFreeOffer = !offer.price || Number(offer.price) === 0;
+    const isFreeOffer = (!offer.price || Number(offer.price) === 0) && cartQuote.addonAmountCents === 0;
     if (isFreeOffer) {
       try {
         const { phase2EnrollmentService } = require('./phase2Enrollment.service');

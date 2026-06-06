@@ -17,6 +17,7 @@ export interface PaymentEventRecord {
   failure_reason: string | null;
   attempt_count: number;
   raw_webhook_payload: Record<string, unknown> | null;
+  line_items?: unknown[] | null;
   source: string | null;
   is_recurring: boolean | null;
   created_at: string;
@@ -40,6 +41,7 @@ export interface PaymentEventInsert {
   failure_reason?: string;
   attempt_count?: number;
   raw_webhook_payload?: Record<string, unknown>;
+  line_items?: unknown[] | null;
   source?: string;
   is_recurring?: boolean;
   payment_status?: string;

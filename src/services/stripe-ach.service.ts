@@ -243,6 +243,7 @@ async function fireStripeAchReceipt(params: {
   transactionId: string;
   paymentKind: string;
   paymentTiming: string;
+  lineItems?: any[];
 }): Promise<void> {
   await triggerService.fireTrigger(params.locationId, 'ss_payment_received', {
     event_type: 'payment_received',
@@ -267,6 +268,8 @@ async function fireStripeAchReceipt(params: {
     amount: params.amount,
     amount_display: `$${params.amount.toFixed(2)}`,
     amountDisplay: `$${params.amount.toFixed(2)}`,
+    line_items: params.lineItems || [],
+    lineItems: params.lineItems || [],
     transaction_id: params.transactionId,
     transactionId: params.transactionId,
     payment_kind: params.paymentKind,
@@ -330,6 +333,16 @@ function stripeAchPaymentSource(paymentStatus: 'processing' | 'settled' | 'faile
   return paymentStatus === 'processing' ? 'stripe_ach_submission' : 'stripe_ach_settlement';
 }
 
+function parseLineItems(value: unknown): any[] {
+  if (!value || typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export const stripeAchService = {
   async recordPaymentIntentState(params: {
     merchant: MerchantLike;
@@ -358,6 +371,7 @@ export const stripeAchService = {
     const paymentStatus = stripeAchStatus(paymentIntent.status);
     const now = new Date().toISOString();
     const amount = centsToDollars(paymentIntent.amount || 0);
+    const lineItems = parseLineItems(metadata.line_items);
     const offerId = String(metadata.offer_id || metadata.scalesafe_offer_id || '') || null;
     const consentToken = String(metadata.consent_token || '') || null;
     const achAccessPolicy = await resolveAchAccessPolicy(locationId, offerId);
@@ -395,6 +409,7 @@ export const stripeAchService = {
     const updatePayload: Record<string, unknown> = {
       payment_status: paymentStatus,
       raw_webhook_payload: paymentIntent,
+      ...(lineItems.length ? { line_items: lineItems } : {}),
       ...(paymentStatus === 'settled' ? { settled_at: now } : {}),
       ...(paymentStatus === 'failed' ? {
         returned_at: now,
@@ -432,6 +447,7 @@ export const stripeAchService = {
           consent_token: consentToken,
           source,
           is_recurring: false,
+          line_items: lineItems,
           raw_webhook_payload: paymentIntent,
           ...(paymentStatus === 'settled' ? { settled_at: now } : {}),
           ...(paymentStatus === 'failed' ? {
@@ -555,6 +571,8 @@ export const stripeAchService = {
               ach_payment_status: paymentStatus,
               achPaymentStatus: paymentStatus,
               amount,
+              line_items: lineItems,
+              lineItems,
               first_name: metadata.first_name || '',
               firstName: metadata.first_name || '',
               last_name: metadata.last_name || '',
@@ -580,6 +598,8 @@ export const stripeAchService = {
             amount,
             amount_display: `$${amount.toFixed(2)}`,
             amountDisplay: `$${amount.toFixed(2)}`,
+            line_items: lineItems,
+            lineItems,
             transaction_id: transactionId,
             transactionId,
             payment_kind: enrollment.payment_type || paymentType,
@@ -624,6 +644,7 @@ export const stripeAchService = {
                 transactionId,
                 paymentKind: paymentTypeForEnrollment,
                 paymentTiming: 'during_enrollment',
+                lineItems,
               });
             }
             return { paymentStatus, paymentEventId, enrollmentId };
@@ -674,6 +695,8 @@ export const stripeAchService = {
         amount,
         amount_display: `$${amount.toFixed(2)}`,
         amountDisplay: `$${amount.toFixed(2)}`,
+        line_items: lineItems,
+        lineItems,
         transaction_id: transactionId,
         transactionId,
         payment_kind: metadata.payment_kind || metadata.payment_choice || 'manual_sale',
