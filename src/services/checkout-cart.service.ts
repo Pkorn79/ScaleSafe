@@ -2,6 +2,7 @@ import { getSupabase } from '../clients/supabase.client';
 import type { OfferRecord } from '../repositories/offer.repository';
 import { buildDualPricingQuote, dualPricingService, PaymentMethod } from './dual-pricing.service';
 import { ValidationError } from '../utils/errors';
+import { logger } from '../utils/logger';
 
 export type CheckoutAddonKind = 'order_bump' | 'pre_payment_upsell';
 
@@ -68,6 +69,30 @@ function normalizePaymentChoice(choice: unknown, offer: OfferRecord): string {
   return raw || 'pif';
 }
 
+function checkoutAddonWriteMessage(err: any): string {
+  const message = String(err?.message || '');
+  if (
+    err?.code === '42P01'
+    || message.includes('offer_checkout_addons')
+    || message.includes('Could not find the table')
+  ) {
+    return 'Checkout add-ons are not ready in the database. Apply migration 080_checkout_addons.sql, then try again.';
+  }
+  if (err?.code === '42703' || err?.code === 'PGRST204') {
+    return 'Checkout add-on columns are not ready in the database. Apply migration 080_checkout_addons.sql, then try again.';
+  }
+  if (err?.code === '42501' || message.toLowerCase().includes('row-level security')) {
+    return 'Checkout add-ons could not be saved because the database write was blocked by permissions.';
+  }
+  if (err?.code === '23503') {
+    return 'Checkout add-ons could not be linked to this offer. Reload the offer and try again.';
+  }
+  if (err?.code === '23514') {
+    return 'Checkout add-ons contain an invalid value. Check the add-on type and price, then try again.';
+  }
+  return `Checkout add-ons could not be saved: ${message || 'unknown database error'}`;
+}
+
 function baseAmountCents(offer: OfferRecord, paymentChoice: unknown): number {
   const choice = normalizePaymentChoice(paymentChoice, offer);
   if (choice === 'installment' || choice === 'subscription') {
@@ -128,30 +153,43 @@ export const checkoutCartService = {
   },
 
   async replaceOfferAddons(locationId: string, offerId: string, addons: CheckoutAddonInput[] = []): Promise<void> {
-    const supabase = getSupabase();
-    const { error: deleteError } = await supabase
-      .from('offer_checkout_addons')
-      .delete()
-      .eq('location_id', locationId)
-      .eq('offer_id', offerId);
-    if (deleteError) throw deleteError;
+    try {
+      const supabase = getSupabase();
+      const { error: deleteError } = await supabase
+        .from('offer_checkout_addons')
+        .delete()
+        .eq('location_id', locationId)
+        .eq('offer_id', offerId);
+      if (deleteError) throw deleteError;
 
-    const rows = (addons || [])
-      .map((addon, index) => ({
-        location_id: locationId,
-        offer_id: offerId,
-        kind: normalizeKind(addon.kind),
-        title: String(addon.title || '').trim(),
-        description: String(addon.description || '').trim() || null,
-        price: Number(addon.price || 0),
-        active: addon.active !== false,
-        sort_order: Number.isFinite(Number(addon.sortOrder)) ? Number(addon.sortOrder) : index,
-      }))
-      .filter((addon) => addon.title && Number.isFinite(addon.price) && addon.price >= 0);
+      const rows = (addons || [])
+        .map((addon, index) => ({
+          location_id: locationId,
+          offer_id: offerId,
+          kind: normalizeKind(addon.kind),
+          title: String(addon.title || '').trim(),
+          description: String(addon.description || '').trim() || null,
+          price: Number(addon.price || 0),
+          active: addon.active !== false,
+          sort_order: Number.isFinite(Number(addon.sortOrder)) ? Number(addon.sortOrder) : index,
+        }))
+        .filter((addon) => addon.title && Number.isFinite(addon.price) && addon.price >= 0);
 
-    if (rows.length === 0) return;
-    const { error } = await supabase.from('offer_checkout_addons').insert(rows);
-    if (error) throw error;
+      if (rows.length === 0) return;
+      const { error } = await supabase.from('offer_checkout_addons').insert(rows);
+      if (error) throw error;
+    } catch (err: any) {
+      logger.error({
+        locationId,
+        offerId,
+        addonCount: Array.isArray(addons) ? addons.length : 0,
+        errorCode: err?.code,
+        errorMessage: err?.message,
+        errorDetails: err?.details,
+        errorHint: err?.hint,
+      }, 'Offer checkout add-ons save failed');
+      throw new ValidationError(checkoutAddonWriteMessage(err));
+    }
   },
 
   async quoteOffer(

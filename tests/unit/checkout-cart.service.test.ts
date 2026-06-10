@@ -23,17 +23,21 @@ const addons = [
   },
 ];
 
+let mockInsertError: any = null;
+
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
     from: (table: string) => {
       const state: Record<string, any> = { table, filters: [] as Array<[string, any]> };
       const builder: any = {
         select: () => builder,
+        delete: () => builder,
         order: () => builder,
         eq: (column: string, value: any) => {
           state.filters.push([column, value]);
           return builder;
         },
+        insert: () => ({ error: mockInsertError }),
         then: (resolve: any) => {
           if (table === 'offer_checkout_addons') {
             let rows = [...addons];
@@ -49,6 +53,10 @@ jest.mock('../../src/clients/supabase.client', () => ({
       return builder;
     },
   }),
+}));
+
+jest.mock('../../src/utils/logger', () => ({
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 jest.mock('../../src/services/dual-pricing.service', () => {
@@ -85,6 +93,10 @@ const offer: any = {
 };
 
 describe('checkoutCartService', () => {
+  beforeEach(() => {
+    mockInsertError = null;
+  });
+
   it('adds selected one-time add-ons before applying card uplift', async () => {
     const quote = await checkoutCartService.quoteOffer(offer, ['addon-bump'], 'pif', 'card');
 
@@ -102,5 +114,19 @@ describe('checkoutCartService', () => {
   it('rejects inactive or tampered add-on ids', async () => {
     await expect(checkoutCartService.quoteOffer(offer, ['addon-inactive'], 'pif', 'card'))
       .rejects.toThrow('One or more selected add-ons are no longer available.');
+  });
+
+  it('returns a clear setup error when checkout add-ons schema is missing', async () => {
+    mockInsertError = {
+      code: '42P01',
+      message: 'relation "offer_checkout_addons" does not exist',
+    };
+
+    await expect(checkoutCartService.replaceOfferAddons('loc-1', 'offer-1', [{
+      kind: 'order_bump',
+      title: 'VIP onboarding call',
+      price: 25,
+      active: true,
+    }])).rejects.toThrow('Apply migration 080_checkout_addons.sql');
   });
 });
