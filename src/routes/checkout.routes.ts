@@ -622,13 +622,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .dual-row strong{font-size:14px;color:#111827}
 .dual-note{font-size:12px;color:#64748b;line-height:1.35;margin-top:6px}
 .addon-box{margin-top:12px}
+.addon-section{margin-top:12px}
+.addon-section-title{font-size:13px;font-weight:700;color:#374151;margin-bottom:8px}
 .addon-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff}
+.addon-option.order-bump{border-color:#bfdbfe;background:#eff6ff}
+.addon-option.pre-payment-upsell{border-color:#c7d2fe;background:#f8fafc;padding:14px}
 .addon-option input{width:18px;height:18px;margin-top:3px;accent-color:#2563eb;flex-shrink:0}
 .addon-copy{flex:1}
 .addon-copy strong{display:block;font-size:14px;color:#111827}
 .addon-copy p{font-size:13px;color:#6b7280;line-height:1.4;margin-top:4px}
 .addon-kind{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
 .addon-price{font-size:14px;color:#2563eb;white-space:nowrap}
+.price-summary{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin:10px 0 8px}
+.price-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;margin:3px 0}
+.price-summary-row strong{font-size:14px;color:#111827}
 .method-toggle{display:none;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:12px}
 .method-toggle.active{display:flex}
 .method-option{flex:1;border:0;background:#f9fafb;color:#374151;padding:10px;font-size:14px;font-weight:600;cursor:pointer}
@@ -687,9 +694,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
     <div id="installment-note" class="hidden" style="display:none;font-size:12px;color:#6b7280;text-align:center;margin-bottom:8px"></div>
+    <div id="price-summary" class="price-summary hidden">
+      <div class="price-summary-row"><span>Due today</span><strong id="due-today-price"></strong></div>
+      <div id="future-payment-row" class="price-summary-row hidden"><span id="future-payment-label">Future payments</span><strong id="future-payment-price"></strong></div>
+    </div>
     <div id="dual-pricing-box" class="dual-pricing-box hidden">
-      <div class="dual-row"><span>Bank transfer price</span><strong id="dual-ach-price"></strong></div>
-      <div class="dual-row"><span>Card price</span><strong id="dual-card-price"></strong></div>
+      <div class="dual-row"><span>Bank transfer due today</span><strong id="dual-ach-price"></strong></div>
+      <div class="dual-row"><span>Card due today</span><strong id="dual-card-price"></strong></div>
     </div>
     <div id="checkout-addons" class="addon-box hidden"></div>
 
@@ -1059,45 +1070,56 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
 
     box.textContent = '';
-    var title = document.createElement('div');
-    title.className = 'section-title';
-    title.textContent = 'Optional Add-Ons';
-    box.appendChild(title);
-    addons.forEach(function(addon, idx) {
-      var checked = selectedAddonIds.indexOf(String(addon.id)) !== -1;
-      var kindLabel = addon.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
-      var label = document.createElement('label');
-      label.className = 'addon-option';
-      label.setAttribute('for', 'checkout-addon-' + idx);
-      var input = document.createElement('input');
-      input.type = 'checkbox';
-      input.className = 'checkout-addon-cb';
-      input.id = 'checkout-addon-' + idx;
-      input.setAttribute('data-addon-id', String(addon.id || ''));
-      input.checked = checked;
-      input.disabled = consentMode;
-      var copy = document.createElement('div');
-      copy.className = 'addon-copy';
-      var kind = document.createElement('div');
-      kind.className = 'addon-kind';
-      kind.textContent = kindLabel;
-      var name = document.createElement('strong');
-      name.textContent = addon.title || 'Add-on';
-      copy.appendChild(kind);
-      copy.appendChild(name);
-      if (addon.description) {
-        var desc = document.createElement('p');
-        desc.textContent = addon.description;
-        copy.appendChild(desc);
-      }
-      var price = document.createElement('strong');
-      price.className = 'addon-price';
-      price.textContent = formatCurrency(Number(addon.price || 0));
-      label.appendChild(input);
-      label.appendChild(copy);
-      label.appendChild(price);
-      box.appendChild(label);
-    });
+    var orderBumps = addons.filter(function(addon) { return addon.kind !== 'pre_payment_upsell'; });
+    var upsells = addons.filter(function(addon) { return addon.kind === 'pre_payment_upsell'; });
+
+    function appendAddonSection(sectionTitle, sectionAddons, className, kindLabel) {
+      if (!sectionAddons.length) return;
+      var section = document.createElement('div');
+      section.className = 'addon-section';
+      var title = document.createElement('div');
+      title.className = 'addon-section-title';
+      title.textContent = sectionTitle;
+      section.appendChild(title);
+      sectionAddons.forEach(function(addon, idx) {
+        var checked = selectedAddonIds.indexOf(String(addon.id)) !== -1;
+        var label = document.createElement('label');
+        label.className = 'addon-option ' + className;
+        label.setAttribute('for', className + '-' + idx);
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'checkout-addon-cb';
+        input.id = className + '-' + idx;
+        input.setAttribute('data-addon-id', String(addon.id || ''));
+        input.checked = checked;
+        input.disabled = consentMode;
+        var copy = document.createElement('div');
+        copy.className = 'addon-copy';
+        var kind = document.createElement('div');
+        kind.className = 'addon-kind';
+        kind.textContent = kindLabel;
+        var name = document.createElement('strong');
+        name.textContent = addon.title || 'Add-on';
+        copy.appendChild(kind);
+        copy.appendChild(name);
+        if (addon.description) {
+          var desc = document.createElement('p');
+          desc.textContent = addon.description;
+          copy.appendChild(desc);
+        }
+        var price = document.createElement('strong');
+        price.className = 'addon-price';
+        price.textContent = formatCurrency(Number(addon.price || 0));
+        label.appendChild(input);
+        label.appendChild(copy);
+        label.appendChild(price);
+        section.appendChild(label);
+      });
+      box.appendChild(section);
+    }
+
+    appendAddonSection("Add to today's checkout", orderBumps, 'order-bump', 'One-time add-on');
+    appendAddonSection('Optional upgrade', upsells, 'pre-payment-upsell', 'One-time upgrade');
     box.classList.remove('hidden');
 
     var addonCbs = box.querySelectorAll('.checkout-addon-cb');
@@ -1137,18 +1159,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   }
 
   function priceQuote() {
-    var basePrice = Math.round((baseDisplayPrice() + selectedAddonTotal()) * 100) / 100;
+    var recurringBasePrice = Math.round(baseDisplayPrice() * 100) / 100;
+    var dueTodayBasePrice = Math.round((recurringBasePrice + selectedAddonTotal()) * 100) / 100;
     var dual = offerData.dualPricing || null;
-    if (!dual || !offerData.dualPricingEnabled) {
-      return { cardPrice: basePrice, achPrice: basePrice, selectedPrice: basePrice, enabled: false };
+    var enabled = !!(dual && offerData.dualPricingEnabled);
+    var uplift = enabled ? Number(dual.cardUpliftPercent || 0) : 0;
+    function cardAmount(amount) {
+      return uplift > 0 ? Math.round((amount * (1 + uplift / 100)) * 100) / 100 : amount;
     }
-    var uplift = Number(dual.cardUpliftPercent || 0);
-    var achPrice = basePrice;
-    var cardPrice = uplift > 0 ? Math.round((basePrice * (1 + uplift / 100)) * 100) / 100 : basePrice;
+    if (!dual || !offerData.dualPricingEnabled) {
+      return {
+        cardPrice: dueTodayBasePrice,
+        achPrice: dueTodayBasePrice,
+        selectedPrice: dueTodayBasePrice,
+        futureCardPrice: recurringBasePrice,
+        futureAchPrice: recurringBasePrice,
+        futureSelectedPrice: recurringBasePrice,
+        enabled: false
+      };
+    }
+    var achPrice = dueTodayBasePrice;
+    var cardPrice = cardAmount(dueTodayBasePrice);
+    var futureAchPrice = recurringBasePrice;
+    var futureCardPrice = cardAmount(recurringBasePrice);
     return {
       cardPrice: cardPrice,
       achPrice: achPrice,
       selectedPrice: selectedPaymentMethod === 'ach' ? achPrice : cardPrice,
+      futureCardPrice: futureCardPrice,
+      futureAchPrice: futureAchPrice,
+      futureSelectedPrice: selectedPaymentMethod === 'ach' ? futureAchPrice : futureCardPrice,
       enabled: true
     };
   }
@@ -1192,11 +1232,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var quote = priceQuote();
     var displayPrice = quote.selectedPrice;
     if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
-      note = offerData.installmentCount + ' ' + (offerData.installmentFrequency || 'monthly') + ' payments of ' + formatCurrency(displayPrice);
+      var remaining = Math.max(0, Number(offerData.installmentCount || 0) - 1);
+      note = remaining > 0
+        ? remaining + ' future ' + (offerData.installmentFrequency || 'monthly') + ' payment' + (remaining === 1 ? '' : 's') + ' of ' + formatCurrency(quote.futureSelectedPrice)
+        : 'No future payments after today';
     } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
-      note = formatCurrency(displayPrice) + ' / ' + (offerData.installmentFrequency || 'month') + ' (ongoing)';
+      note = 'Future payments: ' + formatCurrency(quote.futureSelectedPrice) + ' / ' + (offerData.installmentFrequency || 'month');
     }
     el('offer-price').textContent = formatCurrency(displayPrice);
+    el('due-today-price').textContent = formatCurrency(displayPrice);
+    el('price-summary').classList.remove('hidden');
+    if ((paymentChoice === 'installments' || paymentChoice === 'subscription') && quote.futureSelectedPrice > 0) {
+      el('future-payment-label').textContent = paymentChoice === 'subscription' ? 'Future payments' : 'Remaining payments';
+      el('future-payment-price').textContent = paymentChoice === 'subscription'
+        ? formatCurrency(quote.futureSelectedPrice) + ' / ' + (offerData.installmentFrequency || 'month')
+        : formatCurrency(quote.futureSelectedPrice);
+      el('future-payment-row').classList.remove('hidden');
+    } else {
+      el('future-payment-row').classList.add('hidden');
+    }
     if (quote.enabled) {
       el('dual-ach-price').textContent = formatCurrency(quote.achPrice);
       el('dual-card-price').textContent = formatCurrency(quote.cardPrice);

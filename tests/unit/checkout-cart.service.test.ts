@@ -102,13 +102,49 @@ describe('checkoutCartService', () => {
 
     expect(quote.baseAmountCents).toBe(100);
     expect(quote.addonAmountCents).toBe(50);
+    expect(quote.dueTodayAmountCents).toBe(155);
     expect(quote.achAmountCents).toBe(150);
     expect(quote.cardAmountCents).toBe(155);
     expect(quote.selectedAmountCents).toBe(155);
+    expect(quote.futureRecurringSelectedAmountCents).toBe(0);
     expect(quote.lineItems).toEqual([
       expect.objectContaining({ type: 'base_offer', amountCents: 100 }),
       expect.objectContaining({ type: 'order_bump', addonId: 'addon-bump', amountCents: 50 }),
     ]);
+  });
+
+  it('keeps one-time add-ons out of future installment payments', async () => {
+    const installmentOffer = {
+      ...offer,
+      price: 1,
+      payment_type: 'installments',
+      installment_amount: 0.5,
+      num_payments: 2,
+    };
+
+    const quote = await checkoutCartService.quoteOffer(installmentOffer, ['addon-bump'], 'installment', 'ach');
+
+    expect(quote.baseAmountCents).toBe(50);
+    expect(quote.addonAmountCents).toBe(50);
+    expect(quote.dueTodayAmountCents).toBe(100);
+    expect(quote.selectedAmountCents).toBe(100);
+    expect(quote.futureRecurringSelectedAmountCents).toBe(50);
+  });
+
+  it('applies card uplift to due today and future recurring amounts separately', async () => {
+    const installmentOffer = {
+      ...offer,
+      price: 1,
+      payment_type: 'installments',
+      installment_amount: 0.5,
+      num_payments: 2,
+    };
+
+    const quote = await checkoutCartService.quoteOffer(installmentOffer, ['addon-bump'], 'installment', 'card');
+
+    expect(quote.dueTodayAmountCents).toBe(103);
+    expect(quote.selectedAmountCents).toBe(103);
+    expect(quote.futureRecurringSelectedAmountCents).toBe(52);
   });
 
   it('rejects inactive or tampered add-on ids', async () => {

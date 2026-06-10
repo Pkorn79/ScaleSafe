@@ -12,7 +12,6 @@ import { ghlApi } from '../clients/ghl.client';
 import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { OfferRecord } from '../repositories/offer.repository';
 import { whopService } from '../services/whop.service';
-import { dualPricingService } from '../services/dual-pricing.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-cart.service';
 
@@ -1238,8 +1237,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   };
                 } else {
                   const recurringPaymentType = String(enrForSub.payment_type || subOffer.payment_type || '').toLowerCase();
-                  const recurringQuote = await dualPricingService.quoteOffer(subOffer as any, recurringPaymentType, paymentMethod);
-                  const subAmountCents = recurringQuote.selectedAmountCents;
+                  const recurringQuote = await checkoutCartService.quoteOffer(subOffer as any, [], recurringPaymentType, paymentMethod);
+                  const subAmountCents = recurringQuote.futureRecurringSelectedAmountCents || recurringQuote.selectedAmountCents;
                   const freq = (subOffer.installment_frequency || 'monthly').toLowerCase();
                   const subInterval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' =
                     freq === 'daily' ? 'daily' :

@@ -31,12 +31,19 @@ export interface CheckoutCartQuote {
   paymentMethod: PaymentMethod;
   baseAmountCents: number;
   addonAmountCents: number;
+  dueTodayAmountCents: number;
   achAmountCents: number;
   cardAmountCents: number;
   selectedAmountCents: number;
   achAmount: number;
   cardAmount: number;
   selectedAmount: number;
+  futureRecurringAchAmountCents: number;
+  futureRecurringCardAmountCents: number;
+  futureRecurringSelectedAmountCents: number;
+  futureRecurringAchAmount: number;
+  futureRecurringCardAmount: number;
+  futureRecurringSelectedAmount: number;
   cardUpliftPercent: number;
   processorDeductionPercent: number;
   achAccessPolicy: 'after_settlement' | 'after_submission';
@@ -211,6 +218,7 @@ export const checkoutCartService = {
     const addonCents = selectedAddons.reduce((sum, addon) => sum + dollarsToCents(addon.price), 0);
     const totalBaseCents = baseCents + addonCents;
     const control = await dualPricingService.getActiveControl(offer.location_id);
+    const isRecurringChoice = choice === 'installment' || choice === 'subscription';
     const syntheticOffer = {
       ...offer,
       price: centsToDollars(totalBaseCents),
@@ -219,6 +227,15 @@ export const checkoutCartService = {
       installment_amount: centsToDollars(totalBaseCents),
     } as OfferRecord;
     const quote = buildDualPricingQuote(syntheticOffer, control, choice, paymentMethod);
+    const recurringQuote = isRecurringChoice
+      ? buildDualPricingQuote({
+        ...offer,
+        price: centsToDollars(baseCents),
+        pif_price: null,
+        pif_discount_enabled: false,
+        installment_amount: centsToDollars(baseCents),
+      } as OfferRecord, control, choice, paymentMethod)
+      : null;
     const lineItems: CheckoutLineItem[] = [
       {
         type: 'base_offer',
@@ -245,12 +262,19 @@ export const checkoutCartService = {
       paymentMethod: quote.paymentMethod,
       baseAmountCents: baseCents,
       addonAmountCents: addonCents,
+      dueTodayAmountCents: quote.selectedAmountCents,
       achAmountCents: quote.achAmountCents,
       cardAmountCents: quote.cardAmountCents,
       selectedAmountCents: quote.selectedAmountCents,
       achAmount: quote.achAmount,
       cardAmount: quote.cardAmount,
       selectedAmount: quote.selectedAmount,
+      futureRecurringAchAmountCents: recurringQuote?.achAmountCents || 0,
+      futureRecurringCardAmountCents: recurringQuote?.cardAmountCents || 0,
+      futureRecurringSelectedAmountCents: recurringQuote?.selectedAmountCents || 0,
+      futureRecurringAchAmount: recurringQuote?.achAmount || 0,
+      futureRecurringCardAmount: recurringQuote?.cardAmount || 0,
+      futureRecurringSelectedAmount: recurringQuote?.selectedAmount || 0,
       cardUpliftPercent: quote.cardUpliftPercent,
       processorDeductionPercent: quote.processorDeductionPercent,
       achAccessPolicy: quote.achAccessPolicy,
