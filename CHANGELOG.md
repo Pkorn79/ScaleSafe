@@ -56,6 +56,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   progressive enhancement (content visible if JS fails), and reduced-motion support. Stats are tagged
   `[PLACEHOLDER]` — no fabricated metrics or testimonials. Verified rendering across all sections via
   Chrome DevTools. Copy to be confirmed by the brand owner before publishing.
+- **GHL Marketplace listing draft** — `docs/GHL_MARKETPLACE_LISTING.md`: name/tagline/short+long
+  description, key features, an OAuth-scope-justification table to fill, a screenshots plan, and a
+  pre-submission checklist. Claims to be verified against the live app; copy needs brand-owner sign-off.
 
 ### Changed
 - **Primary CTA contrast meets WCAG AA.** `.btn-primary`, `.btn-success` (App.vue) and `.ss-btn-primary`

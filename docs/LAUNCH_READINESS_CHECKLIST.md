@@ -113,8 +113,8 @@ non-negotiable.
 
 ## 6. Go-to-market
 
-- [ ] 🟡 GHL Marketplace listing complete: name, description, screenshots, scopes justification,
-  support contact.
+- [~] 🟡 GHL Marketplace listing — draft written (`docs/GHL_MARKETPLACE_LISTING.md`). *Still needs:
+  exact OAuth scope justifications, screenshots, hosted privacy/terms URLs, pricing, brand-owner sign-off.*
 - [~] 🟡 Landing page — first draft built (`marketing/index.html`, self-contained, on-brand). *Still
   needs: brand-owner copy sign-off, real stats to replace `[PLACEHOLDER]`s, structured-data/JSON-LD +
   AEO meta, real "Add to GoHighLevel" install URL, and hosting.*
