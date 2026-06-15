@@ -12,6 +12,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 > dunning-retry/refund paths call `record_recurring_payment`/`decrement_enrollment_payments_made`;
 > without the migrations, live recurring webhooks, refunds, and dunning retries will throw.
 
+### Added (Launch readiness — CI + go-live gate, 2026-06-15)
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs on push to `main` and on PRs:
+  `typecheck`, the full Jest suite (88 suites / 736 tests), a backend+UI `build`, and an advisory
+  `npm audit --omit=dev`. Report-only at first (no required status checks) so it never blocks the
+  direct-push-to-main flow; promote `quality`/`build` to required once consistently green. ESLint is
+  intentionally deferred (warning mode only, later) to avoid drowning CI in style noise.
+- **`docs/LAUNCH_READINESS_CHECKLIST.md`** — the single go-live gate: pre-deploy migration ordering,
+  the open Group B (day-1 double-bill) / Group F (NMI Query API permission) verification items,
+  security/multi-tenancy gates, OAuth/provisioning verification, UX, GTM, and ops sign-off.
+
 ### Added
 - **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC
   (migration `073`) inserts the `payment_events` ledger row, increments `payments_made`, and

@@ -1,0 +1,70 @@
+name: CI
+
+# Report-only at first. No branch protection requires these checks yet, so a red
+# run never blocks the team's direct-push-to-main flow — it just surfaces signal.
+# Once `quality` and `build` are consistently green, promote them to required
+# status checks. ESLint is intentionally NOT here (a mature unlinted codebase would
+# drown CI in style noise); add it later in warning mode only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+
+  build:
+    name: Build (backend + UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            src/ui/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build (tsc + Vite UI)
+        run: npm run build
+        env:
+          VITE_ENABLE_DAILY_TEST_BILLING: 'false'
+
+  audit:
+    name: Dependency audit (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only — audit findings inform the launch checklist, they do not gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: npm audit (production deps)
+        run: npm audit --omit=dev
