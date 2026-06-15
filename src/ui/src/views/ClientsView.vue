@@ -58,12 +58,14 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="c in clients" :key="c.contactId">
+          <tr v-for="c in clients" :key="c.contactId || c.enrollmentId">
             <td>
-              <router-link :to="`/clients/${c.contactId}`" style="color: var(--ss-primary-700); text-decoration: none">
+              <router-link v-if="c.contactId" :to="`/clients/${c.contactId}`" style="color: var(--ss-primary-700); text-decoration: none">
                 <strong>{{ c.name }}</strong>
               </router-link>
+              <strong v-else>{{ c.name || 'Contact pending' }}</strong>
               <div v-if="c.email" class="text-sm text-muted">{{ c.email }}</div>
+              <div v-if="!c.contactId" class="text-xs text-muted">Contact sync pending</div>
             </td>
             <td class="text-sm">{{ c.offerName || '-' }}</td>
             <td>
@@ -83,7 +85,8 @@
               <span v-else class="text-sm text-muted">-</span>
             </td>
             <td>
-              <router-link :to="`/clients/${c.contactId}`" class="btn btn-sm btn-secondary">View</router-link>
+              <router-link v-if="c.contactId" :to="`/clients/${c.contactId}`" class="btn btn-sm btn-secondary">View</router-link>
+              <span v-else class="text-sm text-muted">Pending</span>
             </td>
           </tr>
         </tbody>

@@ -202,21 +202,23 @@
         <p>No customers with payment history found.</p>
       </div>
 
-      <div v-for="c in customers" :key="c.contactId" class="card customer-card">
+      <div v-for="c in customers" :key="c.contactId || c.email" class="card customer-card">
         <div class="flex-between">
           <div>
-            <strong>{{ c.name || c.email || c.contactId.slice(0, 12) + '...' }}</strong>
+            <strong>{{ c.name || c.email || (c.contactId ? c.contactId.slice(0, 12) + '...' : 'Contact pending') }}</strong>
             <div v-if="c.email && c.name" class="text-sm text-muted">{{ c.email }}</div>
             <div v-if="c.programName" class="text-sm text-muted">{{ c.programName }}</div>
+            <div v-if="!c.contactId" class="text-xs text-muted">Contact sync pending</div>
             <div class="text-sm text-muted">
               ${{ c.totalCharged.toFixed(2) }} charged
               <span v-if="c.totalRefunded > 0"> &middot; ${{ c.totalRefunded.toFixed(2) }} refunded</span>
               <span v-if="c.lastPaymentDate"> &middot; Last: {{ formatDateShort(c.lastPaymentDate) }}</span>
             </div>
           </div>
-          <router-link :to="`/payments/${c.contactId}`" class="btn btn-sm btn-primary">
+          <router-link v-if="c.contactId" :to="`/payments/${c.contactId}`" class="btn btn-sm btn-primary">
             Manage Payments
           </router-link>
+          <span v-else class="text-sm text-muted">Pending</span>
         </div>
       </div>
     </section>

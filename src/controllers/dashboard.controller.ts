@@ -1427,23 +1427,27 @@ export const dashboardController = {
       const { data: rows, count, error } = await query;
       if (error) throw error;
 
-      const clients = (rows || []).map((r: any) => ({
-        contactId: r.contact_id,
-        enrollmentId: r.enrollment_id,
-        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.digital_signature || r.email || r.contact_id.slice(0, 12),
-        email: r.email || '',
-        status: r.status || 'unknown',
-        paymentType: r.payment_type || '',
-        offerName: r.offer_name || '',
-        enrolledAt: r.enrolled_at || null,
-        lastActivityDate: r.last_activity_date || null,
-        hasCard: r.has_card || false,
-        hasPaymentMethod: r.has_card || false,
-        nextBillingDate: r.next_billing_date || null,
-        paymentsMade: r.payments_made || 0,
-        paymentsTotal: r.payments_total || null,
-        paymentAmount: r.payment_amount || 0,
-      }));
+      const clients = (rows || []).map((r: any) => {
+        const contactId = String(r.contact_id || '').trim();
+        return {
+          contactId,
+          enrollmentId: r.enrollment_id,
+          canOpenProfile: Boolean(contactId),
+          name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.digital_signature || r.email || (contactId ? contactId.slice(0, 12) : 'Contact pending'),
+          email: r.email || '',
+          status: r.status || 'unknown',
+          paymentType: r.payment_type || '',
+          offerName: r.offer_name || '',
+          enrolledAt: r.enrolled_at || null,
+          lastActivityDate: r.last_activity_date || null,
+          hasCard: r.has_card || false,
+          hasPaymentMethod: r.has_card || false,
+          nextBillingDate: r.next_billing_date || null,
+          paymentsMade: r.payments_made || 0,
+          paymentsTotal: r.payments_total || null,
+          paymentAmount: r.payment_amount || 0,
+        };
+      });
 
       res.json({
         clients,

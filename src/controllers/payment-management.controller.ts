@@ -316,7 +316,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
         if (!search) return true;
         const name = c.name.toLowerCase();
         const email = (c.email || '').toLowerCase();
-        const contactId = c.contactId.toLowerCase();
+        const contactId = String(c.contactId || '').toLowerCase();
         return name.includes(loweredSearch) || email.includes(loweredSearch) || contactId.includes(loweredSearch);
       })
       .slice(0, 25);
