@@ -68,6 +68,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   `support.html`, `guide.html`, `troubleshooting.html`, and `README.md` so `scalesafe.app` can host the
   Marketplace-required legal/support URLs plus a lightweight beta help center. Landing footer and the
   Marketplace listing now point at the intended `https://scalesafe.app/*` URLs.
+- **Whole Pay attribution** — public site pages and the Marketplace listing now identify ScaleSafe as
+  powered by Whole Pay and link to `https://getwholepay.com` without changing the processor-direct funds
+  positioning.
 - **Group B regression test** — `tests/unit/stripe.client.test.ts` now covers `createSubscription`'s
   day-1 double-bill guard: a future `startDate` sets `billing_cycle_anchor` + `proration_behavior='none'`;
   no/near-now `startDate` omits them. Locks the shipped fix against silent regression (suite now 800 tests).

@@ -13,6 +13,7 @@
 - **Category:** Payments / Finance
 - **Secondary category:** Sales & CRM tooling
 - **Pricing model:** Private beta / contact for access
+- **Powered by:** Whole Pay - https://getwholepay.com
 
 ## Short description (~140 chars)
 
@@ -34,9 +35,9 @@ When a dispute or early-fraud warning needs attention, ScaleSafe organizes those
 records into a structured defense workflow so the merchant can respond with cleaner
 documentation and less manual digging.
 
-ScaleSafe runs inside GoHighLevel and works with the merchant's own connected Stripe
-or NMI account. Payments settle directly to the merchant's processor account;
-ScaleSafe does not hold funds.
+ScaleSafe is powered by Whole Pay and runs inside GoHighLevel. It works with the
+merchant's own connected Stripe or NMI account. Payments settle directly to the
+merchant's processor account; ScaleSafe does not hold funds.
 
 **What you get**
 
