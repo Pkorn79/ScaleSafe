@@ -123,8 +123,12 @@ non-negotiable.
   (`marketing/index.html`, self-contained, on-brand). *Still needs: brand-owner copy sign-off,
   structured-data/JSON-LD + AEO meta, hosted privacy/terms/support links, final install/beta CTA URL,
   and hosting.*
-- [ ] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
-  NMI Query-API enable step (from §1).
+- [~] 🟡 Public legal/support pages — static Privacy, Terms, Support, User Guide, and Troubleshooting
+  pages exist under `marketing/` and are linked from the landing page. *Still needs hosting at
+  `https://scalesafe.app` and final legal/brand review.*
+- [~] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
+  NMI Query-API enable step (from §1). *Initial static guide/troubleshooting pages exist; expand after
+  Oke's beta testing exposes repeated questions.*
 - [ ] 🟢 Incident/support runbook + status page.
 
 ---

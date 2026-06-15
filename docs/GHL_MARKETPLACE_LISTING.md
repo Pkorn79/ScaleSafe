@@ -89,9 +89,9 @@ offer, and test client across the set.
 ## Support & compliance
 
 - **Support email:** support@scalesafe.app
-- **Privacy policy URL:** Host before submit and paste the final URL here.
-- **Terms URL:** Host before submit and paste the final URL here.
-- **Support / help URL:** Host before submit and paste the final URL here.
+- **Privacy policy URL:** https://scalesafe.app/privacy.html
+- **Terms URL:** https://scalesafe.app/terms.html
+- **Support / help URL:** https://scalesafe.app/support.html
 
 ## Pre-submission checklist
 

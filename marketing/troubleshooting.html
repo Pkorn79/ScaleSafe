@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Troubleshooting - ScaleSafe</title>
+<meta name="description" content="ScaleSafe troubleshooting guide." />
+<style>
+  :root { --bg:#0a0f1c; --panel:#0f172a; --text:#e2e8f0; --muted:#94a3b8; --line:rgba(148,163,184,.22); --accent:#34d399; --warn:#fbbf24; }
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 22px 64px}
+  header{border-bottom:1px solid var(--line);background:rgba(15,23,42,.72);position:sticky;top:0;backdrop-filter:blur(12px)}
+  nav{max-width:1080px;margin:0 auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .brand{font-weight:800;color:#fff}.links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+  h1{font-size:44px;line-height:1.05;margin:44px 0 10px;color:#fff} h2{font-size:22px;margin:0 0 8px;color:#fff}
+  p,li{color:#cbd5e1}.muted{color:var(--muted)} .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:28px}
+  .card{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:20px}.tag{color:var(--warn);font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+  footer{border-top:1px solid var(--line);margin-top:42px;padding-top:22px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <a class="brand" href="/">ScaleSafe</a>
+    <div class="links">
+      <a href="/support.html">Support</a>
+      <a href="/guide.html">User Guide</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a>
+    </div>
+  </nav>
+</header>
+<main class="wrap">
+  <h1>Troubleshooting</h1>
+  <p class="muted">What to capture before reporting a ScaleSafe issue.</p>
+
+  <div class="grid">
+    <section class="card">
+      <div class="tag">Checkout or payment issue</div>
+      <h2>Payment failed, duplicated, or returned an unexpected error</h2>
+      <ul>
+        <li>Capture the merchant/sub-account, client, offer, checkout URL, processor, and exact time.</li>
+        <li>If money moved, include the Stripe payment intent/charge ID or NMI transaction ID.</li>
+        <li>Check whether ScaleSafe created a payment event, enrollment, saved payment method, and processor subscription ID.</li>
+        <li>For duplicate-charge concerns, confirm processor charge count and ScaleSafe payment event count.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Workflow issue</div>
+      <h2>Receipt, enrollment link, reminder, pulse, or refund workflow did not fire</h2>
+      <ul>
+        <li>Confirm the GHL workflow is published and uses the correct ScaleSafe Marketplace trigger.</li>
+        <li>Check ScaleSafe Provisioning Health for active trigger subscription count.</li>
+        <li>Review trigger delivery logs for sent, failed, or no-subscription status.</li>
+        <li>For app events, confirm the workflow filter matches the event type, such as upcoming_payment_reminder or pulse_check_due.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">NMI setup</div>
+      <h2>NMI card shows unknown brand or expiration</h2>
+      <ul>
+        <li>Confirm the NMI security key has Query API permission enabled.</li>
+        <li>Run a fresh vaulting transaction after enabling Query API. Old rows may not backfill automatically.</li>
+        <li>Confirm the payment method shows the vault ID, brand, and expiration in ScaleSafe.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Recurring payments</div>
+      <h2>Subscription ID missing or reminders did not send</h2>
+      <ul>
+        <li>Confirm the processor subscription exists in Stripe or NMI.</li>
+        <li>Confirm ScaleSafe saved the processor subscription ID on the enrollment.</li>
+        <li>Check billing setup status. Reminders are skipped when billing is not ready.</li>
+        <li>Confirm the next billing date is inside the reminder window.</li>
+      </ul>
+    </section>
+  </div>
+
+  <footer>
+    <p>Still stuck? Email <a href="mailto:support@scalesafe.app">support@scalesafe.app</a> with screenshots and processor IDs.</p>
+  </footer>
+</main>
+</body>
+</html>

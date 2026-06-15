@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Support - ScaleSafe</title>
+<meta name="description" content="ScaleSafe support and help center." />
+<style>
+  :root { --bg:#0a0f1c; --panel:#0f172a; --text:#e2e8f0; --muted:#94a3b8; --line:rgba(148,163,184,.22); --accent:#34d399; }
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 22px 64px}
+  header{border-bottom:1px solid var(--line);background:rgba(15,23,42,.72);position:sticky;top:0;backdrop-filter:blur(12px)}
+  nav{max-width:1080px;margin:0 auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .brand{font-weight:800;color:#fff}.links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+  h1{font-size:44px;line-height:1.05;margin:44px 0 10px;color:#fff} h2{font-size:22px;margin:0 0 8px;color:#fff}
+  p,li{color:#cbd5e1}.muted{color:var(--muted)} .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:28px}
+  .card{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:20px}.card p{margin-bottom:12px}
+  .button{display:inline-block;background:#047857;color:#fff;padding:10px 14px;border-radius:999px;font-weight:700}
+  footer{border-top:1px solid var(--line);margin-top:42px;padding-top:22px;color:var(--muted);font-size:14px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <a class="brand" href="/">ScaleSafe</a>
+    <div class="links">
+      <a href="/guide.html">User Guide</a>
+      <a href="/troubleshooting.html">Troubleshooting</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a>
+    </div>
+  </nav>
+</header>
+<main class="wrap">
+  <h1>ScaleSafe Support</h1>
+  <p class="muted">Help for setup, payment testing, workflow verification, and launch support.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Contact support</h2>
+      <p>Email ScaleSafe with your merchant/sub-account name, client name, offer name, and screenshots or processor IDs when money moved.</p>
+      <a class="button" href="mailto:support@scalesafe.app?subject=ScaleSafe%20Support%20Request">Email support</a>
+    </section>
+    <section class="card">
+      <h2>User guide</h2>
+      <p>Start here for the normal ScaleSafe operating flow: install, payment settings, offers, clients, checkout, evidence, and defense workflows.</p>
+      <a class="button" href="/guide.html">Open guide</a>
+    </section>
+    <section class="card">
+      <h2>Troubleshooting</h2>
+      <p>Use this when something does not behave as expected: failed checkout, missing workflow, processor subscription, refund, or webhook issue.</p>
+      <a class="button" href="/troubleshooting.html">Open troubleshooting</a>
+    </section>
+    <section class="card">
+      <h2>Launch status</h2>
+      <p>ScaleSafe is currently in private beta. New merchants should complete onboarding and payment testing before using live payment flows.</p>
+      <a class="button" href="mailto:support@scalesafe.app?subject=ScaleSafe%20Beta%20Access">Request beta access</a>
+    </section>
+  </div>
+
+  <footer>
+    <p>ScaleSafe | <a href="/privacy.html">Privacy</a> | <a href="/terms.html">Terms</a></p>
+  </footer>
+</main>
+</body>
+</html>

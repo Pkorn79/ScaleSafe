@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>User Guide - ScaleSafe</title>
+<meta name="description" content="ScaleSafe user guide." />
+<style>
+  :root { --bg:#0a0f1c; --panel:#0f172a; --text:#e2e8f0; --muted:#94a3b8; --line:rgba(148,163,184,.22); --accent:#34d399; }
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 22px 64px}
+  header{border-bottom:1px solid var(--line);background:rgba(15,23,42,.72);position:sticky;top:0;backdrop-filter:blur(12px)}
+  nav{max-width:1080px;margin:0 auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .brand{font-weight:800;color:#fff}.links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+  h1{font-size:44px;line-height:1.05;margin:44px 0 10px;color:#fff} h2{font-size:24px;margin:36px 0 10px;color:#fff}
+  h3{font-size:17px;margin:20px 0 6px;color:#fff} p,li{color:#cbd5e1}.muted{color:var(--muted)}
+  .card{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:20px;margin:20px 0}
+  footer{border-top:1px solid var(--line);margin-top:42px;padding-top:22px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <a class="brand" href="/">ScaleSafe</a>
+    <div class="links">
+      <a href="/support.html">Support</a>
+      <a href="/troubleshooting.html">Troubleshooting</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a>
+    </div>
+  </nav>
+</header>
+<main class="wrap">
+  <h1>User Guide</h1>
+  <p class="muted">A practical operating guide for ScaleSafe private beta merchants.</p>
+
+  <section class="card">
+    <h2>1. Install and provisioning</h2>
+    <ol>
+      <li>Install ScaleSafe from the GoHighLevel Marketplace or beta install link.</li>
+      <li>Open ScaleSafe inside GoHighLevel and confirm SSO login works.</li>
+      <li>Open Settings and run Provisioning Health.</li>
+      <li>Confirm merchant status, webhook secret, custom values, contact fields, trigger subscriptions, and payment settings.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>2. Connect payment settings</h2>
+    <h3>Stripe</h3>
+    <p>Connect the merchant's Stripe account, enable the needed payment methods in Stripe, and test with Stripe sandbox before live use.</p>
+    <h3>NMI</h3>
+    <p>Add the merchant's NMI credentials, confirm the account can process live transactions, and make sure Query API permission is enabled so vaulted card metadata can populate.</p>
+  </section>
+
+  <section class="card">
+    <h2>3. Build offers</h2>
+    <ol>
+      <li>Create an offer and choose full enrollment or quick checkout.</li>
+      <li>Set pricing: one-time, installments, subscription, or PIF/installment option.</li>
+      <li>Add terms, refund language, milestones, pulse cadence, tags, dual pricing, and one-time checkout add-ons where needed.</li>
+      <li>Save, reload, and open the public checkout/enrollment link to confirm the client-facing page is correct.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>4. Run clients through checkout</h2>
+    <p>For full enrollment, clients complete contact details, offer review, terms/signature, then payment. For quick checkout, the client pays from the shorter hosted page. For quick manual sale, the merchant enters the card and can optionally send the enrollment packet link afterward.</p>
+  </section>
+
+  <section class="card">
+    <h2>5. Verify workflows</h2>
+    <ul>
+      <li><strong>Payment Received:</strong> receipt/payment confirmation only.</li>
+      <li><strong>Send Enrollment Link:</strong> enrollment packet link only.</li>
+      <li><strong>Enrollment Complete:</strong> welcome/access only after terms/signature/enrollment completion.</li>
+      <li><strong>Payment Failed:</strong> failed payment/dunning path.</li>
+      <li><strong>Refund Processed:</strong> refund confirmation.</li>
+      <li><strong>ScaleSafe App Event:</strong> payment reminders and pulse check-ins.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>6. Evidence and defense</h2>
+    <p>Use the client profile to review evidence, communications, payment records, milestones, pulse check-ins, and defense packets. Defense workflows should be reviewed before submission to a processor or bank.</p>
+  </section>
+
+  <footer>
+    <p>Need help? <a href="/support.html">Contact ScaleSafe support</a>.</p>
+  </footer>
+</main>
+</body>
+</html>
