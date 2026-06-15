@@ -40,6 +40,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
     EFW respond routing, and **service-throw → 500 so a chargeback is never silently left unanswered**.
 - **`.github/dependabot.yml`** — weekly grouped npm + github-actions dependency PRs (backend + UI);
   opens PRs only, never auto-merges.
+- **Toast notification system** (UX polish). New `src/ui/src/composables/useToast.ts` (module-level
+  singleton, same pattern as `ssoSession`) + `src/ui/src/components/ToastContainer.vue` (teleported,
+  accessible with `role="alert"`/`status` + `aria-live`, `prefers-reduced-motion` aware, matches the
+  brand token system). Mounted once in `App.vue`. `useApi` now auto-fires an error toast on any failed
+  `post`/`put`/`del`, so a failed action (refund, save, disconnect, dispute submit) can no longer fail
+  silently. Reads stay quiet (views already show inline load/error states). Views can call
+  `toast.success(...)` to confirm actions. Verified: `vue-tsc` clean on all touched files, `vite build` passes.
 
 ### Added
 - **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC

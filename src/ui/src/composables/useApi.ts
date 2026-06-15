@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue';
+import { toast } from './useToast';
 
 interface SsoSession {
   locationId: string;
@@ -219,6 +220,7 @@ export function useApi() {
       });
     } catch (e: any) {
       error.value = e.message;
+      toast.error(e.message);
       throw e;
     } finally {
       loading.value = false;
@@ -235,6 +237,7 @@ export function useApi() {
       });
     } catch (e: any) {
       error.value = e.message;
+      toast.error(e.message);
       throw e;
     } finally {
       loading.value = false;
@@ -248,6 +251,7 @@ export function useApi() {
       await apiFetch(path, { method: 'DELETE' });
     } catch (e: any) {
       error.value = e.message;
+      toast.error(e.message);
       throw e;
     } finally {
       loading.value = false;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ssoSession } from './composables/useApi';
+import ToastContainer from './components/ToastContainer.vue';
 import {
   LayoutDashboard, Package, Users, CreditCard,
   Shield, Activity, Settings, ChevronRight, Map,
@@ -85,6 +86,9 @@ import {
       </div>
     </main>
   </div>
+
+  <!-- Global toast notifications (teleports to body; rendered in every app state) -->
+  <ToastContainer />
 </template>
 
 <style>
