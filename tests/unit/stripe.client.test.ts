@@ -145,6 +145,73 @@ describe('StripeClient', () => {
     });
   });
 
+  describe('createSubscription (Group B — no day-1 double-bill)', () => {
+    function futureIso(days: number) {
+      return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    beforeEach(() => {
+      mockStripe.prices.create.mockResolvedValue({ id: 'price_test1' });
+      mockStripe.subscriptions.create.mockResolvedValue({
+        id: 'sub_test1',
+        status: 'active',
+        current_period_end: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+      });
+    });
+
+    it('anchors the first cycle to a future startDate and disables proration (prevents day-1 double bill)', async () => {
+      const startDate = futureIso(7);
+      const result = await client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_1',
+        planAmount: 50, // $0.50 — the PMG 2-pay repro
+        interval: 'weekly',
+        totalPayments: 2,
+        startDate,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.subscriptionId).toBe('sub_test1');
+
+      const [params, opts] = mockStripe.subscriptions.create.mock.calls[0];
+      // The fix: Stripe must NOT auto-bill a subscription_create invoice on day 1.
+      // The upfront installment is taken once via processor.charge(); the recurring
+      // schedule starts at the *next* cycle, not at creation.
+      expect(params.billing_cycle_anchor).toBe(Math.floor(new Date(startDate).getTime() / 1000));
+      expect(params.proration_behavior).toBe('none');
+      expect(opts.stripeAccount).toBe('acct_test123'); // runs on the connected account
+    });
+
+    it('omits billing_cycle_anchor when no startDate is given', async () => {
+      await client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_1',
+        planAmount: 50,
+        interval: 'weekly',
+        totalPayments: 2,
+      });
+
+      const [params] = mockStripe.subscriptions.create.mock.calls[0];
+      expect(params.billing_cycle_anchor).toBeUndefined();
+      expect(params.proration_behavior).toBeUndefined();
+    });
+
+    it('does not anchor when startDate is effectively now (inside the 60s guard)', async () => {
+      await client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_1',
+        planAmount: 50,
+        interval: 'weekly',
+        totalPayments: 2,
+        startDate: new Date(Date.now() + 5 * 1000).toISOString(), // +5s
+      });
+
+      const [params] = mockStripe.subscriptions.create.mock.calls[0];
+      expect(params.billing_cycle_anchor).toBeUndefined();
+      expect(params.proration_behavior).toBeUndefined();
+    });
+  });
+
   describe('refund', () => {
     it('creates refund with stripeAccount', async () => {
       mockStripe.refunds.create.mockResolvedValue({

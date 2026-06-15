@@ -59,6 +59,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **GHL Marketplace listing draft** — `docs/GHL_MARKETPLACE_LISTING.md`: name/tagline/short+long
   description, key features, an OAuth-scope-justification table to fill, a screenshots plan, and a
   pre-submission checklist. Claims to be verified against the live app; copy needs brand-owner sign-off.
+- **Group B regression test** — `tests/unit/stripe.client.test.ts` now covers `createSubscription`'s
+  day-1 double-bill guard: a future `startDate` sets `billing_cycle_anchor` + `proration_behavior='none'`;
+  no/near-now `startDate` omits them. Locks the shipped fix against silent regression (suite now 800 tests).
+- **`docs/LAUNCH_BLOCKER_VERIFICATION.md`** — step-by-step live-verification runbook (SOP format) for the
+  three open blockers: Group B (Stripe-sandbox 2-pay), Group F (NMI Query API enablement), and the E2E
+  retest matrix for the latest checkout add-on / order-bump / payment-repair fixes.
 
 ### Changed
 - **Primary CTA contrast meets WCAG AA.** `.btn-primary`, `.btn-success` (App.vue) and `.ss-btn-primary`
