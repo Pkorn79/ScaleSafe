@@ -115,7 +115,9 @@ non-negotiable.
 
 - [ ] 🟡 GHL Marketplace listing complete: name, description, screenshots, scopes justification,
   support contact.
-- [ ] 🟡 Landing page live with SEO + AEO (structured data, answer-engine-ready copy).
+- [~] 🟡 Landing page — first draft built (`marketing/index.html`, self-contained, on-brand). *Still
+  needs: brand-owner copy sign-off, real stats to replace `[PLACEHOLDER]`s, structured-data/JSON-LD +
+  AEO meta, real "Add to GoHighLevel" install URL, and hosting.*
 - [ ] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
   NMI Query-API enable step (from §1).
 - [ ] 🟢 Incident/support runbook + status page.

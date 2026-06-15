@@ -50,6 +50,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **Loading skeletons** (UX polish). New `src/ui/src/components/Skeleton.vue` (shimmer placeholder,
   `prefers-reduced-motion` aware). `DashboardView` first-load now renders a skeleton layout mirroring
   the real stat/content cards (with `aria-busy`) instead of a bare "Loading dashboard..." string.
+- **Marketing landing page (first draft)** — `marketing/index.html`, a self-contained, deployable
+  page (no app dependency) with an "evidence dossier" aesthetic: editorial Fraunces/Hanken Grotesk
+  type, the brand emerald/navy/cream palette, a won-dispute hero timeline, accessible scroll-reveal as
+  progressive enhancement (content visible if JS fails), and reduced-motion support. Stats are tagged
+  `[PLACEHOLDER]` — no fabricated metrics or testimonials. Verified rendering across all sections via
+  Chrome DevTools. Copy to be confirmed by the brand owner before publishing.
 
 ### Changed
 - **Primary CTA contrast meets WCAG AA.** `.btn-primary`, `.btn-success` (App.vue) and `.ss-btn-primary`

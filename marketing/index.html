@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ScaleSafe — Win the chargeback before it happens</title>
+<meta name="description" content="ScaleSafe builds a timestamped evidence trail across your entire client lifecycle, so when a dispute hits, your defense packet is already assembled. A GoHighLevel app for high-ticket coaches and service providers." />
+
+<!--
+  ScaleSafe marketing landing page (first draft).
+  Self-contained: no build step, no app dependency. Deploy anywhere (scalesafe.app).
+  COPY/STATS marked [PLACEHOLDER] are illustrative and must be confirmed before launch —
+  no real customer numbers or testimonials are invented here.
+  Brand palette mirrors the app (emerald / navy / teal / cream). Marketing typography
+  (Fraunces + Hanken Grotesk) is elevated vs. the in-app Inter/Manrope by design.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<!-- Add `js` hook before paint so reveal-on-scroll only hides content when JS is active (no FOUC, no invisible content if JS fails). -->
+<script>document.documentElement.classList.add('js');</script>
+
+<style>
+  :root {
+    /* Brand — aligned with the app's tokens */
+    --navy-950: #0a0f1c;
+    --navy-900: #0f172a;
+    --navy-800: #1e293b;
+    --navy-700: #334155;
+    --navy-400: #94a3b8;
+    --navy-300: #cbd5e1;
+    --navy-200: #e2e8f0;
+    --emerald-300: #6ee7b7;
+    --emerald-400: #34d399;
+    --emerald-500: #10b981;
+    --emerald-600: #059669;
+    --emerald-700: #047857;
+    --teal-400: #2dd4bf;
+    --teal-500: #14b8a6;
+    --cream: #fafaf7;
+    --cream-200: #f0efe8;
+    --amber: #fbbf24;
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Hanken Grotesk', system-ui, sans-serif;
+    --font-mono: 'Space Mono', ui-monospace, monospace;
+
+    --maxw: 1180px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--navy-950);
+    color: var(--navy-200);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* Grain overlay for atmosphere */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ─── Nav ─────────────────────────────────────────── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    backdrop-filter: blur(12px);
+    background: rgba(10, 15, 28, 0.72);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 68px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--font-display);
+    font-weight: 600; font-size: 21px; color: #fff;
+    letter-spacing: -0.01em;
+  }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--emerald-400), var(--teal-500));
+    display: grid; place-items: center;
+    box-shadow: 0 0 18px rgba(52, 211, 153, 0.35);
+  }
+  .brand .mark svg { width: 15px; height: 15px; }
+  .nav-links { display: flex; align-items: center; gap: 30px; }
+  .nav-links a.lk {
+    font-size: 14.5px; color: var(--navy-300); font-weight: 500;
+    transition: color 0.2s;
+  }
+  .nav-links a.lk:hover { color: var(--emerald-300); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-body); font-weight: 600; font-size: 15px;
+    padding: 11px 20px; border-radius: 9999px; cursor: pointer;
+    border: 1px solid transparent; transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--emerald-500); color: #04130d;
+    box-shadow: 0 6px 24px rgba(16, 185, 129, 0.3);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(16, 185, 129, 0.45); }
+  .btn-ghost {
+    background: transparent; color: var(--cream);
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+  .btn-ghost:hover { border-color: var(--emerald-400); color: var(--emerald-300); }
+  .btn-lg { padding: 15px 28px; font-size: 16px; }
+
+  @media (max-width: 760px) { .nav-links .lk { display: none; } }
+
+  /* ─── Hero ────────────────────────────────────────── */
+  header.hero {
+    position: relative; z-index: 2;
+    padding: 96px 0 110px;
+    background:
+      radial-gradient(900px 500px at 78% -8%, rgba(20, 184, 166, 0.18), transparent 60%),
+      radial-gradient(760px 460px at 6% 12%, rgba(16, 185, 129, 0.16), transparent 58%);
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center;
+  }
+  @media (max-width: 940px) { .hero-grid { grid-template-columns: 1fr; gap: 48px; } }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--emerald-300);
+    border: 1px solid rgba(52, 211, 153, 0.28);
+    background: rgba(16, 185, 129, 0.07);
+    padding: 7px 14px; border-radius: 9999px;
+  }
+  .eyebrow .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--emerald-400);
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52,211,153,0.6); }
+    70% { box-shadow: 0 0 0 8px rgba(52,211,153,0); }
+    100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  }
+
+  h1.hero-title {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(42px, 6vw, 70px);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    color: #fff;
+    margin: 22px 0 0;
+  }
+  h1.hero-title em {
+    font-style: italic;
+    color: var(--emerald-300);
+  }
+  .hero-sub {
+    font-size: clamp(17px, 2vw, 19.5px);
+    color: var(--navy-300);
+    max-width: 540px;
+    margin: 24px 0 34px;
+  }
+  .hero-cta { display: flex; gap: 14px; flex-wrap: wrap; }
+  .hero-trust {
+    margin-top: 30px; display: flex; gap: 26px; flex-wrap: wrap;
+    font-size: 13.5px; color: var(--navy-400);
+  }
+  .hero-trust span { display: inline-flex; align-items: center; gap: 8px; }
+  .hero-trust svg { width: 15px; height: 15px; color: var(--emerald-400); }
+
+  /* Hero dossier card */
+  .dossier {
+    position: relative;
+    background: linear-gradient(180deg, rgba(30,41,59,0.9), rgba(15,23,42,0.92));
+    border: 1px solid rgba(148,163,184,0.18);
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 40px 80px -30px rgba(0,0,0,0.7);
+  }
+  .dossier-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 16px; border-bottom: 1px dashed rgba(148,163,184,0.22);
+  }
+  .dossier-head .file {
+    font-family: var(--font-mono); font-size: 12px; color: var(--navy-400);
+    letter-spacing: 0.02em;
+  }
+  .dossier-head .file b { color: var(--cream); font-weight: 700; }
+  .stamp {
+    font-family: var(--font-display); font-weight: 600; font-style: italic;
+    font-size: 15px; color: var(--emerald-300);
+    border: 2px solid var(--emerald-400); border-radius: 8px;
+    padding: 4px 12px; transform: rotate(-7deg);
+    box-shadow: 0 0 16px rgba(52,211,153,0.25);
+  }
+  .timeline { margin: 18px 0 4px; position: relative; }
+  .ev {
+    display: grid; grid-template-columns: 78px 1fr; gap: 14px;
+    padding: 11px 0; position: relative;
+  }
+  .ev .ts {
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--navy-400);
+    padding-top: 2px;
+  }
+  .ev .body { position: relative; padding-left: 22px; }
+  .ev .body::before {
+    content: ""; position: absolute; left: 0; top: 4px;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--emerald-500); box-shadow: 0 0 0 4px rgba(16,185,129,0.15);
+  }
+  .ev:not(:last-child) .body::after {
+    content: ""; position: absolute; left: 5px; top: 16px;
+    width: 1px; height: calc(100% + 4px); background: rgba(148,163,184,0.2);
+  }
+  .ev .label { color: var(--cream); font-weight: 600; font-size: 14px; }
+  .ev .meta { color: var(--navy-400); font-size: 12.5px; }
+  .dossier-foot {
+    margin-top: 16px; padding-top: 16px; border-top: 1px dashed rgba(148,163,184,0.22);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .dossier-foot .score { font-size: 13px; color: var(--navy-300); }
+  .dossier-foot .score b { color: var(--emerald-300); font-family: var(--font-mono); }
+  .meter { height: 7px; width: 130px; background: rgba(148,163,184,0.18); border-radius: 999px; overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 94%; background: linear-gradient(90deg, var(--teal-500), var(--emerald-400)); border-radius: 999px; }
+
+  /* ─── Section scaffolding ─────────────────────────── */
+  section { position: relative; z-index: 2; padding: 96px 0; }
+  .section-eyebrow {
+    font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--teal-400); margin-bottom: 16px;
+  }
+  h2.section-title {
+    font-family: var(--font-display); font-weight: 500;
+    font-size: clamp(30px, 4.4vw, 46px); line-height: 1.08;
+    letter-spacing: -0.02em; color: #fff; max-width: 720px;
+  }
+  h2.section-title em { font-style: italic; color: var(--emerald-300); }
+  .section-lead { color: var(--navy-300); font-size: 18px; max-width: 620px; margin-top: 18px; }
+
+  /* The bleed (problem) — light contrast band */
+  .band-light {
+    background: var(--cream); color: var(--navy-900);
+  }
+  .band-light .section-eyebrow { color: var(--emerald-700); }
+  .band-light h2.section-title { color: var(--navy-900); }
+  .band-light h2.section-title em { color: var(--emerald-600); }
+  .band-light .section-lead { color: var(--navy-700); }
+
+  .stat-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 56px;
+  }
+  @media (max-width: 760px) { .stat-row { grid-template-columns: 1fr; gap: 20px; } }
+  .stat {
+    border-top: 2px solid var(--emerald-500); padding-top: 18px;
+  }
+  .stat .num {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 50px; line-height: 1; color: var(--navy-900); letter-spacing: -0.02em;
+  }
+  .stat .cap { margin-top: 10px; color: var(--navy-700); font-size: 15px; }
+  .stat .src { margin-top: 6px; font-family: var(--font-mono); font-size: 11px; color: #94a3b8; }
+
+  /* How it works */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 60px; }
+  @media (max-width: 940px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .steps { grid-template-columns: 1fr; } }
+  .step {
+    background: linear-gradient(180deg, rgba(30,41,59,0.55), rgba(15,23,42,0.4));
+    border: 1px solid rgba(148,163,184,0.14); border-radius: 16px; padding: 26px 22px;
+    transition: transform 0.25s, border-color 0.25s;
+  }
+  .step:hover { transform: translateY(-5px); border-color: rgba(52,211,153,0.4); }
+  .step .idx {
+    font-family: var(--font-mono); font-size: 12px; color: var(--emerald-400);
+    border: 1px solid rgba(52,211,153,0.3); border-radius: 6px;
+    width: 30px; height: 30px; display: grid; place-items: center; margin-bottom: 18px;
+  }
+  .step h3 { font-family: var(--font-display); font-weight: 600; font-size: 20px; color: #fff; margin-bottom: 8px; }
+  .step p { font-size: 14.5px; color: var(--navy-400); }
+
+  /* Evidence captured grid */
+  .ev-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 56px; }
+  @media (max-width: 860px) { .ev-grid { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 540px) { .ev-grid { grid-template-columns: 1fr; } }
+  .ev-card {
+    border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 22px;
+    background: rgba(15,23,42,0.5);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .ev-card .ic {
+    flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(16,185,129,0.12); display: grid; place-items: center;
+  }
+  .ev-card .ic svg { width: 19px; height: 19px; color: var(--emerald-400); }
+  .ev-card h4 { color: var(--cream); font-size: 15.5px; font-weight: 600; margin-bottom: 4px; }
+  .ev-card p { color: var(--navy-400); font-size: 13.5px; }
+
+  /* Stack / trust */
+  .trust-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+  @media (max-width: 860px) { .trust-grid { grid-template-columns: 1fr; } }
+  .trust-list { margin-top: 30px; display: flex; flex-direction: column; gap: 20px; }
+  .trust-item { display: flex; gap: 14px; align-items: flex-start; }
+  .trust-item .ck {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(16,185,129,0.15); display: grid; place-items: center; margin-top: 2px;
+  }
+  .trust-item .ck svg { width: 13px; height: 13px; color: var(--emerald-400); }
+  .trust-item b { color: #fff; font-weight: 600; }
+  .trust-item span { color: var(--navy-400); }
+
+  .panel {
+    border: 1px solid rgba(148,163,184,0.18); border-radius: 18px; padding: 28px;
+    background: linear-gradient(180deg, rgba(30,41,59,0.7), rgba(15,23,42,0.6));
+  }
+  .panel .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0; border-bottom: 1px solid rgba(148,163,184,0.12);
+    font-size: 14.5px;
+  }
+  .panel .row:last-child { border-bottom: none; }
+  .panel .row .k { color: var(--navy-300); }
+  .panel .row .v { font-family: var(--font-mono); font-size: 13px; color: var(--emerald-300); }
+  .chip-ok { color: var(--emerald-300); font-family: var(--font-mono); font-size: 12px; }
+
+  /* Final CTA */
+  .cta-band {
+    text-align: center;
+    background:
+      radial-gradient(700px 360px at 50% 0%, rgba(16,185,129,0.18), transparent 60%);
+  }
+  .cta-band h2 {
+    font-family: var(--font-display); font-weight: 500; font-style: italic;
+    font-size: clamp(32px, 5vw, 56px); color: #fff; letter-spacing: -0.02em; line-height: 1.05;
+  }
+  .cta-band p { color: var(--navy-300); font-size: 18px; margin: 20px auto 34px; max-width: 540px; }
+
+  footer {
+    position: relative; z-index: 2; border-top: 1px solid rgba(148,163,184,0.12);
+    padding: 44px 0; color: var(--navy-400); font-size: 14px;
+  }
+  .foot-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .foot-inner a:hover { color: var(--emerald-300); }
+
+  /* Reveal animation — progressive enhancement: hidden only when JS is active,
+     so a JS failure (or no-JS / crawler) still shows all content. */
+  .js .reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .js .reveal { opacity: 1; transform: none; transition: none; }
+    .eyebrow .dot { animation: none; }
+  }
+  /* Staggered hero load */
+  .hero .anim { opacity: 0; transform: translateY(16px); animation: rise 0.8s cubic-bezier(.2,.7,.2,1) forwards; }
+  .hero .d1 { animation-delay: 0.05s; }
+  .hero .d2 { animation-delay: 0.18s; }
+  .hero .d3 { animation-delay: 0.31s; }
+  .hero .d4 { animation-delay: 0.44s; }
+  .hero .d5 { animation-delay: 0.58s; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .hero .anim { animation: none; opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="ScaleSafe home">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" fill="#04130d"/><path d="M9 12l2 2 4-4" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      ScaleSafe
+    </a>
+    <div class="nav-links">
+      <a class="lk" href="#how">How it works</a>
+      <a class="lk" href="#evidence">Evidence</a>
+      <a class="lk" href="#stack">Your stack</a>
+      <a class="btn btn-primary" href="#cta">Add to GoHighLevel</a>
+    </div>
+  </div>
+</nav>
+
+<a id="top"></a>
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow anim d1"><span class="dot" aria-hidden="true"></span>GoHighLevel Marketplace App</span>
+      <h1 class="hero-title anim d2">Win the chargeback <em>before</em> it happens.</h1>
+      <p class="hero-sub anim d3">
+        ScaleSafe quietly builds a timestamped evidence trail across your entire client
+        lifecycle — terms accepted, money taken, work delivered. When a dispute lands,
+        your defense packet is already assembled and ready to submit.
+      </p>
+      <div class="hero-cta anim d4">
+        <a class="btn btn-primary btn-lg" href="#cta">Add to GoHighLevel</a>
+        <a class="btn btn-ghost btn-lg" href="#how">See how it works</a>
+      </div>
+      <div class="hero-trust anim d5">
+        <span><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Settles to your own NMI or Stripe</span>
+        <span><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> ScaleSafe never holds your funds</span>
+      </div>
+    </div>
+
+    <div class="dossier anim d4" role="img" aria-label="Example evidence dossier showing a won dispute">
+      <div class="dossier-head">
+        <div class="file">CASE&nbsp; <b>#SS-4471</b> &middot; friendly-fraud</div>
+        <div class="stamp">Dispute Won</div>
+      </div>
+      <div class="timeline">
+        <div class="ev"><div class="ts">DAY 0 · 14:02</div><div class="body"><div class="label">Terms accepted</div><div class="meta">Click-wrap signature · IP + timestamp captured</div></div></div>
+        <div class="ev"><div class="ts">DAY 0 · 14:03</div><div class="body"><div class="label">Payment authorized</div><div class="meta">$4,500 · merchant's own processor</div></div></div>
+        <div class="ev"><div class="ts">DAY 2 · 09:18</div><div class="body"><div class="label">Onboarding delivered</div><div class="meta">Access granted · 3 sessions logged</div></div></div>
+        <div class="ev"><div class="ts">DAY 31 · 11:40</div><div class="body"><div class="label">Dispute filed → packet auto-assembled</div><div class="meta">Evidence compiled &amp; submitted in minutes</div></div></div>
+      </div>
+      <div class="dossier-foot">
+        <div class="score">Defense readiness &nbsp;<b>94%</b></div>
+        <div class="meter" aria-hidden="true"><i></i></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- The bleed -->
+<section class="band-light" id="problem">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-eyebrow">The quiet leak</div>
+      <h2 class="section-title">Your best month and a wave of <em>chargebacks</em> can land in the same week.</h2>
+      <p class="section-lead">High-ticket coaching and done-for-you services are friendly-fraud magnets. The buyer got the result — then disputes the charge. Without proof, the bank sides with the cardholder, and you eat the loss plus a fee. Win too many and your processor starts watching.</p>
+    </div>
+    <div class="stat-row">
+      <div class="stat reveal"><div class="num">~75%</div><div class="cap">of chargebacks are "friendly fraud" — a real customer disputing a legitimate charge.</div><div class="src">[PLACEHOLDER — confirm source]</div></div>
+      <div class="stat reveal"><div class="num">2.5×</div><div class="cap">the sale price is the true cost of a lost dispute once fees, time, and product are counted.</div><div class="src">[PLACEHOLDER — confirm source]</div></div>
+      <div class="stat reveal"><div class="num">Minutes</div><div class="cap">to respond with ScaleSafe — versus hours digging through inboxes and CRMs by hand.</div><div class="src">Pre-assembled defense packet</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-eyebrow">How it works</div>
+      <h2 class="section-title">Evidence is collected <em>as you sell</em> — not scrambled for after a dispute.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="idx">01</div>
+        <h3>Capture</h3>
+        <p>Every step — terms accepted, payment taken, sessions and deliverables logged — is timestamped across the client lifecycle inside GoHighLevel.</p>
+      </div>
+      <div class="step reveal">
+        <div class="idx">02</div>
+        <h3>Assemble</h3>
+        <p>The moment a dispute hits, ScaleSafe compiles the matching evidence into a structured, processor-ready defense packet — no manual hunt.</p>
+      </div>
+      <div class="step reveal">
+        <div class="idx">03</div>
+        <h3>Submit</h3>
+        <p>Your case goes to the bank with the receipts attached: consent, delivery, and a clean payment trail that refutes the "I never authorized this" claim.</p>
+      </div>
+      <div class="step reveal">
+        <div class="idx">04</div>
+        <h3>Defend &amp; monitor</h3>
+        <p>Stripe Radar signals, early-fraud warnings, and chargeback-ratio health are watched continuously — so risk surfaces before your processor flags you.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Evidence captured -->
+<section id="evidence" class="band-light" style="padding-top:90px;">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-eyebrow">What gets captured</div>
+      <h2 class="section-title">A defense packet is only as strong as its <em>evidence</em>.</h2>
+      <p class="section-lead">ScaleSafe assembles the exact artifacts banks weigh when deciding a dispute.</p>
+    </div>
+    <div class="ev-grid">
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4 style="color:#0f172a;">Click-wrap consent</h4><p style="color:#334155;">The exact terms accepted, with IP and timestamp — proof the buyer agreed to your refund and cancellation policy.</p></div>
+      </div>
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M2 10h20" stroke="currentColor" stroke-width="2"/></svg></div>
+        <div><h4 style="color:#0f172a;">Payment trail</h4><p style="color:#334155;">A clean record of authorization and settlement through your own NMI or Stripe account — amounts, dates, and method.</p></div>
+      </div>
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4 style="color:#0f172a;">Communications</h4><p style="color:#334155;">Onboarding and follow-up touchpoints logged — evidence the relationship was real and the service was rendered.</p></div>
+      </div>
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4 style="color:#0f172a;">Delivery &amp; access</h4><p style="color:#334155;">Sessions attended, materials accessed, milestones hit — the record that the customer received what they paid for.</p></div>
+      </div>
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+        <div><h4 style="color:#0f172a;">Dispute response</h4><p style="color:#334155;">Everything compiled into a structured packet matched to the dispute reason code and submitted in minutes.</p></div>
+      </div>
+      <div class="ev-card reveal" style="background:#fff;border-color:#e2e8f0;">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M3 3v18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7 14l4-4 3 3 5-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h4 style="color:#0f172a;">Risk &amp; health signals</h4><p style="color:#334155;">Early-fraud warnings and chargeback-ratio monitoring so you can act before a processor does.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Your stack -->
+<section id="stack">
+  <div class="wrap trust-grid">
+    <div class="reveal">
+      <div class="section-eyebrow">Built on your stack</div>
+      <h2 class="section-title">Your CRM. Your processor. <em>Your money.</em></h2>
+      <p class="section-lead">ScaleSafe runs inside GoHighLevel and rides on the rails you already use. It strengthens your defense without ever standing between you and your revenue.</p>
+      <div class="trust-list">
+        <div class="trust-item"><span class="ck"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Funds settle directly to you.</b> Charges run through your own connected NMI or Stripe account. ScaleSafe never holds or touches your money.</span></div>
+        <div class="trust-item"><span class="ck"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Native to GoHighLevel.</b> Installs from the Marketplace and works inside the CRM your team already lives in — no new platform to learn.</span></div>
+        <div class="trust-item"><span class="ck"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Multi-tenant from day one.</b> Built to scale from your first client to your ten-thousandth, with each merchant's data isolated.</span></div>
+      </div>
+    </div>
+    <div class="panel reveal" aria-label="Integration summary">
+      <div class="row"><span class="k">Platform</span><span class="v">GoHighLevel</span></div>
+      <div class="row"><span class="k">Processing rails</span><span class="v">NMI · Stripe</span></div>
+      <div class="row"><span class="k">Funds custody</span><span class="chip-ok">merchant-direct ✓</span></div>
+      <div class="row"><span class="k">Evidence vault</span><span class="chip-ok">timestamped ✓</span></div>
+      <div class="row"><span class="k">Dispute response</span><span class="chip-ok">auto-assembled ✓</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-band" id="cta">
+  <div class="wrap reveal">
+    <h2>Stop losing the disputes you should win.</h2>
+    <p>Add ScaleSafe to GoHighLevel and start building defensible evidence on your very next sale.</p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;">
+      <a class="btn btn-primary btn-lg" href="#">Add to GoHighLevel</a>
+      <a class="btn btn-ghost btn-lg" href="mailto:support@scalesafe.app">Talk to us</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div class="brand" style="font-size:18px;">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" fill="#04130d"/><path d="M9 12l2 2 4-4" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      ScaleSafe
+    </div>
+    <div>Evidence-powered chargeback defense · © 2026 ScaleSafe</div>
+    <div style="display:flex;gap:22px;"><a href="mailto:support@scalesafe.app">support@scalesafe.app</a></div>
+  </div>
+</footer>
+
+<script>
+  // Scroll-reveal — progressive enhancement only.
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.14 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
+
+</body>
+</html>
