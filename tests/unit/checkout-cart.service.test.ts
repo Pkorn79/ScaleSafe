@@ -113,6 +113,36 @@ describe('checkoutCartService', () => {
     ]);
   });
 
+  it('keeps PIF display at the base price when dual pricing is off', async () => {
+    const quote = await checkoutCartService.quoteOffer({
+      ...offer,
+      price: 2000,
+      dual_pricing_enabled: false,
+      ach_enabled: false,
+    }, [], 'pif', 'card');
+
+    expect(quote.dualPricingEnabled).toBe(false);
+    expect(quote.baseAmountCents).toBe(200000);
+    expect(quote.dueTodayAmountCents).toBe(200000);
+    expect(quote.achAmountCents).toBe(200000);
+    expect(quote.cardAmountCents).toBe(200000);
+    expect(quote.selectedAmountCents).toBe(200000);
+  });
+
+  it('shows PIF ACH/base and card prices when dual pricing is on', async () => {
+    const quote = await checkoutCartService.quoteOffer({
+      ...offer,
+      price: 2000,
+      dual_pricing_enabled: true,
+      ach_enabled: true,
+    }, [], 'pif', 'card');
+
+    expect(quote.dualPricingEnabled).toBe(true);
+    expect(quote.achAmountCents).toBe(200000);
+    expect(quote.cardAmountCents).toBe(206000);
+    expect(quote.selectedAmountCents).toBe(206000);
+  });
+
   it('keeps one-time add-ons out of future installment payments', async () => {
     const installmentOffer = {
       ...offer,

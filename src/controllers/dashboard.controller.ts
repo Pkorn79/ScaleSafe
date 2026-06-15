@@ -1479,19 +1479,78 @@ export const dashboardController = {
       // Get merchant for merchant_id
       const { data: merchant } = await supabase.from('merchants').select('id').eq('location_id', locationId).single();
 
-      // Create minimal enrollment record so client appears in client_list_view
-      await supabase.from('enrollments').insert({
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const { data: existingByContactId, error: existingByContactError } = await supabase
+        .from('enrollments')
+        .select('id, contact_id')
+        .eq('location_id', locationId)
+        .eq('status', 'manual_add')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingByContactError) throw existingByContactError;
+      let existingClientRow = existingByContactId;
+      if (!existingClientRow && normalizedEmail) {
+        const { data: emailMatch, error: emailMatchError } = await supabase
+          .from('enrollments')
+          .select('id, contact_id')
+          .eq('location_id', locationId)
+          .eq('status', 'manual_add')
+          .eq('email', normalizedEmail)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (emailMatchError) throw emailMatchError;
+        existingClientRow = emailMatch;
+      }
+
+      if (existingClientRow?.id) {
+        const { error: updateError } = await supabase
+          .from('enrollments')
+          .update({
+            contact_id: contactId,
+            email: normalizedEmail || email,
+            first_name: firstName,
+            last_name: lastName || '',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingClientRow.id)
+          .eq('location_id', locationId);
+        if (updateError) throw updateError;
+
+        res.json({
+          success: true,
+          contactId,
+          enrollmentId: existingClientRow.id,
+          created: false,
+          matchedExisting: true,
+          message: 'Existing client matched and updated.',
+        });
+        return;
+      }
+
+      // Create minimal enrollment record so client appears in client_list_view.
+      const { data: enrollment, error: insertError } = await supabase.from('enrollments').insert({
         location_id: locationId,
         merchant_id: merchant?.id || null,
         contact_id: contactId,
-        email,
+        email: normalizedEmail || email,
         first_name: firstName,
         last_name: lastName || '',
         status: 'manual_add',
         created_at: new Date().toISOString(),
-      });
+      }).select('id').single();
+      if (insertError) throw insertError;
 
-      res.json({ success: true, contactId });
+      res.json({
+        success: true,
+        contactId,
+        enrollmentId: enrollment?.id || null,
+        created: true,
+        matchedExisting: false,
+        message: 'Client added.',
+      });
     } catch (err) { next(err); }
   },
 

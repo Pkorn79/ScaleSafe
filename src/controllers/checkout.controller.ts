@@ -75,29 +75,37 @@ function releasePaymentAttempt(key: string): void {
 }
 
 export async function getCheckoutQuote(req: Request, res: Response): Promise<void> {
-  const offerId = String(req.query.offerId || '');
-  if (!offerId) {
-    res.status(400).json({ error: 'Missing offerId' });
-    return;
-  }
+  try {
+    const offerId = String(req.query.offerId || '');
+    if (!offerId) {
+      res.status(400).json({ error: 'Missing offerId' });
+      return;
+    }
 
-  const offer = await offerRepository.findById(offerId);
-  if (!offer || !offer.active) {
-    res.status(404).json({ error: 'Offer not found' });
-    return;
-  }
+    const offer = await offerRepository.findById(offerId);
+    if (!offer || !offer.active) {
+      res.status(404).json({ error: 'Offer not found' });
+      return;
+    }
 
-  const selectedAddonIds = String(req.query.selectedAddonIds || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-  const quote = await checkoutCartService.quoteOffer(
-    offer,
-    selectedAddonIds,
-    req.query.paymentChoice || 'pif',
-    req.query.paymentMethod === 'ach' ? 'ach' : 'card',
-  );
-  res.json(quote);
+    const consentToken = String(req.query.consentToken || '');
+    const selectedAddonIds = consentToken
+      ? await checkoutCartService.selectedAddonIdsForConsent(consentToken)
+      : String(req.query.selectedAddonIds || '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    const quote = await checkoutCartService.quoteOffer(
+      offer,
+      selectedAddonIds,
+      req.query.paymentChoice || 'pif',
+      req.query.paymentMethod === 'ach' ? 'ach' : 'card',
+    );
+    res.json(quote);
+  } catch (err: any) {
+    logger.error({ err: err.message, offerId: req.query.offerId }, 'Checkout quote failed');
+    res.status(500).json({ error: err.message || 'Unable to calculate checkout amount' });
+  }
 }
 
 export async function createStripeAchPaymentIntent(req: Request, res: Response): Promise<void> {

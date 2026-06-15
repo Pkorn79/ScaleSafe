@@ -24,6 +24,7 @@ jest.mock('../../src/utils/logger', () => ({
 
 import { compileTcHtml, calcInstallmentAmount, buildRefundText, offerService } from '../../src/services/offer.service';
 import { offerRepository } from '../../src/repositories/offer.repository';
+import { checkoutCartService } from '../../src/services/checkout-cart.service';
 
 describe('calcInstallmentAmount', () => {
   it('calculates price / numPayments rounded to 2 decimals', () => {
@@ -198,6 +199,10 @@ describe('offer tracking ID', () => {
 });
 
 describe('offerService.cloneOffer (#13/#31)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('does not copy Whop processor IDs or tracking_id into the clone', async () => {
     (offerRepository.getById as jest.Mock).mockResolvedValueOnce({
       id: 'offer-src', location_id: 'loc-1', offer_name: 'Coaching',
@@ -216,5 +221,32 @@ describe('offerService.cloneOffer (#13/#31)', () => {
       checkout_type: 'whop', // still a Whop offer — provisions its own product/plan on first sync
       active: false,
     }));
+  });
+
+  it('does not insert UI-only checkout add-on fields and copies add-ons to the new offer', async () => {
+    const replaceSpy = jest.spyOn(checkoutCartService, 'replaceOfferAddons').mockResolvedValueOnce();
+    jest.spyOn(checkoutCartService, 'listAddons').mockResolvedValue([]);
+    (offerRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'offer-src',
+      location_id: 'loc-1',
+      offer_name: 'Coaching',
+      price: 2000,
+      checkout_addons: [{ id: 'addon-1', kind: 'order_bump', title: 'Workbook', price: 25, active: true, sort_order: 0 }],
+      checkoutAddons: [{ id: 'addon-1', kind: 'order_bump', title: 'Workbook', price: 25, active: true, sort_order: 0 }],
+    });
+
+    await offerService.cloneOffer('offer-src', 'loc-1');
+
+    expect(offerRepository.create).toHaveBeenCalledWith(expect.not.objectContaining({
+      checkout_addons: expect.anything(),
+      checkoutAddons: expect.anything(),
+    }));
+    expect(replaceSpy).toHaveBeenCalledWith('loc-1', 'offer-1', [expect.objectContaining({
+      kind: 'order_bump',
+      title: 'Workbook',
+      price: 25,
+      active: true,
+      sortOrder: 0,
+    })]);
   });
 });

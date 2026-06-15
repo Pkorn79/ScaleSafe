@@ -810,6 +810,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var selectedPaymentMethod = 'card';
   var selectedAddonIds = [];
   var paymentInFlight = false;
+  var currentQuote = null;
+  var quoteSeq = 0;
+  var quoteErrorActive = false;
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
@@ -839,6 +842,66 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       sessionStorage.setItem('ss_selected_addons_' + offerId, JSON.stringify(selectedAddonIds));
       sessionStorage.setItem('ss_selected_addons', JSON.stringify(selectedAddonIds));
     } catch(e) {}
+  }
+
+  function normalizeCheckoutChoice(choice) {
+    return choice === 'installments' ? 'installment' : (choice || 'pif');
+  }
+
+  async function fetchCheckoutQuote() {
+    if (!offerData || !offerId) throw new Error('Offer is not loaded');
+    var query = new URLSearchParams();
+    query.set('offerId', offerId);
+    query.set('paymentChoice', normalizeCheckoutChoice(paymentChoice));
+    query.set('paymentMethod', selectedPaymentMethod === 'ach' ? 'ach' : 'card');
+    if (consentToken) query.set('consentToken', consentToken);
+    if (!consentToken && selectedAddonIds.length) query.set('selectedAddonIds', selectedAddonIds.join(','));
+    var res = await fetch(API_BASE + '/api/checkout/quote?' + query.toString());
+    var data = await res.json().catch(function() { return {}; });
+    if (!res.ok) throw new Error(data.error || 'Unable to calculate checkout amount');
+    if (!data || !Number.isFinite(Number(data.selectedAmountCents)) || Number(data.selectedAmountCents) <= 0) {
+      throw new Error('Checkout amount could not be calculated. Please refresh and try again.');
+    }
+    return data;
+  }
+
+  async function refreshCheckoutQuote() {
+    var seq = ++quoteSeq;
+    currentQuote = null;
+    updatePayBtn();
+    try {
+      var quote = await fetchCheckoutQuote();
+      if (seq !== quoteSeq) return null;
+      currentQuote = quote;
+      hideQuoteError();
+      return quote;
+    } catch (err) {
+      if (seq !== quoteSeq) return null;
+      currentQuote = null;
+      showQuoteError(err.message || 'Unable to calculate checkout amount');
+      return null;
+    } finally {
+      if (seq === quoteSeq) updatePayBtn();
+    }
+  }
+
+  async function ensureCheckoutQuote() {
+    return currentQuote || await refreshCheckoutQuote();
+  }
+
+  function showQuoteError(message) {
+    quoteErrorActive = true;
+    el('error-msg').textContent = message;
+    el('error-msg').style.display = 'block';
+    el('pay-btn').disabled = true;
+  }
+
+  function hideQuoteError() {
+    if (quoteErrorActive) {
+      quoteErrorActive = false;
+      el('error-msg').style.display = 'none';
+      el('error-msg').textContent = '';
+    }
   }
 
   // Apply prefill on load
@@ -1135,64 +1198,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     });
   }
 
-  function baseDisplayPrice() {
-    var displayPrice = offerData.price;
-    if (paymentChoice === 'pif' && offerData.pifPrice != null) {
-      displayPrice = offerData.pifPrice;
-    } else if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
-      displayPrice = offerData.installmentAmount;
-    } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
-      displayPrice = offerData.installmentAmount;
-    }
-    return Number(displayPrice || 0);
-  }
-
-  function selectedAddonTotal() {
-    var addons = Array.isArray(offerData && offerData.checkoutAddons) ? offerData.checkoutAddons : [];
-    var total = 0;
-    addons.forEach(function(addon) {
-      if (addon && addon.active !== false && selectedAddonIds.indexOf(String(addon.id)) !== -1) {
-        total += Number(addon.price || 0);
-      }
-    });
-    return Math.round(total * 100) / 100;
-  }
-
-  function priceQuote() {
-    var recurringBasePrice = Math.round(baseDisplayPrice() * 100) / 100;
-    var dueTodayBasePrice = Math.round((recurringBasePrice + selectedAddonTotal()) * 100) / 100;
-    var dual = offerData.dualPricing || null;
-    var enabled = !!(dual && offerData.dualPricingEnabled);
-    var uplift = enabled ? Number(dual.cardUpliftPercent || 0) : 0;
-    function cardAmount(amount) {
-      return uplift > 0 ? Math.round((amount * (1 + uplift / 100)) * 100) / 100 : amount;
-    }
-    if (!dual || !offerData.dualPricingEnabled) {
-      return {
-        cardPrice: dueTodayBasePrice,
-        achPrice: dueTodayBasePrice,
-        selectedPrice: dueTodayBasePrice,
-        futureCardPrice: recurringBasePrice,
-        futureAchPrice: recurringBasePrice,
-        futureSelectedPrice: recurringBasePrice,
-        enabled: false
-      };
-    }
-    var achPrice = dueTodayBasePrice;
-    var cardPrice = cardAmount(dueTodayBasePrice);
-    var futureAchPrice = recurringBasePrice;
-    var futureCardPrice = cardAmount(recurringBasePrice);
-    return {
-      cardPrice: cardPrice,
-      achPrice: achPrice,
-      selectedPrice: selectedPaymentMethod === 'ach' ? achPrice : cardPrice,
-      futureCardPrice: futureCardPrice,
-      futureAchPrice: futureAchPrice,
-      futureSelectedPrice: selectedPaymentMethod === 'ach' ? futureAchPrice : futureCardPrice,
-      enabled: true
-    };
-  }
-
   function achSelectable() {
     return !!(offerData
       && offerData.dualPricingEnabled
@@ -1227,31 +1232,40 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
   }
 
-  function updatePricingDisplay() {
+  async function updatePricingDisplay() {
     var note = '';
-    var quote = priceQuote();
-    var displayPrice = quote.selectedPrice;
+    var quote = await refreshCheckoutQuote();
+    if (!quote) {
+      el('offer-price').textContent = '--';
+      el('due-today-price').textContent = '--';
+      el('price-summary').classList.remove('hidden');
+      el('dual-pricing-box').classList.add('hidden');
+      el('future-payment-row').classList.add('hidden');
+      el('pay-btn').textContent = processorType === 'whop' ? 'Continue to Whop Checkout' : 'Pay';
+      return;
+    }
+    var displayPrice = quote.selectedAmount;
     if (paymentChoice === 'installments' && offerData.installmentAmount != null) {
       var remaining = Math.max(0, Number(offerData.installmentCount || 0) - 1);
       note = remaining > 0
-        ? remaining + ' future ' + (offerData.installmentFrequency || 'monthly') + ' payment' + (remaining === 1 ? '' : 's') + ' of ' + formatCurrency(quote.futureSelectedPrice)
+        ? remaining + ' future ' + (offerData.installmentFrequency || 'monthly') + ' payment' + (remaining === 1 ? '' : 's') + ' of ' + formatCurrency(quote.futureRecurringSelectedAmount)
         : 'No future payments after today';
     } else if (paymentChoice === 'subscription' && offerData.installmentAmount != null) {
-      note = 'Future payments: ' + formatCurrency(quote.futureSelectedPrice) + ' / ' + (offerData.installmentFrequency || 'month');
+      note = 'Future payments: ' + formatCurrency(quote.futureRecurringSelectedAmount) + ' / ' + (offerData.installmentFrequency || 'month');
     }
     el('offer-price').textContent = formatCurrency(displayPrice);
     el('due-today-price').textContent = formatCurrency(displayPrice);
     el('price-summary').classList.remove('hidden');
-    if ((paymentChoice === 'installments' || paymentChoice === 'subscription') && quote.futureSelectedPrice > 0) {
+    if ((paymentChoice === 'installments' || paymentChoice === 'subscription') && quote.futureRecurringSelectedAmount > 0) {
       el('future-payment-label').textContent = paymentChoice === 'subscription' ? 'Future payments' : 'Remaining payments';
       el('future-payment-price').textContent = paymentChoice === 'subscription'
-        ? formatCurrency(quote.futureSelectedPrice) + ' / ' + (offerData.installmentFrequency || 'month')
-        : formatCurrency(quote.futureSelectedPrice);
+        ? formatCurrency(quote.futureRecurringSelectedAmount) + ' / ' + (offerData.installmentFrequency || 'month')
+        : formatCurrency(quote.futureRecurringSelectedAmount);
       el('future-payment-row').classList.remove('hidden');
     } else {
       el('future-payment-row').classList.add('hidden');
     }
-    if (quote.enabled) {
+    if (quote.dualPricingEnabled) {
       el('dual-ach-price').textContent = formatCurrency(quote.achPrice);
       el('dual-card-price').textContent = formatCurrency(quote.cardPrice);
       el('dual-pricing-box').classList.remove('hidden');
@@ -1299,7 +1313,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   el('method-ach').addEventListener('click', function() { setPaymentMethod('ach'); });
   el('method-card').addEventListener('click', function() { setPaymentMethod('card'); });
   function updatePayBtn() {
-    var ready = el('consent-cb').checked && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi' || processorType === 'whop');
+    var ready = el('consent-cb').checked
+      && !!currentQuote
+      && Number(currentQuote.selectedAmountCents || 0) > 0
+      && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi' || processorType === 'whop');
     el('pay-btn').disabled = !ready;
   }
 
@@ -1424,7 +1441,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     try {
       var token = paymentToken;
       // Use payment choice to determine charge amount
-      var chargePrice = priceQuote().selectedPrice;
+      var quote = await ensureCheckoutQuote();
+      if (!quote) throw new Error('Unable to calculate checkout amount. Please refresh and try again.');
+      var chargePrice = quote.selectedAmount;
       // Validate customer fields. Phone is only required on Quick Pay (no consent token);
       // on the full funnel path the contact already exists in GHL with phone from Page 1.
       var custName = el('cust-name').value.trim();
@@ -1448,7 +1467,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         return;
       }
 
-      var amount = Math.round(chargePrice * 100);
+      var amount = Number(quote.selectedAmountCents);
 
       var data;
 

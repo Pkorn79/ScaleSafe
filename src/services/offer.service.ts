@@ -635,6 +635,8 @@ export const offerService = {
     const skipKeys = new Set([
       'id', 'ghl_product_id', 'ghl_price_ids', 'ghl_custom_object_id',
       'created_at', 'updated_at', 'redirect_slug',
+      // UI/enrichment-only fields are not columns on offers_mirror.
+      'checkout_addons', 'checkoutAddons',
       // #13: processor-side Whop resource IDs must NOT be shared — copying them makes editing
       // the clone mutate the SOURCE's live Whop product/plan and bills clone checkouts against
       // the wrong plan. The clone provisions its own on first sync.
@@ -660,8 +662,23 @@ export const offerService = {
     clone.active = false;
 
     const newOffer = await offerRepository.create(clone as any);
+    const sourceAddons = Array.isArray((source as any).checkoutAddons)
+      ? (source as any).checkoutAddons
+      : Array.isArray((source as any).checkout_addons)
+        ? (source as any).checkout_addons
+        : await checkoutCartService.listAddons(source.id, source.location_id, false);
+    if (sourceAddons.length > 0) {
+      await checkoutCartService.replaceOfferAddons(locationId, newOffer.id, sourceAddons.map((addon: any, index: number) => ({
+        kind: addon.kind,
+        title: addon.title,
+        description: addon.description || null,
+        price: Number(addon.price || 0),
+        active: addon.active !== false,
+        sortOrder: Number.isFinite(Number(addon.sortOrder ?? addon.sort_order)) ? Number(addon.sortOrder ?? addon.sort_order) : index,
+      })));
+    }
     logger.info({ sourceId: offerId, cloneId: newOffer.id, locationId }, 'Offer cloned');
-    return newOffer;
+    return this.withCheckoutAddons(newOffer);
   },
 };
 

@@ -45,7 +45,7 @@ import {
 
   <!-- Normal app -->
   <div v-else class="flex min-h-screen">
-    <nav class="w-[200px] bg-slate-900 text-white py-5 flex-shrink-0">
+    <nav class="w-[200px] h-screen sticky top-0 overflow-y-auto bg-slate-900 text-white py-5 flex-shrink-0">
       <div class="text-lg font-bold px-5 pb-5 border-b border-slate-700 mb-2">ScaleSafe</div>
 
       <router-link to="/" class="nav-link" :class="{ 'nav-active': $route.name === 'dashboard' }">

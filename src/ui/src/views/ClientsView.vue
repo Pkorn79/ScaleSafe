@@ -6,7 +6,7 @@
       description="Active enrollments, payment status, and last activity at a glance."
     >
       <template #actions>
-        <button class="btn btn-primary btn-sm" @click="showAddModal = true">Add Client</button>
+        <button class="btn btn-primary btn-sm" @click="openAddClientModal">Add Client</button>
       </template>
     </SectionHeader>
 
@@ -109,7 +109,7 @@
         title="No clients yet"
         body="Send an enrollment link from any offer, or use Add Client for clients you've already onboarded outside ScaleSafe."
         cta-label="Add Client"
-        @cta-click="showAddModal = true"
+        @cta-click="openAddClientModal"
       />
     </div>
 
@@ -141,6 +141,7 @@
         <input type="checkbox" v-model="takePaymentNow" />
         Take payment now
       </label>
+      <div v-if="addClientSuccess" class="text-sm mt-2" style="color:#047857">{{ addClientSuccess }}</div>
       <div v-if="addClientError" class="text-sm mt-2" style="color:#ef4444">{{ addClientError }}</div>
       <template #footer>
         <button class="btn btn-secondary" @click="showAddModal = false">Cancel</button>
@@ -182,6 +183,7 @@ const statusGroup = ref('active');
 const showAddModal = ref(false);
 const addClientLoading = ref(false);
 const addClientError = ref('');
+const addClientSuccess = ref('');
 const newClient = ref({ firstName: '', lastName: '', email: '', phone: '' });
 const takePaymentNow = ref(false);
 const showQuickSaleModal = ref(false);
@@ -222,6 +224,12 @@ function switchGroup(group: string) {
   loadClients();
 }
 
+function openAddClientModal() {
+  addClientError.value = '';
+  addClientSuccess.value = '';
+  showAddModal.value = true;
+}
+
 async function loadClients() {
   try {
     const params = new URLSearchParams();
@@ -254,12 +262,17 @@ async function submitAddClient() {
   }
   addClientLoading.value = true;
   addClientError.value = '';
+  addClientSuccess.value = '';
   try {
-    await api.post('/api/dashboard/add-client', newClient.value);
-    showAddModal.value = false;
-    newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
-    takePaymentNow.value = false;
-    loadClients();
+    const result = await api.post<any>('/api/dashboard/add-client', newClient.value);
+    addClientSuccess.value = result?.message || (result?.matchedExisting ? 'Existing client matched and updated.' : 'Client added.');
+    await loadClients();
+    setTimeout(() => {
+      showAddModal.value = false;
+      addClientSuccess.value = '';
+      newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
+      takePaymentNow.value = false;
+    }, 900);
   } catch (e: any) {
     addClientError.value = e.message || 'Failed to add client';
   }
