@@ -21,6 +21,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **`docs/LAUNCH_READINESS_CHECKLIST.md`** — the single go-live gate: pre-deploy migration ordering,
   the open Group B (day-1 double-bill) / Group F (NMI Query API permission) verification items,
   security/multi-tenancy gates, OAuth/provisioning verification, UX, GTM, and ops sign-off.
+- **Launch-critical route tests** (additive; no production code changed). Refund
+  (`tests/unit/payment-management.refund.controller.test.ts`): locks down input validation, tenant
+  scoping, refundable-event checks, **double-refund protection** (remaining-balance math), the
+  pending-refund-is-accepted behavior (#11), and the no-ledger-row-on-hard-failure invariant.
 
 ### Added
 - **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC
