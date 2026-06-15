@@ -75,15 +75,16 @@ const iconSize = computed(() => (props.size === 'sm' ? 14 : props.size === 'lg' 
 .ss-btn-md { padding: 9px 20px;  font-size: 14px; min-height: 40px; }
 .ss-btn-lg { padding: 12px 26px; font-size: 15px; min-height: 48px; }
 
-/* Variant - primary (emerald fill, in-app engagement) */
+/* Variant - primary (emerald fill, in-app engagement).
+   Uses emerald-700 so white text clears WCAG AA contrast (4.5:1); 500/600 fail. */
 .ss-btn-primary {
-  background: var(--ss-primary-500);
+  background: var(--ss-primary-700);
   color: #fff;
-  border-color: var(--ss-primary-500);
+  border-color: var(--ss-primary-700);
 }
 .ss-btn-primary:hover:not(:disabled) {
-  background: var(--ss-primary-600);
-  border-color: var(--ss-primary-600);
+  background: var(--ss-primary-800);
+  border-color: var(--ss-primary-800);
 }
 
 /* Variant - funnel (orange fill, top-of-funnel CTAs only) */

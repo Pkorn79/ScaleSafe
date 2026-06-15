@@ -226,13 +226,14 @@ h1, h2, h3, h4 {
 .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3); }
 
 .btn-primary {
-  background: var(--ss-primary-500);
+  /* emerald-700 so white text clears WCAG AA contrast (4.5:1); 500/600 fail. */
+  background: var(--ss-primary-700);
   color: #fff;
-  border-color: var(--ss-primary-500);
+  border-color: var(--ss-primary-700);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--ss-primary-600);
-  border-color: var(--ss-primary-600);
+  background: var(--ss-primary-800);
+  border-color: var(--ss-primary-800);
 }
 
 /* Funnel orange - top-of-funnel only (enrollment funnel, customer checkout). DO NOT use in-app. */
@@ -283,13 +284,14 @@ h1, h2, h3, h4 {
 
 /* Success - used in archived-list "Activate" action. Same as primary at the moment. */
 .btn-success {
-  background: var(--ss-primary-500);
+  /* emerald-700 for AA contrast with white text (mirrors .btn-primary). */
+  background: var(--ss-primary-700);
   color: #fff;
-  border-color: var(--ss-primary-500);
+  border-color: var(--ss-primary-700);
 }
 .btn-success:hover:not(:disabled) {
-  background: var(--ss-primary-600);
-  border-color: var(--ss-primary-600);
+  background: var(--ss-primary-800);
+  border-color: var(--ss-primary-800);
 }
 
 .btn-sm { padding: 5px 12px; font-size: 12px; }

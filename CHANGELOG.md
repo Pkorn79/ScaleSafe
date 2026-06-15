@@ -47,6 +47,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
   `post`/`put`/`del`, so a failed action (refund, save, disconnect, dispute submit) can no longer fail
   silently. Reads stay quiet (views already show inline load/error states). Views can call
   `toast.success(...)` to confirm actions. Verified: `vue-tsc` clean on all touched files, `vite build` passes.
+- **Loading skeletons** (UX polish). New `src/ui/src/components/Skeleton.vue` (shimmer placeholder,
+  `prefers-reduced-motion` aware). `DashboardView` first-load now renders a skeleton layout mirroring
+  the real stat/content cards (with `aria-busy`) instead of a bare "Loading dashboard..." string.
+
+### Changed
+- **Primary CTA contrast meets WCAG AA.** `.btn-primary`, `.btn-success` (App.vue) and `.ss-btn-primary`
+  (Button.vue) moved from emerald-500 `#10b981` (white text ≈ 2.54:1, **fails** AA) to emerald-700
+  `#047857` (≈ 5.5:1, passes), hover to emerald-800. Same brand hue, accessible depth. Funnel/secondary/
+  tertiary variants unchanged (already compliant).
 
 ### Added
 - **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC

@@ -24,7 +24,24 @@
     </div>
 
     <div v-if="error" class="error-msg">{{ error }}</div>
-    <div v-if="loading && !data" class="loading">Loading dashboard...</div>
+
+    <!-- Skeleton placeholder on first load (no data yet) instead of dead-air text -->
+    <div v-if="loading && !data" aria-busy="true" aria-label="Loading dashboard">
+      <div class="grid grid-4 mb-4">
+        <div v-for="n in 4" :key="n" class="card">
+          <Skeleton width="45%" height="11px" radius="4px" />
+          <Skeleton width="65%" height="30px" radius="6px" style="margin-top: 12px;" />
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div v-for="col in 2" :key="col" class="card">
+          <Skeleton width="40%" height="16px" />
+          <div class="dashboard-skeleton-rows">
+            <Skeleton v-for="n in 4" :key="n" height="14px" radius="6px" />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div v-if="data" class="grid grid-4 mb-4">
       <Stat
@@ -128,6 +145,7 @@ import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import Pill from '../components/Pill.vue';
 import FeatureStatusPill from '../components/FeatureStatusPill.vue';
+import Skeleton from '../components/Skeleton.vue';
 import { formatTimestamp } from '../utils/humanize';
 import { publicFeatureCatalog } from '../lib/featureCatalog';
 
@@ -232,6 +250,12 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--ss-navy-500);
   margin: -8px 0 16px 0;
+}
+.dashboard-skeleton-rows {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 .spin {
   animation: spin 0.9s linear infinite;
