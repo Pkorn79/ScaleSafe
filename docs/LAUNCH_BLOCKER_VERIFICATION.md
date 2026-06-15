@@ -53,9 +53,13 @@ Two charges, or a $1.00, on day 1 = **FAIL / P0**.
 
 ---
 
-## Blocker 2 — Group F: NMI Query API permission (owner-only)
+## Blocker 2 - Group F: NMI Query API permission (owner-only) - PASSED for current merchant
 
 **Owner:** Philip (NMI portal + live NMI). **Severity:** blocks correct card metadata, not money movement.
+
+**Current status:** passed for the current NMI merchant on 2026-06-15. Live proof showed subscription ID
+`12190152581`, NMI vault `1035592018`, card brand `mc`, expiration `1/2028`, payment progress `1 of 4`,
+and next billing date `2026-06-16`.
 
 **Symptom.** NMI vaulted-card metadata (`****` last-four, brand, expiry) shows as `unknown` because the
 NMI **Query API** returns an empty response for the stored `security_key`. ScaleSafe's charge path already
@@ -107,6 +111,6 @@ tracker row marked Pass/Fail with an Issue ID on any failure.
 
 These blockers are cleared (or explicitly accepted as launch exceptions by Philip) when:
 - Group B passes in both ScaleSafe and Stripe sandbox (one $0.50 day 1, second a week later).
-- Group F: Query API enabled and a re-vaulted card shows populated metadata — **or** Philip accepts the
-  `unknown`-metadata limitation as a known launch exception.
+- Group F: Query API enabled and a re-vaulted card shows populated metadata. **Current merchant passed
+  2026-06-15; keep this as an onboarding check for every future NMI merchant.**
 - The Blocker-3 retest matrix is Pass across the listed cases, with any P0/P1 fixed.

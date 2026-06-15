@@ -42,10 +42,13 @@ onboarding real merchants who take live payments.
   `processor.charge()`), then a second `$0.50` fires one week later as a `subscription_cycle`
   invoice — **not** two charges on day 1. Verifies the `billing_cycle_anchor` +
   `proration_behavior='none'` fix. (Disconnect → reconnect test-mode Stripe on Settings → Payments first.)
-- [ ] 🔴 **Group F — NMI Query API permission.** Confirm the merchant's NMI `security_key` has
+- [x] 🔴 **Group F — NMI Query API permission.** Confirm the merchant's NMI `security_key` has
   **Query API permission enabled** in the NMI portal, so vaulted-card metadata (`****`/brand/exp)
   populates instead of staying `unknown`. Affected legacy `payment_methods` rows only self-heal on
   re-vault. Document this as an onboarding step for every NMI merchant.
+  **Current merchant proof captured 2026-06-15:** live NMI recurring test showed subscription ID
+  `12190152581`, NMI vault `1035592018`, card brand `mc`, expiration `1/2028`, payment progress
+  `1 of 4`, and next billing date `2026-06-16`.
 - [ ] 🔴 Run the full payment-flow integration suite green:
   `npx jest --testPathPattern="payment-flow|dispute-flow"`.
 - [ ] 🟡 Spot-check one real end-to-end on each rail: NMI charge + vault, Stripe Connect direct
@@ -113,11 +116,13 @@ non-negotiable.
 
 ## 6. Go-to-market
 
-- [~] 🟡 GHL Marketplace listing — draft written (`docs/GHL_MARKETPLACE_LISTING.md`). *Still needs:
-  exact OAuth scope justifications, screenshots, hosted privacy/terms URLs, pricing, brand-owner sign-off.*
-- [~] 🟡 Landing page — first draft built (`marketing/index.html`, self-contained, on-brand). *Still
-  needs: brand-owner copy sign-off, real stats to replace `[PLACEHOLDER]`s, structured-data/JSON-LD +
-  AEO meta, real "Add to GoHighLevel" install URL, and hosting.*
+- [~] 🟡 GHL Marketplace listing — evidence-first private-beta draft updated
+  (`docs/GHL_MARKETPLACE_LISTING.md`). *Still needs: exact live OAuth scope strings copied from the GHL
+  Marketplace app config, screenshots, hosted privacy/terms/support URLs, and brand-owner sign-off.*
+- [~] 🟡 Landing page — evidence-first private-beta draft aligned with the Marketplace positioning
+  (`marketing/index.html`, self-contained, on-brand). *Still needs: brand-owner copy sign-off,
+  structured-data/JSON-LD + AEO meta, hosted privacy/terms/support links, final install/beta CTA URL,
+  and hosting.*
 - [ ] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
   NMI Query-API enable step (from §1).
 - [ ] 🟢 Incident/support runbook + status page.

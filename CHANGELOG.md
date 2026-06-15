@@ -59,6 +59,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **GHL Marketplace listing draft** — `docs/GHL_MARKETPLACE_LISTING.md`: name/tagline/short+long
   description, key features, an OAuth-scope-justification table to fill, a screenshots plan, and a
   pre-submission checklist. Claims to be verified against the live app; copy needs brand-owner sign-off.
+- **Marketplace / GTM copy aligned for private beta** — `docs/GHL_MARKETPLACE_LISTING.md` and
+  `marketing/index.html` now use the safer evidence-first positioning ("build the evidence trail before
+  the dispute happens"), private-beta/contact pricing, no fabricated stats, and no guarantee-style
+  "win every chargeback" claims. Launch docs also record Group F NMI Query API as passed for the
+  current merchant based on the 2026-06-15 live NMI vault/subscription proof.
 - **Group B regression test** — `tests/unit/stripe.client.test.ts` now covers `createSubscription`'s
   day-1 double-bill guard: a future `startDate` sets `billing_cycle_anchor` + `proration_behavior='none'`;
   no/near-now `startDate` omits them. Locks the shipped fix against silent regression (suite now 800 tests).

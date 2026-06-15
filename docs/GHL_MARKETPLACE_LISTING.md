@@ -1,88 +1,106 @@
-# ScaleSafe — GoHighLevel Marketplace Listing (draft)
+# ScaleSafe - GoHighLevel Marketplace Listing
 
-> First-draft listing copy and submission checklist. **Copy must be confirmed by the brand owner**
-> and every claim verified against the live app before submitting. No metrics or testimonials are
-> invented here. Pairs with the landing page (`marketing/index.html`).
+> Marketplace submission source of truth. This copy is evidence-first and private-beta
+> oriented. Do not submit until the live GHL Marketplace app scopes, legal URLs,
+> screenshots, and Philip's final copy approval are complete.
 
 ---
 
 ## App identity
 
 - **App name:** ScaleSafe
-- **Tagline (≤ ~60 chars):** Win the chargeback before it happens.
-- **Category:** Payments / Finance (secondary: Sales & CRM tooling)
-- **Pricing model:** [DECIDE — flat SaaS / per-location / usage]. Confirm before submit.
+- **Tagline (<= ~60 chars):** Build the evidence trail before the dispute happens.
+- **Category:** Payments / Finance
+- **Secondary category:** Sales & CRM tooling
+- **Pricing model:** Private beta / contact for access
 
 ## Short description (~140 chars)
 
-> Evidence-powered chargeback defense for high-ticket coaches and service providers. ScaleSafe builds
-> a timestamped defense packet across the client lifecycle.
+> Evidence-ready payments and client records for high-ticket GoHighLevel businesses.
+> Capture consent, payment, delivery, and refund proof before disputes happen.
 
 ## Long description
 
-ScaleSafe helps coaches, consultants, and done-for-you service businesses defend against chargebacks —
-especially "friendly fraud," where a real customer disputes a legitimate charge after getting the result.
+ScaleSafe helps high-ticket coaches, consultants, agencies, and service businesses
+build the evidence trail they need before a payment dispute happens.
 
-Most merchants only scramble for evidence *after* a dispute lands, digging through inboxes and CRM
-notes against a tight bank deadline. ScaleSafe flips that: it quietly collects defensible evidence
-throughout the entire client lifecycle — terms accepted (click-wrap consent with timestamp), payment
-authorized and settled, onboarding and communications, and delivery/access — then automatically
-assembles a structured, processor-ready defense packet the moment a dispute is filed.
+Instead of scrambling through inboxes, contracts, screenshots, and CRM notes after a
+chargeback lands, ScaleSafe captures the key proof points throughout the client
+lifecycle: offer terms, click-wrap consent, payment events, enrollment status,
+communications, delivery milestones, pulse check-ins, refunds, and cancellation
+activity.
 
-Because ScaleSafe processes through your **own** connected NMI or Stripe account, funds settle directly
-to you — ScaleSafe never holds your money. It runs natively inside GoHighLevel and fires your existing
-workflows, so there's no new platform for your team to learn.
+When a dispute or early-fraud warning needs attention, ScaleSafe organizes those
+records into a structured defense workflow so the merchant can respond with cleaner
+documentation and less manual digging.
+
+ScaleSafe runs inside GoHighLevel and works with the merchant's own connected Stripe
+or NMI account. Payments settle directly to the merchant's processor account;
+ScaleSafe does not hold funds.
 
 **What you get**
-- Timestamped evidence capture across the client lifecycle (consent, payment, communications, delivery)
-- Automatic, reason-code-matched dispute response packets
-- Payments through your own NMI or Stripe — funds never leave your control
-- Stripe Radar signals, early-fraud-warning handling, and chargeback-ratio health monitoring
-- A merchant dashboard for clients, payments, offers, and defense activity
-- Multi-tenant and built to scale from your first client to your ten-thousandth
 
-## Key features (bullet list for the listing UI)
+- Timestamped evidence capture across the client lifecycle
+- Click-wrap consent and purchase-summary records for enrollment flows
+- Payment, refund, recurring, and card-on-file visibility for Stripe and NMI
+- Client evidence timelines with communications, milestones, pulse check-ins, and delivery proof
+- Defense packet workflows for disputes and early-fraud warnings
+- GoHighLevel workflow triggers for receipts, enrollment links, welcome/access, refunds, failed payments, reminders, and app events
+- Merchant-facing dashboards for clients, offers, payments, evidence, and defense activity
 
-1. **Evidence vault** — every lifecycle event captured and timestamped.
-2. **Auto-assembled defense packets** — respond to disputes in minutes, not hours.
-3. **Your processor, your funds** — NMI + Stripe; ScaleSafe never holds money.
-4. **Proactive risk monitoring** — early-fraud warnings + chargeback-ratio health.
-5. **Native GHL experience** — installs from the Marketplace, fires your workflows.
+## Key features
 
-## OAuth scopes — justification (fill from the actual install scopes)
+1. **Evidence timeline** - capture consent, payment, communication, delivery, refund, and cancellation records in one place.
+2. **Defense workflow** - organize the evidence a merchant needs when a dispute or early-fraud warning appears.
+3. **Processor-direct payments** - use connected Stripe or NMI accounts; ScaleSafe does not hold merchant funds.
+4. **Recurring payment visibility** - track installment/subscription progress, payment reminders, refunds, pauses, resumes, and cancellations.
+5. **Native GHL workflow automation** - fire purpose-built Marketplace triggers for receipts, enrollment links, welcome/access, refunds, failed payments, and app events.
 
-| Scope | Why ScaleSafe needs it |
+## OAuth scopes - submission inventory
+
+The exact scope strings must be copied from the live GHL Marketplace app configuration
+before submission. The repo can show which APIs ScaleSafe calls, but GHL review needs
+the exact configured scope names from the Marketplace app record.
+
+| Live GHL scope | Why ScaleSafe needs it |
 |---|---|
-| [scope] | [user-facing justification — reviewers require a clear reason per scope] |
+| Copy exact scope from GHL app config | Read and update the installed location so ScaleSafe can provision merchant settings, custom values, and workflow-ready records. |
+| Copy exact scope from GHL app config | Read and update contacts so ScaleSafe can attach offers, enrollment/payment fields, evidence status, and workflow context to the right client. |
+| Copy exact scope from GHL app config | Read custom fields/custom values so ScaleSafe can verify provisioning health and keep workflow merge fields mapped. |
+| Copy exact scope from GHL app config | Register and execute Marketplace workflow triggers used for receipts, enrollment links, welcome/access, payment failures, refunds, chargebacks, and app events. |
+| Copy exact scope from GHL app config | Read relevant CRM activity such as conversations, appointments, notes, tasks, opportunities, and invoice events for evidence timelines where enabled. |
 
-> **Action:** list the exact scopes the app requests at install (from the OAuth flow / app config) and
-> write a one-line user-benefit justification for each. GHL review rejects over-broad or unexplained scopes.
+**Before submit:** replace every `Copy exact scope from GHL app config` entry with the
+literal scope from the live GHL app configuration. Remove any row that is not actually
+requested by the app.
 
-## Screenshots / media plan (5–8 assets)
+## Screenshots / media plan
 
-1. Dashboard — defense activity + at-risk clients (hero shot).
-2. A dispute detail with the assembled evidence packet.
-3. The evidence timeline for a client (consent → payment → delivery).
-4. Settings → Payments showing NMI/Stripe connect (funds-direct messaging).
-5. Offer setup / checkout.
-6. Stripe Risk Health / prevention checklist.
+Capture screenshots with realistic, non-PII demo data. Use the same sample merchant,
+offer, and test client across the set.
 
-> Capture at consistent resolution, light UI, realistic-but-non-PII sample data. Reuse the landing
-> page's "evidence dossier" framing for the feature graphic.
+1. Dashboard / provisioning health showing the app is installed and workflow health is visible.
+2. Offer setup showing checkout mode, pricing, terms, milestones, pulse cadence, and add-ons.
+3. Checkout or enrollment flow showing the client-facing purchase summary and consent/payment path.
+4. Client evidence timeline showing consent, payment, communications, milestone, and pulse records.
+5. Payments view showing recurring progress, saved payment method, and processor subscription ID.
+6. Defense workflow showing a dispute/early-fraud warning packet or evidence assembly screen.
 
 ## Support & compliance
 
 - **Support email:** support@scalesafe.app
-- **Privacy policy URL:** [REQUIRED — host before submit]
-- **Terms URL:** [REQUIRED — host before submit]
-- **Onboarding doc / help center:** [link once built]
+- **Privacy policy URL:** Host before submit and paste the final URL here.
+- **Terms URL:** Host before submit and paste the final URL here.
+- **Support / help URL:** Host before submit and paste the final URL here.
 
 ## Pre-submission checklist
 
-- [ ] Every feature claim verified against the live app (no aspirational features listed as live).
-- [ ] Exact OAuth scopes listed with justifications.
-- [ ] Screenshots captured with non-PII sample data.
-- [ ] Privacy policy + terms hosted and linked.
-- [ ] Pricing confirmed.
-- [ ] Fresh install on a clean sub-account passes end-to-end (see §4 of the launch checklist).
-- [ ] Brand owner signed off on all copy.
+- [ ] Every feature claim verified against the live app.
+- [ ] Exact live GHL OAuth scopes copied from the Marketplace app config.
+- [ ] One user-benefit justification included for each OAuth scope.
+- [ ] Screenshots captured with non-PII sample data and approved by Philip.
+- [ ] Privacy policy, terms, and support/help URLs hosted and linked.
+- [ ] Pricing shown as private beta/contact access unless Philip chooses public pricing.
+- [ ] Group B Stripe sandbox double-bill verification is passed or explicitly waived by Philip.
+- [ ] Fresh install on a clean sub-account passes end-to-end.
+- [ ] Philip signs off on final copy before submission.
