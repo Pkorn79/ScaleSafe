@@ -21,10 +21,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **`docs/LAUNCH_READINESS_CHECKLIST.md`** — the single go-live gate: pre-deploy migration ordering,
   the open Group B (day-1 double-bill) / Group F (NMI Query API permission) verification items,
   security/multi-tenancy gates, OAuth/provisioning verification, UX, GTM, and ops sign-off.
-- **Launch-critical route tests** (additive; no production code changed). Refund
-  (`tests/unit/payment-management.refund.controller.test.ts`): locks down input validation, tenant
-  scoping, refundable-event checks, **double-refund protection** (remaining-balance math), the
-  pending-refund-is-accepted behavior (#11), and the no-ledger-row-on-hard-failure invariant.
+- **Launch-critical route tests** (additive; no production code changed) for the money-movement and
+  chargeback-defense surfaces that previously had no dedicated coverage. Full suite now 94 suites /
+  797 tests (was 88 / 736). New files:
+  - Refund (`payment-management.refund.controller.test.ts`): validation, tenant scoping, refundable-
+    event guard, **double-refund protection** (remaining-balance math), pending-refund-is-accepted (#11),
+    no-ledger-row-on-hard-failure.
+  - Quick manual sale (`dashboard.manual-sale.controller.test.ts`): tenant scoping, request→service
+    param/amount mapping, passthrough, and ProcessorError→502 translation.
+  - Offer create/update/clone (`offer.controller.test.ts`): tenant-scoped delegation, status codes,
+    clone envelope, validation/error forwarding.
+  - Payment-provider provisioning/repair (`processor-config.controller.test.ts`): **NMI credential
+    encryption verified with the real crypto** (plaintext never persisted, round-trips, secret never
+    echoed), connection-test pass/fail, disconnect scoping, default-processor gating.
+  - Subscription lifecycle (`payment-lifecycle.routes.test.ts`): required-field validation, tenant +
+    per-action status-whitelist scoping (pause/resume/cancel), service-throw → 500.
+  - Dispute + EFW defense (`dispute-efw.routes.test.ts`): tenant-mismatch 403, evidence submit/accept,
+    EFW respond routing, and **service-throw → 500 so a chargeback is never silently left unanswered**.
+- **`.github/dependabot.yml`** — weekly grouped npm + github-actions dependency PRs (backend + UI);
+  opens PRs only, never auto-merges.
 
 ### Added
 - **Atomic, idempotent recurring-payment recording.** New `record_recurring_payment` RPC
