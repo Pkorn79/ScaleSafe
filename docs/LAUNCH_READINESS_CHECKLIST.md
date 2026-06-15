@@ -99,9 +99,14 @@ non-negotiable.
 
 ## 5. Product / UX readiness
 
-- [ ] 🟡 Error feedback is visible to merchants (toast/notification system) — not silent failures.
-- [ ] 🟡 Key flows have loading states (dashboard, long forms) — no dead-air on slow loads.
-- [ ] 🟡 WCAG contrast pass on primary CTA (emerald `#10b981` on white/cream) and risk indicators.
+- [x] 🟡 Error feedback is visible to merchants — toast system added; failed actions (post/put/del)
+  auto-toast. (Views can adopt `toast.success(...)` for positive confirmation incrementally.)
+- [ ] 🟡 Key flows have loading states (dashboard, long forms) — no dead-air on slow loads. *(skeletons
+  not yet added)*
+- [ ] 🟡 **WCAG contrast — KNOWN FINDING (needs brand decision).** Primary CTA is white text on
+  emerald-500 `#10b981` ≈ **2.54:1**, below AA's 4.5:1 for normal text. emerald-600 ≈ 3.8:1 (still
+  fails); **emerald-700 `#047857` ≈ 5.5:1 passes.** Fix = darken `.btn-primary` background (or enlarge/
+  bolden text to qualify as "large text" at 3:1). Brand-owner call — not changed unilaterally.
 - [ ] 🟡 Keyboard navigation works for `Tabs.vue` / `Modal.vue`; mobile/responsive checked.
 - [ ] 🟢 Empty states present on every list view (clients, payments, offers, disputes).
 
