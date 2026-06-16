@@ -74,6 +74,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **Oke Marketplace update guide** — added `docs/OKE_MARKETPLACE_UPDATE_GUIDE.md`, a safe step-by-step
   handoff for updating the GHL Marketplace listing without touching OAuth credentials, redirect URLs,
   webhooks, payment-provider settings, or submission controls.
+- **Marketplace pricing guidance corrected** — Oke's guide and the listing worksheet now match GHL's
+  actual Pricing options: choose **Free** for beta and do not create billing meters, paid plans, or
+  freemium plans unless Philip explicitly approves Marketplace-managed billing later.
 - **Group B regression test** — `tests/unit/stripe.client.test.ts` now covers `createSubscription`'s
   day-1 double-bill guard: a future `startDate` sets `billing_cycle_anchor` + `proration_behavior='none'`;
   no/near-now `startDate` omits them. Locks the shipped fix against silent regression (suite now 800 tests).

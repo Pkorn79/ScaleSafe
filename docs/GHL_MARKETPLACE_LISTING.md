@@ -12,7 +12,8 @@
 - **Tagline (<= ~60 chars):** Build the evidence trail before the dispute happens.
 - **Category:** Payments / Finance
 - **Secondary category:** Sales & CRM tooling
-- **Pricing model:** Private beta / contact for access
+- **GHL Pricing setting:** Free for beta. Do not create billing meters or paid/freemium plans until Philip approves Marketplace-managed billing.
+- **Business note:** Private beta / contact for access.
 - **Powered by:** Whole Pay - https://getwholepay.com
 
 ## Short description (~140 chars)
@@ -101,7 +102,7 @@ offer, and test client across the set.
 - [ ] One user-benefit justification included for each OAuth scope.
 - [ ] Screenshots captured with non-PII sample data and approved by Philip.
 - [ ] Privacy policy, terms, and support/help URLs hosted and linked.
-- [ ] Pricing shown as private beta/contact access unless Philip chooses public pricing.
+- [ ] GHL Pricing is set to Free for beta; no billing meters or paid/freemium plans created unless Philip approves Marketplace-managed billing.
 - [ ] Group B Stripe sandbox double-bill verification is passed or explicitly waived by Philip.
 - [ ] Fresh install on a clean sub-account passes end-to-end.
 - [ ] Philip signs off on final copy before submission.

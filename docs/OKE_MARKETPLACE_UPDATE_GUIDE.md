@@ -64,11 +64,21 @@ Update only listing/public-facing fields:
 
 ### Build > Pricing
 
-Set pricing as:
+GHL's pricing options are **Free**, **Freemium**, or **Paid**.
 
-> Private beta / contact for access
+For the current beta Marketplace setup, choose:
 
-If the UI requires a marketplace pricing option and does not allow free text, stop and ask Philip before choosing. Do not invent a monthly price.
+> Your app is free
+
+Important:
+
+- Do not create paid plans.
+- Do not create freemium plans.
+- Do not create billing meters.
+- Do not invent a monthly price.
+- Do not set up HighLevel-managed billing unless Philip explicitly approves it later.
+
+ScaleSafe's current business status is still private beta/contact access, but that belongs in the listing copy and sales process, not in GHL's Pricing configuration. If HighLevel asks for pricing details beyond Free/Freemium/Paid, stop and ask Philip.
 
 ### Build > Advanced Settings > Auth
 
@@ -239,8 +249,8 @@ Stop and ask Philip before changing anything if:
 - You cannot find the existing ScaleSafe app
 - You see multiple ScaleSafe apps and are unsure which is current
 - The listing requires a paid price
+- The pricing screen asks you to create billing meters or paid plans
 - The listing requires screenshots you do not have
 - The app prompts for public review submission
 
 Do not solve those by guessing.
-
