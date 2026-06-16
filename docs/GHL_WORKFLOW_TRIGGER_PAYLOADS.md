@@ -118,19 +118,42 @@ Canonical payload variables:
 - `offer_name`
 - `amount`
 - `amount_display`
+- `payment_amount`
+- `payment_amount_display`
 - `installment_amount`
+- `installment_amount_display`
 - `next_billing_date`
+- `next_billing_date_display`
+- `next_payment_date`
+- `next_payment_date_display`
 - `next_payment_number`
+- `payment_number`
+- `payment_number_display`
 - `payments_made`
 - `payments_total`
+- `total_payments`
+- `number_of_payments`
 - `payments_remaining`
 - `days_until_payment`
 - `reminder_window`
 - `processor`
 - `support_email`
+- `merchant_support_email`
+- `offer_support_email`
 - `business_name`
+- `merchant_business_name`
+- `offer_business_name`
 - `enrollment_id`
 - `offer_id`
+
+Recommended GHL reminder template fields:
+
+- Amount: `amount_display` or `payment_amount_display`
+- Next payment date: `next_payment_date_display`
+- Payment number: `payment_number`
+- Total payments: `total_payments`
+- Support email: `support_email`
+- Business name/signature: `business_name`
 
 ## `ss_payment_failed`
 

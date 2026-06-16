@@ -71,6 +71,22 @@ function dateOnly(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+function formatMoney(amount: number): string {
+  return `$${Number(amount || 0).toFixed(2)}`;
+}
+
+function formatDateLabel(date: string | null | undefined): string {
+  if (!date) return '';
+  const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return String(date);
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 function reminderWindows(now = new Date()): Array<ReminderWindow & { targetDate: string }> {
   return [
     { type: 'three_day', daysUntilPayment: 3, targetDate: dateOnly(new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)) },
@@ -310,6 +326,12 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
       const paymentsTotal = enr.payments_total || 0;
       const nextPaymentNumber = paymentsMade + 1;
       const paymentsRemaining = Math.max(0, paymentsTotal - paymentsMade);
+      const amountDisplay = formatMoney(amount);
+      const nextPaymentDate = String(enr.next_billing_date || '');
+      const nextPaymentDateDisplay = formatDateLabel(nextPaymentDate);
+      const paymentNumberDisplay = paymentsTotal
+        ? `${nextPaymentNumber} of ${paymentsTotal}`
+        : String(nextPaymentNumber);
 
       const payload = {
         event_type: 'upcoming_payment_reminder',
@@ -322,20 +344,48 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
         offer_id: enr.offer_id,
         offerId: enr.offer_id,
         amount,
-        amount_display: `$${Number(amount || 0).toFixed(2)}`,
-        amountDisplay: `$${Number(amount || 0).toFixed(2)}`,
+        amount_display: amountDisplay,
+        amountDisplay,
+        amount_formatted: amountDisplay,
+        amountFormatted: amountDisplay,
+        amount_text: amountDisplay,
+        amountText: amountDisplay,
+        payment_amount: amount,
+        paymentAmount: amount,
+        payment_amount_display: amountDisplay,
+        paymentAmountDisplay: amountDisplay,
         installment_amount: amount,
         installmentAmount: amount,
+        installment_amount_display: amountDisplay,
+        installmentAmountDisplay: amountDisplay,
         program_name: offerName,
         programName: offerName,
-        next_billing_date: enr.next_billing_date,
-        nextBillingDate: enr.next_billing_date,
+        next_billing_date: nextPaymentDate,
+        nextBillingDate: nextPaymentDate,
+        next_billing_date_display: nextPaymentDateDisplay,
+        nextBillingDateDisplay: nextPaymentDateDisplay,
+        next_payment_date: nextPaymentDate,
+        nextPaymentDate,
+        next_payment_date_display: nextPaymentDateDisplay,
+        nextPaymentDateDisplay: nextPaymentDateDisplay,
+        due_date: nextPaymentDate,
+        dueDate: nextPaymentDate,
+        due_date_display: nextPaymentDateDisplay,
+        dueDateDisplay: nextPaymentDateDisplay,
         next_payment_number: nextPaymentNumber,
         nextPaymentNumber,
+        payment_number: nextPaymentNumber,
+        paymentNumber: nextPaymentNumber,
+        payment_number_display: paymentNumberDisplay,
+        paymentNumberDisplay: paymentNumberDisplay,
         payments_made: paymentsMade,
         paymentsMade,
         payments_total: paymentsTotal,
         paymentsTotal,
+        total_payments: paymentsTotal,
+        totalPayments: paymentsTotal,
+        number_of_payments: paymentsTotal,
+        numberOfPayments: paymentsTotal,
         days_until_payment: window.daysUntilPayment,
         daysUntilPayment: window.daysUntilPayment,
         reminder_window: window.type,
@@ -345,17 +395,37 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
         processor,
         support_email: supportEmail,
         supportEmail,
+        merchant_support_email: supportEmail,
+        merchantSupportEmail: supportEmail,
+        offer_support_email: supportEmail,
+        offerSupportEmail: supportEmail,
         business_name: businessName,
         businessName,
+        merchant_business_name: businessName,
+        merchantBusinessName: businessName,
+        offer_business_name: businessName,
+        offerBusinessName: businessName,
         offer_name: offerName,
         offerName,
         offer: {
           name: offerName,
           installment_amount: amount,
+          installment_amount_display: amountDisplay,
+          support_email: supportEmail,
+          business_name: businessName,
+        },
+        merchant: {
+          business_name: businessName,
+          support_email: supportEmail,
         },
         subscription: {
-          next_billing_date: enr.next_billing_date,
+          next_billing_date: nextPaymentDate,
+          next_billing_date_display: nextPaymentDateDisplay,
+          next_payment_date: nextPaymentDate,
+          next_payment_date_display: nextPaymentDateDisplay,
           next_payment_number: nextPaymentNumber,
+          payment_number: nextPaymentNumber,
+          payment_number_display: paymentNumberDisplay,
           payments_made: paymentsMade,
           payments_total: paymentsTotal,
           payments_remaining: paymentsRemaining,
