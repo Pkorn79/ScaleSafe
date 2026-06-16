@@ -58,23 +58,23 @@ merchant's processor account; ScaleSafe does not hold funds.
 4. **Recurring payment visibility** - track installment/subscription progress, payment reminders, refunds, pauses, resumes, and cancellations.
 5. **Native GHL workflow automation** - fire purpose-built Marketplace triggers for receipts, enrollment links, welcome/access, refunds, failed payments, and app events.
 
-## OAuth scopes - submission inventory
+## App permissions / scope review note
 
-The exact scope strings must be copied from the live GHL Marketplace app configuration
-before submission. The repo can show which APIs ScaleSafe calls, but GHL review needs
-the exact configured scope names from the Marketplace app record.
+External Authentication should remain OFF. ScaleSafe does not use a separate third-party OAuth step during GHL app installation.
+
+The selected GHL app permissions/scopes still matter for review, but they do not need to be turned into a public listing section unless HighLevel specifically asks for permission justifications during review.
+
+If HighLevel asks for permission/scope justifications, copy the exact selected names from the live Marketplace app configuration and use this working table:
 
 | Live GHL scope | Why ScaleSafe needs it |
 |---|---|
-| Copy exact scope from GHL app config | Read and update the installed location so ScaleSafe can provision merchant settings, custom values, and workflow-ready records. |
-| Copy exact scope from GHL app config | Read and update contacts so ScaleSafe can attach offers, enrollment/payment fields, evidence status, and workflow context to the right client. |
-| Copy exact scope from GHL app config | Read custom fields/custom values so ScaleSafe can verify provisioning health and keep workflow merge fields mapped. |
-| Copy exact scope from GHL app config | Register and execute Marketplace workflow triggers used for receipts, enrollment links, welcome/access, payment failures, refunds, chargebacks, and app events. |
-| Copy exact scope from GHL app config | Read relevant CRM activity such as conversations, appointments, notes, tasks, opportunities, and invoice events for evidence timelines where enabled. |
+| Copy exact selected scope only if GHL asks | Read and update the installed location so ScaleSafe can provision merchant settings, custom values, and workflow-ready records. |
+| Copy exact selected scope only if GHL asks | Read and update contacts so ScaleSafe can attach offers, enrollment/payment fields, evidence status, and workflow context to the right client. |
+| Copy exact selected scope only if GHL asks | Read custom fields/custom values so ScaleSafe can verify provisioning health and keep workflow merge fields mapped. |
+| Copy exact selected scope only if GHL asks | Register and execute Marketplace workflow triggers used for receipts, enrollment links, welcome/access, payment failures, refunds, chargebacks, and app events. |
+| Copy exact selected scope only if GHL asks | Read relevant CRM activity such as conversations, appointments, notes, tasks, opportunities, and invoice events for evidence timelines where enabled. |
 
-**Before submit:** replace every `Copy exact scope from GHL app config` entry with the
-literal scope from the live GHL app configuration. Remove any row that is not actually
-requested by the app.
+Remove any row that is not actually requested by the app.
 
 ## Screenshots / media plan
 
@@ -98,8 +98,8 @@ offer, and test client across the set.
 ## Pre-submission checklist
 
 - [ ] Every feature claim verified against the live app.
-- [ ] Exact live GHL OAuth scopes copied from the Marketplace app config.
-- [ ] One user-benefit justification included for each OAuth scope.
+- [ ] External Authentication remains OFF.
+- [ ] If GHL review asks for permission/scope justifications, exact selected permissions/scopes are copied from the Marketplace app config and justified without changing app settings.
 - [ ] Screenshots captured with non-PII sample data and approved by Philip.
 - [ ] Privacy policy, terms, and support/help URLs hosted and linked.
 - [ ] GHL Pricing is set to Free for beta; no billing meters or paid/freemium plans created unless Philip approves Marketplace-managed billing.

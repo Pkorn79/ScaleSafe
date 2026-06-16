@@ -38,7 +38,7 @@ ScaleSafe is powered by Whole Pay:
 5. For this task, work only inside:
    - **Build > Profile**
    - **Build > Pricing** only to verify it is already set to Free
-   - **Build > Advanced Settings > Auth** only for reading/copying existing scopes
+   - App review/listing fields that HighLevel asks you to complete
    - Any public-review/listing configuration screen if HighLevel prompts for it
 
 Do not create a new app. Do not delete the existing app. Do not create a new version unless Philip explicitly asks you to.
@@ -68,15 +68,15 @@ Pricing is already set to Free for beta. Verify it only.
 
 Do not change pricing, create billing meters, create paid/freemium plans, or set up HighLevel-managed billing unless Philip explicitly approves it later.
 
-### Build > Advanced Settings > Auth
+### App permissions / scopes
 
-Use this screen only to copy the current OAuth scopes into the tracker or listing worksheet.
+Do not open or change External Authentication for this task.
 
-Do not add, remove, or change scopes.
+External Authentication should remain OFF. ScaleSafe does not use an extra third-party OAuth step during GHL app installation.
 
-Do not change redirect URLs.
+Oke does not need to define or justify internal selected app permissions/scopes unless HighLevel specifically asks during review.
 
-Do not change OAuth settings.
+If HighLevel asks for permission/scope justification, copy the selected permission/scope names exactly from the app's permissions/scopes area, send them to Philip, and wait for wording. Do not change selections.
 
 ## Do Not Touch
 
@@ -92,6 +92,7 @@ These settings can break installs, SSO, workflow triggers, or payments. Do not e
 - Trigger URLs
 - Payment provider URLs
 - External authentication settings
+- External Authentication toggle
 - Marketplace modules
 - Installed app version
 - App type
@@ -155,18 +156,18 @@ ScaleSafe is powered by Whole Pay and runs inside GoHighLevel. It works with the
 - Troubleshooting URL if requested: `https://scalesafe.app/troubleshooting`
 - Powered by Whole Pay: `https://getwholepay.com`
 
-## OAuth Scope Inventory
+## Permission / Scope Review Note
 
-HighLevel requires exact OAuth scopes and a reason for each one.
+No action is needed here unless HighLevel specifically asks for selected permission or scope justifications during review.
 
-Steps:
+If they do ask:
 
-1. Go to **Build > Advanced Settings > Auth**.
-2. Find the selected scopes.
-3. Copy the exact scope names into the tracker or listing worksheet.
-4. For each scope, write a plain-English reason using the pattern below.
+1. Copy the exact selected permission/scope names from the live Marketplace app.
+2. Send them to Philip.
+3. Wait for Philip/Codex to provide the exact wording.
+4. Do not add, remove, or change any selected permissions/scopes.
 
-Reason examples:
+Reason examples if GHL asks:
 
 - Contact scopes: needed to attach offers, enrollment/payment fields, evidence status, and workflow context to the right client.
 - Location scopes: needed to provision the installed merchant account and verify setup health.
@@ -175,7 +176,7 @@ Reason examples:
 - Conversation/activity scopes: needed to capture client communications and activity records as evidence when enabled.
 - Product/payment scopes: needed to support offer/payment setup and processor-related payment workflow visibility where configured.
 
-Do not guess scope names. Copy the exact text from HighLevel.
+Do not guess names. Do not use the External Authentication screen for this. If you cannot find a permissions/scopes list, leave this blank and ask Philip.
 
 ## Screenshot Requirements
 
@@ -209,7 +210,7 @@ Do not submit for public review until Philip confirms:
 - Listing copy reviewed
 - Screenshots approved
 - Privacy/Terms/Support links tested
-- OAuth scopes and justifications completed
+- Permission/scope justifications completed only if HighLevel review asks for them
 - Group B Stripe sandbox double-bill test completed
 - Fresh install/provisioning health has no unexplained critical warnings
 - Philip gives explicit "submit" approval
@@ -222,7 +223,7 @@ After completing updates, send Philip:
 
 - Screenshot of **Build > Profile** fields after update
 - Screenshot of support/legal URL fields
-- Screenshot or copied list of selected OAuth scopes
+- Only if HighLevel asks: screenshot or copied list of selected app permissions/scopes
 - Link to screenshot folder
 - Confirmation that no auth/secrets/webhook/payment-provider settings were changed
 - Any warning or validation message HighLevel shows
@@ -234,6 +235,7 @@ Stop and ask Philip before changing anything if:
 - The app asks you to regenerate credentials
 - The app asks you to change a redirect URL
 - The app asks you to change scopes
+- You only see External Authentication and no permissions/scope list
 - You cannot find the existing ScaleSafe app
 - You see multiple ScaleSafe apps and are unsure which is current
 - The listing requires a paid price

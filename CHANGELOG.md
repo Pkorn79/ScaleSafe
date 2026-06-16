@@ -77,6 +77,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - **Marketplace pricing guidance corrected** — Oke's guide and the listing worksheet now match GHL's
   actual Pricing options: choose **Free** for beta and do not create billing meters, paid plans, or
   freemium plans unless Philip explicitly approves Marketplace-managed billing later.
+- **Marketplace auth guidance clarified** — Oke's guide now separates GHL app permissions/scopes from
+  the optional External Authentication toggle. External Authentication stays off, and permission/scope
+  justifications are only prepared if HighLevel specifically asks during review.
 - **Group B regression test** — `tests/unit/stripe.client.test.ts` now covers `createSubscription`'s
   day-1 double-bill guard: a future `startDate` sets `billing_cycle_anchor` + `proration_behavior='none'`;
   no/near-now `startDate` omits them. Locks the shipped fix against silent regression (suite now 800 tests).
