@@ -37,7 +37,7 @@ ScaleSafe is powered by Whole Pay:
    - **Insights**
 5. For this task, work only inside:
    - **Build > Profile**
-   - **Build > Pricing**
+   - **Build > Pricing** only to verify it is already set to Free
    - **Build > Advanced Settings > Auth** only for reading/copying existing scopes
    - Any public-review/listing configuration screen if HighLevel prompts for it
 
@@ -64,21 +64,9 @@ Update only listing/public-facing fields:
 
 ### Build > Pricing
 
-GHL's pricing options are **Free**, **Freemium**, or **Paid**.
+Pricing is already set to Free for beta. Verify it only.
 
-For the current beta Marketplace setup, choose:
-
-> Your app is free
-
-Important:
-
-- Do not create paid plans.
-- Do not create freemium plans.
-- Do not create billing meters.
-- Do not invent a monthly price.
-- Do not set up HighLevel-managed billing unless Philip explicitly approves it later.
-
-ScaleSafe's current business status is still private beta/contact access, but that belongs in the listing copy and sales process, not in GHL's Pricing configuration. If HighLevel asks for pricing details beyond Free/Freemium/Paid, stop and ask Philip.
+Do not change pricing, create billing meters, create paid/freemium plans, or set up HighLevel-managed billing unless Philip explicitly approves it later.
 
 ### Build > Advanced Settings > Auth
 
@@ -249,7 +237,8 @@ Stop and ask Philip before changing anything if:
 - You cannot find the existing ScaleSafe app
 - You see multiple ScaleSafe apps and are unsure which is current
 - The listing requires a paid price
-- The pricing screen asks you to create billing meters or paid plans
+- The pricing screen is not already set to Free
+- The pricing screen asks you to create billing meters or paid/freemium plans
 - The listing requires screenshots you do not have
 - The app prompts for public review submission
 
