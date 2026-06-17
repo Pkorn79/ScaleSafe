@@ -2,9 +2,15 @@ const mockFrom = jest.fn();
 const mockFireTrigger = jest.fn();
 const mockIdempotencyExists = jest.fn();
 const mockIdempotencyRecord = jest.fn();
+const mockGhlPut = jest.fn();
+const mockGhlApi = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
+}));
+
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: (...args: any[]) => mockGhlApi(...args),
 }));
 
 jest.mock('../../src/services/trigger.service', () => ({
@@ -38,6 +44,8 @@ describe('payment reminder check', () => {
     mockIdempotencyExists.mockResolvedValue(false);
     mockIdempotencyRecord.mockResolvedValue(undefined);
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+    mockGhlPut.mockResolvedValue({ data: {} });
+    mockGhlApi.mockResolvedValue({ put: mockGhlPut });
 
     mockFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') {
@@ -132,6 +140,19 @@ describe('payment reminder check', () => {
         payments_remaining: 1,
       }),
     }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', {
+      customField: expect.objectContaining({
+        'contact.offer_program_name': 'Maui Trip',
+        'contact.offer_installment_amount': '$50.00',
+        'contact.offer_number_of_payments': 2,
+        'contact.offer_support_email': '',
+        'contact.ss_payment_status': 'Current',
+        'contact.ss_last_payment_amount': '$50.00',
+        'contact.ss_next_payment_date': 'May 12, 2026',
+        'contact.ss_payments_made': 1,
+        'contact.ss_payments_remaining': 1,
+      }),
+    });
     expect(mockIdempotencyRecord).toHaveBeenCalledWith(
       'payment-reminder:loc_1:enr_1:2026-05-12:next_24_hours',
       'payment_reminder',

@@ -1,4 +1,10 @@
 import { getSupabase } from '../clients/supabase.client';
+import { ghlApi } from '../clients/ghl.client';
+import {
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
@@ -85,6 +91,50 @@ function formatDateLabel(date: string | null | undefined): string {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+async function syncReminderContactFields(params: {
+  locationId: string;
+  contactId?: string | null;
+  offerName: string;
+  amountDisplay: string;
+  nextPaymentDateDisplay: string;
+  paymentsMade: number;
+  paymentsTotal: number;
+  paymentsRemaining: number;
+  supportEmail: string;
+  businessName: string;
+}): Promise<void> {
+  if (!params.locationId || !params.contactId) return;
+
+  const customField: Record<string, unknown> = {
+    [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: params.businessName,
+    [OFFER_CONTACT_FIELDS.OFFER_NAME]: params.offerName,
+    [OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT]: params.amountDisplay,
+    [OFFER_CONTACT_FIELDS.NUM_PAYMENTS]: params.paymentsTotal || '',
+    [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: params.offerName,
+    [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS]: params.paymentsTotal || '',
+    [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: params.supportEmail,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: 'Current',
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: params.amountDisplay,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.NEXT_PAYMENT_DATE]: params.nextPaymentDateDisplay,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: params.paymentsMade,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: params.paymentsRemaining,
+  };
+
+  try {
+    const api = await ghlApi(params.locationId);
+    await api.put(`/contacts/${params.contactId}`, { customField });
+  } catch (err: any) {
+    logger.warn(
+      {
+        err: err?.message || String(err),
+        locationId: params.locationId,
+        contactId: params.contactId,
+      },
+      'Failed to sync upcoming payment reminder contact fields; continuing with trigger delivery',
+    );
+  }
 }
 
 function reminderWindows(now = new Date()): Array<ReminderWindow & { targetDate: string }> {
@@ -431,6 +481,20 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
           payments_remaining: paymentsRemaining,
         },
       };
+
+      await syncReminderContactFields({
+        locationId: enr.location_id,
+        contactId: enr.contact_id,
+        offerName,
+        amountDisplay,
+        nextPaymentDateDisplay,
+        paymentsMade,
+        paymentsTotal,
+        paymentsRemaining,
+        supportEmail,
+        businessName,
+      });
+
       const result = await triggerService.fireTrigger(enr.location_id, 'ss_app_event', payload);
       if (result.sent > 0) {
         await idempotencyRepository.record(reminderEventId, 'payment_reminder', enr.location_id, {
