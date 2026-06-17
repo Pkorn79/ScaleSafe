@@ -131,6 +131,22 @@ const filterFrom = ref('');
 const filterTo = ref('');
 
 const hasActiveFilters = computed(() => Boolean(filterType.value || filterFrom.value || filterTo.value));
+const linkableEvidenceTables = new Set([
+  'evidence',
+  'evidence_communication',
+  'evidence_appointments',
+  'evidence_invoices',
+  'evidence_service_access',
+  'evidence_modules',
+  'evidence_course_completion',
+  'evidence_custom_events',
+  'evidence_external_sessions',
+  'evidence_sessions',
+  'evidence_pulse_checkins',
+  'evidence_milestones',
+  'evidence_signoffs',
+  'evidence_resource_delivery',
+]);
 
 const typeOptions = [
   { value: 'consent', label: 'Consent' },
@@ -186,7 +202,7 @@ function linkedEnrollmentId(item: any): string {
 }
 
 function canLink(item: any): boolean {
-  return Boolean(item.id && item.evidence_table && enrollments.value.length > 0);
+  return Boolean(item.id && item.evidence_table && linkableEvidenceTables.has(item.evidence_table) && enrollments.value.length > 0);
 }
 
 function isLinking(item: any): boolean {

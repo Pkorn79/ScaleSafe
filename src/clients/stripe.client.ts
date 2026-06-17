@@ -374,7 +374,7 @@ export class StripeClient implements ProcessorInterface {
       // For Stripe, resume = remove pause_collection from existing subscription
       const subscription = await this.stripe.subscriptions.update(
         request.subscriptionId,
-        { pause_collection: '' as any },
+        { pause_collection: null as any },
         this.acct,
       );
       return {

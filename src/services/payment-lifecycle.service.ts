@@ -12,6 +12,7 @@ import { SS_CONTACT_FIELDS, WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
 import type { StoredCard } from '../types/processor.types';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { ExternalServiceError, ValidationError } from '../utils/errors';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -33,6 +34,52 @@ function fireTriggerInBackground(
       'Workflow trigger failed after enrollment action response',
     );
   });
+}
+
+function assertProcessorSuccess(
+  result: { success?: boolean; errorMessage?: string } | undefined,
+  processor: string,
+  action: string,
+): void {
+  if (!result || result.success === false) {
+    throw new ExternalServiceError(processor, result?.errorMessage || `Unable to ${action} subscription`);
+  }
+}
+
+async function updateEnrollmentForLifecycleAction(params: {
+  locationId: string;
+  enrollmentId?: string;
+  contactId: string;
+  processorSubscriptionId?: string;
+  fallbackStatuses?: string[];
+  updates: Record<string, unknown>;
+  action: string;
+}): Promise<any> {
+  let query = getSupabase()
+    .from('enrollments')
+    .update(params.updates)
+    .eq('location_id', params.locationId);
+
+  if (params.enrollmentId) {
+    query = query.eq('id', params.enrollmentId);
+  } else {
+    query = query.eq('contact_id', params.contactId);
+    if (params.processorSubscriptionId) {
+      query = query.eq('processor_subscription_id', params.processorSubscriptionId);
+    } else if (params.fallbackStatuses?.length) {
+      query = query.in('status', params.fallbackStatuses);
+    }
+  }
+
+  const { data, error } = await query
+    .select('id, status, next_billing_date, processor_subscription_id')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    throw new ValidationError(`Unable to ${params.action} subscription: enrollment was not updated`);
+  }
+  return data;
 }
 
 export const paymentLifecycleService = {
@@ -463,26 +510,23 @@ export const paymentLifecycleService = {
           nmi_processor_id: null,
         });
         const processor = createProcessorClient(procConfig);
-        await processor.pauseSubscription(params.processorSubscriptionId);
+        const result = await processor.pauseSubscription(params.processorSubscriptionId);
+        assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'pause');
       } catch (err: any) {
-        logger.warn({ err: err.message }, 'Processor subscription pause failed — logging evidence anyway');
+        logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription pause failed');
+        throw err;
       }
 
     }
 
-    // Update enrollment status to 'paused' and clear next_billing_date
-    try {
-      const supabase = getSupabase();
-      let pauseQuery = supabase.from('enrollments')
-        .update({ status: 'paused', next_billing_date: null })
-        .eq('location_id', params.locationId);
-      if (params.enrollmentId) {
-        pauseQuery = pauseQuery.eq('id', params.enrollmentId);
-      } else {
-        pauseQuery = pauseQuery.eq('contact_id', params.contactId).in('status', ['enrolled', 'active']);
-      }
-      await pauseQuery;
-    } catch {}
+    await updateEnrollmentForLifecycleAction({
+      locationId: params.locationId,
+      enrollmentId: params.enrollmentId,
+      contactId: params.contactId,
+      fallbackStatuses: ['enrolled', 'active'],
+      updates: { status: 'paused', next_billing_date: null },
+      action: 'pause',
+    });
 
     // Log evidence (enriched with context for defense letters)
     await evidenceService.logEvidence(
@@ -658,42 +702,44 @@ export const paymentLifecycleService = {
             startDate: nextDate.toISOString().split('T')[0],
             description,
           });
+          assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'resume');
 
-          // For NMI, resumeSubscription creates a NEW subscription — update the stored ID
-          if (result.success && result.subscriptionId !== params.processorSubscriptionId && enr) {
-            await supabase.from('enrollments')
-              .update({
-                status: 'enrolled',
-                processor_subscription_id: result.subscriptionId,
-                next_billing_date: nextDate.toISOString().split('T')[0],
-              })
-              .eq('id', enr.id);
-          } else if (enr) {
-            // Stripe resume — update status + next_billing_date
-            await supabase.from('enrollments')
-              .update({ status: 'enrolled', next_billing_date: nextDate.toISOString().split('T')[0] })
-              .eq('id', enr.id);
+          if (!enr) {
+            throw new ValidationError('Unable to resume subscription: enrollment was not found');
           }
+
+          const resumeUpdates: Record<string, unknown> = {
+            status: 'enrolled',
+            next_billing_date: nextDate.toISOString().split('T')[0],
+          };
+          if (result.subscriptionId && result.subscriptionId !== params.processorSubscriptionId) {
+            resumeUpdates.processor_subscription_id = result.subscriptionId;
+          }
+
+          await updateEnrollmentForLifecycleAction({
+            locationId: params.locationId,
+            enrollmentId: enr.id,
+            contactId: params.contactId,
+            updates: resumeUpdates,
+            action: 'resume',
+          });
+        } else {
+          throw new ValidationError('Unable to resume subscription: recurring amount, saved payment method, or remaining payments are missing');
         }
       } catch (err: any) {
-        logger.warn({ err: err.message }, 'Processor subscription resume failed — logging evidence anyway');
+        logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription resume failed');
+        throw err;
       }
     } else {
-      // No processor subscription — just update enrollment status back to 'enrolled'
-      try {
-        const supabase = getSupabase();
-        let resumeQuery = supabase.from('enrollments')
-          .update({ status: 'enrolled' })
-          .eq('location_id', params.locationId);
-        if (params.enrollmentId) {
-          resumeQuery = resumeQuery.eq('id', params.enrollmentId);
-        } else {
-          resumeQuery = resumeQuery
-            .eq('contact_id', params.contactId)
-            .eq('status', 'paused');
-        }
-        await resumeQuery;
-      } catch {}
+      // No processor subscription - just update enrollment status back to 'enrolled'
+      await updateEnrollmentForLifecycleAction({
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+        contactId: params.contactId,
+        fallbackStatuses: ['paused'],
+        updates: { status: 'enrolled' },
+        action: 'resume',
+      });
     }
 
     // Log evidence (enriched with context for defense letters)
@@ -812,40 +858,31 @@ export const paymentLifecycleService = {
           nmi_processor_id: null,
         });
         const processor = createProcessorClient(procConfig);
-        await processor.cancelSubscription(params.processorSubscriptionId);
+        const result = await processor.cancelSubscription(params.processorSubscriptionId);
+        assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
       } catch (err: any) {
-        logger.warn({ err: err.message }, 'Processor subscription cancel failed — logging evidence anyway');
+        logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
+        throw err;
       }
-
       // Clear processor_subscription_id and mark cancelled
-      try {
-        const supabase = getSupabase();
-        let cancelQuery = supabase.from('enrollments')
-          .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), processor_subscription_id: null, next_billing_date: null })
-          .eq('location_id', params.locationId);
-        if (params.enrollmentId) {
-          cancelQuery = cancelQuery.eq('id', params.enrollmentId);
-        } else {
-          cancelQuery = cancelQuery.eq('contact_id', params.contactId)
-            .eq('processor_subscription_id', params.processorSubscriptionId);
-        }
-        await cancelQuery;
-      } catch {}
+      await updateEnrollmentForLifecycleAction({
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+        contactId: params.contactId,
+        processorSubscriptionId: params.processorSubscriptionId,
+        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), processor_subscription_id: null, next_billing_date: null },
+        action: 'cancel',
+      });
     } else {
-      // No processor subscription — still mark the enrollment as cancelled
-      try {
-        const supabase = getSupabase();
-        let cancelQuery = supabase.from('enrollments')
-          .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null })
-          .eq('location_id', params.locationId);
-        if (params.enrollmentId) {
-          cancelQuery = cancelQuery.eq('id', params.enrollmentId);
-        } else {
-          cancelQuery = cancelQuery.eq('contact_id', params.contactId)
-            .in('status', ['enrolled', 'active', 'paused']);
-        }
-        await cancelQuery;
-      } catch {}
+      // No processor subscription - still mark the enrollment as cancelled
+      await updateEnrollmentForLifecycleAction({
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+        contactId: params.contactId,
+        fallbackStatuses: ['enrolled', 'active', 'paused'],
+        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null },
+        action: 'cancel',
+      });
     }
 
     // Log subscription change evidence (enriched with context — non-fatal)

@@ -661,21 +661,46 @@ export const offerService = {
     clone.tracking_id = null;
     clone.active = false;
 
-    const newOffer = await offerRepository.create(clone as any);
+    let newOffer: OfferRecord;
+    try {
+      newOffer = await offerRepository.create(clone as any);
+    } catch (err: any) {
+      logger.error({
+        err: err?.message || String(err),
+        code: err?.code,
+        details: err?.details,
+        hint: err?.hint,
+        sourceId: offerId,
+        locationId,
+        cloneKeys: Object.keys(clone).sort(),
+      }, 'Offer clone create failed');
+      throw new ValidationError(`Offer clone failed: ${err?.message || 'database write failed'}`);
+    }
     const sourceAddons = Array.isArray((source as any).checkoutAddons)
       ? (source as any).checkoutAddons
       : Array.isArray((source as any).checkout_addons)
         ? (source as any).checkout_addons
         : await checkoutCartService.listAddons(source.id, source.location_id, false);
     if (sourceAddons.length > 0) {
-      await checkoutCartService.replaceOfferAddons(locationId, newOffer.id, sourceAddons.map((addon: any, index: number) => ({
-        kind: addon.kind,
-        title: addon.title,
-        description: addon.description || null,
-        price: Number(addon.price || 0),
-        active: addon.active !== false,
-        sortOrder: Number.isFinite(Number(addon.sortOrder ?? addon.sort_order)) ? Number(addon.sortOrder ?? addon.sort_order) : index,
-      })));
+      try {
+        await checkoutCartService.replaceOfferAddons(locationId, newOffer.id, sourceAddons.map((addon: any, index: number) => ({
+          kind: addon.kind,
+          title: addon.title,
+          description: addon.description || null,
+          price: Number(addon.price || 0),
+          active: addon.active !== false,
+          sortOrder: Number.isFinite(Number(addon.sortOrder ?? addon.sort_order)) ? Number(addon.sortOrder ?? addon.sort_order) : index,
+        })));
+      } catch (err: any) {
+        logger.error({
+          err: err?.message || String(err),
+          sourceId: offerId,
+          cloneId: newOffer.id,
+          locationId,
+          addonCount: sourceAddons.length,
+        }, 'Offer clone add-on copy failed');
+        throw err;
+      }
     }
     logger.info({ sourceId: offerId, cloneId: newOffer.id, locationId }, 'Offer cloned');
     return this.withCheckoutAddons(newOffer);

@@ -833,15 +833,30 @@ export const dashboardController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
-      const { contactId, type, message } = req.body;
+      const { contactId, type, message, subject } = req.body;
       if (!contactId || !type || !message) throw new ValidationError('contactId, type, and message required');
 
       const api = await ghlApi(locationId);
-      await api.post('/conversations/messages', {
-        type: type === 'sms' ? 'SMS' : 'Email',
-        contactId,
-        message,
-      });
+      const cleanMessage = String(message).trim();
+      if (type === 'sms') {
+        await api.post('/conversations/messages', {
+          type: 'SMS',
+          contactId,
+          message: cleanMessage,
+        });
+      } else {
+        const escaped = cleanMessage
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>');
+        await api.post('/conversations/messages', {
+          type: 'Email',
+          contactId,
+          subject: String(subject || 'Message from ScaleSafe'),
+          html: `<p>${escaped}</p>`,
+        });
+      }
       res.json({ success: true });
     } catch (err) { next(err); }
   },
@@ -1488,7 +1503,6 @@ export const dashboardController = {
         .from('enrollments')
         .select('id, contact_id')
         .eq('location_id', locationId)
-        .eq('status', 'manual_add')
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -1500,7 +1514,6 @@ export const dashboardController = {
           .from('enrollments')
           .select('id, contact_id')
           .eq('location_id', locationId)
-          .eq('status', 'manual_add')
           .eq('email', normalizedEmail)
           .order('created_at', { ascending: false })
           .limit(1)

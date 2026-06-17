@@ -21,6 +21,7 @@ async function safeQuery<T>(fn: () => PromiseLike<{ data: T | null; error: any }
 }
 
 const LINKABLE_EVIDENCE_TABLES = new Set([
+  'evidence',
   'evidence_communication',
   'evidence_appointments',
   'evidence_invoices',
