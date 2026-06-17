@@ -24,6 +24,12 @@ This file records product and launch decisions that should not be re-litigated u
 - NMI live-money tests are owner-only.
 - Oke owns Stripe sandbox, GHL setup, offer/client/workflow/evidence/defense tests.
 
+## Security / Launch Hardening
+
+- Historical secret exposure in git history is handled by credential rotation, not by rewriting git history, unless Philip explicitly decides otherwise later.
+- Supabase rotation requires updating downstream runtime variables, especially Railway production variables, followed by a redeploy/health check.
+- Rate-limit gap fixes, at-risk dashboard N+1 work, and money-route P2 hardening are queued in the launch checklist. Do not start those while Oke/Philip retests are still stabilizing unless a live symptom makes one urgent.
+
 ## Payment / Billing
 
 - No fallback billing.

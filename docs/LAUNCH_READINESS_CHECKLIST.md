@@ -83,7 +83,16 @@ non-negotiable.
 - [ ] 🔴 Webhook signature verification enforced in prod for GHL, NMI silent-post, and Stripe.
   Confirm `ALLOW_UNSIGNED_GHL_WEBHOOKS` is **not** set in production.
 - [ ] 🔴 No secrets in the repo or in committed `.env`. `.env.example` is the only env file tracked.
+- [ ] 🔴 **Rotate Supabase credentials after historical git exposure.** Historical commit audit found
+  Supabase DB credentials in `.claude/settings.local.json` in git history. Do not rewrite git history
+  for launch; rotate the Supabase database password and service/JWT secret, then update Railway
+  production variables and redeploy. Evidence: Supabase rotation screenshot + Railway variable update +
+  successful prod health check.
 - [ ] 🟡 Run `/security-review` on the current branch before launch; triage findings.
+- [ ] 🟡 **Rate-limit hardening batch queued.** Add/verify throttling for GHL Custom Payment Provider
+  query URL, public payment-update/milestone-signoff/pulse-check POSTs, and `/auth/sso`; set Express
+  `trust proxy` correctly for Railway; consider a shared store before larger scale. Defer until current
+  Oke/Philip retests settle unless abuse appears.
 - [ ] 🟡 Rate limiting active on public/checkout routes (`rateLimiter` middleware).
 - [ ] 🟡 Public checkout/action pages pass XSS/CSP tests (`public-route-xss`, `public-widget-csp`).
 
@@ -139,6 +148,12 @@ non-negotiable.
 - [ ] 🟡 Error monitoring/alerting on payment + webhook handlers (a silent recurring-webhook failure
   is a money bug — Stripe webhook now returns 5xx so failures are retried; confirm they're also alerted).
 - [ ] 🟡 A way to see, per merchant, that recurring billing is actually firing (reconciliation/audit).
+- [ ] 🟡 **At-risk dashboard performance batch queued.** Security audit found
+  `/api/dashboard/at-risk` / `disengagementService.checkAllClients` can behave as an unbounded N+1
+  query path. Fix before scaling beyond early beta or if the route becomes slow/timeouts in testing.
+- [ ] 🟢 **Money-route hardening backlog queued.** Review NMI webhook retry/200 behavior, refund
+  idempotency window, and internal error-text exposure. Not a current launch blocker unless Oke/Philip
+  retests surface symptoms.
 - [ ] 🟢 Backup/restore of Supabase validated.
 
 ---
