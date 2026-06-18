@@ -199,6 +199,10 @@ describe('offer tracking ID', () => {
 });
 
 describe('offerService.cloneOffer (#13/#31)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -220,6 +224,38 @@ describe('offerService.cloneOffer (#13/#31)', () => {
       tracking_id: null,
       checkout_type: 'whop', // still a Whop offer — provisions its own product/plan on first sync
       active: false,
+    }));
+  });
+
+  it('retries cloning without dormant Whop columns when live schema has not run the Whop migration', async () => {
+    jest.spyOn(checkoutCartService, 'listAddons').mockResolvedValue([]);
+    (offerRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'offer-src',
+      location_id: 'loc-1',
+      offer_name: 'Coaching',
+      price: 6000,
+      num_payments: 6,
+      checkout_type: 'direct',
+      whop_product_id: null,
+      whop_plan_id: null,
+      whop_sync_status: null,
+    });
+    (offerRepository.create as jest.Mock)
+      .mockRejectedValueOnce({
+        code: 'PGRST204',
+        message: "Could not find the 'whop_plan_id' column of 'offers_mirror' in the schema cache",
+      })
+      .mockResolvedValueOnce({ id: 'offer-clone', offer_name: 'Coaching (Copy)' });
+
+    const clone = await offerService.cloneOffer('offer-src', 'loc-1');
+
+    expect(clone.id).toBe('offer-clone');
+    expect(offerRepository.create).toHaveBeenCalledTimes(2);
+    expect(offerRepository.create).toHaveBeenNthCalledWith(2, expect.not.objectContaining({
+      checkout_type: expect.anything(),
+      whop_product_id: expect.anything(),
+      whop_plan_id: expect.anything(),
+      whop_sync_status: expect.anything(),
     }));
   });
 

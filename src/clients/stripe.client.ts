@@ -343,7 +343,9 @@ export class StripeClient implements ProcessorInterface {
 
   async cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {
     try {
-      await this.stripe.subscriptions.cancel(subscriptionId, this.acct);
+      // Stripe SDK v22 uses (id, params?, options?). Passing stripeAccount as the
+      // second argument makes Stripe treat it as a request param and reject it.
+      await this.stripe.subscriptions.cancel(subscriptionId, undefined, this.acct);
       return { success: true };
     } catch (err) {
       const procErr = this.toProcessorError(err);

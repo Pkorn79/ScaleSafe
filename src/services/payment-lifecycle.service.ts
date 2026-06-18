@@ -682,16 +682,11 @@ export const paymentLifecycleService = {
         const customerId = pm?.nmi_customer_vault_id || pm?.stripe_customer_id || '';
         const paymentMethodId = pm?.stripe_payment_method_id || pm?.nmi_customer_vault_id || '';
 
-        // Calculate next billing date
-        const nextDate = new Date();
-        if (interval === 'daily') nextDate.setDate(nextDate.getDate() + 1);
-        else if (interval === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
-        else if (interval === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
-        else if (interval === 'quarterly') nextDate.setMonth(nextDate.getMonth() + 3);
-        else if (interval === 'annual') nextDate.setFullYear(nextDate.getFullYear() + 1);
-        else nextDate.setMonth(nextDate.getMonth() + 1);
+        if (procConfig.processor_type === 'stripe') {
+          if (!enr) {
+            throw new ValidationError('Unable to resume subscription: enrollment was not found');
+          }
 
-        if (remaining > 0 && planAmount > 0 && customerId) {
           const result = await processor.resumeSubscription({
             subscriptionId: params.processorSubscriptionId,
             paymentMethodId,
@@ -699,21 +694,18 @@ export const paymentLifecycleService = {
             planAmount,
             interval,
             remainingPayments: remaining,
-            startDate: nextDate.toISOString().split('T')[0],
             description,
           });
           assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'resume');
 
-          if (!enr) {
-            throw new ValidationError('Unable to resume subscription: enrollment was not found');
-          }
-
           const resumeUpdates: Record<string, unknown> = {
             status: 'enrolled',
-            next_billing_date: nextDate.toISOString().split('T')[0],
           };
           if (result.subscriptionId && result.subscriptionId !== params.processorSubscriptionId) {
             resumeUpdates.processor_subscription_id = result.subscriptionId;
+          }
+          if (result.nextPaymentDate) {
+            resumeUpdates.next_billing_date = result.nextPaymentDate.split('T')[0];
           }
 
           await updateEnrollmentForLifecycleAction({
@@ -724,7 +716,50 @@ export const paymentLifecycleService = {
             action: 'resume',
           });
         } else {
-          throw new ValidationError('Unable to resume subscription: recurring amount, saved payment method, or remaining payments are missing');
+          // NMI resumes by creating a replacement subscription from the saved vault.
+          const nextDate = new Date();
+          if (interval === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+          else if (interval === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+          else if (interval === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
+          else if (interval === 'quarterly') nextDate.setMonth(nextDate.getMonth() + 3);
+          else if (interval === 'annual') nextDate.setFullYear(nextDate.getFullYear() + 1);
+          else nextDate.setMonth(nextDate.getMonth() + 1);
+
+          if (remaining > 0 && planAmount > 0 && customerId) {
+            const result = await processor.resumeSubscription({
+              subscriptionId: params.processorSubscriptionId,
+              paymentMethodId,
+              customerId,
+              planAmount,
+              interval,
+              remainingPayments: remaining,
+              startDate: nextDate.toISOString().split('T')[0],
+              description,
+            });
+            assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'resume');
+
+            if (!enr) {
+              throw new ValidationError('Unable to resume subscription: enrollment was not found');
+            }
+
+            const resumeUpdates: Record<string, unknown> = {
+              status: 'enrolled',
+              next_billing_date: nextDate.toISOString().split('T')[0],
+            };
+            if (result.subscriptionId && result.subscriptionId !== params.processorSubscriptionId) {
+              resumeUpdates.processor_subscription_id = result.subscriptionId;
+            }
+
+            await updateEnrollmentForLifecycleAction({
+              locationId: params.locationId,
+              enrollmentId: enr.id,
+              contactId: params.contactId,
+              updates: resumeUpdates,
+              action: 'resume',
+            });
+          } else {
+            throw new ValidationError('Unable to resume subscription: recurring amount, saved payment method, or remaining payments are missing');
+          }
         }
       } catch (err: any) {
         logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription resume failed');

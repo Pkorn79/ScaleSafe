@@ -19,6 +19,7 @@ jest.mock('stripe', () => {
     subscriptions: {
       create: jest.fn(),
       cancel: jest.fn(),
+      update: jest.fn(),
     },
     accounts: { retrieve: jest.fn() },
   };
@@ -142,6 +143,48 @@ describe('StripeClient', () => {
       expect(result.success).toBe(false);
       expect(result.status).toBe('declined');
       expect(result.errorMessage).toBe('Your card was declined');
+    });
+  });
+
+  describe('cancelSubscription', () => {
+    it('passes stripeAccount as the third SDK argument', async () => {
+      mockStripe.subscriptions.cancel.mockResolvedValue({ id: 'sub_123', status: 'canceled' });
+
+      const result = await client.cancelSubscription('sub_123');
+
+      expect(result.success).toBe(true);
+      expect(mockStripe.subscriptions.cancel).toHaveBeenCalledWith(
+        'sub_123',
+        undefined,
+        { stripeAccount: 'acct_test123' },
+      );
+    });
+  });
+
+  describe('resumeSubscription', () => {
+    it('updates pause_collection using the existing subscription id', async () => {
+      mockStripe.subscriptions.update.mockResolvedValue({
+        id: 'sub_123',
+        status: 'active',
+        current_period_end: 1780000000,
+      });
+
+      const result = await client.resumeSubscription({
+        subscriptionId: 'sub_123',
+        customerId: '',
+        paymentMethodId: '',
+        planAmount: 0,
+        interval: 'monthly',
+        remainingPayments: 0,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.subscriptionId).toBe('sub_123');
+      expect(mockStripe.subscriptions.update).toHaveBeenCalledWith(
+        'sub_123',
+        { pause_collection: null },
+        { stripeAccount: 'acct_test123' },
+      );
     });
   });
 

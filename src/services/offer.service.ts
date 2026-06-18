@@ -665,16 +665,35 @@ export const offerService = {
     try {
       newOffer = await offerRepository.create(clone as any);
     } catch (err: any) {
-      logger.error({
-        err: err?.message || String(err),
-        code: err?.code,
-        details: err?.details,
-        hint: err?.hint,
-        sourceId: offerId,
-        locationId,
-        cloneKeys: Object.keys(clone).sort(),
-      }, 'Offer clone create failed');
-      throw new ValidationError(`Offer clone failed: ${err?.message || 'database write failed'}`);
+      if (isMissingCheckoutChannelColumnError(err)) {
+        const strippedClone = stripCheckoutChannelFields(clone);
+        try {
+          newOffer = await offerRepository.create(strippedClone as any);
+        } catch (retryErr: any) {
+          logger.error({
+            err: retryErr?.message || String(retryErr),
+            originalErr: err?.message || String(err),
+            code: retryErr?.code,
+            details: retryErr?.details,
+            hint: retryErr?.hint,
+            sourceId: offerId,
+            locationId,
+            cloneKeys: Object.keys(strippedClone).sort(),
+          }, 'Offer clone create retry without checkout-channel fields failed');
+          throw new ValidationError(`Offer clone failed: ${retryErr?.message || 'database write failed'}`);
+        }
+      } else {
+        logger.error({
+          err: err?.message || String(err),
+          code: err?.code,
+          details: err?.details,
+          hint: err?.hint,
+          sourceId: offerId,
+          locationId,
+          cloneKeys: Object.keys(clone).sort(),
+        }, 'Offer clone create failed');
+        throw new ValidationError(`Offer clone failed: ${err?.message || 'database write failed'}`);
+      }
     }
     const sourceAddons = Array.isArray((source as any).checkoutAddons)
       ? (source as any).checkoutAddons
