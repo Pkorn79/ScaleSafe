@@ -53,6 +53,22 @@ function toPublic(row: WhopConfigRecord | null): WhopConfigPublic {
   };
 }
 
+function isMissingWhopSchemaError(error: any): boolean {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === 'PGRST205'
+    || error?.code === '42703'
+    || message.includes('whop_configs')
+    || message.includes('checkout_type')
+    || message.includes('whop_');
+}
+
+function throwWhopSchemaError(error: any): never {
+  if (isMissingWhopSchemaError(error)) {
+    throw new ValidationError('Whop checkout is not ready in the database. Apply migration 071_whop_checkout_channel.sql, then try again.');
+  }
+  throw error;
+}
+
 export const whopConfigService = {
   async get(locationId: string): Promise<WhopConfigRecord | null> {
     const { data, error } = await getSupabase()
@@ -60,7 +76,7 @@ export const whopConfigService = {
       .select('*')
       .eq('location_id', locationId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throwWhopSchemaError(error);
     return data || null;
   },
 
@@ -70,7 +86,7 @@ export const whopConfigService = {
       .select('*')
       .eq('company_id', companyId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throwWhopSchemaError(error);
     return data || null;
   },
 
@@ -122,7 +138,7 @@ export const whopConfigService = {
       .upsert(payload, { onConflict: 'merchant_id,location_id' })
       .select('*')
       .single();
-    if (error) throw error;
+    if (error) throwWhopSchemaError(error);
     return toPublic(data);
   },
 
@@ -131,7 +147,7 @@ export const whopConfigService = {
       .from('whop_configs')
       .delete()
       .eq('location_id', locationId);
-    if (error) throw error;
+    if (error) throwWhopSchemaError(error);
   },
 
   decryptApiKey(row: WhopConfigRecord): string {
