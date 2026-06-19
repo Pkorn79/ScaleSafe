@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { processorConfigController } from '../controllers/processor-config.controller';
 import { whopConfigController } from '../controllers/whop-config.controller';
+import { fanbasisConfigController } from '../controllers/fanbasis-config.controller';
 import { ssoAuth } from '../middleware/ssoAuth';
 import { requireTenant } from '../middleware/tenantContext';
 
@@ -18,5 +19,9 @@ router.get('/whop', whopConfigController.get);
 router.post('/whop', whopConfigController.save);
 router.post('/whop/test', whopConfigController.test);
 router.delete('/whop', whopConfigController.disconnect);
+router.get('/fanbasis', fanbasisConfigController.get);
+router.post('/fanbasis', fanbasisConfigController.save);
+router.post('/fanbasis/test', fanbasisConfigController.test);
+router.delete('/fanbasis', fanbasisConfigController.disconnect);
 
 export default router;

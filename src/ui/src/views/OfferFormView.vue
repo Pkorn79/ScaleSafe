@@ -369,6 +369,15 @@
             <p v-if="!whopConnected" class="text-sm" style="margin-top:4px;color:#dc2626">Connect Whop in Payment Settings before using this channel.</p>
           </div>
         </label>
+        <!-- F1: scaffold only. Disabled until FanBasis checkout (Phase F2) ships. -->
+        <label class="radio-card" :class="{ active: form.checkoutType === 'fanbasis', disabled: true }">
+          <input type="radio" v-model="form.checkoutType" value="fanbasis" disabled />
+          <div>
+            <strong>FanBasis Checkout</strong>
+            <p class="text-sm text-muted" style="margin-top:4px">Cards, Apple/Google Pay, Cash App, and BNPL (where enabled) via FanBasis, with ScaleSafe tracking enrollment, payment status, and evidence.</p>
+            <p class="text-sm" style="margin-top:4px;color:#92400e">Coming soon — FanBasis checkout is being finished. Connect FanBasis in Payment Settings to prepare.</p>
+          </div>
+        </label>
       </div>
       <div v-if="form.checkoutType === 'whop' && isEdit" class="form-group whop-sync-panel">
         <label class="form-label">Whop Sync</label>
@@ -520,7 +529,7 @@ const form = ref({
   milestones: Array.from({ length: 8 }, () => ({ name: '', delivers: '', clientDoes: '' })),
   processorOverride: '' as string,
   nmiProcessorId: '' as string,
-  checkoutType: 'direct' as 'direct' | 'whop',
+  checkoutType: 'direct' as 'direct' | 'whop' | 'fanbasis',
   dualPricingEnabled: false,
   achEnabled: false,
   achAccessPolicy: 'after_settlement' as 'after_settlement' | 'after_submission',

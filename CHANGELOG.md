@@ -12,6 +12,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 > dunning-retry/refund paths call `record_recurring_payment`/`decrement_enrollment_payments_made`;
 > without the migrations, live recurring webhooks, refunds, and dunning retries will throw.
 
+### Added (FanBasis integration — Phase F1 foundation, 2026-06-19)
+> **Deploy ordering:** migration `081_fanbasis_checkout_channel.sql` (applied 2026-06-19) must be in Supabase
+> before this code deploys — `fanbasis-config.service` reads/writes the new `fanbasis_configs` table.
+
+- **FanBasis "Model B" checkout channel — foundation only.** Mirrors the Whop integration; FanBasis is a
+  Merchant-of-Record provider kept entirely separate from the NMI/Stripe `ProcessorInterface`.
+  - Migration `081` (additive only): new `fanbasis_configs` table (per-merchant, encrypted API key +
+    webhook secret) and additive `fanbasis_*` columns on `offers_mirror`/`enrollments`. No existing
+    constraint altered — `checkout_type`/processor CHECK widenings are deferred to F2.
+  - `src/clients/fanbasis.client.ts` (shell), `src/services/fanbasis-config.service.ts`,
+    `src/controllers/fanbasis-config.controller.ts`, and `/api/processor-config/fanbasis` routes
+    (get/save/test/disconnect). Credentials encrypted with the same AES-256-GCM util as NMI/Whop.
+  - Settings → Payments **FanBasis credential card** (Save/Disconnect only — the Test Connection button is
+    deferred to F2 pending sandbox endpoint confirmation; the backend `/fanbasis/test` route exists but is
+    not surfaced). Offer form shows a **disabled "FanBasis — Coming soon"** checkout radio. `featureCatalog`
+    entry added as `coming_soon`.
+  - Tests: `fanbasis.client`, `fanbasis-config.service` (real-crypto encryption round-trip),
+    `fanbasis-config.controller` (+18 tests; suite 97 suites / 818 tests). No Stripe/NMI/ProcessorInterface
+    behavior changed. F2 (embedded/hosted checkout + webhooks) is gated on the documented sandbox checks.
+
 ### Added (Launch readiness — CI + go-live gate, 2026-06-15)
 - **GitHub Actions CI** (`.github/workflows/ci.yml`) — runs on push to `main` and on PRs:
   `typecheck`, the full Jest suite (88 suites / 736 tests), a backend+UI `build`, and an advisory

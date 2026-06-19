@@ -291,6 +291,59 @@
         <p v-if="whopStatus?.lastError" class="text-sm mt-2" style="color:#dc2626">{{ whopStatus.lastError }}</p>
       </div>
 
+      <!-- FanBasis Checkout Channel (Model B) -->
+      <div class="card">
+        <div class="flex-between mb-4">
+          <div>
+            <h3 class="section-title" style="margin-bottom:0">FanBasis</h3>
+            <p class="text-sm text-muted mt-2">Connect FanBasis so selected offers can use FanBasis checkout (cards, Apple/Google Pay, Cash App, and BNPL where enabled) while ScaleSafe still tracks payments, enrollment, and evidence.</p>
+          </div>
+          <span v-if="fanbasisConnected" class="badge badge-green">Connected</span>
+          <span v-else class="badge badge-gray">Not Connected</span>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Creator Handle</label>
+            <input class="form-input" v-model="fanbasisForm.creatorHandle" placeholder="FanBasis creator handle" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Environment</label>
+            <select class="form-select" v-model="fanbasisForm.environment">
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input class="form-input" v-model="fanbasisForm.apiKey" type="password" :placeholder="fanbasisConnected ? 'Saved. Paste a replacement key only if rotating.' : 'Paste FanBasis API key'" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Webhook Secret</label>
+          <input class="form-input" v-model="fanbasisForm.webhookSecret" type="password" :placeholder="fanbasisStatus?.hasWebhookSecret ? 'Saved. Paste a replacement secret only if rotating.' : 'Paste FanBasis webhook secret'" />
+        </div>
+        <div class="setup-row">
+          <label>Webhook URL</label>
+          <div class="copy-line">
+            <input class="form-input mono" :value="fanbasisStatus?.webhookUrl || 'https://dashboard.scalesafe.app/webhooks/fanbasis'" readonly />
+            <button class="btn btn-secondary btn-sm" @click="copyText(fanbasisStatus?.webhookUrl || 'https://dashboard.scalesafe.app/webhooks/fanbasis')">Copy</button>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveFanbasis" :disabled="fanbasisSaving">{{ fanbasisSaving ? 'Saving...' : 'Save FanBasis' }}</button>
+          <button v-if="fanbasisConnected" class="btn btn-danger btn-sm" @click="disconnectFanbasis">Disconnect</button>
+        </div>
+        <p class="text-sm text-muted mt-2">Connection testing will be enabled once the FanBasis sandbox endpoint is confirmed.</p>
+        <p v-if="!fanbasisConnected" class="text-sm text-muted mt-2">
+          Don't have a FanBasis account?
+          <a href="https://www.fanbasis.com" target="_blank" rel="noopener" style="color:var(--ss-primary-700)">Sign up here</a>.
+          <!-- TODO(referral): replace with ScaleSafe's FanBasis referral link once confirmed (Decision D4). -->
+        </p>
+        <p v-if="fanbasisMessage" class="text-sm mt-2" :style="{ color: fanbasisMessageOk ? '#059669' : '#dc2626' }">{{ fanbasisMessage }}</p>
+        <p v-if="fanbasisStatus?.lastError" class="text-sm mt-2" style="color:#dc2626">{{ fanbasisStatus.lastError }}</p>
+      </div>
+
       <!-- Auto-Submit Toggle -->
       <div v-if="stripeConnected" class="card">
         <h3 class="section-title">Dispute Auto-Submit <span class="text-xs text-muted">(coming soon)</span></h3>
@@ -363,6 +416,17 @@ const whopForm = ref({
   webhookSecret: '',
   environment: 'production',
 });
+const fanbasisStatus = ref<any>(null);
+const fanbasisConnected = ref(false);
+const fanbasisSaving = ref(false);
+const fanbasisMessage = ref('');
+const fanbasisMessageOk = ref(true);
+const fanbasisForm = ref({
+  creatorHandle: '',
+  apiKey: '',
+  webhookSecret: '',
+  environment: 'sandbox',
+});
 const dualPricingConfig = ref({
   enabled: false,
   locationScoped: false,
@@ -384,7 +448,7 @@ const dualPricingDeductionLabel = computed(() => {
   return `${deduction.toFixed(4)}%`;
 });
 const paymentFeatureSettings = [
-  ...getFeaturesByArea('payments').filter((feature) => feature.id !== 'whop'),
+  ...getFeaturesByArea('payments').filter((feature) => feature.id !== 'whop' && feature.id !== 'fanbasis'),
   ...publicFeatureCatalog.filter((feature) => ['digistore24'].includes(feature.id)),
 ];
 
@@ -422,6 +486,7 @@ async function loadProcessorStatus() {
       await loadNmiWebhook();
     }
     await loadWhop();
+    await loadFanbasis();
   } catch (err: any) {
     loadError.value = err.message || 'Failed to load processor status';
   } finally {
@@ -570,6 +635,57 @@ async function disconnectWhop() {
     await loadWhop();
   } catch (err: any) {
     loadError.value = err?.message || 'Failed to disconnect Whop';
+  }
+}
+
+async function loadFanbasis() {
+  try {
+    fanbasisStatus.value = await api.get<any>('/api/processor-config/fanbasis');
+    fanbasisConnected.value = !!fanbasisStatus.value?.connected;
+    fanbasisForm.value.creatorHandle = fanbasisStatus.value?.creatorHandle || '';
+    fanbasisForm.value.environment = fanbasisStatus.value?.environment || 'sandbox';
+    fanbasisForm.value.apiKey = '';
+    fanbasisForm.value.webhookSecret = '';
+  } catch {
+    fanbasisStatus.value = null;
+    fanbasisConnected.value = false;
+  }
+}
+
+async function saveFanbasis() {
+  if (!fanbasisConnected.value && !fanbasisForm.value.apiKey.trim()) {
+    loadError.value = 'FanBasis API key is required.';
+    return;
+  }
+  fanbasisSaving.value = true;
+  fanbasisMessage.value = '';
+  try {
+    const payload: any = {
+      creatorHandle: fanbasisForm.value.creatorHandle.trim(),
+      environment: fanbasisForm.value.environment,
+    };
+    if (fanbasisForm.value.apiKey.trim()) payload.apiKey = fanbasisForm.value.apiKey.trim();
+    if (fanbasisForm.value.webhookSecret.trim()) payload.webhookSecret = fanbasisForm.value.webhookSecret.trim();
+    fanbasisStatus.value = await api.post<any>('/api/processor-config/fanbasis', payload);
+    fanbasisConnected.value = true;
+    fanbasisForm.value.apiKey = '';
+    fanbasisForm.value.webhookSecret = '';
+    fanbasisMessageOk.value = true;
+    fanbasisMessage.value = 'FanBasis connection saved.';
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to save FanBasis connection';
+  } finally {
+    fanbasisSaving.value = false;
+  }
+}
+
+async function disconnectFanbasis() {
+  if (!confirm('Disconnect FanBasis? FanBasis checkout offers will stop accepting payment until reconnected.')) return;
+  try {
+    await api.del('/api/processor-config/fanbasis');
+    await loadFanbasis();
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to disconnect FanBasis';
   }
 }
 

@@ -192,6 +192,19 @@ export const featureCatalog: FeatureItem[] = [
     ],
   },
   {
+    id: 'fanbasis',
+    title: 'FanBasis Checkout Channel',
+    area: 'integrations',
+    status: 'coming_soon',
+    summary: 'Use FanBasis (Merchant of Record) checkout — cards, Apple/Google Pay, Cash App, and BNPL where enabled — on selected ScaleSafe offers.',
+    userValue: 'Lets merchants offer financing and alternative payment methods through FanBasis without losing ScaleSafe consent, evidence, and defense records.',
+    workflow: [
+      'Merchant connects FanBasis in Payment Settings.',
+      'Merchant selects FanBasis as the offer checkout channel.',
+      'ScaleSafe captures enrollment evidence, renders FanBasis checkout, and records FanBasis payment webhooks.',
+    ],
+  },
+  {
     id: 'digistore24',
     title: 'Digistore24 Integration',
     area: 'integrations',
