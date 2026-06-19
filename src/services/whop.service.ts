@@ -10,16 +10,19 @@ import { ValidationError } from '../utils/errors';
 
 type WhopMetadata = Record<string, string | number | boolean | null | undefined>;
 
-function apiBaseUrl(environment: string): string {
-  if (process.env.WHOP_API_BASE_URL) return process.env.WHOP_API_BASE_URL.replace(/\/+$/, '');
+export function whopApiBaseUrl(environment: string): string {
+  const explicitBase = environment === 'sandbox'
+    ? process.env.WHOP_SANDBOX_API_BASE_URL || process.env.WHOP_API_BASE_URL
+    : process.env.WHOP_API_BASE_URL;
+  if (explicitBase) return explicitBase.replace(/\/+$/, '');
   return environment === 'sandbox'
-    ? 'https://api.whop.com/api/v5'
+    ? 'https://sandbox-api.whop.com/api/v1'
     : 'https://api.whop.com/api/v5';
 }
 
 function client(row: WhopConfigRecord): AxiosInstance {
   return axios.create({
-    baseURL: apiBaseUrl(row.environment),
+    baseURL: whopApiBaseUrl(row.environment),
     timeout: 15000,
     headers: {
       Authorization: `Bearer ${whopConfigService.decryptApiKey(row)}`,
