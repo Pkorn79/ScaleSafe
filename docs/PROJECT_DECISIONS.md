@@ -41,3 +41,9 @@ This file records product and launch decisions that should not be re-litigated u
 
 - Sticky/minimizable left navigation has shipped and should be considered accepted unless a new UI bug is reported.
 - Sticky/minimizable navigation is not a launch blocker.
+
+## Future Defense Response Enhancements
+
+- When we do a deeper defense-response-system pass, organize defense packets around the practical Stripe/processor evidence buckets: authorization, signed terms/MSA/SOW, billing/refund policy, service delivery, client communication/satisfaction, refund/cancellation history, and dispute letter.
+- Add or strengthen a rendered checkout/terms/billing-policy snapshot exhibit if the current packet does not clearly show what the customer saw and accepted at purchase.
+- Keep public/marketplace copy evidence-first. Do not claim ScaleSafe guarantees dispute wins.
