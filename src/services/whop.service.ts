@@ -220,7 +220,6 @@ export const whopService = {
 
     const redirectUrl = `${config.appUrl.replace(/\/+$/, '')}/payment-thank-you?offerId=${encodeURIComponent(input.offer.id)}`;
     const payload = {
-      company_id: row.company_id,
       plan_id: input.offer.whop_plan_id,
       mode: 'payment',
       currency: 'usd',

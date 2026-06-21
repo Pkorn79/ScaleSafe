@@ -173,7 +173,6 @@ describe('whopService.createCheckoutSession', () => {
     });
 
     expect(post).toHaveBeenCalledWith('/checkout_configurations', expect.objectContaining({
-      company_id: 'biz_123',
       plan_id: 'plan_123',
       mode: 'payment',
       currency: 'usd',
