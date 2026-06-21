@@ -944,6 +944,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return ssCheckoutParentOrigins().indexOf(event.origin) !== -1;
   }
 
+  window.ssWhopCheckoutComplete = function(planId, receiptId) {
+    el('success-msg').textContent = 'Payment complete. Finalizing your enrollment...';
+    el('success-msg').style.display = 'block';
+    var amount = currentQuote && currentQuote.selectedAmount ? Number(currentQuote.selectedAmount).toFixed(2) : '0.00';
+    var custName = el('cust-name') ? el('cust-name').value.trim() : 'Customer';
+    setTimeout(function() {
+      window.location.href = API_BASE + '/payment-thank-you?amount=' + encodeURIComponent(amount)
+        + '&name=' + encodeURIComponent(custName || 'Customer')
+        + '&offerId=' + encodeURIComponent(offerId)
+        + '&processor=whop'
+        + '&planId=' + encodeURIComponent(planId || '')
+        + '&receiptId=' + encodeURIComponent(receiptId || '');
+    }, 700);
+  };
+
   // Listen for GHL postMessage (paymentsUrl protocol)
   window.addEventListener('message', function(e) {
     if (!ssCheckoutIsTrustedParentMessage(e)) return;
@@ -1354,11 +1369,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var root = el('whop-embed-root');
     root.textContent = '';
     var mount = document.createElement('div');
+    mount.id = 'whop-embedded-checkout';
     mount.setAttribute('data-whop-checkout-session', session.sessionId);
     mount.setAttribute('data-whop-checkout-plan-id', session.planId || '');
     mount.setAttribute('data-whop-checkout-return-url', API_BASE + '/payment-thank-you?offerId=' + encodeURIComponent(offerId));
-    mount.setAttribute('data-whop-skip-redirect', 'true');
     mount.setAttribute('data-whop-checkout-skip-redirect', 'true');
+    mount.setAttribute('data-whop-checkout-on-complete', 'ssWhopCheckoutComplete');
     mount.setAttribute('data-whop-checkout-environment', session.environment || 'production');
     if (custEmail || enrollmentEmail) {
       mount.setAttribute('data-whop-checkout-prefill-email', custEmail || enrollmentEmail);
@@ -1376,15 +1392,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       document.head.appendChild(script);
     }
 
-    if (session.checkoutUrl) {
-      var link = document.createElement('a');
-      link.href = session.checkoutUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Open Whop checkout';
-      link.style.cssText = 'display:block;text-align:center;margin-top:12px;color:#2563eb;font-weight:600';
-      root.appendChild(link);
-    }
     el('pay-btn').classList.add('hidden');
     el('success-msg').textContent = 'Complete checkout below.';
     el('success-msg').style.display = 'block';

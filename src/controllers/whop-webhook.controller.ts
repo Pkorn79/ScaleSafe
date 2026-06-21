@@ -40,17 +40,24 @@ function amountCents(payload: any): number {
   const centsRaw = b?.amount_cents
     ?? b?.payment?.amount_cents
     ?? b?.amount_total
-    ?? b?.payment?.amount_total;
+    ?? b?.payment?.amount_total
+    ?? b?.total_cents
+    ?? b?.usd_total_cents;
   if (centsRaw !== undefined && centsRaw !== null && centsRaw !== '') {
     const cents = Number(centsRaw);
     return Number.isFinite(cents) ? Math.round(cents) : 0;
   }
 
-  const raw = b?.amount ?? b?.payment?.amount;
+  const raw = b?.amount
+    ?? b?.payment?.amount
+    ?? b?.total
+    ?? b?.usd_total
+    ?? b?.subtotal
+    ?? b?.amount_after_fees
+    ?? b?.settlement_amount;
   const n = Number(raw || 0);
   if (!Number.isFinite(n)) return 0;
   if (typeof raw === 'string' && raw.includes('.')) return Math.round(n * 100);
-  if (Number.isInteger(n)) return n;
   return Math.round(n * 100);
 }
 
@@ -72,6 +79,7 @@ function membershipId(payload: any): string {
     b?.membership_id,
     b?.membershipId,
     b?.membership?.id,
+    b?.member?.id,
     b?.id,
   );
 }
@@ -214,6 +222,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       processor_type: 'whop',
       whop_payment_id: txnId || null,
       whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
+      processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
       whop_setup_intent_id: firstString(b?.setup_intent_id, b?.setupIntentId) || enrollment.whop_setup_intent_id || null,
     } as any)
     .eq('id', enrollment.id)
@@ -325,11 +334,14 @@ async function handleRefund(payload: any, locationId: string, merchantId: string
 async function handleMembership(payload: any, locationId: string, active: boolean): Promise<void> {
   const enrollment = await findEnrollment(payload, locationId);
   if (!enrollment) return;
+  const b = body(payload);
   await getSupabase()
     .from('enrollments')
     .update({
       whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
+      processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
       whop_reconciliation_status: active ? 'membership_active' : 'membership_deactivated',
+      ...(active && b?.renewal_period_end ? { next_billing_date: String(b.renewal_period_end).slice(0, 10) } : {}),
       ...(active ? {} : { cancelled_at: new Date().toISOString() }),
     } as any)
     .eq('id', enrollment.id)
@@ -370,9 +382,9 @@ export async function handleWhopWebhook(req: Request, res: Response): Promise<vo
       await handlePaymentFailed(payload, cfg.location_id, merchant.id);
     } else if (whopEventType === 'refund.created') {
       await handleRefund(payload, cfg.location_id, merchant.id);
-    } else if (whopEventType === 'membership.activated') {
+    } else if (whopEventType === 'membership.activated' || whopEventType === 'membership.went_valid') {
       await handleMembership(payload, cfg.location_id, true);
-    } else if (whopEventType === 'membership.deactivated') {
+    } else if (whopEventType === 'membership.deactivated' || whopEventType === 'membership.went_invalid') {
       await handleMembership(payload, cfg.location_id, false);
     } else if (whopEventType === 'setup_intent.succeeded') {
       const enrollment = await findEnrollment(payload, cfg.location_id);
