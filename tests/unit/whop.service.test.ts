@@ -1,4 +1,37 @@
-import { whopApiBaseUrl } from '../../src/services/whop.service';
+process.env.PROCESSOR_ENCRYPTION_KEY =
+  '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
+
+const mockAxiosCreate = jest.fn();
+jest.mock('axios', () => ({
+  __esModule: true,
+  default: { create: (...a: any[]) => mockAxiosCreate(...a) },
+}));
+
+const mockFrom = jest.fn();
+jest.mock('../../src/clients/supabase.client', () => ({
+  getSupabase: () => ({ from: mockFrom }),
+}));
+
+const mockWhopGetRequired = jest.fn();
+const mockDecryptApiKey = jest.fn();
+jest.mock('../../src/services/whop-config.service', () => ({
+  whopConfigService: {
+    getRequired: (...a: any[]) => mockWhopGetRequired(...a),
+    decryptApiKey: (...a: any[]) => mockDecryptApiKey(...a),
+  },
+}));
+
+import { whopApiBaseUrl, whopService } from '../../src/services/whop.service';
+
+function query(result: { data: any; error?: any } = { data: null }) {
+  const c: any = {};
+  c.from = jest.fn(() => c);
+  c.update = jest.fn(() => c);
+  c.select = jest.fn(() => c);
+  c.eq = jest.fn(() => c);
+  c.single = jest.fn(() => Promise.resolve(result));
+  return c;
+}
 
 describe('whopApiBaseUrl', () => {
   const originalEnv = process.env;
@@ -27,5 +60,64 @@ describe('whopApiBaseUrl', () => {
 
     expect(whopApiBaseUrl('sandbox')).toBe('https://sandbox-api.whop.com/api/v5');
     expect(whopApiBaseUrl('production')).toBe('https://api.whop.com/api/v5');
+  });
+});
+
+describe('whopService.syncOffer', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWhopGetRequired.mockResolvedValue({
+      id: 'whop-config-1',
+      location_id: 'loc-1',
+      company_id: 'biz_123',
+      api_key_encrypted: 'encrypted',
+      environment: 'sandbox',
+    });
+    mockDecryptApiKey.mockReturnValue('whop_key');
+  });
+
+  it('sends title when creating Whop products and plans', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ data: { id: 'prod_123' } })
+      .mockResolvedValueOnce({ data: { id: 'plan_123' } });
+    const patch = jest.fn();
+    mockAxiosCreate.mockReturnValue({ post, patch });
+
+    const updateChain = query({ data: null });
+    const readChain = query({
+      data: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'ScaleSafe Test Plan',
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_123',
+      },
+    });
+    mockFrom.mockReturnValueOnce(updateChain).mockReturnValueOnce(readChain);
+
+    await whopService.syncOffer('loc-1', {
+      id: 'offer-1',
+      offer_name: 'ScaleSafe Test Plan',
+      program_description: 'Test description',
+      payment_type: 'subscription',
+      installment_amount: 25,
+      price: 25,
+      installment_frequency: 'monthly',
+      whop_product_id: null,
+      whop_plan_id: null,
+    } as any);
+
+    expect(post).toHaveBeenNthCalledWith(1, '/products', expect.objectContaining({
+      company_id: 'biz_123',
+      title: 'ScaleSafe Test Plan',
+      name: 'ScaleSafe Test Plan',
+    }));
+    expect(post).toHaveBeenNthCalledWith(2, '/plans', expect.objectContaining({
+      company_id: 'biz_123',
+      product_id: 'prod_123',
+      title: 'ScaleSafe Test Plan',
+      nickname: 'ScaleSafe Test Plan',
+      amount: 2500,
+    }));
   });
 });

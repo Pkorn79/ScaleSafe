@@ -100,6 +100,7 @@ export const whopService = {
       if (!productId) {
         const productRes = await api.post('/products', {
           company_id: row.company_id,
+          title: offer.offer_name,
           name: offer.offer_name,
           description: offer.program_description || '',
           visibility: 'hidden',
@@ -108,6 +109,7 @@ export const whopService = {
         productId = extractId(productRes.data, 'product');
       } else {
         await api.patch(`/products/${encodeURIComponent(productId)}`, {
+          title: offer.offer_name,
           name: offer.offer_name,
           description: offer.program_description || '',
           metadata,
@@ -127,6 +129,7 @@ export const whopService = {
       const planPayload: Record<string, unknown> = {
         company_id: row.company_id,
         product_id: productId,
+        title: offer.offer_name,
         nickname: offer.offer_name,
         currency: 'usd',
         amount: amountCents,
