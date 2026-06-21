@@ -21,6 +21,13 @@ jest.mock('../../src/services/whop-config.service', () => ({
   },
 }));
 
+const mockMerchantGetByLocationId = jest.fn();
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    getByLocationId: (...a: any[]) => mockMerchantGetByLocationId(...a),
+  },
+}));
+
 import { whopApiBaseUrl, whopService } from '../../src/services/whop.service';
 
 function query(result: { data: any; error?: any } = { data: null }) {
@@ -122,6 +129,71 @@ describe('whopService.syncOffer', () => {
       initial_price: 25,
       renewal_price: 25,
       billing_period: 30,
+    }));
+  });
+});
+
+describe('whopService.createCheckoutSession', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWhopGetRequired.mockResolvedValue({
+      id: 'whop-config-1',
+      location_id: 'loc-1',
+      company_id: 'biz_123',
+      api_key_encrypted: 'encrypted',
+      environment: 'sandbox',
+    });
+    mockDecryptApiKey.mockReturnValue('whop_key');
+    mockMerchantGetByLocationId.mockResolvedValue({ id: 'merchant-1' });
+  });
+
+  it('creates a Whop checkout configuration for embedded checkout metadata', async () => {
+    const post = jest.fn().mockResolvedValue({
+      data: {
+        id: 'ch_123',
+        purchase_url: 'https://whop.com/checkout/plan_123?session=ch_123',
+      },
+    });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    const session = await whopService.createCheckoutSession({
+      locationId: 'loc-1',
+      offer: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Whop Offer',
+        whop_plan_id: 'plan_123',
+      } as any,
+      enrollmentId: 'enroll-1',
+      contactId: 'contact-1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client Example',
+      consentToken: 'consent-1',
+      checkoutMode: 'full_enrollment',
+    });
+
+    expect(post).toHaveBeenCalledWith('/checkout_configurations', expect.objectContaining({
+      plan: expect.objectContaining({
+        id: 'plan_123',
+        company_id: 'biz_123',
+      }),
+      mode: 'payment',
+      metadata: expect.objectContaining({
+        location_id: 'loc-1',
+        merchant_id: 'merchant-1',
+        offer_id: 'offer-1',
+        enrollment_id: 'enroll-1',
+        contact_id: 'contact-1',
+        consent_token: 'consent-1',
+        checkout_mode: 'full_enrollment',
+      }),
+      allow_promo_codes: false,
+    }));
+    expect(session).toEqual(expect.objectContaining({
+      sessionId: 'ch_123',
+      checkoutUrl: 'https://whop.com/checkout/plan_123?session=ch_123',
+      planId: 'plan_123',
+      environment: 'sandbox',
     }));
   });
 });

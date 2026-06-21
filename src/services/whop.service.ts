@@ -185,7 +185,7 @@ export const whopService = {
     contactName?: string;
     consentToken?: string;
     checkoutMode: 'full_enrollment' | 'quick_checkout';
-  }): Promise<{ sessionId: string; checkoutUrl?: string; planId: string; embedScriptUrl: string }> {
+  }): Promise<{ sessionId: string; checkoutUrl?: string; planId: string; embedScriptUrl: string; environment: string }> {
     const row = await whopConfigService.getRequired(input.locationId);
     const merchant = await merchantRepository.getByLocationId(input.locationId);
     if (!input.offer.whop_plan_id) {
@@ -203,26 +203,27 @@ export const whopService = {
 
     const redirectUrl = `${config.appUrl.replace(/\/+$/, '')}/payment-thank-you?offerId=${encodeURIComponent(input.offer.id)}`;
     const payload = {
-      company_id: row.company_id,
-      plan_id: input.offer.whop_plan_id,
-      metadata,
-      customer: {
-        email: input.contactEmail || undefined,
-        name: input.contactName || undefined,
+      plan: {
+        id: input.offer.whop_plan_id,
+        company_id: row.company_id,
       },
-      success_url: redirectUrl,
-      cancel_url: redirectUrl,
+      mode: 'payment',
+      metadata,
+      redirect_url: redirectUrl,
+      source_url: config.appUrl,
+      allow_promo_codes: false,
     };
-    const res = await client(row).post('/checkout/sessions', payload);
+    const res = await client(row).post('/checkout_configurations', payload);
     const sessionId = extractId(res.data, 'checkout_session', 'session') || res.data?.checkout_session_id || res.data?.checkoutSessionId || '';
-    const checkoutUrl = res.data?.url || res.data?.checkout_url || res.data?.checkoutSession?.url;
-    if (!sessionId) throw new Error('Whop checkout session returned no ID');
+    const checkoutUrl = res.data?.purchase_url || res.data?.url || res.data?.checkout_url || res.data?.checkoutSession?.url;
+    if (!sessionId) throw new Error('Whop checkout configuration returned no ID');
 
     return {
       sessionId,
       checkoutUrl,
       planId: input.offer.whop_plan_id,
-      embedScriptUrl: process.env.WHOP_EMBED_SCRIPT_URL || 'https://js.whop.com/checkout.js',
+      embedScriptUrl: process.env.WHOP_EMBED_SCRIPT_URL || 'https://js.whop.com/static/checkout/loader.js',
+      environment: row.environment === 'sandbox' ? 'sandbox' : 'production',
     };
   },
 

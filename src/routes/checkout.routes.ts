@@ -813,6 +813,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var currentQuote = null;
   var quoteSeq = 0;
   var quoteErrorActive = false;
+  var whopCheckoutMounted = false;
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
@@ -986,7 +987,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
         } else if (processorType === 'whop') {
           el('whop-checkout').classList.add('active');
-          el('pay-btn').textContent = 'Continue to Whop Checkout';
+          el('pay-btn').textContent = 'Loading Whop checkout...';
+          el('pay-btn').disabled = true;
         } else if (processorType === 'nmi' && !cfg.nmiTokenizationKey) {
           console.error('[ScaleSafe] NMI tokenization key missing');
           el('error-msg').textContent = 'NMI is not fully configured. The tokenization key is missing. Please contact the provider to update their payment settings.';
@@ -1030,6 +1032,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       renderOffer();
+      if (processorType === 'whop') {
+        setTimeout(function() {
+          renderWhopCheckout(el('cust-name').value.trim(), el('cust-email').value.trim()).catch(function(err) {
+            el('error-msg').textContent = err.message || 'Could not load Whop checkout.';
+            el('error-msg').style.display = 'block';
+          });
+        }, 0);
+      }
     } catch(err) {
       el('loading').textContent = 'Unable to load checkout. Please try again.';
     }
@@ -1241,7 +1251,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('price-summary').classList.remove('hidden');
       el('dual-pricing-box').classList.add('hidden');
       el('future-payment-row').classList.add('hidden');
-      el('pay-btn').textContent = processorType === 'whop' ? 'Continue to Whop Checkout' : 'Pay';
+      el('pay-btn').textContent = processorType === 'whop' ? 'Loading Whop checkout...' : 'Pay';
       return;
     }
     var displayPrice = quote.selectedAmount;
@@ -1274,7 +1284,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
     updatePaymentMethodUi();
     el('pay-btn').textContent = processorType === 'whop'
-      ? 'Continue to Whop Checkout'
+      ? 'Loading Whop checkout...'
       : 'Pay ' + formatCurrency(displayPrice);
     if (note) {
       el('installment-note').textContent = note;
@@ -1321,6 +1331,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   }
 
   async function renderWhopCheckout(custName, custEmail) {
+    if (whopCheckoutMounted) return;
+    whopCheckoutMounted = true;
     var sessionRes = await fetch(API_BASE + '/api/checkout/whop/session', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -1333,21 +1345,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout'
       })
     });
-    var session = await sessionRes.json();
-    if (!session.success) throw new Error(session.error || 'Could not start Whop checkout');
+    var session = await sessionRes.json().catch(function() { return {}; });
+    if (!sessionRes.ok || !session.success) {
+      whopCheckoutMounted = false;
+      throw new Error(session.error || 'Could not start Whop checkout');
+    }
 
     var root = el('whop-embed-root');
     root.textContent = '';
     var mount = document.createElement('div');
     mount.setAttribute('data-whop-checkout-session', session.sessionId);
     mount.setAttribute('data-whop-checkout-plan-id', session.planId || '');
+    mount.setAttribute('data-whop-checkout-return-url', API_BASE + '/payment-thank-you?offerId=' + encodeURIComponent(offerId));
     mount.setAttribute('data-whop-skip-redirect', 'true');
+    mount.setAttribute('data-whop-checkout-skip-redirect', 'true');
+    mount.setAttribute('data-whop-checkout-environment', session.environment || 'production');
+    if (custEmail || enrollmentEmail) {
+      mount.setAttribute('data-whop-checkout-prefill-email', custEmail || enrollmentEmail);
+      mount.setAttribute('data-whop-checkout-disable-email', 'true');
+    }
+    if (custName) mount.setAttribute('data-whop-checkout-prefill-name', custName);
     root.appendChild(mount);
 
-    var script = document.createElement('script');
-    script.src = session.embedScriptUrl || 'https://js.whop.com/checkout.js';
-    script.async = true;
-    document.head.appendChild(script);
+    if (!document.querySelector('script[data-scalesafe-whop-checkout-loader="true"]')) {
+      var script = document.createElement('script');
+      script.src = session.embedScriptUrl || 'https://js.whop.com/static/checkout/loader.js';
+      script.async = true;
+      script.defer = true;
+      script.setAttribute('data-scalesafe-whop-checkout-loader', 'true');
+      document.head.appendChild(script);
+    }
 
     if (session.checkoutUrl) {
       var link = document.createElement('a');
@@ -1359,7 +1386,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       root.appendChild(link);
     }
     el('pay-btn').classList.add('hidden');
-    el('success-msg').textContent = 'Whop checkout is ready below.';
+    el('success-msg').textContent = 'Complete checkout below.';
     el('success-msg').style.display = 'block';
   }
 
