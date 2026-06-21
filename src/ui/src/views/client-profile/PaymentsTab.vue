@@ -77,6 +77,9 @@
         <div v-if="enr.cardOnFile" class="text-muted text-xs" style="margin-top:2px">
           Payment method: {{ enr.cardOnFile.displayLabel }}
         </div>
+        <div v-else-if="String(enr.processorType || '').toLowerCase() === 'whop'" class="text-muted text-xs" style="margin-top:2px">
+          Payment method: Whop checkout
+        </div>
         <div v-else class="text-muted text-xs" style="margin-top:2px">
           Payment method: not linked to this processor
         </div>

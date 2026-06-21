@@ -126,7 +126,7 @@ describe('whopService.syncOffer', () => {
       release_method: 'buy_now',
       title: 'ScaleSafe Test Plan',
       nickname: 'ScaleSafe Test Plan',
-      initial_price: 25,
+      initial_price: 0,
       renewal_price: 25,
       billing_period: 30,
     }));
@@ -192,6 +192,62 @@ describe('whopService.createCheckoutSession', () => {
       checkoutUrl: 'https://whop.com/checkout/plan_123?session=ch_123',
       planId: 'plan_123',
       environment: 'sandbox',
+    }));
+  });
+
+  it('creates a checkout-specific renewal plan when one-time add-ons change due today', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ data: { id: 'plan_dynamic_123' } })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'ch_123',
+          purchase_url: 'https://whop.com/checkout/plan_dynamic_123?session=ch_123',
+        },
+      });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    await whopService.createCheckoutSession({
+      locationId: 'loc-1',
+      offer: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Whop Offer',
+        payment_type: 'installments',
+        installment_frequency: 'weekly',
+        num_payments: 5,
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_123',
+      } as any,
+      enrollmentId: 'enroll-1',
+      contactId: 'contact-1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client Example',
+      consentToken: 'consent-1',
+      checkoutMode: 'full_enrollment',
+      quote: {
+        selectedAmount: 3.2,
+        selectedAmountCents: 320,
+        addonAmountCents: 100,
+        futureRecurringSelectedAmountCents: 220,
+      } as any,
+    });
+
+    expect(post).toHaveBeenNthCalledWith(1, '/plans', expect.objectContaining({
+      company_id: 'biz_123',
+      product_id: 'prod_123',
+      plan_type: 'renewal',
+      initial_price: 1,
+      renewal_price: 2.2,
+      billing_period: 7,
+      split_pay_required_payments: 5,
+    }));
+    expect(post).toHaveBeenNthCalledWith(2, '/checkout_configurations', expect.objectContaining({
+      plan_id: 'plan_dynamic_123',
+      metadata: expect.objectContaining({
+        due_today_amount: 3.2,
+        one_time_addon_amount: 1,
+        future_recurring_amount: 2.2,
+      }),
     }));
   });
 });

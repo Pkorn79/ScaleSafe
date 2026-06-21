@@ -37,6 +37,7 @@ function metadata(payload: any): Record<string, any> {
 
 function amountCents(payload: any): number {
   const b = body(payload);
+  const meta = metadata(payload);
   const centsRaw = b?.amount_cents
     ?? b?.payment?.amount_cents
     ?? b?.amount_total
@@ -54,7 +55,10 @@ function amountCents(payload: any): number {
     ?? b?.usd_total
     ?? b?.subtotal
     ?? b?.amount_after_fees
-    ?? b?.settlement_amount;
+    ?? b?.settlement_amount
+    ?? meta.due_today_amount
+    ?? meta.selected_amount
+    ?? meta.amount;
   const n = Number(raw || 0);
   if (!Number.isFinite(n)) return 0;
   if (typeof raw === 'string' && raw.includes('.')) return Math.round(n * 100);

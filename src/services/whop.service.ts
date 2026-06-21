@@ -7,6 +7,7 @@ import { whopConfigService, WhopConfigRecord } from './whop-config.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
+import type { CheckoutCartQuote } from './checkout-cart.service';
 
 type WhopMetadata = Record<string, string | number | boolean | null | undefined>;
 
@@ -61,6 +62,10 @@ function extractId(data: any, ...keys: string[]): string {
     if (value?.id) return value.id;
   }
   return data?.id || data?._id || '';
+}
+
+function centsToDollars(cents: number): number {
+  return Math.round(Number(cents || 0)) / 100;
 }
 
 function whopErrorMessage(err: any, fallback: string): string {
@@ -148,7 +153,7 @@ export const whopService = {
         title: offer.offer_name,
         nickname: offer.offer_name,
         currency: 'usd',
-        initial_price: amount,
+        initial_price: recurring ? 0 : amount,
         renewal_price: recurring ? amount : null,
         billing_period: recurring ? recurring.billingPeriodDays : null,
         visibility: 'hidden',
@@ -202,6 +207,7 @@ export const whopService = {
     contactName?: string;
     consentToken?: string;
     checkoutMode: 'full_enrollment' | 'quick_checkout';
+    quote?: CheckoutCartQuote | null;
   }): Promise<{ sessionId: string; checkoutUrl?: string; planId: string; embedScriptUrl: string; environment: string }> {
     const row = await whopConfigService.getRequired(input.locationId);
     const merchant = await merchantRepository.getByLocationId(input.locationId);
@@ -217,13 +223,58 @@ export const whopService = {
       consent_token: input.consentToken || '',
       checkout_mode: input.checkoutMode,
     };
+    const quote = input.quote || null;
+    const recurring = billingPeriodDaysForOffer(input.offer);
+    const addonCents = quote?.addonAmountCents || 0;
+    const futureRecurringCents = quote?.futureRecurringSelectedAmountCents || 0;
+    const needsSessionPlan = Boolean(recurring && quote && (addonCents > 0 || futureRecurringCents > 0));
+    let planId = input.offer.whop_plan_id;
+
+    if (needsSessionPlan && recurring) {
+      if (!input.offer.whop_product_id) {
+        throw new ValidationError('This Whop offer is missing its synced product ID. Save the offer again, then retry checkout.');
+      }
+      const planPayload: Record<string, unknown> = {
+        company_id: row.company_id,
+        product_id: input.offer.whop_product_id,
+        plan_type: 'renewal',
+        release_method: 'buy_now',
+        title: input.offer.offer_name,
+        nickname: `${input.offer.offer_name} checkout`,
+        currency: 'usd',
+        initial_price: centsToDollars(addonCents),
+        renewal_price: centsToDollars(futureRecurringCents),
+        billing_period: recurring.billingPeriodDays,
+        visibility: 'hidden',
+        unlimited_stock: true,
+        metadata: {
+          ...metadata,
+          scalesafe_dynamic_checkout_plan: true,
+          due_today_amount: quote?.selectedAmount || 0,
+          one_time_addon_amount: centsToDollars(addonCents),
+          future_recurring_amount: centsToDollars(futureRecurringCents),
+        },
+      };
+      if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
+      const planRes = await client(row).post('/plans', planPayload);
+      planId = extractId(planRes.data, 'plan');
+      if (!planId) throw new Error('Whop dynamic checkout plan returned no plan ID');
+    }
 
     const redirectUrl = `${config.appUrl.replace(/\/+$/, '')}/payment-thank-you?offerId=${encodeURIComponent(input.offer.id)}`;
     const payload = {
-      plan_id: input.offer.whop_plan_id,
+      plan_id: planId,
       mode: 'payment',
       currency: 'usd',
-      metadata,
+      metadata: {
+        ...metadata,
+        ...(quote ? {
+          due_today_amount: quote.selectedAmount,
+          selected_amount: quote.selectedAmount,
+          one_time_addon_amount: centsToDollars(addonCents),
+          future_recurring_amount: centsToDollars(futureRecurringCents),
+        } : {}),
+      },
       redirect_url: redirectUrl,
       source_url: config.appUrl,
       allow_promo_codes: false,
@@ -241,7 +292,7 @@ export const whopService = {
     return {
       sessionId,
       checkoutUrl,
-      planId: input.offer.whop_plan_id,
+      planId,
       embedScriptUrl: process.env.WHOP_EMBED_SCRIPT_URL || 'https://js.whop.com/static/checkout/loader.js',
       environment: row.environment === 'sandbox' ? 'sandbox' : 'production',
     };

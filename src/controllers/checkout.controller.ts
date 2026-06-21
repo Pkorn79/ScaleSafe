@@ -1422,7 +1422,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
 export async function createWhopCheckoutSession(req: Request, res: Response): Promise<void> {
   try {
-    const { offerId, consentToken, contactId, contactEmail, contactName, checkoutMode } = req.body || {};
+    const { offerId, consentToken, contactId, contactEmail, contactName, checkoutMode, paymentChoice, selectedAddonIds } = req.body || {};
     if (!offerId) {
       res.status(400).json({ success: false, error: 'offerId required' });
       return;
@@ -1460,6 +1460,12 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       resolvedName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ') || resolvedName;
     }
 
+    const normalizedChoice = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif'));
+    const cartSelectedAddonIds = consentToken
+      ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
+      : checkoutCartService.normalizeAddonIds(selectedAddonIds);
+    const quote = await checkoutCartService.quoteOffer(offer, cartSelectedAddonIds, normalizedChoice, 'card');
+
     const session = await whopService.createCheckoutSession({
       locationId: offer.location_id,
       offer,
@@ -1469,6 +1475,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       contactName: resolvedName,
       consentToken: consentToken || '',
       checkoutMode: checkoutMode === 'quick_checkout' ? 'quick_checkout' : 'full_enrollment',
+      quote,
     });
 
     if (enrollmentId) {

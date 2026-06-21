@@ -1360,7 +1360,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         contactId: prefillContactId || '',
         contactName: custName,
         contactEmail: custEmail || enrollmentEmail,
-        checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout'
+        checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout',
+        paymentChoice: paymentChoice || 'pif',
+        selectedAddonIds: selectedAddonIds
       })
     });
     var session = await sessionRes.json().catch(function() { return {}; });
