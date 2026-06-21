@@ -61,6 +61,7 @@ beforeEach(() => {
 
   mockEnrollmentGetById.mockResolvedValue({
     id: 'enr_1',
+    merchant_id: 'merchant_1',
     location_id: 'loc_1',
     contact_id: 'contact_1',
     offer_id: 'offer_1',
@@ -184,6 +185,7 @@ describe('Phase 2 Enrollment Service - completeEnrollment', () => {
 
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        merchant_id: 'merchant_1',
         event_type: 'payment_success',
         processor: 'ghl',
         processor_transaction_id: 'txn_123',

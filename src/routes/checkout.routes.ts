@@ -624,14 +624,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .addon-box{margin-top:12px}
 .addon-section{margin-top:12px}
 .addon-section-title{font-size:13px;font-weight:700;color:#374151;margin-bottom:8px}
-.addon-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff}
-.addon-option.order-bump{border-color:#bfdbfe;background:#eff6ff}
-.addon-option.pre-payment-upsell{border-color:#c7d2fe;background:#f8fafc;padding:14px}
+.addon-option{display:flex;gap:10px;align-items:flex-start;border-radius:8px;margin-bottom:8px;cursor:pointer}
+.addon-option.order-bump{border:1px solid #bfdbfe;background:#eff6ff;padding:12px}
+.addon-option.pre-payment-upsell{border:2px solid #c7d2fe;background:#f8fafc;padding:16px}
 .addon-option input{width:18px;height:18px;margin-top:3px;accent-color:#2563eb;flex-shrink:0}
 .addon-copy{flex:1}
 .addon-copy strong{display:block;font-size:14px;color:#111827}
+.addon-option.pre-payment-upsell .addon-copy strong{font-size:16px}
 .addon-copy p{font-size:13px;color:#6b7280;line-height:1.4;margin-top:4px}
-.addon-kind{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.addon-kind{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.addon-option.order-bump .addon-kind{background:#dbeafe;color:#1d4ed8}
+.addon-option.pre-payment-upsell .addon-kind{background:#e0e7ff;color:#4338ca}
 .addon-price{font-size:14px;color:#2563eb;white-space:nowrap}
 .price-summary{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin:10px 0 8px}
 .price-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;margin:3px 0}

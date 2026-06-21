@@ -157,11 +157,13 @@ export const phase2EnrollmentService = {
     // Without this backfill, downstream payment_events inserts for recurring charges
     // hit the merchant_id NOT NULL constraint and silently fail.
     let backfillMerchantId: string | undefined;
+    let resolvedMerchantId: string | undefined = enrollment.merchant_id || undefined;
     if (!enrollment.merchant_id) {
       try {
         const merchant = await merchantRepository.findByLocationId(params.locationId);
         if (merchant) {
           backfillMerchantId = merchant.id;
+          resolvedMerchantId = merchant.id;
           logger.info(
             { enrollmentId: params.enrollmentId, locationId: params.locationId, merchantId: merchant.id },
             'completeEnrollment: backfilling merchant_id on consent-captured enrollment',
@@ -342,6 +344,7 @@ export const phase2EnrollmentService = {
     ];
     if (!params.skipPaymentEvent) {
       completionWrites.push(paymentEventRepository.create({
+        merchant_id: resolvedMerchantId || null,
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,

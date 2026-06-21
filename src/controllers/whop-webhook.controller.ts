@@ -137,8 +137,12 @@ async function findEnrollment(payload: any, locationId: string): Promise<any | n
   const sessionId = firstString(
     meta.checkout_session_id,
     meta.checkoutSessionId,
+    meta.checkout_configuration_id,
+    meta.checkoutConfigurationId,
     body(payload)?.checkout_session_id,
     body(payload)?.checkoutSessionId,
+    body(payload)?.checkout_configuration_id,
+    body(payload)?.checkoutConfigurationId,
     body(payload)?.checkout_session?.id,
   );
   if (sessionId) {

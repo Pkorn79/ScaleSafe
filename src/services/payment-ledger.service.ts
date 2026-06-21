@@ -41,6 +41,7 @@ export interface PaymentLedgerRow {
   processorTransactionId: string | null;
   processorSubscriptionId: string | null;
   description: string;
+  lineItems: unknown[];
   refundable: boolean;
   dunningStatus?: string | null;
   dunningRetryCount?: number;
@@ -81,6 +82,7 @@ const PAYMENT_EVENT_COLUMNS = [
   'dunning_status',
   'dunning_retry_count',
   'dunning_next_retry',
+  'line_items',
   'created_at',
 ].join(', ');
 
@@ -98,6 +100,7 @@ const BASE_PAYMENT_EVENT_COLUMNS = [
   'payments_total',
   'failure_reason',
   'raw_webhook_payload',
+  'line_items',
   'created_at',
 ].join(', ');
 
@@ -113,6 +116,7 @@ const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
   dunning_status: null,
   dunning_retry_count: 0,
   dunning_next_retry: null,
+  line_items: [],
 };
 
 const MINIMAL_PAYMENT_EVENT_COLUMNS = [
@@ -129,6 +133,7 @@ const MINIMAL_PAYMENT_EVENT_COLUMNS = [
   'payment_number',
   'payments_total',
   'failure_reason',
+  'line_items',
   'created_at',
 ].join(', ');
 
@@ -257,6 +262,19 @@ function eventTypeLabel(value: unknown): string {
     void: 'Void',
   };
   return labels[raw] || raw.replace(/_/g, ' ') || 'Payment';
+}
+
+function normalizeLineItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function displayName(enrollment: any, fallbackEmail: string, contactId: string): string {
@@ -555,6 +573,7 @@ function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, off
     processorTransactionId: event.processor_transaction_id || null,
     processorSubscriptionId: event.processor_subscription_id || linkedEnrollment?.processor_subscription_id || null,
     description: `${programName} - ${typeLabel}${progress}`,
+    lineItems: normalizeLineItems(event.line_items),
     refundable: ['sale', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
     dunningStatus: event.dunning_status || null,
     dunningRetryCount: event.dunning_retry_count || 0,

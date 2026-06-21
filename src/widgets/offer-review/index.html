@@ -188,6 +188,69 @@
       line-height: 1.5;
     }
 
+    .ss-addon {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+
+    .ss-addon.order-bump {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      padding: 12px;
+    }
+
+    .ss-addon.pre-payment-upsell {
+      border: 2px solid #c7d2fe;
+      background: #f8fafc;
+      padding: 18px;
+    }
+
+    .ss-addon-tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .ss-addon-tag.order-bump {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .ss-addon-tag.pre-payment-upsell {
+      background: #e0e7ff;
+      color: #4338ca;
+    }
+
+    .ss-addon-title {
+      display: block;
+      color: var(--ss-text);
+    }
+
+    .ss-addon.pre-payment-upsell .ss-addon-title {
+      font-size: 17px;
+    }
+
+    .ss-addon-price {
+      white-space: nowrap;
+      color: var(--ss-primary);
+      font-weight: 700;
+    }
+
+    .ss-addon-copy {
+      font-size: 13px;
+      color: var(--ss-muted);
+      margin-top: 6px;
+    }
+
     .ss-contact {
       text-align: center;
       font-size: 14px;
@@ -339,20 +402,38 @@
       var checkoutAddons = Array.isArray(offer.checkoutAddons) ? offer.checkoutAddons : [];
       var activeAddons = checkoutAddons.filter(function(addon) { return addon && addon.active !== false; });
       if (activeAddons.length > 0) {
-        html += '<div class="ss-divider">Optional Add-Ons</div>';
-        activeAddons.forEach(function(addon, i) {
-          var kindLabel = addon.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
-          html += '<label class="ss-addon" for="ss-addon-' + i + '" style="display:flex;gap:12px;align-items:flex-start;border:1px solid var(--ss-border);border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;">';
-          html += '<input type="checkbox" class="ss-addon-cb" id="ss-addon-' + i + '" data-addon-id="' + esc(addon.id) + '" style="width:18px;height:18px;margin-top:3px;flex-shrink:0;accent-color:var(--ss-primary);cursor:pointer;">';
-          html += '<div style="flex:1;">';
-          html += '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">';
-          html += '<div><div style="font-size:12px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">' + kindLabel + '</div>';
-          html += '<strong style="display:block;color:var(--ss-text);">' + esc(addon.title) + '</strong></div>';
-          html += '<strong style="white-space:nowrap;color:var(--ss-primary);">' + formatCurrency(addon.price) + '</strong>';
-          html += '</div>';
-          if (addon.description) html += '<div style="font-size:13px;color:var(--ss-muted);margin-top:6px;">' + esc(addon.description) + '</div>';
-          html += '</div></label>';
-        });
+        var orderBumps = activeAddons.filter(function(addon) { return addon.kind !== 'pre_payment_upsell'; });
+        var upsells = activeAddons.filter(function(addon) { return addon.kind === 'pre_payment_upsell'; });
+
+        if (orderBumps.length > 0) {
+          html += '<div class="ss-divider">Add to Today\'s Checkout</div>';
+          orderBumps.forEach(function(addon, i) {
+            html += '<label class="ss-addon order-bump" for="ss-order-bump-' + i + '">';
+            html += '<input type="checkbox" class="ss-addon-cb" id="ss-order-bump-' + i + '" data-addon-id="' + esc(addon.id) + '" style="width:18px;height:18px;margin-top:3px;flex-shrink:0;accent-color:var(--ss-primary);cursor:pointer;">';
+            html += '<div style="flex:1;">';
+            html += '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">';
+            html += '<div><span class="ss-addon-tag order-bump">One-time add-on</span><strong class="ss-addon-title">' + esc(addon.title) + '</strong></div>';
+            html += '<span class="ss-addon-price">' + formatCurrency(addon.price) + '</span>';
+            html += '</div>';
+            if (addon.description) html += '<div class="ss-addon-copy">' + esc(addon.description) + '</div>';
+            html += '</div></label>';
+          });
+        }
+
+        if (upsells.length > 0) {
+          html += '<div class="ss-divider">Optional Upgrade</div>';
+          upsells.forEach(function(addon, i) {
+            html += '<label class="ss-addon pre-payment-upsell" for="ss-upsell-' + i + '">';
+            html += '<input type="checkbox" class="ss-addon-cb" id="ss-upsell-' + i + '" data-addon-id="' + esc(addon.id) + '" style="width:20px;height:20px;margin-top:4px;flex-shrink:0;accent-color:var(--ss-primary);cursor:pointer;">';
+            html += '<div style="flex:1;">';
+            html += '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">';
+            html += '<div><span class="ss-addon-tag pre-payment-upsell">One-time upgrade</span><strong class="ss-addon-title">' + esc(addon.title) + '</strong></div>';
+            html += '<span class="ss-addon-price">' + formatCurrency(addon.price) + '</span>';
+            html += '</div>';
+            if (addon.description) html += '<div class="ss-addon-copy">' + esc(addon.description) + '</div>';
+            html += '</div></label>';
+          });
+        }
       }
 
       // Milestones with clickwrap

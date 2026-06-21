@@ -144,6 +144,10 @@ describe('paymentLedgerService', () => {
         dunning_status: null,
         dunning_retry_count: 0,
         dunning_next_retry: null,
+        line_items: [
+          { kind: 'base_offer', title: 'Maui Trip', amount: 0.5 },
+          { kind: 'order_bump', title: 'VIP onboarding', amount: 1 },
+        ],
         created_at: '2026-05-08T01:00:00.000Z',
       },
     ];
@@ -198,6 +202,10 @@ describe('paymentLedgerService', () => {
       paymentNumber: 2,
       paymentsRemaining: 0,
       status: 'paid',
+      lineItems: [
+        { kind: 'base_offer', title: 'Maui Trip', amount: 0.5 },
+        { kind: 'order_bump', title: 'VIP onboarding', amount: 1 },
+      ],
     }));
     expect(result.summary.totalCharged).toBe(0.5);
   });

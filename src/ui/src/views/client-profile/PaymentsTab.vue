@@ -109,6 +109,11 @@
               <div v-if="p.paymentNumber" class="text-xs text-muted">
                 Payment {{ p.paymentNumber }}<span v-if="p.paymentsRemaining === 0">, final</span>
               </div>
+              <div v-if="displayLineItems(p).length" class="payment-line-items text-xs">
+                <span v-for="item in displayLineItems(p)" :key="item.key" class="payment-line-item">
+                  {{ item.label }}
+                </span>
+              </div>
             </td>
             <td class="text-sm">${{ Number(p.amount).toFixed(2) }}</td>
             <td>
@@ -239,6 +244,19 @@ function paymentDateSummary(enr: any): string {
     .join(', ');
 }
 
+function displayLineItems(payment: any) {
+  const items = Array.isArray(payment?.lineItems) ? payment.lineItems : [];
+  return items
+    .filter((item: any) => item && item.kind !== 'base_offer')
+    .map((item: any, index: number) => {
+      const title = String(item.title || item.name || (item.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
+      const amount = Number(item.amount || item.price || 0);
+      const price = Number.isFinite(amount) && amount > 0 ? ` $${amount.toFixed(2)}` : '';
+      const prefix = item.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
+      return { key: `${payment.id}-${index}`, label: `${prefix}: ${title}${price}` };
+    });
+}
+
 onMounted(async () => {
   loading.value = true;
   try {
@@ -285,5 +303,25 @@ onMounted(async () => {
   color: #b45309;
   font-size: 12px;
   font-weight: 600;
+}
+
+.payment-line-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.payment-line-item {
+  display: inline-flex;
+  align-items: center;
+  max-width: 190px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #f0fdfa;
+  color: #0f766e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
