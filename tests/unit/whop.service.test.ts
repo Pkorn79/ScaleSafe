@@ -173,11 +173,10 @@ describe('whopService.createCheckoutSession', () => {
     });
 
     expect(post).toHaveBeenCalledWith('/checkout_configurations', expect.objectContaining({
-      plan: expect.objectContaining({
-        id: 'plan_123',
-        company_id: 'biz_123',
-      }),
+      company_id: 'biz_123',
+      plan_id: 'plan_123',
       mode: 'payment',
+      currency: 'usd',
       metadata: expect.objectContaining({
         location_id: 'loc-1',
         merchant_id: 'merchant-1',

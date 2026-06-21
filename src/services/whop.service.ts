@@ -63,6 +63,23 @@ function extractId(data: any, ...keys: string[]): string {
   return data?.id || data?._id || '';
 }
 
+function whopErrorMessage(err: any, fallback: string): string {
+  const body = err?.response?.data;
+  const errors = Array.isArray(body?.errors)
+    ? body.errors.map((e: any) => e?.message || e?.detail || e).filter(Boolean).join('; ')
+    : '';
+  const candidates = [
+    body?.error?.message,
+    body?.error,
+    body?.message,
+    body?.detail,
+    errors,
+    err?.message,
+  ].filter(Boolean);
+  const message = candidates.find((value) => typeof value === 'string' && value.trim());
+  return message || fallback;
+}
+
 async function updateWhopSync(locationId: string, offerId: string, updates: Record<string, unknown>): Promise<void> {
   await getSupabase()
     .from('offers_mirror')
@@ -79,7 +96,7 @@ export const whopService = {
       await whopConfigService.markVerified(locationId);
       return { success: true, message: 'Whop connection verified.' };
     } catch (err: any) {
-      const message = err?.response?.data?.error?.message || err?.response?.data?.message || err.message || 'Whop connection failed';
+      const message = whopErrorMessage(err, 'Whop connection failed');
       await whopConfigService.markError(locationId, message);
       return { success: false, message };
     }
@@ -166,7 +183,7 @@ export const whopService = {
         .single();
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.error?.message || err?.response?.data?.message || err.message || 'Whop sync failed';
+      const message = whopErrorMessage(err, 'Whop sync failed');
       logger.error({ locationId, offerId: offer.id, err: message }, 'Whop offer sync failed');
       await updateWhopSync(locationId, offer.id, {
         whop_sync_status: 'error',
@@ -203,17 +220,21 @@ export const whopService = {
 
     const redirectUrl = `${config.appUrl.replace(/\/+$/, '')}/payment-thank-you?offerId=${encodeURIComponent(input.offer.id)}`;
     const payload = {
-      plan: {
-        id: input.offer.whop_plan_id,
-        company_id: row.company_id,
-      },
+      company_id: row.company_id,
+      plan_id: input.offer.whop_plan_id,
       mode: 'payment',
+      currency: 'usd',
       metadata,
       redirect_url: redirectUrl,
       source_url: config.appUrl,
       allow_promo_codes: false,
     };
-    const res = await client(row).post('/checkout_configurations', payload);
+    let res;
+    try {
+      res = await client(row).post('/checkout_configurations', payload);
+    } catch (err: any) {
+      throw new Error(whopErrorMessage(err, 'Whop checkout configuration failed'));
+    }
     const sessionId = extractId(res.data, 'checkout_session', 'session') || res.data?.checkout_session_id || res.data?.checkoutSessionId || '';
     const checkoutUrl = res.data?.purchase_url || res.data?.url || res.data?.checkout_url || res.data?.checkoutSession?.url;
     if (!sessionId) throw new Error('Whop checkout configuration returned no ID');
