@@ -115,9 +115,13 @@ describe('whopService.syncOffer', () => {
     expect(post).toHaveBeenNthCalledWith(2, '/plans', expect.objectContaining({
       company_id: 'biz_123',
       product_id: 'prod_123',
+      plan_type: 'renewal',
+      release_method: 'buy_now',
       title: 'ScaleSafe Test Plan',
       nickname: 'ScaleSafe Test Plan',
-      amount: 2500,
+      initial_price: 25,
+      renewal_price: 25,
+      billing_period: 30,
     }));
   });
 });

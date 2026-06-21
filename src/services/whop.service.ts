@@ -36,21 +36,20 @@ function dollarsToCents(value: unknown): number {
   return Math.max(0, Math.round(amount * 100));
 }
 
-function intervalForOffer(offer: OfferRecord): { interval: string; intervalCount: number; totalCycles?: number } | null {
+function billingPeriodDaysForOffer(offer: OfferRecord): { billingPeriodDays: number; totalCycles?: number } | null {
   if (!['installments', 'subscription'].includes(String(offer.payment_type || ''))) return null;
   const freq = String(offer.installment_frequency || 'monthly');
-  const intervalMap: Record<string, { interval: string; intervalCount: number }> = {
-    daily: { interval: 'day', intervalCount: 1 },
-    weekly: { interval: 'week', intervalCount: 1 },
-    bi_weekly: { interval: 'week', intervalCount: 2 },
-    biweekly: { interval: 'week', intervalCount: 2 },
-    monthly: { interval: 'month', intervalCount: 1 },
-    quarterly: { interval: 'month', intervalCount: 3 },
-    annual: { interval: 'year', intervalCount: 1 },
+  const daysMap: Record<string, number> = {
+    daily: 1,
+    weekly: 7,
+    bi_weekly: 14,
+    biweekly: 14,
+    monthly: 30,
+    quarterly: 90,
+    annual: 365,
   };
-  const base = intervalMap[freq] || intervalMap.monthly;
   return {
-    ...base,
+    billingPeriodDays: daysMap[freq] || daysMap.monthly,
     ...(offer.payment_type === 'installments' && offer.num_payments ? { totalCycles: Number(offer.num_payments) } : {}),
   };
 }
@@ -118,27 +117,29 @@ export const whopService = {
 
       if (!productId) throw new Error('Whop product sync returned no product ID');
 
-      const recurring = intervalForOffer(offer);
-      const amountCents = offer.payment_type === 'installments' || offer.payment_type === 'subscription'
-        ? dollarsToCents(offer.installment_amount || offer.price)
-        : dollarsToCents(
-          offer.pif_discount_enabled && offer.pif_price != null ? offer.pif_price : offer.price,
-        );
+      const recurring = billingPeriodDaysForOffer(offer);
+      const amount = offer.payment_type === 'installments' || offer.payment_type === 'subscription'
+        ? Number(offer.installment_amount || offer.price || 0)
+        : Number(offer.pif_discount_enabled && offer.pif_price != null ? offer.pif_price : offer.price || 0);
 
       let planId = offer.whop_plan_id || '';
       const planPayload: Record<string, unknown> = {
         company_id: row.company_id,
         product_id: productId,
+        plan_type: recurring ? 'renewal' : 'one_time',
+        release_method: 'buy_now',
         title: offer.offer_name,
         nickname: offer.offer_name,
         currency: 'usd',
-        amount: amountCents,
+        initial_price: amount,
+        renewal_price: recurring ? amount : null,
+        billing_period: recurring ? recurring.billingPeriodDays : null,
+        visibility: 'hidden',
+        unlimited_stock: true,
         metadata,
       };
       if (recurring) {
-        planPayload.billing_period = recurring.interval;
-        planPayload.billing_period_count = recurring.intervalCount;
-        if (recurring.totalCycles) planPayload.total_cycles = recurring.totalCycles;
+        if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
       }
 
       if (!planId) {
