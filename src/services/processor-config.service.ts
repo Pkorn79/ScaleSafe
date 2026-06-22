@@ -64,8 +64,25 @@ export const processorConfigService = {
   async createNmiConfig(input: CreateNmiConfigInput): Promise<ProcessorConfig> {
     const supabase = getSupabase();
 
+    const { data: existingConfigs, error: existingError } = await supabase
+      .from('processor_configs')
+      .select('id')
+      .eq('merchant_id', input.merchantId)
+      .eq('processor_type', 'nmi')
+      .eq('is_active', true);
+
+    if (existingError) {
+      throw new ProcessorError(
+        `Failed to inspect existing NMI configs: ${existingError.message}`,
+        'nmi',
+        existingError.code,
+      );
+    }
+
+    const shouldBeDefault = input.isDefault ?? ((existingConfigs || []).length === 0);
+
     // If this is set as default, clear other NMI defaults for this merchant
-    if (input.isDefault) {
+    if (shouldBeDefault) {
       await this.clearDefaults(input.merchantId, 'nmi');
     }
 
@@ -83,7 +100,7 @@ export const processorConfigService = {
         nmi_webhook_status: 'manual_setup_required',
         nmi_webhook_events: NMI_WEBHOOK_EVENTS,
         nmi_webhook_callback_url: nmiUnifiedWebhookCallbackUrl(),
-        is_default: input.isDefault ?? true,
+        is_default: shouldBeDefault,
       })
       .select('*')
       .single();

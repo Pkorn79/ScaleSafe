@@ -72,12 +72,51 @@
       <!-- NMI Connection -->
       <div class="card">
         <div class="flex-between mb-4">
-          <h3 class="section-title" style="margin-bottom:0">NMI</h3>
+          <div>
+            <h3 class="section-title" style="margin-bottom:0">NMI</h3>
+            <p class="text-sm text-muted mt-2">Add one or more NMI merchant accounts/MID routes. Each offer can use the default route or a specific named route.</p>
+          </div>
           <span v-if="nmiConnected" class="badge badge-green">Connected</span>
           <span v-else class="badge badge-gray">Not Connected</span>
         </div>
 
-        <div v-if="!nmiConnected">
+        <div v-if="nmiConfigs.length" class="nmi-route-list mb-4">
+          <div v-for="route in nmiConfigs" :key="route.id" class="nmi-route-row">
+            <div>
+              <div class="route-title">
+                {{ route.label }}
+                <span v-if="route.isDefault" class="badge badge-green">Default</span>
+              </div>
+              <p class="text-sm text-muted">
+                Processor ID: {{ route.nmiProcessorId || 'Gateway default' }}
+              </p>
+              <p class="text-sm text-muted">
+                Tokenization: {{ route.hasTokenizationKey ? 'configured' : 'missing' }} · Webhook: {{ route.webhookStatus.replace(/_/g, ' ') }}
+              </p>
+            </div>
+            <div class="route-actions">
+              <button v-if="!route.isDefault" class="btn btn-secondary btn-sm" @click="setDefaultNmiRoute(route.id)">
+                Make Default
+              </button>
+              <button class="btn btn-danger btn-sm" @click="deactivateNmiRoute(route)">
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="subsection-title mb-4">{{ nmiConnected ? 'Add NMI Route' : 'Connect NMI' }}</h4>
+          <div class="form-group">
+            <label class="form-label">Route Name</label>
+            <input
+              class="form-input"
+              v-model="nmiForm.label"
+              type="text"
+              placeholder="Example: Main MID, High Ticket MID, ACH MID"
+            />
+            <p class="text-sm text-muted mt-2">This name is only used inside ScaleSafe so offers can choose the right NMI route.</p>
+          </div>
           <div class="form-group">
             <label class="form-label">Security Key</label>
             <input
@@ -99,18 +138,22 @@
             <p class="text-sm text-muted mt-2">Found in NMI Dashboard > Settings > Collect.js</p>
           </div>
           <div class="form-group">
-            <label class="form-label">Processor ID (optional)</label>
+            <label class="form-label">Processor ID</label>
             <input
               class="form-input"
               v-model="nmiForm.processorId"
               type="text"
-              placeholder="For multi-MID routing"
+              placeholder="NMI processor_id for this MID route"
             />
-            <p class="text-sm text-muted mt-2">Only needed if you have multiple merchant accounts in NMI</p>
+            <p class="text-sm text-muted mt-2">Found in NMI Settings > Transaction Routing. Leave blank only for the gateway default route.</p>
           </div>
+          <label class="checkbox-row mb-4">
+            <input type="checkbox" v-model="nmiForm.isDefault" />
+            <span>Make this the default NMI route</span>
+          </label>
           <div class="flex gap-2">
             <button class="btn btn-primary" @click="connectNmi" :disabled="saving">
-              {{ saving ? 'Connecting...' : 'Connect NMI' }}
+              {{ saving ? 'Saving...' : (nmiConnected ? 'Add Route' : 'Connect NMI') }}
             </button>
             <button class="btn btn-secondary" @click="testNmiConnection" :disabled="testing">
               {{ testing ? 'Testing...' : 'Test Connection' }}
@@ -121,9 +164,7 @@
           </div>
         </div>
 
-        <div v-else>
-          <p class="text-sm text-muted">NMI account connected. Security key stored securely.</p>
-          <p v-if="nmiProcessorId" class="text-sm text-muted">Processor ID: {{ nmiProcessorId }}</p>
+        <div v-if="nmiConnected">
           <div class="webhook-panel mt-4">
             <div class="flex-between mb-2">
               <h4 class="subsection-title">Official NMI Webhook</h4>
@@ -176,7 +217,7 @@
             </template>
             <p v-else class="text-sm text-muted">Webhook setup values are not available yet.</p>
           </div>
-          <button class="btn btn-danger btn-sm mt-2" @click="disconnectNmi">Disconnect</button>
+          <button class="btn btn-danger btn-sm mt-2" @click="disconnectNmi">Disconnect All NMI Routes</button>
         </div>
       </div>
 
@@ -393,6 +434,19 @@ const stripeConnected = ref(false);
 const defaultProcessor = ref('');
 const stripeAccountId = ref('');
 const nmiProcessorId = ref('');
+const nmiConfigs = ref<Array<{
+  id: string;
+  label: string;
+  nmiProcessorId: string;
+  hasSecurityKey: boolean;
+  hasTokenizationKey: boolean;
+  isDefault: boolean;
+  webhookStatus: string;
+  webhookAdvancedCallbackUrl?: string | null;
+  webhookHasKey?: boolean;
+  lastVerifiedAt?: string | null;
+  createdAt?: string;
+}>>([]);
 const autoSubmit = ref(false);
 const saving = ref(false);
 const testing = ref(false);
@@ -453,9 +507,11 @@ const paymentFeatureSettings = [
 ];
 
 const nmiForm = ref({
+  label: '',
   securityKey: '',
   tokenizationKey: '',
   processorId: '',
+  isDefault: false,
 });
 
 onMounted(async () => {
@@ -471,8 +527,20 @@ async function loadProcessorStatus() {
     stripeAccountId.value = data.stripeUserId || '';
     nmiConnected.value = data.nmiConnected || false;
     nmiProcessorId.value = data.nmiProcessorId || '';
+    nmiConfigs.value = Array.isArray(data.nmiConfigs)
+      ? data.nmiConfigs.map((config: any) => ({
+        id: config.id || config.nmiProcessorId || '',
+        label: config.label || config.nmiProcessorId || 'NMI Account',
+        nmiProcessorId: config.nmiProcessorId || config.id || '',
+        hasSecurityKey: true,
+        hasTokenizationKey: true,
+        isDefault: !!config.isDefault,
+        webhookStatus: 'manual_setup_required',
+      }))
+      : [];
     defaultProcessor.value = data.defaultProcessor || '';
     await loadDualPricing();
+    await loadNmiConfigs();
 
     if (stripeConnected.value) {
       try {
@@ -555,19 +623,59 @@ async function connectNmi() {
   loadError.value = null;
   try {
     await api.post('/api/processor-config/nmi', {
+      label: nmiForm.value.label || undefined,
       securityKey: nmiForm.value.securityKey,
       tokenizationKey: nmiForm.value.tokenizationKey,
       processorId: nmiForm.value.processorId || undefined,
+      isDefault: nmiForm.value.isDefault || !nmiConnected.value,
     });
     nmiConnected.value = true;
     nmiProcessorId.value = nmiForm.value.processorId || '';
-    nmiForm.value = { securityKey: '', tokenizationKey: '', processorId: '' };
+    nmiForm.value = { label: '', securityKey: '', tokenizationKey: '', processorId: '', isDefault: false };
     nmiTestResult.value = null;
+    await loadNmiConfigs();
     await loadNmiWebhook();
   } catch (err: any) {
     loadError.value = err?.message || 'Failed to connect NMI';
   }
   saving.value = false;
+}
+
+async function loadNmiConfigs() {
+  try {
+    const result = await api.get<{ configs: typeof nmiConfigs.value }>('/api/processor-config/nmi');
+    nmiConfigs.value = Array.isArray(result.configs) ? result.configs : [];
+    nmiConnected.value = nmiConfigs.value.length > 0;
+    nmiProcessorId.value = nmiConfigs.value.find((config) => config.isDefault)?.nmiProcessorId || nmiConfigs.value[0]?.nmiProcessorId || '';
+  } catch {
+    nmiConfigs.value = [];
+    nmiConnected.value = false;
+    nmiProcessorId.value = '';
+  }
+}
+
+async function setDefaultNmiRoute(configId: string) {
+  loadError.value = null;
+  try {
+    await api.post(`/api/processor-config/nmi/${encodeURIComponent(configId)}/default`, {});
+    await loadNmiConfigs();
+    await loadNmiWebhook();
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to set default NMI route.';
+  }
+}
+
+async function deactivateNmiRoute(route: { id: string; label: string }) {
+  if (!confirm(`Remove NMI route "${route.label}"? Existing payments remain in ScaleSafe, but this route will no longer be selectable for new offers.`)) return;
+  loadError.value = null;
+  try {
+    await api.del(`/api/processor-config/nmi/${encodeURIComponent(route.id)}`);
+    await loadNmiConfigs();
+    if (nmiConnected.value) await loadNmiWebhook();
+    else nmiWebhook.value = null;
+  } catch (err: any) {
+    loadError.value = err?.message || 'Failed to remove NMI route.';
+  }
 }
 
 async function loadWhop() {
@@ -805,6 +913,7 @@ async function disconnectNmi() {
     await api.del('/api/processor-config/nmi');
     nmiConnected.value = false;
     nmiProcessorId.value = '';
+    nmiConfigs.value = [];
     nmiWebhook.value = null;
     if (defaultProcessor.value === 'nmi') defaultProcessor.value = '';
   } catch (err: any) {
@@ -856,6 +965,45 @@ async function saveAutoSubmit() {
 .webhook-panel {
   border-top: 1px solid #e5e7eb;
   padding-top: 16px;
+}
+
+.nmi-route-list {
+  display: grid;
+  gap: 10px;
+}
+
+.nmi-route-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.route-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #334155;
 }
 
 .stripe-ach-setup {

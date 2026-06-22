@@ -604,6 +604,14 @@ onMounted(async () => {
     const pc = await api.get<any>('/api/merchants/config');
     defaultProcessor.value = pc.defaultProcessor || '';
     stripeConnected.value = pc.stripeConnected || false;
+    nmiProcessorIds.value = Array.isArray(pc.nmiConfigs)
+      ? pc.nmiConfigs
+        .filter((config: any) => config.nmiProcessorId)
+        .map((config: any) => ({
+          id: config.nmiProcessorId,
+          label: `${config.label || config.nmiProcessorId}${config.isDefault ? ' (Default)' : ''}`,
+        }))
+      : [];
   } catch {
     // Processor config may not exist yet
   }

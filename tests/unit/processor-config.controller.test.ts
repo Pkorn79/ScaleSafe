@@ -144,7 +144,8 @@ describe('createNmi', () => {
     const PLAINTEXT_SECURITY = 'sk_live_super_secret_security_key';
     const TOKENIZATION = 'tok_pub_key';
 
-    // createNmiConfig: clearDefaults (update chain) then insert().select().single()
+    // createNmiConfig: inspect existing routes, clearDefaults, then insert().select().single()
+    const existingChain = query({ data: [] });
     const clearChain = query({ data: null });
     const insertChain = query({
       data: {
@@ -168,6 +169,7 @@ describe('createNmi', () => {
     });
 
     mockFrom
+      .mockReturnValueOnce(existingChain) // existing NMI route inspection
       .mockReturnValueOnce(clearChain) // clearDefaults update
       .mockReturnValueOnce(insertChain) // insert config
       .mockReturnValueOnce(webhookChain) // webhook select

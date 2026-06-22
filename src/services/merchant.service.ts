@@ -39,6 +39,7 @@ export interface MerchantFullConfig {
 
   nmiConnected: boolean;
   nmiProcessorId: string;
+  nmiConfigs: Array<{ id: string; label: string; nmiProcessorId: string; isDefault: boolean }>;
   defaultProcessor: '' | 'nmi' | 'stripe';
 
   tcHasOwn: boolean;
@@ -953,19 +954,27 @@ export const merchantService = {
     // the Settings page still loads).
     let nmiConnected = false;
     let nmiProcessorId = '';
+    let nmiConfigs: Array<{ id: string; label: string; nmiProcessorId: string; isDefault: boolean }> = [];
     try {
       const supabase = getSupabase();
-      const { data: nmiCfg } = await supabase
+      const { data: nmiCfgs } = await supabase
         .from('processor_configs')
-        .select('id, nmi_processor_id')
+        .select('id, label, nmi_processor_id, is_default')
         .eq('merchant_id', merchant.id)
         .eq('processor_type', 'nmi')
         .eq('is_active', true)
-        .eq('is_default', true)
-        .maybeSingle();
-      if (nmiCfg) {
+        .order('is_default', { ascending: false })
+        .order('label');
+      nmiConfigs = (nmiCfgs || []).map((config: any) => ({
+        id: config.nmi_processor_id || '',
+        label: config.label || config.nmi_processor_id || 'NMI Account',
+        nmiProcessorId: config.nmi_processor_id || '',
+        isDefault: !!config.is_default,
+      }));
+      const defaultNmi = (nmiCfgs || []).find((config: any) => config.is_default) || (nmiCfgs || [])[0];
+      if (defaultNmi) {
         nmiConnected = true;
-        nmiProcessorId = (nmiCfg as any).nmi_processor_id || '';
+        nmiProcessorId = (defaultNmi as any).nmi_processor_id || '';
       }
     } catch (err) {
       logger.warn({ err, locationId }, 'Failed to look up NMI processor config — defaulting to disconnected');
@@ -1004,6 +1013,7 @@ export const merchantService = {
 
       nmiConnected,
       nmiProcessorId,
+      nmiConfigs,
       defaultProcessor: ((merchant as any).default_processor || '') as '' | 'nmi' | 'stripe',
 
       tcHasOwn: gv('TC_HAS_OWN') === 'true' || (cfg as any).tc_has_own === true,

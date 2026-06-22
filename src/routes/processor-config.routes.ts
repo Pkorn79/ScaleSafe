@@ -9,8 +9,11 @@ const router = Router();
 
 router.use(ssoAuth, requireTenant);
 
+router.get('/nmi', processorConfigController.listNmi);
 router.post('/nmi', processorConfigController.createNmi);
 router.post('/nmi/test', processorConfigController.testNmi);
+router.post('/nmi/:id/default', processorConfigController.setDefaultNmi);
+router.delete('/nmi/:id', processorConfigController.deactivateNmi);
 router.get('/nmi/webhook', processorConfigController.getNmiWebhook);
 router.post('/nmi/webhook/key', processorConfigController.saveNmiWebhookKey);
 router.delete('/nmi', processorConfigController.disconnectNmi);

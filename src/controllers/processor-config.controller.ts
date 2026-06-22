@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { processorConfigService } from '../services/processor-config.service';
+import { processorConfigService, nmiWebhookCallbackUrl } from '../services/processor-config.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
@@ -19,13 +19,41 @@ import { logger } from '../utils/logger';
  * to choose which rail handles a given charge (with offer-level override support).
  */
 export const processorConfigController = {
+  async listNmi(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const merchant = await merchantRepository.getByLocationId(locationId);
+      const configs = await processorConfigService.listConfigs(merchant.id);
+      const nmiConfigs = configs
+        .filter((config) => config.processor_type === 'nmi' && config.is_active)
+        .map((config) => ({
+          id: config.id,
+          label: config.label || 'NMI Account',
+          nmiProcessorId: config.nmi_processor_id || '',
+          hasSecurityKey: !!config.nmi_security_key_encrypted,
+          hasTokenizationKey: !!config.nmi_tokenization_key,
+          isDefault: !!config.is_default,
+          webhookStatus: config.nmi_webhook_status || 'manual_setup_required',
+          webhookCallbackUrl: config.nmi_webhook_callback_url || null,
+          webhookAdvancedCallbackUrl: nmiWebhookCallbackUrl(config.id),
+          webhookHasKey: !!config.nmi_webhook_secret_encrypted,
+          lastVerifiedAt: config.last_verified_at || null,
+          createdAt: config.created_at,
+        }));
+
+      res.json({ configs: nmiConfigs });
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/processor-config/nmi — store NMI credentials for this merchant */
   async createNmi(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const { securityKey, tokenizationKey, processorId } = req.body || {};
+      const { label, securityKey, tokenizationKey, processorId, isDefault } = req.body || {};
       if (!securityKey || !tokenizationKey) {
         throw new ValidationError('securityKey and tokenizationKey are required');
       }
@@ -37,18 +65,25 @@ export const processorConfigController = {
       const config = await processorConfigService.createNmiConfig({
         merchantId: merchant.id,
         locationId,
+        label: typeof label === 'string' && label.trim() ? label.trim() : undefined,
         securityKey,
         tokenizationKey,
         processorId: typeof processorId === 'string' && processorId ? processorId : undefined,
-        isDefault: true, // first NMI config is default; setDefaultProcessor endpoint can change later
+        isDefault: typeof isDefault === 'boolean' ? isDefault : undefined,
       });
 
       logger.info({ merchantId: merchant.id, locationId, configId: config.id }, 'NMI config created via Settings');
-      const webhook = await processorConfigService.getOrCreateNmiWebhookConfig(locationId);
+      let webhook = null;
+      try {
+        webhook = await processorConfigService.getOrCreateNmiWebhookConfig(locationId);
+      } catch (webhookErr: any) {
+        logger.warn({ err: webhookErr?.message, merchantId: merchant.id, locationId, configId: config.id }, 'NMI webhook setup lookup failed after config save');
+      }
 
       // Don't echo the encrypted security key back to the client
       res.json({
         id: config.id,
+        label: config.label,
         processor_type: config.processor_type,
         nmi_processor_id: config.nmi_processor_id,
         is_default: config.is_default,
@@ -60,6 +95,85 @@ export const processorConfigController = {
   },
 
   /** GET /api/processor-config/nmi/webhook — setup values for NMI official webhooks */
+  async setDefaultNmi(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { id } = req.params;
+      if (!id) throw new ValidationError('NMI config id required');
+
+      const merchant = await merchantRepository.getByLocationId(locationId);
+      const supabase = getSupabase();
+      const { data: config, error } = await supabase
+        .from('processor_configs')
+        .select('id')
+        .eq('id', id)
+        .eq('merchant_id', merchant.id)
+        .eq('location_id', locationId)
+        .eq('processor_type', 'nmi')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error || !config) {
+        throw new ValidationError('NMI route not found for this merchant.');
+      }
+
+      await processorConfigService.setDefault(id);
+      logger.info({ merchantId: merchant.id, locationId, configId: id }, 'Default NMI route set');
+      res.json({ success: true });
+    } catch (err) { next(err); }
+  },
+
+  async deactivateNmi(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { id } = req.params;
+      if (!id) throw new ValidationError('NMI config id required');
+
+      const merchant = await merchantRepository.getByLocationId(locationId);
+      const supabase = getSupabase();
+      const { data: config, error } = await supabase
+        .from('processor_configs')
+        .select('id, is_default')
+        .eq('id', id)
+        .eq('merchant_id', merchant.id)
+        .eq('location_id', locationId)
+        .eq('processor_type', 'nmi')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error || !config) {
+        throw new ValidationError('NMI route not found for this merchant.');
+      }
+
+      await processorConfigService.deactivate(id);
+
+      if ((config as any).is_default) {
+        const { data: fallback } = await supabase
+          .from('processor_configs')
+          .select('id')
+          .eq('merchant_id', merchant.id)
+          .eq('location_id', locationId)
+          .eq('processor_type', 'nmi')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+
+        if (fallback?.id) {
+          await processorConfigService.setDefault(fallback.id);
+        } else if ((merchant as any).default_processor === 'nmi') {
+          await supabase.from('merchants')
+            .update({ default_processor: null })
+            .eq('id', merchant.id);
+        }
+      }
+
+      logger.info({ merchantId: merchant.id, locationId, configId: id }, 'NMI route deactivated');
+      res.json({ success: true });
+    } catch (err) { next(err); }
+  },
+
   async getNmiWebhook(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);
