@@ -213,7 +213,7 @@ function selectProcessorCard(methods: any[], processor?: string | null) {
   return selectProcessorPaymentMethod(methods, processor);
 }
 
-const PAID_PAYMENT_EVENT_TYPES = new Set(['sale', 'subscription_payment', 'capture']);
+const PAID_PAYMENT_EVENT_TYPES = new Set(['sale', 'payment_success', 'subscription_payment', 'capture']);
 
 function isPaidPaymentEvent(event: any): boolean {
   const type = String(event?.event_type || '').toLowerCase();
@@ -633,7 +633,7 @@ export const dashboardController = {
       for (const ev of paymentEvents) {
         const amt = Number(ev.amount) || 0;
         if (ev.event_type === 'refund') totalRefunded += amt;
-        else if (ev.event_type === 'sale') totalCharged += amt;
+        else if (['sale', 'payment_success', 'subscription_payment', 'capture'].includes(String(ev.event_type || '').toLowerCase())) totalCharged += amt;
         if (ev.created_at && (!lastPaymentDate || ev.created_at > lastPaymentDate)) lastPaymentDate = ev.created_at;
       }
 

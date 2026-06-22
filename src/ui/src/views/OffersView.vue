@@ -34,7 +34,7 @@
       class="mb-4"
     />
 
-    <div class="card offer-settings-preview">
+    <div v-if="offerFeatureSettings.length > 0" class="card offer-settings-preview">
       <div class="flex-between mb-4">
         <div>
           <h3 class="section-title" style="margin-bottom:4px">Offer Settings Preview</h3>
@@ -193,7 +193,8 @@ const offerTabs = computed(() => [
   { key: 'active', label: 'Active', count: activeOffers.value.length },
   { key: 'archived', label: 'Archived', count: archivedOffers.value.length },
 ]);
-const offerFeatureSettings = getFeaturesByArea('offers');
+const offerFeatureSettings = getFeaturesByArea('offers')
+  .filter(feature => !['checkout-upsells', 'source-closer-tracking'].includes(feature.id));
 
 // Send link modal state
 const showSendModal = ref(false);

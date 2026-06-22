@@ -88,6 +88,7 @@
           </div>
           <div class="text-sm text-muted mt-1">
             <span v-if="enr.cardOnFile">Payment method: {{ enr.cardOnFile.displayLabel }}</span>
+            <span v-else-if="String(enr.processorType || '').toLowerCase() === 'whop'">Payment method: Whop checkout</span>
             <span v-else>Payment method: not linked to this processor</span>
             <span v-if="enr.cardOnFile?.detailLabel"> - {{ enr.cardOnFile.detailLabel }}</span>
           </div>

@@ -83,7 +83,7 @@ function paymentMethodDetail(method: any) {
   return pieces.join(' - ');
 }
 
-const REFUNDABLE_EVENT_TYPES = new Set(['sale', 'subscription_payment', 'capture']);
+const REFUNDABLE_EVENT_TYPES = new Set(['sale', 'payment_success', 'subscription_payment', 'capture']);
 
 function dollarsToCents(value: number): number {
   return Math.round(Number(value || 0) * 100);
@@ -290,7 +290,7 @@ export async function searchCustomers(req: Request, res: Response, next: NextFun
       if (!totals[ev.contact_id]) continue;
       if (ev.event_type === 'refund') {
         totals[ev.contact_id].refunded += Number(ev.amount) || 0;
-      } else if (ev.event_type === 'sale') {
+      } else if (['sale', 'payment_success', 'subscription_payment', 'capture'].includes(String(ev.event_type || '').toLowerCase())) {
         totals[ev.contact_id].charged += Number(ev.amount) || 0;
       }
       // Track most recent payment date

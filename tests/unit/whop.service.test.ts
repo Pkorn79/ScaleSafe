@@ -229,6 +229,10 @@ describe('whopService.createCheckoutSession', () => {
         selectedAmountCents: 320,
         addonAmountCents: 100,
         futureRecurringSelectedAmountCents: 220,
+        lineItems: [
+          { kind: 'base_offer', title: 'Whop Offer', amount: 2.2 },
+          { kind: 'pre_payment_upsell', title: 'Upgrade', amount: 1 },
+        ],
       } as any,
     });
 
@@ -247,6 +251,10 @@ describe('whopService.createCheckoutSession', () => {
         due_today_amount: 3.2,
         one_time_addon_amount: 1,
         future_recurring_amount: 2.2,
+        line_items: JSON.stringify([
+          { kind: 'base_offer', title: 'Whop Offer', amount: 2.2 },
+          { kind: 'pre_payment_upsell', title: 'Upgrade', amount: 1 },
+        ]),
       }),
     }));
   });

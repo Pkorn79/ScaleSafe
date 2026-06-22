@@ -252,6 +252,7 @@ function eventTypeLabel(value: unknown): string {
   const raw = String(value || '').toLowerCase();
   const labels: Record<string, string> = {
     sale: 'Charge',
+    payment_success: 'Charge',
     subscription_payment: 'Subscription payment',
     payment_failed: 'Failed payment',
     refund: 'Refund',
@@ -403,7 +404,7 @@ function buildPaymentEventsQuery(
   const status = String(filters.status || '').toLowerCase();
   if (status === 'failed') query = query.eq('event_type', 'payment_failed');
   if (status === 'refunded') query = query.eq('event_type', 'refund');
-  if (status === 'paid') query = query.in('event_type', ['sale', 'subscription_payment', 'capture']);
+  if (status === 'paid') query = query.in('event_type', ['sale', 'payment_success', 'subscription_payment', 'capture']);
 
   return query;
 }
@@ -574,7 +575,7 @@ function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, off
     processorSubscriptionId: event.processor_subscription_id || linkedEnrollment?.processor_subscription_id || null,
     description: `${programName} - ${typeLabel}${progress}`,
     lineItems: normalizeLineItems(event.line_items),
-    refundable: ['sale', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
+    refundable: ['sale', 'payment_success', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
     dunningStatus: event.dunning_status || null,
     dunningRetryCount: event.dunning_retry_count || 0,
     dunningNextRetry: event.dunning_next_retry || null,

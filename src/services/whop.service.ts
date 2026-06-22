@@ -253,6 +253,7 @@ export const whopService = {
           due_today_amount: quote?.selectedAmount || 0,
           one_time_addon_amount: centsToDollars(addonCents),
           future_recurring_amount: centsToDollars(futureRecurringCents),
+          line_items: JSON.stringify(quote?.lineItems || []),
         },
       };
       if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
@@ -273,6 +274,7 @@ export const whopService = {
           selected_amount: quote.selectedAmount,
           one_time_addon_amount: centsToDollars(addonCents),
           future_recurring_amount: centsToDollars(futureRecurringCents),
+          line_items: JSON.stringify(quote.lineItems || []),
         } : {}),
       },
       redirect_url: redirectUrl,

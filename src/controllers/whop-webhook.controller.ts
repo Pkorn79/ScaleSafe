@@ -9,6 +9,7 @@ import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
+import { paymentEventRepository } from '../repositories/paymentEvent.repository';
 
 function firstString(...values: any[]): string {
   for (const value of values) {
@@ -33,6 +34,32 @@ function metadata(payload: any): Record<string, any> {
     || b?.checkout_session?.metadata
     || b?.checkoutSession?.metadata
     || {};
+}
+
+function parseLineItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function lineItems(payload: any, enrollment?: any): unknown[] {
+  const meta = metadata(payload);
+  const b = body(payload);
+  const parsed = [
+    ...parseLineItems(meta.line_items),
+    ...parseLineItems(meta.lineItems),
+    ...parseLineItems(b?.line_items),
+    ...parseLineItems(b?.lineItems),
+  ];
+  if (parsed.length > 0) return parsed;
+  return parseLineItems(enrollment?.selected_checkout_items);
 }
 
 function amountCents(payload: any): number {
@@ -172,6 +199,7 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
   const email = firstString(b?.customer?.email, b?.email, b?.payer_email, meta.email);
   const contactId = firstString(meta.contact_id, b?.customer?.metadata?.contact_id);
   const amount = amountCents(payload) / 100;
+  const selectedItems = lineItems(payload);
   const { data, error } = await getSupabase()
     .from('enrollments')
     .insert({
@@ -188,6 +216,7 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
       payment_amount: amount,
       payment_type: paymentTypeForOffer(offer),
       payments_total: paymentsTotalForOffer(offer),
+      selected_checkout_items: selectedItems,
     } as any)
     .select('*')
     .single();
@@ -195,18 +224,83 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
   return data;
 }
 
+async function findPaidPaymentEvent(locationId: string, enrollmentId: string, txnId?: string): Promise<any | null> {
+  let query = getSupabase()
+    .from('payment_events')
+    .select('id, event_type, processor_transaction_id')
+    .eq('location_id', locationId)
+    .eq('enrollment_id', enrollmentId)
+    .eq('processor', 'whop')
+    .in('event_type', ['sale', 'payment_success', 'subscription_payment', 'capture'])
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (txnId) query = query.eq('processor_transaction_id', txnId);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function recordInitialWhopSale(input: {
+  payload: any;
+  locationId: string;
+  merchantId: string;
+  enrollment: any;
+  offer: any;
+  txnId: string;
+  amount: number;
+  lineItems: unknown[];
+}): Promise<void> {
+  const paymentsTotal = paymentsTotalForOffer(input.offer);
+  const paymentsRemaining = paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1);
+  const record = {
+    merchant_id: input.enrollment.merchant_id || input.merchantId,
+    location_id: input.locationId,
+    contact_id: input.enrollment.contact_id || firstString(metadata(input.payload).contact_id),
+    enrollment_id: input.enrollment.id,
+    offer_id: input.enrollment.offer_id,
+    event_type: 'sale',
+    processor: 'whop',
+    processor_transaction_id: input.txnId,
+    processor_subscription_id: membershipId(input.payload) || input.enrollment.processor_subscription_id || input.enrollment.whop_membership_id || null,
+    amount: input.amount,
+    currency: 'usd',
+    payment_number: 1,
+    payments_total: paymentsTotal,
+    payments_remaining: paymentsRemaining,
+    source: 'whop_webhook',
+    is_recurring: false,
+    raw_webhook_payload: input.payload,
+    line_items: input.lineItems,
+  } as const;
+
+  const existing = await paymentEventRepository.findByTransactionId('whop', input.txnId, input.locationId);
+  if (existing?.id) {
+    const { error } = await getSupabase()
+      .from('payment_events')
+      .update({
+        ...record,
+        event_type: 'sale',
+      } as any)
+      .eq('id', existing.id);
+    if (error) throw error;
+    return;
+  }
+
+  await paymentEventRepository.create(record);
+}
+
 async function handlePaymentSucceeded(payload: any, locationId: string, merchantId: string): Promise<void> {
   const txnId = paymentId(payload);
   const duplicatePayment = txnId
     ? await getSupabase()
       .from('payment_events')
-      .select('id')
+      .select('id, event_type')
       .eq('location_id', locationId)
       .eq('processor', 'whop')
       .eq('processor_transaction_id', txnId)
       .maybeSingle()
     : null;
-  if (duplicatePayment?.data?.id) {
+  if (duplicatePayment?.data?.id && String(duplicatePayment.data.event_type || '').toLowerCase() === 'sale') {
     logger.info({ locationId, txnId }, 'Whop payment webhook duplicate ignored by transaction ID');
     return;
   }
@@ -222,6 +316,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
     ? await offerRepository.findById(enrollment.offer_id, locationId)
     : null;
   const amount = amountCents(payload);
+  const selectedLineItems = lineItems(payload, enrollment);
   const b = body(payload);
   await getSupabase()
     .from('enrollments')
@@ -232,9 +327,62 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
       processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
       whop_setup_intent_id: firstString(b?.setup_intent_id, b?.setupIntentId) || enrollment.whop_setup_intent_id || null,
+      ...(selectedLineItems.length > 0 ? { selected_checkout_items: selectedLineItems } : {}),
     } as any)
     .eq('id', enrollment.id)
     .eq('location_id', locationId);
+
+  const existingPaidEvent = await findPaidPaymentEvent(locationId, enrollment.id, txnId);
+  const meta = metadata(payload);
+  const isCheckoutPayment = Boolean(
+    meta.checkout_mode
+    || meta.checkoutMode
+    || meta.checkout_session_id
+    || meta.checkoutSessionId
+    || meta.due_today_amount
+    || meta.selected_amount
+    || selectedLineItems.length > 0,
+  );
+
+  if (isCheckoutPayment) {
+    if (enrollment.status !== 'enrolled') {
+      await phase2EnrollmentService.completeEnrollment({
+        enrollmentId: enrollment.id,
+        locationId,
+        contactId: enrollment.contact_id || firstString(metadata(payload).contact_id),
+        contactEmail: enrollment.email || firstString(b?.customer?.email, b?.email),
+        paymentAmount: amount / 100,
+        paymentType: paymentTypeForOffer(offer),
+        transactionId: txnId || `whop_${Date.now()}`,
+        paymentsTotal: paymentsTotalForOffer(offer),
+        processorType: 'whop',
+        paymentSource: 'whop_webhook',
+        skipPaymentEvent: true,
+      });
+    }
+    const { data: refreshed } = await getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('id', enrollment.id)
+      .eq('location_id', locationId)
+      .maybeSingle();
+    await recordInitialWhopSale({
+      payload,
+      locationId,
+      merchantId,
+      enrollment: refreshed || enrollment,
+      offer,
+      txnId: txnId || `whop_${Date.now()}`,
+      amount: amount / 100,
+      lineItems: selectedLineItems,
+    });
+    return;
+  }
+
+  if (existingPaidEvent?.id) {
+    logger.info({ locationId, txnId, enrollmentId: enrollment.id }, 'Whop non-checkout payment duplicate ignored');
+    return;
+  }
 
   if (enrollment.status !== 'enrolled') {
     await phase2EnrollmentService.completeEnrollment({
