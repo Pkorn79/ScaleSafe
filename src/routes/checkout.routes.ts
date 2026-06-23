@@ -1055,6 +1055,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           renderWhopCheckout(el('cust-name').value.trim(), el('cust-email').value.trim()).catch(function(err) {
             el('error-msg').textContent = err.message || 'Could not load Whop checkout.';
             el('error-msg').style.display = 'block';
+            el('pay-btn').classList.remove('hidden');
+            el('pay-btn').textContent = 'Retry Whop checkout';
+            updatePayBtn();
           });
         }, 0);
       }

@@ -258,4 +258,52 @@ describe('whopService.createCheckoutSession', () => {
       }),
     }));
   });
+
+  it('uses the synced Whop renewal plan when there are no one-time add-ons', async () => {
+    const post = jest.fn().mockResolvedValue({
+      data: {
+        id: 'ch_123',
+        purchase_url: 'https://whop.com/checkout/plan_123?session=ch_123',
+      },
+    });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    const session = await whopService.createCheckoutSession({
+      locationId: 'loc-1',
+      offer: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Whop Offer',
+        payment_type: 'installments',
+        installment_frequency: 'weekly',
+        num_payments: 5,
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_123',
+      } as any,
+      enrollmentId: 'enroll-1',
+      contactId: 'contact-1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client Example',
+      consentToken: 'consent-1',
+      checkoutMode: 'full_enrollment',
+      quote: {
+        selectedAmount: 2.2,
+        selectedAmountCents: 220,
+        addonAmountCents: 0,
+        futureRecurringSelectedAmountCents: 220,
+        lineItems: [
+          { kind: 'base_offer', title: 'Whop Offer', amount: 2.2 },
+        ],
+      } as any,
+    });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/checkout_configurations', expect.objectContaining({
+      plan_id: 'plan_123',
+    }));
+    expect(session).toEqual(expect.objectContaining({
+      sessionId: 'ch_123',
+      planId: 'plan_123',
+    }));
+  });
 });

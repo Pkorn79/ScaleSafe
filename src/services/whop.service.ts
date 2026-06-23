@@ -227,7 +227,9 @@ export const whopService = {
     const recurring = billingPeriodDaysForOffer(input.offer);
     const addonCents = quote?.addonAmountCents || 0;
     const futureRecurringCents = quote?.futureRecurringSelectedAmountCents || 0;
-    const needsSessionPlan = Boolean(recurring && quote && (addonCents > 0 || futureRecurringCents > 0));
+    // Use the offer's synced Whop plan for normal recurring checkouts. Only create a
+    // checkout-specific hidden plan when one-time add-ons/upsells need an initial fee.
+    const needsSessionPlan = Boolean(recurring && quote && addonCents > 0);
     let planId = input.offer.whop_plan_id;
 
     if (needsSessionPlan && recurring) {
