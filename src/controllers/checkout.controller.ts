@@ -58,6 +58,67 @@ function getClientIp(req: Request): string {
     || '';
 }
 
+function moneyDisplayFromCents(amountCents: number): string {
+  return `$${(Number(amountCents || 0) / 100).toFixed(2)}`;
+}
+
+async function fireCheckoutPaymentFailedTrigger(params: {
+  locationId: string;
+  contactId: string;
+  enrollmentId?: string | null;
+  offerId?: string | null;
+  programName?: string | null;
+  amountCents: number;
+  failureReason?: string | null;
+  transactionId?: string | null;
+  paymentSource: string;
+}): Promise<void> {
+  if (!params.contactId) {
+    logger.warn(
+      { locationId: params.locationId, offerId: params.offerId, transactionId: params.transactionId },
+      'Payment failed but no contact id was available for the failed-payment workflow',
+    );
+    return;
+  }
+
+  try {
+    const amountDisplay = moneyDisplayFromCents(params.amountCents);
+    await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
+      event_type: 'payment_failed',
+      location_id: params.locationId,
+      locationId: params.locationId,
+      contact_id: params.contactId,
+      contactId: params.contactId,
+      enrollment_id: params.enrollmentId || '',
+      enrollmentId: params.enrollmentId || '',
+      offer_id: params.offerId || '',
+      offerId: params.offerId || '',
+      program_name: params.programName || '',
+      programName: params.programName || '',
+      amount: Number((params.amountCents / 100).toFixed(2)),
+      amount_display: amountDisplay,
+      amountDisplay,
+      failure_reason: params.failureReason || 'Payment failed',
+      failureReason: params.failureReason || 'Payment failed',
+      attempt_count: 1,
+      attemptCount: 1,
+      next_retry_date: 'none',
+      nextRetryDate: 'none',
+      dunning_stage: 'initial',
+      dunningStage: 'initial',
+      payment_source: params.paymentSource,
+      paymentSource: params.paymentSource,
+      transaction_id: params.transactionId || '',
+      transactionId: params.transactionId || '',
+    });
+  } catch (err: any) {
+    logger.warn(
+      { err: err?.message || String(err), contactId: params.contactId, locationId: params.locationId },
+      'Failed-payment workflow trigger failed',
+    );
+  }
+}
+
 const inFlightCheckoutPayments = new Set<string>();
 
 function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
@@ -737,7 +798,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     // Log payment event
     const enrollmentLookup = consentToken
-      ? await supabase.from('enrollments').select('id, offer_id').eq('consent_token', consentToken).single()
+      ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('consent_token', consentToken).single()
       : null;
 
     await supabase.from('payment_events').insert({
@@ -764,6 +825,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       is_recurring: false,
       line_items: cartQuote?.lineItems || [],
     });
+
+    if (!result.success) {
+      const failedContactId = contactId
+        || enrollmentLookup?.data?.contact_id
+        || (contactEmail ? await findExistingContactIdByEmail(merchant.locationId, contactEmail) : '');
+      await fireCheckoutPaymentFailedTrigger({
+        locationId: merchant.locationId,
+        contactId: failedContactId,
+        enrollmentId: enrollmentLookup?.data?.id || null,
+        offerId: enrollmentLookup?.data?.offer_id || offerId || null,
+        programName: productDetails?.[0]?.name || '',
+        amountCents: amount,
+        failureReason: result.errorMessage || null,
+        transactionId: result.transactionId || result.chargeId || null,
+        paymentSource: 'checkout',
+      });
+    }
 
     // ─── Complete enrollment + create GHL records ──────
     logger.info({ hasConsent: !!consentToken, paymentSuccess: result.success, paymentProcessing }, 'POST-PAYMENT: checking enrollment completion eligibility');

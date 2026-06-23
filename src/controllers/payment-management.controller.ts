@@ -9,6 +9,7 @@ import { nmiRecurringRepairService } from '../services/nmi-recurring-repair.serv
 import { nmiRecurringSyncService } from '../services/nmi-recurring-sync.service';
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
+import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
 
@@ -81,6 +82,50 @@ function paymentMethodDetail(method: any) {
   if (method.processor_type === 'stripe' && method.stripe_payment_method_id) pieces.push(`Stripe PM ${method.stripe_payment_method_id}`);
   else if (method.processor_type === 'stripe' && method.stripe_customer_id) pieces.push(`Stripe customer ${method.stripe_customer_id}`);
   return pieces.join(' - ');
+}
+
+function formatMoney(value: unknown): string {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? `$${amount.toFixed(2)}` : String(value || '');
+}
+
+async function fireManualChargeFailedTrigger(params: {
+  locationId: string;
+  contactId: string;
+  amount: number;
+  failureReason?: string | null;
+  transactionId?: string | null;
+}): Promise<void> {
+  try {
+    const amountDisplay = formatMoney(params.amount);
+    await triggerService.fireTrigger(params.locationId, 'ss_payment_failed', {
+      event_type: 'payment_failed',
+      location_id: params.locationId,
+      locationId: params.locationId,
+      contact_id: params.contactId,
+      contactId: params.contactId,
+      amount: params.amount,
+      amount_display: amountDisplay,
+      amountDisplay,
+      failure_reason: params.failureReason || 'Manual saved-card charge failed',
+      failureReason: params.failureReason || 'Manual saved-card charge failed',
+      attempt_count: 1,
+      attemptCount: 1,
+      next_retry_date: 'none',
+      nextRetryDate: 'none',
+      dunning_stage: 'initial',
+      dunningStage: 'initial',
+      payment_source: 'manual_charge',
+      paymentSource: 'manual_charge',
+      transaction_id: params.transactionId || '',
+      transactionId: params.transactionId || '',
+    });
+  } catch (err: any) {
+    logger.warn(
+      { err: err?.message || String(err), contactId: params.contactId, locationId: params.locationId },
+      'Manual saved-card failed-payment trigger failed',
+    );
+  }
 }
 
 const REFUNDABLE_EVENT_TYPES = new Set(['sale', 'payment_success', 'subscription_payment', 'capture']);
@@ -686,13 +731,44 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
     // charge() with a vault id in paymentToken; the latter fails on both NMI and Stripe.
     const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
     const storedPaymentMethodId = method.stripe_payment_method_id || method.nmi_customer_vault_id || '';
-    const result = await processor.chargeStoredCard(customerId, storedPaymentMethodId, {
-      amount: Math.round(amount * 100),
-      currency: 'usd',
-      paymentToken: storedPaymentMethodId,
-      description: description || 'One-time charge',
-      metadata: { contact_id: contactId, source: 'payment_management' },
-    });
+    let result: any;
+    try {
+      result = await processor.chargeStoredCard(customerId, storedPaymentMethodId, {
+        amount: Math.round(amount * 100),
+        currency: 'usd',
+        paymentToken: storedPaymentMethodId,
+        description: description || 'One-time charge',
+        metadata: { contact_id: contactId, source: 'payment_management' },
+      });
+    } catch (err: any) {
+      const message = err?.message || 'Saved payment method charge failed';
+      logger.warn(
+        { err: message, contactId, locationId, processor: procConfig.processor_type },
+        'Manual saved-card charge failed before processor approval',
+      );
+      await supabase.from('payment_events').insert({
+        merchant_id: merchantId,
+        location_id: locationId,
+        contact_id: contactId,
+        event_type: 'payment_failed',
+        processor: procConfig.processor_type,
+        processor_transaction_id: null,
+        amount,
+        currency: 'usd',
+        payment_status: 'failed',
+        failure_reason: message,
+        source: 'manual_charge',
+        is_recurring: false,
+      });
+      await fireManualChargeFailedTrigger({
+        locationId,
+        contactId,
+        amount,
+        failureReason: message,
+      });
+      res.status(402).json({ success: false, error: message });
+      return;
+    }
 
     // Log payment event
     await supabase.from('payment_events').insert({
@@ -704,10 +780,21 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
       processor_transaction_id: result.transactionId,
       amount,
       currency: 'usd',
+      payment_status: result.success ? 'succeeded' : 'failed',
       failure_reason: result.errorMessage || null,
       source: 'manual_charge',
       is_recurring: false,
     });
+
+    if (!result.success) {
+      await fireManualChargeFailedTrigger({
+        locationId,
+        contactId,
+        amount,
+        failureReason: result.errorMessage || 'Saved payment method charge failed',
+        transactionId: result.transactionId,
+      });
+    }
 
     logger.info({ contactId, amount, success: result.success }, 'Manual charge processed');
     res.json({ success: result.success, chargeId: result.chargeId || result.transactionId, error: result.errorMessage });

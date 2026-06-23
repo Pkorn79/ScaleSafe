@@ -211,6 +211,9 @@ export const defenseService = {
   async runCompilation(defenseId: string, input: CompileDefenseInput, category: string): Promise<void> {
     await defenseRepository.updateStatus(defenseId, 'processing');
     const supabase = getSupabase();
+    const processor: 'stripe' | 'nmi' = input.processor || (input.disputeEventId ? 'stripe' : 'nmi');
+    const addressee = input.addressee
+      || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
 
     // 1. Build the single-source-of-truth exhibit list (used by BOTH the prompt AND the PDF bundler)
     // When an enrollmentId is available (from the transaction selector), scope exhibits to that enrollment.
@@ -251,8 +254,49 @@ export const defenseService = {
       input, contactDetails, merchant, exhibitList, undisputedPayments, category,
     );
 
-    // 8. Call Claude API
-    const result = await callClaude(systemPrompt, userMessage, 8192);
+    // 8. Call Claude API. If the AI provider is unavailable, still produce a factual
+    // fallback packet so the merchant is not left with no letter and no workflow.
+    let result: { text: string; inputTokens: number; outputTokens: number };
+    let modelUsed = 'claude';
+    try {
+      result = await callClaude(systemPrompt, userMessage, 8192);
+    } catch (err: any) {
+      modelUsed = 'fallback';
+      const merchantName = String((merchant as any)?.business_name || 'the merchant');
+      const clientName = String((contactDetails as any)?.firstName || (contactDetails as any)?.first_name || (contactDetails as any)?.name || 'the client');
+      const amount = Number(input.disputeAmount || 0);
+      const exhibitCount = exhibitList.exhibits.length;
+      logger.warn(
+        { err: err?.message || String(err), defenseId },
+        'AI defense letter generation failed; using deterministic fallback letter',
+      );
+      result = {
+        inputTokens: 0,
+        outputTokens: 0,
+        text: [
+          `${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+          '',
+          `${addressee}`,
+          '',
+          `RE: Chargeback Dispute Response${input.caseNumber ? ` Case Number: ${input.caseNumber}` : ''}`,
+          `Reason Code: ${input.reasonCode}`,
+          `Disputed Amount: $${amount.toFixed(2)}`,
+          `Merchant: ${merchantName}`,
+          '',
+          `${merchantName} responds to the dispute filed by ${clientName}. This response summarizes the evidence currently available in ScaleSafe.`,
+          '',
+          'EVIDENCE SUMMARY',
+          `ScaleSafe found ${exhibitCount} evidence record(s) associated with this client and transaction context.`,
+          'Available evidence may include signed consent records, payment records, delivery/milestone records, communications, refunds, and cancellation history depending on what has been captured for this client.',
+          '',
+          'NEXT STEP',
+          'Review the attached exhibits and edit this fallback letter before submission. The AI draft service was temporarily unavailable, so ScaleSafe generated this factual fallback packet to keep the defense workflow moving.',
+          '',
+          'Respectfully submitted,',
+          merchantName,
+        ].join('\n'),
+      };
+    }
 
     // 9. Write the letter to defense_letter_versions as version 1 and mirror to the fast-read column
     try {
@@ -260,8 +304,8 @@ export const defenseService = {
         defense_packet_id: defenseId,
         version_number: 1,
         letter_text: result.text,
-        generated_by: 'ai',
-        model_used: 'claude',
+        generated_by: modelUsed === 'fallback' ? 'system' : 'ai',
+        model_used: modelUsed,
         prompt_tokens_used: result.inputTokens,
         response_tokens_used: result.outputTokens,
       });

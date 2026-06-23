@@ -23,6 +23,17 @@ function today(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+function plainText(value: unknown, fallback = ''): string {
+  if (value == null) return fallback;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function fireTriggerInBackground(
   locationId: string,
   triggerKey: string,
@@ -502,6 +513,7 @@ export const paymentLifecycleService = {
    * Pause a subscription. Logs evidence, fires trigger, updates GHL.
    */
   async pauseSubscription(params: SubscriptionParams): Promise<void> {
+    const pauseReason = plainText(params.reason, 'Merchant-initiated pause');
     // Pause via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
       try {
@@ -534,14 +546,14 @@ export const paymentLifecycleService = {
       {
         action: 'pause',
         change_date: new Date().toISOString(),
-        reason: params.reason,
+        reason: pauseReason,
         initiated_by: 'merchant',
         previous_status: 'enrolled',
         new_status: 'paused',
         enrollment_id: params.enrollmentId || null,
         raw_payload: params as any,
         ...buildDefenseEvidenceFields({
-          summary: `Merchant paused the subscription. Reason: ${params.reason || 'not specified'}. Future billing was paused with enrollment status moved from enrolled to paused.`,
+          summary: `Merchant paused the subscription. Reason: ${pauseReason || 'not specified'}. Future billing was paused with enrollment status moved from enrolled to paused.`,
           title: 'Subscription Paused',
           proofRole: 'billing_update',
           relevance: { tags: ['cancelled_recurring', 'credit_not_processed'], priority: 'medium', confidence: 'moderate' },
@@ -606,8 +618,8 @@ export const paymentLifecycleService = {
         processor,
         subscription_id: subscriptionId,
         subscriptionId,
-        pause_reason: params.reason,
-        pauseReason: params.reason,
+        pause_reason: pauseReason,
+        pauseReason,
         pause_resume_date: '',
         payments_remaining: paymentsRemaining,
         paymentsRemaining,
@@ -620,11 +632,11 @@ export const paymentLifecycleService = {
         customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'paused' },
       });
       await api.post(`/contacts/${params.contactId}/notes`, {
-        body: `Subscription paused: ${params.reason}`,
+        body: `Subscription paused: ${pauseReason}`,
       });
     } catch { /* non-blocking */ }
 
-    logger.info({ contactId: params.contactId, reason: params.reason }, 'Subscription paused');
+    logger.info({ contactId: params.contactId, reason: pauseReason }, 'Subscription paused');
   },
 
   /**

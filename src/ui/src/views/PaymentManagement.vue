@@ -388,8 +388,7 @@ const recurringEnrollments = computed(() => {
 
 function isRecurringEnrollment(enrollment: any): boolean {
   const type = String(enrollment?.paymentType || '').toLowerCase();
-  const status = String(enrollment?.status || '').toLowerCase();
-  return ['installment', 'installments', 'subscription'].includes(type) && !['cancelled', 'completed'].includes(status);
+  return ['installment', 'installments', 'subscription'].includes(type);
 }
 
 function paymentTypeLabel(type?: string | null): string {
@@ -653,12 +652,15 @@ async function submitCharge() {
   chargeLoading.value = true;
   actionError.value = '';
   try {
-    await api.post('/api/payments/manage/charge', {
+    const result = await api.post<any>('/api/payments/manage/charge', {
       contactId,
       paymentMethodId: chargeForm.value.methodId,
       amount: chargeForm.value.amount,
       description: chargeForm.value.description,
     });
+    if (result?.success === false) {
+      throw new Error(result.error || 'Charge failed');
+    }
     showChargeModal.value = false;
     chargeForm.value = { methodId: methods.value[0]?.id || '', amount: 0, description: '' };
     await loadHistory();
