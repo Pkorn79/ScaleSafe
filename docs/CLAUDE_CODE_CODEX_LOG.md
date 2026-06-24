@@ -19,6 +19,14 @@ At the end of each meaningful Codex coding session, update this file with:
 
 Do not include secrets, `.env` values, tokens, database credentials, or customer/client private data.
 
+## Product Decision Note - 2026-06-24
+
+- Saved the post-beta NMI Billing API / Portal concept in `docs/PROJECT_DECISIONS.md`.
+- Direction: NMI-focused billing portal/API with a Stripe-inspired developer experience, not a literal Stripe clone.
+- Concept: ScaleSafe can provide checkout sessions, billing management sessions, subscription status, external customer mapping, merchant webhooks, and evidence logging for merchants who want NMI-powered subscription management inside their own software.
+- Security posture: merchant apps never receive card/bank data, NMI keys, Supabase keys, or service-role credentials; merchant backend requests short-lived scoped billing sessions after authenticating its own user.
+- Scope: post-beta only. V1 should stay NMI-only and narrow: checkout session, billing session, payment-method update, cancel/request-cancel, subscription status, webhooks, and evidence logging.
+
 ## Current Build Context
 
 - Product: ScaleSafe V2, a GHL Marketplace app for evidence-powered chargeback defense.

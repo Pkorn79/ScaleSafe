@@ -47,3 +47,46 @@ This file records product and launch decisions that should not be re-litigated u
 - When we do a deeper defense-response-system pass, organize defense packets around the practical Stripe/processor evidence buckets: authorization, signed terms/MSA/SOW, billing/refund policy, service delivery, client communication/satisfaction, refund/cancellation history, and dispute letter.
 - Add or strengthen a rendered checkout/terms/billing-policy snapshot exhibit if the current packet does not clearly show what the customer saw and accepted at purchase.
 - Keep public/marketplace copy evidence-first. Do not claim ScaleSafe guarantees dispute wins.
+
+## Post-Beta Product Lane: NMI Billing Portal / Stripe-Shaped Billing API
+
+- This is post-beta. Do not build before beta launch unless Philip explicitly promotes it.
+- Product concept: ScaleSafe can offer an NMI-focused billing backend for merchants who sell software, memberships, coaching, agencies, or recurring services and want Stripe-like subscription management without using Stripe.
+- Positioning: "Use ScaleSafe like Stripe Checkout + Stripe Billing Portal, but powered by NMI and evidence tracking."
+- Primary lane is NMI/Whole Pay processing. Stripe support is optional later only if the premium value is evidence, GHL automation, cancellation proof, usage tracking, and dispute readiness. Do not prioritize Whop/FanBasis billing portals because those platforms already own their customer billing infrastructure.
+- Developer experience should be Stripe-inspired, not a literal Stripe API clone. Use familiar concepts where useful: customer, offer/price, checkout session, subscription, billing portal session, webhook events.
+- Example merchant integration:
+  - Merchant creates ScaleSafe offers for software tiers.
+  - Merchant app links signup buttons to ScaleSafe checkout sessions.
+  - ScaleSafe creates the NMI subscription and sends a webhook to the merchant app.
+  - Merchant app stores its own user ID mapped to ScaleSafe contact/enrollment/subscription IDs.
+  - Customer later clicks Manage Billing inside the merchant app.
+  - Merchant backend requests a short-lived ScaleSafe billing session for that customer/subscription.
+  - ScaleSafe handles the billing action, logs evidence, updates NMI, and sends GHL/merchant webhooks.
+- Security model:
+  - Merchant apps must never receive raw card data, CVV, bank data, NMI keys, Supabase keys, or ScaleSafe service-role credentials.
+  - Merchant browser must not directly create billing sessions by claiming a user ID. Merchant backend must authenticate the customer first, then request a ScaleSafe session.
+  - Billing sessions should be short-lived, scoped to one merchant/customer/subscription, action-limited, and auditable.
+  - ScaleSafe enforces ownership and policy before any pause, cancel, payment-method update, or plan action.
+- V1 scope:
+  - NMI only.
+  - External merchant API keys, scoped and revocable.
+  - External customer mapping.
+  - Checkout session API.
+  - Billing management session API.
+  - Subscription status lookup.
+  - Update payment method.
+  - Cancel or request cancellation.
+  - Pause/resume only if NMI support is reliable enough.
+  - Merchant webhooks for payment succeeded, payment failed, subscription cancelled, subscription paused, subscription resumed, and payment method updated.
+  - Evidence logging for all customer billing actions.
+- Deferred:
+  - Full SDK.
+  - Embedded in-app widget.
+  - Plan upgrades/downgrades.
+  - App activity event ingestion, such as login, module completion, feature usage, support ticket, onboarding completion, or milestone events.
+  - Stripe premium evidence layer.
+- Long-term SDK/API direction:
+  - Start with a simple REST API and hosted billing sessions.
+  - Later add a lightweight JavaScript helper so merchants can create checkout buttons and open billing sessions more easily.
+  - Do not promise "drop-in Stripe replacement"; promise Stripe-like integration flow for NMI plus ScaleSafe evidence/GHL automation.
