@@ -156,7 +156,7 @@ export const featureCatalog: FeatureItem[] = [
     id: 'ach',
     title: 'ACH Payments',
     area: 'payments',
-    status: 'coming_soon',
+    status: 'beta',
     summary: 'Add bank debit payment support for merchants who want card alternatives.',
     userValue: 'Reduces card fees and gives high-ticket clients another way to pay.',
     workflow: [
@@ -205,23 +205,10 @@ export const featureCatalog: FeatureItem[] = [
     ],
   },
   {
-    id: 'digistore24',
-    title: 'Digistore24 Integration',
-    area: 'integrations',
-    status: 'coming_soon',
-    summary: 'Explore Digistore24 purchase, refund, affiliate, and delivery evidence.',
-    userValue: 'Adds support for merchants selling through Digistore24.',
-    workflow: [
-      'Merchant connects Digistore24.',
-      'ScaleSafe records purchases, refunds, and product access signals.',
-      'Defense packets use those records when relevant.',
-    ],
-  },
-  {
     id: 'checkout-upsells',
     title: 'Order Bumps and Upsells',
     area: 'offers',
-    status: 'coming_soon',
+    status: 'beta',
     summary: 'Add optional add-ons and upsell paths around the ScaleSafe checkout.',
     userValue: 'Lets merchants increase order value while preserving clean payment and evidence records.',
     workflow: [

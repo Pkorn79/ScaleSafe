@@ -65,7 +65,7 @@ import {
         <Shield :size="16" /> Defense
       </router-link>
       <router-link to="/roadmap" class="nav-link" :class="{ 'nav-active': $route.path.startsWith('/roadmap') }">
-        <Map :size="16" /> Roadmap <span class="nav-badge">Preview</span>
+        <Map :size="16" /> Roadmap
       </router-link>
       <router-link to="/risk-health" class="nav-link nav-sub" :class="{ 'nav-active': $route.path === '/risk-health' }">
         <Activity :size="14" /> Stripe Risk Health

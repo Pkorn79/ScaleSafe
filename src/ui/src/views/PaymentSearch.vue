@@ -7,29 +7,6 @@
       </div>
     </div>
 
-    <div class="payment-roadmap mb-4">
-      <router-link v-for="feature in paymentRoadmap" :key="feature.id" :to="`/roadmap/${feature.id}`" class="payment-roadmap-card">
-        <div>
-          <strong>{{ feature.title }}</strong>
-          <span>{{ feature.summary }}</span>
-        </div>
-        <FeatureStatusPill :status="feature.status" />
-      </router-link>
-    </div>
-
-    <div class="card payment-settings-preview">
-      <div class="flex-between mb-4">
-        <div>
-          <div class="card-title" style="margin-bottom:4px">Payment Settings Preview</div>
-          <p class="text-sm text-muted">These options are visible now as planned controls. Disabled items are not active yet.</p>
-        </div>
-        <router-link to="/settings/payments" class="btn btn-sm btn-secondary">Processor Settings</router-link>
-      </div>
-      <div class="settings-stub-grid">
-        <FeatureSettingStub v-for="feature in paymentFeatureSettings" :key="feature.id" :feature="feature" />
-      </div>
-    </div>
-
     <div class="payment-tabs mb-4">
       <button class="tab-btn" :class="{ active: activeTab === 'ledger' }" @click="activeTab = 'ledger'">
         All Payments
@@ -452,25 +429,11 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { useApi } from '../composables/useApi';
-import FeatureStatusPill from '../components/FeatureStatusPill.vue';
-import FeatureSettingStub from '../components/FeatureSettingStub.vue';
-import { getFeaturesByArea, publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 const { loading, error } = api;
 
 const activeTab = ref<'ledger' | 'clients' | 'reconciliation'>('ledger');
-
-const paymentRoadmap = publicFeatureCatalog.filter((feature) => [
-  'nmi-multi-mid',
-  'ach',
-  'whop',
-  'digistore24',
-].includes(feature.id));
-const paymentFeatureSettings = [
-  ...getFeaturesByArea('payments'),
-  ...publicFeatureCatalog.filter((feature) => ['whop', 'digistore24'].includes(feature.id)),
-];
 
 const searchQuery = ref('');
 const customers = ref<any[]>([]);
