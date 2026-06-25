@@ -111,6 +111,16 @@ describe('issueRefund', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
+  it('blocks Whop manual refunds because Whop is not a ProcessorInterface refund rail', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop' } }));
+    const res = mockRes();
+    await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect((res.json as jest.Mock).mock.calls[0][0].error).toContain('Whop refunds are not supported');
+    expect(mockResolveProcessor).not.toHaveBeenCalled();
+    expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
+  });
+
   it('blocks a refund that exceeds the remaining refundable balance (double-refund protection)', async () => {
     const priorRefund = {
       id: 'ref-prior',

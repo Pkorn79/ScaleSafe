@@ -575,7 +575,7 @@ function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, off
     processorSubscriptionId: event.processor_subscription_id || linkedEnrollment?.processor_subscription_id || null,
     description: `${programName} - ${typeLabel}${progress}`,
     lineItems: normalizeLineItems(event.line_items),
-    refundable: ['sale', 'payment_success', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
+    refundable: processor !== 'whop' && ['sale', 'payment_success', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase()) && !event.failure_reason,
     dunningStatus: event.dunning_status || null,
     dunningRetryCount: event.dunning_retry_count || 0,
     dunningNextRetry: event.dunning_next_retry || null,

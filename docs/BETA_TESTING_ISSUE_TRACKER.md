@@ -25,12 +25,19 @@ Purpose: keep live beta test failures visible until they are proven fixed. This 
 
 ## Open / Watch
 
-### Stripe and Whop manual refunds
+### Stripe manual refunds
 
 - Status: FAILING
 - Owner: Codex investigates next.
-- Finding: Philip manually tested refunds for Stripe, Whop, and NMI on 2026-06-24. NMI refund worked. Stripe and Whop both returned "An unexpected error occurred."
-- Expected: Stripe and Whop refunds should return clear success/failure, write refund records/evidence when successful, and fire `ss_refund_processed` where applicable.
+- Finding: Philip manually tested refunds for Stripe, Whop, and NMI on 2026-06-24. NMI refund worked. Stripe returned "An unexpected error occurred."
+- Expected: Stripe refunds should work whether the stored transaction ID is a PaymentIntent (`pi_...`) or Charge (`ch_...`), write refund records/evidence when successful, and fire `ss_refund_processed`.
+
+### Whop manual refunds
+
+- Status: UNSUPPORTED IN SCALESAFE / NEEDS PRODUCT DECISION
+- Owner: Codex prevents false-success UI; Philip refunds directly in Whop unless/until a real Whop refund API path is built.
+- Finding: Philip saw a ScaleSafe/GHL refund email after attempting a Whop refund, but Whop did not show the refund. Treat this as not processor-confirmed.
+- Expected: ScaleSafe must not show or process generic manual refunds for Whop unless Whop confirms the refund. Real Whop refund events should be recorded when Whop sends a refund webhook.
 
 ### Pulse check-ins
 

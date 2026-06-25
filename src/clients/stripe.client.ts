@@ -150,10 +150,15 @@ export class StripeClient implements ProcessorInterface {
 
   async refund(request: RefundRequest): Promise<RefundResult> {
     try {
+      const transactionId = String(request.transactionId || '').trim();
       const params: Record<string, any> = {
-        payment_intent: request.transactionId,
         reason: 'requested_by_customer',
       };
+      if (transactionId.startsWith('ch_')) {
+        params.charge = transactionId;
+      } else {
+        params.payment_intent = transactionId;
+      }
 
       if (request.amount !== undefined) {
         params.amount = request.amount;

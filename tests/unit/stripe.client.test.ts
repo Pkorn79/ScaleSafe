@@ -286,6 +286,20 @@ describe('StripeClient', () => {
       const [params] = mockStripe.refunds.create.mock.calls[0];
       expect(params.amount).toBe(2500);
     });
+
+    it('creates refund against a charge when the stored transaction ID is a charge ID', async () => {
+      mockStripe.refunds.create.mockResolvedValue({
+        id: 're_charge',
+        status: 'succeeded',
+        amount: 5000,
+      });
+
+      await client.refund({ transactionId: 'ch_test1' });
+
+      const [params] = mockStripe.refunds.create.mock.calls[0];
+      expect(params.charge).toBe('ch_test1');
+      expect(params.payment_intent).toBeUndefined();
+    });
   });
 
   describe('saveCard', () => {

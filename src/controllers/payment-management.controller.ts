@@ -839,6 +839,13 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    if (String(originalEvent.processor || '').toLowerCase() === 'whop') {
+      res.status(400).json({
+        error: 'Whop refunds are not supported from ScaleSafe yet. Refund directly in Whop; ScaleSafe will record the refund when Whop sends the refund webhook.',
+      });
+      return;
+    }
+
     if (!originalEvent.processor_transaction_id) {
       res.status(400).json({ error: 'Payment event is missing a processor transaction ID' });
       return;
