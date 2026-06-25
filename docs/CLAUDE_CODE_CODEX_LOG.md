@@ -26,6 +26,7 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 - Concept: ScaleSafe can provide checkout sessions, billing management sessions, subscription status, external customer mapping, merchant webhooks, and evidence logging for merchants who want NMI-powered subscription management inside their own software.
 - Security posture: merchant apps never receive card/bank data, NMI keys, Supabase keys, or service-role credentials; merchant backend requests short-lived scoped billing sessions after authenticating its own user.
 - Scope: post-beta only. V1 should stay NMI-only and narrow: checkout session, billing session, payment-method update, cancel/request-cancel, subscription status, webhooks, and evidence logging.
+- Deferred consideration: service integration with Polar or a similar international tax/VAT/GST support layer if this becomes SaaS billing infrastructure for merchants with global customers.
 
 ## Current Build Context
 

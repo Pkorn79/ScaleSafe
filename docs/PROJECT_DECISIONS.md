@@ -84,6 +84,7 @@ This file records product and launch decisions that should not be re-litigated u
   - Full SDK.
   - Embedded in-app widget.
   - Plan upgrades/downgrades.
+  - Tax/Merchant-of-Record service integration research, such as Polar or a similar service for international tax/VAT/GST handling if ScaleSafe becomes billing infrastructure for SaaS merchants with global customers.
   - App activity event ingestion, such as login, module completion, feature usage, support ticket, onboarding completion, or milestone events.
   - Stripe premium evidence layer.
 - Long-term SDK/API direction:
