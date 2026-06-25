@@ -25,25 +25,27 @@ Purpose: keep live beta test failures visible until they are proven fixed. This 
 
 ## Open / Watch
 
-### NMI 3-payment installment test
+### Stripe and Whop manual refunds
 
-- Status: WATCH
-- Owner: Philip runs the live test; Codex reviews app state after recurring payments post.
-- Expected: each NMI recurring payment reaches ScaleSafe automatically through the live NMI webhook path, advances `payments_made`, fires `ss_payment_received`, and final payment sets `billing_completed_at` without completing the program.
-- Must not pass by: `nmi_history_sync`, `recurring_billing`, manual repair, or any hidden backup charge.
+- Status: FAILING
+- Owner: Codex investigates next.
+- Finding: Philip manually tested refunds for Stripe, Whop, and NMI on 2026-06-24. NMI refund worked. Stripe and Whop both returned "An unexpected error occurred."
+- Expected: Stripe and Whop refunds should return clear success/failure, write refund records/evidence when successful, and fire `ss_refund_processed` where applicable.
 
-### Stripe recurring/installment sanity test
+### Pulse check-ins
 
-- Status: WATCH
-- Owner: Philip runs one small test; Codex reviews app state.
-- Expected: Stripe processor subscription/payment webhook advances the right enrollment, sends receipt, and keeps finite installment payoff separate from program completion.
+- Status: UNPROVEN / LIKELY NOT WORKING
+- Owner: Codex to define and test the exact pulse path.
+- Finding: Philip has not received a pulse notification and is not sure how to force/test it. Pulse likely needs to be tied to an offer/enrollment cadence and the shared `ss_app_event` workflow.
+- Expected: due pulse fires `ss_app_event` with `event_type = pulse_check_due`, GHL sends the message, and client submission creates pulse evidence linked to the enrollment.
 
 ### Workflow live proof
 
 - Status: WATCH
 - Reason: the app now sends richer trigger payloads and syncs compatibility contact fields, but each live GHL workflow still has to prove that its trigger is active and its message body renders populated values.
-- Known workflows needing proof: enrollment complete, payment received, refund processed, milestone reached, milestone signed off, pulse due, chargeback detected, defense ready.
+- Known workflows needing proof: enrollment complete, payment received, refund processed, milestone reached, pulse due, chargeback detected, defense ready.
 - Verified working: upcoming payment reminder has fired correctly in multiple live instances as of Philip's 2026-06-24 retest.
+- Verified working: milestone signoff completed and created useful evidence as of Philip's 2026-06-24 retest. Example evidence: client digitally signed off on Milestone 1 with timestamp, IP, browser, and work delivered.
 - 2026-05-13 update: Trigger Health now logs `no_subscription` when the app fires a trigger with no active GHL workflow subscription, and Provisioning Health surfaces last sent/failed/no-subscription status per trigger.
 
 ### Client record and evidence proof
@@ -78,17 +80,25 @@ NOTIFY pgrst, 'reload schema';
 - Evidence: transaction `12054526789`, NMI reference/subscription `12053506151`, repaired to `2 of 2 paid`.
 - Code follow-up: NMI Query parsing was fixed so multi-action NMI transaction responses select the real sale amount instead of treating the verified amount as zero.
 
-### Refund notification from Payment Management refund action
+### NMI refund from Payment Management
 
-- Status: FIXED IN CODE, NEEDS RETEST
-- Finding: manual refunds from the Payment Management UI logged a refund payment event but did not fire `ss_refund_processed`.
-- Fix: successful manual refunds now fire the refund workflow trigger and sync refund amount/date/transaction id fields before firing.
+- Status: VERIFIED WORKING
+- Evidence: Philip manually tested Stripe, Whop, and NMI refunds on 2026-06-24. NMI refund worked.
+
+### NMI recurring/installment live webhook path
+
+- Status: VERIFIED WORKING
+- Evidence: Philip confirmed NMI recurring has been working in live tests. Upcoming payment reminders and recurring receipt/progress behavior have also been observed working.
+
+### Stripe recurring/installment sanity test
+
+- Status: VERIFIED WORKING
+- Evidence: Philip confirmed Stripe recurring should be recorded as completed from testing.
 
 ### Milestone mark-complete path
 
-- Status: FIXED IN CODE, NEEDS RETEST
-- Finding: milestone completion wrote the app evidence/enrollment state but did not send enough workflow data for the sign-off request path.
-- Fix: milestone completion now builds a signed milestone sign-off link, includes it in the trigger payload, syncs milestone contact fields, and updates the UI immediately after a successful mark-complete call.
+- Status: VERIFIED WORKING
+- Evidence: milestone signoff completed and produced evidence with signer, milestone, timestamp, IP, browser, and work delivered.
 
 ## Notes
 
