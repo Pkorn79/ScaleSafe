@@ -62,6 +62,16 @@ function lineItems(payload: any, enrollment?: any): unknown[] {
   return parseLineItems(enrollment?.selected_checkout_items);
 }
 
+function mergedLineItems(payload: any, ...enrollments: any[]): unknown[] {
+  const fromPayload = lineItems(payload);
+  if (fromPayload.length > 0) return fromPayload;
+  for (const enrollment of enrollments) {
+    const fromEnrollment = parseLineItems(enrollment?.selected_checkout_items);
+    if (fromEnrollment.length > 0) return fromEnrollment;
+  }
+  return [];
+}
+
 function amountCents(payload: any): number {
   const b = body(payload);
   const meta = metadata(payload);
@@ -316,7 +326,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
     ? await offerRepository.findById(enrollment.offer_id, locationId)
     : null;
   const amount = amountCents(payload);
-  const selectedLineItems = lineItems(payload, enrollment);
+  const selectedLineItems = mergedLineItems(payload, enrollment);
   const b = body(payload);
   await getSupabase()
     .from('enrollments')
@@ -333,6 +343,14 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
     .eq('location_id', locationId);
 
   const existingPaidEvent = await findPaidPaymentEvent(locationId, enrollment.id, txnId);
+  const { data: latestEnrollment } = await getSupabase()
+    .from('enrollments')
+    .select('*')
+    .eq('id', enrollment.id)
+    .eq('location_id', locationId)
+    .maybeSingle();
+  const currentEnrollment = latestEnrollment || enrollment;
+  const currentLineItems = mergedLineItems(payload, currentEnrollment, enrollment);
   const meta = metadata(payload);
   const isCheckoutPayment = Boolean(
     meta.checkout_mode
@@ -341,16 +359,16 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
     || meta.checkoutSessionId
     || meta.due_today_amount
     || meta.selected_amount
-    || selectedLineItems.length > 0,
+    || currentLineItems.length > 0,
   );
 
   if (isCheckoutPayment) {
-    if (enrollment.status !== 'enrolled') {
+    if (!existingPaidEvent?.id && currentEnrollment.status !== 'enrolled') {
       await phase2EnrollmentService.completeEnrollment({
         enrollmentId: enrollment.id,
         locationId,
-        contactId: enrollment.contact_id || firstString(metadata(payload).contact_id),
-        contactEmail: enrollment.email || firstString(b?.customer?.email, b?.email),
+        contactId: currentEnrollment.contact_id || enrollment.contact_id || firstString(metadata(payload).contact_id),
+        contactEmail: currentEnrollment.email || enrollment.email || firstString(b?.customer?.email, b?.email),
         paymentAmount: amount / 100,
         paymentType: paymentTypeForOffer(offer),
         transactionId: txnId || `whop_${Date.now()}`,
@@ -374,7 +392,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       offer,
       txnId: txnId || `whop_${Date.now()}`,
       amount: amount / 100,
-      lineItems: selectedLineItems,
+      lineItems: mergedLineItems(payload, refreshed, currentEnrollment, enrollment),
     });
     return;
   }

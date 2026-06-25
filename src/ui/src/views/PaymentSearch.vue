@@ -547,12 +547,13 @@ function processorBadge(proc: string): string {
 function displayLineItems(row: any) {
   const items = Array.isArray(row?.lineItems) ? row.lineItems : [];
   return items
-    .filter((item: any) => item && item.kind !== 'base_offer')
+    .filter((item: any) => item && (item.kind || item.type) !== 'base_offer')
     .map((item: any, index: number) => {
-      const title = String(item.title || item.name || (item.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
-      const amount = Number(item.amount || item.price || 0);
+      const itemType = item.kind || item.type;
+      const title = String(item.title || item.label || item.name || (itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
+      const amount = Number(item.amount ?? item.price ?? (item.amountCents != null ? Number(item.amountCents) / 100 : 0));
       const price = Number.isFinite(amount) && amount > 0 ? ` $${amount.toFixed(2)}` : '';
-      const prefix = item.kind === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
+      const prefix = itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
       return { key: `${row.id}-${index}`, label: `${prefix}: ${title}${price}` };
     });
 }

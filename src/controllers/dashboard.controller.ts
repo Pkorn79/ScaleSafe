@@ -220,7 +220,7 @@ function isPaidPaymentEvent(event: any): boolean {
   return PAID_PAYMENT_EVENT_TYPES.has(type) && !event?.failure_reason && Number(event?.amount || 0) > 0;
 }
 
-function paymentDates(events: any[]): Array<{ date: string; amount: number; transactionId: string | null; paymentNumber: number | null }> {
+function paymentDates(events: any[]): Array<{ date: string; amount: number; transactionId: string | null; paymentNumber: number | null; lineItems: unknown[] }> {
   return events
     .filter(isPaidPaymentEvent)
     .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
@@ -229,6 +229,7 @@ function paymentDates(events: any[]): Array<{ date: string; amount: number; tran
       amount: Number(event.amount || 0),
       transactionId: event.processor_transaction_id || null,
       paymentNumber: event.payment_number == null ? null : Number(event.payment_number),
+      lineItems: Array.isArray(event.line_items) ? event.line_items : [],
     }));
 }
 
@@ -683,7 +684,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -720,7 +721,7 @@ export const dashboardController = {
         enrollmentIds.length > 0
           ? supabase
             .from('payment_events')
-            .select('id, enrollment_id, event_type, amount, failure_reason, processor_transaction_id, payment_number, created_at')
+            .select('id, enrollment_id, event_type, amount, failure_reason, processor_transaction_id, payment_number, created_at, line_items')
             .eq('location_id', locationId)
             .in('enrollment_id', enrollmentIds)
             .order('created_at', { ascending: false })
@@ -783,6 +784,7 @@ export const dashboardController = {
           lastPaymentAmount: lastPayment?.amount || null,
           lastPaymentTransactionId: lastPayment?.transactionId || null,
           paymentDates: paidDates,
+          selectedCheckoutItems: Array.isArray(e.selected_checkout_items) ? e.selected_checkout_items : [],
           lastNmiPostDate: lastNmiLog?.created_at || null,
           lastNmiPostAction: lastNmiLog?.action || null,
           lastNmiPostTransactionId: lastNmiLog?.transaction_id || null,

@@ -1564,6 +1564,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
           processor_type: 'whop',
           whop_checkout_session_id: session.sessionId,
           whop_checkout_url: session.checkoutUrl || null,
+          selected_checkout_items: quote.lineItems || [],
         } as any)
         .eq('id', enrollmentId)
         .eq('location_id', offer.location_id);

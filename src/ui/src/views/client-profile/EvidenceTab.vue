@@ -271,6 +271,27 @@ function titleCase(value: string): string {
     .trim();
 }
 
+function lineItemAmount(item: any): number {
+  const raw = item?.amount ?? item?.price ?? (item?.amountCents != null ? Number(item.amountCents) / 100 : 0);
+  const amount = Number(raw || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function checkoutLineItemSummary(value: unknown): string {
+  const items = Array.isArray(value) ? value : [];
+  const labels = items
+    .filter((item: any) => item && (item.kind || item.type) !== 'base_offer')
+    .map((item: any) => {
+      const itemType = item.kind || item.type;
+      const title = String(item.title || item.label || item.name || (itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
+      const amount = lineItemAmount(item);
+      const price = amount > 0 ? ` $${amount.toFixed(2)}` : '';
+      const prefix = itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
+      return `${prefix}: ${title}${price}`;
+    });
+  return labels.join(', ');
+}
+
 function summarize(item: any): string {
   const type = evidenceType(item);
   const defenseSummary = item.defense_summary || evidenceData(item).defense_summary;
@@ -307,6 +328,17 @@ function summarize(item: any): string {
       const paymentNumber = d.payment_number ? ` #${d.payment_number}` : '';
       const tx = d.ghl_transaction_id || d.transaction_id;
       return `NMI history sync recorded ${amount} payment${paymentNumber}${tx ? `, Tx: ${String(tx).slice(0, 12)}...` : ''}.`;
+    }
+    if (type === 'enrollment_payment' || type === 'payment_confirmation') {
+      const parts: string[] = [];
+      if (d.amount) parts.push(`$${Number(d.amount).toFixed(2)}`);
+      if (d.payment_type) parts.push(d.payment_type);
+      if (d.transaction_id) parts.push(`Tx: ${String(d.transaction_id).slice(0, 12)}...`);
+      const itemSummary = checkoutLineItemSummary(d.line_items);
+      if (itemSummary) parts.push(itemSummary);
+      if (d.timestamp) parts.push(formatDate(d.timestamp));
+      if (d.source) parts.push(sourceLabel(d.source));
+      if (parts.length > 0) return parts.join(' | ');
     }
     if (type === 'appointment') {
       const title = d.appointment_title || d.title || 'GHL appointment';

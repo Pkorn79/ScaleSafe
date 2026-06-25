@@ -75,6 +75,11 @@
           <div v-if="enr.billingIssue" class="billing-warning">
             {{ enr.billingIssue.label }}
           </div>
+          <div v-if="displayCheckoutItems(enr).length" class="checkout-items">
+            <div v-for="item in displayCheckoutItems(enr)" :key="item.key" class="checkout-item">
+              {{ item.label }}
+            </div>
+          </div>
         </div>
         <div class="text-sm" v-if="enr.deliveryMethod">
           <strong>Delivery:</strong> {{ enr.deliveryMethod }}
@@ -256,6 +261,30 @@ function shortFrequency(freq?: string): string {
   };
   if (!freq) return 'mo';
   return map[freq.toLowerCase()] || freq;
+}
+
+function checkoutItemAmount(item: any): number {
+  const raw = item?.amount ?? item?.price ?? (item?.amountCents != null ? Number(item.amountCents) / 100 : 0);
+  const amount = Number(raw || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function displayCheckoutItems(enr: any) {
+  const enrollmentItems = Array.isArray(enr?.selectedCheckoutItems) ? enr.selectedCheckoutItems : [];
+  const paymentItems = Array.isArray(enr?.paymentDates)
+    ? enr.paymentDates.flatMap((payment: any) => Array.isArray(payment.lineItems) ? payment.lineItems : [])
+    : [];
+  const items = enrollmentItems.length > 0 ? enrollmentItems : paymentItems;
+  return items
+    .filter((item: any) => item && (item.kind || item.type) !== 'base_offer')
+    .map((item: any, index: number) => {
+      const itemType = item.kind || item.type;
+      const title = String(item.title || item.label || item.name || (itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
+      const amount = checkoutItemAmount(item);
+      const price = amount > 0 ? ` $${amount.toFixed(2)}` : '';
+      const prefix = itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
+      return { key: `${enr.id}-checkout-item-${index}`, label: `${prefix}: ${title}${price}` };
+    });
 }
 
 function programEndDate(enr: any): string {
@@ -493,6 +522,19 @@ async function downloadPacket(enrollmentId: string) {
 .billing-warning {
   margin-top: 5px;
   color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.checkout-items {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.checkout-item {
+  color: #047857;
   font-size: 12px;
   font-weight: 600;
 }
