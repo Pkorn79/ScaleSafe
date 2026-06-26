@@ -268,7 +268,7 @@ describe('paymentLedgerService', () => {
         payments_total: null,
         failure_reason: null,
         payment_type: 'manual_sale',
-        source: 'nmi_silent_post',
+        source: 'quick_manual_sale',
         is_recurring: true,
         customer_email: 'phil@example.com',
         dunning_status: null,

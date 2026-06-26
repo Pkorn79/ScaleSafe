@@ -567,7 +567,6 @@ export const payFirstEnrollmentService = {
         payment_number: 1,
         payments_total: paymentsTotal,
         payments_remaining: paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1),
-        payment_type: paymentType,
         source: 'quick_manual_sale',
         is_recurring: false,
         payment_status: paymentProcessing ? 'processing' : 'succeeded',

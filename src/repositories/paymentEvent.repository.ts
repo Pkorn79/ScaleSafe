@@ -47,7 +47,6 @@ export interface PaymentEventInsert {
   payment_status?: string;
   payment_method_type?: string;
   selected_payment_method?: string;
-  payment_type?: string | null;
   settled_at?: string | null;
   returned_at?: string | null;
   return_reason?: string | null;
@@ -63,7 +62,6 @@ export interface PaymentEventInsert {
 const COMPATIBILITY_COLUMNS = [
   'payment_status',
   'selected_payment_method',
-  'payment_type',
   'settled_at',
   'returned_at',
   'return_reason',
