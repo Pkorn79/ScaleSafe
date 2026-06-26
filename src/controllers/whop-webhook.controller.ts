@@ -195,6 +195,25 @@ async function findEnrollment(payload: any, locationId: string): Promise<any | n
       .maybeSingle();
     if (data) return data;
   }
+
+  const whopMemberId = membershipId(payload);
+  if (whopMemberId) {
+    const { data: byWhopMembership } = await supabase
+      .from('enrollments')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('whop_membership_id', whopMemberId)
+      .maybeSingle();
+    if (byWhopMembership) return byWhopMembership;
+
+    const { data: byProcessorSubscription } = await supabase
+      .from('enrollments')
+      .select('*')
+      .eq('location_id', locationId)
+      .eq('processor_subscription_id', whopMemberId)
+      .maybeSingle();
+    if (byProcessorSubscription) return byProcessorSubscription;
+  }
   return null;
 }
 
@@ -352,14 +371,20 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
   const currentEnrollment = latestEnrollment || enrollment;
   const currentLineItems = mergedLineItems(payload, currentEnrollment, enrollment);
   const meta = metadata(payload);
+  const alreadyStartedRecurring = currentEnrollment.status === 'enrolled'
+    && Number(currentEnrollment.payments_made || 0) > 0
+    && ['installment', 'installments', 'subscription'].includes(String(currentEnrollment.payment_type || paymentTypeForOffer(offer)));
   const isCheckoutPayment = Boolean(
-    meta.checkout_mode
-    || meta.checkoutMode
-    || meta.checkout_session_id
-    || meta.checkoutSessionId
-    || meta.due_today_amount
-    || meta.selected_amount
-    || currentLineItems.length > 0,
+    !alreadyStartedRecurring
+    && (
+      meta.checkout_mode
+      || meta.checkoutMode
+      || meta.checkout_session_id
+      || meta.checkoutSessionId
+      || meta.due_today_amount
+      || meta.selected_amount
+      || lineItems(payload).length > 0
+    ),
   );
 
   if (isCheckoutPayment) {
@@ -428,7 +453,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       payments_made: Number(enrollment.payments_made || 0),
       payments_total: enrollment.payments_total,
       payment_type: enrollment.payment_type || paymentTypeForOffer(offer),
-      processor_subscription_id: enrollment.whop_membership_id || membershipId(payload) || null,
+      processor_subscription_id: enrollment.processor_subscription_id || enrollment.whop_membership_id || membershipId(payload) || null,
     },
     processorType: 'whop',
     transactionId: txnId || `whop_${Date.now()}`,

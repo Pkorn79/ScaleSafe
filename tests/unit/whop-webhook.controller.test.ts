@@ -1,0 +1,192 @@
+const mockSupabaseFrom = jest.fn();
+const mockWhopConfigGet = jest.fn();
+const mockDecryptWebhookSecret = jest.fn();
+const mockVerifyStandardWebhook = jest.fn();
+const mockIdempotencyExists = jest.fn();
+const mockIdempotencyRecord = jest.fn();
+const mockMerchantGetByLocationId = jest.fn();
+const mockOfferFindById = jest.fn();
+const mockHandleRecurringPaymentSuccess = jest.fn();
+const mockHandleRecurringPaymentFailure = jest.fn();
+const mockCompleteEnrollment = jest.fn();
+const mockPaymentEventFindByTransactionId = jest.fn();
+const mockPaymentEventCreate = jest.fn();
+const mockTriggerFire = jest.fn();
+
+jest.mock('../../src/clients/supabase.client', () => ({
+  getSupabase: () => ({
+    from: (...args: any[]) => mockSupabaseFrom(...args),
+  }),
+}));
+
+jest.mock('../../src/services/whop-config.service', () => ({
+  whopConfigService: {
+    get: (...args: any[]) => mockWhopConfigGet(...args),
+    findByCompanyId: jest.fn(),
+    decryptWebhookSecret: (...args: any[]) => mockDecryptWebhookSecret(...args),
+  },
+}));
+
+jest.mock('../../src/services/whop.service', () => ({
+  whopService: {
+    verifyStandardWebhook: (...args: any[]) => mockVerifyStandardWebhook(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/idempotency.repository', () => ({
+  idempotencyRepository: {
+    exists: (...args: any[]) => mockIdempotencyExists(...args),
+    record: (...args: any[]) => mockIdempotencyRecord(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    getByLocationId: (...args: any[]) => mockMerchantGetByLocationId(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/offer.repository', () => ({
+  offerRepository: {
+    findById: (...args: any[]) => mockOfferFindById(...args),
+  },
+}));
+
+jest.mock('../../src/services/recurring-payment.service', () => ({
+  handleRecurringPaymentSuccess: (...args: any[]) => mockHandleRecurringPaymentSuccess(...args),
+  handleRecurringPaymentFailure: (...args: any[]) => mockHandleRecurringPaymentFailure(...args),
+}));
+
+jest.mock('../../src/services/phase2Enrollment.service', () => ({
+  phase2EnrollmentService: {
+    completeEnrollment: (...args: any[]) => mockCompleteEnrollment(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/paymentEvent.repository', () => ({
+  paymentEventRepository: {
+    findByTransactionId: (...args: any[]) => mockPaymentEventFindByTransactionId(...args),
+    create: (...args: any[]) => mockPaymentEventCreate(...args),
+  },
+}));
+
+jest.mock('../../src/services/trigger.service', () => ({
+  triggerService: {
+    fireTrigger: (...args: any[]) => mockTriggerFire(...args),
+  },
+}));
+
+import { handleWhopWebhook } from '../../src/controllers/whop-webhook.controller';
+
+function queryBuilder(result: any = null) {
+  const builder: any = {
+    select: jest.fn(() => builder),
+    insert: jest.fn(() => builder),
+    update: jest.fn(() => builder),
+    eq: jest.fn(() => builder),
+    in: jest.fn(() => builder),
+    order: jest.fn(() => builder),
+    limit: jest.fn(() => builder),
+    single: jest.fn().mockResolvedValue({ data: result, error: null }),
+    maybeSingle: jest.fn().mockResolvedValue({ data: result, error: null }),
+  };
+  return builder;
+}
+
+describe('handleWhopWebhook', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWhopConfigGet.mockResolvedValue({
+      location_id: 'loc_1',
+      webhook_secret_encrypted: 'encrypted_secret',
+    });
+    mockDecryptWebhookSecret.mockReturnValue('whsec_test');
+    mockVerifyStandardWebhook.mockReturnValue(true);
+    mockIdempotencyExists.mockResolvedValue(false);
+    mockIdempotencyRecord.mockResolvedValue(undefined);
+    mockMerchantGetByLocationId.mockResolvedValue({ id: 'merchant_1' });
+    mockOfferFindById.mockResolvedValue({
+      id: 'offer_1',
+      offer_name: 'Whop Installments',
+      payment_type: 'installments',
+      installment_frequency: 'weekly',
+      num_payments: 5,
+    });
+    mockHandleRecurringPaymentSuccess.mockResolvedValue({ paymentEventId: 'pe_2', isFinal: false, newPaymentsMade: 2 });
+  });
+
+  it('processes a Whop renewal payment by membership id as recurring, not as a new initial sale', async () => {
+    const enrollment = {
+      id: 'enr_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      payment_type: 'installment',
+      payments_made: 1,
+      payments_total: 5,
+      processor_type: 'whop',
+      processor_subscription_id: 'mem_123',
+      whop_membership_id: 'mem_123',
+      selected_checkout_items: [
+        { kind: 'base_offer', title: 'Whop Installments', amount: 2.2 },
+        { kind: 'pre_payment_upsell', title: 'Upgrade', amount: 1 },
+      ],
+    };
+
+    let enrollmentQueryCount = 0;
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'payment_events') return queryBuilder(null);
+      if (table === 'enrollments') {
+        enrollmentQueryCount += 1;
+        // First enrollment query is membership lookup. Later update/select calls can safely return the same row.
+        return queryBuilder(enrollment);
+      }
+      return queryBuilder(null);
+    });
+
+    const payload = {
+      id: 'evt_renewal_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_renewal_1',
+        amount: 2.2,
+        membership_id: 'mem_123',
+        metadata: {
+          location_id: 'loc_1',
+          line_items: JSON.stringify(enrollment.selected_checkout_items),
+        },
+      },
+    };
+
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_renewal_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(enrollmentQueryCount).toBeGreaterThan(0);
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      processorType: 'whop',
+      transactionId: 'pay_renewal_1',
+      amountCents: 220,
+      source: 'whop_webhook',
+      enrollment: expect.objectContaining({
+        id: 'enr_1',
+        processor_subscription_id: 'mem_123',
+        payments_made: 1,
+        payments_total: 5,
+      }),
+    }));
+    expect(mockCompleteEnrollment).not.toHaveBeenCalled();
+    expect(mockPaymentEventCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+});

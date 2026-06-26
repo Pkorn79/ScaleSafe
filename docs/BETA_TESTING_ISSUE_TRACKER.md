@@ -39,6 +39,14 @@ Purpose: keep live beta test failures visible until they are proven fixed. This 
 - Finding: Philip saw a ScaleSafe/GHL refund email after attempting a Whop refund, but Whop did not show the refund. Treat this as not processor-confirmed.
 - Expected: ScaleSafe must not show or process generic manual refunds for Whop unless Whop confirms the refund. Real Whop refund events should be recorded when Whop sends a refund webhook.
 
+### Whop recurring renewal processing
+
+- Status: FIXED / READY TO RETEST
+- Owner: Philip retests with the next Whop renewal.
+- Finding: upcoming payment reminders fired for Whop enrollments, but Whop recurring renewal payments were not advancing ScaleSafe payment progress.
+- Cause: Whop renewal webhooks can arrive without the original checkout-session metadata. ScaleSafe matched Whop payments by enrollment/session metadata but did not fall back to the stored Whop membership/subscription ID. Once matched, stored checkout line items could also cause the renewal to be misclassified as a new initial checkout payment.
+- Expected: Whop `payment.succeeded` renewal webhooks should match by `whop_membership_id` / `processor_subscription_id`, call the recurring payment handler, advance `payments_made`, record payment evidence, and fire the recurring payment receipt once.
+
 ### Pulse check-ins
 
 - Status: UNPROVEN / LIKELY NOT WORKING
