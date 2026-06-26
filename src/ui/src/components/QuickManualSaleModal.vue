@@ -26,8 +26,13 @@
       <label class="form-label">Offer / Program</label>
       <select class="form-select" v-model="selectedOfferId">
         <option value="">Client-level payment only - no enrollment link</option>
-        <option v-for="offer in activeOffers" :key="offer.id" :value="offer.id">
-          {{ offer.offer_name }}
+        <option
+          v-for="offer in activeOffers"
+          :key="offer.id"
+          :value="offer.id"
+          :disabled="isWhopOffer(offer)"
+        >
+          {{ offer.offer_name }}{{ isWhopOffer(offer) ? ' - use Whop checkout link' : '' }}
         </option>
       </select>
       <p class="text-sm text-muted mt-2">
@@ -69,7 +74,12 @@
         <button type="button" :disabled="submitting" :class="{ active: paymentMethod === 'card' }" @click="paymentMethod = 'card'">Card</button>
       </div>
       <div v-if="configLoading" class="loading">Loading payment fields...</div>
-      <div v-else-if="processorError" class="error-msg">{{ processorError }}</div>
+      <div v-else-if="processorError" class="error-msg">
+        {{ processorError }}
+        <button type="button" class="btn btn-secondary btn-sm qms-retry" @click="loadProcessorConfig">
+          Reload payment fields
+        </button>
+      </div>
       <template v-else>
         <div v-if="fieldMounting" class="text-sm text-muted mb-2">{{ fieldPrepMessage }}</div>
         <div v-if="processorType === 'nmi'" class="qms-nmi">
@@ -120,7 +130,9 @@
     <div v-if="submitError" class="text-sm mt-2" style="color:#ef4444">{{ submitError }}</div>
 
     <template #footer>
-      <button class="btn btn-secondary" @click="openProxy = false" :disabled="submitting">Close</button>
+      <button class="btn btn-secondary" @click="openProxy = false" :disabled="submitting">
+        {{ completedSuccessfully ? 'Done' : 'Close' }}
+      </button>
       <button class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
         {{ submitting ? 'Submitting...' : (paymentMethod === 'ach' ? 'Submit Bank Payment' : 'Charge Card') }}
       </button>
@@ -214,6 +226,9 @@ const selectedOfferSupportsInstallments = computed(() => {
   const offer = selectedOffer.value;
   return ['installment', 'installments'].includes(String(offer?.payment_type || '').toLowerCase());
 });
+function isWhopOffer(offer: any): boolean {
+  return String(offer?.checkout_type || offer?.checkoutType || 'direct').toLowerCase() === 'whop';
+}
 const selectedOfferSupportsSubscription = computed(() => {
   const offer = selectedOffer.value;
   return String(offer?.payment_type || '').toLowerCase() === 'subscription';
@@ -591,7 +606,7 @@ async function submit() {
   } catch (err: any) {
     submitError.value = err.message || 'Payment failed.';
   } finally {
-    if (!completedSuccessfully.value) submitting.value = false;
+    submitting.value = false;
   }
 }
 
@@ -624,6 +639,13 @@ watch(() => props.open, async (open) => {
 watch(selectedOfferId, async () => {
   resetTransient();
   const offer = selectedOffer.value;
+  if (offer && isWhopOffer(offer)) {
+    paymentChoice.value = 'pif';
+    amount.value = null;
+    processorError.value = 'Whop offers use the Whop checkout link and cannot be charged with Quick Manual Sale card entry.';
+    cleanupPaymentFields();
+    return;
+  }
   paymentChoice.value = offer ? normalizeOfferChoice(offer) : 'pif';
   amount.value = offer ? selectedAmountForOffer(offer, paymentChoice.value) : null;
   if (props.open) await loadProcessorConfig();
@@ -724,6 +746,10 @@ watch(achAllowedForSelection, (allowed) => {
   color: #475569;
   font-size: 13px;
   padding: 12px;
+}
+
+.qms-retry {
+  margin-top: 10px;
 }
 
 .section-title {

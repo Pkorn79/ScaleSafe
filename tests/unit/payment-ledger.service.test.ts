@@ -267,6 +267,7 @@ describe('paymentLedgerService', () => {
         payment_number: null,
         payments_total: null,
         failure_reason: null,
+        payment_type: 'manual_sale',
         source: 'nmi_silent_post',
         is_recurring: true,
         customer_email: 'phil@example.com',
@@ -286,7 +287,8 @@ describe('paymentLedgerService', () => {
       enrollmentId: null,
       offerId: null,
       programName: 'Unassigned payment',
-      paymentType: 'unknown',
+      paymentType: 'manual',
+      paymentTypeLabel: 'Manual',
       processorSubscriptionId: null,
     }));
   });

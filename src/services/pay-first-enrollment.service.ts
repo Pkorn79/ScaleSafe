@@ -192,6 +192,9 @@ export const payFirstEnrollmentService = {
     if (offerId) {
       offer = await offerRepository.findById(offerId, locationId);
       if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
+      if ((offer.checkout_type || 'direct') === 'whop') {
+        throw new ValidationError('Whop offers cannot be charged from Quick Manual Sale. Use the Whop checkout link for this offer.');
+      }
     }
 
     const offerHint = offer
@@ -221,6 +224,9 @@ export const payFirstEnrollmentService = {
     const merchant = await merchantRepository.getByLocationId(input.locationId);
     const offer = input.offerId ? await offerRepository.findById(input.offerId, input.locationId) : null;
     if (input.offerId && (!offer || !offer.active)) throw new ValidationError('Offer not found or inactive');
+    if (offer && (offer.checkout_type || 'direct') === 'whop') {
+      throw new ValidationError('Whop offers cannot be charged from Quick Manual Sale. Use the Whop checkout link for this offer.');
+    }
 
     const contactId = await upsertContact(input.locationId, input);
     const name = splitName(input.firstName, input.lastName, input.email);
@@ -243,7 +249,7 @@ export const payFirstEnrollmentService = {
     const amountCents = dollarsToCents(input.amount);
     if (amountCents <= 0) throw new ValidationError('Amount must be greater than zero');
 
-    const paymentType = offer ? normalizePaymentType(input.paymentType, offer) : 'one_off';
+    const paymentType = offer ? normalizePaymentType(input.paymentType, offer) : 'manual_sale';
     const paymentsTotal = offer ? paymentsTotalFor(paymentType, offer) : null;
     const finiteBillingComplete = offer && paymentType !== 'subscription'
       && paymentsTotal != null
@@ -561,6 +567,7 @@ export const payFirstEnrollmentService = {
         payment_number: 1,
         payments_total: paymentsTotal,
         payments_remaining: paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1),
+        payment_type: paymentType,
         source: 'quick_manual_sale',
         is_recurring: false,
         payment_status: paymentProcessing ? 'processing' : 'succeeded',

@@ -75,6 +75,7 @@ const PAYMENT_EVENT_COLUMNS = [
   'currency',
   'payment_number',
   'payments_total',
+  'payment_type',
   'failure_reason',
   'source',
   'is_recurring',
@@ -98,6 +99,7 @@ const BASE_PAYMENT_EVENT_COLUMNS = [
   'currency',
   'payment_number',
   'payments_total',
+  'payment_type',
   'failure_reason',
   'raw_webhook_payload',
   'line_items',
@@ -109,6 +111,7 @@ const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
   processor_subscription_id: null,
   source: null,
   is_recurring: false,
+  payment_type: null,
   customer_email: null,
   payment_number: null,
   payments_total: null,
@@ -132,6 +135,7 @@ const MINIMAL_PAYMENT_EVENT_COLUMNS = [
   'currency',
   'payment_number',
   'payments_total',
+  'payment_type',
   'failure_reason',
   'line_items',
   'created_at',
@@ -212,7 +216,7 @@ function normalizePaymentType(value: unknown): string {
   if (raw === 'one_time' || raw === 'paid_in_full') return 'pif';
   if (raw === 'subscription') return 'subscription';
   if (raw === 'free') return 'free';
-  if (raw === 'manual') return 'manual';
+  if (raw === 'manual' || raw === 'manual_sale' || raw === 'one_off') return 'manual';
   if (raw === 'installment') return 'installment';
   if (raw === 'pif') return 'pif';
   return raw || 'unknown';
@@ -530,7 +534,7 @@ async function fetchOfferMap(locationId: string, events: any[], enrollments: Map
 function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, offer: any): PaymentLedgerRow {
   const amount = Number(event.amount || 0);
   const status = eventStatus(event);
-  const paymentType = normalizePaymentType(linkedEnrollment?.payment_type || offer?.payment_type);
+  const paymentType = normalizePaymentType(linkedEnrollment?.payment_type || offer?.payment_type || event.payment_type);
   const customerEmail = String(linkedEnrollment?.email || contactEnrollment?.email || event.customer_email || '').trim();
   const processor = String(event.processor || linkedEnrollment?.processor_type || 'unknown').toLowerCase();
   const programName = offer?.offer_name || 'Unassigned payment';

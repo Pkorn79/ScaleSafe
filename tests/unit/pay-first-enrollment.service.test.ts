@@ -359,4 +359,32 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
 
     expect(mockCreateProcessorClient.mock.results[0].value.charge).not.toHaveBeenCalled();
   });
+
+  it('does not resolve Whop offers to the default manual-sale card processor', async () => {
+    mockFindOffer.mockResolvedValue({
+      id: 'offer_whop',
+      active: true,
+      offer_name: 'Whop Offer',
+      payment_type: 'pif',
+      price: 100,
+      checkout_type: 'whop',
+    });
+
+    await expect(payFirstEnrollmentService.getManualSaleConfig('loc_1', 'offer_whop'))
+      .rejects.toThrow('Whop offers cannot be charged from Quick Manual Sale');
+
+    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1',
+      offerId: 'offer_whop',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentToken: 'tok_card',
+      paymentType: 'pif',
+      paymentMethod: 'card',
+    } as any)).rejects.toThrow('Whop offers cannot be charged from Quick Manual Sale');
+
+    expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+  });
 });
