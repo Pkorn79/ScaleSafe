@@ -266,6 +266,17 @@
     .ss-contact a:hover {
       text-decoration: underline;
     }
+
+    .ss-paid-notice {
+      border: 1px solid #bbf7d0;
+      background: #f0fdf4;
+      color: #166534;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 14px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -304,6 +315,23 @@
     } catch (e) { /* ignore */ }
   }
 
+  var paidEnrollmentToken = new URLSearchParams(window.location.search).get('paidEnrollmentToken') || '';
+  if (!paidEnrollmentToken) {
+    try { paidEnrollmentToken = sessionStorage.getItem('ss_paid_enrollment_token') || ''; } catch (e) { /* ignore */ }
+  }
+  if (!paidEnrollmentToken) {
+    try { paidEnrollmentToken = new URLSearchParams(window.parent.location.search).get('paidEnrollmentToken') || ''; } catch (e) { /* ignore */ }
+  }
+  if (!paidEnrollmentToken && document.referrer) {
+    try {
+      var paidRefUrl = new URL(document.referrer);
+      paidEnrollmentToken = paidRefUrl.searchParams.get('paidEnrollmentToken') || '';
+    } catch (e) { /* ignore */ }
+  }
+  if (paidEnrollmentToken) {
+    try { sessionStorage.setItem('ss_paid_enrollment_token', paidEnrollmentToken); } catch (e) { /* ignore */ }
+  }
+
   if (!offerId) {
     root.innerHTML = '<div class="ss-error">Offer information not available. Please contact the provider.</div>';
     return;
@@ -330,6 +358,7 @@
       var html = '';
 
       // Payment choice state
+      var isPaidEnrollment = Boolean(paidEnrollmentToken);
       var selectedPayment = 'pif'; // default
       var selectedAddonIds = [];
 
@@ -363,7 +392,24 @@
 
       var hasBothOptions = offer.pifDiscountEnabled && offer.pifPrice != null && offer.installmentAmount != null && offer.installmentCount;
 
-      if (hasBothOptions) {
+      if (isPaidEnrollment) {
+        if (offer.paymentType === 'installment' || offer.paymentType === 'installments') selectedPayment = 'installments';
+        else if (offer.paymentType === 'subscription') selectedPayment = 'subscription';
+        else selectedPayment = 'pif';
+        html += '<div class="ss-paid-notice">Payment has already been received. Please review the program details and continue to complete the enrollment packet.</div>';
+        html += '<div class="ss-price-box">';
+        if (selectedPayment === 'installments' && offer.installmentAmount != null && offer.installmentCount) {
+          html += '<div class="ss-price-main">' + formatCurrency(offer.installmentAmount) + '<span style="font-size:16px;font-weight:400;color:var(--ss-muted)">/' + (offer.installmentFrequency || 'month') + '</span></div>';
+          html += '<div class="ss-price-installment" style="margin-top:4px">' + offer.installmentCount + ' payments - already started</div>';
+        } else if (selectedPayment === 'subscription' && offer.installmentAmount != null) {
+          html += '<div class="ss-price-main">' + formatCurrency(offer.installmentAmount) + '<span style="font-size:16px;font-weight:400;color:var(--ss-muted)">/' + (offer.installmentFrequency || 'month') + '</span></div>';
+          html += '<div class="ss-price-installment" style="margin-top:4px">Subscription - already started</div>';
+        } else {
+          html += '<div class="ss-price-main">' + formatCurrency(offer.pifPrice != null ? offer.pifPrice : offer.price) + '</div>';
+          html += '<div class="ss-price-installment" style="margin-top:4px">Paid</div>';
+        }
+        html += '</div>';
+      } else if (hasBothOptions) {
         // Two clickable cards side by side
         html += '<div id="ss-pricing-toggle" style="display:flex;gap:10px;margin-bottom:16px;">';
 
@@ -401,7 +447,7 @@
 
       var checkoutAddons = Array.isArray(offer.checkoutAddons) ? offer.checkoutAddons : [];
       var activeAddons = checkoutAddons.filter(function(addon) { return addon && addon.active !== false; });
-      if (activeAddons.length > 0) {
+      if (activeAddons.length > 0 && !isPaidEnrollment) {
         var orderBumps = activeAddons.filter(function(addon) { return addon.kind !== 'pre_payment_upsell'; });
         var upsells = activeAddons.filter(function(addon) { return addon.kind === 'pre_payment_upsell'; });
 
