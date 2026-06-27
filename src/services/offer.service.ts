@@ -122,6 +122,19 @@ function normalizeNullableText(value: unknown): string | null {
   return text || null;
 }
 
+function normalizeEnrollmentFunnelBaseUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(withProtocol);
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.protocol}//${parsed.host}${pathname && pathname !== '/' ? pathname : ''}`;
+  } catch {
+    return '';
+  }
+}
+
 function isOfferConstraintError(err: any): boolean {
   return err?.code === '23514'
     && String(err?.message || '').includes('offers_mirror_installment_frequency_check');
@@ -614,7 +627,7 @@ export const offerService = {
     }
     // Full enrollment funnel lives in GHL — use the merchant's funnel domain
     if (funnelBaseUrl) {
-      const cleanUrl = funnelBaseUrl.replace(/\/+$/, '');
+      const cleanUrl = normalizeEnrollmentFunnelBaseUrl(funnelBaseUrl) || funnelBaseUrl.replace(/\/+$/, '');
       return `${cleanUrl}/welcome?offerId=${offerId}`;
     }
     // Fallback to app URL if no funnel URL configured

@@ -149,6 +149,12 @@ describe('Light Checkout Mode', () => {
     const link = offerService.generateEnrollmentLink('offer-1', 'https://app.scalesafe.com', 'full_enrollment');
     expect(link).toBe('https://app.scalesafe.com/enrollment?offerId=offer-1');
   });
+
+  it('should normalize merchant funnel domains without a protocol', () => {
+    const link = offerService.generateEnrollmentLink('offer-1', 'https://app.scalesafe.com', 'full_enrollment', 'wholepay.co');
+    expect(link).toBe('https://wholepay.co/welcome?offerId=offer-1');
+    expect(() => new URL(link)).not.toThrow();
+  });
 });
 
 describe('Clone Offer', () => {
