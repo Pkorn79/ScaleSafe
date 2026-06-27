@@ -17,6 +17,13 @@ import { createPublicActionToken } from '../utils/public-action-token';
 import type { ProcessorType } from '../types/processor.types';
 import { dualPricingService } from './dual-pricing.service';
 import { deliverEnrollmentLink, type EnrollmentLinkDeliveryResult } from './enrollment-link-delivery.service';
+import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
+import {
+  SS_CONTACT_FIELDS,
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 
 interface RecordPayFirstInput {
   locationId: string;
@@ -116,6 +123,42 @@ function isRecurringPaymentType(paymentType: string): boolean {
 
 function errorMessage(err: any): string {
   return err?.message || err?.details || err?.hint || String(err || 'Unknown error');
+}
+
+function formatDate(value: Date = new Date()): string {
+  return value.toISOString().split('T')[0];
+}
+
+function formatPaymentType(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw === 'pif') return 'Paid in full';
+  if (raw === 'installment' || raw === 'installments') return 'Installment';
+  if (raw === 'subscription') return 'Subscription';
+  if (raw === 'free') return 'Free';
+  return raw.replace(/_/g, ' ');
+}
+
+function formatFrequency(value: unknown): string {
+  const raw = String(value || '').trim();
+  const labels: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    bi_weekly: 'Bi-weekly',
+    biweekly: 'Bi-weekly',
+    monthly: 'Monthly',
+    quarterly: 'Quarterly',
+    annual: 'Annual',
+  };
+  return labels[raw] || raw.replace(/_/g, ' ');
+}
+
+function merchantSupportEmail(merchant: any): string {
+  return merchant?.support_email || merchant?.email || '';
+}
+
+function merchantBusinessName(merchant: any): string {
+  return merchant?.dba_name || merchant?.business_name || '';
 }
 
 const inFlightManualSalePayments = new Set<string>();
@@ -1306,6 +1349,59 @@ export const payFirstEnrollmentService = {
       browser_info: params.userAgent,
     });
 
+    let supportEmail = '';
+    let businessName = '';
+    try {
+      const merchant = await merchantRepository.getByLocationId(params.locationId);
+      supportEmail = merchantSupportEmail(merchant);
+      businessName = merchantBusinessName(merchant);
+      if (offer && enrollment.contact_id) {
+        const customFields: Record<string, unknown> = {
+          [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled',
+          [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: formatDate(enrolledAt),
+        };
+        const receiptPriceDisplay = formatMoney(getSelectedPlanReceiptPrice(offer, paymentType));
+        const billingAmount = offer.installment_amount ?? offer.price;
+        const billingAmountDisplay = formatMoney(billingAmount);
+        const numPayments = enrollment.payments_total ?? offer.num_payments ?? '';
+        const paymentsMade = Number(enrollment.payments_made || 1);
+        const paymentsTotal = enrollment.payments_total == null ? null : Number(enrollment.payments_total);
+        const paymentsRemaining = paymentsTotal == null ? '' : Math.max(0, paymentsTotal - paymentsMade);
+
+        customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
+        customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
+        customFields[OFFER_CONTACT_FIELDS.PRICE] = receiptPriceDisplay;
+        customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = formatPaymentType(paymentType);
+        customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
+        customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = formatFrequency(offer.installment_frequency);
+        customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name || '';
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = receiptPriceDisplay;
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = supportEmail;
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = (merchant as any)?.tc_document_url || '';
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = (offer as any).refund_policy || (offer as any).refund_terms || '';
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT] = formatMoney(Number(enrollment.payment_amount || 0));
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE] = formatDate(enrolledAt);
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE] = paymentsMade;
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING] = paymentsRemaining;
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT] = paymentsMade;
+        customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID] = formatMoney(Number(enrollment.payment_amount || 0) * paymentsMade);
+
+        const api = await ghlApi(params.locationId);
+        await api.put(`/contacts/${enrollment.contact_id}`, { customField: customFields });
+        logger.info(
+          { enrollmentId: params.enrollmentId, contactId: enrollment.contact_id, offerId: enrollment.offer_id },
+          'Paid pending enrollment workflow contact fields synced',
+        );
+      }
+    } catch (err: any) {
+      logger.warn(
+        { err: err?.message || String(err), enrollmentId: params.enrollmentId, contactId: enrollment.contact_id },
+        'Paid pending enrollment workflow contact field sync failed',
+      );
+    }
+
     await triggerService.fireTrigger(params.locationId, 'enrollment_complete', {
       event_type: 'enrollment_complete',
       location_id: params.locationId,
@@ -1323,6 +1419,8 @@ export const payFirstEnrollmentService = {
       offer_name: offer?.offer_name || '',
       offerName: offer?.offer_name || '',
       amount: enrollment.payment_amount || 0,
+      amount_display: formatMoney(Number(enrollment.payment_amount || 0)),
+      amountDisplay: formatMoney(Number(enrollment.payment_amount || 0)),
       payment_type: paymentType,
       paymentType: paymentType,
       pay_first: true,
@@ -1339,6 +1437,10 @@ export const payFirstEnrollmentService = {
       processorSubscriptionId,
       billing_setup_issue: billingSetupIssue,
       billingSetupIssue,
+      support_email: supportEmail,
+      supportEmail,
+      business_name: businessName,
+      businessName,
     });
 
     return {

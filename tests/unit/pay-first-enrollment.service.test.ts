@@ -109,9 +109,19 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
       id: 'offer_1',
       offer_name: 'ScaleSafe Beta',
       payment_type: 'installment',
+      price: 200,
       installment_amount: 100,
       installment_frequency: 'weekly',
       num_payments: 2,
+    });
+    (merchantRepository.getByLocationId as jest.Mock).mockResolvedValue({
+      id: 'merch_1',
+      business_name: 'ScaleSafe Merchant',
+      support_email: 'support@example.com',
+    });
+    mockGhlApi.mockResolvedValue({
+      put: jest.fn().mockResolvedValue({ data: {} }),
+      post: jest.fn().mockResolvedValue({ data: {} }),
     });
     mockEvidenceCreate.mockResolvedValue({});
     mockFireTrigger.mockResolvedValue({});
@@ -175,14 +185,30 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     expect(result?.success).toBe(true);
     expect(result?.processorSubscriptionId).toBe('sub_existing_123');
     expect(createSubscription).not.toHaveBeenCalled();
+    const ghl = await mockGhlApi.mock.results[0].value;
+    expect(ghl.put).toHaveBeenCalledWith(
+      '/contacts/contact_1',
+      expect.objectContaining({
+        customField: expect.objectContaining({
+          'contact.offer_program_name': 'ScaleSafe Beta',
+          'contact.offer_name': 'ScaleSafe Beta',
+          'contact.offer_support_email': 'support@example.com',
+          'contact.ss_enrollment_status': 'enrolled',
+        }),
+      }),
+    );
     expect(mockFireTrigger).toHaveBeenCalledWith(
       'loc_1',
       'enrollment_complete',
       expect.objectContaining({
+        offer_name: 'ScaleSafe Beta',
+        program_name: 'ScaleSafe Beta',
         send_receipt: false,
         send_welcome: true,
         payment_already_received: true,
         processor_subscription_id: 'sub_existing_123',
+        support_email: 'support@example.com',
+        business_name: 'ScaleSafe Merchant',
       }),
     );
   });
