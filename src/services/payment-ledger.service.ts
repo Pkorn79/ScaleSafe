@@ -388,18 +388,20 @@ function buildPaymentEventsQuery(
   filters: PaymentLedgerFilters,
   enrollmentFilterIds: string[] | null,
   columns: string,
+  options: { skipContactFilter?: boolean; forceEnrollmentIds?: string[] | null } = {},
 ) {
   let query: any = getSupabase()
     .from('payment_events')
     .select(columns, { count: 'exact' })
     .eq('location_id', locationId);
 
-  if (filters.contactId) query = query.eq('contact_id', filters.contactId);
+  if (filters.contactId && !options.skipContactFilter) query = query.eq('contact_id', filters.contactId);
   if (filters.processor) query = query.eq('processor', String(filters.processor).toLowerCase());
   if (filters.eventType) query = query.eq('event_type', filters.eventType);
   if (filters.from) query = query.gte('created_at', filters.from);
   if (filters.to) query = query.lte('created_at', filters.to);
-  if (enrollmentFilterIds) query = query.in('enrollment_id', enrollmentFilterIds.slice(0, 500));
+  const enrollmentIds = options.forceEnrollmentIds ?? enrollmentFilterIds;
+  if (enrollmentIds) query = query.in('enrollment_id', enrollmentIds.slice(0, 500));
 
   const status = String(filters.status || '').toLowerCase();
   if (status === 'failed') query = query.eq('event_type', 'payment_failed');
@@ -407,6 +409,40 @@ function buildPaymentEventsQuery(
   if (status === 'paid') query = query.in('event_type', ['sale', 'payment_success', 'subscription_payment', 'capture']);
 
   return query;
+}
+
+async function findContactEnrollmentIds(locationId: string, contactId: string): Promise<string[]> {
+  const rows = await selectEnrollments(locationId, 'contact_id', [contactId], { newestFirst: true, limit: 500 });
+  return [...new Set((rows as any[]).map(row => row.id).filter(Boolean))];
+}
+
+function intersectEnrollmentIds(left: string[] | null, right: string[]): string[] {
+  if (!left) return right;
+  const allowed = new Set(left);
+  return right.filter(id => allowed.has(id));
+}
+
+function paymentEventDedupeKey(event: any): string {
+  const processor = String(event?.processor || '').toLowerCase();
+  const transactionId = String(event?.processor_transaction_id || '').trim();
+  if (processor && transactionId) return `${processor}:${transactionId}`;
+  return `event:${event?.id || ''}`;
+}
+
+function dedupeAndPageEvents(events: any[], limit: number, offset: number) {
+  const seen = new Set<string>();
+  const deduped: any[] = [];
+  for (const event of events) {
+    const key = paymentEventDedupeKey(event);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(event);
+  }
+  deduped.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return {
+    events: deduped.slice(offset, offset + limit),
+    count: deduped.length,
+  };
 }
 
 async function fetchPaymentEvents(
@@ -423,6 +459,40 @@ async function fetchPaymentEvents(
   ];
 
   for (let index = 0; index < columnSets.length; index += 1) {
+    if (filters.contactId) {
+      const contactEnrollmentIds = intersectEnrollmentIds(
+        enrollmentFilterIds,
+        await findContactEnrollmentIds(locationId, filters.contactId),
+      );
+      const contactResponse = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, columnSets[index])
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      const enrollmentResponse = contactEnrollmentIds.length > 0
+        ? await buildPaymentEventsQuery(locationId, filters, null, columnSets[index], {
+          skipContactFilter: true,
+          forceEnrollmentIds: contactEnrollmentIds,
+        })
+          .order('created_at', { ascending: false })
+          .limit(500)
+        : { data: [], error: null };
+
+      const compatibilityError = (contactResponse.error && isColumnCompatibilityError(contactResponse.error))
+        || (enrollmentResponse.error && isColumnCompatibilityError(enrollmentResponse.error));
+      if (compatibilityError && index < columnSets.length - 1) continue;
+
+      if (contactResponse.error) throw contactResponse.error;
+      if (enrollmentResponse.error) throw enrollmentResponse.error;
+
+      const merged = dedupeAndPageEvents(
+        [...(contactResponse.data || []), ...(enrollmentResponse.data || [])]
+          .map((row: any) => ({ ...PAYMENT_EVENT_FALLBACK_DEFAULTS, ...row })),
+        limit,
+        offset,
+      );
+      return merged;
+    }
+
     const response = await buildPaymentEventsQuery(locationId, filters, enrollmentFilterIds, columnSets[index])
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);

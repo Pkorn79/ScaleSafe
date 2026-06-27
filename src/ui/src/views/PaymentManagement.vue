@@ -383,12 +383,21 @@ function paymentStatusBadge(payment: any): string {
 }
 
 const recurringEnrollments = computed(() => {
-  return enrollments.value.filter((e: any) => isRecurringEnrollment(e));
+  return enrollments.value.filter((e: any) => isRecurringEnrollment(e) && isManageableRecurringEnrollment(e));
 });
 
 function isRecurringEnrollment(enrollment: any): boolean {
   const type = String(enrollment?.paymentType || '').toLowerCase();
   return ['installment', 'installments', 'subscription'].includes(type);
+}
+
+function isManageableRecurringEnrollment(enrollment: any): boolean {
+  const status = String(enrollment?.status || '').toLowerCase();
+  if (status === 'paid_pending_enrollment' || status === 'payment_processing') return false;
+  if (['cancelled', 'completed'].includes(status)) return false;
+  const billingStatus = String(enrollment?.billingSetupStatus || 'ok').toLowerCase();
+  if (['failed', 'pending', 'needs_reconciliation'].includes(billingStatus)) return false;
+  return ['enrolled', 'active', 'paused'].includes(status) || Boolean(enrollment?.processorSubscriptionId);
 }
 
 function paymentTypeLabel(type?: string | null): string {
@@ -494,7 +503,11 @@ function formatDate(d: string) {
 
 function formatDateShort(d: string) {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(d);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // Payment method management

@@ -68,6 +68,9 @@
           Last paid: {{ formatDate(enr.lastPaymentDate) }}
           <span v-if="enr.lastPaymentAmount"> (${{ Number(enr.lastPaymentAmount).toFixed(2) }})</span>
         </div>
+        <div v-if="firstPaymentDate(enr)" class="text-muted text-xs" style="margin-top:2px">
+          First paid: {{ formatDate(firstPaymentDate(enr)) }}
+        </div>
         <div v-if="paymentDateSummary(enr)" class="text-muted text-xs" style="margin-top:2px">
           Payment dates: {{ paymentDateSummary(enr) }}
         </div>
@@ -175,9 +178,11 @@ const activeRecurringEnrollments = computed(() => {
   return props.enrollments.filter(e => {
     const status = String(e.status || '').toLowerCase();
     const type = String(e.paymentType || '').toLowerCase();
-    const isActive = ['enrolled', 'active', 'consent_captured', 'paid_pending_enrollment', 'payment_processing'].includes(status);
+    const billingStatus = String(e.billingSetupStatus || 'ok').toLowerCase();
+    const isActive = ['enrolled', 'active', 'paused'].includes(status) || Boolean(e.processorSubscriptionId);
+    const billingReady = !['failed', 'pending', 'needs_reconciliation'].includes(billingStatus);
     const isRecurring = ['installments', 'installment', 'subscription'].includes(type);
-    return isActive && isRecurring;
+    return isActive && billingReady && isRecurring;
   });
 });
 
@@ -245,6 +250,11 @@ function paymentDateSummary(enr: any): string {
     .slice(-4)
     .map((p: any) => formatDate(p.date))
     .join(', ');
+}
+
+function firstPaymentDate(enr: any): string {
+  const dates = Array.isArray(enr.paymentDates) ? enr.paymentDates : [];
+  return dates[0]?.date || '';
 }
 
 function displayLineItems(payment: any) {

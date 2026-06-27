@@ -258,6 +258,8 @@ describe('Payment Management Controller', () => {
       eq: jest.fn().mockReturnThis(),
       in: jest.fn().mockReturnThis(),
       order: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      range: jest.fn().mockReturnThis(),
       single: jest.fn().mockResolvedValue({ data, error }),
       maybeSingle: jest.fn().mockResolvedValue({ data, error }),
       then: jest.fn((resolve: any) => Promise.resolve({ data, error }).then(resolve)),
@@ -271,11 +273,6 @@ describe('Payment Management Controller', () => {
       { id: '1', created_at: '2026-04-01', amount: 500, event_type: 'sale', processor: 'nmi', processor_transaction_id: 'tx-1' },
       { id: '2', created_at: '2026-03-01', amount: 500, event_type: 'sale', processor: 'nmi', processor_transaction_id: 'tx-2' },
     ]);
-    // Override: order returns the chain which then has implicit data
-    chain.order.mockReturnValue({ data: chain.select.mock ? chain : [
-      { id: '1', created_at: '2026-04-01', amount: 500, event_type: 'sale', processor: 'nmi', processor_transaction_id: 'tx-1' },
-    ], error: null });
-
     mockFrom.mockReturnValue(chain);
 
     const req = mockReq({}, { contactId: 'contact-1' });
@@ -284,7 +281,8 @@ describe('Payment Management Controller', () => {
 
     await getPaymentHistory(req, res, next);
 
-    // Should call from('payment_events')
+    // Client history now first resolves the client's enrollments, then loads payment events.
+    expect(mockFrom).toHaveBeenCalledWith('enrollments');
     expect(mockFrom).toHaveBeenCalledWith('payment_events');
   });
 

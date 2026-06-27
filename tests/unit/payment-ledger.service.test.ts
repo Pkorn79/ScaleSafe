@@ -292,4 +292,44 @@ describe('paymentLedgerService', () => {
       processorSubscriptionId: null,
     }));
   });
+
+  it('includes enrollment-linked payments in a client history even when contact_id is missing', async () => {
+    mockTables.payment_events = [
+      {
+        id: 'pay_missing_contact',
+        location_id: 'loc_1',
+        contact_id: '',
+        enrollment_id: 'enr_1',
+        offer_id: null,
+        event_type: 'sale',
+        processor: 'nmi',
+        processor_transaction_id: 'txn_missing_contact',
+        processor_subscription_id: 'sub_1',
+        amount: 0.2,
+        currency: 'usd',
+        payment_number: 1,
+        payments_total: 4,
+        failure_reason: null,
+        source: 'quick_manual_sale',
+        is_recurring: false,
+        customer_email: null,
+        dunning_status: null,
+        dunning_retry_count: 0,
+        dunning_next_retry: null,
+        line_items: [],
+        created_at: '2026-06-26T17:00:00.000Z',
+      },
+    ];
+
+    const result = await paymentLedgerService.list('loc_1', { contactId: 'contact_1' });
+
+    expect(result.payments).toHaveLength(1);
+    expect(result.payments[0]).toEqual(expect.objectContaining({
+      enrollmentId: 'enr_1',
+      contactId: 'contact_1',
+      programName: 'Maui Trip',
+      amount: 0.2,
+      processorTransactionId: 'txn_missing_contact',
+    }));
+  });
 });

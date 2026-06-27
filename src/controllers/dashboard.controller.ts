@@ -220,6 +220,25 @@ function isPaidPaymentEvent(event: any): boolean {
   return PAID_PAYMENT_EVENT_TYPES.has(type) && !event?.failure_reason && Number(event?.amount || 0) > 0;
 }
 
+function paymentEventDedupeKey(event: any): string {
+  const processor = String(event?.processor || '').toLowerCase();
+  const transactionId = String(event?.processor_transaction_id || '').trim();
+  if (processor && transactionId) return `${processor}:${transactionId}`;
+  return `event:${event?.id || ''}`;
+}
+
+function dedupePaymentEvents(events: any[]): any[] {
+  const seen = new Set<string>();
+  const deduped: any[] = [];
+  for (const event of events || []) {
+    const key = paymentEventDedupeKey(event);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(event);
+  }
+  return deduped;
+}
+
 function paymentDates(events: any[]): Array<{ date: string; amount: number; transactionId: string | null; paymentNumber: number | null; lineItems: unknown[] }> {
   return events
     .filter(isPaidPaymentEvent)
@@ -252,7 +271,8 @@ function enrollmentBillingIssue(enrollment: any, lastPayment: any | null, lastNm
     return { code: 'billing_setup_pending', label: 'Recurring billing setup pending' };
   }
 
-  if (['stripe', 'nmi', 'whop'].includes(processor) && !enrollment?.processor_subscription_id) {
+  const subscriptionId = enrollment?.processor_subscription_id || enrollment?.whop_membership_id;
+  if (['stripe', 'nmi', 'whop'].includes(processor) && !subscriptionId) {
     return { code: `missing_${processor}_subscription`, label: `Missing ${processorLabel(processor)} subscription ID` };
   }
 
@@ -684,7 +704,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -712,20 +732,46 @@ export const dashboardController = {
         .order('created_at', { ascending: false });
 
       const enrollmentIds = (enrollments || []).map((e: any) => e.id).filter(Boolean);
+      const subscriptionIds = (enrollments || [])
+        .flatMap((e: any) => [e.processor_subscription_id, e.whop_membership_id])
+        .map((value: any) => String(value || '').trim())
+        .filter(Boolean);
       const nmiSubscriptionIds = (enrollments || [])
         .filter((e: any) => String(e.processor_type || '').toLowerCase() === 'nmi')
         .map((e: any) => e.processor_subscription_id)
         .filter(Boolean);
 
-      const [paymentEventsResult, nmiLogsResult] = await Promise.all([
-        enrollmentIds.length > 0
-          ? supabase
+      const paymentEventQueries: any[] = [
+        supabase
+          .from('payment_events')
+          .select('id, contact_id, enrollment_id, offer_id, event_type, processor, amount, failure_reason, processor_transaction_id, processor_subscription_id, payment_number, created_at, line_items')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .order('created_at', { ascending: false }),
+      ];
+      if (enrollmentIds.length > 0) {
+        paymentEventQueries.push(
+          supabase
             .from('payment_events')
-            .select('id, enrollment_id, event_type, amount, failure_reason, processor_transaction_id, payment_number, created_at, line_items')
+            .select('id, contact_id, enrollment_id, offer_id, event_type, processor, amount, failure_reason, processor_transaction_id, processor_subscription_id, payment_number, created_at, line_items')
             .eq('location_id', locationId)
             .in('enrollment_id', enrollmentIds)
-            .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] }),
+            .order('created_at', { ascending: false }),
+        );
+      }
+      if (subscriptionIds.length > 0) {
+        paymentEventQueries.push(
+          supabase
+            .from('payment_events')
+            .select('id, contact_id, enrollment_id, offer_id, event_type, processor, amount, failure_reason, processor_transaction_id, processor_subscription_id, payment_number, created_at, line_items')
+            .eq('location_id', locationId)
+            .in('processor_subscription_id', subscriptionIds)
+            .order('created_at', { ascending: false }),
+        );
+      }
+
+      const [paymentEventResults, nmiLogsResult] = await Promise.all([
+        Promise.all(paymentEventQueries),
         nmiSubscriptionIds.length > 0
           ? supabase
             .from('nmi_silent_post_logs')
@@ -737,10 +783,24 @@ export const dashboardController = {
       ]);
 
       const paymentsByEnrollment = new Map<string, any[]>();
-      for (const payment of ((paymentEventsResult as any).data || [])) {
-        const list = paymentsByEnrollment.get(payment.enrollment_id) || [];
-        list.push(payment);
-        paymentsByEnrollment.set(payment.enrollment_id, list);
+      const allPaymentEvents = dedupePaymentEvents(
+        ((paymentEventResults as any[]) || []).flatMap((result: any) => result?.data || []),
+      );
+      for (const enrollment of (enrollments || [])) {
+        const keys = new Set(
+          [enrollment.processor_subscription_id, enrollment.whop_membership_id]
+            .map((value: any) => String(value || '').trim())
+            .filter(Boolean),
+        );
+        const matched = allPaymentEvents.filter((payment: any) => {
+          if (payment.enrollment_id && payment.enrollment_id === enrollment.id) return true;
+          const paymentSubscription = String(payment.processor_subscription_id || '').trim();
+          if (paymentSubscription && keys.has(paymentSubscription)) return true;
+          if (payment.contact_id !== contactId) return false;
+          if (payment.offer_id && enrollment.offer_id && payment.offer_id === enrollment.offer_id) return true;
+          return false;
+        });
+        paymentsByEnrollment.set(enrollment.id, matched);
       }
 
       const nmiLogsBySubscription = new Map<string, any[]>();
@@ -756,6 +816,7 @@ export const dashboardController = {
         const enrollmentPayments = paymentsByEnrollment.get(e.id) || [];
         const paidDates = paymentDates(enrollmentPayments);
         const lastPayment = paidDates.length > 0 ? paidDates[paidDates.length - 1] : null;
+        const effectiveSubscriptionId = e.processor_subscription_id || e.whop_membership_id || null;
         const lastNmiLog = e.processor_subscription_id
           ? ((nmiLogsBySubscription.get(e.processor_subscription_id) || [])[0] || null)
           : null;
@@ -767,11 +828,12 @@ export const dashboardController = {
           offerPrice: offer?.price || e.payment_amount || 0,
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
           processorType: e.processor_type || null,
-          processorSubscriptionId: e.processor_subscription_id || null,
+          processorSubscriptionId: effectiveSubscriptionId,
+          whopMembershipId: e.whop_membership_id || null,
           billingSetupStatus: e.billing_setup_status || 'ok',
           billingSetupError: e.billing_setup_error || null,
           cardOnFile: cardSummary(matchedCard),
-          controlVerified: Boolean(e.processor_subscription_id),
+          controlVerified: Boolean(effectiveSubscriptionId),
           paymentAmount: e.payment_amount || 0,
           enrolledAt: e.enrolled_at,
           cancelledAt: e.cancelled_at,
