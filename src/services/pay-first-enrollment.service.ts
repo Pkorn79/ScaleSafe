@@ -1036,6 +1036,107 @@ export const payFirstEnrollmentService = {
     };
   },
 
+  async resendPaidEnrollmentLink(input: {
+    locationId: string;
+    enrollmentId: string;
+    sendVia?: string[];
+  }) {
+    if (!input.locationId || !input.enrollmentId) {
+      throw new ValidationError('locationId and enrollmentId required');
+    }
+
+    const { data: enrollment, error } = await getSupabase()
+      .from('enrollments')
+      .select('id, location_id, contact_id, offer_id, email, first_name, last_name, status, payment_amount')
+      .eq('id', input.enrollmentId)
+      .eq('location_id', input.locationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!enrollment) throw new ValidationError('Paid enrollment not found');
+    if (enrollment.status !== 'paid_pending_enrollment') {
+      throw new ValidationError('Enrollment is not waiting for paid enrollment signature');
+    }
+    if (!enrollment.offer_id || !enrollment.contact_id) {
+      throw new ValidationError('Enrollment is missing offer or contact information');
+    }
+
+    const offer = await offerRepository.findById(enrollment.offer_id, input.locationId);
+    if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
+
+    const paidToken = createPublicActionToken({
+      action: 'paid_enrollment',
+      locationId: input.locationId,
+      contactId: enrollment.contact_id,
+      enrollmentId: enrollment.id,
+      ttlSeconds: 30 * 24 * 60 * 60,
+    });
+    const enrollmentUrl = await buildEnrollmentUrl(input.locationId, enrollment.offer_id, paidToken);
+
+    try {
+      const api = await ghlApi(input.locationId);
+      await api.put(`/contacts/${enrollment.contact_id}`, {
+        customField: {
+          'contact.ss_enrollment_link': enrollmentUrl,
+          'contact.ss_current_offer_name': offer.offer_name,
+          'contact.ss_enrollment_status': 'paid_pending_enrollment',
+        },
+      });
+    } catch (err: any) {
+      logger.warn(
+        { err: err?.message || String(err), contactId: enrollment.contact_id, enrollmentId: enrollment.id },
+        'Paid enrollment resend contact field sync failed',
+      );
+    }
+
+    const result = await triggerService.fireTrigger(input.locationId, 'ss_send_enrollment_link', {
+      event_type: 'send_enrollment_link',
+      location_id: input.locationId,
+      locationId: input.locationId,
+      contact_id: enrollment.contact_id,
+      contactId: enrollment.contact_id,
+      enrollment_id: enrollment.id,
+      enrollmentId: enrollment.id,
+      offer_id: enrollment.offer_id,
+      offerId: enrollment.offer_id,
+      offer_name: offer.offer_name,
+      offerName: offer.offer_name,
+      program_name: offer.offer_name,
+      programName: offer.offer_name,
+      enrollment_url: enrollmentUrl,
+      enrollmentUrl,
+      payment_status: 'paid_pending_enrollment',
+      paymentStatus: 'paid_pending_enrollment',
+      payment_source: 'resend_paid_enrollment_link',
+      paymentSource: 'resend_paid_enrollment_link',
+      payment_timing: 'before_enrollment',
+      paymentTiming: 'before_enrollment',
+      enrollment_status: 'paid_pending_enrollment',
+      enrollmentStatus: 'paid_pending_enrollment',
+      send_welcome: false,
+      sendWelcome: false,
+      amount: enrollment.payment_amount || 0,
+      send_via: input.sendVia || ['email'],
+      sendVia: input.sendVia || ['email'],
+      first_name: enrollment.first_name || '',
+      firstName: enrollment.first_name || '',
+      last_name: enrollment.last_name || '',
+      lastName: enrollment.last_name || '',
+      email: enrollment.email || '',
+      phone: '',
+    });
+
+    return {
+      success: result.sent > 0,
+      sent: result.sent,
+      failed: result.failed,
+      enrollmentId: enrollment.id,
+      enrollmentUrl,
+      message: result.sent > 0
+        ? 'Paid enrollment link sent.'
+        : 'No active Send Enrollment Link workflow subscription accepted the trigger.',
+    };
+  },
+
   async finalizePaidPendingEnrollment(params: {
     enrollmentId: string;
     locationId: string;

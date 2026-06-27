@@ -27,14 +27,16 @@
       <select class="form-select" v-model="selectedOfferId">
         <option value="">Client-level payment only - no enrollment link</option>
         <option
-          v-for="offer in activeOffers"
+          v-for="offer in manualSaleOffers"
           :key="offer.id"
           :value="offer.id"
-          :disabled="isWhopOffer(offer)"
         >
-          {{ offer.offer_name }}{{ isWhopOffer(offer) ? ' - use Whop checkout link' : '' }}
+          {{ offer.offer_name }}
         </option>
       </select>
+      <p v-if="whopOfferCount > 0" class="text-sm text-muted mt-2">
+        Whop offers use the client checkout link and are not available for merchant-entered Quick Manual Sale.
+      </p>
       <p class="text-sm text-muted mt-2">
         {{ selectedOfferId ? 'Payment now, enrollment packet after payment.' : 'This records a payment on the client only. No enrollment packet or welcome email is sent.' }}
       </p>
@@ -222,6 +224,8 @@ let nmiTokenRejecter: ((err: Error) => void) | null = null;
 let processorLoadSeq = 0;
 
 const selectedOffer = computed(() => activeOffers.value.find((offer) => offer.id === selectedOfferId.value) || null);
+const manualSaleOffers = computed(() => activeOffers.value.filter((offer) => !isWhopOffer(offer)));
+const whopOfferCount = computed(() => activeOffers.value.length - manualSaleOffers.value.length);
 const selectedOfferSupportsInstallments = computed(() => {
   const offer = selectedOffer.value;
   return ['installment', 'installments'].includes(String(offer?.payment_type || '').toLowerCase());

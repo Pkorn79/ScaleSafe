@@ -473,6 +473,46 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     ]));
   });
 
+  it('resends an existing paid pending enrollment link without creating another payment', async () => {
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn(() => queryResult({
+        data: {
+          id: 'enr_existing',
+          location_id: 'loc_1',
+          contact_id: 'contact_1',
+          offer_id: 'offer_1',
+          email: 'client@example.com',
+          first_name: 'Client',
+          last_name: 'One',
+          status: 'paid_pending_enrollment',
+          payment_amount: 100,
+        },
+        error: null,
+      })),
+    });
+    mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+
+    const result = await payFirstEnrollmentService.resendPaidEnrollmentLink({
+      locationId: 'loc_1',
+      enrollmentId: 'enr_existing',
+      sendVia: ['email'],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.enrollmentUrl).toContain('paidEnrollmentToken=');
+    expect(mockPaymentEventCreateOrReuse).not.toHaveBeenCalled();
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_send_enrollment_link',
+      expect.objectContaining({
+        contact_id: 'contact_1',
+        enrollment_id: 'enr_existing',
+        enrollment_url: expect.stringContaining('paidEnrollmentToken='),
+        payment_source: 'resend_paid_enrollment_link',
+      }),
+    );
+  });
+
   it('directs Stripe bank payments to the dedicated manual-sale ACH flow', async () => {
     await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
       locationId: 'loc_1',

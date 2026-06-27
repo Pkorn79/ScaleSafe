@@ -157,7 +157,8 @@ function isBillingReady(enrollment: any): boolean {
 
 function needsProcessorSubscription(enrollment: any): boolean {
   const processor = String(enrollment.processor_type || '').toLowerCase();
-  return ['stripe', 'nmi', 'whop'].includes(processor) && !enrollment.processor_subscription_id;
+  if (processor === 'whop') return !(enrollment.processor_subscription_id || enrollment.whop_membership_id);
+  return ['stripe', 'nmi'].includes(processor) && !enrollment.processor_subscription_id;
 }
 
 export async function getPaymentReminderDiagnostics(locationId: string): Promise<PaymentReminderDiagnosticReport> {
@@ -175,7 +176,7 @@ export async function getPaymentReminderDiagnostics(locationId: string): Promise
   ] = await Promise.all([
     supabase
       .from('enrollments')
-      .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, billing_setup_status, status')
+      .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, status')
       .eq('location_id', locationId)
       .in('status', ['enrolled', 'active'])
       .in('payment_type', ['installments', 'installment', 'subscription'])
@@ -293,7 +294,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
 
   const baseQuery = supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, payments_made, payments_total')
+    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, payments_made, payments_total')
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription'])
     // Batch H: never remind for an enrollment whose processor billing setup did not complete

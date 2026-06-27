@@ -119,6 +119,8 @@ async function checkRatioThresholds(locationId: string, processor: string, snaps
 async function checkNmiRatio(merchantId: string, locationId: string): Promise<void> {
   const supabase = getSupabase();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const computedAt = new Date();
+  const snapshotDate = computedAt.toISOString().split('T')[0];
 
   // Count NMI transactions in last 30 days
   const { count: txCount } = await supabase
@@ -148,7 +150,8 @@ async function checkNmiRatio(merchantId: string, locationId: string): Promise<vo
     merchant_id: merchantId,
     location_id: locationId,
     processor: 'nmi',
-    computed_at: new Date().toISOString(),
+    snapshot_date: snapshotDate,
+    computed_at: computedAt.toISOString(),
     period_days: 30,
     total_charges: txCount,
     total_disputes: disputeCount || 0,

@@ -184,6 +184,7 @@ describe('StripeHealthService', () => {
           merchant_id: 'merchant_1',
           location_id: 'loc_1',
           processor: 'stripe',
+          snapshot_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
       );
     });

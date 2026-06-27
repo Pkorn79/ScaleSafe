@@ -33,6 +33,7 @@ import { runPaymentReminderCheck } from '../../src/jobs/payment-reminder-check';
 let enrollmentBillingStatus = 'ok';
 let enrollmentProcessorType = '';
 let enrollmentProcessorSubscriptionId: string | null = null;
+let enrollmentWhopMembershipId: string | null = null;
 
 describe('payment reminder check', () => {
   beforeEach(() => {
@@ -41,6 +42,7 @@ describe('payment reminder check', () => {
     enrollmentBillingStatus = 'ok';
     enrollmentProcessorType = '';
     enrollmentProcessorSubscriptionId = null;
+    enrollmentWhopMembershipId = null;
     mockIdempotencyExists.mockResolvedValue(false);
     mockIdempotencyRecord.mockResolvedValue(undefined);
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
@@ -61,6 +63,7 @@ describe('payment reminder check', () => {
           billing_setup_status: enrollmentBillingStatus,
           processor_type: enrollmentProcessorType,
           processor_subscription_id: enrollmentProcessorSubscriptionId,
+          whop_membership_id: enrollmentWhopMembershipId,
         };
         // Honour the .eq('billing_setup_status', 'ok') filter added in Batch H.
         let billingOk = true;
@@ -189,5 +192,20 @@ describe('payment reminder check', () => {
     expect(result.sent).toBe(0);
     expect(result.skipped).toBe(1);
     expect(mockFireTrigger).not.toHaveBeenCalled();
+  });
+
+  test('treats Whop membership ID as a valid recurring subscription reference', async () => {
+    enrollmentProcessorType = 'whop';
+    enrollmentProcessorSubscriptionId = null;
+    enrollmentWhopMembershipId = 'mem_123';
+
+    const result = await runPaymentReminderCheck();
+
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_app_event', expect.objectContaining({
+      enrollment_id: 'enr_1',
+      processor: 'whop',
+    }));
   });
 });

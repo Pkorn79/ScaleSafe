@@ -111,6 +111,7 @@ export interface AccountHealthSnapshot {
   merchant_id: string;
   location_id: string;
   processor: 'stripe' | 'nmi';
+  snapshot_date?: string;
   computed_at: string;
   period_days: number;
   total_charges: number;

@@ -1827,6 +1827,20 @@ export const dashboardController = {
     }
   },
 
+  /** POST /api/dashboard/enrollments/:enrollmentId/resend-paid-link */
+  async resendPaidEnrollmentLink(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const result = await payFirstEnrollmentService.resendPaidEnrollmentLink({
+        locationId,
+        enrollmentId: String(req.params.enrollmentId || ''),
+        sendVia: req.body.sendVia,
+      });
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
   async createManualSaleStripeAchIntent(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);

@@ -36,6 +36,9 @@
           <button v-if="canResume(enr)" class="btn btn-sm btn-secondary" @click="executeAction(enr, 'resume')" :disabled="actionLoading">Resume</button>
           <button v-if="canComplete(enr)" class="btn btn-sm btn-secondary" @click="openActionModal(enr, 'complete')" :disabled="actionLoading">Complete</button>
           <button v-if="canCancel(enr)" class="btn btn-sm btn-red" @click="openActionModal(enr, 'cancel')" :disabled="actionLoading">Cancel</button>
+          <button v-if="canResendPaidLink(enr)" class="btn btn-sm btn-secondary" @click="resendPaidLink(enr)" :disabled="resendLoading === enr.id">
+            {{ resendLoading === enr.id ? 'Sending...' : 'Resend Link' }}
+          </button>
           <button v-if="enr.packetPdfPath && ['enrolled','completed'].includes(enr.status)"
             class="btn btn-sm btn-secondary" @click="downloadPacket(enr.id)" :disabled="packetLoading">
             {{ packetLoading ? '...' : 'Packet' }}
@@ -113,6 +116,7 @@
     </div>
 
     <div v-if="packetError || actionError" class="text-sm mt-2" style="color:#ef4444">{{ packetError || actionError }}</div>
+    <div v-if="resendResult" class="text-sm mt-2" style="color:#047857">{{ resendResult }}</div>
     <div v-if="milestoneResult" class="text-sm mt-2" style="color:#047857">{{ milestoneResult }}</div>
 
     <!-- Mark Complete confirmation modal -->
@@ -196,6 +200,8 @@ const milestoneResult = ref('');
 const milestoneLoading = ref(false);
 const actionLoading = ref(false);
 const actionError = ref('');
+const resendLoading = ref('');
+const resendResult = ref('');
 
 // Milestone modal
 const showMilestoneModal = ref(false);
@@ -248,6 +254,9 @@ function canCancel(enr: any): boolean {
 }
 function canComplete(enr: any): boolean {
   return ['enrolled', 'active'].includes(enr.status);
+}
+function canResendPaidLink(enr: any): boolean {
+  return enr.status === 'paid_pending_enrollment';
 }
 
 function shortFrequency(freq?: string): string {
@@ -328,6 +337,26 @@ async function executeAction(enr: any, action: string, reason?: string) {
     actionError.value = e.message || `Failed to ${action} enrollment`;
   }
   actionLoading.value = false;
+}
+
+async function resendPaidLink(enr: any) {
+  resendLoading.value = enr.id;
+  actionError.value = '';
+  resendResult.value = '';
+  try {
+    const result = await api.post<any>(`/api/dashboard/enrollments/${enr.id}/resend-paid-link`, {
+      sendVia: ['email'],
+    });
+    if (result?.success === false) {
+      actionError.value = result.message || 'Paid enrollment link was not sent.';
+    } else {
+      resendResult.value = result?.message || 'Paid enrollment link sent.';
+    }
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to resend paid enrollment link';
+  } finally {
+    resendLoading.value = '';
+  }
 }
 
 function formatDateShort(d: string): string {

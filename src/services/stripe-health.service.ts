@@ -117,12 +117,16 @@ export class StripeHealthService {
     const vampStatus = this.assessVampStatus(disputeRate);
     const mcStatus = this.assessMastercardStatus(disputeRate);
 
+    const computedAt = new Date();
+    const snapshotDate = computedAt.toISOString().split('T')[0];
+
     // Store snapshot
     const snapshot: AccountHealthSnapshot = {
       merchant_id: merchantId,
       location_id: locationId,
       processor: 'stripe',
-      computed_at: new Date().toISOString(),
+      snapshot_date: snapshotDate,
+      computed_at: computedAt.toISOString(),
       period_days: 30,
       total_charges: totalCharges,
       total_disputes: totalDisputes,
