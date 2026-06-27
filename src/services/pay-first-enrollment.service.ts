@@ -16,6 +16,7 @@ import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
 import type { ProcessorType } from '../types/processor.types';
 import { dualPricingService } from './dual-pricing.service';
+import { deliverEnrollmentLink, type EnrollmentLinkDeliveryResult } from './enrollment-link-delivery.service';
 
 interface RecordPayFirstInput {
   locationId: string;
@@ -395,6 +396,7 @@ export const payFirstEnrollmentService = {
     let processorSubscriptionId = '';
     let billingSetupIssue: { code: string; message: string } | null = null;
     let enrollmentLinkIssue: ManualSaleIssue | null = null;
+    let enrollmentLinkDelivery: EnrollmentLinkDeliveryResult | undefined;
     const releaseAchOnSubmission = paymentProcessing
       && paymentMethod === 'ach'
       && offer?.ach_access_policy === 'after_submission';
@@ -627,64 +629,38 @@ export const payFirstEnrollmentService = {
     const enrollmentLinkRequested = Boolean(offer && input.sendEnrollment !== false);
     const enrollmentLinkEligible = !paymentProcessing || releaseAchOnSubmission;
     if (enrollmentLinkRequested && enrollmentLinkEligible && offer && enrollmentId && enrollmentUrl) {
-      try {
-        const api = await ghlApi(input.locationId);
-        await api.put(`/contacts/${contactId}`, {
-          customField: {
-            'contact.ss_enrollment_link': enrollmentUrl,
-            'contact.ss_current_offer_name': offer.offer_name,
-            'contact.ss_enrollment_status': 'paid_pending_enrollment',
-          },
-        });
-      } catch (err: any) {
-        logger.warn({ ...logContext, err: err.message, contactId }, 'Quick manual sale contact field sync failed');
-      }
-
-      const enrollmentTriggerResult = await fireManualSaleTrigger(input.locationId, 'ss_send_enrollment_link', {
-        event_type: 'send_enrollment_link',
-        location_id: input.locationId,
+      const enrollmentTriggerResult = await deliverEnrollmentLink({
         locationId: input.locationId,
-        contact_id: contactId,
         contactId,
-        enrollment_id: enrollmentId,
         enrollmentId,
-        offer_id: input.offerId,
-        offerId: input.offerId,
-        offer_name: offer.offer_name,
+        offerId: input.offerId!,
         offerName: offer.offer_name,
-        program_name: offer.offer_name,
-        programName: offer.offer_name,
-        enrollment_url: enrollmentUrl,
         enrollmentUrl,
-        payment_status: 'paid_pending_enrollment',
         paymentStatus: 'paid_pending_enrollment',
-        payment_source: 'quick_manual_sale',
         paymentSource: 'quick_manual_sale',
-        payment_timing: 'before_enrollment',
         paymentTiming: 'before_enrollment',
-        enrollment_status: 'paid_pending_enrollment',
         enrollmentStatus: 'paid_pending_enrollment',
-        send_welcome: false,
         sendWelcome: false,
         amount: input.amount,
-        ach_payment_status: paymentProcessing ? 'processing' : 'settled',
-        achPaymentStatus: paymentProcessing ? 'processing' : 'settled',
-        send_via: input.sendVia || ['email'],
         sendVia: input.sendVia || ['email'],
-        first_name: name.firstName || '',
         firstName: name.firstName || '',
-        last_name: name.lastName || '',
         lastName: name.lastName || '',
         email: input.email,
         phone: input.phone || '',
+        sendDirectMessage: true,
+        extraPayload: {
+          ach_payment_status: paymentProcessing ? 'processing' : 'settled',
+          achPaymentStatus: paymentProcessing ? 'processing' : 'settled',
+        },
       });
+      enrollmentLinkDelivery = enrollmentTriggerResult;
       if (enrollmentTriggerResult.sent < 1) {
         enrollmentLinkIssue = {
-          code: enrollmentTriggerResult.failed > 0 || enrollmentTriggerResult.error
+          code: enrollmentTriggerResult.failed > 0 || enrollmentTriggerResult.triggerError
             ? 'enrollment_link_trigger_failed'
             : 'enrollment_link_trigger_missing',
-          message: enrollmentTriggerResult.error
-            ? `Payment was received, but the enrollment link workflow failed: ${enrollmentTriggerResult.error}`
+          message: enrollmentTriggerResult.triggerError
+            ? `Payment was received, but the enrollment link workflow failed: ${enrollmentTriggerResult.triggerError}`
             : 'Payment was received, but no active Send Enrollment Link workflow subscription accepted the trigger.',
           step: 'send_enrollment_link',
         };
@@ -692,6 +668,22 @@ export const payFirstEnrollmentService = {
         logger.error(
           { ...logContext, triggerResult: enrollmentTriggerResult, step: enrollmentLinkIssue.step },
           'Quick Manual Sale enrollment link trigger did not send',
+        );
+      }
+      if (!enrollmentTriggerResult.contactFieldSynced || enrollmentTriggerResult.directMessageErrors?.length) {
+        const detail = [
+          enrollmentTriggerResult.contactFieldError ? `contact fields: ${enrollmentTriggerResult.contactFieldError}` : '',
+          ...(enrollmentTriggerResult.directMessageErrors || []),
+        ].filter(Boolean).join('; ');
+        const issue = {
+          code: 'enrollment_link_delivery_warning',
+          message: `Payment was received and the enrollment link trigger fired, but direct enrollment-link delivery had a warning: ${detail}`,
+          step: 'send_enrollment_link',
+        };
+        postChargeIssues.push(issue);
+        logger.warn(
+          { ...logContext, delivery: enrollmentTriggerResult, step: issue.step },
+          'Quick Manual Sale enrollment link delivery completed with warnings',
         );
       }
     } else if (enrollmentLinkRequested && enrollmentLinkEligible) {
@@ -770,6 +762,7 @@ export const payFirstEnrollmentService = {
       subscriptionId: processorSubscriptionId || undefined,
       billingIssue: billingSetupIssue || undefined,
       enrollmentLinkIssue: enrollmentLinkIssue || undefined,
+      enrollmentLinkDelivery,
       recordingIssue: postChargeIssues[0] || undefined,
       recordingIssues: postChargeIssues.length ? postChargeIssues : undefined,
       cardLastFour: saveResult.cardLastFour,
