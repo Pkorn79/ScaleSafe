@@ -1,12 +1,15 @@
 import { payFirstEnrollmentService } from '../../src/services/pay-first-enrollment.service';
 import { getSupabase } from '../../src/clients/supabase.client';
 import { offerRepository } from '../../src/repositories/offer.repository';
+import { paymentEventRepository } from '../../src/repositories/paymentEvent.repository';
 import { phase2EvidenceRepository } from '../../src/repositories/phase2Evidence.repository';
 import { triggerService } from '../../src/services/trigger.service';
 import { createProcessorClient, resolveProcessor } from '../../src/services/processor.factory';
 import { merchantRepository } from '../../src/repositories/merchant.repository';
 import { ghlApi } from '../../src/clients/ghl.client';
-import { findSavedCardForProcessor } from '../../src/services/payment-methods.service';
+import { findSavedCardForProcessor, saveOrReusePaymentMethod } from '../../src/services/payment-methods.service';
+import { dualPricingService } from '../../src/services/dual-pricing.service';
+import { merchantService } from '../../src/services/merchant.service';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: jest.fn(),
@@ -24,6 +27,12 @@ jest.mock('../../src/repositories/phase2Evidence.repository', () => ({
   },
 }));
 
+jest.mock('../../src/repositories/paymentEvent.repository', () => ({
+  paymentEventRepository: {
+    createOrReuseByTransaction: jest.fn(),
+  },
+}));
+
 jest.mock('../../src/services/trigger.service', () => ({
   triggerService: {
     fireTrigger: jest.fn(),
@@ -38,6 +47,12 @@ jest.mock('../../src/services/processor.factory', () => ({
 jest.mock('../../src/services/payment-methods.service', () => ({
   findSavedCardForProcessor: jest.fn(),
   saveOrReusePaymentMethod: jest.fn(),
+}));
+
+jest.mock('../../src/services/dual-pricing.service', () => ({
+  dualPricingService: {
+    quoteOffer: jest.fn(),
+  },
 }));
 
 jest.mock('../../src/clients/ghl.client', () => ({
@@ -58,12 +73,16 @@ jest.mock('../../src/services/offer.service', () => ({
 
 const mockGetSupabase = getSupabase as jest.Mock;
 const mockFindOffer = offerRepository.findById as jest.Mock;
+const mockPaymentEventCreateOrReuse = paymentEventRepository.createOrReuseByTransaction as jest.Mock;
 const mockEvidenceCreate = phase2EvidenceRepository.create as jest.Mock;
 const mockFireTrigger = triggerService.fireTrigger as jest.Mock;
 const mockCreateProcessorClient = createProcessorClient as jest.Mock;
 const mockResolveProcessor = resolveProcessor as jest.Mock;
 const mockGhlApi = ghlApi as jest.Mock;
 const mockFindSavedCard = findSavedCardForProcessor as jest.Mock;
+const mockSaveOrReusePaymentMethod = saveOrReusePaymentMethod as jest.Mock;
+const mockQuoteOffer = dualPricingService.quoteOffer as jest.Mock;
+const mockGetFullConfig = merchantService.getFullConfig as jest.Mock;
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -327,7 +346,9 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     });
     mockGhlApi.mockResolvedValue({
       post: jest.fn().mockResolvedValue({ data: { contact: { id: 'contact_1' } } }),
+      put: jest.fn().mockResolvedValue({ data: {} }),
     });
+    mockGetFullConfig.mockResolvedValue({ enrollmentFunnelUrl: '' });
     mockFindOffer.mockResolvedValue({
       id: 'offer_1',
       active: true,
@@ -342,6 +363,114 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     mockCreateProcessorClient.mockReturnValue({
       charge: jest.fn(),
     });
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn(() => queryResult({ data: { id: 'enr_1' }, error: null })),
+    });
+    mockPaymentEventCreateOrReuse.mockResolvedValue({ id: 'pe_1' });
+    mockEvidenceCreate.mockResolvedValue({});
+    mockSaveOrReusePaymentMethod.mockResolvedValue(undefined);
+    mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+    mockQuoteOffer.mockResolvedValue({
+      selectedAmountCents: 10000,
+      selectedAmount: 100,
+      cardAmountCents: 10000,
+      achAmountCents: 10000,
+      dualPricingEnabled: false,
+    });
+  });
+
+  it('fires the paid enrollment link trigger after a successful card manual sale', async () => {
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn().mockResolvedValue({
+        success: true,
+        status: 'succeeded',
+        transactionId: 'pi_manual_1',
+        vaultedCustomerId: 'cus_1',
+        vaultedCardLastFour: '4242',
+        vaultedCardBrand: 'visa',
+        vaultedCardExpMonth: 4,
+        vaultedCardExpYear: 2028,
+      }),
+    });
+
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1',
+      offerId: 'offer_1',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentToken: 'tok_card',
+      paymentType: 'pif',
+      paymentMethod: 'card',
+      sendEnrollment: true,
+    } as any);
+
+    expect(result.success).toBe(true);
+    expect(result.enrollmentId).toBe('enr_1');
+    expect(result.enrollmentLinkIssue).toBeUndefined();
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_send_enrollment_link',
+      expect.objectContaining({
+        contact_id: 'contact_1',
+        enrollment_id: 'enr_1',
+        offer_id: 'offer_1',
+        enrollment_url: expect.stringContaining('paidEnrollmentToken='),
+        payment_source: 'quick_manual_sale',
+      }),
+    );
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_payment_received',
+      expect.objectContaining({
+        contact_id: 'contact_1',
+        enrollment_id: 'enr_1',
+        transaction_id: 'pi_manual_1',
+      }),
+    );
+  });
+
+  it('returns a visible issue when the paid enrollment link trigger has no active subscription', async () => {
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn().mockResolvedValue({
+        success: true,
+        status: 'succeeded',
+        transactionId: 'pi_manual_2',
+        vaultedCustomerId: 'cus_1',
+        vaultedCardLastFour: '4242',
+        vaultedCardBrand: 'visa',
+        vaultedCardExpMonth: 4,
+        vaultedCardExpYear: 2028,
+      }),
+    });
+    mockFireTrigger.mockImplementation(async (_locationId, triggerKey) => (
+      triggerKey === 'ss_send_enrollment_link'
+        ? { sent: 0, failed: 0 }
+        : { sent: 1, failed: 0 }
+    ));
+
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1',
+      offerId: 'offer_1',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentToken: 'tok_card',
+      paymentType: 'pif',
+      paymentMethod: 'card',
+      sendEnrollment: true,
+    } as any);
+
+    expect(result.success).toBe(true);
+    expect(result.enrollmentLinkIssue).toEqual(expect.objectContaining({
+      code: 'enrollment_link_trigger_missing',
+      step: 'send_enrollment_link',
+    }));
+    expect(result.recordingIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'enrollment_link_trigger_missing' }),
+    ]));
   });
 
   it('directs Stripe bank payments to the dedicated manual-sale ACH flow', async () => {

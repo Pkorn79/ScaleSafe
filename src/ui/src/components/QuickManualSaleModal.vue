@@ -594,6 +594,8 @@ async function submit() {
     });
     if (result.billingIssue?.message) {
       resultMessage.value = `Payment received, but subscription setup failed: ${result.billingIssue.message}`;
+    } else if (result.enrollmentLinkIssue?.message) {
+      resultMessage.value = result.enrollmentLinkIssue.message;
     } else if (result.recordingIssue?.message) {
       resultMessage.value = `Payment received, but ScaleSafe could not finish recording: ${result.recordingIssue.message}`;
     } else {

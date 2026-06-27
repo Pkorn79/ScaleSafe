@@ -137,14 +137,16 @@ async function fireManualSaleTrigger(
   locationId: string,
   triggerKey: Parameters<typeof triggerService.fireTrigger>[1],
   payload: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ sent: number; failed: number; error?: string }> {
   try {
-    await triggerService.fireTrigger(locationId, triggerKey, payload);
+    return await triggerService.fireTrigger(locationId, triggerKey, payload);
   } catch (err: any) {
+    const error = err?.message || String(err);
     logger.error(
-      { err: err?.message || String(err), locationId, triggerKey },
+      { err: error, locationId, triggerKey },
       'Quick Manual Sale trigger failed after payment was recorded',
     );
+    return { sent: 0, failed: 1, error };
   }
 }
 
@@ -392,6 +394,7 @@ export const payFirstEnrollmentService = {
     let enrollmentUrl = '';
     let processorSubscriptionId = '';
     let billingSetupIssue: { code: string; message: string } | null = null;
+    let enrollmentLinkIssue: ManualSaleIssue | null = null;
     const releaseAchOnSubmission = paymentProcessing
       && paymentMethod === 'ach'
       && offer?.ach_access_policy === 'after_submission';
@@ -621,7 +624,9 @@ export const payFirstEnrollmentService = {
       logger.error({ ...logContext, err: errorMessage(err), step: issue.step }, 'Quick Manual Sale post-charge step failed');
     }
 
-    if ((!paymentProcessing || releaseAchOnSubmission) && offer && enrollmentId && enrollmentUrl && input.sendEnrollment !== false) {
+    const enrollmentLinkRequested = Boolean(offer && input.sendEnrollment !== false);
+    const enrollmentLinkEligible = !paymentProcessing || releaseAchOnSubmission;
+    if (enrollmentLinkRequested && enrollmentLinkEligible && offer && enrollmentId && enrollmentUrl) {
       try {
         const api = await ghlApi(input.locationId);
         await api.put(`/contacts/${contactId}`, {
@@ -632,10 +637,10 @@ export const payFirstEnrollmentService = {
           },
         });
       } catch (err: any) {
-        logger.warn({ err: err.message, contactId }, 'Quick manual sale contact field sync failed');
+        logger.warn({ ...logContext, err: err.message, contactId }, 'Quick manual sale contact field sync failed');
       }
 
-      await fireManualSaleTrigger(input.locationId, 'ss_send_enrollment_link', {
+      const enrollmentTriggerResult = await fireManualSaleTrigger(input.locationId, 'ss_send_enrollment_link', {
         event_type: 'send_enrollment_link',
         location_id: input.locationId,
         locationId: input.locationId,
@@ -673,6 +678,42 @@ export const payFirstEnrollmentService = {
         email: input.email,
         phone: input.phone || '',
       });
+      if (enrollmentTriggerResult.sent < 1) {
+        enrollmentLinkIssue = {
+          code: enrollmentTriggerResult.failed > 0 || enrollmentTriggerResult.error
+            ? 'enrollment_link_trigger_failed'
+            : 'enrollment_link_trigger_missing',
+          message: enrollmentTriggerResult.error
+            ? `Payment was received, but the enrollment link workflow failed: ${enrollmentTriggerResult.error}`
+            : 'Payment was received, but no active Send Enrollment Link workflow subscription accepted the trigger.',
+          step: 'send_enrollment_link',
+        };
+        postChargeIssues.push(enrollmentLinkIssue);
+        logger.error(
+          { ...logContext, triggerResult: enrollmentTriggerResult, step: enrollmentLinkIssue.step },
+          'Quick Manual Sale enrollment link trigger did not send',
+        );
+      }
+    } else if (enrollmentLinkRequested && enrollmentLinkEligible) {
+      enrollmentLinkIssue = {
+        code: 'enrollment_link_not_ready',
+        message: 'Payment was received, but ScaleSafe could not send the enrollment link because the paid enrollment link was not created.',
+        step: 'send_enrollment_link',
+      };
+      postChargeIssues.push(enrollmentLinkIssue);
+      logger.error(
+        {
+          ...logContext,
+          hasOffer: Boolean(offer),
+          hasEnrollmentId: Boolean(enrollmentId),
+          hasEnrollmentUrl: Boolean(enrollmentUrl),
+          sendEnrollment: input.sendEnrollment !== false,
+          paymentProcessing,
+          releaseAchOnSubmission,
+          step: enrollmentLinkIssue.step,
+        },
+        'Quick Manual Sale enrollment link skipped after payment',
+      );
     }
 
     if (!paymentProcessing || releaseAchOnSubmission) await fireManualSaleTrigger(input.locationId, 'ss_payment_received', {
@@ -728,6 +769,7 @@ export const payFirstEnrollmentService = {
       processorType: procConfig.processor_type,
       subscriptionId: processorSubscriptionId || undefined,
       billingIssue: billingSetupIssue || undefined,
+      enrollmentLinkIssue: enrollmentLinkIssue || undefined,
       recordingIssue: postChargeIssues[0] || undefined,
       recordingIssues: postChargeIssues.length ? postChargeIssues : undefined,
       cardLastFour: saveResult.cardLastFour,
