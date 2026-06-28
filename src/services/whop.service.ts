@@ -259,7 +259,37 @@ export const whopService = {
         },
       };
       if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
-      const planRes = await client(row).post('/plans', planPayload);
+      logger.info({
+        locationId: input.locationId,
+        offerId: input.offer.id,
+        companyId: row.company_id,
+        productId: input.offer.whop_product_id,
+        initialPrice: planPayload.initial_price,
+        renewalPrice: planPayload.renewal_price,
+        billingPeriod: planPayload.billing_period,
+        splitPayments: planPayload.split_pay_required_payments || null,
+      }, 'Creating Whop dynamic checkout plan');
+      let planRes;
+      try {
+        planRes = await client(row).post('/plans', planPayload);
+      } catch (err: any) {
+        logger.error({
+          locationId: input.locationId,
+          offerId: input.offer.id,
+          status: err?.response?.status,
+          whopError: err?.response?.data,
+          planPayload: {
+            company_id: planPayload.company_id,
+            product_id: planPayload.product_id,
+            plan_type: planPayload.plan_type,
+            initial_price: planPayload.initial_price,
+            renewal_price: planPayload.renewal_price,
+            billing_period: planPayload.billing_period,
+            split_pay_required_payments: planPayload.split_pay_required_payments || null,
+          },
+        }, 'Whop dynamic checkout plan creation failed');
+        throw new Error(whopErrorMessage(err, 'Whop dynamic checkout plan failed'));
+      }
       planId = extractId(planRes.data, 'plan');
       if (!planId) throw new Error('Whop dynamic checkout plan returned no plan ID');
     }
@@ -285,8 +315,30 @@ export const whopService = {
     };
     let res;
     try {
+      logger.info({
+        locationId: input.locationId,
+        offerId: input.offer.id,
+        planId,
+        checkoutMode: input.checkoutMode,
+        hasConsentToken: Boolean(input.consentToken),
+        addonCents,
+        futureRecurringCents,
+      }, 'Creating Whop checkout configuration');
       res = await client(row).post('/checkout_configurations', payload);
     } catch (err: any) {
+      logger.error({
+        locationId: input.locationId,
+        offerId: input.offer.id,
+        status: err?.response?.status,
+        whopError: err?.response?.data,
+        checkoutPayload: {
+          plan_id: payload.plan_id,
+          mode: payload.mode,
+          currency: payload.currency,
+          redirect_url: payload.redirect_url,
+          source_url: payload.source_url,
+        },
+      }, 'Whop checkout configuration failed');
       throw new Error(whopErrorMessage(err, 'Whop checkout configuration failed'));
     }
     const sessionId = extractId(res.data, 'checkout_session', 'session') || res.data?.checkout_session_id || res.data?.checkoutSessionId || '';
