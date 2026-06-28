@@ -68,6 +68,12 @@ function centsToDollars(cents: number): number {
   return Math.round(Number(cents || 0)) / 100;
 }
 
+function assertWhopMinimum(label: string, amount: number): void {
+  if (!Number.isFinite(amount) || amount < 1) {
+    throw new ValidationError(`${label} must be at least $1.00 for Whop checkout.`);
+  }
+}
+
 function whopErrorMessage(err: any, fallback: string): string {
   const body = err?.response?.data;
   const errors = Array.isArray(body?.errors)
@@ -144,7 +150,6 @@ export const whopService = {
         ? Number(offer.installment_amount || offer.price || 0)
         : Number(offer.pif_discount_enabled && offer.pif_price != null ? offer.pif_price : offer.price || 0);
 
-      let planId = offer.whop_plan_id || '';
       const planPayload: Record<string, unknown> = {
         company_id: row.company_id,
         product_id: productId,
@@ -162,14 +167,16 @@ export const whopService = {
       };
       if (recurring) {
         if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
+        assertWhopMinimum('Whop renewal price', amount);
+      } else {
+        assertWhopMinimum('Whop one-time price', amount);
       }
 
-      if (!planId) {
-        const planRes = await api.post('/plans', planPayload);
-        planId = extractId(planRes.data, 'plan');
-      } else {
-        await api.patch(`/plans/${encodeURIComponent(planId)}`, planPayload);
-      }
+      // Whop plans are cheap to recreate and fragile to mutate across billing
+      // shapes. Recreate the hidden plan on every offer sync so a PIF offer does
+      // not keep pointing at a stale renewal plan, or vice versa.
+      const planRes = await api.post('/plans', planPayload);
+      const planId = extractId(planRes.data, 'plan');
       if (!planId) throw new Error('Whop plan sync returned no plan ID');
 
       await updateWhopSync(locationId, offer.id, {
@@ -236,6 +243,10 @@ export const whopService = {
       if (!input.offer.whop_product_id) {
         throw new ValidationError('This Whop offer is missing its synced product ID. Save the offer again, then retry checkout.');
       }
+      const addonAmount = centsToDollars(addonCents);
+      const renewalAmount = centsToDollars(futureRecurringCents);
+      assertWhopMinimum('Selected one-time Whop add-ons', addonAmount);
+      assertWhopMinimum('Whop renewal price', renewalAmount);
       const planPayload: Record<string, unknown> = {
         company_id: row.company_id,
         product_id: input.offer.whop_product_id,
@@ -244,8 +255,8 @@ export const whopService = {
         title: input.offer.offer_name,
         nickname: `${input.offer.offer_name} checkout`,
         currency: 'usd',
-        initial_price: centsToDollars(addonCents),
-        renewal_price: centsToDollars(futureRecurringCents),
+        initial_price: addonAmount,
+        renewal_price: renewalAmount,
         billing_period: recurring.billingPeriodDays,
         visibility: 'hidden',
         unlimited_stock: true,

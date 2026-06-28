@@ -259,6 +259,40 @@ describe('whopService.createCheckoutSession', () => {
     }));
   });
 
+  it('rejects checkout-specific Whop add-ons below the Whop plan minimum before calling Whop', async () => {
+    const post = jest.fn();
+    mockAxiosCreate.mockReturnValue({ post });
+
+    await expect(whopService.createCheckoutSession({
+      locationId: 'loc-1',
+      offer: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Whop Offer',
+        payment_type: 'installments',
+        installment_frequency: 'weekly',
+        num_payments: 5,
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_123',
+      } as any,
+      enrollmentId: 'enroll-1',
+      contactId: 'contact-1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client Example',
+      consentToken: 'consent-1',
+      checkoutMode: 'full_enrollment',
+      quote: {
+        selectedAmount: 2.24,
+        selectedAmountCents: 224,
+        addonAmountCents: 4,
+        futureRecurringSelectedAmountCents: 220,
+        lineItems: [],
+      } as any,
+    })).rejects.toThrow('Selected one-time Whop add-ons must be at least $1.00');
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('uses the synced Whop renewal plan when there are no one-time add-ons', async () => {
     const post = jest.fn().mockResolvedValue({
       data: {
