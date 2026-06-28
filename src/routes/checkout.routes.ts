@@ -1371,8 +1371,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('future-payment-row').classList.add('hidden');
     }
     if (quote.dualPricingEnabled) {
-      el('dual-ach-price').textContent = formatCurrency(quote.achPrice);
-      el('dual-card-price').textContent = formatCurrency(quote.cardPrice);
+      el('dual-ach-price').textContent = formatCurrency(quote.achAmount);
+      el('dual-card-price').textContent = formatCurrency(quote.cardAmount);
       el('dual-pricing-box').classList.remove('hidden');
     } else {
       el('dual-pricing-box').classList.add('hidden');

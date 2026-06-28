@@ -51,13 +51,11 @@ export const turnstileService = {
       throw new ValidationError('Please complete the security check before continuing.');
     }
 
-    const idempotencyKey = `${offer?.location_id || 'unknown'}:${offer?.id || 'no-offer'}:${token.slice(0, 32)}`;
     const body = new URLSearchParams();
     body.set('secret', turnstileConfig.secretKey);
     body.set('response', token);
     const ip = clientIp(req);
     if (ip) body.set('remoteip', ip);
-    body.set('idempotency_key', idempotencyKey);
 
     try {
       const { data } = await axios.post(
@@ -66,12 +64,22 @@ export const turnstileService = {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 5000 },
       );
       if (!data?.success) {
+        const errorCodes = data?.['error-codes'] || [];
         logger.warn({
           offerId: offer?.id,
           locationId: offer?.location_id,
-          errorCodes: data?.['error-codes'] || [],
+          errorCodes,
         }, 'Turnstile verification rejected checkout attempt');
-        throw new ValidationError('Security check expired. Please try again.');
+        if (errorCodes.includes('missing-input-response')) {
+          throw new ValidationError('Please complete the security check before continuing.');
+        }
+        if (errorCodes.includes('invalid-input-secret') || errorCodes.includes('missing-input-secret')) {
+          throw new ValidationError('Security check is not configured. Please contact support.');
+        }
+        if (errorCodes.includes('timeout-or-duplicate')) {
+          throw new ValidationError('Security check expired. Please try again.');
+        }
+        throw new ValidationError('Security check failed. Please try again.');
       }
     } catch (err: any) {
       if (err instanceof ValidationError) throw err;
