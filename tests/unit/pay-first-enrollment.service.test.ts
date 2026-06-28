@@ -373,6 +373,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
         enrollment_id: 'enr_1',
         offer_id: 'offer_1',
         enrollment_url: expect.stringContaining('paidEnrollmentToken='),
+        enrollmentUrl: expect.stringContaining('email=client%40example.com'),
         payment_source: 'quick_manual_sale',
       }),
     );

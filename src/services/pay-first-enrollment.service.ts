@@ -194,7 +194,20 @@ async function fireManualSaleTrigger(
   }
 }
 
-async function buildEnrollmentUrl(locationId: string, offerId: string, paidEnrollmentToken?: string): Promise<string> {
+interface PaidEnrollmentUrlContext {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  paymentType?: string;
+}
+
+async function buildEnrollmentUrl(
+  locationId: string,
+  offerId: string,
+  paidEnrollmentToken?: string,
+  context?: PaidEnrollmentUrlContext,
+): Promise<string> {
   let funnelBaseUrl = '';
   try {
     const mc = await merchantService.getFullConfig(locationId);
@@ -209,6 +222,12 @@ async function buildEnrollmentUrl(locationId: string, offerId: string, paidEnrol
   if (!paidEnrollmentToken) return link;
   const url = new URL(link);
   url.searchParams.set('paidEnrollmentToken', paidEnrollmentToken);
+  url.searchParams.set('paidEnrollment', '1');
+  if (context?.firstName) url.searchParams.set('firstName', context.firstName);
+  if (context?.lastName) url.searchParams.set('lastName', context.lastName);
+  if (context?.email) url.searchParams.set('email', context.email);
+  if (context?.phone) url.searchParams.set('phone', context.phone);
+  if (context?.paymentType) url.searchParams.set('paymentType', context.paymentType);
   return url.toString();
 }
 
@@ -483,7 +502,13 @@ export const payFirstEnrollmentService = {
           enrollmentId: createdEnrollmentId,
           ttlSeconds: 30 * 24 * 60 * 60,
         });
-        enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId!, paidToken);
+        enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId!, paidToken, {
+          firstName: name.firstName,
+          lastName: name.lastName,
+          email: input.email,
+          phone: input.phone,
+          paymentType,
+        });
 
         if (releaseAchOnSubmission) {
           const { error: releaseError } = await getSupabase().from('enrollments').update({
@@ -1083,7 +1108,7 @@ export const payFirstEnrollmentService = {
 
     const { data: enrollment, error } = await getSupabase()
       .from('enrollments')
-      .select('id, location_id, contact_id, offer_id, email, first_name, last_name, status, payment_amount')
+      .select('id, location_id, contact_id, offer_id, email, first_name, last_name, status, payment_amount, payment_type')
       .eq('id', input.enrollmentId)
       .eq('location_id', input.locationId)
       .maybeSingle();
@@ -1106,7 +1131,12 @@ export const payFirstEnrollmentService = {
       enrollmentId: enrollment.id,
       ttlSeconds: 30 * 24 * 60 * 60,
     });
-    const enrollmentUrl = await buildEnrollmentUrl(input.locationId, enrollment.offer_id, paidToken);
+    const enrollmentUrl = await buildEnrollmentUrl(input.locationId, enrollment.offer_id, paidToken, {
+      firstName: enrollment.first_name || '',
+      lastName: enrollment.last_name || '',
+      email: enrollment.email || '',
+      paymentType: enrollment.payment_type || '',
+    });
 
     try {
       const api = await ghlApi(input.locationId);
