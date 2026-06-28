@@ -17,6 +17,9 @@ router.post('/device-capture', enrollmentPublicLimiter, enrollmentController.dev
 // Page 2 widget: Public offer details (no internal IDs)
 router.get('/offer/:offerId/public', enrollmentPublicLimiter, enrollmentController.getPublicOffer);
 
+// Paid/QMS enrollment widget context
+router.get('/paid-context', enrollmentPublicLimiter, enrollmentController.getPaidEnrollmentContext);
+
 // Page 3 widget: Consent capture with forensics + consent_token generation
 router.post('/consent', enrollmentPublicLimiter, enrollmentController.funnelConsent);
 

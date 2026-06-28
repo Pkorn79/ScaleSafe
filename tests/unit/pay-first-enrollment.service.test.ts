@@ -102,6 +102,11 @@ function queryResult(result: any) {
   return chain;
 }
 
+async function flushBackgroundTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await Promise.resolve();
+}
+
 describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -185,6 +190,7 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     expect(result?.success).toBe(true);
     expect(result?.processorSubscriptionId).toBe('sub_existing_123');
     expect(createSubscription).not.toHaveBeenCalled();
+    await flushBackgroundTasks();
     const ghl = await mockGhlApi.mock.results[0].value;
     expect(ghl.put).toHaveBeenCalledWith(
       '/contacts/contact_1',
@@ -213,14 +219,9 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     );
   });
 
-  it('marks recurring billing ok when paid enrollment finalization creates the processor subscription', async () => {
-    const createSubscription = jest.fn().mockResolvedValue({ success: true, subscriptionId: 'sub_new_123' });
+  it('marks recurring billing failed when paid pending recurring enrollment has no processor subscription', async () => {
+    const createSubscription = jest.fn();
     mockCreateProcessorClient.mockReturnValue({ createSubscription });
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
-    mockFindSavedCard.mockResolvedValue({
-      stripe_payment_method_id: 'pm_123',
-      stripe_customer_id: 'cus_123',
-    });
 
     const enrollment = {
       id: 'enr_1',
@@ -276,90 +277,19 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
       scrollDepth: 100,
     });
 
-    expect(result?.processorSubscriptionId).toBe('sub_new_123');
-    expect(enrollmentUpdates).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        processor_subscription_id: 'sub_new_123',
-        billing_setup_status: 'ok',
-        billing_setup_error: null,
-      }),
-    ]));
-  });
-
-  it('marks recurring billing failed when paid enrollment finalization cannot create the subscription', async () => {
-    const createSubscription = jest.fn().mockResolvedValue({ success: false, errorMessage: 'processor rejected plan' });
-    mockCreateProcessorClient.mockReturnValue({ createSubscription });
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
-    mockFindSavedCard.mockResolvedValue({
-      stripe_payment_method_id: 'pm_123',
-      stripe_customer_id: 'cus_123',
-    });
-
-    const enrollment = {
-      id: 'enr_1',
-      location_id: 'loc_1',
-      merchant_id: 'merch_1',
-      contact_id: 'contact_1',
-      offer_id: 'offer_1',
-      email: 'client@example.com',
-      first_name: 'Client',
-      last_name: 'One',
-      status: 'paid_pending_enrollment',
-      payment_amount: 100,
-      payment_type: 'installment',
-      payments_made: 1,
-      payments_total: 2,
-      processor_type: 'stripe',
-      processor_subscription_id: null,
-    };
-
-    const enrollmentUpdates: any[] = [];
-    const updateChain: any = {};
-    updateChain.eq = jest.fn(() => updateChain);
-    const enrollments = {
-      select: jest.fn(() => ({
-        eq: jest.fn(function eq(this: any) { return this; }),
-        maybeSingle: jest.fn(async () => ({ data: enrollment, error: null })),
-      })),
-      update: jest.fn((payload: any) => {
-        enrollmentUpdates.push(payload);
-        return updateChain;
-      }),
-    };
-    mockGetSupabase.mockReturnValue({
-      from: jest.fn((table: string) => {
-        if (table === 'enrollments') return enrollments;
-        return queryResult({ data: null, error: null });
-      }),
-    });
-
-    const result = await payFirstEnrollmentService.finalizePaidPendingEnrollment({
-      enrollmentId: 'enr_1',
-      locationId: 'loc_1',
-      consentTimestamp: '2026-06-04T12:00:00.000Z',
-      ipAddress: '127.0.0.1',
-      userAgent: 'jest',
-      deviceFingerprint: 'fp_1',
-      screenResolution: '1440x900',
-      timezone: 'America/Chicago',
-      browserLanguage: 'en-US',
-      tcVersionHash: 'hash_1',
-      digitalSignature: 'Client One',
-      clausesAccepted: ['terms'],
-      scrollDepth: 100,
-    });
-
+    expect(result?.processorSubscriptionId).toBeNull();
     expect(result?.billingSetupIssue).toEqual(expect.objectContaining({
-      code: 'recurring_setup_failed_after_paid_enrollment',
-      message: 'processor rejected plan',
+      code: 'recurring_setup_missing_after_paid_enrollment',
+      message: 'Payment was received, but recurring billing was not linked to a processor subscription.',
     }));
     expect(enrollmentUpdates).toEqual(expect.arrayContaining([
       expect.objectContaining({
         billing_setup_status: 'failed',
-        billing_setup_error: 'processor rejected plan',
+        billing_setup_error: 'Payment was received, but recurring billing was not linked to a processor subscription.',
         next_billing_date: null,
       }),
     ]));
+    expect(createSubscription).not.toHaveBeenCalled();
   });
 });
 

@@ -80,6 +80,11 @@ interface FunnelConsentInput {
   selectedAddonIds?: string[];
 }
 
+interface PaidEnrollmentContextInput {
+  offerId: string;
+  paidEnrollmentToken: string;
+}
+
 interface PaymentWebhookInput {
   locationId: string;
   contactId: string;
@@ -91,6 +96,52 @@ interface PaymentWebhookInput {
 }
 
 export const enrollmentService = {
+  async getPaidEnrollmentContext(input: PaidEnrollmentContextInput) {
+    if (!input.offerId || !input.paidEnrollmentToken) {
+      throw new ValidationError('offerId and paidEnrollmentToken required');
+    }
+
+    const token = verifyPublicActionToken(input.paidEnrollmentToken, 'paid_enrollment');
+    const supabase = getSupabase();
+    const { data: enrollment, error } = await supabase
+      .from('enrollments')
+      .select('id, location_id, contact_id, offer_id, email, first_name, last_name, status, payment_amount, payment_type, processor_type, processor_subscription_id, payments_made, payments_total')
+      .eq('id', token.enrollmentId || '')
+      .eq('location_id', token.locationId)
+      .eq('contact_id', token.contactId)
+      .eq('offer_id', input.offerId)
+      .eq('status', 'paid_pending_enrollment')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!enrollment) throw new ValidationError('Paid enrollment link is invalid or expired');
+
+    const offer = await offerRepository.findById(enrollment.offer_id, enrollment.location_id);
+    if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
+
+    return {
+      success: true,
+      paidEnrollment: true,
+      paymentAlreadyReceived: true,
+      enrollmentId: enrollment.id,
+      offerId: enrollment.offer_id,
+      offerName: offer.offer_name,
+      locationId: enrollment.location_id,
+      contactId: enrollment.contact_id,
+      firstName: enrollment.first_name || '',
+      lastName: enrollment.last_name || '',
+      fullName: [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' '),
+      email: enrollment.email || '',
+      phone: '',
+      status: enrollment.status,
+      paymentAmount: Number(enrollment.payment_amount || 0),
+      paymentType: enrollment.payment_type || offer.payment_type,
+      processorType: enrollment.processor_type || '',
+      processorSubscriptionId: enrollment.processor_subscription_id || '',
+      paymentsMade: enrollment.payments_made ?? null,
+      paymentsTotal: enrollment.payments_total ?? null,
+    };
+  },
   // ─── Funnel Widget Endpoints ───────────────────────────────────
 
   /**
@@ -285,11 +336,12 @@ export const enrollmentService = {
     };
 
     let paidEnrollmentId = '';
+    let paidEnrollmentEmail = '';
     if (input.paidEnrollmentToken) {
       const token = verifyPublicActionToken(input.paidEnrollmentToken, 'paid_enrollment');
       const { data: paidEnrollment, error: paidError } = await supabase
         .from('enrollments')
-        .select('id, offer_id, location_id, status')
+        .select('id, offer_id, location_id, status, email')
         .eq('id', token.enrollmentId || '')
         .eq('location_id', token.locationId)
         .eq('offer_id', input.offerId)
@@ -298,7 +350,9 @@ export const enrollmentService = {
       if (paidError) throw paidError;
       if (!paidEnrollment) throw new ValidationError('Paid enrollment link is invalid or expired');
       paidEnrollmentId = paidEnrollment.id;
+      paidEnrollmentEmail = paidEnrollment.email || '';
     }
+    const effectiveEmail = input.email || paidEnrollmentEmail;
 
     // Find existing enrollment (created by device-capture on Page 1)
     const { data: existingRows } = paidEnrollmentId
@@ -310,7 +364,7 @@ export const enrollmentService = {
       : await supabase
         .from('enrollments')
         .select('id, status')
-        .eq('email', input.email)
+        .eq('email', effectiveEmail)
         .eq('offer_id', input.offerId)
         .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
         .order('created_at', { ascending: false })
@@ -384,7 +438,7 @@ export const enrollmentService = {
             enrollmentId: existing.id,
             locationId: offer.location_id,
             contactId: (existing as any).contact_id || '',
-            contactEmail: input.email,
+            contactEmail: effectiveEmail,
             paymentAmount: 0,
             paymentType: 'free',
             transactionId: 'free_enrollment',
@@ -405,7 +459,7 @@ export const enrollmentService = {
       .insert({
         location_id: offer.location_id,
         offer_id: input.offerId,
-        email: input.email,
+        email: effectiveEmail,
         status: 'consent_captured',
         consent_token: consentToken,
         consent_captured_at: input.consentTimestamp,
@@ -435,7 +489,7 @@ export const enrollmentService = {
           enrollmentId: created.id,
           locationId: offer.location_id,
           contactId: '',
-          contactEmail: input.email,
+          contactEmail: effectiveEmail,
           paymentAmount: 0,
           paymentType: 'free',
           transactionId: 'free_enrollment',

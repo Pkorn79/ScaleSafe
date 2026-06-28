@@ -9,7 +9,7 @@ import { offerService } from './offer.service';
 import { merchantService } from './merchant.service';
 import { triggerService } from './trigger.service';
 import { resolveProcessor, createProcessorClient } from './processor.factory';
-import { findSavedCardForProcessor, saveOrReusePaymentMethod } from './payment-methods.service';
+import { saveOrReusePaymentMethod } from './payment-methods.service';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { config } from '../config';
@@ -1243,90 +1243,20 @@ export const payFirstEnrollmentService = {
     let processorSubscriptionId = enrollment.processor_subscription_id || '';
     let billingSetupIssue: { code: string; message: string } | null = null;
     if (offer && ['installment', 'subscription'].includes(paymentType) && nextBillingDate && !enrollment.processor_subscription_id) {
-      try {
-        const processorType = String(enrollment.processor_type || '').toLowerCase() as ProcessorType;
-        if (processorType !== 'nmi' && processorType !== 'stripe') {
-          throw new Error('Missing processor for paid pending enrollment');
-        }
-        const card = await findSavedCardForProcessor(params.locationId, enrollment.contact_id, processorType);
-        if (!card) throw new Error('No saved card found for recurring setup');
-        const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, params.locationId, {
-          processor_override: processorType,
-          nmi_processor_id: offer.nmi_processor_id || null,
-        });
-        const processor = createProcessorClient(procConfig);
-        const recurringAmount = paymentType === 'subscription'
-          ? Number(offer.price || offer.installment_amount || 0)
-          : Number(offer.installment_amount || offer.price || 0);
-        const remainingPayments = paymentType === 'subscription'
-          ? 0
-          : Math.max(0, Number(enrollment.payments_total || 0) - Number(enrollment.payments_made || 1));
-
-        if (recurringAmount > 0 && (paymentType === 'subscription' || remainingPayments > 0)) {
-          const subResult = await processor.createSubscription({
-            paymentMethodId: card.stripe_payment_method_id || card.nmi_customer_vault_id,
-            customerId: card.stripe_customer_id || card.nmi_customer_vault_id,
-            planAmount: dollarsToCents(recurringAmount),
-            interval: processorInterval(offer.installment_frequency),
-            totalPayments: remainingPayments,
-            startDate: nextBillingDate,
-            description: offer.offer_name || 'ScaleSafe Recurring Plan',
-            metadata: {
-              enrollment_id: params.enrollmentId,
-              offer_id: enrollment.offer_id || '',
-              contact_id: enrollment.contact_id || '',
-              location_id: params.locationId,
-              payment_type: paymentType,
-            },
-          });
-          if (subResult.success && subResult.subscriptionId) {
-            processorSubscriptionId = subResult.subscriptionId;
-            const { error: subSaveError } = await supabase
-              .from('enrollments')
-              .update({
-                processor_subscription_id: subResult.subscriptionId,
-                processor_type: procConfig.processor_type,
-                billing_setup_status: 'ok',
-                billing_setup_error: null,
-                next_billing_date_source: 'processor',
-              })
-              .eq('id', params.enrollmentId)
-              .eq('location_id', params.locationId);
-            if (subSaveError) {
-              billingSetupIssue = {
-                code: 'recurring_subscription_save_failed_after_paid_enrollment',
-                message: `Processor subscription ${subResult.subscriptionId} was created, but ScaleSafe could not save it: ${subSaveError.message}`,
-              };
-              await supabase
-                .from('enrollments')
-                .update({
-                  billing_setup_status: 'needs_reconciliation',
-                  billing_setup_error: billingSetupIssue.message,
-                  next_billing_date: null,
-                })
-                .eq('id', params.enrollmentId)
-                .eq('location_id', params.locationId);
-            }
-          } else {
-            throw new Error(subResult.errorMessage || 'Processor subscription creation failed');
-          }
-        }
-      } catch (err: any) {
-        billingSetupIssue = {
-          code: 'recurring_setup_failed_after_paid_enrollment',
-          message: err?.message || 'Recurring billing setup failed after enrollment consent.',
-        };
-        await supabase
-          .from('enrollments')
-          .update({
-            billing_setup_status: 'failed',
-            billing_setup_error: billingSetupIssue.message,
-            next_billing_date: null,
-          })
-          .eq('id', params.enrollmentId)
-          .eq('location_id', params.locationId);
-        logger.error({ err: err?.message || String(err), enrollmentId: params.enrollmentId }, 'Paid pending recurring setup failed');
-      }
+      billingSetupIssue = {
+        code: 'recurring_setup_missing_after_paid_enrollment',
+        message: 'Payment was received, but recurring billing was not linked to a processor subscription.',
+      };
+      await supabase
+        .from('enrollments')
+        .update({
+          billing_setup_status: 'failed',
+          billing_setup_error: billingSetupIssue.message,
+          next_billing_date: null,
+        })
+        .eq('id', params.enrollmentId)
+        .eq('location_id', params.locationId);
+      logger.error({ enrollmentId: params.enrollmentId }, 'Paid pending recurring setup missing processor subscription');
     }
 
     await phase2EvidenceRepository.create({
@@ -1349,6 +1279,7 @@ export const payFirstEnrollmentService = {
       browser_info: params.userAgent,
     });
 
+    void (async () => {
     let supportEmail = '';
     let businessName = '';
     try {
@@ -1441,6 +1372,12 @@ export const payFirstEnrollmentService = {
       supportEmail,
       business_name: businessName,
       businessName,
+    });
+    })().catch((err: any) => {
+      logger.warn(
+        { err: err?.message || String(err), enrollmentId: params.enrollmentId },
+        'Paid pending enrollment background workflow failed',
+      );
     });
 
     return {

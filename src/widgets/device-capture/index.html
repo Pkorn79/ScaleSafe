@@ -89,8 +89,22 @@
       var fpSource = userAgent + '|' + screenResolution + '|' + timezone + '|' + browserLanguage;
       var deviceFingerprint = await sha256(fpSource);
 
-      // Get email from URL params or parent message
-      var email = params.get('email') || '';
+      // Get email from URL params, paid context, or parent message
+      var email = ownParams.get('email') || '';
+      if (!email && paidEnrollmentToken) {
+        try {
+          var ctxRes = await fetch(API_BASE + '/api/enrollment/paid-context?offerId=' + encodeURIComponent(offerId) + '&paidEnrollmentToken=' + encodeURIComponent(paidEnrollmentToken));
+          if (ctxRes.ok) {
+            var ctx = await ctxRes.json();
+            email = ctx.email || '';
+            try {
+              window.parent.postMessage({ type: 'ssPaidEnrollmentContext', context: ctx }, '*');
+            } catch (postErr) { /* silent */ }
+          }
+        } catch (e) {
+          console.log('[ScaleSafe] Paid enrollment context fetch failed, continuing without email');
+        }
+      }
 
       // If no email, wait for postMessage from parent with email
       if (!email) {
@@ -109,8 +123,8 @@
         browserLanguage: browserLanguage
       };
 
-      // Only send if we have an email
-      if (payload.email) {
+      // Paid enrollment links can be captured with the token even if email did not reach this iframe.
+      if (payload.email || paidEnrollmentToken) {
         await sendDeviceCapture(payload);
       } else {
         // Store payload, wait for email via postMessage

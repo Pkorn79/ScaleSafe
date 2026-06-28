@@ -316,6 +316,13 @@
   // ─── Load offer and render ──────────────────────────────────
 
   var offerData = null;
+  var paidContext = null;
+  function loadPaidContext() {
+    if (!paidEnrollmentToken) return Promise.resolve(null);
+    return fetch(API_BASE + '/api/enrollment/paid-context?offerId=' + encodeURIComponent(offerId) + '&paidEnrollmentToken=' + encodeURIComponent(paidEnrollmentToken))
+      .then(function(res) { return res.ok ? res.json() : null; })
+      .catch(function() { return null; });
+  }
   var maxScrollDepth = 100; // No scroll box — terms are at external link
 
   fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
@@ -325,7 +332,15 @@
     })
     .then(function(offer) {
       offerData = offer;
-      renderForm(offer);
+      return loadPaidContext().then(function(ctx) {
+        paidContext = ctx;
+        if (paidContext) {
+          try {
+            window.parent.postMessage({ type: 'ssPaidEnrollmentContext', context: paidContext }, '*');
+          } catch (postErr) { /* silent */ }
+        }
+        renderForm(offer);
+      });
     })
     .catch(function(err) {
       console.log('[ScaleSafe] Failed to load terms:', err.message);
@@ -335,6 +350,9 @@
   function renderForm(offer) {
     var html = '';
     var paymentChoice = paymentChoiceParam;
+    if (paidContext && paidContext.paymentType) {
+      paymentChoice = paidContext.paymentType === 'installment' ? 'installments' : paidContext.paymentType;
+    }
     if (!paymentChoice) {
       try {
         paymentChoice = sessionStorage.getItem('ss_payment_choice_' + offerId) || sessionStorage.getItem('ss_payment_choice') || '';
@@ -393,15 +411,19 @@
     html += '<div class="ss-sig-section">';
     html += '<div class="ss-sig-label">Electronic Signature</div>';
     html += '<p class="ss-sig-notice">By typing your name below, you are providing your electronic signature and agreeing to all terms above.</p>';
-    html += '<input type="text" id="ss-signature" class="ss-sig-input" placeholder="Type your full legal name" autocomplete="name">';
+    var defaultSignature = paidContext && paidContext.fullName ? paidContext.fullName : '';
+    html += '<input type="text" id="ss-signature" class="ss-sig-input" placeholder="Type your full legal name" autocomplete="name" value="' + esc(defaultSignature) + '">';
     html += '</div>';
 
     // Email (hidden if already in URL, visible if not)
-    if (!emailParam) {
+    var contextEmail = paidContext && paidContext.email ? paidContext.email : '';
+    if (!emailParam && !contextEmail) {
       html += '<div style="margin-bottom:20px">';
       html += '<label style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--ss-muted);display:block;margin-bottom:6px">Your Email</label>';
       html += '<input type="email" id="ss-email" style="width:100%;padding:10px 12px;border:1px solid var(--ss-border);border-radius:6px;font-size:15px;outline:none;" placeholder="your@email.com" autocomplete="email">';
       html += '</div>';
+    } else if (contextEmail) {
+      html += '<div style="margin-bottom:20px;padding:12px 14px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;color:#166534;font-size:14px;">Payment received for ' + esc(contextEmail) + '</div>';
     }
 
     // Submit
@@ -432,7 +454,7 @@
       });
 
       var hasSig = sigInput.value.trim().length > 0;
-      var hasEmail = emailParam || (emailInput && emailInput.value.trim().includes('@'));
+      var hasEmail = emailParam || (paidContext && paidContext.email) || (emailInput && emailInput.value.trim().includes('@'));
 
       var canSubmit = allChecked && hasSig && hasEmail;
       // If no clauses, only need signature + email
@@ -454,11 +476,11 @@
     // Submit handler
     submitBtn.addEventListener('click', async function() {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Processing...';
+      submitBtn.textContent = paidContext && paidContext.paymentAlreadyReceived ? 'Finalizing enrollment...' : 'Processing...';
       errorEl.style.display = 'none';
 
       try {
-        var email = emailParam || (emailInput ? emailInput.value.trim() : '');
+        var email = emailParam || (paidContext && paidContext.email) || (emailInput ? emailInput.value.trim() : '');
         var selectedAddonIds = [];
         try {
           var storedAddons = sessionStorage.getItem('ss_selected_addons_' + offerId) || sessionStorage.getItem('ss_selected_addons') || '[]';

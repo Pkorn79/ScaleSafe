@@ -349,16 +349,33 @@
     return '$' + dollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
+  function loadPaidContext() {
+    if (!paidEnrollmentToken) return Promise.resolve(null);
+    return fetch(API_BASE + '/api/enrollment/paid-context?offerId=' + encodeURIComponent(offerId) + '&paidEnrollmentToken=' + encodeURIComponent(paidEnrollmentToken))
+      .then(function(res) { return res.ok ? res.json() : null; })
+      .catch(function() { return null; });
+  }
+
+  Promise.all([
+    fetch(API_BASE + '/api/enrollment/offer/' + encodeURIComponent(offerId) + '/public')
     .then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
-    })
-    .then(function(offer) {
+    }),
+    loadPaidContext()
+  ])
+    .then(function(results) {
+      var offer = results[0];
+      var paidContext = results[1];
       var html = '';
+      if (paidContext) {
+        try {
+          window.parent.postMessage({ type: 'ssPaidEnrollmentContext', context: paidContext }, '*');
+        } catch (postErr) { /* silent */ }
+      }
 
       // Payment choice state
-      var isPaidEnrollment = Boolean(paidEnrollmentToken);
+      var isPaidEnrollment = Boolean(paidContext && paidContext.paymentAlreadyReceived);
       var selectedPayment = 'pif'; // default
       var selectedAddonIds = [];
 
@@ -393,8 +410,9 @@
       var hasBothOptions = offer.pifDiscountEnabled && offer.pifPrice != null && offer.installmentAmount != null && offer.installmentCount;
 
       if (isPaidEnrollment) {
-        if (offer.paymentType === 'installment' || offer.paymentType === 'installments') selectedPayment = 'installments';
-        else if (offer.paymentType === 'subscription') selectedPayment = 'subscription';
+        var paidPaymentType = paidContext.paymentType || offer.paymentType;
+        if (paidPaymentType === 'installment' || paidPaymentType === 'installments') selectedPayment = 'installments';
+        else if (paidPaymentType === 'subscription') selectedPayment = 'subscription';
         else selectedPayment = 'pif';
         html += '<div class="ss-paid-notice">Payment has already been received. Please review the program details and continue to complete the enrollment packet.</div>';
         html += '<div class="ss-price-box">';

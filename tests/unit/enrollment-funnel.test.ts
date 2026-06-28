@@ -42,6 +42,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 import { enrollmentService } from '../../src/services/enrollment.service';
+import { createPublicActionToken } from '../../src/utils/public-action-token';
 
 // ─── Supabase mock helpers ──────────────────────────────────────
 
@@ -66,6 +67,7 @@ function mockSupabaseChain(returnData: any, returnError: any = null) {
 describe('Enrollment Funnel Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.PUBLIC_ACTION_TOKEN_SECRET = 'test_public_action_secret';
   });
 
   // ─── captureDevice ──────────────────────────────────────────
@@ -226,6 +228,82 @@ describe('Enrollment Funnel Service', () => {
 
       const result = await enrollmentService.getPublicOffer('nonexistent');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getPaidEnrollmentContext', () => {
+    it('returns safe paid enrollment context for a valid paid enrollment token', async () => {
+      const token = createPublicActionToken({
+        action: 'paid_enrollment',
+        locationId: 'loc-1',
+        contactId: 'contact-1',
+        enrollmentId: 'enroll-paid-1',
+      });
+
+      mockFindById.mockResolvedValue({
+        id: 'offer-789',
+        location_id: 'loc-1',
+        active: true,
+        offer_name: 'Paid First Program',
+        payment_type: 'installment',
+      });
+
+      mockFrom.mockReturnValue(mockSupabaseChain({
+        id: 'enroll-paid-1',
+        location_id: 'loc-1',
+        contact_id: 'contact-1',
+        offer_id: 'offer-789',
+        email: 'client@example.com',
+        first_name: 'Client',
+        last_name: 'One',
+        status: 'paid_pending_enrollment',
+        payment_amount: 100,
+        payment_type: 'installment',
+        processor_type: 'stripe',
+        processor_subscription_id: 'sub_123',
+        payments_made: 1,
+        payments_total: 2,
+      }));
+
+      const result = await enrollmentService.getPaidEnrollmentContext({
+        offerId: 'offer-789',
+        paidEnrollmentToken: token,
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        success: true,
+        paidEnrollment: true,
+        paymentAlreadyReceived: true,
+        enrollmentId: 'enroll-paid-1',
+        offerId: 'offer-789',
+        offerName: 'Paid First Program',
+        contactId: 'contact-1',
+        firstName: 'Client',
+        lastName: 'One',
+        fullName: 'Client One',
+        email: 'client@example.com',
+        paymentAmount: 100,
+        paymentType: 'installment',
+        processorSubscriptionId: 'sub_123',
+      }));
+      expect((result as any).merchant_id).toBeUndefined();
+      expect((result as any).processor_config).toBeUndefined();
+    });
+
+    it('rejects a paid enrollment token that does not match a paid-pending enrollment', async () => {
+      const token = createPublicActionToken({
+        action: 'paid_enrollment',
+        locationId: 'loc-1',
+        contactId: 'contact-1',
+        enrollmentId: 'enroll-paid-1',
+      });
+
+      mockFrom.mockReturnValue(mockSupabaseChain(null));
+
+      await expect(enrollmentService.getPaidEnrollmentContext({
+        offerId: 'offer-789',
+        paidEnrollmentToken: token,
+      })).rejects.toThrow('Paid enrollment link is invalid or expired');
     });
   });
 

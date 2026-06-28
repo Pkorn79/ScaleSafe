@@ -10,7 +10,7 @@ export const enrollmentController = {
   async deviceCapture(req: Request, res: Response, next: NextFunction) {
     try {
       const { offerId, email, paidEnrollmentToken, ipAddress, userAgent, deviceFingerprint, screenResolution, timezone, browserLanguage } = req.body;
-      if (!offerId || !email) {
+      if (!offerId || (!email && !paidEnrollmentToken)) {
         res.status(400).json({ error: 'offerId and email are required' });
         return;
       }
@@ -57,6 +57,27 @@ export const enrollmentController = {
     }
   },
 
+  /** GET /api/enrollment/paid-context — paid/QMS enrollment context for public widgets */
+  async getPaidEnrollmentContext(req: Request, res: Response, next: NextFunction) {
+    try {
+      const offerId = String(req.query.offerId || '');
+      const paidEnrollmentToken = String(req.query.paidEnrollmentToken || '');
+      const result = await enrollmentService.getPaidEnrollmentContext({ offerId, paidEnrollmentToken });
+      res.json(result);
+    } catch (err: any) {
+      if (err.message === 'Offer not found or inactive') {
+        res.status(404).json({ error: 'Offer not found' });
+        return;
+      }
+      if (err.message?.includes('Paid enrollment link') || err.message?.includes('action token') || err.message?.includes('required')) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      logger.error({ err: err.message }, 'Paid enrollment context fetch failed');
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
   /** POST /api/enrollment/consent — Page 3 widget (updated for funnel) */
   async funnelConsent(req: Request, res: Response, next: NextFunction) {
     try {
@@ -68,7 +89,7 @@ export const enrollmentController = {
         selectedAddonIds,
       } = req.body;
 
-      if (!offerId || !email || !digitalSignature) {
+      if (!offerId || (!email && !paidEnrollmentToken) || !digitalSignature) {
         res.status(400).json({ error: 'offerId, email, and digitalSignature are required' });
         return;
       }
