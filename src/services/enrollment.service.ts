@@ -291,6 +291,7 @@ export const enrollmentService = {
       checkoutType: (offer as any).checkout_type || 'direct',
       whopPlanId: (offer as any).whop_plan_id || null,
       whopSyncStatus: (offer as any).whop_sync_status || null,
+      botProtectionPolicy: (offer as any).bot_protection_policy || 'default',
       deliveryMethod: offer.delivery_method || '',
       programDurationValue: (offer as any).program_duration_value || null,
       programDurationUnit: (offer as any).program_duration_unit || '',

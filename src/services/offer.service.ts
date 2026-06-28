@@ -40,6 +40,7 @@ interface CreateOfferInput {
   dualPricingEnabled?: boolean;
   achEnabled?: boolean;
   achAccessPolicy?: 'after_settlement' | 'after_submission';
+  botProtectionPolicy?: 'default' | 'off' | 'required';
   pulseCadenceEnabled?: boolean;
   pulseFrequencyDays?: number;
   checkoutAddons?: CheckoutAddonInput[];
@@ -181,6 +182,12 @@ function isMissingCheckoutChannelColumnError(err: any): boolean {
     );
 }
 
+function isMissingBotProtectionColumnError(err: any): boolean {
+  const message = String(err?.message || '');
+  return (err?.code === '42703' || err?.code === 'PGRST204')
+    && message.includes('bot_protection_policy');
+}
+
 function stripPulseCadenceFields(record: Record<string, unknown>): Record<string, unknown> {
   const next = { ...record };
   delete next.pulse_cadence_enabled;
@@ -213,13 +220,24 @@ function stripCheckoutChannelFields(record: Record<string, unknown>): Record<str
   return next;
 }
 
+function stripBotProtectionFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record };
+  delete next.bot_protection_policy;
+  return next;
+}
+
 function stripCompatibilityFields(record: Record<string, unknown>, err: any): Record<string, unknown> {
   let next = record;
   if (isMissingPulseCadenceColumnError(err)) next = stripPulseCadenceFields(next);
   if (isMissingTrackingColumnError(err)) next = stripTrackingFields(next);
   if (isMissingDualPricingColumnError(err)) next = stripDualPricingFields(next);
   if (isMissingCheckoutChannelColumnError(err)) next = stripCheckoutChannelFields(next);
+  if (isMissingBotProtectionColumnError(err)) next = stripBotProtectionFields(next);
   return next;
+}
+
+function normalizeBotProtectionPolicy(value: unknown): 'default' | 'off' | 'required' {
+  return value === 'off' || value === 'required' ? value : 'default';
 }
 
 function isDailyGhlRecurringPriceError(err: any): boolean {
@@ -368,6 +386,7 @@ export const offerService = {
       dual_pricing_enabled: input.dualPricingEnabled === true,
       ach_enabled: input.achEnabled === true,
       ach_access_policy: input.achAccessPolicy || 'after_settlement',
+      bot_protection_policy: normalizeBotProtectionPolicy(input.botProtectionPolicy),
       pulse_cadence_enabled: input.pulseCadenceEnabled ?? (input.checkoutMode !== 'quick_checkout'),
       pulse_frequency_days: normalizePulseFrequency(input.pulseFrequencyDays),
     };
@@ -410,6 +429,7 @@ export const offerService = {
         || isMissingTrackingColumnError(err)
         || isMissingDualPricingColumnError(err)
         || isMissingCheckoutChannelColumnError(err)
+        || isMissingBotProtectionColumnError(err)
       ) {
         if ((input.checkoutType || 'direct') === 'whop' && isMissingCheckoutChannelColumnError(err)) {
           throw new ValidationError('Whop checkout columns are not ready. Apply migration 071_whop_checkout_channel.sql, then try again.');
@@ -499,6 +519,7 @@ export const offerService = {
     if (updates.dualPricingEnabled !== undefined) dbUpdates.dual_pricing_enabled = updates.dualPricingEnabled === true;
     if (updates.achEnabled !== undefined) dbUpdates.ach_enabled = updates.achEnabled === true;
     if (updates.achAccessPolicy !== undefined) dbUpdates.ach_access_policy = updates.achAccessPolicy || 'after_settlement';
+    if (updates.botProtectionPolicy !== undefined) dbUpdates.bot_protection_policy = normalizeBotProtectionPolicy(updates.botProtectionPolicy);
     if (updates.pulseCadenceEnabled !== undefined) dbUpdates.pulse_cadence_enabled = updates.pulseCadenceEnabled;
     if (updates.pulseFrequencyDays !== undefined) dbUpdates.pulse_frequency_days = normalizePulseFrequency(updates.pulseFrequencyDays);
 
@@ -569,6 +590,7 @@ export const offerService = {
         || isMissingTrackingColumnError(err)
         || isMissingDualPricingColumnError(err)
         || isMissingCheckoutChannelColumnError(err)
+        || isMissingBotProtectionColumnError(err)
       ) {
         if ((updates.checkoutType || 'direct') === 'whop' && isMissingCheckoutChannelColumnError(err)) {
           throw new ValidationError('Whop checkout columns are not ready. Apply migration 071_whop_checkout_channel.sql, then try again.');

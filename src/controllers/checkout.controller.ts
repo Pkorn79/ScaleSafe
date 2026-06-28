@@ -14,6 +14,7 @@ import { OfferRecord } from '../repositories/offer.repository';
 import { whopService } from '../services/whop.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-cart.service';
+import { turnstileService } from '../services/turnstile.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -60,6 +61,14 @@ function getClientIp(req: Request): string {
 
 function moneyDisplayFromCents(amountCents: number): string {
   return `$${(Number(amountCents || 0) / 100).toFixed(2)}`;
+}
+
+function turnstileConfigForOffer(offer?: OfferRecord | null): Record<string, unknown> {
+  const requirement = turnstileService.requirementForOffer(offer);
+  return {
+    turnstileRequired: requirement.required,
+    turnstileSiteKey: requirement.siteKey,
+  };
 }
 
 async function fireCheckoutPaymentFailedTrigger(params: {
@@ -189,6 +198,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       res.status(400).json({ success: false, error: 'This offer uses Whop checkout.' });
       return;
     }
+    await turnstileService.verifyForOffer(req, offer);
 
     const normalizedCurrency = String(currency || 'usd').toLowerCase();
     if (normalizedCurrency !== 'usd') {
@@ -293,7 +303,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
     });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Stripe ACH payment intent creation failed');
-    res.status(500).json({ success: false, error: err.message || 'Stripe ACH setup failed' });
+    res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Stripe ACH setup failed' });
   }
 }
 
@@ -434,6 +444,7 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
       publishableKey: merchant.provider_publishable_key || '',
       whopPlanId: (offer as any).whop_plan_id || '',
       whopSyncStatus: (offer as any).whop_sync_status || '',
+      ...turnstileConfigForOffer(offer),
     });
     return;
   }
@@ -451,6 +462,7 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
       processorType: procConfig.processor_type,
       merchantName: merchant.business_name || '',
       publishableKey: merchant.provider_publishable_key || '',
+      ...turnstileConfigForOffer(offer),
     };
 
     if (procConfig.processor_type === 'nmi') {
@@ -506,6 +518,7 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
       merchantName: merchant.business_name || '',
       whopPlanId: offer.whop_plan_id || '',
       whopSyncStatus: offer.whop_sync_status || '',
+      ...turnstileConfigForOffer(offer as any),
     });
     return;
   }
@@ -529,6 +542,7 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
       offerId: offer.id,
       processorType: procConfig.processor_type,
       merchantName: merchant.business_name || '',
+      ...turnstileConfigForOffer(offer as any),
     };
 
     if (procConfig.processor_type === 'nmi') {
@@ -670,6 +684,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       });
       return;
     }
+    await turnstileService.verifyForOffer(req, resolvedOffer);
 
     const paymentMethod = req.body.paymentMethod === 'ach' ? 'ach' : 'card';
     if (resolvedOffer) {
@@ -1490,7 +1505,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     });
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack, merchantId: merchant.merchantId }, 'Checkout payment failed');
-    res.status(500).json({ success: false, error: err.message || 'Payment processing error' });
+    res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Payment processing error' });
   } finally {
     releasePaymentAttempt(claimedPaymentAttemptKey);
   }
@@ -1515,6 +1530,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       res.status(400).json({ success: false, error: 'Offer is not configured for Whop checkout' });
       return;
     }
+    await turnstileService.verifyForOffer(req, offer);
 
     const supabase = getSupabase();
     let enrollmentId = '';
@@ -1573,7 +1589,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
     res.json({ success: true, ...session });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Whop checkout session creation failed');
-    res.status(500).json({ success: false, error: err.message || 'Failed to create Whop checkout session' });
+    res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Failed to create Whop checkout session' });
   }
 }
 

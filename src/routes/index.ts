@@ -10,6 +10,7 @@ import evidenceRoutes from './evidence.routes';
 import defenseRoutes from './defense.routes';
 import dashboardRoutes from './dashboard.routes';
 import adminRoutes from './admin.routes';
+import hqAdminRoutes from './hq-admin.routes';
 import webhookRoutes from './webhook.routes';
 import stripeConnectRoutes from './stripe-connect.routes';
 import paymentProviderRoutes from './payment-provider.routes';
@@ -43,6 +44,7 @@ router.use('/api/evidence', apiLimiter, evidenceRoutes);
 router.use('/api/defense', apiLimiter, defenseRoutes);
 router.use('/api/dashboard', apiLimiter, dashboardRoutes);
 router.use('/api/admin', apiLimiter, adminRoutes);
+router.use(hqAdminRoutes);
 
 // Public enrollment page (client-facing, no SSO)
 router.use('/enrollment', enrollmentRoutes);

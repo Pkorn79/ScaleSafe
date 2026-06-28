@@ -38,6 +38,7 @@ export interface OfferRecord {
   whop_sync_status: string | null;
   whop_sync_error: string | null;
   whop_last_synced_at: string | null;
+  bot_protection_policy: 'default' | 'off' | 'required';
   pulse_cadence_enabled: boolean;
   pulse_frequency_days: number | null;
   redirect_slug: string | null;

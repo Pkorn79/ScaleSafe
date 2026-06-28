@@ -247,6 +247,16 @@
         </label>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">Bot Protection</label>
+        <select class="form-select" v-model="form.botProtectionPolicy">
+          <option value="default">Use default</option>
+          <option value="off">Off</option>
+          <option value="required">Required</option>
+        </select>
+        <p class="text-sm text-muted mt-2">Adds a quick security check before public checkout payment is submitted.</p>
+      </div>
+
       <div v-if="form.checkoutMode === 'quick_checkout'" class="quick-checkout-options mb-4">
         <div class="form-group">
           <label class="checkbox-label">
@@ -533,6 +543,7 @@ const form = ref({
   dualPricingEnabled: false,
   achEnabled: false,
   achAccessPolicy: 'after_settlement' as 'after_settlement' | 'after_submission',
+  botProtectionPolicy: 'default' as 'default' | 'off' | 'required',
   checkoutAddons: [] as Array<{
     id?: string;
     localId: string;
@@ -675,6 +686,7 @@ onMounted(async () => {
       form.value.dualPricingEnabled = offer.dual_pricing_enabled ?? false;
       form.value.achEnabled = offer.ach_enabled ?? false;
       form.value.achAccessPolicy = offer.ach_access_policy || 'after_settlement';
+      form.value.botProtectionPolicy = offer.bot_protection_policy || 'default';
       const checkoutAddons = Array.isArray(offer.checkout_addons)
         ? offer.checkout_addons
         : Array.isArray(offer.checkoutAddons)
@@ -766,6 +778,7 @@ async function save() {
     dualPricingEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled,
     achEnabled: form.value.checkoutType === 'direct' && form.value.dualPricingEnabled,
     achAccessPolicy: form.value.achAccessPolicy,
+    botProtectionPolicy: form.value.botProtectionPolicy,
     checkoutMode: form.value.checkoutMode,
     quickCheckoutConsentText: form.value.quickCheckoutConsentText || '',
     quickCheckoutShowDescription: form.value.quickCheckoutShowDescription,

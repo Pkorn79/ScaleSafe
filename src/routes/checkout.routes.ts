@@ -30,7 +30,7 @@ function createScriptNonce(): string {
 }
 
 function checkoutCsp(nonce: string): string {
-  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com`;
+  return `frame-ancestors *; frame-src https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com https://challenges.cloudflare.com; script-src 'self' 'nonce-${nonce}' https://secure.nmi.com https://js.stripe.com https://*.whop.com https://whop.com https://challenges.cloudflare.com`;
 }
 
 // Serve the checkout page (loaded by GHL in an iframe)
@@ -112,6 +112,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 #card-element{min-height:20px}
 .save-card-row{display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:14px;color:#374151}
 .save-card-row input{width:18px;height:18px}
+.turnstile-row{margin:0 0 14px;display:none}
+.turnstile-row.active{display:block}
 .pay-btn{display:block;width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background .15s}
 .pay-btn:hover{background:#2563eb}
 .pay-btn:disabled{background:#93c5fd;cursor:not-allowed}
@@ -168,6 +170,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     Save card for future use
   </label>
 
+  <div class="turnstile-row" id="turnstile-row">
+    <div id="turnstile-widget"></div>
+  </div>
+
   <button class="pay-btn" id="pay-btn">Pay</button>
   <div class="spinner" id="spinner"></div>
 
@@ -201,6 +207,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     cardElement: null,
     nmiToken: null,
     processing: false,
+    turnstileRequired: false,
+    turnstileSiteKey: '',
+    turnstileToken: '',
+    turnstileWidgetId: null,
   };
 
   var API_BASE = '';
@@ -343,7 +353,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       .then(function(r) { return r.json(); })
       .then(function(cfg) {
         state.processorType = cfg.processorType;
+        state.turnstileRequired = cfg.turnstileRequired === true;
+        state.turnstileSiteKey = cfg.turnstileSiteKey || '';
         el('merchant-name').textContent = cfg.merchantName || '';
+        renderTurnstileIfNeeded();
 
         if (cfg.processorType === 'nmi') {
           if (!cfg.nmiTokenizationKey) {
@@ -396,7 +409,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           focusCss: { 'outline': 'none' },
           fieldsAvailableCallback: function() {
             console.log('[ScaleSafe] Collect.js fields rendered');
-            el('pay-btn').disabled = false;
+            el('pay-btn').disabled = state.turnstileRequired && !state.turnstileToken;
             if (state.amount) el('pay-btn').textContent = 'Pay ' + formatCents(state.amount);
             else el('pay-btn').textContent = 'Pay';
           },
@@ -437,9 +450,59 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   }
 
   // ─── Submit payment ─────────────────────────────────────
+  function renderTurnstileIfNeeded() {
+    var row = el('turnstile-row');
+    if (!row) return;
+    row.classList.toggle('active', state.turnstileRequired);
+    if (!state.turnstileRequired) {
+      state.turnstileToken = '';
+      return;
+    }
+    if (!state.turnstileSiteKey) {
+      showError('Security check is not configured. Please contact support.');
+      el('pay-btn').disabled = true;
+      return;
+    }
+    function render() {
+      if (!window.turnstile || state.turnstileWidgetId !== null) return;
+      state.turnstileWidgetId = window.turnstile.render('#turnstile-widget', {
+        sitekey: state.turnstileSiteKey,
+        callback: function(token) {
+          state.turnstileToken = token || '';
+          if (state.amount && !state.processing) el('pay-btn').disabled = false;
+        },
+        'expired-callback': function() {
+          state.turnstileToken = '';
+          el('pay-btn').disabled = true;
+        },
+        'error-callback': function() {
+          state.turnstileToken = '';
+          el('pay-btn').disabled = true;
+        }
+      });
+    }
+    if (!window.turnstile) {
+      if (!document.querySelector('script[data-scalesafe-turnstile="true"]')) {
+        var script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.setAttribute('data-scalesafe-turnstile', 'true');
+        script.onload = render;
+        document.head.appendChild(script);
+      }
+      return;
+    }
+    render();
+  }
+
   function submitPayment() {
     if (state.processing) return;
     hideError();
+    if (state.turnstileRequired && !state.turnstileToken) {
+      showError('Please complete the security check before continuing.');
+      return;
+    }
 
     if (state.processorType === 'nmi') {
       // Trigger Collect.js tokenization — callback calls doSubmit
@@ -536,6 +599,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         deviceFingerprint: evidence.deviceFingerprint,
         browserInfo: evidence.browserInfo,
         productDetails: state.productDetails,
+        turnstileToken: state.turnstileToken,
         requestThreeDSecure: false,
       })
     })
@@ -656,6 +720,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .whop-note{font-size:13px;color:#475569;line-height:1.5;margin-bottom:10px}
 .consent-row{display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:14px;color:#374151;line-height:1.5}
 .consent-row input{width:20px;height:20px;margin-top:2px;flex-shrink:0;accent-color:#3b82f6}
+.turnstile-row{margin:0 0 14px;display:none}
+.turnstile-row.active{display:block}
 .pay-btn{display:block;width:100%;padding:14px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background .15s}
 .pay-btn:hover{background:#2563eb}
 .pay-btn:disabled{background:#93c5fd;cursor:not-allowed}
@@ -786,6 +852,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     <div class="error-msg" id="error-msg"></div>
     <div class="success-msg" id="success-msg">Payment successful!</div>
+    <div class="turnstile-row" id="turnstile-row"><div id="turnstile-widget"></div></div>
     <div class="spinner" id="spinner"></div>
     <button class="pay-btn" id="pay-btn" disabled>Pay</button>
 
@@ -817,6 +884,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var quoteSeq = 0;
   var quoteErrorActive = false;
   var whopCheckoutMounted = false;
+  var turnstileRequired = false;
+  var turnstileSiteKey = '';
+  var turnstileToken = '';
+  var turnstileWidgetId = null;
 
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
@@ -997,6 +1068,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       if (cfg) {
         if (cfg.publishableKey) publishableKey = cfg.publishableKey;
         processorType = cfg.processorType;
+        turnstileRequired = cfg.turnstileRequired === true;
+        turnstileSiteKey = cfg.turnstileSiteKey || '';
+        renderTurnstileIfNeeded();
         el('merchant-name').textContent = cfg.merchantName || offerData.merchantName || '';
 
         if (processorType === 'nmi' && cfg.nmiTokenizationKey) {
@@ -1334,6 +1408,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     return '$' + Number(val).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
+  function renderTurnstileIfNeeded() {
+    var row = el('turnstile-row');
+    if (!row) return;
+    row.classList.toggle('active', turnstileRequired);
+    if (!turnstileRequired) {
+      turnstileToken = '';
+      return;
+    }
+    if (!turnstileSiteKey) {
+      showError('Security check is not configured. Please contact support.');
+      el('pay-btn').disabled = true;
+      return;
+    }
+    function render() {
+      if (!window.turnstile || turnstileWidgetId !== null) return;
+      turnstileWidgetId = window.turnstile.render('#turnstile-widget', {
+        sitekey: turnstileSiteKey,
+        callback: function(token) {
+          turnstileToken = token || '';
+          updatePayBtn();
+        },
+        'expired-callback': function() {
+          turnstileToken = '';
+          updatePayBtn();
+        },
+        'error-callback': function() {
+          turnstileToken = '';
+          updatePayBtn();
+        }
+      });
+    }
+    if (!window.turnstile) {
+      if (!document.querySelector('script[data-scalesafe-turnstile="true"]')) {
+        var script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.setAttribute('data-scalesafe-turnstile', 'true');
+        script.onload = render;
+        document.head.appendChild(script);
+      }
+      return;
+    }
+    render();
+  }
+
   // Consent checkbox + pay button gate
   // For NMI: button enables when consent is checked (token is generated on submit via startPaymentRequest).
   // For Stripe: button enables when consent is checked (token is created inline via createPaymentMethod on submit).
@@ -1347,6 +1467,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var ready = el('consent-cb').checked
       && !!currentQuote
       && Number(currentQuote.selectedAmountCents || 0) > 0
+      && (!turnstileRequired || !!turnstileToken)
       && (paymentToken !== null || processorType === 'stripe' || processorType === 'nmi' || processorType === 'whop');
     el('pay-btn').disabled = !ready;
   }
@@ -1365,7 +1486,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         contactEmail: custEmail || enrollmentEmail,
         checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout',
         paymentChoice: paymentChoice || 'pif',
-        selectedAddonIds: selectedAddonIds
+        selectedAddonIds: selectedAddonIds,
+        turnstileToken: turnstileToken
       })
     });
     var session = await sessionRes.json().catch(function() { return {}; });
@@ -1485,6 +1607,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       // Use payment choice to determine charge amount
       var quote = await ensureCheckoutQuote();
       if (!quote) throw new Error('Unable to calculate checkout amount. Please refresh and try again.');
+      if (turnstileRequired && !turnstileToken) {
+        throw new Error('Please complete the security check before continuing.');
+      }
       var chargePrice = quote.selectedAmount;
       // Validate customer fields. Phone is only required on Quick Pay (no consent token);
       // on the full funnel path the contact already exists in GHL with phone from Page 1.
@@ -1532,7 +1657,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             contactEmail: custEmail || enrollmentEmail,
             paymentChoice: paymentChoice || 'pif',
             checkoutMode: consentMode ? 'full_enrollment' : 'quick_checkout',
-            selectedAddonIds: selectedAddonIds
+            selectedAddonIds: selectedAddonIds,
+            turnstileToken: turnstileToken
           })
         });
         var intentData = await intentRes.json();
@@ -1606,6 +1732,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           achAccountHolderType: selectedPaymentMethod === 'ach' ? el('ach-holder-type').value : undefined,
           achAccountType: selectedPaymentMethod === 'ach' ? el('ach-account-type').value : undefined,
           achSecCode: selectedPaymentMethod === 'ach' ? 'WEB' : undefined,
+          turnstileToken: turnstileToken,
           deviceFingerprint: navigator.userAgent,
           browserInfo: {screen: screen.width+'x'+screen.height, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}
         })

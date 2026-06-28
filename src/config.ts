@@ -66,6 +66,16 @@ export const config = {
   // App URL (for OAuth callbacks, webhook URLs)
   appUrl: optional('APP_URL', 'http://localhost:3000'),
 
+  // Cloudflare Turnstile bot protection for public checkout endpoints.
+  turnstile: {
+    siteKey: process.env.TURNSTILE_SITE_KEY || '',
+    secretKey: process.env.TURNSTILE_SECRET_KEY || '',
+    enabledDefault: process.env.TURNSTILE_ENABLED_DEFAULT === 'true',
+  },
+
+  // Internal ScaleSafe HQ console. If unset, HQ routes return 404.
+  hqAdminToken: process.env.SCALESAFE_HQ_ADMIN_TOKEN || '',
+
   // Public action links (payment update, cancellation, milestone signoff)
   publicActionTokenSecret: optional('PUBLIC_ACTION_TOKEN_SECRET', ''),
 
