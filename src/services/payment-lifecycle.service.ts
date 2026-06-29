@@ -57,6 +57,16 @@ function assertProcessorSuccess(
   }
 }
 
+function assertProcessorLifecycleSupported(processorType: unknown, action: 'pause' | 'resume' | 'cancel'): void {
+  const processor = String(processorType || '').toLowerCase();
+  if (processor !== 'whop') return;
+
+  const actionLabel = action === 'cancel' ? 'cancelled' : action === 'pause' ? 'paused' : 'resumed';
+  throw new ValidationError(
+    `Whop memberships cannot be ${actionLabel} from ScaleSafe yet. Manage the membership in Whop; ScaleSafe will update when Whop sends the membership webhook.`,
+  );
+}
+
 async function updateEnrollmentForLifecycleAction(params: {
   locationId: string;
   enrollmentId?: string;
@@ -513,6 +523,8 @@ export const paymentLifecycleService = {
    * Pause a subscription. Logs evidence, fires trigger, updates GHL.
    */
   async pauseSubscription(params: SubscriptionParams): Promise<void> {
+    assertProcessorLifecycleSupported(params.processorType, 'pause');
+
     const pauseReason = plainText(params.reason, 'Merchant-initiated pause');
     // Pause via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
@@ -643,6 +655,8 @@ export const paymentLifecycleService = {
    * Resume a paused subscription. Logs evidence, fires trigger, updates GHL.
    */
   async resumeSubscription(params: SubscriptionParams): Promise<void> {
+    assertProcessorLifecycleSupported(params.processorType, 'resume');
+
     // Resume via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
       try {
@@ -897,6 +911,8 @@ export const paymentLifecycleService = {
    * Cancel a subscription. Logs both subscription change + cancellation evidence.
    */
   async cancelSubscription(params: SubscriptionParams): Promise<void> {
+    assertProcessorLifecycleSupported(params.processorType, 'cancel');
+
     // Cancel via processor if we have a subscription ID
     if (params.processorSubscriptionId) {
       try {

@@ -108,10 +108,13 @@
           </div>
         </div>
         <div class="flex gap-2">
-          <button class="btn btn-sm btn-secondary" @click="copyCardUpdateLink(enr)" :disabled="cardUpdateSending">
+          <span v-if="isWhopEnrollment(enr)" class="text-xs text-muted" style="align-self:center">
+            Manage membership changes in Whop.
+          </span>
+          <button v-if="canRequestPaymentUpdate(enr)" class="btn btn-sm btn-secondary" @click="copyCardUpdateLink(enr)" :disabled="cardUpdateSending">
             Copy Update Link
           </button>
-          <button class="btn btn-sm btn-secondary" @click="sendCardUpdateRequest(enr)" :disabled="cardUpdateSending">
+          <button v-if="canRequestPaymentUpdate(enr)" class="btn btn-sm btn-secondary" @click="sendCardUpdateRequest(enr)" :disabled="cardUpdateSending">
             {{ cardUpdateSending ? 'Sending...' : 'Request Payment Update' }}
           </button>
           <button v-if="canPause(enr)" class="btn btn-sm btn-secondary" @click="openPause(enr)">
@@ -425,7 +428,16 @@ function paymentsRemaining(enrollment: any): number | null {
   return Math.max(0, total - Number(enrollment?.paymentsMade || 0));
 }
 
+function isWhopEnrollment(enrollment: any): boolean {
+  return String(enrollment?.processorType || '').toLowerCase() === 'whop';
+}
+
+function canRequestPaymentUpdate(enrollment: any): boolean {
+  return !isWhopEnrollment(enrollment);
+}
+
 function canPause(enrollment: any): boolean {
+  if (isWhopEnrollment(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   if (!['enrolled', 'active'].includes(status)) return false;
   const type = String(enrollment?.paymentType || '').toLowerCase();
@@ -435,10 +447,12 @@ function canPause(enrollment: any): boolean {
 }
 
 function canResume(enrollment: any): boolean {
+  if (isWhopEnrollment(enrollment)) return false;
   return String(enrollment?.status || '').toLowerCase() === 'paused';
 }
 
 function canCancel(enrollment: any): boolean {
+  if (isWhopEnrollment(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   return !['cancelled', 'completed'].includes(status);
 }
