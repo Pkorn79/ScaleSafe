@@ -514,7 +514,7 @@ export const phase2EnrollmentService = {
               const offer = await offerRepository.getById(bgOfferId, bgLocationId);
               applyOfferContactFields(customFields, offer, merchant, bgPaymentType);
               applyPaymentContactFields(customFields, bgPaymentAmount, 1, params.paymentsTotal, enrolledAt);
-              pulseCadenceEnabled = (offer as any).checkout_mode !== 'quick_checkout' && offer.pulse_cadence_enabled !== false;
+              pulseCadenceEnabled = offer.pulse_cadence_enabled === true;
               pulseFrequencyDays = Math.min(365, Math.max(1, Number(offer.pulse_frequency_days || 30)));
             } catch {}
           }

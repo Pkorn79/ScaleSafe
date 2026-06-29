@@ -291,6 +291,82 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     ]));
     expect(createSubscription).not.toHaveBeenCalled();
   });
+
+  it('initializes pulse cadence after paid pending enrollment finalization when the offer has pulse enabled', async () => {
+    mockFindOffer.mockResolvedValue({
+      id: 'offer_1',
+      offer_name: 'ScaleSafe Beta',
+      payment_type: 'pif',
+      price: 200,
+      pulse_cadence_enabled: true,
+      pulse_frequency_days: 14,
+    });
+
+    const enrollment = {
+      id: 'enr_1',
+      location_id: 'loc_1',
+      merchant_id: 'merch_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      first_name: 'Client',
+      last_name: 'One',
+      status: 'paid_pending_enrollment',
+      payment_amount: 200,
+      payment_type: 'pif',
+      payments_made: 1,
+      payments_total: 1,
+      processor_type: 'stripe',
+      processor_subscription_id: null,
+    };
+
+    const enrollmentUpdates: any[] = [];
+    const updateChain: any = {};
+    updateChain.eq = jest.fn(() => updateChain);
+    const enrollments = {
+      select: jest.fn(() => ({
+        eq: jest.fn(function eq(this: any) { return this; }),
+        maybeSingle: jest.fn(async () => ({ data: enrollment, error: null })),
+      })),
+      update: jest.fn((payload: any) => {
+        enrollmentUpdates.push(payload);
+        return updateChain;
+      }),
+    };
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn((table: string) => {
+        if (table === 'enrollments') return enrollments;
+        return queryResult({ data: null, error: null });
+      }),
+    });
+
+    const result = await payFirstEnrollmentService.finalizePaidPendingEnrollment({
+      enrollmentId: 'enr_1',
+      locationId: 'loc_1',
+      consentTimestamp: '2026-06-04T12:00:00.000Z',
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+      deviceFingerprint: 'fp_1',
+      screenResolution: '1440x900',
+      timezone: 'America/Chicago',
+      browserLanguage: 'en-US',
+      tcVersionHash: 'hash_1',
+      digitalSignature: 'Client One',
+      clausesAccepted: ['terms'],
+      scrollDepth: 100,
+    });
+
+    expect(result?.success).toBe(true);
+    await flushBackgroundTasks();
+    expect(enrollmentUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pulse_cadence_enabled: true,
+        pulse_frequency_days: 14,
+        next_pulse_due_at: expect.any(String),
+        last_pulse_sent_at: null,
+      }),
+    ]));
+  });
 });
 
 describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {

@@ -1,8 +1,13 @@
 const mockFrom = jest.fn();
 const mockMerchant = jest.fn();
+const mockGhlPut = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
+}));
+
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn(async () => ({ put: mockGhlPut })),
 }));
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
@@ -19,7 +24,10 @@ jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { getPulseCadenceDiagnostics } from '../../src/jobs/pulse-cadence-check';
+import { getPulseCadenceDiagnostics, runPulseCadenceCheck } from '../../src/jobs/pulse-cadence-check';
+import { triggerService } from '../../src/services/trigger.service';
+
+const mockFireTrigger = triggerService.fireTrigger as jest.Mock;
 
 function thenableQuery(result: any) {
   const query: any = {
@@ -86,5 +94,106 @@ describe('pulse cadence diagnostics', () => {
     expect(report.status).toBe('needs_setup');
     expect(report.pulseEnabled).toBe(false);
     expect(report.lastSkippedReason).toBe('pulse_module_disabled');
+  });
+});
+
+describe('runPulseCadenceCheck', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMerchant.mockResolvedValue({
+      module_pulse: true,
+      business_name: 'ScaleSafe Merchant',
+      support_email: 'support@example.com',
+    });
+    mockGhlPut.mockResolvedValue({ data: {} });
+    mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+  });
+
+  it('syncs pulse contact fields and fires the shared app-event payload with durable aliases', async () => {
+    const updatePayloads: any[] = [];
+    const makeUpdateQuery = () => {
+      const query: any = {
+        eq: jest.fn(() => query),
+      };
+      return query;
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        const query: any = {
+          select: jest.fn(() => query),
+          eq: jest.fn(() => query),
+          in: jest.fn(() => query),
+          lte: jest.fn(() => query),
+          update: jest.fn((payload: any) => {
+            updatePayloads.push(payload);
+            return makeUpdateQuery();
+          }),
+          then: (resolve: any) => Promise.resolve({
+            data: [{
+              id: 'enr_1',
+              location_id: 'loc_1',
+              contact_id: 'contact_1',
+              offer_id: 'offer_1',
+              status: 'enrolled',
+              pulse_frequency_days: 14,
+              next_pulse_due_at: '2026-06-29T00:00:00.000Z',
+            }],
+            error: null,
+          }).then(resolve),
+        };
+        return query;
+      }
+      if (table === 'offers_mirror') {
+        const query: any = {
+          select: jest.fn(() => query),
+          eq: jest.fn(() => query),
+          maybeSingle: jest.fn(async () => ({
+            data: { offer_name: 'Beta Program', pulse_frequency_days: 14 },
+            error: null,
+          })),
+        };
+        return query;
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await runPulseCadenceCheck();
+
+    expect(mockGhlPut).toHaveBeenCalledWith(
+      '/contacts/contact_1',
+      expect.objectContaining({
+        customField: expect.objectContaining({
+          'contact.offer_program_name': 'Beta Program',
+          'contact.offer_support_email': 'support@example.com',
+          'contact.ss_pulse_check_url': expect.stringContaining('/pulse-check?actionToken='),
+          'contact.ss_pulse_due_date': 'Jun 29, 2026',
+          'contact.ss_pulse_interval_label': 'every 2 weeks',
+        }),
+      }),
+    );
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_app_event',
+      expect.objectContaining({
+        event_type: 'pulse_check_due',
+        eventType: 'pulse_check_due',
+        event_type_display: 'Pulse Check Due',
+        contact_id: 'contact_1',
+        enrollment_id: 'enr_1',
+        offer_name: 'Beta Program',
+        pulse_check_url: expect.stringContaining('/pulse-check?actionToken='),
+        pulseCheckUrl: expect.stringContaining('/pulse-check?actionToken='),
+        pulse_due_date_display: 'Jun 29, 2026',
+        pulse_interval_label: 'every 2 weeks',
+        support_email: 'support@example.com',
+        business_name: 'ScaleSafe Merchant',
+      }),
+    );
+    expect(updatePayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        last_pulse_sent_at: expect.any(String),
+        next_pulse_due_at: expect.any(String),
+      }),
+    ]));
   });
 });

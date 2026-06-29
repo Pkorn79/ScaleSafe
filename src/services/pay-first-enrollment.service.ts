@@ -1351,6 +1351,21 @@ export const payFirstEnrollmentService = {
 
         const api = await ghlApi(params.locationId);
         await api.put(`/contacts/${enrollment.contact_id}`, { customField: customFields });
+        if ((offer as any).pulse_cadence_enabled === true) {
+          const pulseFrequencyDays = Math.min(365, Math.max(1, Number((offer as any).pulse_frequency_days || 30)));
+          const nextPulseDue = new Date();
+          nextPulseDue.setDate(nextPulseDue.getDate() + pulseFrequencyDays);
+          await supabase
+            .from('enrollments')
+            .update({
+              pulse_cadence_enabled: true,
+              pulse_frequency_days: pulseFrequencyDays,
+              next_pulse_due_at: nextPulseDue.toISOString(),
+              last_pulse_sent_at: null,
+            })
+            .eq('id', params.enrollmentId)
+            .eq('location_id', params.locationId);
+        }
         logger.info(
           { enrollmentId: params.enrollmentId, contactId: enrollment.contact_id, offerId: enrollment.offer_id },
           'Paid pending enrollment workflow contact fields synced',

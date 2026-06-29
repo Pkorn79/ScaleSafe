@@ -66,6 +66,13 @@ export const WORKFLOW_PAYMENT_CONTACT_FIELDS = {
   LAST_FAILED_PAYMENT_DATE:  'contact.ss_last_failed_payment_date',
 } as const;
 
+export const WORKFLOW_PULSE_CONTACT_FIELDS = {
+  CHECK_URL:      'contact.ss_pulse_check_url',
+  DUE_DATE:       'contact.ss_pulse_due_date',
+  INTERVAL_LABEL: 'contact.ss_pulse_interval_label',
+  LAST_SENT_AT:   'contact.ss_last_pulse_sent_at',
+} as const;
+
 export const WORKFLOW_MILESTONE_CONTACT_FIELDS = {
   CURRENT_MILESTONE_NAME:     'contact.ss_current_milestone_name',
   SIGNOFF_LINK:               'contact.sign_off_link',
@@ -161,6 +168,11 @@ export const BETA_CUSTOM_FIELD_REGISTRY: readonly CustomFieldDef[] = [
   textField('SS Total Paid', WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID),
   numberField('SS Failed Payment Count', WORKFLOW_PAYMENT_CONTACT_FIELDS.FAILED_PAYMENT_COUNT),
   textField('SS Last Failed Payment Date', WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_FAILED_PAYMENT_DATE),
+
+  textField('SS Pulse Check URL', WORKFLOW_PULSE_CONTACT_FIELDS.CHECK_URL),
+  textField('SS Pulse Due Date', WORKFLOW_PULSE_CONTACT_FIELDS.DUE_DATE),
+  textField('SS Pulse Interval Label', WORKFLOW_PULSE_CONTACT_FIELDS.INTERVAL_LABEL),
+  textField('SS Last Pulse Sent At', WORKFLOW_PULSE_CONTACT_FIELDS.LAST_SENT_AT),
 
   textField('SS Current Milestone Name', WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME),
   textField('Sign Off Link', WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK),

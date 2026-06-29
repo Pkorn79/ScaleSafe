@@ -1,4 +1,10 @@
 import { getSupabase } from '../clients/supabase.client';
+import { ghlApi } from '../clients/ghl.client';
+import {
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PULSE_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
@@ -52,7 +58,7 @@ export async function runPulseCadenceCheck(): Promise<void> {
       const { data: offer } = enrollment.offer_id
         ? await supabase
           .from('offers_mirror')
-          .select('offer_name')
+          .select('offer_name, pulse_frequency_days')
           .eq('id', enrollment.offer_id)
           .maybeSingle()
         : { data: null };
@@ -60,15 +66,34 @@ export async function runPulseCadenceCheck(): Promise<void> {
       const frequencyDays = normalizeFrequency(enrollment.pulse_frequency_days);
       const nextDue = new Date(now);
       nextDue.setDate(nextDue.getDate() + frequencyDays);
+      const dueDateDisplay = formatDateLabel(enrollment.next_pulse_due_at);
+      const sentAt = now.toISOString();
+      const intervalLabel = formatPulseIntervalLabel(frequencyDays);
       const pulseUrl = buildPulseCheckUrl({
         locationId: enrollment.location_id,
         contactId: enrollment.contact_id,
         enrollmentId: enrollment.id,
       });
+      const supportEmail = (merchant as any).support_email || (merchant as any).email || '';
+      const businessName = (merchant as any).dba_name || merchant.business_name || '';
+
+      await syncPulseContactFields({
+        locationId: enrollment.location_id,
+        contactId: enrollment.contact_id,
+        offerName: offer?.offer_name || '',
+        pulseUrl,
+        dueDateDisplay,
+        intervalLabel,
+        sentAt,
+        supportEmail,
+        businessName,
+      });
 
       const triggerResult = await triggerService.fireTrigger(enrollment.location_id, 'ss_app_event', {
         event_type: 'pulse_check_due',
         eventType: 'pulse_check_due',
+        event_type_display: 'Pulse Check Due',
+        eventTypeDisplay: 'Pulse Check Due',
         location_id: enrollment.location_id,
         locationId: enrollment.location_id,
         contact_id: enrollment.contact_id,
@@ -81,14 +106,48 @@ export async function runPulseCadenceCheck(): Promise<void> {
         offerName: offer?.offer_name || '',
         form_url: pulseUrl,
         formUrl: pulseUrl,
+        pulse_check_url: pulseUrl,
+        pulseCheckUrl: pulseUrl,
+        checkin_url: pulseUrl,
+        checkinUrl: pulseUrl,
+        action_url: pulseUrl,
+        actionUrl: pulseUrl,
         pulse_frequency_days: frequencyDays,
         pulseFrequencyDays: frequencyDays,
-        pulse_interval_label: formatPulseIntervalLabel(frequencyDays),
-        pulseIntervalLabel: formatPulseIntervalLabel(frequencyDays),
+        pulse_interval_label: intervalLabel,
+        pulseIntervalLabel: intervalLabel,
         pulse_due_at: enrollment.next_pulse_due_at,
         pulseDueAt: enrollment.next_pulse_due_at,
-        sent_at: now.toISOString(),
-        sentAt: now.toISOString(),
+        pulse_due_date_display: dueDateDisplay,
+        pulseDueDateDisplay: dueDateDisplay,
+        due_date_display: dueDateDisplay,
+        dueDateDisplay: dueDateDisplay,
+        sent_at: sentAt,
+        sentAt,
+        support_email: supportEmail,
+        supportEmail,
+        merchant_support_email: supportEmail,
+        merchantSupportEmail: supportEmail,
+        business_name: businessName,
+        businessName,
+        merchant_business_name: businessName,
+        merchantBusinessName: businessName,
+        offer: {
+          name: offer?.offer_name || '',
+          pulse_check_url: pulseUrl,
+          pulse_interval_label: intervalLabel,
+        },
+        merchant: {
+          business_name: businessName,
+          support_email: supportEmail,
+        },
+        pulse: {
+          check_url: pulseUrl,
+          due_at: enrollment.next_pulse_due_at,
+          due_date_display: dueDateDisplay,
+          interval_label: intervalLabel,
+          frequency_days: frequencyDays,
+        },
       });
 
       if (triggerResult.sent === 0) {
@@ -192,6 +251,18 @@ function normalizeFrequency(days: unknown): number {
   return Math.min(365, Math.max(1, Math.round(parsed)));
 }
 
+function formatDateLabel(date: string | null | undefined): string {
+  if (!date) return '';
+  const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return String(date);
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 function formatPulseIntervalLabel(days: number): string {
   if (days === 1) return 'daily';
   if (days === 7) return 'weekly';
@@ -200,4 +271,43 @@ function formatPulseIntervalLabel(days: number): string {
   if (days >= 89 && days <= 92) return 'quarterly';
   if (days === 365) return 'yearly';
   return `every ${days} days`;
+}
+
+async function syncPulseContactFields(params: {
+  locationId: string;
+  contactId?: string | null;
+  offerName: string;
+  pulseUrl: string;
+  dueDateDisplay: string;
+  intervalLabel: string;
+  sentAt: string;
+  supportEmail: string;
+  businessName: string;
+}): Promise<void> {
+  if (!params.locationId || !params.contactId) return;
+
+  const customField: Record<string, unknown> = {
+    [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: params.businessName,
+    [OFFER_CONTACT_FIELDS.OFFER_NAME]: params.offerName,
+    [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: params.offerName,
+    [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: params.supportEmail,
+    [WORKFLOW_PULSE_CONTACT_FIELDS.CHECK_URL]: params.pulseUrl,
+    [WORKFLOW_PULSE_CONTACT_FIELDS.DUE_DATE]: params.dueDateDisplay,
+    [WORKFLOW_PULSE_CONTACT_FIELDS.INTERVAL_LABEL]: params.intervalLabel,
+    [WORKFLOW_PULSE_CONTACT_FIELDS.LAST_SENT_AT]: params.sentAt,
+  };
+
+  try {
+    const api = await ghlApi(params.locationId);
+    await api.put(`/contacts/${params.contactId}`, { customField });
+  } catch (err: any) {
+    logger.warn(
+      {
+        err: err?.message || String(err),
+        locationId: params.locationId,
+        contactId: params.contactId,
+      },
+      'Failed to sync pulse contact fields; continuing with trigger delivery',
+    );
+  }
 }
