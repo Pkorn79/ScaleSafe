@@ -340,4 +340,63 @@ describe('whopService.createCheckoutSession', () => {
       planId: 'plan_123',
     }));
   });
+
+  it('creates a one-time checkout plan when PIF is selected on an installment Whop offer', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ data: { id: 'plan_pif_123' } })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'ch_pif_123',
+          purchase_url: 'https://whop.com/checkout/plan_pif_123?session=ch_pif_123',
+        },
+      });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    const session = await whopService.createCheckoutSession({
+      locationId: 'loc-1',
+      offer: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Whop Offer',
+        payment_type: 'installments',
+        installment_frequency: 'monthly',
+        num_payments: 2,
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_recurring_123',
+      } as any,
+      enrollmentId: 'enroll-1',
+      contactId: 'contact-1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client Example',
+      consentToken: '',
+      checkoutMode: 'quick_checkout',
+      quote: {
+        paymentChoice: 'pif',
+        selectedAmount: 12,
+        selectedAmountCents: 1200,
+        addonAmountCents: 200,
+        futureRecurringSelectedAmountCents: 0,
+        lineItems: [
+          { kind: 'base_offer', title: 'Whop Offer', amount: 10 },
+          { kind: 'order_bump', title: 'Bump', amount: 2 },
+        ],
+      } as any,
+    });
+
+    expect(post).toHaveBeenNthCalledWith(1, '/plans', expect.objectContaining({
+      company_id: 'biz_123',
+      product_id: 'prod_123',
+      plan_type: 'one_time',
+      initial_price: 12,
+      renewal_price: null,
+      billing_period: null,
+    }));
+    expect(post).toHaveBeenNthCalledWith(2, '/checkout_configurations', expect.objectContaining({
+      plan_id: 'plan_pif_123',
+    }));
+    expect(session).toEqual(expect.objectContaining({
+      sessionId: 'ch_pif_123',
+      planId: 'plan_pif_123',
+    }));
+  });
 });

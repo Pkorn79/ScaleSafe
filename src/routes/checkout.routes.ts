@@ -1079,7 +1079,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
         } else if (processorType === 'whop') {
           el('whop-checkout').classList.add('active');
-          el('pay-btn').textContent = 'Loading Whop checkout...';
+          el('pay-btn').textContent = 'Continue to Whop checkout';
           el('pay-btn').disabled = true;
         } else if (processorType === 'nmi' && !cfg.nmiTokenizationKey) {
           console.error('[ScaleSafe] NMI tokenization key missing');
@@ -1124,17 +1124,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       renderOffer();
-      if (processorType === 'whop') {
-        setTimeout(function() {
-          renderWhopCheckout(el('cust-name').value.trim(), el('cust-email').value.trim()).catch(function(err) {
-            el('error-msg').textContent = err.message || 'Could not load Whop checkout.';
-            el('error-msg').style.display = 'block';
-            el('pay-btn').classList.remove('hidden');
-            el('pay-btn').textContent = 'Retry Whop checkout';
-            updatePayBtn();
-          });
-        }, 0);
-      }
     } catch(err) {
       el('loading').textContent = 'Unable to load checkout. Please try again.';
     }
@@ -1298,6 +1287,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           if (inner.checked) selectedAddonIds.push(inner.getAttribute('data-addon-id'));
         });
         persistAddonIds();
+        resetWhopCheckout();
         updatePricingDisplay();
       });
     });
@@ -1346,7 +1336,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('price-summary').classList.remove('hidden');
       el('dual-pricing-box').classList.add('hidden');
       el('future-payment-row').classList.add('hidden');
-      el('pay-btn').textContent = processorType === 'whop' ? 'Loading Whop checkout...' : 'Pay';
+      el('pay-btn').textContent = processorType === 'whop' ? 'Continue to Whop checkout' : 'Pay';
       return;
     }
     var displayPrice = quote.selectedAmount;
@@ -1379,7 +1369,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     }
     updatePaymentMethodUi();
     el('pay-btn').textContent = processorType === 'whop'
-      ? 'Loading Whop checkout...'
+      ? 'Continue to Whop checkout'
       : 'Pay ' + formatCurrency(displayPrice);
     if (note) {
       el('installment-note').textContent = note;
@@ -1400,6 +1390,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   function selectPaymentOption(choice) {
     paymentChoice = choice;
+    resetWhopCheckout();
     updatePricingDisplay();
   }
 
@@ -1472,8 +1463,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     el('pay-btn').disabled = !ready;
   }
 
+  function resetWhopCheckout() {
+    if (processorType !== 'whop') return;
+    whopCheckoutMounted = false;
+    var root = el('whop-embed-root');
+    if (root) root.textContent = '';
+    var success = el('success-msg');
+    if (success) success.style.display = 'none';
+    var button = el('pay-btn');
+    if (button) {
+      button.classList.remove('hidden');
+      button.textContent = 'Continue to Whop checkout';
+    }
+  }
+
   async function renderWhopCheckout(custName, custEmail) {
     if (whopCheckoutMounted) return;
+    await refreshCheckoutQuote();
     whopCheckoutMounted = true;
     var sessionRes = await fetch(API_BASE + '/api/checkout/whop/session', {
       method: 'POST',
@@ -1630,7 +1636,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       if (processorType === 'whop') {
         await renderWhopCheckout(custName, custEmail);
         paymentInFlight = false;
-        setLoading(false);
+        el('spinner').style.display = 'none';
+        el('pay-btn').classList.add('hidden');
         return;
       }
 

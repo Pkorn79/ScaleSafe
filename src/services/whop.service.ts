@@ -231,15 +231,33 @@ export const whopService = {
       checkout_mode: input.checkoutMode,
     };
     const quote = input.quote || null;
-    const recurring = billingPeriodDaysForOffer(input.offer);
+    const quoteChoice = quote?.paymentChoice || (
+      String(input.offer.payment_type || '') === 'subscription'
+        ? 'subscription'
+        : String(input.offer.payment_type || '') === 'installments'
+          ? 'installment'
+          : 'pif'
+    );
+    const recurring = quoteChoice === 'installment' || quoteChoice === 'subscription'
+      ? billingPeriodDaysForOffer(input.offer)
+      : null;
     const addonCents = quote?.addonAmountCents || 0;
     const futureRecurringCents = quote?.futureRecurringSelectedAmountCents || 0;
-    // Use the offer's synced Whop plan for normal recurring checkouts. Only create a
-    // checkout-specific hidden plan when one-time add-ons/upsells need an initial fee.
-    const needsSessionPlan = Boolean(recurring && quote && addonCents > 0);
+    const selectedCents = quote?.selectedAmountCents || 0;
+    // Use the offer's synced Whop plan only when it exactly matches the selected
+    // checkout shape. Create a checkout-specific hidden plan when add-ons change
+    // today's amount or a dual PIF/installment offer is paid in full.
+    const needsRecurringSessionPlan = Boolean(recurring && quote && addonCents > 0);
+    const needsOneTimeSessionPlan = Boolean(!recurring && quote && (
+      addonCents > 0 || ['installments', 'subscription'].includes(String(input.offer.payment_type || ''))
+    ));
     let planId = input.offer.whop_plan_id;
 
-    if (needsSessionPlan && recurring) {
+    if ((needsRecurringSessionPlan || needsOneTimeSessionPlan) && !input.offer.whop_product_id) {
+      throw new ValidationError('This Whop offer is missing its synced product ID. Save the offer again, then retry checkout.');
+    }
+
+    if (needsRecurringSessionPlan && recurring) {
       if (!input.offer.whop_product_id) {
         throw new ValidationError('This Whop offer is missing its synced product ID. Save the offer again, then retry checkout.');
       }
@@ -303,6 +321,58 @@ export const whopService = {
       }
       planId = extractId(planRes.data, 'plan');
       if (!planId) throw new Error('Whop dynamic checkout plan returned no plan ID');
+    } else if (needsOneTimeSessionPlan) {
+      const oneTimeAmount = centsToDollars(selectedCents);
+      assertWhopMinimum('Whop one-time price', oneTimeAmount);
+      const planPayload: Record<string, unknown> = {
+        company_id: row.company_id,
+        product_id: input.offer.whop_product_id,
+        plan_type: 'one_time',
+        release_method: 'buy_now',
+        title: input.offer.offer_name,
+        nickname: `${input.offer.offer_name} checkout`,
+        currency: 'usd',
+        initial_price: oneTimeAmount,
+        renewal_price: null,
+        billing_period: null,
+        visibility: 'hidden',
+        unlimited_stock: true,
+        metadata: {
+          ...metadata,
+          scalesafe_dynamic_checkout_plan: true,
+          due_today_amount: quote?.selectedAmount || 0,
+          one_time_addon_amount: centsToDollars(addonCents),
+          future_recurring_amount: 0,
+          line_items: JSON.stringify(quote?.lineItems || []),
+        },
+      };
+      logger.info({
+        locationId: input.locationId,
+        offerId: input.offer.id,
+        companyId: row.company_id,
+        productId: input.offer.whop_product_id,
+        initialPrice: planPayload.initial_price,
+      }, 'Creating Whop one-time checkout plan');
+      let planRes;
+      try {
+        planRes = await client(row).post('/plans', planPayload);
+      } catch (err: any) {
+        logger.error({
+          locationId: input.locationId,
+          offerId: input.offer.id,
+          status: err?.response?.status,
+          whopError: err?.response?.data,
+          planPayload: {
+            company_id: planPayload.company_id,
+            product_id: planPayload.product_id,
+            plan_type: planPayload.plan_type,
+            initial_price: planPayload.initial_price,
+          },
+        }, 'Whop one-time checkout plan creation failed');
+        throw new Error(whopErrorMessage(err, 'Whop one-time checkout plan failed'));
+      }
+      planId = extractId(planRes.data, 'plan');
+      if (!planId) throw new Error('Whop one-time checkout plan returned no plan ID');
     }
 
     const redirectUrl = `${config.appUrl.replace(/\/+$/, '')}/payment-thank-you?offerId=${encodeURIComponent(input.offer.id)}`;
