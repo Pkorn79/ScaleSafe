@@ -1079,7 +1079,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           await loadStripe(cfg.stripePublishableKey, cfg.stripeAccountId);
         } else if (processorType === 'whop') {
           el('whop-checkout').classList.add('active');
-          el('pay-btn').textContent = 'Continue to Whop checkout';
+          el('pay-btn').textContent = consentMode ? 'Loading Whop checkout...' : 'Continue to Whop checkout';
           el('pay-btn').disabled = true;
         } else if (processorType === 'nmi' && !cfg.nmiTokenizationKey) {
           console.error('[ScaleSafe] NMI tokenization key missing');
@@ -1386,6 +1386,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       el('toggle-inst-btn').style.color = paymentChoice === 'installments' ? '#fff' : '#374151';
     }
     updatePayBtn();
+    maybeAutoLoadWhopCheckout();
   }
 
   function selectPaymentOption(choice) {
@@ -1419,6 +1420,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         callback: function(token) {
           turnstileToken = token || '';
           updatePayBtn();
+          maybeAutoLoadWhopCheckout();
         },
         'expired-callback': function() {
           turnstileToken = '';
@@ -1473,8 +1475,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var button = el('pay-btn');
     if (button) {
       button.classList.remove('hidden');
-      button.textContent = 'Continue to Whop checkout';
+      button.textContent = consentMode ? 'Loading Whop checkout...' : 'Continue to Whop checkout';
     }
+  }
+
+  function maybeAutoLoadWhopCheckout() {
+    if (processorType !== 'whop' || !consentMode || whopCheckoutMounted || paymentInFlight) return;
+    if (!currentQuote || (turnstileRequired && !turnstileToken)) return;
+    var custName = el('cust-name').value.trim();
+    var custEmail = el('cust-email').value.trim() || enrollmentEmail;
+    if (!custName || !custEmail) return;
+    paymentInFlight = true;
+    el('pay-btn').classList.add('hidden');
+    el('spinner').style.display = 'block';
+    renderWhopCheckout(custName, custEmail)
+      .catch(function(err) {
+        el('error-msg').textContent = err.message || 'Could not load Whop checkout.';
+        el('error-msg').style.display = 'block';
+        el('pay-btn').classList.remove('hidden');
+        el('pay-btn').textContent = 'Retry Whop checkout';
+      })
+      .finally(function() {
+        paymentInFlight = false;
+        el('spinner').style.display = 'none';
+        if (whopCheckoutMounted) el('pay-btn').classList.add('hidden');
+        updatePayBtn();
+      });
   }
 
   async function renderWhopCheckout(custName, custEmail) {
