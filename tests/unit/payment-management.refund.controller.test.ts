@@ -143,6 +143,24 @@ describe('issueRefund', () => {
     }));
   });
 
+  it('returns success with a recording issue when Whop accepts a refund but ScaleSafe cannot insert the refund event', async () => {
+    mockFrom
+      .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
+      .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: null, error: { message: 'insert failed' } }));
+    const res = mockRes();
+    await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
+
+    expect(mockWhopRefundPayment).toHaveBeenCalledWith('loc-1', expect.objectContaining({ paymentId: 'pay_123' }));
+    expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
+    expect((res.json as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
+      success: true,
+      refundId: 'ref_whop_1',
+      paymentEventId: null,
+      recordingIssue: expect.stringContaining('could not record the refund event'),
+    }));
+  });
+
   it('blocks Whop refunds when the payment event lacks a Whop payment id', async () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'checkout_123' } }))

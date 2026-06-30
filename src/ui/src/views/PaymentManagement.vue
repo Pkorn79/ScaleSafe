@@ -700,12 +700,13 @@ async function submitRefund() {
   refundLoading.value = true;
   actionError.value = '';
   try {
-    await api.post('/api/payments/manage/refund', {
+    const result = await api.post<any>('/api/payments/manage/refund', {
       paymentEventId: refundForm.value.paymentEventId,
       amount: refundForm.value.amount,
       reason: refundForm.value.reason,
     });
     showRefundModal.value = false;
+    if (result?.message) actionError.value = result.message;
     await loadHistory();
   } catch (e: any) { actionError.value = e.message || 'Refund failed'; }
   refundLoading.value = false;

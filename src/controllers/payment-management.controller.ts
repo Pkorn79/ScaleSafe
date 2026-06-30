@@ -906,15 +906,24 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
     let programName = '';
     if (originalEvent.offer_id) {
-      const { data: offer } = await supabase
+      const { data: offer, error: offerError } = await supabase
         .from('offers_mirror')
         .select('offer_name')
         .eq('id', originalEvent.offer_id)
         .maybeSingle();
+      if (offerError) {
+        logger.warn({ err: offerError, paymentEventId, offerId: originalEvent.offer_id }, 'Refund processed but offer lookup failed');
+      }
       programName = offer?.offer_name || '';
     }
 
-    // Log refund event
+    let refundEventId: string | null = null;
+    let recordingIssue: string | null = null;
+    let notificationIssue: string | null = null;
+
+    // Once the processor accepts a refund, local bookkeeping must not turn the
+    // merchant-facing result into a generic failure. Surface post-refund issues
+    // explicitly so support can reconcile without hiding the processor outcome.
     const { data: refundEvent, error: refundInsertError } = await supabase.from('payment_events').insert({
       merchant_id: merchantId,
       location_id: locationId,
@@ -935,26 +944,38 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       },
       is_recurring: false,
     }).select('id').single();
-    if (refundInsertError) throw refundInsertError;
+    if (refundInsertError) {
+      recordingIssue = 'Refund was accepted by the processor, but ScaleSafe could not record the refund event. Contact support to reconcile this payment.';
+      logger.error({ err: refundInsertError, paymentEventId, refundTransactionId, processor: processorType }, 'Refund accepted but refund event insert failed');
+    } else {
+      refundEventId = refundEvent?.id || null;
+      try {
+        await paymentLifecycleService.notifyRefundProcessed(locationId, originalEvent.contact_id, {
+          amount,
+          refundType,
+          reason: reason || 'Refund processed',
+          transactionId: refundTransactionId,
+          enrollmentId: originalEvent.enrollment_id || null,
+          offerId: originalEvent.offer_id || null,
+          programName,
+          processor: processorType,
+          subscriptionId: originalEvent.processor_subscription_id || null,
+        });
+      } catch (notifyErr: any) {
+        notificationIssue = 'Refund was recorded, but the refund workflow notification did not send. Review trigger delivery logs.';
+        logger.error({ err: notifyErr, paymentEventId, refundTransactionId, processor: processorType }, 'Refund recorded but refund notification failed');
+      }
+    }
 
-    await paymentLifecycleService.notifyRefundProcessed(locationId, originalEvent.contact_id, {
-      amount,
-      refundType,
-      reason: reason || 'Refund processed',
-      transactionId: refundTransactionId,
-      enrollmentId: originalEvent.enrollment_id || null,
-      offerId: originalEvent.offer_id || null,
-      programName,
-      processor: processorType,
-      subscriptionId: originalEvent.processor_subscription_id || null,
-    });
-
-    logger.info({ paymentEventId, amount, reason, pending: refundPending }, 'Refund processed');
+    logger.info({ paymentEventId, amount, reason, pending: refundPending, recordingIssue, notificationIssue }, 'Refund processed');
     res.json({
       success: true,
       status: refundPending ? 'processing' : 'refunded',
       refundId: refundTransactionId,
-      paymentEventId: refundEvent?.id || null,
+      paymentEventId: refundEventId,
+      recordingIssue,
+      notificationIssue,
+      message: recordingIssue || notificationIssue || undefined,
     });
   } catch (err) { next(err); }
 }
