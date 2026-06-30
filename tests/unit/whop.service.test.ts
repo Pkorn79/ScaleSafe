@@ -131,6 +131,50 @@ describe('whopService.syncOffer', () => {
       billing_period: 30,
     }));
   });
+
+  it('omits renewal fields when syncing a one-time Whop plan', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ data: { id: 'prod_123' } })
+      .mockResolvedValueOnce({ data: { id: 'plan_pif_123' } });
+    const patch = jest.fn();
+    mockAxiosCreate.mockReturnValue({ post, patch });
+
+    const updateChain = query({ data: null });
+    const readChain = query({
+      data: {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'ScaleSafe PIF',
+        whop_product_id: 'prod_123',
+        whop_plan_id: 'plan_pif_123',
+      },
+    });
+    mockFrom.mockReturnValueOnce(updateChain).mockReturnValueOnce(readChain);
+
+    await whopService.syncOffer('loc-1', {
+      id: 'offer-1',
+      offer_name: 'ScaleSafe PIF',
+      program_description: 'Test description',
+      payment_type: 'pif',
+      price: 10,
+      pif_discount_enabled: false,
+      whop_product_id: null,
+      whop_plan_id: null,
+    } as any);
+
+    expect(post).toHaveBeenNthCalledWith(2, '/plans', expect.not.objectContaining({
+      renewal_price: expect.anything(),
+    }));
+    expect(post).toHaveBeenNthCalledWith(2, '/plans', expect.not.objectContaining({
+      billing_period: expect.anything(),
+    }));
+    expect(post).toHaveBeenNthCalledWith(2, '/plans', expect.objectContaining({
+      company_id: 'biz_123',
+      product_id: 'prod_123',
+      plan_type: 'one_time',
+      initial_price: 10,
+    }));
+  });
 });
 
 describe('whopService.createCheckoutSession', () => {
@@ -388,8 +432,12 @@ describe('whopService.createCheckoutSession', () => {
       product_id: 'prod_123',
       plan_type: 'one_time',
       initial_price: 12,
-      renewal_price: null,
-      billing_period: null,
+    }));
+    expect(post).toHaveBeenNthCalledWith(1, '/plans', expect.not.objectContaining({
+      renewal_price: expect.anything(),
+    }));
+    expect(post).toHaveBeenNthCalledWith(1, '/plans', expect.not.objectContaining({
+      billing_period: expect.anything(),
     }));
     expect(post).toHaveBeenNthCalledWith(2, '/checkout_configurations', expect.objectContaining({
       plan_id: 'plan_pif_123',

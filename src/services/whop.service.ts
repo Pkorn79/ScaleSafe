@@ -165,13 +165,13 @@ export const whopService = {
         nickname: offer.offer_name,
         currency: 'usd',
         initial_price: recurring ? 0 : amount,
-        renewal_price: recurring ? amount : null,
-        billing_period: recurring ? recurring.billingPeriodDays : null,
         visibility: 'hidden',
         unlimited_stock: true,
         metadata,
       };
       if (recurring) {
+        planPayload.renewal_price = amount;
+        planPayload.billing_period = recurring.billingPeriodDays;
         if (recurring.totalCycles) planPayload.split_pay_required_payments = recurring.totalCycles;
         assertWhopMinimum('Whop renewal price', amount);
       } else {
@@ -339,8 +339,6 @@ export const whopService = {
         nickname: `${input.offer.offer_name} checkout`,
         currency: 'usd',
         initial_price: oneTimeAmount,
-        renewal_price: null,
-        billing_period: null,
         visibility: 'hidden',
         unlimited_stock: true,
         metadata: {
