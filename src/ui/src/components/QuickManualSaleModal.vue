@@ -1,5 +1,5 @@
 <template>
-  <Modal v-model:open="openProxy" title="Quick Manual Sale" :max-width="whopCheckoutUrl ? '960px' : '680px'" @close="resetTransient">
+  <Modal v-model:open="openProxy" title="Quick Manual Sale" max-width="680px" @close="resetTransient">
     <div class="qms-grid">
       <div class="form-group">
         <label class="form-label">First Name *</label>
@@ -125,6 +125,7 @@
           Whop checkout will load here after you create the checkout.
         </div>
         <div v-else-if="processorType === 'whop' && whopCheckoutUrl" class="qms-whop-frame-wrap">
+          <div v-if="whopEmbedLoading" class="qms-whop-loading">Loading Whop checkout...</div>
           <div ref="whopEmbedRoot" class="qms-whop-embed-root"></div>
         </div>
         <div v-else class="error-msg">No processor is configured.</div>
@@ -210,6 +211,7 @@ const resultMessage = ref('');
 const whopCheckoutUrl = ref('');
 const whopEmbedRoot = ref<HTMLElement | null>(null);
 const whopSession = ref<any>(null);
+const whopEmbedLoading = ref(false);
 const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
 const completedSuccessfully = ref(false);
 
@@ -379,6 +381,7 @@ async function mountWhopEmbeddedCheckout() {
     throw new Error('Whop checkout session is missing required embed details.');
   }
 
+  whopEmbedLoading.value = true;
   root.textContent = '';
   window.ssQmsWhopCheckoutComplete = (planId?: string, receiptId?: string) => {
     resultMessage.value = 'Whop payment submitted. ScaleSafe will update this client when Whop confirms payment.';
@@ -409,6 +412,9 @@ async function mountWhopEmbeddedCheckout() {
   root.appendChild(mount);
 
   await loadWhopCheckoutScript(session.embedScriptUrl || 'https://js.whop.com/static/checkout/loader.js');
+  window.setTimeout(() => {
+    whopEmbedLoading.value = false;
+  }, 300);
 }
 
 function animationFrame() {
@@ -722,6 +728,7 @@ function resetTransient() {
   resultMessage.value = '';
   whopCheckoutUrl.value = '';
   whopSession.value = null;
+  whopEmbedLoading.value = false;
   completedSuccessfully.value = false;
   submitting.value = false;
 }
@@ -851,9 +858,10 @@ watch(achAllowedForSelection, (allowed) => {
 }
 
 .qms-whop-frame-wrap {
+  position: relative;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  height: min(680px, 72vh);
+  height: min(520px, 58vh);
   overflow: hidden;
   background: #fff;
 }
@@ -861,6 +869,18 @@ watch(achAllowedForSelection, (allowed) => {
 .qms-whop-embed-root {
   height: 100%;
   width: 100%;
+}
+
+.qms-whop-loading {
+  align-items: center;
+  background: #f8fafc;
+  color: #475569;
+  display: flex;
+  font-size: 13px;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 1;
 }
 
 .qms-retry {
