@@ -125,12 +125,7 @@
           Whop checkout will load here after you create the checkout.
         </div>
         <div v-else-if="processorType === 'whop' && whopCheckoutUrl" class="qms-whop-frame-wrap">
-          <iframe
-            class="qms-whop-frame"
-            :src="whopCheckoutUrl"
-            title="Whop checkout"
-            allow="payment *; clipboard-write"
-          ></iframe>
+          <div ref="whopEmbedRoot" class="qms-whop-embed-root"></div>
         </div>
         <div v-else class="error-msg">No processor is configured.</div>
       </template>
@@ -159,6 +154,7 @@ declare global {
   interface Window {
     Stripe?: any;
     CollectJS?: any;
+    ssQmsWhopCheckoutComplete?: (planId?: string, receiptId?: string) => void;
   }
 }
 
@@ -212,6 +208,8 @@ const submitting = ref(false);
 const submitError = ref('');
 const resultMessage = ref('');
 const whopCheckoutUrl = ref('');
+const whopEmbedRoot = ref<HTMLElement | null>(null);
+const whopSession = ref<any>(null);
 const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
 const completedSuccessfully = ref(false);
 
@@ -357,6 +355,60 @@ function loadScript(src: string, attrs: Record<string, string> = {}) {
     script.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
   });
+}
+
+function loadWhopCheckoutScript(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector('script[data-scalesafe-qms-whop-checkout-loader="true"]');
+    if (existing) existing.remove();
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.defer = true;
+    script.setAttribute('data-scalesafe-qms-whop-checkout-loader', 'true');
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Could not load Whop checkout.'));
+    document.head.appendChild(script);
+  });
+}
+
+async function mountWhopEmbeddedCheckout() {
+  const session = whopSession.value;
+  const root = whopEmbedRoot.value;
+  if (!session?.sessionId || !session?.planId || !root) {
+    throw new Error('Whop checkout session is missing required embed details.');
+  }
+
+  root.textContent = '';
+  window.ssQmsWhopCheckoutComplete = (planId?: string, receiptId?: string) => {
+    resultMessage.value = 'Whop payment submitted. ScaleSafe will update this client when Whop confirms payment.';
+    completedSuccessfully.value = true;
+    emit('completed', {
+      success: true,
+      processorType: 'whop',
+      offerId: selectedOfferId.value,
+      planId: planId || session.planId,
+      receiptId: receiptId || '',
+    });
+  };
+
+  const mount = document.createElement('div');
+  mount.id = `qms-whop-embedded-checkout-${Date.now()}`;
+  mount.setAttribute('data-whop-checkout-session', session.sessionId);
+  mount.setAttribute('data-whop-checkout-plan-id', session.planId);
+  mount.setAttribute('data-whop-checkout-return-url', `${window.location.origin}/payment-thank-you?offerId=${encodeURIComponent(selectedOfferId.value || '')}`);
+  mount.setAttribute('data-whop-checkout-skip-redirect', 'true');
+  mount.setAttribute('data-whop-checkout-on-complete', 'ssQmsWhopCheckoutComplete');
+  mount.setAttribute('data-whop-checkout-environment', session.environment || 'production');
+  if (client.email) {
+    mount.setAttribute('data-whop-checkout-prefill-email', client.email);
+    mount.setAttribute('data-whop-checkout-disable-email', 'true');
+  }
+  const fullName = [client.firstName, client.lastName].filter(Boolean).join(' ');
+  if (fullName) mount.setAttribute('data-whop-checkout-prefill-name', fullName);
+  root.appendChild(mount);
+
+  await loadWhopCheckoutScript(session.embedScriptUrl || 'https://js.whop.com/static/checkout/loader.js');
 }
 
 function animationFrame() {
@@ -551,10 +603,15 @@ async function submit() {
         amount: amount.value,
         paymentType: paymentChoice.value,
       });
-      whopCheckoutUrl.value = result.checkoutUrl || '';
+      whopSession.value = result;
+      whopCheckoutUrl.value = result.checkoutUrl || result.sessionId || '';
       resultMessage.value = whopCheckoutUrl.value
         ? 'Whop checkout is ready. Complete payment below.'
         : (result.message || 'Whop checkout created for this client.');
+      if (whopCheckoutUrl.value) {
+        await nextTick();
+        await mountWhopEmbeddedCheckout();
+      }
       return;
     }
 
@@ -664,6 +721,7 @@ function resetTransient() {
   submitError.value = '';
   resultMessage.value = '';
   whopCheckoutUrl.value = '';
+  whopSession.value = null;
   completedSuccessfully.value = false;
   submitting.value = false;
 }
@@ -800,8 +858,7 @@ watch(achAllowedForSelection, (allowed) => {
   background: #fff;
 }
 
-.qms-whop-frame {
-  border: 0;
+.qms-whop-embed-root {
   height: 100%;
   width: 100%;
 }
