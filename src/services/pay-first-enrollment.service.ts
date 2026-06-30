@@ -16,6 +16,8 @@ import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
 import type { ProcessorType } from '../types/processor.types';
 import { dualPricingService } from './dual-pricing.service';
+import { checkoutCartService } from './checkout-cart.service';
+import { whopService } from './whop.service';
 import { deliverEnrollmentLink, type EnrollmentLinkDeliveryResult } from './enrollment-link-delivery.service';
 import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import {
@@ -60,6 +62,19 @@ interface ChargeManualSaleInput {
   achAccountType?: 'checking' | 'savings';
   sendEnrollment?: boolean;
   sendVia?: string[];
+  recordedBy?: string;
+}
+
+interface WhopManualSaleSessionInput {
+  locationId: string;
+  offerId: string;
+  contactId?: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  amount: number;
+  paymentType?: string;
   recordedBy?: string;
 }
 
@@ -258,7 +273,11 @@ export const payFirstEnrollmentService = {
       offer = await offerRepository.findById(offerId, locationId);
       if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
       if ((offer.checkout_type || 'direct') === 'whop') {
-        throw new ValidationError('Whop offers cannot be charged from Quick Manual Sale. Use the Whop checkout link for this offer.');
+        return {
+          processorType: 'whop',
+          merchantName: merchant.business_name || '',
+          hostedCheckout: true,
+        };
       }
     }
 
@@ -279,6 +298,61 @@ export const payFirstEnrollmentService = {
     }
 
     return response;
+  },
+
+  async createWhopManualSaleSession(input: WhopManualSaleSessionInput) {
+    if (!input.locationId || !input.offerId || !input.email || !input.amount) {
+      throw new ValidationError('locationId, offerId, email, and amount required');
+    }
+
+    const merchant = await merchantRepository.getByLocationId(input.locationId);
+    const offer = await offerRepository.findById(input.offerId, input.locationId);
+    if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
+    if ((offer.checkout_type || 'direct') !== 'whop') {
+      throw new ValidationError('Selected offer is not configured for Whop checkout');
+    }
+
+    const contactId = await upsertContact(input.locationId, input);
+    const name = splitName(input.firstName, input.lastName, input.email);
+    const contactName = [name.firstName, name.lastName].filter(Boolean).join(' ');
+    const paymentType = normalizePaymentType(input.paymentType, offer);
+    const quote = await checkoutCartService.quoteOffer(offer, [], paymentType, 'card');
+    if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== dollarsToCents(input.amount)) {
+      throw new ValidationError('Payment amount does not match selected Whop offer');
+    }
+
+    const session = await whopService.createCheckoutSession({
+      locationId: input.locationId,
+      offer,
+      contactId,
+      contactEmail: input.email,
+      contactName,
+      contactPhone: input.phone || '',
+      checkoutMode: 'quick_checkout',
+      quote,
+    });
+
+    logger.info({
+      locationId: input.locationId,
+      offerId: input.offerId,
+      contactId,
+      sessionId: session.sessionId,
+      recordedBy: input.recordedBy || 'merchant',
+    }, 'Quick Manual Sale Whop checkout session created');
+
+    return {
+      success: true,
+      processorType: 'whop',
+      hostedCheckout: true,
+      contactId,
+      offerId: offer.id,
+      amount: quote.selectedAmount,
+      paymentType,
+      ...session,
+      message: session.checkoutUrl
+        ? 'Whop checkout link created. Complete payment in the Whop checkout window.'
+        : 'Whop checkout session created.',
+    };
   },
 
   async chargeCardAndCreatePaidEnrollment(input: ChargeManualSaleInput) {

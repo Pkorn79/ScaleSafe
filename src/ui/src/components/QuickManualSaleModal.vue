@@ -34,11 +34,8 @@
           {{ offer.offer_name }}
         </option>
       </select>
-      <p v-if="whopOfferCount > 0" class="text-sm text-muted mt-2">
-        Whop offers use the client checkout link and are not available for merchant-entered Quick Manual Sale.
-      </p>
       <p class="text-sm text-muted mt-2">
-        {{ selectedOfferId ? 'Payment now, enrollment packet after payment.' : 'This records a payment on the client only. No enrollment packet or welcome email is sent.' }}
+        {{ selectedOfferId ? selectedOfferHelpText : 'This records a payment on the client only. No enrollment packet or welcome email is sent.' }}
       </p>
     </div>
 
@@ -124,11 +121,17 @@
         <div v-else-if="processorType === 'stripe' && paymentMethod === 'ach'" class="qms-ach-placeholder">
           Stripe opens secure bank account collection after you submit.
         </div>
+        <div v-else-if="processorType === 'whop'" class="qms-ach-placeholder">
+          Whop will open a hosted checkout for this client. ScaleSafe will attach the payment to this client when Whop confirms payment.
+        </div>
         <div v-else class="error-msg">No processor is configured.</div>
       </template>
     </div>
 
     <div v-if="resultMessage" class="text-sm mt-2" style="color:#10b981">{{ resultMessage }}</div>
+    <div v-if="whopCheckoutUrl" class="text-sm mt-2">
+      <a class="btn btn-secondary btn-sm" :href="whopCheckoutUrl" target="_blank" rel="noopener">Open Whop Checkout</a>
+    </div>
     <div v-if="submitError" class="text-sm mt-2" style="color:#ef4444">{{ submitError }}</div>
 
     <template #footer>
@@ -136,7 +139,7 @@
         {{ completedSuccessfully ? 'Done' : 'Close' }}
       </button>
       <button class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
-        {{ submitting ? 'Submitting...' : (paymentMethod === 'ach' ? 'Submit Bank Payment' : 'Charge Card') }}
+        {{ submitButtonText }}
       </button>
     </template>
   </Modal>
@@ -203,6 +206,7 @@ const processorError = ref('');
 const submitting = ref(false);
 const submitError = ref('');
 const resultMessage = ref('');
+const whopCheckoutUrl = ref('');
 const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
 const completedSuccessfully = ref(false);
 
@@ -224,8 +228,7 @@ let nmiTokenRejecter: ((err: Error) => void) | null = null;
 let processorLoadSeq = 0;
 
 const selectedOffer = computed(() => activeOffers.value.find((offer) => offer.id === selectedOfferId.value) || null);
-const manualSaleOffers = computed(() => activeOffers.value.filter((offer) => !isWhopOffer(offer)));
-const whopOfferCount = computed(() => activeOffers.value.length - manualSaleOffers.value.length);
+const manualSaleOffers = computed(() => activeOffers.value);
 const selectedOfferSupportsInstallments = computed(() => {
   const offer = selectedOffer.value;
   return ['installment', 'installments'].includes(String(offer?.payment_type || '').toLowerCase());
@@ -248,6 +251,16 @@ const canSubmit = computed(() => {
     && !processorError.value
     && !completedSuccessfully.value,
   );
+});
+const selectedOfferHelpText = computed(() => (
+  selectedOffer.value && isWhopOffer(selectedOffer.value)
+    ? 'Create a Whop checkout for this client. Whop collects payment; ScaleSafe records the payment after confirmation.'
+    : 'Payment now, enrollment packet after payment.'
+));
+const submitButtonText = computed(() => {
+  if (submitting.value) return processorType.value === 'whop' ? 'Creating checkout...' : 'Submitting...';
+  if (processorType.value === 'whop') return 'Create Whop Checkout';
+  return paymentMethod.value === 'ach' ? 'Submit Bank Payment' : 'Charge Card';
 });
 
 function applyInitialClient() {
@@ -355,6 +368,7 @@ function cardTargetExists(): boolean {
       && document.getElementById(nmiIds.checkAccount),
     );
   }
+  if (processorType.value === 'whop') return true;
   return false;
 }
 
@@ -402,7 +416,9 @@ async function loadProcessorConfig() {
     if (seq !== processorLoadSeq || !props.open) return;
     if (!cardTargetExists()) throw new Error('Secure card fields were not ready. Please close and reopen Quick Manual Sale.');
 
-    if (processorType.value === 'nmi') {
+    if (processorType.value === 'whop') {
+      paymentFieldsReady.value = true;
+    } else if (processorType.value === 'nmi') {
       if (!cfg.nmiTokenizationKey) throw new Error('NMI tokenization key is missing.');
       await loadCollectJs(cfg.nmiTokenizationKey);
       if (seq !== processorLoadSeq || !props.open) return;
@@ -513,7 +529,29 @@ async function submit() {
   submitting.value = true;
   submitError.value = '';
   resultMessage.value = '';
+  whopCheckoutUrl.value = '';
   try {
+    if (processorType.value === 'whop') {
+      const result = await api.post<any>('/api/dashboard/manual-sale/whop-session', {
+        contactId: client.contactId || undefined,
+        firstName: client.firstName,
+        lastName: client.lastName,
+        email: client.email,
+        phone: client.phone,
+        offerId: selectedOfferId.value,
+        amount: amount.value,
+        paymentType: paymentChoice.value,
+      });
+      whopCheckoutUrl.value = result.checkoutUrl || '';
+      resultMessage.value = result.message || 'Whop checkout created for this client.';
+      if (whopCheckoutUrl.value) {
+        try { window.open(whopCheckoutUrl.value, '_blank', 'noopener'); } catch {}
+      }
+      completedSuccessfully.value = true;
+      emit('completed', result);
+      return;
+    }
+
     if (processorType.value === 'stripe' && paymentMethod.value === 'ach') {
       if (!stripe || !stripe.collectBankAccountForPayment) throw new Error('Stripe bank transfer is not ready.');
       resultMessage.value = 'Opening secure Stripe bank account collection...';
@@ -619,6 +657,7 @@ async function submit() {
 function resetTransient() {
   submitError.value = '';
   resultMessage.value = '';
+  whopCheckoutUrl.value = '';
   completedSuccessfully.value = false;
   submitting.value = false;
 }
@@ -645,13 +684,6 @@ watch(() => props.open, async (open) => {
 watch(selectedOfferId, async () => {
   resetTransient();
   const offer = selectedOffer.value;
-  if (offer && isWhopOffer(offer)) {
-    paymentChoice.value = 'pif';
-    amount.value = null;
-    processorError.value = 'Whop offers use the Whop checkout link and cannot be charged with Quick Manual Sale card entry.';
-    cleanupPaymentFields();
-    return;
-  }
   paymentChoice.value = offer ? normalizeOfferChoice(offer) : 'pif';
   amount.value = offer ? selectedAmountForOffer(offer, paymentChoice.value) : null;
   if (props.open) await loadProcessorConfig();

@@ -1827,6 +1827,29 @@ export const dashboardController = {
     }
   },
 
+  /** POST /api/dashboard/manual-sale/whop-session - create hosted Whop checkout from QMS fields */
+  async createManualSaleWhopSession(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await payFirstEnrollmentService.createWhopManualSaleSession({
+        locationId,
+        offerId: req.body.offerId,
+        contactId: req.body.contactId || undefined,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        email: req.body.email,
+        phone: req.body.phone,
+        amount: Number(req.body.amount || 0),
+        paymentType: req.body.paymentType,
+        recordedBy: String((req as any).tenantContext?.userId || 'merchant'),
+      });
+
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/dashboard/enrollments/:enrollmentId/resend-paid-link */
   async resendPaidEnrollmentLink(req: Request, res: Response, next: NextFunction) {
     try {

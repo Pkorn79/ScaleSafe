@@ -10,6 +10,8 @@ import { ghlApi } from '../../src/clients/ghl.client';
 import { findSavedCardForProcessor, saveOrReusePaymentMethod } from '../../src/services/payment-methods.service';
 import { dualPricingService } from '../../src/services/dual-pricing.service';
 import { merchantService } from '../../src/services/merchant.service';
+import { checkoutCartService } from '../../src/services/checkout-cart.service';
+import { whopService } from '../../src/services/whop.service';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: jest.fn(),
@@ -55,6 +57,18 @@ jest.mock('../../src/services/dual-pricing.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/checkout-cart.service', () => ({
+  checkoutCartService: {
+    quoteOffer: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/whop.service', () => ({
+  whopService: {
+    createCheckoutSession: jest.fn(),
+  },
+}));
+
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn(),
 }));
@@ -78,6 +92,8 @@ const mockEvidenceCreate = phase2EvidenceRepository.create as jest.Mock;
 const mockFireTrigger = triggerService.fireTrigger as jest.Mock;
 const mockCreateProcessorClient = createProcessorClient as jest.Mock;
 const mockResolveProcessor = resolveProcessor as jest.Mock;
+const mockCheckoutCartQuoteOffer = checkoutCartService.quoteOffer as jest.Mock;
+const mockWhopCreateCheckoutSession = whopService.createCheckoutSession as jest.Mock;
 const mockGhlApi = ghlApi as jest.Mock;
 const mockFindSavedCard = findSavedCardForProcessor as jest.Mock;
 const mockSaveOrReusePaymentMethod = saveOrReusePaymentMethod as jest.Mock;
@@ -562,7 +578,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     expect(mockCreateProcessorClient.mock.results[0].value.charge).not.toHaveBeenCalled();
   });
 
-  it('does not resolve Whop offers to the default manual-sale card processor', async () => {
+  it('creates a hosted Whop checkout session from Quick Manual Sale fields without using the card processor', async () => {
     mockFindOffer.mockResolvedValue({
       id: 'offer_whop',
       active: true,
@@ -570,23 +586,53 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       payment_type: 'pif',
       price: 100,
       checkout_type: 'whop',
+      location_id: 'loc_1',
+      whop_product_id: 'prod_123',
+      whop_plan_id: 'plan_123',
+    });
+    mockCheckoutCartQuoteOffer.mockResolvedValue({
+      selectedAmount: 100,
+      selectedAmountCents: 10000,
+      lineItems: [{ type: 'base_offer', label: 'Whop Offer', amount: 100 }],
+    });
+    mockWhopCreateCheckoutSession.mockResolvedValue({
+      sessionId: 'ch_123',
+      checkoutUrl: 'https://whop.com/checkout/ch_123',
+      planId: 'plan_123',
+      embedScriptUrl: 'https://js.whop.com/static/checkout/loader.js',
+      environment: 'production',
     });
 
-    await expect(payFirstEnrollmentService.getManualSaleConfig('loc_1', 'offer_whop'))
-      .rejects.toThrow('Whop offers cannot be charged from Quick Manual Sale');
+    const cfg = await payFirstEnrollmentService.getManualSaleConfig('loc_1', 'offer_whop');
+    expect(cfg).toEqual(expect.objectContaining({
+      processorType: 'whop',
+      hostedCheckout: true,
+    }));
 
-    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+    const result = await payFirstEnrollmentService.createWhopManualSaleSession({
       locationId: 'loc_1',
       offerId: 'offer_whop',
       firstName: 'Client',
       lastName: 'One',
       email: 'client@example.com',
       amount: 100,
-      paymentToken: 'tok_card',
       paymentType: 'pif',
-      paymentMethod: 'card',
-    } as any)).rejects.toThrow('Whop offers cannot be charged from Quick Manual Sale');
+    } as any);
 
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      processorType: 'whop',
+      hostedCheckout: true,
+      checkoutUrl: 'https://whop.com/checkout/ch_123',
+    }));
+    expect(mockWhopCreateCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+      locationId: 'loc_1',
+      offer: expect.objectContaining({ id: 'offer_whop' }),
+      contactId: 'contact_1',
+      contactEmail: 'client@example.com',
+      contactName: 'Client One',
+      checkoutMode: 'quick_checkout',
+    }));
     expect(mockCreateProcessorClient).not.toHaveBeenCalled();
   });
 });
