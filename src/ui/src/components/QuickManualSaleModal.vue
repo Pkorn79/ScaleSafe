@@ -1,5 +1,5 @@
 <template>
-  <Modal v-model:open="openProxy" title="Quick Manual Sale" max-width="680px" @close="resetTransient">
+  <Modal v-model:open="openProxy" title="Quick Manual Sale" :max-width="whopCheckoutUrl ? '960px' : '680px'" @close="resetTransient">
     <div class="qms-grid">
       <div class="form-group">
         <label class="form-label">First Name *</label>
@@ -121,24 +121,29 @@
         <div v-else-if="processorType === 'stripe' && paymentMethod === 'ach'" class="qms-ach-placeholder">
           Stripe opens secure bank account collection after you submit.
         </div>
-        <div v-else-if="processorType === 'whop'" class="qms-ach-placeholder">
-          Whop will open a hosted checkout for this client. ScaleSafe will attach the payment to this client when Whop confirms payment.
+        <div v-else-if="processorType === 'whop' && !whopCheckoutUrl" class="qms-ach-placeholder">
+          Whop checkout will load here after you create the checkout.
+        </div>
+        <div v-else-if="processorType === 'whop' && whopCheckoutUrl" class="qms-whop-frame-wrap">
+          <iframe
+            class="qms-whop-frame"
+            :src="whopCheckoutUrl"
+            title="Whop checkout"
+            allow="payment *; clipboard-write"
+          ></iframe>
         </div>
         <div v-else class="error-msg">No processor is configured.</div>
       </template>
     </div>
 
     <div v-if="resultMessage" class="text-sm mt-2" style="color:#10b981">{{ resultMessage }}</div>
-    <div v-if="whopCheckoutUrl" class="text-sm mt-2">
-      <a class="btn btn-secondary btn-sm" :href="whopCheckoutUrl" target="_blank" rel="noopener">Open Whop Checkout</a>
-    </div>
     <div v-if="submitError" class="text-sm mt-2" style="color:#ef4444">{{ submitError }}</div>
 
     <template #footer>
       <button class="btn btn-secondary" @click="openProxy = false" :disabled="submitting">
         {{ completedSuccessfully ? 'Done' : 'Close' }}
       </button>
-      <button class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
+      <button v-if="!whopCheckoutUrl" class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
         {{ submitButtonText }}
       </button>
     </template>
@@ -547,12 +552,9 @@ async function submit() {
         paymentType: paymentChoice.value,
       });
       whopCheckoutUrl.value = result.checkoutUrl || '';
-      resultMessage.value = result.message || 'Whop checkout created for this client.';
-      if (whopCheckoutUrl.value) {
-        try { window.open(whopCheckoutUrl.value, '_blank', 'noopener'); } catch {}
-      }
-      completedSuccessfully.value = true;
-      emit('completed', result);
+      resultMessage.value = whopCheckoutUrl.value
+        ? 'Whop checkout is ready. Complete payment below.'
+        : (result.message || 'Whop checkout created for this client.');
       return;
     }
 
@@ -788,6 +790,20 @@ watch(achAllowedForSelection, (allowed) => {
   color: #475569;
   font-size: 13px;
   padding: 12px;
+}
+
+.qms-whop-frame-wrap {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  height: min(680px, 72vh);
+  overflow: hidden;
+  background: #fff;
+}
+
+.qms-whop-frame {
+  border: 0;
+  height: 100%;
+  width: 100%;
 }
 
 .qms-retry {
