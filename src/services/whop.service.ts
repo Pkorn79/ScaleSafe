@@ -74,6 +74,12 @@ function assertWhopMinimum(label: string, amount: number): void {
   }
 }
 
+function assertWhopId(label: string, value: string, prefix: string): void {
+  if (!String(value || '').startsWith(prefix)) {
+    throw new ValidationError(`${label} is missing or invalid for Whop.`);
+  }
+}
+
 function whopErrorMessage(err: any, fallback: string): string {
   const body = err?.response?.data;
   const errors = Array.isArray(body?.errors)
@@ -433,6 +439,68 @@ export const whopService = {
       embedScriptUrl: process.env.WHOP_EMBED_SCRIPT_URL || 'https://js.whop.com/static/checkout/loader.js',
       environment: row.environment === 'sandbox' ? 'sandbox' : 'production',
     };
+  },
+
+  async refundPayment(locationId: string, input: {
+    paymentId: string;
+    partialAmount?: number;
+  }): Promise<{ success: boolean; refundId?: string; status?: string; raw?: any }> {
+    const row = await whopConfigService.getRequired(locationId);
+    assertWhopId('Whop payment ID', input.paymentId, 'pay_');
+    const payload: Record<string, unknown> = {};
+    if (input.partialAmount != null) {
+      const amount = Number(input.partialAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new ValidationError('Whop refund amount must be greater than $0.00');
+      }
+      payload.partial_amount = amount;
+    }
+    try {
+      const res = await client(row).post(`/payments/${encodeURIComponent(input.paymentId)}/refund`, payload);
+      return {
+        success: true,
+        refundId: extractId(res.data, 'refund') || input.paymentId,
+        status: res.data?.status || res.data?.refund?.status || 'refunded',
+        raw: res.data,
+      };
+    } catch (err: any) {
+      throw new ValidationError(whopErrorMessage(err, 'Whop refund failed'));
+    }
+  },
+
+  async pauseMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+    const row = await whopConfigService.getRequired(locationId);
+    assertWhopId('Whop membership ID', membershipId, 'mem_');
+    try {
+      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/pause`);
+      return { success: true, raw: res.data };
+    } catch (err: any) {
+      throw new ValidationError(whopErrorMessage(err, 'Whop membership pause failed'));
+    }
+  },
+
+  async resumeMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+    const row = await whopConfigService.getRequired(locationId);
+    assertWhopId('Whop membership ID', membershipId, 'mem_');
+    try {
+      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/resume`);
+      return { success: true, raw: res.data };
+    } catch (err: any) {
+      throw new ValidationError(whopErrorMessage(err, 'Whop membership resume failed'));
+    }
+  },
+
+  async cancelMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+    const row = await whopConfigService.getRequired(locationId);
+    assertWhopId('Whop membership ID', membershipId, 'mem_');
+    try {
+      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/cancel`, {
+        cancellation_mode: 'immediate',
+      });
+      return { success: true, raw: res.data };
+    } catch (err: any) {
+      throw new ValidationError(whopErrorMessage(err, 'Whop membership cancel failed'));
+    }
   },
 
   verifyStandardWebhook(rawBody: Buffer, headers: Record<string, any>, secret: string): boolean {

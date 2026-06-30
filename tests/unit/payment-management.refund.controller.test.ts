@@ -34,6 +34,13 @@ jest.mock('../../src/services/payment-lifecycle.service', () => ({
   },
 }));
 
+const mockWhopRefundPayment = jest.fn();
+jest.mock('../../src/services/whop.service', () => ({
+  whopService: {
+    refundPayment: (...args: any[]) => mockWhopRefundPayment(...args),
+  },
+}));
+
 import { issueRefund } from '../../src/controllers/payment-management.controller';
 
 // Chainable Supabase query stub: every builder method returns the same object,
@@ -80,6 +87,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
   mockNotifyRefundProcessed.mockResolvedValue(undefined);
+  mockWhopRefundPayment.mockResolvedValue({ success: true, refundId: 'ref_whop_1', status: 'refunded', raw: { id: 'ref_whop_1' } });
 });
 
 describe('issueRefund', () => {
@@ -111,14 +119,40 @@ describe('issueRefund', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  it('blocks Whop manual refunds because Whop is not a ProcessorInterface refund rail', async () => {
-    mockFrom.mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop' } }));
+  it('processes a Whop refund through the Whop refund API without using the generic processor factory', async () => {
+    mockFrom
+      .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
+      .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'refund-event-whop' } }));
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect((res.json as jest.Mock).mock.calls[0][0].error).toContain('Whop refunds are not supported');
+
+    expect(mockWhopRefundPayment).toHaveBeenCalledWith('loc-1', {
+      paymentId: 'pay_123',
+      partialAmount: 10,
+    });
     expect(mockResolveProcessor).not.toHaveBeenCalled();
-    expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
+    expect(mockNotifyRefundProcessed).toHaveBeenCalledWith('loc-1', 'contact-1', expect.objectContaining({
+      amount: 10,
+      processor: 'whop',
+      transactionId: 'ref_whop_1',
+    }));
+    expect((res.json as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
+      success: true,
+      refundId: 'ref_whop_1',
+    }));
+  });
+
+  it('blocks Whop refunds when the payment event lacks a Whop payment id', async () => {
+    mockFrom
+      .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'checkout_123' } }))
+      .mockReturnValueOnce(query({ data: [] }));
+    const res = mockRes();
+    await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect((res.json as jest.Mock).mock.calls[0][0].error).toContain('missing a refundable Whop payment ID');
+    expect(mockWhopRefundPayment).not.toHaveBeenCalled();
   });
 
   it('blocks a refund that exceeds the remaining refundable balance (double-refund protection)', async () => {

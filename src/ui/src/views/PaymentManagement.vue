@@ -108,9 +108,6 @@
           </div>
         </div>
         <div class="flex gap-2">
-          <span v-if="isWhopEnrollment(enr)" class="text-xs text-muted" style="align-self:center">
-            Manage membership changes in Whop.
-          </span>
           <button v-if="canRequestPaymentUpdate(enr)" class="btn btn-sm btn-secondary" @click="copyCardUpdateLink(enr)" :disabled="cardUpdateSending">
             Copy Update Link
           </button>
@@ -437,7 +434,7 @@ function canRequestPaymentUpdate(enrollment: any): boolean {
 }
 
 function canPause(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment)) return false;
+  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   if (!['enrolled', 'active'].includes(status)) return false;
   const type = String(enrollment?.paymentType || '').toLowerCase();
@@ -447,14 +444,18 @@ function canPause(enrollment: any): boolean {
 }
 
 function canResume(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment)) return false;
+  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
   return String(enrollment?.status || '').toLowerCase() === 'paused';
 }
 
 function canCancel(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment)) return false;
+  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   return !['cancelled', 'completed'].includes(status);
+}
+
+function hasProcessorSubscription(enrollment: any): boolean {
+  return Boolean(String(enrollment?.processorSubscriptionId || '').trim());
 }
 
 onMounted(async () => {

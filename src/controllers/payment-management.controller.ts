@@ -9,6 +9,7 @@ import { nmiRecurringRepairService } from '../services/nmi-recurring-repair.serv
 import { nmiRecurringSyncService } from '../services/nmi-recurring-sync.service';
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { collapseVisiblePaymentMethods } from '../services/payment-methods.service';
+import { whopService } from '../services/whop.service';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
@@ -839,13 +840,6 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    if (String(originalEvent.processor || '').toLowerCase() === 'whop') {
-      res.status(400).json({
-        error: 'Whop refunds are not supported from ScaleSafe yet. Refund directly in Whop; ScaleSafe will record the refund when Whop sends the refund webhook.',
-      });
-      return;
-    }
-
     if (!originalEvent.processor_transaction_id) {
       res.status(400).json({ error: 'Payment event is missing a processor transaction ID' });
       return;
@@ -861,7 +855,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
 
     const priorRefundCents = (priorRefunds || [])
       .filter((refund: any) => isRefundLinkedToPayment(refund, originalEvent, paymentEventId))
-      .reduce((sum: number, refund: any) => sum + dollarsToCents(Number(refund.amount || 0)), 0);
+      .reduce((sum: number, refund: any) => sum + dollarsToCents(Math.abs(Number(refund.amount || 0))), 0);
     const originalAmountCents = dollarsToCents(Number(originalEvent.amount || 0));
     const requestedAmountCents = dollarsToCents(amount);
     const remainingRefundableCents = originalAmountCents - priorRefundCents;
@@ -871,16 +865,32 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
-      processor_override: originalEvent.processor || null,
-      nmi_processor_id: null,
-    });
-    const processor = createProcessorClient(procConfig);
+    const originalProcessor = String(originalEvent.processor || '').toLowerCase();
+    let processorType = originalProcessor;
+    let result: any;
+    if (originalProcessor === 'whop') {
+      if (!String(originalEvent.processor_transaction_id || '').startsWith('pay_')) {
+        res.status(400).json({ error: 'This Whop payment is missing a refundable Whop payment ID. Refund directly in Whop; ScaleSafe will record the refund webhook.' });
+        return;
+      }
+      result = await whopService.refundPayment(locationId, {
+        paymentId: originalEvent.processor_transaction_id,
+        partialAmount: requestedAmountCents < remainingRefundableCents ? amount : undefined,
+      });
+      processorType = 'whop';
+    } else {
+      const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
+        processor_override: originalEvent.processor || null,
+        nmi_processor_id: null,
+      });
+      processorType = procConfig.processor_type;
+      const processor = createProcessorClient(procConfig);
 
-    const result = await processor.refund({
-      transactionId: originalEvent.processor_transaction_id,
-      amount: requestedAmountCents,
-    });
+      result = await processor.refund({
+        transactionId: originalEvent.processor_transaction_id,
+        amount: requestedAmountCents,
+      });
+    }
 
     // #11: a 'pending' refund is ACCEPTED by the processor (it will settle), not a failure.
     // Treat only a genuine failure as a hard stop; record pending refunds so the refundable
@@ -910,7 +920,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       location_id: locationId,
       contact_id: originalEvent.contact_id,
       event_type: 'refund',
-      processor: procConfig.processor_type,
+      processor: processorType,
       processor_transaction_id: refundTransactionId,
       amount,
       currency: 'usd',
@@ -921,6 +931,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
         original_payment_event_id: paymentEventId,
         original_processor_transaction_id: originalEvent.processor_transaction_id,
         reason: reason || null,
+        processor_refund_response: result.raw || null,
       },
       is_recurring: false,
     }).select('id').single();
@@ -934,7 +945,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       enrollmentId: originalEvent.enrollment_id || null,
       offerId: originalEvent.offer_id || null,
       programName,
-      processor: procConfig.processor_type,
+      processor: processorType,
       subscriptionId: originalEvent.processor_subscription_id || null,
     });
 

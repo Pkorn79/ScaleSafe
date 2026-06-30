@@ -412,11 +412,11 @@ describe('Payment Management Controller', () => {
     expect(insertChain.insert).toHaveBeenCalledWith(expect.objectContaining({
       event_type: 'refund',
       amount: 50,
-      raw_webhook_payload: {
+      raw_webhook_payload: expect.objectContaining({
         original_payment_event_id: 'pay-1',
         original_processor_transaction_id: 'txn-1',
         reason: 'Courtesy refund',
-      },
+      }),
     }));
     expect(mockNotifyRefundProcessed).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({

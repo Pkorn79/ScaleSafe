@@ -18,7 +18,7 @@ async function getEnrollmentForLifecycleAction(
 ) {
   let query = getSupabase()
     .from('enrollments')
-    .select('id, contact_id, offer_id, processor_subscription_id, processor_type, status')
+    .select('id, contact_id, offer_id, processor_subscription_id, whop_membership_id, processor_type, status')
     .eq('id', enrollmentId)
     .eq('location_id', locationId);
 
@@ -50,7 +50,7 @@ router.post('/subscription/pause', async (req: Request, res: Response, next: Nex
       merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
       offerId: enrollment.offer_id || '', reason: reason || 'Merchant-initiated pause',
       enrollmentId: enrollment.id,
-      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
@@ -70,7 +70,7 @@ router.post('/subscription/resume', async (req: Request, res: Response, next: Ne
       merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
       offerId: enrollment.offer_id || '', reason: 'Merchant-initiated resume',
       enrollmentId: enrollment.id,
-      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
@@ -90,7 +90,7 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
       merchantId: merchant.id, locationId, contactId: enrollment.contact_id,
       offerId: enrollment.offer_id || '', reason: reason || 'Merchant-initiated cancellation',
       enrollmentId: enrollment.id,
-      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
     });
     res.json({ success: true });
@@ -112,7 +112,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
     // Look up enrollment for processor subscription ID and offer ID
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, processor_subscription_id, processor_type, offer_id, status')
+      .select('id, processor_subscription_id, whop_membership_id, processor_type, offer_id, status')
       .eq('id', enrollmentId)
       .eq('location_id', locationId)
       .single();
@@ -126,7 +126,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
       offerId: enrollment.offer_id || '',
       reason: reason || `Merchant-initiated ${action}`,
       enrollmentId,
-      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
     };
 

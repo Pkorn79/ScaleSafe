@@ -13,6 +13,7 @@ import type { DunningParams, SubscriptionParams, CardManagementParams } from '..
 import type { StoredCard } from '../types/processor.types';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { ExternalServiceError, ValidationError } from '../utils/errors';
+import { whopService } from './whop.service';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -57,14 +58,16 @@ function assertProcessorSuccess(
   }
 }
 
-function assertProcessorLifecycleSupported(processorType: unknown, action: 'pause' | 'resume' | 'cancel'): void {
-  const processor = String(processorType || '').toLowerCase();
-  if (processor !== 'whop') return;
+function isWhopProcessor(processorType: unknown): boolean {
+  return String(processorType || '').toLowerCase() === 'whop';
+}
 
-  const actionLabel = action === 'cancel' ? 'cancelled' : action === 'pause' ? 'paused' : 'resumed';
-  throw new ValidationError(
-    `Whop memberships cannot be ${actionLabel} from ScaleSafe yet. Manage the membership in Whop; ScaleSafe will update when Whop sends the membership webhook.`,
-  );
+function requireWhopMembershipId(params: SubscriptionParams, action: string): string {
+  const membershipId = String(params.processorSubscriptionId || '').trim();
+  if (!membershipId.startsWith('mem_')) {
+    throw new ValidationError(`Unable to ${action} Whop membership: missing Whop membership ID`);
+  }
+  return membershipId;
 }
 
 async function updateEnrollmentForLifecycleAction(params: {
@@ -523,11 +526,12 @@ export const paymentLifecycleService = {
    * Pause a subscription. Logs evidence, fires trigger, updates GHL.
    */
   async pauseSubscription(params: SubscriptionParams): Promise<void> {
-    assertProcessorLifecycleSupported(params.processorType, 'pause');
-
     const pauseReason = plainText(params.reason, 'Merchant-initiated pause');
     // Pause via processor if we have a subscription ID
-    if (params.processorSubscriptionId) {
+    if (isWhopProcessor(params.processorType)) {
+      const membershipId = requireWhopMembershipId(params, 'pause');
+      await whopService.pauseMembership(params.locationId, membershipId);
+    } else if (params.processorSubscriptionId) {
       try {
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
           processor_override: params.processorType || null,
@@ -655,10 +659,19 @@ export const paymentLifecycleService = {
    * Resume a paused subscription. Logs evidence, fires trigger, updates GHL.
    */
   async resumeSubscription(params: SubscriptionParams): Promise<void> {
-    assertProcessorLifecycleSupported(params.processorType, 'resume');
-
     // Resume via processor if we have a subscription ID
-    if (params.processorSubscriptionId) {
+    if (isWhopProcessor(params.processorType)) {
+      const membershipId = requireWhopMembershipId(params, 'resume');
+      await whopService.resumeMembership(params.locationId, membershipId);
+      await updateEnrollmentForLifecycleAction({
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+        contactId: params.contactId,
+        processorSubscriptionId: membershipId,
+        updates: { status: 'enrolled' },
+        action: 'resume',
+      });
+    } else if (params.processorSubscriptionId) {
       try {
         const supabase = getSupabase();
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
@@ -911,10 +924,19 @@ export const paymentLifecycleService = {
    * Cancel a subscription. Logs both subscription change + cancellation evidence.
    */
   async cancelSubscription(params: SubscriptionParams): Promise<void> {
-    assertProcessorLifecycleSupported(params.processorType, 'cancel');
-
     // Cancel via processor if we have a subscription ID
-    if (params.processorSubscriptionId) {
+    if (isWhopProcessor(params.processorType)) {
+      const membershipId = requireWhopMembershipId(params, 'cancel');
+      await whopService.cancelMembership(params.locationId, membershipId);
+      await updateEnrollmentForLifecycleAction({
+        locationId: params.locationId,
+        enrollmentId: params.enrollmentId,
+        contactId: params.contactId,
+        processorSubscriptionId: membershipId,
+        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null },
+        action: 'cancel',
+      });
+    } else if (params.processorSubscriptionId) {
       try {
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
           processor_override: params.processorType || null,

@@ -7,7 +7,7 @@ import { whopConfigService } from '../services/whop-config.service';
 import { whopService } from '../services/whop.service';
 import { phase2EnrollmentService } from '../services/phase2Enrollment.service';
 import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '../services/recurring-payment.service';
-import { triggerService } from '../services/trigger.service';
+import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { logger } from '../utils/logger';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
 
@@ -122,6 +122,27 @@ function membershipId(payload: any): string {
     b?.membership?.id,
     b?.member?.id,
     b?.id,
+  );
+}
+
+function refundId(payload: any): string {
+  const b = body(payload);
+  return firstString(
+    b?.refund_id,
+    b?.refundId,
+    b?.refund?.id,
+    String(b?.id || '').startsWith('ref_') ? b.id : '',
+  );
+}
+
+function originalPaymentId(payload: any): string {
+  const b = body(payload);
+  return firstString(
+    b?.payment_id,
+    b?.paymentId,
+    b?.payment?.id,
+    b?.charge?.id,
+    metadata(payload).original_processor_transaction_id,
   );
 }
 
@@ -487,9 +508,37 @@ async function handlePaymentFailed(payload: any, locationId: string, merchantId:
 }
 
 async function handleRefund(payload: any, locationId: string, merchantId: string): Promise<void> {
-  const txnId = paymentId(payload) || firstString(body(payload)?.refund_id, body(payload)?.id);
+  const originalTxnId = originalPaymentId(payload) || paymentId(payload);
+  const txnId = refundId(payload) || originalTxnId || paymentId(payload);
   const enrollment = await findEnrollment(payload, locationId);
   const amount = amountCents(payload) / 100;
+  const existingByRefundId = txnId ? await getSupabase()
+    .from('payment_events')
+    .select('id')
+    .eq('location_id', locationId)
+    .eq('processor', 'whop')
+    .eq('event_type', 'refund')
+    .eq('processor_transaction_id', txnId)
+    .limit(1)
+    .maybeSingle() : { data: null };
+  const existingByOriginalPayment = originalTxnId ? await getSupabase()
+    .from('payment_events')
+    .select('id, raw_webhook_payload')
+    .eq('location_id', locationId)
+    .eq('processor', 'whop')
+    .eq('event_type', 'refund')
+    .limit(100) : { data: [] };
+  const duplicateOriginal = Array.isArray(existingByOriginalPayment.data)
+    ? existingByOriginalPayment.data.some((row: any) => {
+      const raw = row.raw_webhook_payload || {};
+      return raw.original_processor_transaction_id === originalTxnId;
+    })
+    : false;
+  if (existingByRefundId.data?.id || duplicateOriginal) {
+    logger.info({ locationId, txnId, originalTxnId }, 'Whop refund webhook duplicate ignored');
+    return;
+  }
+
   await getSupabase().from('payment_events').insert({
     merchant_id: merchantId,
     location_id: locationId,
@@ -499,50 +548,53 @@ async function handleRefund(payload: any, locationId: string, merchantId: string
     event_type: 'refund',
     processor: 'whop',
     processor_transaction_id: txnId || null,
-    amount: amount ? -Math.abs(amount) : 0,
+    amount: amount ? Math.abs(amount) : 0,
     currency: 'usd',
     source: 'whop_webhook',
-    raw_webhook_payload: payload,
+    raw_webhook_payload: {
+      ...payload,
+      original_processor_transaction_id: originalTxnId || null,
+    },
   } as any);
 
   if (enrollment?.contact_id) {
-    try {
-      await triggerService.fireTrigger(locationId, 'ss_refund_processed', {
-        event_type: 'refund_processed',
-        location_id: locationId,
-        locationId,
-        contact_id: enrollment.contact_id,
-        contactId: enrollment.contact_id,
-        enrollment_id: enrollment.id,
-        enrollmentId: enrollment.id,
-        offer_id: enrollment.offer_id,
-        offerId: enrollment.offer_id,
-        processor: 'whop',
-        amount,
-        amount_display: `$${amount.toFixed(2)}`,
-        amountDisplay: `$${amount.toFixed(2)}`,
-        transaction_id: txnId,
-        transactionId: txnId,
-      });
-    } catch (err: any) {
-      logger.warn({ err: err.message, enrollmentId: enrollment.id }, 'Whop refund trigger failed');
-    }
+    await paymentLifecycleService.notifyRefundProcessed(locationId, enrollment.contact_id, {
+      amount: Math.abs(amount),
+      refundType: 'processor_webhook',
+      reason: 'Whop refund processed',
+      transactionId: txnId,
+      enrollmentId: enrollment.id,
+      offerId: enrollment.offer_id,
+      processor: 'whop',
+      subscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
+    });
   }
 }
 
-async function handleMembership(payload: any, locationId: string, active: boolean): Promise<void> {
+async function handleMembership(payload: any, locationId: string, active: boolean, action?: 'pause' | 'resume' | 'cancel'): Promise<void> {
   const enrollment = await findEnrollment(payload, locationId);
   if (!enrollment) return;
   const b = body(payload);
+  const updates: Record<string, unknown> = {
+    whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
+    processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
+    whop_reconciliation_status: active ? 'membership_active' : 'membership_deactivated',
+    ...(active && b?.renewal_period_end ? { next_billing_date: String(b.renewal_period_end).slice(0, 10) } : {}),
+  };
+  if (action === 'pause') {
+    updates.status = 'paused';
+    updates.next_billing_date = null;
+  } else if (action === 'resume') {
+    updates.status = 'enrolled';
+  } else if (action === 'cancel' || !active) {
+    updates.status = 'cancelled';
+    updates.cancelled_at = new Date().toISOString();
+    updates.next_billing_date = null;
+  }
+
   await getSupabase()
     .from('enrollments')
-    .update({
-      whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
-      processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
-      whop_reconciliation_status: active ? 'membership_active' : 'membership_deactivated',
-      ...(active && b?.renewal_period_end ? { next_billing_date: String(b.renewal_period_end).slice(0, 10) } : {}),
-      ...(active ? {} : { cancelled_at: new Date().toISOString() }),
-    } as any)
+    .update(updates as any)
     .eq('id', enrollment.id)
     .eq('location_id', locationId);
 }
@@ -581,10 +633,16 @@ export async function handleWhopWebhook(req: Request, res: Response): Promise<vo
       await handlePaymentFailed(payload, cfg.location_id, merchant.id);
     } else if (whopEventType === 'refund.created') {
       await handleRefund(payload, cfg.location_id, merchant.id);
+    } else if (whopEventType === 'membership.paused') {
+      await handleMembership(payload, cfg.location_id, false, 'pause');
+    } else if (whopEventType === 'membership.resumed') {
+      await handleMembership(payload, cfg.location_id, true, 'resume');
+    } else if (whopEventType === 'membership.cancelled' || whopEventType === 'membership.canceled') {
+      await handleMembership(payload, cfg.location_id, false, 'cancel');
     } else if (whopEventType === 'membership.activated' || whopEventType === 'membership.went_valid') {
       await handleMembership(payload, cfg.location_id, true);
     } else if (whopEventType === 'membership.deactivated' || whopEventType === 'membership.went_invalid') {
-      await handleMembership(payload, cfg.location_id, false);
+      await handleMembership(payload, cfg.location_id, false, 'cancel');
     } else if (whopEventType === 'setup_intent.succeeded') {
       const enrollment = await findEnrollment(payload, cfg.location_id);
       if (enrollment) {

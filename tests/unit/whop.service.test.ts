@@ -400,3 +400,58 @@ describe('whopService.createCheckoutSession', () => {
     }));
   });
 });
+
+describe('whopService lifecycle methods', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWhopGetRequired.mockResolvedValue({
+      id: 'whop-config-1',
+      location_id: 'loc-1',
+      company_id: 'biz_123',
+      api_key_encrypted: 'encrypted',
+      environment: 'production',
+    });
+    mockDecryptApiKey.mockReturnValue('whop_key');
+  });
+
+  it('refunds a full Whop payment without partial_amount', async () => {
+    const post = jest.fn().mockResolvedValue({ data: { id: 'ref_123', status: 'succeeded' } });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    const result = await whopService.refundPayment('loc-1', { paymentId: 'pay_123' });
+
+    expect(post).toHaveBeenCalledWith('/payments/pay_123/refund', {});
+    expect(result).toEqual(expect.objectContaining({ success: true, refundId: 'ref_123' }));
+  });
+
+  it('refunds a partial Whop payment with partial_amount', async () => {
+    const post = jest.fn().mockResolvedValue({ data: { id: 'ref_123', status: 'succeeded' } });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    await whopService.refundPayment('loc-1', { paymentId: 'pay_123', partialAmount: 3.2 });
+
+    expect(post).toHaveBeenCalledWith('/payments/pay_123/refund', { partial_amount: 3.2 });
+  });
+
+  it('pauses, resumes, and cancels Whop memberships with the membership endpoint', async () => {
+    const post = jest.fn().mockResolvedValue({ data: { id: 'mem_123' } });
+    mockAxiosCreate.mockReturnValue({ post });
+
+    await whopService.pauseMembership('loc-1', 'mem_123');
+    await whopService.resumeMembership('loc-1', 'mem_123');
+    await whopService.cancelMembership('loc-1', 'mem_123');
+
+    expect(post).toHaveBeenNthCalledWith(1, '/memberships/mem_123/pause');
+    expect(post).toHaveBeenNthCalledWith(2, '/memberships/mem_123/resume');
+    expect(post).toHaveBeenNthCalledWith(3, '/memberships/mem_123/cancel', { cancellation_mode: 'immediate' });
+  });
+
+  it('rejects lifecycle calls without Whop-formatted IDs', async () => {
+    const post = jest.fn();
+    mockAxiosCreate.mockReturnValue({ post });
+
+    await expect(whopService.refundPayment('loc-1', { paymentId: 'txn_123' })).rejects.toThrow(/Whop payment ID/i);
+    await expect(whopService.pauseMembership('loc-1', 'sub_123')).rejects.toThrow(/Whop membership ID/i);
+    expect(post).not.toHaveBeenCalled();
+  });
+});
