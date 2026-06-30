@@ -329,7 +329,11 @@ function normalizeOfferChoice(offer: any): string {
 
 async function loadOffers() {
   const offers = await api.get<any[]>('/api/offers');
-  activeOffers.value = (offers || []).filter((offer) => offer.active);
+  activeOffers.value = (offers || []).filter((offer) => {
+    const active = offer?.active;
+    const status = String(offer?.status || '').toLowerCase();
+    return active !== false && status !== 'archived' && status !== 'deleted';
+  });
   try {
     dualPricingConfig.value = await api.get<any>('/api/offers/dual-pricing/config');
   } catch {
@@ -677,7 +681,7 @@ watch(() => props.open, async (open) => {
   amount.value = null;
   sendEnrollment.value = true;
   resetTransient();
-  if (activeOffers.value.length === 0) await loadOffers();
+  await loadOffers();
   await loadProcessorConfig();
 });
 
@@ -698,7 +702,7 @@ watch(paymentMethod, async () => {
   resetTransient();
   if (!achAllowedForSelection.value && !processorLoading.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
   if (selectedOffer.value) amount.value = selectedAmountForOffer(selectedOffer.value, paymentChoice.value);
-  if (props.open && processorType.value === 'stripe') await loadProcessorConfig();
+  if (props.open && selectedOffer.value) await loadProcessorConfig();
 });
 
 watch(achAllowedForSelection, (allowed) => {
