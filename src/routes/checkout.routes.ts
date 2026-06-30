@@ -1516,6 +1516,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         contactId: prefillContactId || '',
         contactName: custName,
         contactEmail: custEmail || enrollmentEmail,
+        contactPhone: custPhone,
         checkoutMode: consentToken ? 'full_enrollment' : 'quick_checkout',
         paymentChoice: paymentChoice || 'pif',
         selectedAddonIds: selectedAddonIds,

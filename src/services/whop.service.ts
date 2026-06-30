@@ -218,6 +218,7 @@ export const whopService = {
     contactId?: string;
     contactEmail?: string;
     contactName?: string;
+    contactPhone?: string;
     consentToken?: string;
     checkoutMode: 'full_enrollment' | 'quick_checkout';
     quote?: CheckoutCartQuote | null;
@@ -233,6 +234,9 @@ export const whopService = {
       offer_id: input.offer.id,
       enrollment_id: input.enrollmentId || '',
       contact_id: input.contactId || '',
+      contact_email: input.contactEmail || '',
+      contact_name: input.contactName || '',
+      contact_phone: input.contactPhone || '',
       consent_token: input.consentToken || '',
       checkout_mode: input.checkoutMode,
     };

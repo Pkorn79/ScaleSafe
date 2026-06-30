@@ -1513,9 +1513,35 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
 // ─── POST /api/checkout/whop/session ─────────────────────────────────────────
 
+async function resolveQuickCheckoutContact(params: {
+  locationId: string;
+  email: string;
+  name?: string;
+  phone?: string;
+  explicitContactId?: string;
+}): Promise<string> {
+  if (params.explicitContactId) return params.explicitContactId;
+  const email = String(params.email || '').trim().toLowerCase();
+  if (!email) return '';
+
+  const existingContactId = await findExistingContactIdByEmail(params.locationId, email);
+  if (existingContactId) return existingContactId;
+
+  const api = await ghlApi(params.locationId);
+  const nameParts = String(params.name || '').trim().split(/\s+/).filter(Boolean);
+  const upsertRes = await api.post('/contacts/upsert', {
+    firstName: nameParts[0] || email.split('@')[0] || 'Client',
+    lastName: nameParts.slice(1).join(' ') || '',
+    email,
+    phone: params.phone || undefined,
+    locationId: params.locationId,
+  });
+  return upsertRes.data.contact?.id || upsertRes.data.id || '';
+}
+
 export async function createWhopCheckoutSession(req: Request, res: Response): Promise<void> {
   try {
-    const { offerId, consentToken, contactId, contactEmail, contactName, checkoutMode, paymentChoice, selectedAddonIds } = req.body || {};
+    const { offerId, consentToken, contactId, contactEmail, contactName, contactPhone, checkoutMode, paymentChoice, selectedAddonIds } = req.body || {};
     if (!offerId) {
       res.status(400).json({ success: false, error: 'offerId required' });
       return;
@@ -1537,6 +1563,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
     let resolvedContactId = typeof contactId === 'string' ? contactId : '';
     let resolvedEmail = typeof contactEmail === 'string' ? contactEmail : '';
     let resolvedName = typeof contactName === 'string' ? contactName : '';
+    let resolvedPhone = typeof contactPhone === 'string' ? contactPhone : '';
     if (consentToken) {
       const { data: enrollment } = await supabase
         .from('enrollments')
@@ -1552,6 +1579,18 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       resolvedContactId = enrollment.contact_id || resolvedContactId;
       resolvedEmail = enrollment.email || resolvedEmail;
       resolvedName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ') || resolvedName;
+    } else if (resolvedEmail) {
+      try {
+        resolvedContactId = await resolveQuickCheckoutContact({
+          locationId: offer.location_id,
+          email: resolvedEmail,
+          name: resolvedName,
+          phone: resolvedPhone,
+          explicitContactId: resolvedContactId,
+        });
+      } catch (contactErr: any) {
+        logger.warn({ err: contactErr.message, offerId, hasEmail: !!resolvedEmail }, 'Whop quick checkout contact resolution failed');
+      }
     }
 
     const normalizedChoice = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif'));
@@ -1567,6 +1606,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       contactId: resolvedContactId,
       contactEmail: resolvedEmail,
       contactName: resolvedName,
+      contactPhone: resolvedPhone,
       consentToken: consentToken || '',
       checkoutMode: checkoutMode === 'quick_checkout' ? 'quick_checkout' : 'full_enrollment',
       quote,

@@ -226,6 +226,8 @@ describe('whopService.createCheckoutSession', () => {
         offer_id: 'offer-1',
         enrollment_id: 'enroll-1',
         contact_id: 'contact-1',
+        contact_email: 'client@example.com',
+        contact_name: 'Client Example',
         consent_token: 'consent-1',
         checkout_mode: 'full_enrollment',
       }),

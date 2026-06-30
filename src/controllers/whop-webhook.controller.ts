@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getSupabase } from '../clients/supabase.client';
+import { ghlApi } from '../clients/ghl.client';
 import { offerRepository } from '../repositories/offer.repository';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
@@ -34,6 +35,53 @@ function metadata(payload: any): Record<string, any> {
     || b?.checkout_session?.metadata
     || b?.checkoutSession?.metadata
     || {};
+}
+
+async function findExistingContactIdByEmail(locationId: string, email: string): Promise<string> {
+  if (!locationId || !email) return '';
+  const { data } = await getSupabase()
+    .from('enrollments')
+    .select('contact_id')
+    .eq('location_id', locationId)
+    .eq('email', email)
+    .not('contact_id', 'is', null)
+    .not('contact_id', 'eq', '')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.contact_id || '';
+}
+
+async function resolveWhopContactId(locationId: string, payload: any): Promise<string> {
+  const meta = metadata(payload);
+  const b = body(payload);
+  const explicitContactId = firstString(meta.contact_id, meta.contactId, b?.customer?.metadata?.contact_id);
+  if (explicitContactId) return explicitContactId;
+
+  const email = firstString(
+    meta.contact_email,
+    meta.contactEmail,
+    meta.email,
+    b?.customer?.email,
+    b?.email,
+    b?.payer_email,
+  ).toLowerCase();
+  if (!email) return '';
+
+  const existingContactId = await findExistingContactIdByEmail(locationId, email);
+  if (existingContactId) return existingContactId;
+
+  const contactName = firstString(meta.contact_name, meta.contactName, b?.customer?.name, b?.name);
+  const nameParts = contactName.trim().split(/\s+/).filter(Boolean);
+  const api = await ghlApi(locationId);
+  const upsertRes = await api.post('/contacts/upsert', {
+    firstName: nameParts[0] || email.split('@')[0] || 'Client',
+    lastName: nameParts.slice(1).join(' ') || '',
+    email,
+    phone: firstString(meta.contact_phone, meta.contactPhone, b?.customer?.phone, b?.phone) || undefined,
+    locationId,
+  });
+  return upsertRes.data.contact?.id || upsertRes.data.id || '';
 }
 
 function parseLineItems(value: unknown): unknown[] {
@@ -246,8 +294,21 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
   const offer = await offerRepository.findById(offerId, locationId);
   if (!offer) return null;
   const b = body(payload);
-  const email = firstString(b?.customer?.email, b?.email, b?.payer_email, meta.email);
-  const contactId = firstString(meta.contact_id, b?.customer?.metadata?.contact_id);
+  const email = firstString(
+    b?.customer?.email,
+    b?.email,
+    b?.payer_email,
+    meta.contact_email,
+    meta.contactEmail,
+    meta.email,
+  );
+  let contactId = '';
+  try {
+    contactId = await resolveWhopContactId(locationId, payload);
+  } catch (err: any) {
+    logger.warn({ err: err.message, locationId, offerId, hasEmail: !!email }, 'Whop quick checkout contact resolution failed');
+    contactId = firstString(meta.contact_id, meta.contactId, b?.customer?.metadata?.contact_id);
+  }
   const amount = amountCents(payload) / 100;
   const selectedItems = lineItems(payload);
   const { data, error } = await getSupabase()

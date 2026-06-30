@@ -12,11 +12,18 @@ const mockCompleteEnrollment = jest.fn();
 const mockPaymentEventFindByTransactionId = jest.fn();
 const mockPaymentEventCreate = jest.fn();
 const mockTriggerFire = jest.fn();
+const mockGhlPost = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
     from: (...args: any[]) => mockSupabaseFrom(...args),
   }),
+}));
+
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn(async () => ({
+    post: (...args: any[]) => mockGhlPost(...args),
+  })),
 }));
 
 jest.mock('../../src/services/whop-config.service', () => ({
@@ -84,6 +91,7 @@ function queryBuilder(result: any = null) {
     insert: jest.fn(() => builder),
     update: jest.fn(() => builder),
     eq: jest.fn(() => builder),
+    not: jest.fn(() => builder),
     in: jest.fn(() => builder),
     order: jest.fn(() => builder),
     limit: jest.fn(() => builder),
@@ -113,6 +121,10 @@ describe('handleWhopWebhook', () => {
       num_payments: 5,
     });
     mockHandleRecurringPaymentSuccess.mockResolvedValue({ paymentEventId: 'pe_2', isFinal: false, newPaymentsMade: 2 });
+    mockCompleteEnrollment.mockResolvedValue(undefined);
+    mockPaymentEventFindByTransactionId.mockResolvedValue(null);
+    mockPaymentEventCreate.mockResolvedValue({ id: 'pe_1' });
+    mockGhlPost.mockResolvedValue({ data: { contact: { id: 'contact_from_ghl' } } });
   });
 
   it('processes a Whop renewal payment by membership id as recurring, not as a new initial sale', async () => {
@@ -187,6 +199,96 @@ describe('handleWhopWebhook', () => {
     }));
     expect(mockCompleteEnrollment).not.toHaveBeenCalled();
     expect(mockPaymentEventCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('creates a Whop quick-checkout enrollment with a resolved contact id from email metadata', async () => {
+    const insertedEnrollment = {
+      id: 'enr_quick_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_from_ghl',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      status: 'consent_captured',
+      payment_type: 'installment',
+      payments_made: 0,
+      payments_total: 5,
+      selected_checkout_items: [
+        { type: 'base_offer', label: 'Whop Installments', amount: 5.5 },
+        { type: 'order_bump', label: 'Bump', amount: 2 },
+      ],
+    };
+    const insertedRows: any[] = [];
+    let enrollmentLookupCount = 0;
+
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'payment_events') return queryBuilder(null);
+      if (table === 'enrollments') {
+        enrollmentLookupCount += 1;
+        if (enrollmentLookupCount <= 3) return queryBuilder(null);
+        const builder = queryBuilder(insertedEnrollment);
+        builder.insert = jest.fn((row: any) => {
+          insertedRows.push(row);
+          return builder;
+        });
+        return builder;
+      }
+      return queryBuilder(null);
+    });
+
+    const payload = {
+      id: 'evt_quick_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_quick_1',
+        amount: 7.5,
+        membership_id: 'mem_quick_1',
+        metadata: {
+          location_id: 'loc_1',
+          offer_id: 'offer_1',
+          checkout_mode: 'quick_checkout',
+          contact_email: 'client@example.com',
+          contact_name: 'Client Example',
+          line_items: JSON.stringify(insertedEnrollment.selected_checkout_items),
+        },
+      },
+    };
+
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_quick_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(mockGhlPost).toHaveBeenCalledWith('/contacts/upsert', expect.objectContaining({
+      email: 'client@example.com',
+      locationId: 'loc_1',
+    }));
+    expect(insertedRows[0]).toEqual(expect.objectContaining({
+      contact_id: 'contact_from_ghl',
+      email: 'client@example.com',
+      checkout_type: 'whop',
+      processor_type: 'whop',
+    }));
+    expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_quick_1',
+      contactId: 'contact_from_ghl',
+      contactEmail: 'client@example.com',
+      processorType: 'whop',
+    }));
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      contact_id: 'contact_from_ghl',
+      processor_transaction_id: 'pay_quick_1',
+      processor_subscription_id: 'mem_quick_1',
+      line_items: insertedEnrollment.selected_checkout_items,
+    }));
     expect(res.json).toHaveBeenCalledWith({ received: true });
   });
 });
