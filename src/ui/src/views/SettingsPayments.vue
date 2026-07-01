@@ -385,10 +385,10 @@
         <p v-if="fanbasisStatus?.lastError" class="text-sm mt-2" style="color:#dc2626">{{ fanbasisStatus.lastError }}</p>
       </div>
 
-      <!-- Auto-Submit Toggle -->
+      <!-- Dispute submission helper placeholder -->
       <div v-if="stripeConnected" class="card">
-        <h3 class="section-title">Dispute Auto-Submit <span class="text-xs text-muted">(coming soon)</span></h3>
-        <p class="text-sm text-muted mb-4">When enabled, ScaleSafe will automatically submit evidence for disputes with strong evidence (score 60+). For now, every dispute packet is reviewed manually before submission.</p>
+        <h3 class="section-title">Dispute Submission Helpers <span class="text-xs text-muted">(coming soon)</span></h3>
+        <p class="text-sm text-muted mb-4">Future tools may help prepare processor-ready dispute submissions. For now, every dispute packet is reviewed and submitted manually by the merchant.</p>
         <!-- #30: the persistence endpoint is not built yet - disable the control so merchants are
              not misled into believing auto-submit is active (it currently resets to OFF silently). -->
         <label class="toggle-switch-label">
@@ -398,7 +398,7 @@
               <span class="toggle-thumb" :class="{ active: autoSubmit }"></span>
             </span>
           </span>
-          <span class="text-sm">Auto-submit is not yet available - every dispute packet is reviewed manually before submission.</span>
+          <span class="text-sm">Automated submission is not available - every dispute packet is reviewed manually before submission.</span>
         </label>
       </div>
 

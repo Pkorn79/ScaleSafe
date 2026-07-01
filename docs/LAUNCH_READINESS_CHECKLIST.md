@@ -138,6 +138,16 @@ non-negotiable.
 - [~] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
   NMI Query-API enable step (from §1). *Initial static guide/troubleshooting pages exist; expand after
   Oke's beta testing exposes repeated questions.*
+- [ ] 🟡 Chargeback-reduction positioning verified across public copy: use "reduce chargebacks,"
+  "build the evidence trail," and "improve dispute readiness"; avoid "prevent chargebacks,"
+  "win every chargeback," and automated-representment claims that are not live.
+- [ ] 🟡 Evidence readiness copy is accurate: current score is contact-level readiness, not
+  enrollment-level scoring and not a win-probability prediction.
+- [ ] 🟡 Pulse beta proof captured: due app event sent, GHL workflow delivered, client submitted,
+  and pulse evidence linked to the enrollment.
+- [ ] 🟡 Processor-side prevention setup checklist exists for WholePay/NMI merchants covering
+  descriptor clarity, Ethoca/Verifi/RDR availability, and optional 3DS/Radar guidance without
+  implying ScaleSafe-native network-alert automation.
 - [ ] 🟢 Incident/support runbook + status page.
 
 ---

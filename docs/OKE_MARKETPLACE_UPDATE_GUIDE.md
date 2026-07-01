@@ -124,7 +124,7 @@ ScaleSafe helps high-ticket coaches, consultants, agencies, and service business
 
 Instead of scrambling through inboxes, contracts, screenshots, and CRM notes after a chargeback lands, ScaleSafe captures the key proof points throughout the client lifecycle: offer terms, click-wrap consent, payment events, enrollment status, communications, delivery milestones, pulse check-ins, refunds, and cancellation activity.
 
-When a dispute or early-fraud warning needs attention, ScaleSafe organizes those records into a structured defense workflow so the merchant can respond with cleaner documentation and less manual digging.
+When a dispute needs attention, ScaleSafe organizes those records into a structured defense workflow so the merchant can respond with cleaner documentation and less manual digging.
 
 ScaleSafe is powered by Whole Pay and runs inside GoHighLevel. It works with the merchant's own connected Stripe or NMI account. Payments settle directly to the merchant's processor account; ScaleSafe does not hold funds.
 
@@ -134,14 +134,14 @@ ScaleSafe is powered by Whole Pay and runs inside GoHighLevel. It works with the
 - Click-wrap consent and purchase-summary records for enrollment flows
 - Payment, refund, recurring, and card-on-file visibility for Stripe and NMI
 - Client evidence timelines with communications, milestones, pulse check-ins, and delivery proof
-- Defense packet workflows for disputes and early-fraud warnings
+- Defense packet workflows for disputes
 - GoHighLevel workflow triggers for receipts, enrollment links, welcome/access, refunds, failed payments, reminders, and app events
 - Merchant-facing dashboards for clients, offers, payments, evidence, and defense activity
 
 ### Key features
 
 1. Evidence timeline - capture consent, payment, communication, delivery, refund, and cancellation records in one place.
-2. Defense workflow - organize the evidence a merchant needs when a dispute or early-fraud warning appears.
+2. Defense workflow - organize the evidence a merchant needs when a dispute appears.
 3. Processor-direct payments - use connected Stripe or NMI accounts; ScaleSafe does not hold merchant funds.
 4. Recurring payment visibility - track installment/subscription progress, payment reminders, refunds, pauses, resumes, and cancellations.
 5. Native GHL workflow automation - fire purpose-built Marketplace triggers for receipts, enrollment links, welcome/access, refunds, failed payments, and app events.

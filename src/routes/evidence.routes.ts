@@ -28,7 +28,7 @@ router.get('/:contactId', async (req: Request, res: Response, next: NextFunction
   } catch (err) { next(err); }
 });
 
-/** GET /api/evidence/:contactId/score — Defense Readiness Score */
+/** GET /api/evidence/:contactId/score - contact-level evidence readiness */
 router.get('/:contactId/score', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const locationId = resolveLocationId(req);

@@ -395,7 +395,7 @@ h1, h2, h3, h4 {
   color: var(--ss-navy-500);
 }
 
-/* -- Score bar (used by Defense Readiness Score widget) - preserve, this is a "Win to Amplify" -- */
+/* -- Score bar (used by evidence readiness widgets) -- */
 .score-bar {
   height: 8px;
   background: var(--ss-navy-200);

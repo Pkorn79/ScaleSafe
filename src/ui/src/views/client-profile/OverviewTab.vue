@@ -4,8 +4,9 @@
     <div v-if="score" class="card">
       <div class="flex-between">
         <div>
-          <div class="card-title">Defense Readiness Score</div>
+          <div class="card-title">Client Evidence Readiness</div>
           <div class="card-value" :style="{ color: scoreColor(score.score) }">{{ score.score }}/100</div>
+          <div class="text-sm text-muted" style="margin-top:4px">Contact-level indicator, not a dispute outcome prediction.</div>
         </div>
         <div class="score-bar" style="width:200px;height:12px">
           <div class="score-fill" :style="{ width: score.score + '%', background: scoreColor(score.score) }"></div>

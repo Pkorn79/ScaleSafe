@@ -614,7 +614,8 @@ export const evidenceService = {
   },
 
   /**
-   * Calculate Defense Readiness Score (0-100).
+   * Calculate contact-level evidence readiness (0-100).
+   * This is not an enrollment-specific score or dispute outcome prediction.
    */
   async calculateReadinessScore(locationId: string, contactId: string): Promise<{
     score: number;

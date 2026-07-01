@@ -507,14 +507,14 @@ letter tuned to reason code, (2) enrollment packet with consent proof,
 (3) complete evidence PDF, (4) payment history with undisputed
 transactions highlighted. Ready to submit to processor or bank.
 
-11\. Defense Readiness Score
+11\. Client Evidence Readiness
 
-Each active client gets a Defense Readiness Score (0-100) showing how
-strong their defense would be RIGHT NOW if a chargeback was filed. This
-motivates merchants to log evidence and gives confidence ScaleSafe is
-working.
+Each active client gets a contact-level evidence readiness indicator
+(0-100) showing how complete the client evidence record is. It is not a
+win-probability prediction. Program/enrollment-level scoring is a later
+roadmap improvement.
 
-*Example: \'Client John Smith: Defense Readiness 82/100. Strong
+*Example: \'Client John Smith: Evidence Readiness 82/100. Strong
 enrollment consent, 6 session records, 3 milestone sign-offs. Missing:
 no pulse check-ins in last 30 days. Log a check-in to reach 90+.\'*
 
@@ -932,8 +932,8 @@ New (Build Fresh)
   Subscription management (observe + log)     P1 - Launch        Low - Observe GHL subscription events, log as evidence (no control)
   Daily reconciliation job                    P1 - Launch        Medium - Compare payment records vs evidence
   Evidence health scoring                     P1 - Launch        Low - Count evidence types per client vs expected
-  Defense Readiness Score                     P1 - Launch        Medium - 0-100 score per client showing defense strength
-  Win/loss tracking + Total Value Saved       P1 - Launch        Low - Track defense outcomes with financial metrics
+  Client Evidence Readiness                   P1 - Launch        Medium - 0-100 contact-level evidence completeness indicator
+  Win/loss tracking + Recovery Analytics      P1 - Launch        Low - Track defense outcomes with financial metrics
   Merchant dashboard (Vue 3)                  P1 - Launch        High - Full frontend with readiness scores + value saved
   Health monitoring + alerting                P1 - Launch        Medium - Background checks + notification routing
   Failed webhook retry queue                  P1 - Launch        Medium - Queue + retry logic with backoff
@@ -1030,7 +1030,7 @@ Phase 3: Payment Lifecycle + Disengagement
 
 -   Log all outbound communications as evidence
 
--   Build Defense Readiness Score calculator
+-   Build client evidence readiness calculator
 
 -   Test: simulate payment events, disengagement scenarios, verify
     scores and alerts
@@ -1142,7 +1142,7 @@ Terms used throughout this document, defined for clarity.
   Disengagement             Pattern of declining client participation that may indicate chargeback risk.
   Dunning                   Automated sequence for recovering failed payments: notifications + retry attempts.
   Reconciliation            Daily job comparing payment processor records against evidence records to catch gaps.
-  Defense Readiness Score   0-100 score per client measuring strength of available defense evidence. Drives dashboard alerts.
+  Client Evidence Readiness 0-100 contact-level indicator of available evidence completeness; not a win-probability score.
   Reason Code Mapping       Lookup table mapping processor reason codes to evidence priorities and defense strategies.
   Defense Template          Proven defense letter template per reason code. Claude customizes with client-specific evidence.
   Total Value Saved         Cumulative dollar value of chargebacks successfully defended. Key merchant dashboard metric.

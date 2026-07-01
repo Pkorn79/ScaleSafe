@@ -47,6 +47,12 @@ This file records product and launch decisions that should not be re-litigated u
 - When we do a deeper defense-response-system pass, organize defense packets around the practical Stripe/processor evidence buckets: authorization, signed terms/MSA/SOW, billing/refund policy, service delivery, client communication/satisfaction, refund/cancellation history, and dispute letter.
 - Add or strengthen a rendered checkout/terms/billing-policy snapshot exhibit if the current packet does not clearly show what the customer saw and accepted at purchase.
 - Keep public/marketplace copy evidence-first. Do not claim ScaleSafe guarantees dispute wins.
+- Position ScaleSafe as helping merchants reduce chargebacks and improve dispute readiness, not as preventing chargebacks outright.
+- Treat the current readiness score as a contact-level evidence indicator, not a dispute win prediction. Program/enrollment-level scoring is a roadmap item.
+- Payment rail does not inherently weaken the evidence story. The real risk is whether the rail gives ScaleSafe reliable transaction IDs, webhooks, refund/cancel events, and dispute visibility.
+- WholePay/processor-side Ethoca, Verifi, RDR, descriptor, Radar, and 3DS setup can be part of onboarding guidance, but ScaleSafe should not claim native network-alert automation until it is integrated and tested.
+- Pulse is legitimate evidence when it asks concrete progress, satisfaction, help-needed, and billing-concern questions. It still needs end-to-end proof before being treated as beta-proven.
+- Full positioning and roadmap reference: `docs/CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md`.
 
 ## Post-Beta Product Lane: NMI Billing Portal / Stripe-Shaped Billing API
 

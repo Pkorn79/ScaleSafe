@@ -54,7 +54,7 @@ These are the core SS contact-level fields the app actively maintains. Offer bri
 | Field Key | Display Name | Type | Updated By | Purpose |
 |-----------|-------------|------|-----------|---------|
 | contact.ss_enrollment_status | SS Enrollment Status | TEXT | App | Current enrollment state (active, paused, cancelled, completed) |
-| contact.ss_evidence_score | SS Evidence Score | NUMERICAL | App | Current evidence strength score for this client |
+| contact.ss_evidence_score | SS Evidence Score | NUMERICAL | App | Contact-level evidence readiness indicator for this client; not a dispute win prediction |
 | contact.ss_last_evidence_date | SS Last Evidence Date | TEXT | App | Date of most recent evidence logged |
 | contact.ss_chargeback_status | SS Chargeback Status | TEXT | App | Chargeback state (none, disputed, defending, won, lost) |
 | contact.ss_defense_status | SS Defense Status | TEXT | App | Defense packet state (none, preparing, ready, submitted) |
@@ -312,7 +312,7 @@ For clarity, these are handled by the app or Supabase, NOT GHL:
 - Evidence storage (Supabase)
 - Defense packet generation (App + Claude API)
 - Reason code mapping and strategy selection (App)
-- Defense Readiness Score calculation (App)
+- Client evidence readiness calculation (App)
 - Win/loss tracking (Supabase)
 - Payment evidence logging (App listens to GHL webhooks, stores in Supabase)
 - Enrollment packet PDF generation (App)
