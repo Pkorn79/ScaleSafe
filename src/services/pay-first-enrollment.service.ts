@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { offerRepository } from '../repositories/offer.repository';
+import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
 import { phase2EvidenceRepository } from '../repositories/phase2Evidence.repository';
 import { offerService } from './offer.service';
@@ -179,7 +180,10 @@ function merchantBusinessName(merchant: any): string {
 const inFlightManualSalePayments = new Set<string>();
 
 function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
-  return parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|');
+  return crypto
+    .createHash('sha256')
+    .update(parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|'))
+    .digest('hex');
 }
 
 function claimPaymentAttempt(key: string): boolean {
@@ -409,6 +413,9 @@ export const payFirstEnrollmentService = {
       paymentMethod,
       paymentType,
     ]);
+    if (await idempotencyRepository.isDuplicate(attemptKey, 'quick_manual_sale_payment', input.locationId)) {
+      throw new ValidationError('Payment is already processing. Please wait.');
+    }
     if (!claimPaymentAttempt(attemptKey)) {
       throw new ValidationError('Payment is already processing. Please wait.');
     }

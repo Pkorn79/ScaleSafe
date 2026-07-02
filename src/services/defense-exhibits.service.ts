@@ -149,11 +149,19 @@ function scopedRows<T extends Record<string, any>>(
   dateField: string,
   windowStart: Date | null,
   windowEnd: Date | null,
+  offerId?: string | null,
 ): T[] {
   if (!enrollmentId) return rows || [];
   return (rows || []).filter((row) => {
     if (row.enrollment_id === enrollmentId) return true;
     if (row.enrollment_id) return false;
+    const meta = row.defense_metadata || {};
+    const metaEnrollmentId = meta.enrollmentId || meta.enrollment_id || meta.service?.enrollmentId || meta.service?.enrollment_id;
+    if (metaEnrollmentId === enrollmentId) return true;
+    if (metaEnrollmentId) return false;
+    const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id;
+    if (offerId && (row.offer_id === offerId || metaOfferId === offerId)) return true;
+    if (row.offer_id || metaOfferId) return false;
     if (!windowStart || !windowEnd) return true;
     const value = row[dateField] || row.created_at;
     if (!value) return false;
@@ -188,7 +196,7 @@ export const defenseExhibitsService = {
       try {
         const { data: enr } = await supabase
           .from('enrollments')
-          .select('offer_id, created_at, enrolled_at')
+          .select('offer_id, created_at, enrolled_at, completed_at, cancelled_at')
           .eq('location_id', locationId)
           .eq('contact_id', contactId)
           .eq('id', opts.enrollmentId)
@@ -197,7 +205,11 @@ export const defenseExhibitsService = {
         const anchor = enr?.enrolled_at || enr?.created_at;
         if (anchor) {
           scopeWindowStart = new Date(new Date(anchor).getTime() - 14 * 86400000);
-          scopeWindowEnd = new Date();
+          const explicitEnd = enr?.completed_at || enr?.cancelled_at;
+          const fallbackEnd = new Date(new Date(anchor).getTime() + 180 * 86400000);
+          scopeWindowEnd = explicitEnd ? new Date(explicitEnd) : fallbackEnd;
+          const now = new Date();
+          if (scopeWindowEnd.getTime() > now.getTime()) scopeWindowEnd = now;
         }
       } catch {}
     }
@@ -246,11 +258,11 @@ export const defenseExhibitsService = {
     try {
       const { data: consents } = await supabase
         .from('evidence_consent')
-        .select(`id, consent_timestamp, ip_address, device_fingerprint, browser, tc_version, contact_name, contact_email, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, consent_timestamp, ip_address, device_fingerprint, browser, tc_version, contact_name, contact_email, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('consent_timestamp', { ascending: true });
-      for (const c of ((consents || []) as any[])) {
+      for (const c of scopedRows((consents || []) as any[], opts?.enrollmentId, 'consent_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(c, 'Consent Record'),
@@ -272,7 +284,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('start_time', { ascending: true });
-      for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd)) {
+      for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(a, `Appointment: ${a.appointment_title || 'GHL appointment'}`),
@@ -289,12 +301,12 @@ export const defenseExhibitsService = {
     try {
       const { data: sessions } = await supabase
         .from('evidence_sessions')
-        .select(`id, session_date, session_title, duration_minutes, attendance_status, facilitator, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, session_date, session_title, duration_minutes, attendance_status, facilitator, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .eq('attendance_status', 'attended') // only count attended sessions as delivery evidence
         .order('session_date', { ascending: true });
-      for (const s of ((sessions || []) as any[])) {
+      for (const s of scopedRows((sessions || []) as any[], opts?.enrollmentId, 'session_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(s, `Session: ${s.session_title || 'Untitled'}`),
@@ -315,7 +327,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completion_date', { ascending: true });
-      for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd)) {
+      for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(m, `Module: ${m.module_name || 'Untitled'}`),
@@ -332,11 +344,11 @@ export const defenseExhibitsService = {
     try {
       const { data: milestones } = await supabase
         .from('evidence_milestones')
-        .select(`id, milestone_number, milestone_name, completed_at, description, notes, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, milestone_number, milestone_name, completed_at, description, notes, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const ms of ((milestones || []) as any[])) {
+      for (const ms of scopedRows((milestones || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Milestone ${ms.milestone_number ?? '?'}: ${ms.milestone_name || ''}`,
@@ -353,11 +365,11 @@ export const defenseExhibitsService = {
     try {
       const { data: signoffs } = await supabase
         .from('evidence_signoffs')
-        .select(`id, milestone_number, milestone_name, work_summary, signed_at, ip_address, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, milestone_number, milestone_name, work_summary, signed_at, ip_address, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('signed_at', { ascending: true });
-      for (const so of ((signoffs || []) as any[])) {
+      for (const so of scopedRows((signoffs || []) as any[], opts?.enrollmentId, 'signed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Client Signoff: Milestone ${so.milestone_number ?? '?'}`,
@@ -378,7 +390,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd)) {
+      for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Course Completion: ${c.course_name || ''}`,
@@ -400,7 +412,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
-      for (const c of scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd)) {
+      for (const c of scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Communication: ${c.direction === 'inbound' ? 'From client' : 'To client'} (${c.comm_type})`,
@@ -422,7 +434,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true });
-      for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd)) {
+      for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(inv, `Invoice: ${inv.invoice_number || inv.invoice_id || inv.invoice_status || 'GHL invoice'}`),
@@ -439,11 +451,11 @@ export const defenseExhibitsService = {
     try {
       const { data: enrollPay } = await supabase
         .from('evidence_enrollment_payment')
-        .select(`id, ghl_transaction_id, amount, payment_method, last_four, payment_timestamp, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, ghl_transaction_id, amount, payment_method, last_four, payment_timestamp, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_timestamp', { ascending: true });
-      for (const p of ((enrollPay || []) as any[])) {
+      for (const p of scopedRows((enrollPay || []) as any[], opts?.enrollmentId, 'payment_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Enrollment Payment',
@@ -460,11 +472,11 @@ export const defenseExhibitsService = {
     try {
       const { data: recPay } = await supabase
         .from('evidence_payment_confirmation')
-        .select(`id, ghl_transaction_id, amount, payment_date, payment_number, running_total, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, ghl_transaction_id, amount, payment_date, payment_number, running_total, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_date', { ascending: true });
-      for (const p of ((recPay || []) as any[])) {
+      for (const p of scopedRows((recPay || []) as any[], opts?.enrollmentId, 'payment_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Recurring Payment #${p.payment_number ?? '?'}`,
@@ -482,11 +494,11 @@ export const defenseExhibitsService = {
     try {
       const { data: cancels } = await supabase
         .from('evidence_cancellation')
-        .select(`id, cancellation_date, reason, refund_eligibility, status_at_cancellation, initiated_by, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, cancellation_date, reason, refund_eligibility, status_at_cancellation, initiated_by, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('cancellation_date', { ascending: true });
-      for (const c of ((cancels || []) as any[])) {
+      for (const c of scopedRows((cancels || []) as any[], opts?.enrollmentId, 'cancellation_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Cancellation Record',
@@ -503,11 +515,11 @@ export const defenseExhibitsService = {
     try {
       const { data: refunds } = await supabase
         .from('evidence_refund_activity')
-        .select(`id, amount, refund_type, reason, refund_date, initiated_by, ghl_transaction_id, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, amount, refund_type, reason, refund_date, initiated_by, ghl_transaction_id, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('refund_date', { ascending: true });
-      for (const r of ((refunds || []) as any[])) {
+      for (const r of scopedRows((refunds || []) as any[], opts?.enrollmentId, 'refund_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Refund (${r.refund_type || 'partial'})`,
@@ -526,7 +538,7 @@ export const defenseExhibitsService = {
     // safety net for the unified `evidence` table additions made post-migration 010).
     try {
       const { rows: extra } = await evidenceRepository.getTimeline(locationId, contactId, { limit: 200 });
-      for (const e of scopedRows(extra as any[], opts?.enrollmentId, 'created_at', scopeWindowStart, scopeWindowEnd)) {
+      for (const e of scopedRows(extra as any[], opts?.enrollmentId, 'created_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
         // Skip rows already covered by the per-table queries above (matched by id).
         if (exhibits.some(ex => ex.ref === e.id)) continue;
         // Only include high-signal types from the unified table

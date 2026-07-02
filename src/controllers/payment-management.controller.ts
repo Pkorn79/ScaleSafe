@@ -142,6 +142,25 @@ function isRefundLinkedToPayment(refund: any, originalEvent: any, paymentEventId
     || refund.processor_transaction_id === originalEvent.processor_transaction_id;
 }
 
+function isUniqueViolation(error: any): boolean {
+  return error?.code === '23505';
+}
+
+async function updateRefundClaim(
+  supabase: ReturnType<typeof getSupabase>,
+  claimId: string | null,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  if (!claimId) return;
+  const { error } = await supabase
+    .from('payment_refund_claims')
+    .update(updates)
+    .eq('id', claimId);
+  if (error) {
+    logger.warn({ err: error.message, claimId }, 'Refund claim status update failed');
+  }
+}
+
 async function resolveMerchantId(locationId: string): Promise<string> {
   const supabase = getSupabase();
   const { data } = await supabase
@@ -805,6 +824,7 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
 // ─── POST /api/payments/refund ──────────────────────────────────
 
 export async function issueRefund(req: Request, res: Response, next: NextFunction) {
+  let refundClaim: { supabase: ReturnType<typeof getSupabase>; id: string } | null = null;
   try {
     const locationId = resolveLocationId(req);
     const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
@@ -850,7 +870,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       .select('id, amount, processor_transaction_id, raw_webhook_payload')
       .eq('location_id', locationId)
       .eq('contact_id', originalEvent.contact_id)
-      .eq('event_type', 'refund');
+      .in('event_type', ['refund', 'void']);
     if (priorRefundsError) throw priorRefundsError;
 
     const priorRefundCents = (priorRefunds || [])
@@ -865,11 +885,42 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    const { data: claim, error: claimError } = await supabase
+      .from('payment_refund_claims')
+      .insert({
+        location_id: locationId,
+        original_payment_event_id: paymentEventId,
+        amount_cents: requestedAmountCents,
+        status: 'processing',
+        processor: originalEvent.processor || null,
+        claimed_by: getMerchantId(req) || merchantId || null,
+      })
+      .select('id')
+      .single();
+
+    if (claimError) {
+      if (isUniqueViolation(claimError)) {
+        res.status(409).json({ error: 'A refund for this payment is already processing. Please wait before trying again.' });
+        return;
+      }
+      throw claimError;
+    }
+    if (!claim?.id) {
+      throw new Error('Refund claim could not be created');
+    }
+    refundClaim = { supabase, id: claim.id };
+    const refundIdempotencyKey = `refund:${locationId}:${claim.id}`;
+
     const originalProcessor = String(originalEvent.processor || '').toLowerCase();
     let processorType = originalProcessor;
     let result: any;
     if (originalProcessor === 'whop') {
       if (!String(originalEvent.processor_transaction_id || '').startsWith('pay_')) {
+        await updateRefundClaim(supabase, refundClaim.id, {
+          status: 'failed',
+          error_message: 'Whop payment is missing a refundable Whop payment ID',
+        });
+        refundClaim = null;
         res.status(400).json({ error: 'This Whop payment is missing a refundable Whop payment ID. Refund directly in Whop; ScaleSafe will record the refund webhook.' });
         return;
       }
@@ -889,6 +940,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       result = await processor.refund({
         transactionId: originalEvent.processor_transaction_id,
         amount: requestedAmountCents,
+        idempotencyKey: refundIdempotencyKey,
       });
     }
 
@@ -896,13 +948,22 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     // Treat only a genuine failure as a hard stop; record pending refunds so the refundable
     // balance reflects them and a re-issue cannot double-refund.
     if (!result.success && result.status !== 'pending') {
+      await updateRefundClaim(supabase, refundClaim.id, {
+        status: 'failed',
+        error_message: result.errorMessage || 'Refund failed',
+      });
       logger.warn({ paymentEventId, amount, reason, error: result.errorMessage }, 'Refund failed');
       res.json({ success: false, error: result.errorMessage || 'Refund failed' });
       return;
     }
     const refundPending = result.status === 'pending';
 
-    const refundTransactionId = result.refundId || originalEvent.processor_transaction_id;
+    const refundTransactionId = result.refundId || `${originalEvent.processor_transaction_id}:refund:${refundClaim.id}`;
+    await updateRefundClaim(supabase, refundClaim.id, {
+      status: 'succeeded',
+      processor_refund_id: refundTransactionId,
+      error_message: null,
+    });
     const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
     let programName = '';
     if (originalEvent.offer_id) {
@@ -939,6 +1000,7 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       raw_webhook_payload: {
         original_payment_event_id: paymentEventId,
         original_processor_transaction_id: originalEvent.processor_transaction_id,
+        refund_claim_id: refundClaim.id,
         reason: reason || null,
         processor_refund_response: result.raw || null,
       },
@@ -977,5 +1039,13 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       notificationIssue,
       message: recordingIssue || notificationIssue || undefined,
     });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (refundClaim) {
+      await updateRefundClaim(refundClaim.supabase, refundClaim.id, {
+        status: 'failed',
+        error_message: err?.message || 'Refund request failed before processor confirmation',
+      });
+    }
+    next(err);
+  }
 }

@@ -684,11 +684,11 @@ export class NmiClient implements ProcessorInterface {
     params.set('customer_vault_id', vaultId);
 
     const xml = await this.postQuery(params);
-    logger.info({ vaultId, xmlLen: xml.length, xmlPreview: xml.substring(0, 200) }, '[NMI] Vault query response');
+    logger.info({ vaultId, xmlLen: xml.length }, '[NMI] Vault query response');
     const records = parseNmiVaultRecords(xml);
 
     if (records.length === 0) {
-      logger.warn({ vaultId, xmlPreview: xml.substring(0, 400) }, '[NMI] Vault query parsed zero records — XML structure may not match expected <customer_vault><customer><billing>');
+      logger.warn({ vaultId, xmlLen: xml.length }, '[NMI] Vault query parsed zero records');
       throw new ProcessorError(
         'NMI vault query returned no records',
         'nmi',
@@ -699,7 +699,7 @@ export class NmiClient implements ProcessorInterface {
 
     const r = records[0];
     const exp = parseNmiExpiry(r.ccExp);
-    logger.info({ vaultId, ccType: r.ccType, ccExp: r.ccExp, ccNumber: r.ccNumber }, '[NMI] Vault card metadata extracted');
+    logger.info({ vaultId, ccType: r.ccType, hasCardMetadata: Boolean(r.ccType && r.ccExp && r.ccNumber) }, '[NMI] Vault card metadata extracted');
     return {
       lastFour: extractLastFour(r.ccNumber),
       brand: r.ccType.toLowerCase(),

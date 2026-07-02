@@ -261,6 +261,7 @@ describe('Payment Management Controller', () => {
     return {
       select: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
+      update: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       in: jest.fn().mockReturnThis(),
       order: jest.fn().mockReturnThis(),
@@ -390,11 +391,15 @@ describe('Payment Management Controller', () => {
     ]);
     const insertChain = mockChain({ id: 'refund-event-1' });
     const offerChain = mockChain({ offer_name: 'Program' });
+    const claimChain = mockChain({ id: 'claim-1' });
+    const updateClaimChain = mockChain(null);
     const refund = jest.fn().mockResolvedValue({ success: true, refundId: 'refund-2' });
 
     mockFrom
       .mockReturnValueOnce(originalChain)
       .mockReturnValueOnce(priorRefundChain)
+      .mockReturnValueOnce(claimChain)
+      .mockReturnValueOnce(updateClaimChain)
       .mockReturnValueOnce(offerChain)
       .mockReturnValueOnce(insertChain);
 
@@ -408,7 +413,11 @@ describe('Payment Management Controller', () => {
 
     await issueRefund(req, res, next);
 
-    expect(refund).toHaveBeenCalledWith({ transactionId: 'txn-1', amount: 5000 });
+    expect(refund).toHaveBeenCalledWith({
+      transactionId: 'txn-1',
+      amount: 5000,
+      idempotencyKey: 'refund:loc-1:claim-1',
+    });
     expect(insertChain.insert).toHaveBeenCalledWith(expect.objectContaining({
       event_type: 'refund',
       amount: 50,
@@ -424,6 +433,9 @@ describe('Payment Management Controller', () => {
       status: 'refunded', // #11: surfaces processing/refunded state
       refundId: 'refund-2',
       paymentEventId: 'refund-event-1',
+      recordingIssue: null,
+      notificationIssue: null,
+      message: undefined,
     });
   });
 });

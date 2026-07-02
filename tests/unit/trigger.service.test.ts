@@ -107,7 +107,13 @@ describe('Trigger Service - fireTrigger', () => {
         locationId: 'loc_1',
         contactId: 'c1',
       }),
-      { timeout: 10000 },
+      expect.objectContaining({
+        timeout: 10000,
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+          'X-ScaleSafe-Trigger-Key': expect.any(String),
+        }),
+      }),
     );
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf2',
@@ -118,7 +124,13 @@ describe('Trigger Service - fireTrigger', () => {
         locationId: 'loc_1',
         contactId: 'c1',
       }),
-      { timeout: 10000 },
+      expect.objectContaining({
+        timeout: 10000,
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+          'X-ScaleSafe-Trigger-Key': expect.any(String),
+        }),
+      }),
     );
   });
 
@@ -151,7 +163,13 @@ describe('Trigger Service - fireTrigger', () => {
         contact_id: 'c1',
         contactId: 'c1',
       }),
-      { timeout: 10000 },
+      expect.objectContaining({
+        timeout: 10000,
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+          'X-ScaleSafe-Trigger-Key': expect.any(String),
+        }),
+      }),
     );
   });
 

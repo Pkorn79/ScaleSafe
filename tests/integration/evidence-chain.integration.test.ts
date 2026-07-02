@@ -76,12 +76,13 @@ describe('Evidence Chain Integration', () => {
       },
     ];
 
-    chainMockData['enrollment_packets'] = [
+    chainMockData['enrollments'] = [
       {
         id: 'packet_1',
+        location_id: 'loc_1',
         consent_token: consentToken,
         consent_ip: sharedIp,
-        consent_timestamp: '2026-04-01T00:00:00Z',
+        consent_captured_at: '2026-04-01T00:00:00Z',
         created_at: '2026-04-01T00:00:00Z',
       },
     ];
@@ -89,6 +90,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['stripe_evidence_vault'] = [
       {
         id: 'vault_1',
+        location_id: 'loc_1',
         stripe_payment_intent_id: 'pi_test_1',
         evidence_score: 85,
         created_at: '2026-04-01T00:00:00Z',
@@ -127,12 +129,13 @@ describe('Evidence Chain Integration', () => {
       },
     ];
 
-    chainMockData['enrollment_packets'] = [
+    chainMockData['enrollments'] = [
       {
         id: 'packet_mismatch',
+        location_id: 'loc_1',
         consent_token: consentToken,
         consent_ip: '1.1.1.1',
-        consent_timestamp: '2026-04-01T00:00:00Z',
+        consent_captured_at: '2026-04-01T00:00:00Z',
         created_at: '2026-04-01T00:00:00Z',
       },
     ];
@@ -142,6 +145,41 @@ describe('Evidence Chain Integration', () => {
     expect(result.complete).toBe(false);
     expect(result.gaps.some(g => g.includes('IP mismatch'))).toBe(true);
     expect(result.chainStrength).toBeLessThan(100);
+  });
+
+  it('does not treat missing consent and payment IPs as a verified IP match', async () => {
+    const paymentId = 'pay_null_ips';
+    const consentToken = 'consent_null_ips';
+
+    chainMockData['payment_events'] = [
+      {
+        id: paymentId,
+        location_id: 'loc_1',
+        consent_token: consentToken,
+        ip_address: null,
+        processor: 'nmi',
+        processor_transaction_id: 'txn_nmi_null',
+        amount: 100,
+        created_at: '2026-04-01T00:00:00Z',
+      },
+    ];
+
+    chainMockData['enrollments'] = [
+      {
+        id: 'enr_null_ips',
+        location_id: 'loc_1',
+        consent_token: consentToken,
+        consent_ip: null,
+        consent_captured_at: '2026-04-01T00:00:00Z',
+        created_at: '2026-04-01T00:00:00Z',
+      },
+    ];
+
+    const result = await evidenceChainService.verifyChain(paymentId, 'loc_1');
+
+    expect(result.complete).toBe(false);
+    expect(result.links.some(l => l.type === 'ip_match')).toBe(false);
+    expect(result.gaps.some(g => g.includes('IP match unavailable'))).toBe(true);
   });
 
   it('should detect broken chain when no consent token linked', async () => {

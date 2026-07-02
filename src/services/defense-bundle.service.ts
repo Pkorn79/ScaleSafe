@@ -79,7 +79,8 @@ export const defenseBundleService = {
         const { buffer } = await storageService.downloadPrivateFileWithLegacy(exhibitList.enrollmentPacketPath);
         enrollmentPdfBuffer = buffer;
       } catch (err: any) {
-        logger.warn({ err: err.message, path: exhibitList.enrollmentPacketPath }, 'Failed to download enrollment packet for defense bundle');
+        logger.error({ err: err.message, path: exhibitList.enrollmentPacketPath }, 'Failed to download required enrollment packet for defense bundle');
+        throw new Error(`Required signed enrollment packet could not be loaded: ${err.message}`);
       }
     }
 
@@ -95,6 +96,10 @@ export const defenseBundleService = {
       } catch (err: any) {
         logger.warn({ err: err.message }, 'pdf-lib: failed to merge a PDF section — skipping');
       }
+    }
+
+    if (merged.getPageCount() === 0) {
+      throw new Error('Defense bundle PDF generation produced no pages');
     }
 
     const mergedBuffer = Buffer.from(await merged.save());

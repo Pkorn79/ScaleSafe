@@ -15,6 +15,8 @@ import { whopService } from '../services/whop.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-cart.service';
 import { turnstileService } from '../services/turnstile.service';
+import { idempotencyRepository } from '../repositories/idempotency.repository';
+import crypto from 'crypto';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -131,7 +133,10 @@ async function fireCheckoutPaymentFailedTrigger(params: {
 const inFlightCheckoutPayments = new Set<string>();
 
 function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
-  return parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|');
+  return crypto
+    .createHash('sha256')
+    .update(parts.map((part) => String(part ?? '').trim().toLowerCase()).join('|'))
+    .digest('hex');
 }
 
 function claimPaymentAttempt(key: string): boolean {
@@ -580,8 +585,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     return;
   }
 
-  if (typeof amount !== 'number' || amount <= 0 || amount > 99999999) {
-    res.status(400).json({ success: false, error: 'Invalid amount: must be a positive number in cents (max $999,999.99)' });
+  if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0 || amount > 99999999) {
+    res.status(400).json({ success: false, error: 'Invalid amount: must be a positive integer number of cents (max $999,999.99)' });
     return;
   }
 
@@ -740,6 +745,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       paymentMethod,
       req.body.paymentChoice || '',
     ]);
+    if (await idempotencyRepository.isDuplicate(checkoutAttemptKey, 'checkout_payment', merchant.locationId)) {
+      res.status(409).json({ success: false, error: 'Payment is already processing. Please wait.' });
+      return;
+    }
     if (!claimPaymentAttempt(checkoutAttemptKey)) {
       res.status(409).json({ success: false, error: 'Payment is already processing. Please wait.' });
       return;

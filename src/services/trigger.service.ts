@@ -4,6 +4,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { triggerRepository } from '../repositories/trigger.repository';
 import { logger } from '../utils/logger';
 import { isAllowedTriggerSubscriptionUrl } from '../utils/trigger-subscription-url';
+import crypto from 'crypto';
 
 const RETRY_DELAYS = [1000, 5000, 30000]; // 1s, 5s, 30s
 interface TriggerDeliveryResult {
@@ -19,11 +20,29 @@ function normalizeTriggerPayload(
   triggerKey: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  const eventType = String(payload.event_type || payload.eventType || triggerKey.replace(/^ss_/, ''));
+  const deliveryKey = crypto
+    .createHash('sha256')
+    .update([
+      locationId,
+      triggerKey,
+      eventType,
+      payload.contact_id || payload.contactId || '',
+      payload.enrollment_id || payload.enrollmentId || '',
+      payload.offer_id || payload.offerId || '',
+      payload.payment_event_id || payload.paymentEventId || '',
+      payload.transaction_id || payload.transactionId || '',
+      payload.defense_id || payload.defenseId || '',
+    ].map((part) => String(part ?? '').trim()).join('|'))
+    .digest('hex');
   const normalized: Record<string, unknown> = {
-    event_type: String(payload.event_type || payload.eventType || triggerKey.replace(/^ss_/, '')),
+    ...payload,
+    event_type: eventType,
+    eventType,
     location_id: locationId,
     locationId,
-    ...payload,
+    trigger_delivery_key: deliveryKey,
+    triggerDeliveryKey: deliveryKey,
   };
 
   if (normalized.contact_id && !normalized.contactId) {
@@ -61,12 +80,26 @@ async function postTriggerUrl(
   url: string,
   payload: Record<string, unknown>,
 ): Promise<{ status: number }> {
+  const deliveryKey = String(payload.trigger_delivery_key || payload.triggerDeliveryKey || '');
+  const options = {
+    timeout: 10000,
+    headers: deliveryKey ? { 'Idempotency-Key': deliveryKey, 'X-ScaleSafe-Trigger-Key': deliveryKey } : undefined,
+  };
   if (isGhlTriggerExecuteUrl(url)) {
     const api = await ghlApi(locationId);
-    return api.post(url, payload, { timeout: 10000 });
+    return api.post(url, payload, options);
   }
 
-  return axios.post(url, payload, { timeout: 10000 });
+  return axios.post(url, payload, options);
+}
+
+function isAmbiguousTimeout(err: any): boolean {
+  const message = err instanceof Error ? err.message : String(err || '');
+  return !err?.response?.status && (
+    err?.code === 'ECONNABORTED'
+    || err?.code === 'ETIMEDOUT'
+    || /timeout|timed out|socket hang up/i.test(message)
+  );
 }
 
 async function postWithRetry(
@@ -90,6 +123,14 @@ async function postWithRetry(
       const message = err instanceof Error ? err.message : String(err);
       lastError = message;
       logger.warn({ url, attempt, status: lastStatus, error: message }, 'Trigger POST failed');
+      if (isAmbiguousTimeout(err)) {
+        return {
+          success: false,
+          httpStatus: lastStatus,
+          attemptCount: attempt + 1,
+          errorMessage: `Ambiguous trigger delivery timeout; not retried automatically. ${message}`,
+        };
+      }
       if (isInactiveGhlTriggerError(message)) {
         return {
           success: false,

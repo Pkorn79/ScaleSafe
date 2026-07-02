@@ -313,15 +313,15 @@ export const defenseService = {
       logger.warn({ err: vErr.message, defenseId }, 'Failed to insert letter version row (non-fatal — letter still saved on packet)');
     }
 
-    await defenseRepository.updateStatus(defenseId, 'complete', {
+    await defenseRepository.updateStatus(defenseId, 'processing', {
       defense_letter_text: result.text,
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
       template_id: template?.id || null,
-      completed_at: new Date().toISOString(),
     });
 
-    // 10. Generate bundled PDF (fire-and-forget — don't block the status update)
+    // 10. Generate bundled PDF before marking ready. A missing signed packet or
+    // failed bundle is a defense integrity problem, so it must not fire ready.
     let defensePacketUrl = '';
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
@@ -329,8 +329,27 @@ export const defenseService = {
         enrollmentId: input.enrollmentId,
       });
     } catch (pdfErr: any) {
-      logger.warn({ err: pdfErr.message, defenseId }, 'Bundled PDF generation failed (non-fatal — letter text is available inline)');
+      logger.error({ err: pdfErr.message, defenseId }, 'Bundled PDF generation failed; defense packet not marked ready');
+      await defenseRepository.updateStatus(defenseId, 'failed', {
+        error_message: `Defense packet PDF generation failed: ${pdfErr.message}`,
+      } as any);
+      return;
     }
+
+    if (!defensePacketUrl) {
+      await defenseRepository.updateStatus(defenseId, 'failed', {
+        error_message: 'Defense packet PDF generation failed: no PDF URL returned',
+      } as any);
+      return;
+    }
+
+    await defenseRepository.updateStatus(defenseId, 'complete', {
+      defense_letter_text: result.text,
+      prompt_tokens_used: result.inputTokens,
+      response_tokens_used: result.outputTokens,
+      template_id: template?.id || null,
+      completed_at: new Date().toISOString(),
+    });
 
     // 11. Update GHL contact
     try {

@@ -61,7 +61,10 @@ export const triggerRepository = {
       .eq('is_active', true);
 
     // Table may not exist — triggers fire directly to GHL Marketplace without it
-    if (error) return [];
+    if (error) {
+      if (error.code === '42P01' || String(error.message || '').includes('trigger_subscriptions')) return [];
+      throw error;
+    }
     return data || [];
   },
 };

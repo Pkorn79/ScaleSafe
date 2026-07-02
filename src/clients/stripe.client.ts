@@ -164,7 +164,10 @@ export class StripeClient implements ProcessorInterface {
         params.amount = request.amount;
       }
 
-      const refund = await this.stripe.refunds.create(params, this.acct);
+      const requestOptions = request.idempotencyKey
+        ? { ...this.acct, idempotencyKey: request.idempotencyKey }
+        : this.acct;
+      const refund = await this.stripe.refunds.create(params, requestOptions);
 
       return {
         success: refund.status === 'succeeded',

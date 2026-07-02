@@ -114,7 +114,13 @@ describe('Trigger Integration — subscribe → fire → verify POST', () => {
         location_id: 'loc_1',
         locationId: 'loc_1',
       }),
-      { timeout: 10000 },
+      expect.objectContaining({
+        timeout: 10000,
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+          'X-ScaleSafe-Trigger-Key': expect.any(String),
+        }),
+      }),
     );
   });
 

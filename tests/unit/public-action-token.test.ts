@@ -102,12 +102,12 @@ describe('public action tokens', () => {
     expect(() => verifyPublicActionToken(token)).toThrow('expired');
   });
 
-  it('allows legacy raw links only when explicitly enabled', () => {
+  it('does not allow legacy raw links even when the old override is set', () => {
     process.env.NODE_ENV = 'test';
     expect(legacyPublicActionLinksAllowed()).toBe(false);
 
     process.env.ALLOW_LEGACY_PUBLIC_ACTION_LINKS = 'true';
-    expect(legacyPublicActionLinksAllowed()).toBe(true);
+    expect(legacyPublicActionLinksAllowed()).toBe(false);
   });
 
   it('requires an independent public action token secret', () => {

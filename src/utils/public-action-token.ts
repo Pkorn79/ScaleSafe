@@ -99,5 +99,5 @@ export function verifyPublicActionToken(token: string, expectedAction?: PublicAc
 }
 
 export function legacyPublicActionLinksAllowed(): boolean {
-  return process.env.ALLOW_LEGACY_PUBLIC_ACTION_LINKS === 'true';
+  return false;
 }

@@ -51,11 +51,17 @@ function query(result: { data: any; error?: any }) {
   const res = { data: result.data, error: result.error ?? null };
   c.select = jest.fn(() => c);
   c.eq = jest.fn(() => c);
+  c.in = jest.fn(() => c);
   c.insert = jest.fn(() => c);
+  c.update = jest.fn(() => c);
   c.single = jest.fn(() => Promise.resolve(res));
   c.maybeSingle = jest.fn(() => Promise.resolve(res));
   c.then = (resolve: any) => resolve(res); // makes the chain awaitable
   return c;
+}
+
+function okUpdate() {
+  return query({ data: null });
 }
 
 function mockReq(body: any = {}): Request {
@@ -123,6 +129,8 @@ describe('issueRefund', () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
       .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'claim-whop' } }))
+      .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(query({ data: { id: 'refund-event-whop' } }));
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
@@ -147,6 +155,8 @@ describe('issueRefund', () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
       .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'claim-whop' } }))
+      .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(query({ data: null, error: { message: 'insert failed' } }));
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
@@ -164,7 +174,9 @@ describe('issueRefund', () => {
   it('blocks Whop refunds when the payment event lacks a Whop payment id', async () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'checkout_123' } }))
-      .mockReturnValueOnce(query({ data: [] }));
+      .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'claim-whop' } }))
+      .mockReturnValueOnce(okUpdate());
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
 
@@ -197,6 +209,8 @@ describe('issueRefund', () => {
     mockFrom
       .mockReturnValueOnce(query({ data: successfulSale })) // original event
       .mockReturnValueOnce(query({ data: [] })) // no prior refunds
+      .mockReturnValueOnce(query({ data: { id: 'claim-1' } }))
+      .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(query({ data: { id: 'refund-event-1' } })); // insert().select().single()
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 100, reason: 'duplicate' }), res, next);
@@ -215,6 +229,8 @@ describe('issueRefund', () => {
     mockFrom
       .mockReturnValueOnce(query({ data: successfulSale }))
       .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'claim-2' } }))
+      .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(query({ data: { id: 'refund-event-2' } }));
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 100 }), res, next);
@@ -232,6 +248,8 @@ describe('issueRefund', () => {
     mockFrom
       .mockReturnValueOnce(query({ data: successfulSale }))
       .mockReturnValueOnce(query({ data: [] }))
+      .mockReturnValueOnce(query({ data: { id: 'claim-3' } }))
+      .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(insertChain);
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 100 }), res, next);

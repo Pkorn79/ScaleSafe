@@ -38,7 +38,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
   try {
     const body = req.body || {};
     if (isNmiOfficialEventPayload(body)) {
-      await processNmiOfficialWebhookRequest(req, res);
+      await processNmiOfficialWebhookRequest(req, res, { requireSignature: true });
       return;
     }
 
@@ -142,12 +142,12 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       }
     }
 
-    if (nmiResponse === '1' && !transactionId) {
-      logger.warn({ subscriptionId }, 'NMI Silent Post: approved payment missing transaction id - ignoring');
+    if (!transactionId) {
+      logger.warn({ subscriptionId, response: nmiResponse }, 'NMI Silent Post: post missing transaction id - ignoring');
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         verification_status: 'failed',
         action: 'ignored_missing_transaction_id',
-        error_message: 'Approved NMI payment post did not include a transaction id',
+        error_message: 'NMI Silent Post did not include a transaction id',
       });
       res.status(200).json({ received: true });
       return;
@@ -169,37 +169,45 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       }
     }
 
-    if (transactionId && nmiResponse === '1') {
-      try {
-        const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
-          processor_override: 'nmi',
-          nmi_processor_id: offerNmiProcessorId,
-        });
-        const processor = createProcessorClient(procConfig);
-        const verification = await processor.verifyTransaction(transactionId);
-        if (!verification.success) {
-          logger.warn({ transactionId, subscriptionId }, 'NMI Silent Post: transaction verification failed - ignoring');
-          await updateDiagnosticLog(supabase, diagnosticLogId, {
-            verification_status: 'failed',
-            action: 'ignored_verification_failed',
-            error_message: 'NMI transaction verification returned unsuccessful',
-          });
-          res.status(200).json({ received: true });
-          return;
-        }
+    try {
+      const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
+        processor_override: 'nmi',
+        nmi_processor_id: offerNmiProcessorId,
+      });
+      const processor = createProcessorClient(procConfig);
+      const verification = await processor.verifyTransaction(transactionId);
+      if (!verification.success) {
+        logger.warn({ transactionId, subscriptionId }, 'NMI Silent Post: transaction verification failed - ignoring');
         await updateDiagnosticLog(supabase, diagnosticLogId, {
-          verification_status: 'verified',
-        });
-      } catch (verifyErr: any) {
-        logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
-        await updateDiagnosticLog(supabase, diagnosticLogId, {
-          verification_status: 'error',
-          action: 'ignored_verification_error',
-          error_message: verifyErr.message || 'NMI verification threw',
+          verification_status: 'failed',
+          action: 'ignored_verification_failed',
+          error_message: 'NMI transaction verification returned unsuccessful',
         });
         res.status(200).json({ received: true });
         return;
       }
+      if (verification.subscriptionId && verification.subscriptionId !== subscriptionId) {
+        logger.warn({ transactionId, subscriptionId, verifiedSubscriptionId: verification.subscriptionId }, 'NMI Silent Post: transaction subscription mismatch - ignoring');
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          verification_status: 'failed',
+          action: 'ignored_subscription_mismatch',
+          error_message: 'Verified NMI transaction did not belong to the posted subscription id',
+        });
+        res.status(200).json({ received: true });
+        return;
+      }
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        verification_status: 'verified',
+      });
+    } catch (verifyErr: any) {
+      logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        verification_status: 'error',
+        action: 'ignored_verification_error',
+        error_message: verifyErr.message || 'NMI verification threw',
+      });
+      res.status(200).json({ received: true });
+      return;
     }
 
     const amountCents = Math.round(safeAmount * 100);

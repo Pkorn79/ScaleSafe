@@ -53,6 +53,7 @@ export interface RefundRequest {
   transactionId: string;
   amount?: number; // partial refund in cents; omit for full
   reason?: string;
+  idempotencyKey?: string;
 }
 
 export interface RefundResult {

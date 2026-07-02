@@ -28,45 +28,61 @@ export const evidenceChainService = {
       paymentQuery = paymentQuery.eq('location_id', locationId);
     }
 
-    const { data: payment } = await paymentQuery.single();
+    const { data: payment, error: paymentError } = await paymentQuery.single();
 
-    if (!payment) {
+    if (paymentError || !payment) {
       return { complete: false, links: [], gaps: ['Payment event not found'], chainStrength: 0 };
     }
 
+    const scopedLocationId = locationId || payment.location_id || '';
     const links: EvidenceLink[] = [];
     const gaps: string[] = [];
 
     // Link 1: Consent record
     if (payment.consent_token) {
-      const { data: packet } = await supabase
-        .from('enrollment_packets')
-        .select('*')
+      let consentQuery = supabase
+        .from('enrollments')
+        .select('id, consent_captured_at, consent_ip, created_at')
         .eq('consent_token', payment.consent_token)
-        .single();
+      if (scopedLocationId) {
+        consentQuery = consentQuery.eq('location_id', scopedLocationId);
+      }
+      const { data: consent, error: consentError } = await consentQuery.single();
 
-      if (packet) {
+      if (consentError) {
+        logger.warn({
+          err: consentError.message,
+          paymentEventId,
+          locationId: scopedLocationId || null,
+          consentTokenPresent: true,
+        }, 'Evidence chain consent lookup failed');
+        gaps.push('Consent token present but enrollment consent record could not be verified');
+      } else if (consent) {
         links.push({
           type: 'consent',
-          id: packet.id,
-          timestamp: packet.consent_timestamp || packet.created_at,
+          id: consent.id,
+          timestamp: consent.consent_captured_at || consent.created_at,
           verified: true,
         });
 
         // IP match
-        if (packet.consent_ip === payment.ip_address) {
+        const consentIp = String(consent.consent_ip || '').trim();
+        const paymentIp = String(payment.ip_address || '').trim();
+        if (consentIp && paymentIp && consentIp === paymentIp) {
           links.push({
             type: 'ip_match',
             id: null,
             timestamp: payment.created_at,
             verified: true,
-            detail: `Consent IP ${packet.consent_ip} matches payment IP`,
+            detail: `Consent IP ${consentIp} matches payment IP`,
           });
+        } else if (consentIp && paymentIp) {
+          gaps.push(`IP mismatch: consent=${consentIp}, payment=${paymentIp}`);
         } else {
-          gaps.push(`IP mismatch: consent=${packet.consent_ip}, payment=${payment.ip_address}`);
+          gaps.push(`IP match unavailable: consent=${consentIp || 'missing'}, payment=${paymentIp || 'missing'}`);
         }
       } else {
-        gaps.push('Consent token present but enrollment packet not found');
+        gaps.push('Consent token present but enrollment consent record not found');
       }
     } else {
       gaps.push('No consent token linked to payment');
@@ -83,11 +99,14 @@ export const evidenceChainService = {
 
     // Link 3: Evidence vault (Stripe only)
     if (payment.processor === 'stripe' && payment.processor_transaction_id) {
-      const { data: vault } = await supabase
+      let vaultQuery = supabase
         .from('stripe_evidence_vault')
         .select('*')
-        .eq('stripe_payment_intent_id', payment.processor_transaction_id)
-        .single();
+        .eq('stripe_payment_intent_id', payment.processor_transaction_id);
+      if (scopedLocationId) {
+        vaultQuery = vaultQuery.eq('location_id', scopedLocationId);
+      }
+      const { data: vault } = await vaultQuery.single();
 
       if (vault) {
         links.push({

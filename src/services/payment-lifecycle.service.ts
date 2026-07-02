@@ -217,6 +217,8 @@ export const paymentLifecycleService = {
       .from('payment_events')
       .select('*')
       .eq('id', paymentEventId)
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
       .single();
 
     if (!originalEvent) {

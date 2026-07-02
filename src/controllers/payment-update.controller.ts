@@ -6,7 +6,6 @@ import { saveOrReusePaymentMethod } from '../services/payment-methods.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
 import {
-  legacyPublicActionLinksAllowed,
   PublicActionType,
   verifyPublicActionToken,
 } from '../utils/public-action-token';
@@ -42,21 +41,7 @@ function readPublicActionContext(req: Request, action: PublicActionType | Public
     };
   }
 
-  if (!legacyPublicActionLinksAllowed()) {
-    throw new Error('Valid action token required');
-  }
-
-  const contactId = (req.query.contactId || req.body?.contactId) as string | undefined;
-  const locationId = (req.query.locationId || req.body?.locationId) as string | undefined;
-  const enrollmentId = (req.query.enrollmentId || req.body?.enrollmentId) as string | undefined;
-  const rawMilestoneNumber = (req.query.milestoneNumber || req.body?.milestoneNumber) as string | number | undefined;
-  const milestoneNumber = rawMilestoneNumber ? parseInt(rawMilestoneNumber.toString(), 10) : undefined;
-
-  if (!contactId || !locationId) {
-    throw new Error('Valid action token required');
-  }
-
-  return { contactId, locationId, enrollmentId, milestoneNumber };
+  throw new Error('Valid action token required');
 }
 
 function isPublicActionTokenError(err: unknown): boolean {
