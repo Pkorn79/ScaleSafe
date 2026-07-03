@@ -291,6 +291,7 @@
         <div v-if="form.pulseCadenceEnabled" class="form-group">
           <label class="form-label">Cadence</label>
           <select class="form-select" v-model.number="form.pulseFrequencyDays">
+            <option :value="1">Daily (testing)</option>
             <option :value="7">Weekly</option>
             <option :value="14">Every 2 weeks</option>
             <option :value="30">Monthly</option>
