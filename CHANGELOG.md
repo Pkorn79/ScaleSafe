@@ -5,6 +5,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense packet regression fix (transaction-scoped evidence)
+
+> **Deploy ordering:** migration `084_defense_needs_review_status.sql` MUST be applied in Supabase
+> **before** this code deploys. `runCompilation` now writes `status = 'needs_review'`, which the
+> existing `defense_packets_status_check` constraint rejects until 084 widens it.
+
+### Fixed (defense packet regression, 2026-07-03)
+- **Defense output is now scoped to the disputed transaction/enrollment instead of dumping every
+  contact-wide evidence row.** Root causes were (1) the retired `claude-sonnet-4-20250514` model with
+  no retry, which silently dropped every letter into the generic fallback, and (2) an empty
+  `enrollmentId` from the UI combined with an open exhibit-scoping default that returned all contact
+  evidence.
+  - `src/clients/anthropic.client.ts`: default model moved to `claude-sonnet-5` (overridable via
+    `ANTHROPIC_MODEL`); `callClaude` now retries transient failures (429/500/502/503/504/529 + network
+    timeouts) with exponential backoff + jitter, up to 3 attempts, before falling back.
+  - `src/services/dispute-scope.service.ts` (new): `resolveDisputeScope()` resolves a disputed
+    transaction to a specific enrollment/program (via enrollmentId → paymentEventId → inference) and
+    returns a scope with `scopeConfidence` (`exact` | `inferred` | `contact_only`) and `gaps[]`.
+  - `src/services/defense-exhibits.service.ts`: missing enrollment no longer means "include everything";
+    contact-wide rows are only returned under explicit `contact_only` scope (and tagged
+    `unverifiedScope`). Unlinked communications capped at 5. `scopedRows` exported for testing.
+  - `src/services/defense.service.ts`: threads resolved scope through exhibit building, prior-payment
+    scoping, prompt building, and PDF bundling. On AI failure after retries it now emits a **structured**
+    fallback letter (Transaction/program, Authorization, Service delivery, Payment/refund/cancellation,
+    Prior payment, Evidence gaps, Exhibit index) instead of the generic "found X evidence records"
+    paragraph. Fallback **and** contact-only packets are marked `needs_review` and do **not** fire
+    `ss_defense_ready`. Regenerate and manual-edit rebundle paths re-resolve scope for consistency.
+  - `src/services/payment.service.ts`: `getUndisputedPayments()` accepts an optional `enrollmentId` and
+    orders same-enrollment payments first (primary), others after (secondary relationship evidence).
+  - `src/ui/src/views/DefenseView.vue`: warns when the selected transaction isn't linked to a program,
+    instead of silently sending an empty `enrollmentId`.
+  - Migration `084_defense_needs_review_status.sql`: adds `needs_review` to the `defense_packets.status`
+    CHECK constraint.
+  - Tests: anthropic retry/backoff, dispute-scope resolution, exhibit scoping fail-safe, enrollment-scoped
+    prior payments, and defense-service needs_review/fallback gating.
+
 ## Unreleased — Bug-hunt Batches A–H (complete; pending review/merge)
 
 > **Deploy ordering:** migrations `072`/`073`/`074` (pushed) + `077` MUST be applied in Supabase **before**

@@ -119,6 +119,29 @@ jest.mock('../../src/services/payment.service', () => ({
   },
 }));
 
+const mockResolveDisputeScope = jest.fn();
+jest.mock('../../src/services/dispute-scope.service', () => ({
+  disputeScopeService: {
+    resolveDisputeScope: (...args: any[]) => mockResolveDisputeScope(...args),
+  },
+}));
+
+function exactScope(overrides: Record<string, any> = {}) {
+  return {
+    paymentEventId: null,
+    processorTransactionId: null,
+    processor: null,
+    enrollmentId: 'enr_1',
+    offerId: 'offer_1',
+    offerName: 'Test Program',
+    enrollmentStart: '2026-01-10',
+    enrollmentEnd: null,
+    scopeConfidence: 'exact',
+    gaps: [],
+    ...overrides,
+  };
+}
+
 const mockFireTrigger = jest.fn().mockResolvedValue({ sent: 1, failed: 0 });
 jest.mock('../../src/services/trigger.service', () => ({
   triggerService: {
@@ -140,6 +163,7 @@ import { defenseExhibitsService } from '../../src/services/defense-exhibits.serv
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockResolveDisputeScope.mockResolvedValue(exactScope());
 });
 
 describe('Defense Service - Reason Code Mapping', () => {
@@ -297,13 +321,13 @@ describe('Defense Service - Compilation Flow', () => {
     expect(defenseExhibitsService.buildExhibitList).toHaveBeenCalledWith(
       'loc_1',
       'c_1',
-      { enrollmentId: 'enr_1' },
+      expect.objectContaining({ enrollmentId: 'enr_1', scopeConfidence: 'exact' }),
     );
     expect(mockBundleDefensePdf).toHaveBeenCalledWith(
       'def_1',
       'loc_1',
       'c_1',
-      { enrollmentId: 'enr_1' },
+      expect.objectContaining({ enrollmentId: 'enr_1', scopeConfidence: 'exact' }),
     );
   });
 
@@ -325,5 +349,95 @@ describe('Defense Service - Compilation Flow', () => {
         processor: 'stripe',
       }),
     );
+  });
+});
+
+describe('Defense Service - Scope resolution & needs_review gating', () => {
+  test('resolves enrollment from paymentEventId and scopes exhibits to it', async () => {
+    mockResolveDisputeScope.mockResolvedValueOnce(
+      exactScope({ paymentEventId: 'pe_1', enrollmentId: 'enr_from_pe', processorTransactionId: 'txn_99' }),
+    );
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      paymentEventId: 'pe_1',
+    }, 'services_not_provided');
+
+    expect(mockResolveDisputeScope).toHaveBeenCalledWith(
+      expect.objectContaining({ locationId: 'loc_1', contactId: 'c_1', paymentEventId: 'pe_1' }),
+    );
+    expect(defenseExhibitsService.buildExhibitList).toHaveBeenCalledWith(
+      'loc_1', 'c_1',
+      expect.objectContaining({ enrollmentId: 'enr_from_pe', scopeConfidence: 'exact' }),
+    );
+  });
+
+  test('contact_only scope marks needs_review and does NOT fire ss_defense_ready', async () => {
+    mockResolveDisputeScope.mockResolvedValueOnce(
+      exactScope({ enrollmentId: null, offerId: null, offerName: null, scopeConfidence: 'contact_only', gaps: ['No program linked.'] }),
+    );
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review', expect.any(Object),
+    );
+    expect(defenseRepository.updateStatus).not.toHaveBeenCalledWith('def_1', 'complete', expect.anything());
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+
+  test('AI failure produces a structured fallback letter, marks needs_review, and does not fire ready', async () => {
+    (callClaude as jest.Mock).mockRejectedValueOnce(new Error('Anthropic overloaded'));
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '4855', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    // needs_review, not complete
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review', expect.any(Object),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+
+    // The fallback letter is structured — NOT the generic "found X evidence records" paragraph.
+    const call = (defenseRepository.updateStatus as jest.Mock).mock.calls.find(
+      (c) => c[1] === 'needs_review' && c[2]?.defense_letter_text,
+    );
+    expect(call).toBeTruthy();
+    const letter: string = call[2].defense_letter_text;
+    expect(letter).toContain('TRANSACTION AND PROGRAM');
+    expect(letter).toContain('EVIDENCE GAPS');
+    expect(letter).toContain('EXHIBIT INDEX');
+    expect(letter).not.toMatch(/found \d+ evidence records/i);
+  });
+
+  test('structured fallback letter builder includes all required sections', () => {
+    const letter = defenseService.buildStructuredFallbackLetter(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 100, disputeDate: '2026-03-20', deadline: '2026-04-10' },
+      exactScope({ gaps: ['A gap to review.'] }) as any,
+      mockExhibitList,
+      [{ amount: 500, payment_date: '2026-01-15' }],
+      { business_name: 'Test Biz' },
+      { firstName: 'John', lastName: 'Doe' },
+      'Dispute Resolution Department',
+    );
+
+    expect(letter).toContain('TRANSACTION AND PROGRAM');
+    expect(letter).toContain('AUTHORIZATION / CONSENT EVIDENCE');
+    expect(letter).toContain('SERVICE DELIVERY EVIDENCE');
+    expect(letter).toContain('PAYMENT / REFUND / CANCELLATION CONTEXT');
+    expect(letter).toContain('PRIOR PAYMENT / RELATIONSHIP CONTEXT');
+    expect(letter).toContain('EVIDENCE GAPS');
+    expect(letter).toContain('EXHIBIT INDEX');
+    expect(letter).toContain('A gap to review.');
   });
 });

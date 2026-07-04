@@ -70,6 +70,8 @@ export interface ExhibitEntry {
   summary: string;
   /** Optional structured fields the bundler can render in the PDF */
   meta?: Record<string, unknown>;
+  /** True when this exhibit was included under contact-only (unverified) scope */
+  unverifiedScope?: boolean;
 }
 
 export interface ExhibitList {
@@ -143,15 +145,24 @@ function applyDefenseContract(exhibit: ExhibitEntry, row: any): void {
   exhibit.meta = exhibitMeta(row, exhibit.meta || {});
 }
 
-function scopedRows<T extends Record<string, any>>(
+// Exported for unit testing — this is the fail-safe that decides whether a row is
+// in-scope for the disputed enrollment. A regression here is what caused contact-wide
+// evidence dumps.
+export function scopedRows<T extends Record<string, any>>(
   rows: T[] | null | undefined,
   enrollmentId: string | undefined,
   dateField: string,
   windowStart: Date | null,
   windowEnd: Date | null,
   offerId?: string | null,
+  scopeConfidence?: string,
 ): T[] {
-  if (!enrollmentId) return rows || [];
+  if (!enrollmentId) {
+    // Fail-safe: a missing enrollment must NOT mean "include every contact-wide
+    // row". Only allow contact-wide evidence when scope is *explicitly* contact_only
+    // (the packet is then marked needs_review and communications are capped).
+    return scopeConfidence === 'contact_only' ? (rows || []) : [];
+  }
   return (rows || []).filter((row) => {
     if (row.enrollment_id === enrollmentId) return true;
     if (row.enrollment_id) return false;
@@ -182,17 +193,37 @@ export const defenseExhibitsService = {
   async buildExhibitList(
     locationId: string,
     contactId: string,
-    opts?: { enrollmentId?: string },
+    opts?: {
+      enrollmentId?: string;
+      scopeConfidence?: string;
+      offerId?: string | null;
+      enrollmentStart?: string | null;
+      enrollmentEnd?: string | null;
+    },
   ): Promise<ExhibitList> {
     const supabase = getSupabase();
     const exhibits: ExhibitEntry[] = [];
     let nextIdx = 1;
+    const scopeConfidence = opts?.scopeConfidence;
+    const isContactOnly = scopeConfidence === 'contact_only';
 
-    // Resolve the target enrollment for scoping (when available)
-    let scopeOfferId: string | null = null;
+    // Resolve the target enrollment for scoping (when available). Prefer values the
+    // caller already resolved (dispute-scope) to avoid a redundant lookup.
+    let scopeOfferId: string | null = opts?.offerId ?? null;
     let scopeWindowStart: Date | null = null;
     let scopeWindowEnd: Date | null = null;
-    if (opts?.enrollmentId) {
+    if (opts?.enrollmentId && (opts.enrollmentStart !== undefined || opts.enrollmentEnd !== undefined || opts.offerId !== undefined)) {
+      // Use the pre-resolved scope window/offer.
+      const anchor = opts.enrollmentStart || null;
+      if (anchor) {
+        scopeWindowStart = new Date(new Date(anchor).getTime() - 14 * 86400000);
+        const explicitEnd = opts.enrollmentEnd || null;
+        const fallbackEnd = new Date(new Date(anchor).getTime() + 180 * 86400000);
+        scopeWindowEnd = explicitEnd ? new Date(explicitEnd) : fallbackEnd;
+        const now = new Date();
+        if (scopeWindowEnd.getTime() > now.getTime()) scopeWindowEnd = now;
+      }
+    } else if (opts?.enrollmentId) {
       try {
         const { data: enr } = await supabase
           .from('enrollments')
@@ -262,7 +293,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('consent_timestamp', { ascending: true });
-      for (const c of scopedRows((consents || []) as any[], opts?.enrollmentId, 'consent_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const c of scopedRows((consents || []) as any[], opts?.enrollmentId, 'consent_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(c, 'Consent Record'),
@@ -284,7 +315,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('start_time', { ascending: true });
-      for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(a, `Appointment: ${a.appointment_title || 'GHL appointment'}`),
@@ -306,7 +337,7 @@ export const defenseExhibitsService = {
         .eq('contact_id', contactId)
         .eq('attendance_status', 'attended') // only count attended sessions as delivery evidence
         .order('session_date', { ascending: true });
-      for (const s of scopedRows((sessions || []) as any[], opts?.enrollmentId, 'session_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const s of scopedRows((sessions || []) as any[], opts?.enrollmentId, 'session_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(s, `Session: ${s.session_title || 'Untitled'}`),
@@ -327,7 +358,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completion_date', { ascending: true });
-      for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(m, `Module: ${m.module_name || 'Untitled'}`),
@@ -348,7 +379,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const ms of scopedRows((milestones || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const ms of scopedRows((milestones || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Milestone ${ms.milestone_number ?? '?'}: ${ms.milestone_name || ''}`,
@@ -369,7 +400,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('signed_at', { ascending: true });
-      for (const so of scopedRows((signoffs || []) as any[], opts?.enrollmentId, 'signed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const so of scopedRows((signoffs || []) as any[], opts?.enrollmentId, 'signed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Client Signoff: Milestone ${so.milestone_number ?? '?'}`,
@@ -390,7 +421,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
-      for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Course Completion: ${c.course_name || ''}`,
@@ -405,6 +436,10 @@ export const defenseExhibitsService = {
     } catch {}
 
     // ── 4. Communication log ──
+    // Communications are the highest-volume, lowest-signal evidence type (GHL syncs
+    // every outbound email). Cap them so a packet can never again become 29 emails:
+    // enrollment/transaction-linked comms are always kept; unlinked ones are capped.
+    const MAX_UNLINKED_COMMS = 5;
     try {
       const { data: comms } = await supabase
         .from('evidence_communication')
@@ -412,7 +447,28 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
-      for (const c of scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      const scopedComms = scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence);
+
+      const isDirectlyLinked = (row: any): boolean => {
+        if (!opts?.enrollmentId) return false;
+        if (row.enrollment_id === opts.enrollmentId) return true;
+        const meta = row.defense_metadata || {};
+        const metaEnr = meta.enrollmentId || meta.enrollment_id || meta.service?.enrollmentId || meta.service?.enrollment_id;
+        return metaEnr === opts.enrollmentId;
+      };
+
+      const linked = scopedComms.filter(isDirectlyLinked);
+      const unlinked = scopedComms.filter((c) => !isDirectlyLinked(c));
+      const keptUnlinked = unlinked.slice(0, MAX_UNLINKED_COMMS);
+      const droppedCount = unlinked.length - keptUnlinked.length;
+      if (droppedCount > 0) {
+        logger.info(
+          { locationId, contactId, droppedCount, keptUnlinked: keptUnlinked.length, linked: linked.length, scopeConfidence },
+          'defense-exhibits: capped unlinked communication exhibits',
+        );
+      }
+
+      for (const c of [...linked, ...keptUnlinked]) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Communication: ${c.direction === 'inbound' ? 'From client' : 'To client'} (${c.comm_type})`,
@@ -434,7 +490,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true });
-      for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(inv, `Invoice: ${inv.invoice_number || inv.invoice_id || inv.invoice_status || 'GHL invoice'}`),
@@ -455,7 +511,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_timestamp', { ascending: true });
-      for (const p of scopedRows((enrollPay || []) as any[], opts?.enrollmentId, 'payment_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const p of scopedRows((enrollPay || []) as any[], opts?.enrollmentId, 'payment_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Enrollment Payment',
@@ -476,7 +532,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_date', { ascending: true });
-      for (const p of scopedRows((recPay || []) as any[], opts?.enrollmentId, 'payment_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const p of scopedRows((recPay || []) as any[], opts?.enrollmentId, 'payment_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Recurring Payment #${p.payment_number ?? '?'}`,
@@ -498,7 +554,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('cancellation_date', { ascending: true });
-      for (const c of scopedRows((cancels || []) as any[], opts?.enrollmentId, 'cancellation_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const c of scopedRows((cancels || []) as any[], opts?.enrollmentId, 'cancellation_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Cancellation Record',
@@ -519,7 +575,7 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('refund_date', { ascending: true });
-      for (const r of scopedRows((refunds || []) as any[], opts?.enrollmentId, 'refund_date', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const r of scopedRows((refunds || []) as any[], opts?.enrollmentId, 'refund_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Refund (${r.refund_type || 'partial'})`,
@@ -538,7 +594,7 @@ export const defenseExhibitsService = {
     // safety net for the unified `evidence` table additions made post-migration 010).
     try {
       const { rows: extra } = await evidenceRepository.getTimeline(locationId, contactId, { limit: 200 });
-      for (const e of scopedRows(extra as any[], opts?.enrollmentId, 'created_at', scopeWindowStart, scopeWindowEnd, scopeOfferId)) {
+      for (const e of scopedRows(extra as any[], opts?.enrollmentId, 'created_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         // Skip rows already covered by the per-table queries above (matched by id).
         if (exhibits.some(ex => ex.ref === e.id)) continue;
         // Only include high-signal types from the unified table
@@ -557,6 +613,12 @@ export const defenseExhibitsService = {
         });
       }
     } catch {}
+
+    // Under contact-only scope the evidence is not verified against a specific
+    // enrollment — tag every exhibit so the letter/PDF and reviewer can see it.
+    if (isContactOnly) {
+      for (const ex of exhibits) ex.unverifiedScope = true;
+    }
 
     // Build by-category index
     const byCategory: Record<ExhibitCategory, ExhibitEntry[]> = {

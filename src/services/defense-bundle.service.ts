@@ -26,16 +26,29 @@ export const defenseBundleService = {
     defenseId: string,
     locationId: string,
     contactId: string,
-    opts?: { enrollmentId?: string | null },
+    opts?: {
+      enrollmentId?: string | null;
+      scopeConfidence?: string;
+      offerId?: string | null;
+      enrollmentStart?: string | null;
+      enrollmentEnd?: string | null;
+    },
   ): Promise<string> {
     const supabase = getSupabase();
     const packet = await defenseRepository.getById(defenseId, locationId);
     const merchant = await merchantRepository.getByLocationId(locationId);
 
-    // 1. Build the exhibit list (same list that was used for the letter prompt)
+    // 1. Build the exhibit list (same list that was used for the letter prompt).
+    // The scope options must match the ones the letter used, or the PDF's exhibits
+    // will drift from the letter — e.g. a contact_only packet would otherwise scope
+    // to nothing here while the letter cited contact-wide exhibits.
     const enrollmentId = opts?.enrollmentId || packet.enrollment_id || undefined;
     const exhibitList = await defenseExhibitsService.buildExhibitList(locationId, contactId, {
       enrollmentId,
+      scopeConfidence: opts?.scopeConfidence,
+      offerId: opts?.offerId ?? (packet as any).offer_id ?? undefined,
+      enrollmentStart: opts?.enrollmentStart ?? undefined,
+      enrollmentEnd: opts?.enrollmentEnd ?? undefined,
     });
 
     // 2. Get the latest letter text

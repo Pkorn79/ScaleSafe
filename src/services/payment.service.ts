@@ -273,7 +273,14 @@ export const paymentService = {
   /**
    * Get all undisputed payments for a contact (used in defense compilation).
    */
-  async getUndisputedPayments(locationId: string, contactId: string): Promise<any[]> {
+  /**
+   * Prior undisputed transactions for the "prior payment / relationship" section.
+   * When an enrollmentId is supplied, same-enrollment payments are returned first so
+   * the defense letter leads with charges tied to the disputed program; payments from
+   * other enrollments follow only as secondary relationship evidence. Without an
+   * enrollmentId, behavior is unchanged (all contact payments, oldest first).
+   */
+  async getUndisputedPayments(locationId: string, contactId: string, enrollmentId?: string): Promise<any[]> {
     const { getSupabase } = await import('../clients/supabase.client');
     const supabase = getSupabase();
 
@@ -285,6 +292,12 @@ export const paymentService = {
       .order('created_at', { ascending: true });
 
     if (error) throw error;
-    return payments || [];
+    const rows = payments || [];
+    if (!enrollmentId) return rows;
+
+    // Same-enrollment first (primary), everything else after (secondary relationship evidence).
+    const sameEnrollment = rows.filter((p: any) => p.enrollment_id === enrollmentId);
+    const otherEnrollment = rows.filter((p: any) => p.enrollment_id !== enrollmentId);
+    return [...sameEnrollment, ...otherEnrollment];
   },
 };

@@ -103,6 +103,9 @@
         <div v-if="transactions.length === 0 && !transactionsLoading && compileForm.contactId" class="text-sm text-muted mt-2">
           No transactions found for this client. You can still file a defense with manual entry.
         </div>
+        <div v-if="transactionScopeWarning" class="text-sm mt-2" style="color: #b45309;">
+          ⚠️ {{ transactionScopeWarning }}
+        </div>
       </div>
 
       <div class="form-group">
@@ -213,6 +216,20 @@ const compileForm = ref({
 const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; offerName: string; enrollmentId: string; offerId: string }>>([]);
 const transactionsLoading = ref(false);
 const selectedTransactionId = ref('');
+
+// Warn when a transaction is selected but isn't linked to a specific program.
+// The backend will still scope by the payment event, but it may fall back to
+// contact-wide (needs-review) evidence — so surface that instead of silently
+// sending an empty enrollmentId.
+const transactionScopeWarning = computed(() => {
+  const txId = selectedTransactionId.value;
+  if (!txId) return '';
+  const tx = transactions.value.find(t => t.id === txId);
+  if (tx && !tx.enrollmentId) {
+    return 'This transaction isn’t linked to a specific program. ScaleSafe will try to match it to one from the transaction itself; if it can’t, the packet will be scoped to the whole client and marked "needs review" before it can be submitted.';
+  }
+  return '';
+});
 
 watch(() => compileForm.value.disputeDate, (disputeDate) => {
   if (!disputeDate) { compileForm.value.deadline = ''; return; }

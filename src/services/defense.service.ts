@@ -8,6 +8,7 @@ import { paymentService } from './payment.service';
 import { triggerService } from './trigger.service';
 import { storageService } from './storage.service';
 import { defenseExhibitsService, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
+import { disputeScopeService, type DisputeScope } from './dispute-scope.service';
 import { logger } from '../utils/logger';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
@@ -215,11 +216,33 @@ export const defenseService = {
     const addressee = input.addressee
       || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
 
-    // 1. Build the single-source-of-truth exhibit list (used by BOTH the prompt AND the PDF bundler)
-    // When an enrollmentId is available (from the transaction selector), scope exhibits to that enrollment.
-    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, {
+    // 0. Resolve the disputed transaction to a specific enrollment/program BEFORE
+    // gathering any evidence. This is the guard against dumping contact-wide evidence.
+    const scope = await disputeScopeService.resolveDisputeScope({
+      locationId: input.locationId,
+      contactId: input.contactId,
+      paymentEventId: input.paymentEventId,
       enrollmentId: input.enrollmentId,
+      offerId: input.offerId,
     });
+
+    // Persist the resolved linkage back onto the packet (paymentEventId is no longer dead weight).
+    if (scope.enrollmentId || scope.offerId) {
+      await defenseRepository.updateStatus(defenseId, 'processing', {
+        enrollment_id: scope.enrollmentId || undefined,
+        offer_id: scope.offerId || undefined,
+      } as any);
+    }
+
+    // 1. Build the single-source-of-truth exhibit list, scoped to the resolved enrollment.
+    const exhibitScope = {
+      enrollmentId: scope.enrollmentId || undefined,
+      scopeConfidence: scope.scopeConfidence,
+      offerId: scope.offerId,
+      enrollmentStart: scope.enrollmentStart,
+      enrollmentEnd: scope.enrollmentEnd,
+    };
+    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, exhibitScope);
 
     // 2. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
     const evidence = await evidenceRepository.getFullSnapshot(input.locationId, input.contactId);
@@ -228,8 +251,11 @@ export const defenseService = {
       evidence_count: exhibitList.exhibits.length,
     } as any);
 
-    // 3. Get undisputed payments (critical for defense — Prior Undisputed Transactions section)
-    const undisputedPayments = await paymentService.getUndisputedPayments(input.locationId, input.contactId);
+    // 3. Get undisputed payments (Prior Undisputed Transactions section), scoped to
+    // this enrollment when known so sibling-program payments don't pollute the main story.
+    const undisputedPayments = await paymentService.getUndisputedPayments(
+      input.locationId, input.contactId, scope.enrollmentId || undefined,
+    );
 
     // 4. Get contact details from GHL
     let contactDetails: Record<string, unknown> = {};
@@ -251,50 +277,30 @@ export const defenseService = {
     // 7. Build the AI prompt with the rewritten clinical-tone structure
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
     const userMessage = this.buildUserMessage(
-      input, contactDetails, merchant, exhibitList, undisputedPayments, category,
+      input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope,
     );
 
-    // 8. Call Claude API. If the AI provider is unavailable, still produce a factual
-    // fallback packet so the merchant is not left with no letter and no workflow.
+    // 8. Call Claude API. If the AI provider is unavailable AFTER retries, still produce
+    // a structured, transaction-specific fallback packet (not a generic "evidence found"
+    // paragraph), and mark it for review rather than complete.
     let result: { text: string; inputTokens: number; outputTokens: number };
     let modelUsed = 'claude';
+    let usedFallback = false;
     try {
       result = await callClaude(systemPrompt, userMessage, 8192);
     } catch (err: any) {
       modelUsed = 'fallback';
-      const merchantName = String((merchant as any)?.business_name || 'the merchant');
-      const clientName = String((contactDetails as any)?.firstName || (contactDetails as any)?.first_name || (contactDetails as any)?.name || 'the client');
-      const amount = Number(input.disputeAmount || 0);
-      const exhibitCount = exhibitList.exhibits.length;
+      usedFallback = true;
       logger.warn(
         { err: err?.message || String(err), defenseId },
-        'AI defense letter generation failed; using deterministic fallback letter',
+        'AI defense letter generation failed after retries; using structured fallback letter',
       );
       result = {
         inputTokens: 0,
         outputTokens: 0,
-        text: [
-          `${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
-          '',
-          `${addressee}`,
-          '',
-          `RE: Chargeback Dispute Response${input.caseNumber ? ` Case Number: ${input.caseNumber}` : ''}`,
-          `Reason Code: ${input.reasonCode}`,
-          `Disputed Amount: $${amount.toFixed(2)}`,
-          `Merchant: ${merchantName}`,
-          '',
-          `${merchantName} responds to the dispute filed by ${clientName}. This response summarizes the evidence currently available in ScaleSafe.`,
-          '',
-          'EVIDENCE SUMMARY',
-          `ScaleSafe found ${exhibitCount} evidence record(s) associated with this client and transaction context.`,
-          'Available evidence may include signed consent records, payment records, delivery/milestone records, communications, refunds, and cancellation history depending on what has been captured for this client.',
-          '',
-          'NEXT STEP',
-          'Review the attached exhibits and edit this fallback letter before submission. The AI draft service was temporarily unavailable, so ScaleSafe generated this factual fallback packet to keep the defense workflow moving.',
-          '',
-          'Respectfully submitted,',
-          merchantName,
-        ].join('\n'),
+        text: this.buildStructuredFallbackLetter(
+          input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee,
+        ),
       };
     }
 
@@ -325,9 +331,7 @@ export const defenseService = {
     let defensePacketUrl = '';
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      defensePacketUrl = await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, {
-        enrollmentId: input.enrollmentId,
-      });
+      defensePacketUrl = await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, exhibitScope);
     } catch (pdfErr: any) {
       logger.error({ err: pdfErr.message, defenseId }, 'Bundled PDF generation failed; defense packet not marked ready');
       await defenseRepository.updateStatus(defenseId, 'failed', {
@@ -343,13 +347,44 @@ export const defenseService = {
       return;
     }
 
-    await defenseRepository.updateStatus(defenseId, 'complete', {
+    // A packet must NOT be presented as a finished defense when the AI draft fell back
+    // OR when we could not scope the evidence to the disputed transaction. Mark those
+    // needs_review and do not fire the "ready" workflow.
+    const needsReview = usedFallback || scope.scopeConfidence === 'contact_only';
+    const finalStatus = needsReview ? 'needs_review' : 'complete';
+    const reviewReasons: string[] = [];
+    if (usedFallback) reviewReasons.push('AI draft was unavailable; a structured fallback letter was generated.');
+    if (scope.scopeConfidence === 'contact_only') reviewReasons.push('The disputed transaction could not be tied to a specific program; evidence is contact-wide.');
+    if (scope.gaps.length) reviewReasons.push(...scope.gaps);
+
+    await defenseRepository.updateStatus(defenseId, finalStatus, {
       defense_letter_text: result.text,
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
       template_id: template?.id || null,
       completed_at: new Date().toISOString(),
-    });
+      error_message: needsReview ? reviewReasons.join(' ') : null,
+    } as any);
+
+    if (needsReview) {
+      logger.info({ defenseId, usedFallback, scopeConfidence: scope.scopeConfidence }, 'Defense packet marked needs_review; ss_defense_ready not fired');
+      // Reflect a non-ready state on the contact; do not advertise the packet as ready.
+      try {
+        const api = await ghlApi(input.locationId);
+        await api.put(`/contacts/${input.contactId}`, {
+          customField: { [SS_CONTACT_FIELDS.DEFENSE_STATUS]: 'preparing' },
+        });
+      } catch (err) {
+        logger.warn({ err }, 'Failed to update defense (needs_review) status on contact');
+      }
+      logger.info({
+        defenseId,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        exhibitCount: exhibitList.exhibits.length,
+      }, 'Defense compilation complete (needs_review)');
+      return;
+    }
 
     // 11. Update GHL contact
     try {
@@ -469,6 +504,7 @@ LETTER STRUCTURE:
     exhibitList: ExhibitList,
     undisputedPayments: any[],
     category: string,
+    scope?: DisputeScope,
   ): string {
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const clientName = [contact.firstName || '', contact.lastName || ''].filter(Boolean).join(' ') || 'Client';
@@ -477,6 +513,23 @@ LETTER STRUCTURE:
 
     let msg = `TODAY'S DATE: ${today}\n\n`;
     msg += `ADDRESSEE: ${addressee}\n\n`;
+
+    // Anchor the letter on the specific disputed transaction/program so the model
+    // writes about THIS charge, not the contact's whole history.
+    if (scope) {
+      msg += `DISPUTED TRANSACTION SCOPE:\n`;
+      msg += `- Program/Offer: ${scope.offerName || (scope.offerId ? `offer ${scope.offerId}` : 'not resolved')}\n`;
+      if (scope.processorTransactionId) msg += `- Processor Transaction ID: ${scope.processorTransactionId}\n`;
+      if (scope.enrollmentStart) msg += `- Enrollment/Service Window: ${scope.enrollmentStart}${scope.enrollmentEnd ? ` to ${scope.enrollmentEnd}` : ' onward'}\n`;
+      msg += `- Scope Confidence: ${scope.scopeConfidence}\n`;
+      if (scope.scopeConfidence === 'contact_only') {
+        msg += `  NOTE: The disputed charge could not be tied to a single program. Write conservatively and do NOT assert program-specific service delivery that isn't in the exhibits below.\n`;
+      }
+      if (scope.gaps.length) {
+        msg += `- Evidence gaps: ${scope.gaps.join(' ')}\n`;
+      }
+      msg += `\n`;
+    }
 
     msg += `DISPUTE DETAILS:\n`;
     msg += `- Case/ARN Number: ${input.caseNumber || 'information not provided'}\n`;
@@ -547,6 +600,100 @@ LETTER STRUCTURE:
     }
 
     msg += `Generate the defense letter now. Use the exact exhibit letters (A, B, C…) provided above. Do not add or skip any.`;
+    return msg;
+  },
+
+  /**
+   * Deterministic, transaction-specific fallback letter used ONLY when the AI provider
+   * is unavailable after retries. This intentionally does NOT use the old generic
+   * "ScaleSafe found X evidence records" paragraph — it is a real, structured response
+   * built from the resolved scope and categorized exhibits, and the packet that carries
+   * it is marked needs_review (never complete, never fires ss_defense_ready).
+   */
+  buildStructuredFallbackLetter(
+    input: CompileDefenseInput,
+    scope: DisputeScope,
+    exhibitList: ExhibitList,
+    undisputedPayments: any[],
+    merchant: any,
+    contact: Record<string, unknown>,
+    addressee: string,
+  ): string {
+    const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const clientName = [contact.firstName || '', contact.lastName || ''].filter(Boolean).join(' ') || 'the cardholder';
+    const businessName = merchant?.business_name || 'The merchant';
+    const programName = scope.offerName || 'the purchased program';
+    const byCat = exhibitList.byCategory;
+
+    const exhibitRef = (ex: ExhibitEntry) => `Exhibit ${ex.letter} (${ex.name})`;
+    const listExhibits = (rows: ExhibitEntry[]) =>
+      rows.length ? rows.map((ex) => `  - ${exhibitRef(ex)}: ${ex.summary}`).join('\n') : '  - None on file.';
+
+    let msg = `${today}\n\n${addressee}\n\n`;
+    msg += `RE: Chargeback Dispute Response`;
+    msg += ` — Case Number: ${input.caseNumber || 'information not provided'}`;
+    msg += ` — Reason Code: ${input.reasonCode}`;
+    msg += ` — Disputed Amount: $${Number(input.disputeAmount).toFixed(2)}`;
+    msg += ` — Merchant: ${businessName}\n\n`;
+
+    msg += `TRANSACTION AND PROGRAM\n`;
+    msg += `${businessName} responds to the chargeback filed by ${clientName} disputing a `;
+    msg += `$${Number(input.disputeAmount).toFixed(2)} charge dated ${input.disputeDate}. `;
+    msg += `This response concerns ${programName}`;
+    if (scope.processorTransactionId) msg += ` (processor transaction ${scope.processorTransactionId})`;
+    msg += `. `;
+    if (scope.enrollmentStart) {
+      msg += `The service window on record runs from ${scope.enrollmentStart}${scope.enrollmentEnd ? ` to ${scope.enrollmentEnd}` : ' onward'}. `;
+    }
+    if (scope.scopeConfidence === 'contact_only') {
+      msg += `NOTE: This charge could not be tied to a single program; the evidence below is drawn from the cardholder's account and must be reviewed before submission.`;
+    }
+    msg += `\n\n`;
+
+    msg += `AUTHORIZATION / CONSENT EVIDENCE\n`;
+    msg += `${listExhibits(byCat.consent)}\n\n`;
+
+    msg += `SERVICE DELIVERY EVIDENCE\n`;
+    msg += `${listExhibits(byCat.service_delivery)}\n\n`;
+
+    msg += `PAYMENT / REFUND / CANCELLATION CONTEXT\n`;
+    msg += `${listExhibits([...byCat.payments, ...byCat.termination])}\n\n`;
+
+    msg += `PRIOR PAYMENT / RELATIONSHIP CONTEXT\n`;
+    if (undisputedPayments.length === 0) {
+      msg += `  - No prior undisputed transactions are on record for this cardholder.\n`;
+    } else {
+      for (const p of undisputedPayments) {
+        msg += `  - ${p.payment_date || p.created_at}: $${Number(p.amount || 0).toFixed(2)}\n`;
+      }
+    }
+    if (byCat.communication.length) {
+      msg += `  Documented communications: ${byCat.communication.length} exhibit(s) on file (${byCat.communication.map((ex) => ex.letter).join(', ')}).\n`;
+    }
+    msg += `\n`;
+
+    msg += `EVIDENCE GAPS\n`;
+    if (scope.gaps.length) {
+      for (const g of scope.gaps) msg += `  - ${g}\n`;
+    } else {
+      msg += `  - None identified during scope resolution.\n`;
+    }
+    msg += `\n`;
+
+    msg += `EXHIBIT INDEX\n`;
+    if (exhibitList.exhibits.length) {
+      for (const ex of exhibitList.exhibits) {
+        msg += `  ${exhibitRef(ex)}${ex.occurredAt ? ` — ${ex.occurredAt}` : ''}\n`;
+      }
+    } else {
+      msg += `  - No exhibits were assembled for this transaction.\n`;
+    }
+    msg += `\n`;
+
+    msg += `This response was assembled by ScaleSafe from the exhibits listed above. `;
+    msg += `It requires merchant review before submission.\n\n`;
+    msg += `Respectfully submitted,\n${businessName}`;
+
     return msg;
   },
 
@@ -707,10 +854,26 @@ LETTER STRUCTURE:
       addressee: (packet as any).addressee || '',
     };
 
-    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, {
+    // Resolve scope the same way the initial compilation does, so a regenerated letter
+    // stays transaction-specific instead of falling back to contact-wide evidence.
+    const scope = await disputeScopeService.resolveDisputeScope({
+      locationId: input.locationId,
+      contactId: input.contactId,
+      paymentEventId: (packet as any).payment_event_id || undefined,
       enrollmentId: input.enrollmentId,
+      offerId: (packet as any).offer_id || undefined,
     });
-    const undisputedPayments = await paymentService.getUndisputedPayments(input.locationId, input.contactId);
+    const exhibitScope = {
+      enrollmentId: scope.enrollmentId || undefined,
+      scopeConfidence: scope.scopeConfidence,
+      offerId: scope.offerId,
+      enrollmentStart: scope.enrollmentStart,
+      enrollmentEnd: scope.enrollmentEnd,
+    };
+    const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, exhibitScope);
+    const undisputedPayments = await paymentService.getUndisputedPayments(
+      input.locationId, input.contactId, scope.enrollmentId || undefined,
+    );
     let contactDetails: Record<string, unknown> = {};
     try {
       const api = await ghlApi(input.locationId);
@@ -722,7 +885,7 @@ LETTER STRUCTURE:
     const template = await defenseRepository.getDefenseTemplate(category);
 
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
-    const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category);
+    const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope);
     const result = await callClaude(systemPrompt, userMessage, 8192);
 
     // Insert new version
@@ -746,9 +909,7 @@ LETTER STRUCTURE:
     // Rebundle PDF
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, {
-        enrollmentId: input.enrollmentId,
-      });
+      await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, exhibitScope);
     } catch {}
 
     logger.info({ defenseId, version: nextVersion }, 'Defense letter regenerated');
@@ -788,11 +949,24 @@ LETTER STRUCTURE:
       .update({ defense_letter_text: letterText })
       .eq('id', defenseId);
 
-    // Rebundle PDF
+    // Rebundle PDF using the same resolved scope as compilation so the exhibit list
+    // in the PDF stays consistent with the edited letter (contact_only packets must
+    // keep their contact-wide exhibits rather than scoping to nothing).
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
-      await defenseBundleService.bundleDefensePdf(defenseId, packet.location_id, packet.contact_id, {
+      const scope = await disputeScopeService.resolveDisputeScope({
+        locationId: packet.location_id,
+        contactId: packet.contact_id,
+        paymentEventId: (packet as any).payment_event_id || undefined,
         enrollmentId: packet.enrollment_id || undefined,
+        offerId: (packet as any).offer_id || undefined,
+      });
+      await defenseBundleService.bundleDefensePdf(defenseId, packet.location_id, packet.contact_id, {
+        enrollmentId: scope.enrollmentId || undefined,
+        scopeConfidence: scope.scopeConfidence,
+        offerId: scope.offerId,
+        enrollmentStart: scope.enrollmentStart,
+        enrollmentEnd: scope.enrollmentEnd,
       });
     } catch {}
 
