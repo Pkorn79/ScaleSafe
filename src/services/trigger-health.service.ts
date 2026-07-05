@@ -4,6 +4,7 @@ import {
   getTriggerContracts,
   TriggerContract,
 } from '../constants/trigger-contracts';
+import { appEventTypeMatches } from '../utils/app-event-type';
 
 interface TriggerSubscriptionRow {
   trigger_key: string;
@@ -126,7 +127,7 @@ function buildRow(
 }
 
 function buildAppEventUse(logs: TriggerDeliveryLogRow[], eventType: string, label: string) {
-  const eventLogs = logs.filter((log) => log.trigger_key === 'ss_app_event' && log.payload?.event_type === eventType);
+  const eventLogs = logs.filter((log) => log.trigger_key === 'ss_app_event' && appEventTypeMatches(log.payload, eventType));
   return {
     eventType,
     label,

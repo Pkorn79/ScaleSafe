@@ -8,6 +8,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { triggerHealthService } from './trigger-health.service';
 import { isMerchantWebhookSecretEnforced } from '../utils/webhook-enforcement';
 import { getPaymentReminderDiagnostics } from '../jobs/payment-reminder-check';
+import { appEventTypeMatches } from '../utils/app-event-type';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -517,7 +518,7 @@ export const merchantService = {
 
     const dueCount = (dueRes.data || []).length;
     const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
-    const pulseLogs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'pulse_check_due');
+    const pulseLogs = (logsRes.data || []).filter((log: any) => appEventTypeMatches(log.payload, 'pulse_check_due'));
     const pulseEnabled = merchant.module_pulse !== false;
     const formUrlConfigured = true;
     const status = dueCount === 0

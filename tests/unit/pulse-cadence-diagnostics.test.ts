@@ -186,8 +186,12 @@ describe('runPulseCadenceCheck', () => {
       'loc_1',
       'ss_app_event',
       expect.objectContaining({
-        event_type: 'pulse_check_due',
+        event_type: 'Pulse Check Due',
         eventType: 'pulse_check_due',
+        event_type_key: 'pulse_check_due',
+        eventTypeKey: 'pulse_check_due',
+        app_event_type: 'pulse_check_due',
+        appEventType: 'pulse_check_due',
         event_type_display: 'Pulse Check Due',
         contact_id: 'contact_1',
         enrollment_id: 'enr_1',

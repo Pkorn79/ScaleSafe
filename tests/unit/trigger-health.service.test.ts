@@ -112,4 +112,38 @@ describe('trigger health service', () => {
 
     expect(report.recentNoSubscriptionTriggers).toContain('ss_app_event');
   });
+
+  it('recognizes pulse app-event logs that use the GHL display label plus raw event key', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'trigger_subscriptions') {
+        return thenableQuery({
+          data: [{ trigger_key: 'ss_app_event', subscription_url: 'https://example.test/hook', is_active: true }],
+          error: null,
+        });
+      }
+      if (table === 'trigger_delivery_logs') {
+        return thenableQuery({
+          data: [{
+            trigger_key: 'ss_app_event',
+            subscription_url: 'https://example.test/hook',
+            status: 'sent',
+            payload: {
+              event_type: 'Pulse Check Due',
+              eventType: 'pulse_check_due',
+              event_type_key: 'pulse_check_due',
+            },
+            created_at: '2026-06-04T15:00:00.000Z',
+          }],
+          error: null,
+        });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const report = await triggerHealthService.getHealth('loc_1');
+    const appEvent = report.rows.find((row) => row.key === 'ss_app_event');
+    const pulseUse = appEvent?.appEventUses?.find((item) => item.eventType === 'pulse_check_due');
+
+    expect(pulseUse?.lastSentAt).toBe('2026-06-04T15:00:00.000Z');
+  });
 });

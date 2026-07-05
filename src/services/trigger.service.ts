@@ -20,13 +20,26 @@ function normalizeTriggerPayload(
   triggerKey: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  const eventType = String(payload.event_type || payload.eventType || triggerKey.replace(/^ss_/, ''));
+  const fallbackEventType = triggerKey.replace(/^ss_/, '');
+  const eventType = firstNonBlank(payload.event_type, payload.eventType, fallbackEventType);
+  const eventTypeAlias = firstNonBlank(payload.eventType, payload.event_type, eventType);
+  const eventIdentity = firstNonBlank(
+    payload.event_type_key,
+    payload.eventTypeKey,
+    payload.event_key,
+    payload.eventKey,
+    payload.app_event_type,
+    payload.appEventType,
+    payload.eventType,
+    payload.event_type,
+    fallbackEventType,
+  );
   const deliveryKey = crypto
     .createHash('sha256')
     .update([
       locationId,
       triggerKey,
-      eventType,
+      eventIdentity,
       payload.contact_id || payload.contactId || '',
       payload.enrollment_id || payload.enrollmentId || '',
       payload.offer_id || payload.offerId || '',
@@ -38,7 +51,7 @@ function normalizeTriggerPayload(
   const normalized: Record<string, unknown> = {
     ...payload,
     event_type: eventType,
-    eventType,
+    eventType: eventTypeAlias,
     location_id: locationId,
     locationId,
     trigger_delivery_key: deliveryKey,
@@ -65,6 +78,14 @@ function normalizeTriggerPayload(
   }
 
   return normalized;
+}
+
+function firstNonBlank(...values: unknown[]): string {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return '';
 }
 
 function isGhlTriggerExecuteUrl(url: string): boolean {

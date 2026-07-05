@@ -8,6 +8,7 @@ import {
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { triggerService } from '../services/trigger.service';
+import { appEventTypeMatches } from '../utils/app-event-type';
 import { logger } from '../utils/logger';
 import { buildPulseCheckUrl } from '../utils/pulse-check-link';
 
@@ -103,8 +104,12 @@ export async function runPulseCadenceCheck(): Promise<void> {
       });
 
       const triggerResult = await triggerService.fireTrigger(enrollment.location_id, 'ss_app_event', {
-        event_type: 'pulse_check_due',
+        event_type: 'Pulse Check Due',
         eventType: 'pulse_check_due',
+        event_type_key: 'pulse_check_due',
+        eventTypeKey: 'pulse_check_due',
+        app_event_type: 'pulse_check_due',
+        appEventType: 'pulse_check_due',
         event_type_display: 'Pulse Check Due',
         eventTypeDisplay: 'Pulse Check Due',
         location_id: enrollment.location_id,
@@ -227,7 +232,7 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
 
   const dueCount = (dueRes.data || []).length;
   const activeAppEventSubscriptions = (subscriptionRes.data || []).length;
-  const pulseLogs = (logsRes.data || []).filter((log: any) => log.payload?.event_type === 'pulse_check_due');
+  const pulseLogs = (logsRes.data || []).filter((log: any) => appEventTypeMatches(log.payload, 'pulse_check_due'));
   const recentPulseSentAt = pulseLogs.find((log: any) => log.status === 'sent')?.created_at || null;
   const recentPulseNoSubscriptionAt = pulseLogs.find((log: any) => log.status === 'no_subscription')?.created_at || null;
   const pulseEnabled = merchant.module_pulse !== false;

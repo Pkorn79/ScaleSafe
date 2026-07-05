@@ -173,6 +173,47 @@ describe('Trigger Service - fireTrigger', () => {
     );
   });
 
+  test('preserves distinct display and raw app-event type values', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'ss_app_event',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/app',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      event_type: 'Pulse Check Due',
+      eventType: 'pulse_check_due',
+      event_type_key: 'pulse_check_due',
+      contact_id: 'c1',
+      enrollment_id: 'enr_1',
+    });
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/app',
+      expect.objectContaining({
+        event_type: 'Pulse Check Due',
+        eventType: 'pulse_check_due',
+        event_type_key: 'pulse_check_due',
+        contact_id: 'c1',
+        contactId: 'c1',
+        enrollment_id: 'enr_1',
+        enrollmentId: 'enr_1',
+      }),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+        }),
+      }),
+    );
+  });
+
   test('retries on failure and eventually marks as failed', async () => {
     mockGetActive.mockResolvedValue([
       {
