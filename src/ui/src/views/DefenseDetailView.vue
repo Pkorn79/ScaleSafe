@@ -38,6 +38,17 @@
           </span>
         </div>
 
+        <!-- Needs-review callout -->
+        <div v-if="packet.status === 'needs_review'" class="review-callout">
+          <strong>⚠️ This packet needs your review before submission.</strong>
+          <p class="review-callout-body">
+            ScaleSafe could not fully verify this packet — read the letter and exhibits carefully,
+            edit or regenerate the letter if needed, and only mark it submitted once you're
+            confident it accurately represents this dispute.
+          </p>
+          <p v-if="reviewReasons" class="review-callout-reasons">{{ reviewReasons }}</p>
+        </div>
+
         <!-- PDF inline preview -->
         <div v-if="packet.pdf_url" class="pdf-preview-container">
           <iframe
@@ -122,7 +133,10 @@ const tabs: TabDef[] = [
 
 const isPreSubmit = computed(() => {
   const ls = packet.value?.lifecycleStatus || packet.value?.lifecycle_status;
-  return ls === 'pending_submission' && packet.value?.status === 'complete';
+  // needs_review packets can still be submitted — after the merchant has reviewed
+  // (and optionally edited/regenerated) the letter. The callout above the letter
+  // explains why review is required first.
+  return ls === 'pending_submission' && ['complete', 'needs_review'].includes(packet.value?.status);
 });
 
 const daysRemaining = computed(() => {
@@ -155,9 +169,16 @@ function statusBadge(status: string): string {
   const map: Record<string, string> = {
     pending: 'badge-yellow', processing: 'badge-blue',
     complete: 'badge-green', failed: 'badge-red',
+    needs_review: 'badge-orange',
   };
   return map[status] || 'badge-gray';
 }
+
+// Reasons the packet was held for review (stored server-side at compilation time).
+const reviewReasons = computed(() => {
+  if (packet.value?.status !== 'needs_review') return '';
+  return packet.value?.error_message || '';
+});
 
 function formatDate(d: string): string {
   if (!d) return '-';
@@ -282,6 +303,29 @@ onMounted(async () => {
   border-radius: 6px;
   font-size: 13px;
   margin-bottom: 12px;
+}
+
+.review-callout {
+  padding: 12px 14px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-left: 4px solid #ea580c;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #7c2d12;
+  margin-bottom: 12px;
+}
+
+.review-callout-body {
+  margin: 6px 0 0;
+}
+
+.review-callout-reasons {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid #fed7aa;
+  font-size: 12px;
+  color: #9a3412;
 }
 
 .deadline-warning {

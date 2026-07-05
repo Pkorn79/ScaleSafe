@@ -48,6 +48,9 @@
           <span class="badge" :class="lifecycleBadge(p.lifecycleStatus || p.lifecycle_status || 'pending_submission')" style="margin-left:8px">
             {{ humanizeEventType(p.lifecycleStatus || p.lifecycle_status || 'pending_submission') }}
           </span>
+          <span v-if="p.status && p.status !== 'complete'" class="badge" :class="statusBadge(p.status)" style="margin-left:6px">
+            {{ humanizeEventType(p.status) }}
+          </span>
         </div>
         <div class="text-sm text-muted">{{ formatTimestamp(p.created_at, 'short') }}</div>
       </div>
@@ -273,6 +276,16 @@ function lifecycleBadge(ls: string): string {
   if (ls === 'lost') return 'badge-red';
   if (ls === 'withdrawn') return 'badge-gray';
   return 'badge-gray';
+}
+
+// Compilation status badge — only rendered on cards when status !== 'complete'
+// so finished packets stay uncluttered while stuck/held ones stand out.
+function statusBadge(status: string): string {
+  const map: Record<string, string> = {
+    pending: 'badge-yellow', processing: 'badge-blue',
+    failed: 'badge-red', needs_review: 'badge-orange',
+  };
+  return map[status] || 'badge-gray';
 }
 
 function daysUntil(d: string | null): number | null {

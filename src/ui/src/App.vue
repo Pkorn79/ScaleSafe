@@ -313,6 +313,7 @@ h1, h2, h3, h4 {
 .badge-red    { background: #fee2e2;              color: #991b1b; }
 .badge-blue   { background: var(--ss-teal-50);    color: var(--ss-teal-700); }   /* repurposed: was blue, now teal accent - preserves "informational tone" semantics */
 .badge-gray   { background: var(--ss-navy-100);   color: var(--ss-navy-600); }
+.badge-orange { background: #ffedd5;              color: #9a3412; }   /* needs_review: attention-required, distinct from pending (yellow) and failed (red) */
 .badge-purple { background: var(--ss-navy-100);   color: var(--ss-navy-700); }   /* deprecated; renamed to navy semantically. callers should migrate to badge-gray */
 
 /* -- Tables ------------------------------------------- */

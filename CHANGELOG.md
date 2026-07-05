@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — needs_review UI treatment
+
+### Added (defense packet review UX, 2026-07-05)
+- **Clear visual treatment for `needs_review` defense packets** (UI only — no generation logic changes).
+  - New global `badge-orange` class; `needs_review` renders orange, distinct from `pending` (yellow),
+    `processing` (blue), `complete` (green), and `failed` (red).
+  - Defense packet list cards now show a compilation-status badge whenever status ≠ `complete`
+    (needs_review / failed / processing / pending), alongside the lifecycle badge.
+  - Defense detail page shows a prominent callout under the deadline strip when a packet is
+    `needs_review`, explaining review is required before submission and listing the stored
+    review reasons (from `error_message`).
+  - "Mark Submitted" is now available for `needs_review` packets (backend already permitted it —
+    the UI previously only offered it for `complete`, which would have stranded reviewed packets).
+
 ## Unreleased — Defense packet regression fix (transaction-scoped evidence)
 
 > **Deploy ordering:** migration `084_defense_needs_review_status.sql` MUST be applied in Supabase
