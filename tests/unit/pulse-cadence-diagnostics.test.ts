@@ -1,6 +1,8 @@
 const mockFrom = jest.fn();
 const mockMerchant = jest.fn();
 const mockGhlPut = jest.fn();
+const mockIdempotencyExists = jest.fn();
+const mockIdempotencyRecord = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -13,6 +15,13 @@ jest.mock('../../src/clients/ghl.client', () => ({
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     getByLocationId: (...args: any[]) => mockMerchant(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/idempotency.repository', () => ({
+  idempotencyRepository: {
+    exists: (...args: any[]) => mockIdempotencyExists(...args),
+    record: (...args: any[]) => mockIdempotencyRecord(...args),
   },
 }));
 
@@ -107,6 +116,8 @@ describe('runPulseCadenceCheck', () => {
     });
     mockGhlPut.mockResolvedValue({ data: {} });
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+    mockIdempotencyExists.mockResolvedValue(false);
+    mockIdempotencyRecord.mockResolvedValue(undefined);
   });
 
   it('syncs pulse contact fields and fires the shared app-event payload with durable aliases', async () => {
@@ -195,5 +206,44 @@ describe('runPulseCadenceCheck', () => {
         next_pulse_due_at: expect.any(String),
       }),
     ]));
+    expect(mockIdempotencyRecord).toHaveBeenCalledWith(
+      'pulse-check:loc_1:enr_1:2026-06-29T00:00:00.000Z',
+      'pulse_check',
+      'loc_1',
+      expect.objectContaining({ sent: 1, failed: 0, next_pulse_due_at: '2026-06-29T00:00:00.000Z' }),
+    );
+  });
+
+  it('does not resend the same due pulse when already recorded', async () => {
+    mockIdempotencyExists.mockResolvedValue(true);
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        const query: any = {
+          select: jest.fn(() => query),
+          eq: jest.fn(() => query),
+          in: jest.fn(() => query),
+          lte: jest.fn(() => query),
+          then: (resolve: any) => Promise.resolve({
+            data: [{
+              id: 'enr_1',
+              location_id: 'loc_1',
+              contact_id: 'contact_1',
+              offer_id: 'offer_1',
+              status: 'enrolled',
+              pulse_frequency_days: 14,
+              next_pulse_due_at: '2026-06-29T00:00:00.000Z',
+            }],
+            error: null,
+          }).then(resolve),
+        };
+        return query;
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await runPulseCadenceCheck();
+
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+    expect(mockIdempotencyRecord).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import {
   WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
   WORKFLOW_PULSE_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
+import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
@@ -49,6 +50,18 @@ export async function runPulseCadenceCheck(): Promise<void> {
 
   for (const enrollment of enrollments) {
     try {
+      const pulseEventId = [
+        'pulse-check',
+        enrollment.location_id,
+        enrollment.id,
+        enrollment.next_pulse_due_at || '',
+      ].join(':');
+      if (await idempotencyRepository.exists(pulseEventId, 'pulse_check', enrollment.location_id)) {
+        skipped++;
+        logger.info({ locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse cadence check skipped by idempotency');
+        continue;
+      }
+
       const merchant = await merchantRepository.getByLocationId(enrollment.location_id);
       if (merchant.module_pulse === false) {
         skipped++;
@@ -165,6 +178,11 @@ export async function runPulseCadenceCheck(): Promise<void> {
         .eq('id', enrollment.id);
 
       if (updateError) throw updateError;
+      await idempotencyRepository.record(pulseEventId, 'pulse_check', enrollment.location_id, {
+        sent: triggerResult.sent,
+        failed: triggerResult.failed,
+        next_pulse_due_at: enrollment.next_pulse_due_at,
+      });
       sent++;
     } catch (err: any) {
       skipped++;
