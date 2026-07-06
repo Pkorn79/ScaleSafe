@@ -35,7 +35,8 @@ export interface ReasonCodeInfo {
   displayName: string;
 }
 
-/** Merchant-side response window in calendar days, per network. */
+/** Card-network MAXIMUM response window in calendar days, per network. These are
+ *  what the ACQUIRER gets — never use them as the merchant's default deadline. */
 export const NETWORK_RESPONSE_DAYS: Record<CardNetwork, number> = {
   visa: 30,
   mastercard: 45,
@@ -44,6 +45,19 @@ export const NETWORK_RESPONSE_DAYS: Record<CardNetwork, number> = {
   // conservative end so a default deadline never overshoots the real one.
   discover: 20,
 };
+
+/** Merchant-safe operational deadline default. Processors/acquirers require the
+ *  merchant's response well before the network maximum (they need time to compile
+ *  and forward it). Unless an actual processor/acquirer due date is supplied,
+ *  deadline defaults must never exceed this. Mirrored in DefenseView.vue. */
+export const OPERATIONAL_RESPONSE_DAYS = 20;
+
+/** Default deadline window (days) for a reason code: the network window capped at
+ *  the merchant-safe operational deadline. */
+export function operationalResponseDays(code: string): number {
+  const network = responseWindowDays(code);
+  return Math.min(network ?? OPERATIONAL_RESPONSE_DAYS, OPERATIONAL_RESPONSE_DAYS);
+}
 
 const RC = (code: string, network: CardNetwork, category: DisputeCategory, displayName: string): ReasonCodeInfo =>
   ({ code, network, category, displayName });

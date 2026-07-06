@@ -34,6 +34,16 @@ describe('scopedRows fail-safe', () => {
     expect(ids).not.toContain('r2'); // sibling enrollment excluded
   });
 
+  test('legacy rows with the enrollment id only in raw_payload are included for exact scope', () => {
+    const legacy = [
+      { id: 'legacy_match', enrollment_id: null, raw_payload: { enrollmentId: 'enr_target' }, created_at: '2026-01-10' },
+      { id: 'legacy_snake', enrollment_id: null, raw_payload: { enrollment_id: 'enr_target' }, created_at: '2026-01-11' },
+      { id: 'legacy_other', enrollment_id: null, raw_payload: { enrollmentId: 'enr_sibling' }, created_at: '2026-01-12' },
+    ];
+    const result = scopedRows(legacy, 'enr_target', 'created_at', null, null, null, 'exact');
+    expect(result.map((r) => r.id)).toEqual(['legacy_match', 'legacy_snake']);
+  });
+
   test('unlinked rows within the enrollment window are included; outside are excluded', () => {
     const windowStart = new Date('2026-01-01');
     const windowEnd = new Date('2026-01-31');

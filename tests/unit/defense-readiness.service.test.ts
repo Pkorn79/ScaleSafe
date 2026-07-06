@@ -44,6 +44,7 @@ function exhibitList(byCategory: Partial<ExhibitList['byCategory']>): ExhibitLis
       termination: by.termination.length,
     },
     enrollmentPacketPath: null as any,
+    sourceErrors: [],
   };
 }
 

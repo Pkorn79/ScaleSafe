@@ -122,7 +122,9 @@
           </optgroup>
         </select>
         <div v-if="selectedNetwork" class="text-sm text-muted mt-2">
-          {{ selectedNetwork.label }} response window: {{ selectedNetwork.days }} days from the dispute date.
+          {{ selectedNetwork.label }} allows up to {{ selectedNetwork.days }} days, but processors usually require
+          your response sooner — ScaleSafe defaults the deadline to {{ Math.min(selectedNetwork.days, 20) }} days
+          from the dispute date. Use your processor's actual due date if you have one.
         </div>
       </div>
       <div class="grid grid-2">
@@ -168,7 +170,7 @@ import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
-import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp, pluralize } from '../utils/humanize';
+import { humanizeEventType, humanizeReasonCode, maskTransactionId, formatTimestamp, formatCalendarDate, parseDateValue, pluralize } from '../utils/humanize';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -234,9 +236,9 @@ const transactionScopeWarning = computed(() => {
 });
 
 // Reason codes grouped by network, mirroring src/constants/reason-codes.ts.
-// Days = the network's merchant response window (Visa 30, MC 45, Amex 20,
-// Discover ~20 conservative) — an Amex deadline defaulted past day 20 is a
-// default loss, so the deadline must follow the selected code's network.
+// Days = the network's MAXIMUM response window (Visa 30, MC 45, Amex 20,
+// Discover ~20 conservative), shown for context only — the default deadline is
+// capped at OPERATIONAL_RESPONSE_DAYS below, never the network maximum.
 const REASON_CODE_GROUPS = [
   {
     network: 'visa', label: 'Visa', days: 30,
@@ -302,12 +304,16 @@ const selectedNetwork = computed(() => {
   return group ? { label: group.label, days: group.days } : null;
 });
 
+// Merchant-safe operational deadline. Card-network maximums (Visa 30, MC 45) are
+// what the ACQUIRER gets — processors and acquirers require the merchant's response
+// well before that, and a merchant who trusts "45 days" has already lost. Unless an
+// actual processor/acquirer due date is supplied, never default past this.
+const OPERATIONAL_RESPONSE_DAYS = 20;
+
 function recomputeDeadline() {
   const disputeDate = compileForm.value.disputeDate;
   if (!disputeDate) { compileForm.value.deadline = ''; return; }
-  // Default to the strictest window (20 days) when the network is unknown —
-  // better to prompt the merchant early than to blow a real deadline.
-  const days = selectedNetwork.value?.days ?? 20;
+  const days = Math.min(selectedNetwork.value?.days ?? OPERATIONAL_RESPONSE_DAYS, OPERATIONAL_RESPONSE_DAYS);
   const deadline = new Date(disputeDate);
   deadline.setDate(deadline.getDate() + days);
   compileForm.value.deadline = deadline.toISOString().slice(0, 10);
@@ -343,8 +349,7 @@ const filteredPackets = computed(() => {
 });
 
 function formatDate(d: string): string {
-  if (!d) return '-';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatCalendarDate(d) || '-';
 }
 
 function lifecycleBadge(ls: string): string {
@@ -368,7 +373,7 @@ function statusBadge(status: string): string {
 
 function daysUntil(d: string | null): number | null {
   if (!d) return null;
-  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+  return Math.ceil((parseDateValue(d).getTime() - Date.now()) / 86400000);
 }
 
 onMounted(async () => {

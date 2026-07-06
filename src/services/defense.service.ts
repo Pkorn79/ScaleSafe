@@ -280,19 +280,28 @@ export const defenseService = {
       input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope,
     );
 
-    // 8. Call Claude API. If the AI provider is unavailable AFTER retries, still produce
-    // a structured, transaction-specific fallback packet (not a generic "evidence found"
-    // paragraph), and mark it for review rather than complete.
+    // 8. Call Claude API. If the AI provider is unavailable AFTER retries (and any
+    // configured fallback models), still produce a structured, transaction-specific
+    // fallback packet (not a generic "evidence found" paragraph), and mark it for
+    // review rather than complete. The true provider failure is preserved in
+    // internal_debug; error_message stays merchant-facing.
     let result: { text: string; inputTokens: number; outputTokens: number };
     let modelUsed = 'claude';
     let usedFallback = false;
+    let modelAttempts: unknown = null;
+    let aiFailure: { message: string; status?: number } | null = null;
     try {
-      result = await callClaude(systemPrompt, userMessage, 8192);
+      const ai = await callClaude(systemPrompt, userMessage, 8192);
+      result = ai;
+      modelUsed = ai.model || 'claude';
+      modelAttempts = ai.modelAttempts || null;
     } catch (err: any) {
       modelUsed = 'fallback';
       usedFallback = true;
+      aiFailure = { message: err?.message || String(err), status: err?.response?.status };
+      modelAttempts = err?.modelAttempts || null;
       logger.warn(
-        { err: err?.message || String(err), defenseId },
+        { err: aiFailure.message, status: aiFailure.status, modelAttempts, defenseId },
         'AI defense letter generation failed after retries; using structured fallback letter',
       );
       result = {
@@ -304,9 +313,11 @@ export const defenseService = {
       };
     }
 
-    // 9. Write the letter to defense_letter_versions as version 1 and mirror to the fast-read column
+    // 9. Write the letter to defense_letter_versions as version 1 and mirror to the
+    // fast-read column. Supabase inserts return { error } rather than throwing — an
+    // ignored error here is exactly how fallback letters silently went unversioned.
     try {
-      await supabase.from('defense_letter_versions').insert({
+      const { error: versionErr } = await supabase.from('defense_letter_versions').insert({
         defense_packet_id: defenseId,
         version_number: 1,
         letter_text: result.text,
@@ -314,9 +325,13 @@ export const defenseService = {
         model_used: modelUsed,
         prompt_tokens_used: result.inputTokens,
         response_tokens_used: result.outputTokens,
+        notes: usedFallback ? 'Structured fallback letter — AI provider unavailable' : null,
       });
+      if (versionErr) {
+        logger.error({ err: versionErr.message, defenseId, generatedBy: modelUsed === 'fallback' ? 'system' : 'ai' }, 'Letter version insert FAILED — version history is missing this letter');
+      }
     } catch (vErr: any) {
-      logger.warn({ err: vErr.message, defenseId }, 'Failed to insert letter version row (non-fatal — letter still saved on packet)');
+      logger.error({ err: vErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
     }
 
     await defenseRepository.updateStatus(defenseId, 'processing', {
@@ -347,14 +362,17 @@ export const defenseService = {
       return;
     }
 
-    // A packet must NOT be presented as a finished defense when the AI draft fell back
-    // OR when we could not scope the evidence to the disputed transaction. Mark those
-    // needs_review and do not fire the "ready" workflow.
+    // A packet must NOT be presented as a finished defense when the AI draft fell back,
+    // when we could not scope the evidence to the disputed transaction, OR when an
+    // evidence source query failed (the packet is missing that source entirely). Mark
+    // those needs_review and do not fire the "ready" workflow.
+    const sourceErrors = exhibitList.sourceErrors || [];
     const needsReview = usedFallback
       || scope.scopeConfidence === 'contact_only'
       || unknownReasonCode
       || readiness.redFlags.length > 0
-      || readiness.missingEvidence.length > 0;
+      || readiness.missingEvidence.length > 0
+      || sourceErrors.length > 0;
     const finalStatus = needsReview ? 'needs_review' : 'complete';
     const reviewReasons: string[] = [];
     if (readiness.recommendAccept) reviewReasons.push('RECOMMENDATION: consider accepting this dispute rather than fighting it.');
@@ -363,6 +381,7 @@ export const defenseService = {
     if (usedFallback) reviewReasons.push('AI draft was unavailable; a structured fallback letter was generated.');
     if (scope.scopeConfidence === 'contact_only') reviewReasons.push('The disputed transaction could not be tied to a specific program; evidence is contact-wide.');
     if (unknownReasonCode) reviewReasons.push(`Reason code "${input.reasonCode}" is not recognized; the letter uses a generic strategy and must be reviewed against the network's actual requirements for this code.`);
+    if (sourceErrors.length) reviewReasons.push('Some evidence sources could not be read while assembling this packet, so the exhibit list may be incomplete.');
     if (scope.gaps.length) reviewReasons.push(...scope.gaps);
 
     await defenseRepository.updateStatus(defenseId, finalStatus, {
@@ -373,6 +392,26 @@ export const defenseService = {
       completed_at: new Date().toISOString(),
       error_message: needsReview ? reviewReasons.join(' ') : null,
     } as any);
+
+    // Preserve the true failure internals for debugging (never merchant-facing).
+    // Written with its own guarded update so a missing column (migration 086 not
+    // yet applied) degrades to a warn log instead of failing compilation.
+    const internalDebug: Record<string, unknown> = {};
+    if (aiFailure) internalDebug.ai_failure = aiFailure;
+    if (modelAttempts) internalDebug.model_attempts = modelAttempts;
+    if (!usedFallback) internalDebug.final_model_used = modelUsed;
+    if (sourceErrors.length) internalDebug.exhibit_source_errors = sourceErrors;
+    if (Object.keys(internalDebug).length) {
+      try {
+        const { error: dbgErr } = await supabase
+          .from('defense_packets')
+          .update({ internal_debug: internalDebug })
+          .eq('id', defenseId);
+        if (dbgErr) logger.warn({ err: dbgErr.message, defenseId }, 'Failed to persist internal_debug (is migration 086 applied?)');
+      } catch (dbgErr: any) {
+        logger.warn({ err: dbgErr.message, defenseId }, 'Failed to persist internal_debug (is migration 086 applied?)');
+      }
+    }
 
     if (needsReview) {
       logger.info({ defenseId, usedFallback, scopeConfidence: scope.scopeConfidence }, 'Defense packet marked needs_review; ss_defense_ready not fired');
@@ -930,15 +969,18 @@ LETTER STRUCTURE:
     const result = await callClaude(systemPrompt, userMessage, 8192);
 
     // Insert new version
-    await supabase.from('defense_letter_versions').insert({
+    const { error: regenVersionErr } = await supabase.from('defense_letter_versions').insert({
       defense_packet_id: defenseId,
       version_number: nextVersion,
       letter_text: result.text,
       generated_by: 'ai',
-      model_used: 'claude',
+      model_used: result.model || 'claude',
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
     });
+    if (regenVersionErr) {
+      logger.error({ err: regenVersionErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
+    }
 
     // Mirror to fast-read column
     await defenseRepository.updateStatus(defenseId, packet.status, {

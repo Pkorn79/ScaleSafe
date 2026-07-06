@@ -1,10 +1,46 @@
 import {
   humanizeEventType,
   formatTimestamp,
+  formatCalendarDate,
+  parseDateValue,
   humanizeReasonCode,
   maskTransactionId,
   pluralize,
 } from '../../src/ui/src/utils/humanize';
+
+describe('date-only values (no timezone shift)', () => {
+  // A DATE column value like response_deadline is a calendar date, not an instant.
+  // new Date('2026-08-16') is UTC midnight, which US timezones render as Aug 15 —
+  // exactly the live-test bug where the Aug 16 deadline displayed as Aug 15.
+  test('parseDateValue treats YYYY-MM-DD as LOCAL midnight', () => {
+    const d = parseDateValue('2026-08-16');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(7); // August
+    expect(d.getDate()).toBe(16); // local date — not shifted to the 15th
+    expect(d.getHours()).toBe(0);
+  });
+
+  test('formatCalendarDate renders a date-only string as that exact calendar date', () => {
+    expect(formatCalendarDate('2026-08-16')).toBe('Aug 16, 2026');
+    expect(formatCalendarDate('2026-01-01')).toBe('Jan 1, 2026');
+    expect(formatCalendarDate('2026-12-31')).toBe('Dec 31, 2026');
+  });
+
+  test('formatTimestamp short mode renders a date-only string without shifting', () => {
+    expect(formatTimestamp('2026-08-16', 'short')).toBe('Aug 16');
+  });
+
+  test('full timestamps still parse as instants', () => {
+    const d = parseDateValue('2026-08-16T12:34:56Z');
+    expect(d.getTime()).toBe(new Date('2026-08-16T12:34:56Z').getTime());
+  });
+
+  test('formatCalendarDate handles null/undefined/invalid', () => {
+    expect(formatCalendarDate(null)).toBe('');
+    expect(formatCalendarDate(undefined)).toBe('');
+    expect(formatCalendarDate('not-a-date')).toBe('');
+  });
+});
 
 describe('humanizeEventType', () => {
   test('curated slug returns the curated label', () => {

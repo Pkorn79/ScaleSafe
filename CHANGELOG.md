@@ -5,6 +5,63 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense live-test fixes (packet a2d357fa, 2026-07-06)
+
+> **Deploy ordering:** migration `086_defense_live_test_fixes.sql` was applied in Supabase by Philip
+> on 2026-07-06 BEFORE this deploy (in chunks, with a live schema diagnostic in between — the file
+> documents what ran). It re-applies migration 048's columns (never applied live), backfills
+> `enrollment_id` from `raw_payload`, aligns `evidence_consent`/`evidence_enrollment_payment` with
+> the code's write paths (live drift — consent and enrollment-payment evidence inserts were failing),
+> widens `defense_letter_versions.generated_by` to allow `'system'`, and adds
+> `defense_packets.internal_debug`.
+
+### Fixed (live defense packet failures, 2026-07-06)
+- **Evidence source query failures are no longer silently swallowed.** Supabase returns
+  `{ data, error }` without throwing; the defense exhibit builder ignored `error` on every source
+  query, so a schema mismatch (live `evidence_milestones.enrollment_id` missing) silently dropped
+  all milestone evidence. Every source query now records failures into `ExhibitList.sourceErrors`
+  (error-level log), and any source error forces `needs_review` and suppresses `ss_defense_ready`.
+- **Fallback letters are now versioned.** `defense_letter_versions.generated_by` rejected
+  `'system'` and the insert error was invisible — fallback letters never got a version row. The
+  CHECK now allows `'system'`, inserts check their error and log loudly, and fallback versions carry
+  an explanatory note.
+- **True AI failure reason preserved.** The packet's `error_message` stays merchant-facing; the
+  provider failure (message, HTTP status, per-model attempts) and any exhibit source errors are
+  written to `defense_packets.internal_debug` (degrades to a warn log if the column is missing).
+- **Legacy milestone scoping.** `scopedRows` now also reads `raw_payload.enrollment_id`/
+  `enrollmentId` (in addition to `defense_metadata`), so pre-048 rows scope to the disputed
+  enrollment even without the backfill.
+- **Date-only display no longer shifts a day.** `response_deadline` (`2026-08-16`) rendered as
+  Aug 15 in US timezones (`new Date('YYYY-MM-DD')` parses UTC midnight). New `parseDateValue`/
+  `formatCalendarDate` in `humanize.ts` treat date-only values as local calendar dates; DefenseView,
+  DefenseDetailView, and the days-remaining countdowns use them.
+- **Merchant-safe deadline defaults.** The compile form no longer defaults the response deadline to
+  the card network's maximum (MC 45d); defaults are capped at a 20-day operational window
+  (`OPERATIONAL_RESPONSE_DAYS`, mirrored in `reason-codes.ts`), with copy telling the merchant to
+  use their processor's actual due date when known.
+- **Defense packet noise.** Internal readiness-score threshold events (`custom_event` rows with
+  `event_type: evidence_milestone` / `readiness_score`) are excluded from exhibits — they are
+  bookkeeping, not service-delivery proof. Unlinked communications now sort after all other
+  exhibits (they led the live packet as Exhibits A–E), and the signed enrollment packet leads when a
+  reason code's priority list has no consent key (per-code ordering like 13.6's refund-first is
+  unchanged).
+
+### Added (AI model fallback, 2026-07-06)
+- **Ordered model fallback in `anthropic.client.ts`.** `ANTHROPIC_MODEL_PRIMARY` +
+  `ANTHROPIC_MODEL_FALLBACKS` (comma-separated). Transient errors (429/5xx/network) retry the same
+  model with backoff; the next model is tried only on 404 (retired/unknown model), 403 (model
+  access), or exhausted transient retries. 400/401/refusals/format errors throw immediately —
+  falling back there would hide product bugs. Every attempt is recorded (`modelAttempts`) and
+  surfaced on success and on thrown errors; the letter version row records the model actually used.
+
+### Tests
+- New: fallback letters get a version row; AI failure internals in `internal_debug` with clean
+  merchant-facing text; source-error → `needs_review` (no ready fire); legacy raw_payload milestone
+  inclusion; milestones schema failure recorded + logged; internal score-event exclusion; packet
+  leads/unlinked comms demoted for 4855-style priorities; date-only rendering without timezone
+  shift; model fallback on 404/403/transient-exhaustion only; ready fired exactly once.
+  Full suite: 109 suites / 925 tests green.
+
 ## Unreleased — Defense optimization Phase 1 (reason-code-aware packets)
 
 > **Deploy ordering:** migration `085_seed_expanded_reason_codes.sql` should be applied in Supabase

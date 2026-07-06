@@ -72,6 +72,16 @@ export interface ExhibitEntry {
   meta?: Record<string, unknown>;
   /** True when this exhibit was included under contact-only (unverified) scope */
   unverifiedScope?: boolean;
+  /** True for low-signal exhibits (e.g. unlinked comms) — sorted after everything else */
+  deprioritized?: boolean;
+}
+
+/** A defense evidence source whose query failed — the packet is missing that
+ *  source's exhibits entirely, so callers must surface it (needs_review), never
+ *  present the packet as complete. */
+export interface ExhibitSourceError {
+  source: string;
+  message: string;
 }
 
 export interface ExhibitList {
@@ -85,6 +95,8 @@ export interface ExhibitList {
     termination: number;
   };
   enrollmentPacketPath: string | null;
+  /** Evidence source queries that failed (schema drift, etc.) — never silently empty */
+  sourceErrors: ExhibitSourceError[];
 }
 
 /** Convert column index to letter: 1→A, 2→B… 26→Z, 27→AA… */
@@ -166,11 +178,16 @@ export function scopedRows<T extends Record<string, any>>(
   return (rows || []).filter((row) => {
     if (row.enrollment_id === enrollmentId) return true;
     if (row.enrollment_id) return false;
+    // Legacy rows (pre-048 write paths) carry the enrollment/offer link only inside
+    // defense_metadata or raw_payload — consult both before falling to the date window.
     const meta = row.defense_metadata || {};
-    const metaEnrollmentId = meta.enrollmentId || meta.enrollment_id || meta.service?.enrollmentId || meta.service?.enrollment_id;
+    const raw = row.raw_payload || {};
+    const metaEnrollmentId = meta.enrollmentId || meta.enrollment_id || meta.service?.enrollmentId || meta.service?.enrollment_id
+      || raw.enrollmentId || raw.enrollment_id;
     if (metaEnrollmentId === enrollmentId) return true;
     if (metaEnrollmentId) return false;
-    const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id;
+    const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id
+      || raw.offerId || raw.offer_id;
     if (offerId && (row.offer_id === offerId || metaOfferId === offerId)) return true;
     if (row.offer_id || metaOfferId) return false;
     if (!windowStart || !windowEnd) return true;
@@ -256,12 +273,20 @@ export function normalizeEvidencePriorities(raw: unknown): string[] {
 }
 
 function exhibitPriorityRank(exhibit: ExhibitEntry, priorities: string[]): number {
+  // Low-signal exhibits (unlinked comms) go after everything, matched or not.
+  if (exhibit.deprioritized) return priorities.length + 1;
   const keys = SOURCE_PRIORITY_KEYS[exhibit.source] || [];
   let best = priorities.length;
   for (const key of keys) {
     const idx = priorities.indexOf(key);
     if (idx !== -1 && idx < best) best = idx;
   }
+  // The signed enrollment packet is the strongest single piece of evidence. When a
+  // reason code's priority list ranks it (via 'consent' etc.) that rank wins — e.g.
+  // 13.6 deliberately leads with the refund record. But when the list has no consent
+  // key at all (e.g. 4855), the packet must LEAD the exhibits, not fall behind
+  // unmatched noise. (The 4855 live test put five outbound emails ahead of it.)
+  if (exhibit.source === 'enrollment_packet_pdf' && best === priorities.length) return -1;
   return best;
 }
 
@@ -301,6 +326,20 @@ export const defenseExhibitsService = {
     let nextIdx = 1;
     const scopeConfidence = opts?.scopeConfidence;
     const isContactOnly = scopeConfidence === 'contact_only';
+
+    // Supabase queries do NOT throw — they return { data, error }. Ignoring `error`
+    // is what silently dropped every milestone exhibit when the live DB was missing
+    // evidence_milestones.enrollment_id. Every source query below must route its
+    // error through here so the failure is loud and the packet is held for review.
+    const sourceErrors: ExhibitSourceError[] = [];
+    const recordSourceError = (source: string, err: any) => {
+      const message = err?.message || String(err);
+      sourceErrors.push({ source, message });
+      logger.error(
+        { source, err: message, locationId, contactId },
+        'defense-exhibits: evidence source query failed — exhibits from this source are MISSING from the packet',
+      );
+    };
 
     // Resolve the target enrollment for scoping (when available). Prefer values the
     // caller already resolved (dispute-scope) to avoid a redundant lookup.
@@ -353,7 +392,8 @@ export const defenseExhibitsService = {
       } else {
         enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
       }
-      const { data: enrollment } = await enrollmentQuery.maybeSingle();
+      const { data: enrollment, error: enrollmentErr } = await enrollmentQuery.maybeSingle();
+      if (enrollmentErr) recordSourceError('enrollments', enrollmentErr);
 
       if (enrollment?.packet_pdf_path) {
         enrollmentPacketPath = enrollment.packet_pdf_path;
@@ -377,17 +417,18 @@ export const defenseExhibitsService = {
         });
       }
     } catch (err: any) {
-      logger.warn({ err: err.message, locationId, contactId }, 'defense-exhibits: failed to look up enrollment packet');
+      recordSourceError('enrollments', err);
     }
 
     // ── 2. Consent records (separate from the signed packet — for funnel-direct enrollments) ──
     try {
-      const { data: consents } = await supabase
+      const { data: consents, error: consentsErr } = await supabase
         .from('evidence_consent')
         .select(`id, enrollment_id, consent_timestamp, ip_address, device_fingerprint, browser, tc_version, contact_name, contact_email, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('consent_timestamp', { ascending: true });
+      if (consentsErr) recordSourceError('evidence_consent', consentsErr);
       for (const c of scopedRows((consents || []) as any[], opts?.enrollmentId, 'consent_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -400,16 +441,17 @@ export const defenseExhibitsService = {
           meta: exhibitMeta(c, { ip: c.ip_address, device: c.device_fingerprint, browser: c.browser }),
         });
       }
-    } catch { /* table may be empty — non-fatal */ }
+    } catch (err) { recordSourceError('evidence_consent', err); }
 
     // ── 3. Service Delivery: sessions, modules, milestones, signoffs, course completion ──
     try {
-      const { data: appointments } = await supabase
+      const { data: appointments, error: appointmentsErr } = await supabase
         .from('evidence_appointments')
         .select(`id, enrollment_id, appointment_title, appointment_status, appointment_event_type, start_time, end_time, calendar_id, delivery_role, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('start_time', { ascending: true });
+      if (appointmentsErr) recordSourceError('evidence_appointments', appointmentsErr);
       for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -422,16 +464,17 @@ export const defenseExhibitsService = {
           meta: exhibitMeta(a, { calendarId: a.calendar_id, deliveryRole: a.delivery_role, appointmentStatus: a.appointment_status }),
         });
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_appointments', err); }
 
     try {
-      const { data: sessions } = await supabase
+      const { data: sessions, error: sessionsErr } = await supabase
         .from('evidence_sessions')
         .select(`id, enrollment_id, session_date, session_title, duration_minutes, attendance_status, facilitator, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .eq('attendance_status', 'attended') // only count attended sessions as delivery evidence
         .order('session_date', { ascending: true });
+      if (sessionsErr) recordSourceError('evidence_sessions', sessionsErr);
       for (const s of scopedRows((sessions || []) as any[], opts?.enrollmentId, 'session_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -444,15 +487,16 @@ export const defenseExhibitsService = {
           meta: exhibitMeta(s),
         });
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_sessions', err); }
 
     try {
-      const { data: modules } = await supabase
+      const { data: modules, error: modulesErr } = await supabase
         .from('evidence_modules')
         .select(`id, enrollment_id, module_name, completion_date, completion_status, progress_pct, time_spent_minutes, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completion_date', { ascending: true });
+      if (modulesErr) recordSourceError('evidence_modules', modulesErr);
       for (const m of scopedRows((modules || []) as any[], opts?.enrollmentId, 'completion_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -465,15 +509,18 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], m);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_modules', err); }
 
     try {
-      const { data: milestones } = await supabase
+      // raw_payload is selected because legacy milestone rows (written before the
+      // enrollment_id column existed) carry the enrollment link only inside it.
+      const { data: milestones, error: milestonesErr } = await supabase
         .from('evidence_milestones')
-        .select(`id, enrollment_id, milestone_number, milestone_name, completed_at, description, notes, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, milestone_number, milestone_name, completed_at, description, notes, raw_payload, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
+      if (milestonesErr) recordSourceError('evidence_milestones', milestonesErr);
       for (const ms of scopedRows((milestones || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -486,15 +533,16 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], ms);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_milestones', err); }
 
     try {
-      const { data: signoffs } = await supabase
+      const { data: signoffs, error: signoffsErr } = await supabase
         .from('evidence_signoffs')
         .select(`id, enrollment_id, milestone_number, milestone_name, work_summary, signed_at, ip_address, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('signed_at', { ascending: true });
+      if (signoffsErr) recordSourceError('evidence_signoffs', signoffsErr);
       for (const so of scopedRows((signoffs || []) as any[], opts?.enrollmentId, 'signed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -507,15 +555,16 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], so);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_signoffs', err); }
 
     try {
-      const { data: courses } = await supabase
+      const { data: courses, error: coursesErr } = await supabase
         .from('evidence_course_completion')
         .select(`id, enrollment_id, course_name, completed_at, certificate_url, grade, platform, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('completed_at', { ascending: true });
+      if (coursesErr) recordSourceError('evidence_course_completion', coursesErr);
       for (const c of scopedRows((courses || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -528,7 +577,7 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_course_completion', err); }
 
     // ── 4. Communication log ──
     // Communications are the highest-volume, lowest-signal evidence type (GHL syncs
@@ -536,12 +585,13 @@ export const defenseExhibitsService = {
     // enrollment/transaction-linked comms are always kept; unlinked ones are capped.
     const MAX_UNLINKED_COMMS = 5;
     try {
-      const { data: comms } = await supabase
+      const { data: comms, error: commsErr } = await supabase
         .from('evidence_communication')
         .select(`id, enrollment_id, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
+      if (commsErr) recordSourceError('evidence_communication', commsErr);
       const scopedComms = scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence);
 
       const isDirectlyLinked = (row: any): boolean => {
@@ -563,6 +613,7 @@ export const defenseExhibitsService = {
         );
       }
 
+      const linkedIds = new Set(linked.map((c: any) => c.id));
       for (const c of [...linked, ...keptUnlinked]) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -572,19 +623,23 @@ export const defenseExhibitsService = {
           ref: c.id,
           occurredAt: c.comm_date,
           summary: `${c.direction === 'inbound' ? 'Inbound' : 'Outbound'} ${c.comm_type} on ${fmtDate(c.comm_date)}.${c.summary || c.body_preview ? ` Summary: ${cleanCommunicationBody(c.summary || c.body_preview).slice(0, 240)}.` : ''}`,
+          // Unlinked comms are low-signal (routine workflow emails) — keep them as
+          // secondary context at the END of the exhibit list, never leading the packet.
+          deprioritized: !linkedIds.has(c.id),
         });
         applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_communication', err); }
 
     // ── 5. Payments: enrollment + recurring confirmations (Prior Undisputed Transactions) ──
     try {
-      const { data: invoices } = await supabase
+      const { data: invoices, error: invoicesErr } = await supabase
         .from('evidence_invoices')
         .select(`id, enrollment_id, invoice_id, invoice_number, invoice_status, invoice_event_type, amount, amount_paid, currency, sent_at, paid_at, due_date, created_at, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true });
+      if (invoicesErr) recordSourceError('evidence_invoices', invoicesErr);
       for (const inv of scopedRows((invoices || []) as any[], opts?.enrollmentId, 'paid_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -597,15 +652,16 @@ export const defenseExhibitsService = {
           meta: exhibitMeta(inv, { invoiceId: inv.invoice_id, amount: inv.amount, amountPaid: inv.amount_paid, status: inv.invoice_status }),
         });
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_invoices', err); }
 
     try {
-      const { data: enrollPay } = await supabase
+      const { data: enrollPay, error: enrollPayErr } = await supabase
         .from('evidence_enrollment_payment')
         .select(`id, enrollment_id, ghl_transaction_id, amount, payment_method, last_four, payment_timestamp, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_timestamp', { ascending: true });
+      if (enrollPayErr) recordSourceError('evidence_enrollment_payment', enrollPayErr);
       for (const p of scopedRows((enrollPay || []) as any[], opts?.enrollmentId, 'payment_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -618,15 +674,16 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], p);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_enrollment_payment', err); }
 
     try {
-      const { data: recPay } = await supabase
+      const { data: recPay, error: recPayErr } = await supabase
         .from('evidence_payment_confirmation')
         .select(`id, enrollment_id, ghl_transaction_id, amount, payment_date, payment_number, running_total, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('payment_date', { ascending: true });
+      if (recPayErr) recordSourceError('evidence_payment_confirmation', recPayErr);
       for (const p of scopedRows((recPay || []) as any[], opts?.enrollmentId, 'payment_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -639,16 +696,17 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], p);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_payment_confirmation', err); }
 
     // ── 6. Termination events: cancellation, refund, subscription changes ──
     try {
-      const { data: cancels } = await supabase
+      const { data: cancels, error: cancelsErr } = await supabase
         .from('evidence_cancellation')
         .select(`id, enrollment_id, cancellation_date, reason, refund_eligibility, status_at_cancellation, initiated_by, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('cancellation_date', { ascending: true });
+      if (cancelsErr) recordSourceError('evidence_cancellation', cancelsErr);
       // One cancellation exhibit per enrollment: the EARLIEST record is the one
       // with legal weight (the service period ended then). Re-cancellations of an
       // already-cancelled subscription are noise that reads as sloppy evidence.
@@ -668,15 +726,16 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_cancellation', err); }
 
     try {
-      const { data: refunds } = await supabase
+      const { data: refunds, error: refundsErr } = await supabase
         .from('evidence_refund_activity')
         .select(`id, enrollment_id, amount, refund_type, reason, refund_date, initiated_by, ghl_transaction_id, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('refund_date', { ascending: true });
+      if (refundsErr) recordSourceError('evidence_refund_activity', refundsErr);
       for (const r of scopedRows((refunds || []) as any[], opts?.enrollmentId, 'refund_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -689,7 +748,7 @@ export const defenseExhibitsService = {
         });
         applyDefenseContract(exhibits[exhibits.length - 1], r);
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_refund_activity', err); }
 
     // Also pull from unified evidence repo for any evidence_type rows not in the per-table tables
     // (deliberate: we trust the per-table queries above as the primary source — this is just a
@@ -702,6 +761,16 @@ export const defenseExhibitsService = {
         // Only include high-signal types from the unified table
         const type = (e as any).evidence_type || (e as any).type;
         if (!['custom_event', 'resource_delivery', 'service_access'].includes(type)) continue;
+        // ScaleSafe's own readiness-score threshold events (event_type
+        // 'evidence_milestone' with readiness_score/milestone_threshold) are internal
+        // bookkeeping, not client service-delivery proof — never bank-facing.
+        const payload = (e as any).data || {};
+        if (type === 'custom_event'
+          && (payload.event_type === 'evidence_milestone'
+            || payload.readiness_score !== undefined
+            || payload.milestone_threshold !== undefined)) {
+          continue;
+        }
         const summary = getDefenseSummary(e) || JSON.stringify((e as any).data || {}).slice(0, 200);
         exhibits.push({
           letter: indexToLetter(nextIdx++),
@@ -714,7 +783,7 @@ export const defenseExhibitsService = {
           meta: exhibitMeta(e),
         });
       }
-    } catch {}
+    } catch (err) { recordSourceError('evidence_timeline', err); }
 
     // Under contact-only scope the evidence is not verified against a specific
     // enrollment — tag every exhibit so the letter/PDF and reviewer can see it.
@@ -754,6 +823,7 @@ export const defenseExhibitsService = {
         termination: byCategory.termination.length,
       },
       enrollmentPacketPath,
+      sourceErrors,
     };
   },
 };

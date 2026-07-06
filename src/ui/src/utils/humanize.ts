@@ -68,6 +68,34 @@ export function humanizeEventType(slug: string | null | undefined): string {
 
 const MS = { sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 };
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parse a date value for display. A date-only string ("2026-08-16" — e.g. a DB
+ * DATE column like response_deadline) is a calendar date, not an instant:
+ * `new Date('2026-08-16')` parses it as UTC midnight, which any US timezone
+ * renders as Aug 15. Construct it as LOCAL midnight so it displays as the exact
+ * calendar date stored.
+ */
+export function parseDateValue(value: string | number | Date): Date {
+  if (typeof value === 'string' && DATE_ONLY_RE.test(value.trim())) {
+    const [y, m, d] = value.trim().split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return value instanceof Date ? value : new Date(value);
+}
+
+/**
+ * Format a calendar date (or timestamp) as "Aug 16, 2026". Date-only strings
+ * render as that exact calendar date with no timezone shift.
+ */
+export function formatCalendarDate(value: string | number | Date | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  const date = parseDateValue(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 /**
  * Format a timestamp for merchant-facing UI.
  *
@@ -83,7 +111,7 @@ export function formatTimestamp(
   now: Date = new Date(),
 ): string {
   if (value === null || value === undefined || value === '') return '';
-  const date = value instanceof Date ? value : new Date(value);
+  const date = parseDateValue(value);
   if (Number.isNaN(date.getTime())) return '';
 
   if (mode === 'absolute') {

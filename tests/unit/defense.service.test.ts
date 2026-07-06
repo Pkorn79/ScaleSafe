@@ -5,8 +5,36 @@
 
 import type { ExhibitList } from '../../src/services/defense-exhibits.service';
 
+// Table-level tracking mock: records every insert/update per table so tests can
+// assert e.g. that fallback letters land in defense_letter_versions and that
+// internal_debug is written to defense_packets.
+const mockInsertedRows: Record<string, any[]> = {};
+const mockUpdatedRows: Record<string, any[]> = {};
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({ from: jest.fn().mockReturnValue({ insert: jest.fn().mockReturnValue({ error: null }) }) }),
+  getSupabase: () => ({
+    from: (table: string) => ({
+      insert: (row: any) => {
+        (mockInsertedRows[table] = mockInsertedRows[table] || []).push(row);
+        const p: any = Promise.resolve({ data: null, error: null });
+        p.select = () => ({ single: () => Promise.resolve({ data: { id: 'row_1' }, error: null }) });
+        return p;
+      },
+      update: (row: any) => {
+        (mockUpdatedRows[table] = mockUpdatedRows[table] || []).push(row);
+        const p: any = Promise.resolve({ data: null, error: null });
+        p.eq = () => Promise.resolve({ data: null, error: null });
+        return p;
+      },
+      select: () => {
+        const b: any = {};
+        for (const m of ['eq', 'order', 'limit', 'gte', 'lte']) b[m] = () => b;
+        b.maybeSingle = () => Promise.resolve({ data: null, error: null });
+        b.single = () => Promise.resolve({ data: null, error: null });
+        b.then = (resolve: any, reject: any) => Promise.resolve({ data: [], error: null }).then(resolve, reject);
+        return b;
+      },
+    }),
+  }),
 }));
 
 jest.mock('../../src/clients/ghl.client', () => ({
@@ -21,6 +49,8 @@ jest.mock('../../src/clients/anthropic.client', () => ({
     text: 'Defense letter content here',
     inputTokens: 1000,
     outputTokens: 2000,
+    model: 'claude-sonnet-5',
+    modelAttempts: [{ model: 'claude-sonnet-5', result: 'succeeded' }],
   }),
 }));
 
@@ -84,6 +114,7 @@ const mockExhibitList: ExhibitList = {
     termination: 0,
   },
   enrollmentPacketPath: 'packets/enrollment.pdf',
+  sourceErrors: [],
 };
 
 jest.mock('../../src/services/defense-exhibits.service', () => {
@@ -171,6 +202,8 @@ import { defenseExhibitsService } from '../../src/services/defense-exhibits.serv
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveDisputeScope.mockResolvedValue(exactScope());
+  for (const k of Object.keys(mockInsertedRows)) delete mockInsertedRows[k];
+  for (const k of Object.keys(mockUpdatedRows)) delete mockUpdatedRows[k];
 });
 
 describe('Defense Service - Reason Code Mapping', () => {
@@ -401,6 +434,9 @@ describe('Defense Service - Compilation Flow', () => {
         processor: 'stripe',
       }),
     );
+    // Exactly once — never duplicated
+    const readyCalls = mockFireTrigger.mock.calls.filter((c) => c[1] === 'ss_defense_ready');
+    expect(readyCalls).toHaveLength(1);
   });
 
   test('unknown reason code forces needs_review and suppresses ss_defense_ready', async () => {
@@ -512,6 +548,95 @@ describe('Defense Service - Scope resolution & needs_review gating', () => {
     expect(letter).toContain('EVIDENCE GAPS');
     expect(letter).toContain('EXHIBIT INDEX');
     expect(letter).not.toMatch(/found \d+ evidence records/i);
+  });
+
+  test('fallback letters get a defense_letter_versions row (generated_by system)', async () => {
+    (callClaude as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('model_not_found'), {
+      response: { status: 404 },
+      modelAttempts: [{ model: 'claude-sonnet-5', result: 'failed', status: 404, reason: 'not_found_error' }],
+    }));
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '4855', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    const versions = mockInsertedRows['defense_letter_versions'] || [];
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({
+      defense_packet_id: 'def_1',
+      version_number: 1,
+      generated_by: 'system',
+      model_used: 'fallback',
+    });
+    expect(versions[0].letter_text).toContain('TRANSACTION AND PROGRAM');
+  });
+
+  test('AI failure internals are preserved in internal_debug; merchant-facing text stays clean', async () => {
+    (callClaude as jest.Mock).mockRejectedValueOnce(Object.assign(new Error('model_not_found'), {
+      response: { status: 404 },
+      modelAttempts: [{ model: 'claude-sonnet-5', result: 'failed', status: 404, reason: 'not_found_error' }],
+    }));
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '4855', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    const debugUpdates = (mockUpdatedRows['defense_packets'] || []).filter((u) => u.internal_debug);
+    expect(debugUpdates).toHaveLength(1);
+    expect(debugUpdates[0].internal_debug.ai_failure).toMatchObject({ message: 'model_not_found', status: 404 });
+    expect(debugUpdates[0].internal_debug.model_attempts).toEqual([
+      expect.objectContaining({ model: 'claude-sonnet-5', result: 'failed' }),
+    ]);
+
+    const statusCall = (defenseRepository.updateStatus as jest.Mock).mock.calls.find(
+      (c) => c[1] === 'needs_review' && c[2]?.error_message,
+    );
+    expect(statusCall[2].error_message).toContain('AI draft was unavailable');
+    expect(statusCall[2].error_message).not.toContain('model_not_found');
+  });
+
+  test('successful AI letters are versioned with generated_by ai and the real model', async () => {
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    const versions = mockInsertedRows['defense_letter_versions'] || [];
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ generated_by: 'ai', model_used: 'claude-sonnet-5' });
+  });
+
+  test('an exhibit source query failure forces needs_review and suppresses ss_defense_ready', async () => {
+    (defenseExhibitsService.buildExhibitList as jest.Mock).mockResolvedValueOnce({
+      ...mockExhibitList,
+      sourceErrors: [{ source: 'evidence_milestones', message: 'column evidence_milestones.enrollment_id does not exist' }],
+    });
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review',
+      expect.objectContaining({ error_message: expect.stringContaining('evidence sources') }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+
+    // The raw schema error is preserved internally, not shown to the merchant
+    const debugUpdates = (mockUpdatedRows['defense_packets'] || []).filter((u) => u.internal_debug);
+    expect(debugUpdates).toHaveLength(1);
+    expect(debugUpdates[0].internal_debug.exhibit_source_errors[0].message).toContain('enrollment_id does not exist');
   });
 
   test('structured fallback letter builder includes all required sections', () => {

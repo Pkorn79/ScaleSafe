@@ -109,7 +109,7 @@ import LetterTab from './defense/LetterTab.vue';
 import ExhibitsTab from './defense/ExhibitsTab.vue';
 import HistoryTab from './defense/HistoryTab.vue';
 import OutcomeTab from './defense/OutcomeTab.vue';
-import { humanizeEventType, humanizeReasonCode, pluralize } from '../utils/humanize';
+import { humanizeEventType, humanizeReasonCode, formatCalendarDate, parseDateValue, pluralize } from '../utils/humanize';
 
 const route = useRoute();
 const api = useApi();
@@ -142,7 +142,8 @@ const isPreSubmit = computed(() => {
 const daysRemaining = computed(() => {
   const d = packet.value?.deadline || packet.value?.response_deadline;
   if (!d) return null;
-  const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+  // parseDateValue treats date-only values as local calendar dates (no UTC shift)
+  const diff = Math.ceil((parseDateValue(d).getTime() - Date.now()) / 86400000);
   return diff;
 });
 
@@ -181,8 +182,7 @@ const reviewReasons = computed(() => {
 });
 
 function formatDate(d: string): string {
-  if (!d) return '-';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatCalendarDate(d) || '-';
 }
 
 async function refresh() {
