@@ -55,6 +55,10 @@ export const stripeEvidenceVaultService = {
     serviceDeliveryModel?: string;
     serviceStartDate?: string;
   }): Promise<any> {
+    // "Fields complete" means we captured the identity data CE 3.0 *matching* needs
+    // (IP, email, description). It is NOT eligibility: real CE 3.0 requires two prior
+    // undisputed transactions 120-365 days old with matching elements, which we do not
+    // verify yet — so ce30_eligible is always written false until that engine exists.
     const ce30Complete = !!(params.customerIp && params.customerEmail && params.offerDescription);
     const evidenceScore = this.computeEvidenceScore({
       hasTermsFile: false,
@@ -86,7 +90,7 @@ export const stripeEvidenceVaultService = {
         refund_policy_text: params.refundPolicyText || null,
         service_delivery_model: params.serviceDeliveryModel || null,
         service_start_date: params.serviceStartDate || null,
-        ce30_eligible: ce30Complete,
+        ce30_eligible: false,
         ce30_fields_complete: ce30Complete,
         metadata_written: true,
         evidence_score: evidenceScore,
@@ -148,7 +152,7 @@ export const stripeEvidenceVaultService = {
         customer_ip: metadata.customer_ip || null,
         terms_accepted: metadata.terms_accepted === 'true',
         terms_accepted_at: metadata.terms_accepted_at || null,
-        ce30_eligible: ce30Complete,
+        ce30_eligible: false,
         ce30_fields_complete: ce30Complete,
         metadata_written: false,
         evidence_score: evidenceScore,

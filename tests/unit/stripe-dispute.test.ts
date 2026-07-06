@@ -60,7 +60,8 @@ function makeVaultEntry(overrides: Record<string, any> = {}): any {
     terms_file_id: 'file_terms_1',
     communication_file_id: 'file_comm_1',
     session_file_ids: ['file_session_1', 'file_session_2'],
-    ce30_eligible: true,
+    ce30_eligible: false,
+    ce30_fields_complete: true,
     refund_policy_text: 'No refunds after program commencement.',
     terms_accepted: true,
     terms_accepted_at: '2026-01-15T00:00:00Z',
@@ -278,12 +279,16 @@ describe('Dispute Triage Service', () => {
       expect(evidence['product_description']).toBe('12-week coaching engagement');
     });
 
-    it('maps fraudulent reason with IP, billing address, CE 3.0 text', () => {
+    it('maps fraudulent reason with IP, billing address, and factual identity text', () => {
       const vault = makeVaultEntry();
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('fraudulent', vault, null);
       expect(evidence['customer_purchase_ip']).toBe('192.168.1.1');
       expect(evidence['billing_address']).toContain('123 Main St');
-      expect(evidence['uncategorized_text']).toContain('CE 3.0');
+      // Must state only captured facts — never an unverified CE 3.0 eligibility claim.
+      expect(evidence['uncategorized_text']).toContain('identity data captured at the time of purchase');
+      expect(evidence['uncategorized_text']).toContain('192.168.1.1');
+      expect(evidence['uncategorized_text']).not.toContain('CE 3.0');
+      expect(evidence['uncategorized_text']).not.toContain('prior non-disputed transactions');
       expect(evidence['uncategorized_file']).toBe('file_contract_1');
     });
 

@@ -181,6 +181,97 @@ export function scopedRows<T extends Record<string, any>>(
   });
 }
 
+// Maps each exhibit source to the evidence-priority keys used in
+// reason_code_strategies.evidence_priorities. An exhibit's rank is the index of
+// its earliest-matching key; unmatched exhibits keep build order after all
+// matched ones. Sort is stable, so within a rank the original chronology holds.
+const SOURCE_PRIORITY_KEYS: Record<string, string[]> = {
+  enrollment_packet_pdf: ['consent', 'enrollment_packet', 'offer_terms'],
+  evidence_consent: ['consent', 'ip_device_match'],
+  evidence_sessions: ['sessions'],
+  evidence_appointments: ['sessions'],
+  evidence_external_sessions: ['sessions'],
+  evidence_modules: ['modules', 'deliverables'],
+  evidence_course_completion: ['modules', 'deliverables'],
+  evidence_milestones: ['milestones'],
+  evidence_signoffs: ['signoffs', 'milestones'],
+  evidence_service_access: ['service_access', 'ip_device_match'],
+  evidence_resource_delivery: ['deliverables'],
+  evidence_communication: ['communication'],
+  evidence_invoices: ['payment_history'],
+  evidence_enrollment_payment: ['payment_history'],
+  evidence_payment_confirmation: ['payment_history'],
+  evidence_cancellation: ['cancellation'],
+  evidence_refund_activity: ['refund_policy', 'cancellation'],
+};
+
+// ── Transaction timeline ─────────────────────────────────────────────────
+// A chronological table (date → event → exhibit letter) assembled from the
+// exhibit list plus markers for the disputed charge and the dispute filing.
+// Reviewers skim; the timeline shows at a glance that engagement continued
+// after purchase and where the dispute falls in the story.
+
+export interface TimelineRow {
+  /** ISO date string */
+  date: string;
+  label: string;
+  exhibitLetter?: string;
+  /** Marker rows (disputed charge / dispute filed) get emphasis in rendering */
+  isMarker?: boolean;
+}
+
+export function buildTimelineRows(
+  exhibits: ExhibitEntry[],
+  opts?: { transactionDate?: string | null; disputeDate?: string | null },
+): TimelineRow[] {
+  const rows: TimelineRow[] = exhibits
+    .filter((ex) => ex.occurredAt)
+    .map((ex) => ({ date: ex.occurredAt as string, label: ex.name, exhibitLetter: ex.letter }));
+
+  if (opts?.transactionDate) {
+    rows.push({ date: opts.transactionDate, label: 'Disputed charge', isMarker: true });
+  }
+  if (opts?.disputeDate) {
+    rows.push({ date: opts.disputeDate, label: 'Chargeback filed by cardholder', isMarker: true });
+  }
+
+  return rows
+    .filter((r) => Number.isFinite(new Date(r.date).getTime()))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+/** reason_code_strategies.evidence_priorities is JSONB — normalize whatever
+ *  shape the driver returns (array, JSON string, null) to a string array. */
+export function normalizeEvidencePriorities(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((p): p is string => typeof p === 'string');
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function exhibitPriorityRank(exhibit: ExhibitEntry, priorities: string[]): number {
+  const keys = SOURCE_PRIORITY_KEYS[exhibit.source] || [];
+  let best = priorities.length;
+  for (const key of keys) {
+    const idx = priorities.indexOf(key);
+    if (idx !== -1 && idx < best) best = idx;
+  }
+  return best;
+}
+
+// Exported for unit testing — this decides which exhibit leads the packet.
+export function sortExhibitsByPriority(exhibits: ExhibitEntry[], priorities: string[]): void {
+  const ranked = exhibits.map((ex, i) => ({ ex, rank: exhibitPriorityRank(ex, priorities), i }));
+  ranked.sort((a, b) => (a.rank - b.rank) || (a.i - b.i));
+  for (let i = 0; i < ranked.length; i++) exhibits[i] = ranked[i].ex;
+}
+
 export const defenseExhibitsService = {
   /**
    * Build the exhibit list for a contact at compilation time.
@@ -199,6 +290,10 @@ export const defenseExhibitsService = {
       offerId?: string | null;
       enrollmentStart?: string | null;
       enrollmentEnd?: string | null;
+      /** Ordered persuasiveness keys from reason_code_strategies.evidence_priorities
+       *  (e.g. ["cancellation","consent","service_access"]). When present, exhibits
+       *  are re-sorted by these priorities and re-lettered. */
+      evidencePriorities?: string[];
     },
   ): Promise<ExhibitList> {
     const supabase = getSupabase();
@@ -554,7 +649,14 @@ export const defenseExhibitsService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('cancellation_date', { ascending: true });
+      // One cancellation exhibit per enrollment: the EARLIEST record is the one
+      // with legal weight (the service period ended then). Re-cancellations of an
+      // already-cancelled subscription are noise that reads as sloppy evidence.
+      const seenCancellations = new Set<string>();
       for (const c of scopedRows((cancels || []) as any[], opts?.enrollmentId, 'cancellation_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        const dedupeKey = c.enrollment_id || 'no_enrollment';
+        if (seenCancellations.has(dedupeKey)) continue;
+        seenCancellations.add(dedupeKey);
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: 'Cancellation Record',
@@ -618,6 +720,15 @@ export const defenseExhibitsService = {
     // enrollment — tag every exhibit so the letter/PDF and reviewer can see it.
     if (isContactOnly) {
       for (const ex of exhibits) ex.unverifiedScope = true;
+    }
+
+    // Re-order exhibits by reason-code persuasiveness and re-letter A, B, C…
+    // Reviewers skim: for 13.6 the refund record must lead, for 13.2 the
+    // cancellation ledger, for fraud the consent forensics. Without priorities
+    // the original build order is kept (existing behavior).
+    if (opts?.evidencePriorities?.length) {
+      sortExhibitsByPriority(exhibits, opts.evidencePriorities);
+      exhibits.forEach((ex, i) => { ex.letter = indexToLetter(i + 1); });
     }
 
     // Build by-category index

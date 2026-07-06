@@ -7,33 +7,17 @@ import { merchantRepository } from '../repositories/merchant.repository';
 import { paymentService } from './payment.service';
 import { triggerService } from './trigger.service';
 import { storageService } from './storage.service';
-import { defenseExhibitsService, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
+import { defenseExhibitsService, normalizeEvidencePriorities, buildTimelineRows, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { disputeScopeService, type DisputeScope } from './dispute-scope.service';
+import { defenseReadinessService } from './defense-readiness.service';
 import { logger } from '../utils/logger';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
-/**
- * Reason code → category mapping.
- * From SCALESAFE_APP_BLUEPRINT_v2.1 Section 10.
- */
-const REASON_CODE_CATEGORIES: Record<string, string> = {
-  // Visa
-  '10.1': 'authorization',
-  '10.4': 'fraud',
-  '13.1': 'services_not_provided',
-  '13.3': 'not_as_described',
-  '13.6': 'credit_not_processed',
-  // Mastercard
-  '4837': 'fraud',
-  '4853': 'not_as_described',
-  '4855': 'services_not_provided',
-  '4860': 'credit_not_processed',
-  // Amex
-  'C08': 'services_not_provided',
-  'C31': 'not_as_described',
-  'FR2': 'fraud',
-  'FR6': 'fraud',
-};
+// Reason-code → network/category/deadline resolution lives in the registry.
+// An unknown code maps to the 'general' category (generic evidence presentation)
+// and forces needs_review — it must never be silently argued as a specific
+// dispute type it isn't.
+import { resolveReasonCode } from '../constants/reason-codes';
 
 interface CompileDefenseInput {
   locationId: string;
@@ -100,7 +84,8 @@ export const defenseService = {
    * Compilation runs asynchronously in the background.
    */
   async compileDefense(input: CompileDefenseInput): Promise<string> {
-    const category = REASON_CODE_CATEGORIES[input.reasonCode] || 'services_not_provided';
+    const reasonInfo = resolveReasonCode(input.reasonCode);
+    const category = reasonInfo?.category || 'general';
     const supabase = getSupabase();
 
     // Resolve dispute_event_id. Stripe path: use the provided id. NMI path:
@@ -216,6 +201,11 @@ export const defenseService = {
     const addressee = input.addressee
       || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
 
+    // An unrecognized reason code means we cannot select the right defense
+    // strategy — the packet gets generic evidence presentation and MUST be
+    // reviewed by the merchant before submission.
+    const unknownReasonCode = !resolveReasonCode(input.reasonCode);
+
     // 0. Resolve the disputed transaction to a specific enrollment/program BEFORE
     // gathering any evidence. This is the guard against dumping contact-wide evidence.
     const scope = await disputeScopeService.resolveDisputeScope({
@@ -234,30 +224,44 @@ export const defenseService = {
       } as any);
     }
 
-    // 1. Build the single-source-of-truth exhibit list, scoped to the resolved enrollment.
+    // 1. Look up reason code strategy + defense template FIRST — the strategy's
+    // evidence_priorities drives exhibit ordering (most persuasive first for
+    // this specific code), so it must exist before the exhibit list is built.
+    const strategy = await defenseRepository.getReasonCodeStrategy(input.reasonCode);
+    const template = await defenseRepository.getDefenseTemplate(category);
+    const evidencePriorities = normalizeEvidencePriorities(strategy?.evidence_priorities);
+
+    // 2. Build the single-source-of-truth exhibit list, scoped to the resolved enrollment.
     const exhibitScope = {
       enrollmentId: scope.enrollmentId || undefined,
       scopeConfidence: scope.scopeConfidence,
       offerId: scope.offerId,
       enrollmentStart: scope.enrollmentStart,
       enrollmentEnd: scope.enrollmentEnd,
+      evidencePriorities,
     };
     const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, exhibitScope);
 
-    // 2. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
+    // 2b. Reason-code readiness check: does the evidence on file actually support
+    // fighting THIS dispute type? Missing required evidence or an indefensible
+    // fact pattern (e.g. billed after a cancellation request) holds the packet
+    // for review with an honest recommendation instead of confident prose.
+    const readiness = defenseReadinessService.assess(category, exhibitList, scope);
+
+    // 3. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
     const evidence = await evidenceRepository.getFullSnapshot(input.locationId, input.contactId);
     await defenseRepository.updateStatus(defenseId, 'processing', {
       evidence_snapshot: evidence,
       evidence_count: exhibitList.exhibits.length,
     } as any);
 
-    // 3. Get undisputed payments (Prior Undisputed Transactions section), scoped to
+    // 4. Get undisputed payments (Prior Undisputed Transactions section), scoped to
     // this enrollment when known so sibling-program payments don't pollute the main story.
     const undisputedPayments = await paymentService.getUndisputedPayments(
       input.locationId, input.contactId, scope.enrollmentId || undefined,
     );
 
-    // 4. Get contact details from GHL
+    // 5. Get contact details from GHL
     let contactDetails: Record<string, unknown> = {};
     try {
       const api = await ghlApi(input.locationId);
@@ -267,12 +271,8 @@ export const defenseService = {
       logger.warn({ err, contactId: input.contactId }, 'Failed to fetch contact details');
     }
 
-    // 5. Get merchant info
+    // 6. Get merchant info
     const merchant = await merchantRepository.getByLocationId(input.locationId);
-
-    // 6. Look up reason code strategy + defense template
-    const strategy = await defenseRepository.getReasonCodeStrategy(input.reasonCode);
-    const template = await defenseRepository.getDefenseTemplate(category);
 
     // 7. Build the AI prompt with the rewritten clinical-tone structure
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
@@ -350,11 +350,19 @@ export const defenseService = {
     // A packet must NOT be presented as a finished defense when the AI draft fell back
     // OR when we could not scope the evidence to the disputed transaction. Mark those
     // needs_review and do not fire the "ready" workflow.
-    const needsReview = usedFallback || scope.scopeConfidence === 'contact_only';
+    const needsReview = usedFallback
+      || scope.scopeConfidence === 'contact_only'
+      || unknownReasonCode
+      || readiness.redFlags.length > 0
+      || readiness.missingEvidence.length > 0;
     const finalStatus = needsReview ? 'needs_review' : 'complete';
     const reviewReasons: string[] = [];
+    if (readiness.recommendAccept) reviewReasons.push('RECOMMENDATION: consider accepting this dispute rather than fighting it.');
+    if (readiness.redFlags.length) reviewReasons.push(...readiness.redFlags);
+    if (readiness.missingEvidence.length) reviewReasons.push(...readiness.missingEvidence);
     if (usedFallback) reviewReasons.push('AI draft was unavailable; a structured fallback letter was generated.');
     if (scope.scopeConfidence === 'contact_only') reviewReasons.push('The disputed transaction could not be tied to a specific program; evidence is contact-wide.');
+    if (unknownReasonCode) reviewReasons.push(`Reason code "${input.reasonCode}" is not recognized; the letter uses a generic strategy and must be reviewed against the network's actual requirements for this code.`);
     if (scope.gaps.length) reviewReasons.push(...scope.gaps);
 
     await defenseRepository.updateStatus(defenseId, finalStatus, {
@@ -448,6 +456,10 @@ export const defenseService = {
       not_as_described: 'The cardholder claims the service was not as described. Compare the offer terms presented at enrollment (from the signed enrollment packet) against what was actually delivered. Show the client reviewed and agreed to terms before purchasing.',
       credit_not_processed: 'The cardholder claims a credit/refund was promised but not received. Present the refund policy from the enrollment terms, communication logs showing what was communicated about refunds, and any refund actions that were taken.',
       authorization: 'The cardholder disputes authorization. Focus on consent proof: the signed enrollment packet with T&C acceptance timestamp, IP address, device fingerprint, scroll depth, and digital signature. This is the strongest evidence for authorization disputes.',
+      canceled_recurring: 'The cardholder claims they canceled a recurring payment before this charge. Lead with the cancellation record (or the documented absence of any cancellation request before the billing date), the express consent to recurring billing from the signed enrollment terms, and any service usage after the claimed cancellation date. State cancellation and billing dates precisely — the sequence of dates decides this dispute. If a cancellation request predates the charge, do not argue otherwise; state the facts as they are.',
+      misrepresentation: 'The cardholder claims the offer was misrepresented at the time of purchase. Present the exact terms as shown and accepted at enrollment (the signed enrollment packet with T&C version hash), disclosure of the payment schedule, and any advance notice of upcoming charges. Compare what was disclosed against what was billed — do not characterize marketing claims; cite only the accepted terms.',
+      canceled_services: 'The cardholder claims they canceled the service. Present the cancellation policy as disclosed and accepted at enrollment, whether the cardholder followed that policy, and any continued service usage after the claimed cancellation. State the policy terms and the dates factually.',
+      duplicate_processing: 'The cardholder claims a duplicate or erroneous charge. Present payment records showing each charge corresponds to a distinct obligation (separate offers, separate installments, or an authorization vs. a settlement). Cite transaction identifiers, amounts, and dates for each charge separately.',
     };
 
     let prompt = `You are generating a chargeback defense letter. Your output will be submitted to a payment processor or bank as part of a formal dispute response.
@@ -479,11 +491,12 @@ EXHIBIT REFERENCES:
 LETTER STRUCTURE:
 1. Header with date, addressee, case reference, and merchant name
 2. Brief dispute summary (1-2 sentences stating the dispute facts)
-3. Evidence of authorization / enrollment (cite consent exhibits)
-4. Evidence of service delivery (cite delivery exhibits)
-5. Prior Undisputed Transactions section
-6. Conclusion (factual summary, not argumentative)
-7. Exhibit index (numbered list of all cited exhibits)
+3. Transaction Timeline — a brief chronological list reproducing the TRANSACTION TIMELINE block from the evidence below verbatim (dates and exhibit letters exactly as given); omit if no timeline block is provided
+4. Evidence of authorization / enrollment (cite consent exhibits)
+5. Evidence of service delivery (cite delivery exhibits)
+6. Prior Undisputed Transactions section — ONLY when a "PRIOR UNDISPUTED TRANSACTIONS" block appears in the evidence below; otherwise omit this section entirely
+7. Conclusion (factual summary, not argumentative)
+8. Exhibit index (numbered list of all cited exhibits)
 `;
 
     if (strategy?.evidence_priorities) {
@@ -538,6 +551,24 @@ LETTER STRUCTURE:
     msg += `- Dispute Date: ${input.disputeDate}\n`;
     msg += `- Response Deadline: ${input.deadline}\n\n`;
 
+    // Chronological transaction timeline — the reviewer's fastest path to
+    // "engagement continued after purchase". The letter reproduces this as a
+    // brief chronology section using the exact dates and exhibit letters.
+    const timelineRows = buildTimelineRows(exhibitList.exhibits, {
+      transactionDate: scope?.transactionDate,
+      disputeDate: input.disputeDate,
+    });
+    if (timelineRows.length > 1) {
+      msg += `═══ TRANSACTION TIMELINE (chronological — reproduce as a "Transaction Timeline" section in the letter) ═══\n`;
+      for (const row of timelineRows) {
+        const d = new Date(row.date).toISOString().slice(0, 10);
+        msg += row.isMarker
+          ? `  ${d}  ** ${row.label} **\n`
+          : `  ${d}  ${row.label}${row.exhibitLetter ? ` (Exhibit ${row.exhibitLetter})` : ''}\n`;
+      }
+      msg += `\n`;
+    }
+
     msg += `MERCHANT:\n`;
     msg += `- Business Name: ${merchant.business_name || 'N/A'}\n`;
     msg += `- Support Email: ${merchant.support_email || 'N/A'}\n\n`;
@@ -588,15 +619,24 @@ LETTER STRUCTURE:
       }
     }
 
-    // 6. Prior Undisputed Transactions (always include when available)
-    msg += `═══ PRIOR UNDISPUTED TRANSACTIONS (${undisputedPayments.length}) ═══\n`;
-    if (undisputedPayments.length === 0) {
-      msg += `  No prior undisputed transactions on record.\n\n`;
-    } else {
-      for (const p of undisputedPayments) {
-        msg += `  - ${p.payment_date || p.created_at}: $${Number(p.amount || 0).toFixed(2)}\n`;
+    // 6. Prior Undisputed Transactions — only where they carry evidentiary weight:
+    // fraud/authorization (prior clean history on the same credential rebuts
+    // "I didn't authorize this") and canceled-recurring (payment continuity shows
+    // an ongoing accepted arrangement). For other dispute types they are filler
+    // that dilutes the reviewer's attention, so they are omitted entirely.
+    const PRIOR_PAYMENT_CATEGORIES = new Set(['fraud', 'authorization', 'canceled_recurring']);
+    if (PRIOR_PAYMENT_CATEGORIES.has(category)) {
+      msg += `═══ PRIOR UNDISPUTED TRANSACTIONS (${undisputedPayments.length}) ═══\n`;
+      if (undisputedPayments.length === 0) {
+        msg += `  No prior undisputed transactions on record.\n\n`;
+      } else {
+        for (const p of undisputedPayments) {
+          msg += `  - ${p.payment_date || p.created_at}: $${Number(p.amount || 0).toFixed(2)}\n`;
+        }
+        msg += `\n`;
       }
-      msg += `\n`;
+    } else {
+      msg += `Do NOT include a "Prior Undisputed Transactions" section — it is not relevant to this dispute type.\n\n`;
     }
 
     msg += `Generate the defense letter now. Use the exact exhibit letters (A, B, C…) provided above. Do not add or skip any.`;
@@ -863,12 +903,15 @@ LETTER STRUCTURE:
       enrollmentId: input.enrollmentId,
       offerId: (packet as any).offer_id || undefined,
     });
+    const strategy = await defenseRepository.getReasonCodeStrategy(input.reasonCode);
+    const template = await defenseRepository.getDefenseTemplate(category);
     const exhibitScope = {
       enrollmentId: scope.enrollmentId || undefined,
       scopeConfidence: scope.scopeConfidence,
       offerId: scope.offerId,
       enrollmentStart: scope.enrollmentStart,
       enrollmentEnd: scope.enrollmentEnd,
+      evidencePriorities: normalizeEvidencePriorities(strategy?.evidence_priorities),
     };
     const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, exhibitScope);
     const undisputedPayments = await paymentService.getUndisputedPayments(
@@ -881,8 +924,6 @@ LETTER STRUCTURE:
       contactDetails = contactRes.data.contact || contactRes.data;
     } catch {}
     const merchant = await merchantRepository.getByLocationId(input.locationId);
-    const strategy = await defenseRepository.getReasonCodeStrategy(input.reasonCode);
-    const template = await defenseRepository.getDefenseTemplate(category);
 
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
     const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope);

@@ -5,6 +5,51 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense optimization Phase 1 (reason-code-aware packets)
+
+> **Deploy ordering:** migration `085_seed_expanded_reason_codes.sql` should be applied in Supabase
+> with (or before) this deploy. Code works without it (new codes fall back to category strategy with
+> default exhibit order), but per-code evidence priorities and strategy guidance come from the seed.
+
+### Fixed (defense output honesty, 2026-07-05)
+- **Removed a false Visa CE 3.0 claim from Stripe evidence submissions.** `stripe-dispute.service`
+  asserted "prior non-disputed transactions with matching IP … CE 3.0 pre-dispute block criteria met"
+  based only on having IP+email+description on file. Fraud evidence now states only captured facts
+  (purchase IP, email, terms-acceptance timestamp). `stripe_evidence_vault.ce30_eligible` is now
+  always written false until a real eligibility engine exists (`ce30_fields_complete` remains the
+  data-completeness flag; triage scoring uses it).
+- **Unknown reason codes no longer silently defended as "services not provided."** Unrecognized codes
+  map to a `general` category and force `needs_review` with an explanatory reason.
+- **Enrollment packet PDF robustness:** long unbroken values (T&C hash, transaction IDs) now wrap
+  inside their table cells; device-info separator switched to ASCII (middle dot rendered as
+  replacement glyphs in some PDF font subsets). Duplicate cancellation exhibits deduped (earliest
+  record per enrollment — the one with legal weight).
+
+### Added (reason-code-aware defense, 2026-07-05)
+- **`src/constants/reason-codes.ts`** — registry of ~40 codes across Visa/Mastercard/Amex/Discover
+  with network, dispute category, and per-network response windows (Visa 30d, MC 45d, Amex 20d,
+  Discover 20d). New categories: `canceled_recurring`, `misrepresentation`, `canceled_services`,
+  `duplicate_processing` — each with its own AI strategy block in `buildSystemPrompt`.
+- **Migration `085`** seeds `reason_code_strategies` for all new codes (evidence priorities +
+  strategy guidance; `historical_win_rate` left NULL — no invented numbers).
+- **Per-code exhibit ordering.** Exhibits are re-sorted by the reason code's `evidence_priorities`
+  and re-lettered (refund record leads for 13.6, cancellation ledger for 13.2, consent forensics for
+  fraud). The PDF bundler derives the same priorities from the packet's reason code, so letters stay
+  identical across compile/regenerate/manual-edit rebundles.
+- **`src/services/defense-readiness.service.ts`** — reason-code missing-evidence checks and
+  "don't fight this" red flags: no delivery evidence for a services-not-provided dispute, no consent
+  forensics for fraud, and billed-after-cancellation (cancellation record predates the disputed
+  charge — generally indefensible). Red flags mark the packet `needs_review` with an explicit
+  "consider accepting" recommendation; `ss_defense_ready` is not fired.
+- **Transaction timeline.** Chronological table (date → event → exhibit ref) with disputed-charge and
+  chargeback-filed markers, derived from the exhibit list: included in the AI letter (structure item 3)
+  and server-rendered in the bundled PDF's exhibits page. `DisputeScope` now carries `transactionDate`.
+- **Prior Undisputed Transactions is now conditional** — included only for fraud/authorization/
+  canceled-recurring disputes where it has evidentiary weight, omitted as filler elsewhere.
+- **UI:** reason-code dropdown expanded to all four networks (grouped); deadline auto-derives from the
+  selected code's network window instead of a hardcoded +21 days (which silently overshot Amex's 20-day
+  window); the network window is shown under the selector.
+
 ## Unreleased — needs_review UI treatment
 
 ### Added (defense packet review UX, 2026-07-05)

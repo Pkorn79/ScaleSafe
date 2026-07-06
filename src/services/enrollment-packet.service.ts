@@ -106,7 +106,9 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
       }
       if (d.screenResolution) parts.push(d.screenResolution);
       if (d.timezone) parts.push(d.timezone);
-      deviceDisplay = parts.join(' · ') || 'N/A';
+      // Plain ASCII separator: the middle dot renders as "?"/replacement glyphs
+      // in some PDF font subsets, which reads as sloppy evidence to a reviewer.
+      deviceDisplay = parts.join(' - ') || 'N/A';
     }
   } catch { /* ignore parse errors */ }
 
@@ -185,9 +187,15 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   .subtitle { color: #6b7280; font-size: 11px; margin-bottom: 20px; }
   .header { text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #111827; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  .info-table { width: 100%; table-layout: fixed; }
   .info-table td { padding: 3px 0; vertical-align: top; }
   .info-table td:first-child { color: #6b7280; width: 180px; font-size: 12px; }
   .info-table td:last-child { font-weight: 500; }
+  /* Long unbroken values (T&C version hash, processor transaction IDs) must wrap
+     inside their cell — overflow shifts values visually onto neighboring rows,
+     which reads as tampered/sloppy evidence to a bank reviewer. */
+  .info-table code { word-break: break-all; white-space: normal; }
+  .info-table td:last-child { word-break: break-word; }
   .clause-table { border: 1px solid #e5e7eb; border-radius: 4px; }
   .clause-table th { background: #f9fafb; padding: 8px 10px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
   .footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #d1d5db; font-size: 10px; color: #9ca3af; text-align: center; }

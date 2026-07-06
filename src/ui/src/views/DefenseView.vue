@@ -115,16 +115,15 @@
         <label class="form-label">Reason Code *</label>
         <select class="form-select" v-model="compileForm.reasonCode">
           <option value="">Select...</option>
-          <option value="10.4">10.4 - Fraud (Visa)</option>
-          <option value="13.1">13.1 - Services Not Provided (Visa)</option>
-          <option value="13.3">13.3 - Not As Described (Visa)</option>
-          <option value="13.6">13.6 - Credit Not Processed (Visa)</option>
-          <option value="10.1">10.1 - Authorization (Visa)</option>
-          <option value="4837">4837 - Fraud (MC)</option>
-          <option value="4855">4855 - Services Not Provided (MC)</option>
-          <option value="4853">4853 - Not As Described (MC)</option>
-          <option value="4860">4860 - Credit Not Processed (MC)</option>
+          <optgroup v-for="group in REASON_CODE_GROUPS" :key="group.network" :label="group.label">
+            <option v-for="rc in group.codes" :key="rc.code" :value="rc.code">
+              {{ rc.code }} - {{ rc.name }}
+            </option>
+          </optgroup>
         </select>
+        <div v-if="selectedNetwork" class="text-sm text-muted mt-2">
+          {{ selectedNetwork.label }} response window: {{ selectedNetwork.days }} days from the dispute date.
+        </div>
       </div>
       <div class="grid grid-2">
         <div class="form-group">
@@ -234,11 +233,90 @@ const transactionScopeWarning = computed(() => {
   return '';
 });
 
-watch(() => compileForm.value.disputeDate, (disputeDate) => {
+// Reason codes grouped by network, mirroring src/constants/reason-codes.ts.
+// Days = the network's merchant response window (Visa 30, MC 45, Amex 20,
+// Discover ~20 conservative) — an Amex deadline defaulted past day 20 is a
+// default loss, so the deadline must follow the selected code's network.
+const REASON_CODE_GROUPS = [
+  {
+    network: 'visa', label: 'Visa', days: 30,
+    codes: [
+      { code: '10.1', name: 'Authorization — EMV Liability Shift' },
+      { code: '10.4', name: 'Fraud — Card-Absent' },
+      { code: '11.3', name: 'No Authorization' },
+      { code: '12.5', name: 'Incorrect Amount' },
+      { code: '12.6.1', name: 'Duplicate Processing' },
+      { code: '12.6.2', name: 'Paid by Other Means' },
+      { code: '13.1', name: 'Services Not Provided' },
+      { code: '13.2', name: 'Canceled Recurring' },
+      { code: '13.3', name: 'Not As Described' },
+      { code: '13.5', name: 'Misrepresentation' },
+      { code: '13.6', name: 'Credit Not Processed' },
+      { code: '13.7', name: 'Canceled Services' },
+    ],
+  },
+  {
+    network: 'mastercard', label: 'Mastercard', days: 45,
+    codes: [
+      { code: '4808', name: 'Authorization' },
+      { code: '4834', name: 'Point-of-Interaction Error / Duplicate' },
+      { code: '4837', name: 'Fraud — No Cardholder Authorization' },
+      { code: '4841', name: 'Canceled Recurring / Digital Goods' },
+      { code: '4853', name: 'Cardholder Dispute / Not As Described' },
+      { code: '4855', name: 'Services Not Provided' },
+      { code: '4860', name: 'Credit Not Processed' },
+    ],
+  },
+  {
+    network: 'amex', label: 'American Express', days: 20,
+    codes: [
+      { code: 'A02', name: 'No Valid Authorization' },
+      { code: 'C02', name: 'Credit Not Processed' },
+      { code: 'C05', name: 'Goods/Services Canceled' },
+      { code: 'C08', name: 'Goods/Services Not Received' },
+      { code: 'C14', name: 'Paid by Other Means' },
+      { code: 'C28', name: 'Canceled Recurring Billing' },
+      { code: 'C31', name: 'Not As Described' },
+      { code: 'C32', name: 'Damaged or Defective' },
+      { code: 'F29', name: 'Fraud — Card Not Present' },
+      { code: 'P08', name: 'Duplicate Charge' },
+    ],
+  },
+  {
+    network: 'discover', label: 'Discover', days: 20,
+    codes: [
+      { code: 'AA', name: 'Does Not Recognize' },
+      { code: 'AP', name: 'Canceled Recurring Payment' },
+      { code: 'RG', name: 'Non-Receipt of Goods/Services' },
+      { code: 'RM', name: 'Quality Dispute' },
+      { code: 'RN2', name: 'Credit Not Received' },
+      { code: 'UA', name: 'Fraud — Card Not Present' },
+    ],
+  },
+];
+
+const selectedNetwork = computed(() => {
+  const code = compileForm.value.reasonCode;
+  if (!code) return null;
+  const group = REASON_CODE_GROUPS.find(g => g.codes.some(c => c.code === code));
+  return group ? { label: group.label, days: group.days } : null;
+});
+
+function recomputeDeadline() {
+  const disputeDate = compileForm.value.disputeDate;
   if (!disputeDate) { compileForm.value.deadline = ''; return; }
+  // Default to the strictest window (20 days) when the network is unknown —
+  // better to prompt the merchant early than to blow a real deadline.
+  const days = selectedNetwork.value?.days ?? 20;
   const deadline = new Date(disputeDate);
-  deadline.setDate(deadline.getDate() + 21);
+  deadline.setDate(deadline.getDate() + days);
   compileForm.value.deadline = deadline.toISOString().slice(0, 10);
+}
+
+watch(() => compileForm.value.disputeDate, recomputeDeadline);
+// Changing the reason code changes the network window, so re-derive the deadline.
+watch(() => compileForm.value.reasonCode, () => {
+  if (compileForm.value.disputeDate) recomputeDeadline();
 });
 
 const filteredPackets = computed(() => {

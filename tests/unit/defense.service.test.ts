@@ -47,38 +47,38 @@ jest.mock('../../src/repositories/evidence.repository', () => ({
   },
 }));
 
+const consentExhibit = {
+  letter: 'A',
+  name: 'Signed Enrollment Packet',
+  category: 'consent' as const,
+  source: 'enrollment_packet_pdf' as const,
+  ref: 'packets/enrollment.pdf',
+  occurredAt: '2026-01-15',
+  summary: 'T&C accepted',
+};
+
+const deliveryExhibit = {
+  letter: 'B',
+  name: 'Milestone 1: Setup',
+  category: 'service_delivery' as const,
+  source: 'evidence_milestones' as const,
+  ref: 'ms_1',
+  occurredAt: '2026-02-01',
+  summary: 'Milestone 1 completed',
+};
+
 const mockExhibitList: ExhibitList = {
-  exhibits: [
-    {
-      letter: 'A',
-      name: 'Signed Enrollment Packet',
-      category: 'consent',
-      source: 'enrollment_packet_pdf',
-      ref: 'packets/enrollment.pdf',
-      occurredAt: '2026-01-15',
-      summary: 'T&C accepted',
-    },
-  ],
+  exhibits: [consentExhibit, deliveryExhibit],
   byCategory: {
-    consent: [
-      {
-        letter: 'A',
-        name: 'Signed Enrollment Packet',
-        category: 'consent',
-        source: 'enrollment_packet_pdf',
-        ref: 'packets/enrollment.pdf',
-        occurredAt: '2026-01-15',
-        summary: 'T&C accepted',
-      },
-    ],
-    service_delivery: [],
+    consent: [consentExhibit],
+    service_delivery: [deliveryExhibit],
     communication: [],
     payments: [],
     termination: [],
   },
   totals: {
     consent: 1,
-    serviceDelivery: 0,
+    serviceDelivery: 1,
     communication: 0,
     payments: 0,
     termination: 0,
@@ -86,11 +86,17 @@ const mockExhibitList: ExhibitList = {
   enrollmentPacketPath: 'packets/enrollment.pdf',
 };
 
-jest.mock('../../src/services/defense-exhibits.service', () => ({
-  defenseExhibitsService: {
-    buildExhibitList: jest.fn().mockResolvedValue(mockExhibitList),
-  },
-}));
+jest.mock('../../src/services/defense-exhibits.service', () => {
+  // Keep the real pure helpers (normalizeEvidencePriorities, buildTimelineRows,
+  // sortExhibitsByPriority) — only the DB-backed exhibit builder is mocked.
+  const actual = jest.requireActual('../../src/services/defense-exhibits.service');
+  return {
+    ...actual,
+    defenseExhibitsService: {
+      buildExhibitList: jest.fn().mockResolvedValue(mockExhibitList),
+    },
+  };
+});
 
 const mockBundleDefensePdf = jest.fn().mockResolvedValue('https://files.test/defense.pdf');
 jest.mock('../../src/services/defense-bundle.service', () => ({
@@ -130,6 +136,7 @@ function exactScope(overrides: Record<string, any> = {}) {
   return {
     paymentEventId: null,
     processorTransactionId: null,
+    transactionDate: null,
     processor: null,
     enrollmentId: 'enr_1',
     offerId: 'offer_1',
@@ -215,7 +222,7 @@ describe('Defense Service - Reason Code Mapping', () => {
     );
   });
 
-  test('Unknown reason code defaults to services_not_provided', async () => {
+  test('Unknown reason code maps to general category, never services_not_provided', async () => {
     await defenseService.compileDefense({
       locationId: 'loc_1', contactId: 'c_1',
       reasonCode: '99.99', disputeAmount: 5000,
@@ -223,8 +230,22 @@ describe('Defense Service - Reason Code Mapping', () => {
     });
 
     expect(defenseRepository.create).toHaveBeenCalledWith(
-      expect.objectContaining({ reason_code_category: 'services_not_provided' }),
+      expect.objectContaining({ reason_code_category: 'general' }),
     );
+  });
+
+  test('New registry codes resolve: Visa 13.2, MC 4841, Amex C28, Discover AP → canceled_recurring', async () => {
+    for (const code of ['13.2', '4841', 'C28', 'AP']) {
+      (defenseRepository.create as jest.Mock).mockClear();
+      await defenseService.compileDefense({
+        locationId: 'loc_1', contactId: 'c_1',
+        reasonCode: code, disputeAmount: 5000,
+        disputeDate: '2026-03-20', deadline: '2026-04-10',
+      });
+      expect(defenseRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ reason_code_category: 'canceled_recurring' }),
+      );
+    }
   });
 });
 
@@ -241,7 +262,26 @@ describe('Defense Service - Prompt Building', () => {
     expect(prompt).toContain('Prior Undisputed Transactions');
   });
 
-  test('user message includes evidence timeline', () => {
+  test('user message includes evidence and prior payments for fraud disputes', () => {
+    const msg = defenseService.buildUserMessage(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '10.4', disputeAmount: 5000, disputeDate: '2026-03-20', deadline: '2026-04-10' },
+      { firstName: 'John', lastName: 'Doe', email: 'john@test.com' },
+      { business_name: 'Test Biz' },
+      mockExhibitList,
+      [{ amount: 500, payment_date: '2026-01-15' }],
+      'fraud',
+    );
+
+    expect(msg).toContain('10.4');
+    expect(msg).toContain('$5000');
+    expect(msg).toContain('John');
+    expect(msg).toContain('CONSENT EVIDENCE');
+    expect(msg).toContain('Exhibit A');
+    expect(msg).toContain('PRIOR UNDISPUTED TRANSACTIONS');
+    expect(msg).toContain('$500');
+  });
+
+  test('prior payments are OMITTED for non-fraud/non-recurring dispute types', () => {
     const msg = defenseService.buildUserMessage(
       { locationId: 'loc_1', contactId: 'c_1', reasonCode: '13.1', disputeAmount: 5000, disputeDate: '2026-03-20', deadline: '2026-04-10' },
       { firstName: 'John', lastName: 'Doe', email: 'john@test.com' },
@@ -251,13 +291,25 @@ describe('Defense Service - Prompt Building', () => {
       'services_not_provided',
     );
 
-    expect(msg).toContain('13.1');
-    expect(msg).toContain('$5000');
-    expect(msg).toContain('John');
-    expect(msg).toContain('CONSENT EVIDENCE');
-    expect(msg).toContain('Exhibit A');
-    expect(msg).toContain('PRIOR UNDISPUTED TRANSACTIONS');
-    expect(msg).toContain('$500');
+    expect(msg).not.toContain('PRIOR UNDISPUTED TRANSACTIONS (');
+    expect(msg).toContain('Do NOT include a "Prior Undisputed Transactions" section');
+  });
+
+  test('user message includes a chronological transaction timeline with markers', () => {
+    const msg = defenseService.buildUserMessage(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '13.1', disputeAmount: 5000, disputeDate: '2026-03-20', deadline: '2026-04-10' },
+      { firstName: 'John', lastName: 'Doe', email: 'john@test.com' },
+      { business_name: 'Test Biz' },
+      mockExhibitList,
+      [],
+      'services_not_provided',
+      exactScope({ transactionDate: '2026-01-15T08:00:00Z' }) as any,
+    );
+
+    expect(msg).toContain('TRANSACTION TIMELINE');
+    expect(msg).toContain('** Disputed charge **');
+    expect(msg).toContain('** Chargeback filed by cardholder **');
+    expect(msg).toContain('(Exhibit B)');
   });
 });
 
@@ -344,11 +396,53 @@ describe('Defense Service - Compilation Flow', () => {
       'ss_defense_ready',
       expect.objectContaining({
         contact_id: 'c_1',
-        evidence_count: 1,
+        evidence_count: 2,
         readiness_score: expect.any(Number),
         processor: 'stripe',
       }),
     );
+  });
+
+  test('unknown reason code forces needs_review and suppresses ss_defense_ready', async () => {
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: 'ZZ99', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'general');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review',
+      expect.objectContaining({
+        error_message: expect.stringContaining('not recognized'),
+      }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+
+  test('services_not_provided with zero delivery evidence is red-flagged, not marked ready', async () => {
+    const noDelivery: ExhibitList = {
+      ...mockExhibitList,
+      exhibits: [consentExhibit],
+      byCategory: { ...mockExhibitList.byCategory, service_delivery: [] },
+      totals: { ...mockExhibitList.totals, serviceDelivery: 0 },
+    };
+    (defenseExhibitsService.buildExhibitList as jest.Mock).mockResolvedValueOnce(noDelivery);
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review',
+      expect.objectContaining({
+        error_message: expect.stringContaining('consider accepting'),
+      }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
   });
 });
 

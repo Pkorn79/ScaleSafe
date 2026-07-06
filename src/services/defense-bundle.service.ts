@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { getSupabase } from '../clients/supabase.client';
 import { defenseRepository } from '../repositories/defense.repository';
-import { defenseExhibitsService } from './defense-exhibits.service';
+import { defenseExhibitsService, normalizeEvidencePriorities, buildTimelineRows, type TimelineRow } from './defense-exhibits.service';
 import { defenseLetterPdfService } from './defense-letter-pdf.service';
 import { renderHtmlToPdf } from './pdf-renderer.service';
 import { merchantRepository } from '../repositories/merchant.repository';
@@ -42,6 +42,14 @@ export const defenseBundleService = {
     // The scope options must match the ones the letter used, or the PDF's exhibits
     // will drift from the letter — e.g. a contact_only packet would otherwise scope
     // to nothing here while the letter cited contact-wide exhibits.
+    // Exhibit ordering: derive the reason-code evidence priorities from the packet
+    // itself (not from opts) so every rebundle path — initial compile, regenerate,
+    // manual edit — assigns identical exhibit letters to identical evidence.
+    let evidencePriorities: string[] = [];
+    try {
+      const strategy = await defenseRepository.getReasonCodeStrategy(packet.chargeback_reason_code || '');
+      evidencePriorities = normalizeEvidencePriorities(strategy?.evidence_priorities);
+    } catch {}
     const enrollmentId = opts?.enrollmentId || packet.enrollment_id || undefined;
     const exhibitList = await defenseExhibitsService.buildExhibitList(locationId, contactId, {
       enrollmentId,
@@ -49,6 +57,7 @@ export const defenseBundleService = {
       offerId: opts?.offerId ?? (packet as any).offer_id ?? undefined,
       enrollmentStart: opts?.enrollmentStart ?? undefined,
       enrollmentEnd: opts?.enrollmentEnd ?? undefined,
+      evidencePriorities,
     });
 
     // 2. Get the latest letter text
@@ -78,10 +87,15 @@ export const defenseBundleService = {
       exhibits: exhibitList.exhibits,
     });
 
-    // 4. Render the exhibits summary as PDF (list of exhibit summaries for quick reference)
+    // 4. Render the exhibits summary as PDF (transaction timeline + exhibit
+    // summaries). The timeline is server-rendered from the same exhibit list the
+    // letter cites, so its dates are exact regardless of what the AI letter says.
     let exhibitsPdfBuffer: Buffer | null = null;
     if (exhibitList.exhibits.length > 0) {
-      const exhibitsHtml = buildExhibitsSummaryHtml(exhibitList.exhibits, merchant.business_name || '');
+      const timelineRows = buildTimelineRows(exhibitList.exhibits, {
+        disputeDate: packet.chargeback_date || null,
+      });
+      const exhibitsHtml = buildExhibitsSummaryHtml(exhibitList.exhibits, merchant.business_name || '', timelineRows);
       exhibitsPdfBuffer = await renderHtmlToPdf(exhibitsHtml);
     }
 
@@ -154,7 +168,32 @@ function esc(s: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function buildExhibitsSummaryHtml(exhibits: any[], merchantName: string): string {
+function buildTimelineHtml(timeline: TimelineRow[]): string {
+  if (!timeline || timeline.length < 2) return '';
+  const rows = timeline.map((row) => {
+    const d = new Date(row.date).toLocaleDateString('en-US', { dateStyle: 'medium' });
+    const emphasis = row.isMarker ? 'font-weight:700;color:#991b1b' : 'color:#374151';
+    return `<tr>
+      <td style="padding:4px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-size:11px;color:#6b7280">${esc(d)}</td>
+      <td style="padding:4px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;${emphasis}">${esc(row.label)}</td>
+      <td style="padding:4px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6b7280;white-space:nowrap">${row.exhibitLetter ? `Exhibit ${esc(row.exhibitLetter)}` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div style="margin-bottom:20px">
+  <h2 style="font-size:14px;font-weight:700;margin:0 0 8px">Transaction Timeline</h2>
+  <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb">
+    <thead><tr style="background:#f9fafb">
+      <th style="text-align:left;padding:5px 10px;font-size:11px;color:#6b7280">Date</th>
+      <th style="text-align:left;padding:5px 10px;font-size:11px;color:#6b7280">Event</th>
+      <th style="text-align:left;padding:5px 10px;font-size:11px;color:#6b7280">Reference</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</div>`;
+}
+
+function buildExhibitsSummaryHtml(exhibits: any[], merchantName: string, timeline: TimelineRow[] = []): string {
   const rows = exhibits.map(ex =>
     `<div style="margin-bottom:12px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px">
       <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:4px">Exhibit ${esc(ex.letter)}: ${esc(ex.name)}</div>
@@ -175,6 +214,7 @@ function buildExhibitsSummaryHtml(exhibits: any[], merchantName: string): string
   <h1>Evidence Exhibits</h1>
   <div class="subtitle">${esc(merchantName)} — ${exhibits.length} exhibits</div>
 </div>
+${buildTimelineHtml(timeline)}
 ${rows}
 </body>
 </html>`;

@@ -165,7 +165,7 @@ export const stripeDisputeService = {
       if (vaultEntry.contract_file_id || vaultEntry.terms_file_id) score += 30;
       if (vaultEntry.communication_file_id) score += 20;
       if (vaultEntry.session_file_ids?.length > 0) score += 20;
-      if (vaultEntry.ce30_eligible) score += 15;
+      if (vaultEntry.ce30_fields_complete) score += 15;
       if (vaultEntry.customer_email) score += 10;
       if (vaultEntry.customer_billing_address) score += 5;
     }
@@ -323,8 +323,19 @@ export const stripeDisputeService = {
           evidence['billing_address'] = `${addr.line1 || ''}, ${addr.city || ''} ${addr.state || ''} ${addr.postal_code || ''}`.trim();
         }
         if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
-        if (vault?.ce30_eligible) {
-          evidence['uncategorized_text'] = 'This transaction is CE 3.0 eligible. The cardholder has prior non-disputed transactions with matching IP address and email. Visa CE 3.0 pre-dispute block criteria met.';
+        // Only state facts we actually hold. Actual Visa CE 3.0 eligibility requires
+        // two prior undisputed transactions (settled 120-365 days before the dispute)
+        // with matching data elements — we do not verify that yet, so we must never
+        // assert it. Asserting unverified CE 3.0 claims to the network damages the
+        // merchant's credibility and can void an otherwise winnable response.
+        if (vault?.ce30_fields_complete) {
+          const identityFacts: string[] = [];
+          if (vault.customer_ip) identityFacts.push(`purchase IP address ${vault.customer_ip}`);
+          if (vault.customer_email) identityFacts.push(`customer email ${vault.customer_email}`);
+          if (vault.terms_accepted && vault.terms_accepted_at) identityFacts.push(`terms acceptance recorded at ${vault.terms_accepted_at}`);
+          if (identityFacts.length) {
+            evidence['uncategorized_text'] = `Customer identity data captured at the time of purchase: ${identityFacts.join('; ')}.`;
+          }
         }
         mergeEvidenceText(
           evidence,

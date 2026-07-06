@@ -17,6 +17,9 @@ export type ScopeConfidence = 'exact' | 'inferred' | 'contact_only';
 export interface DisputeScope {
   paymentEventId: string | null;
   processorTransactionId: string | null;
+  /** When the disputed charge occurred (payment_events.created_at) — anchors the
+   *  transaction timeline and the billed-after-cancellation red-flag check. */
+  transactionDate: string | null;
   processor: string | null;
   enrollmentId: string | null;
   offerId: string | null;
@@ -39,6 +42,7 @@ function emptyScope(overrides: Partial<DisputeScope> = {}): DisputeScope {
   return {
     paymentEventId: null,
     processorTransactionId: null,
+    transactionDate: null,
     processor: null,
     enrollmentId: null,
     offerId: null,
@@ -160,6 +164,7 @@ export const disputeScopeService = {
         const base = {
           paymentEventId: pe.id,
           processorTransactionId: pe.processor_transaction_id || null,
+          transactionDate: pe.created_at || null,
           processor: pe.processor || null,
           offerId: pe.offer_id || input.offerId || null,
         };

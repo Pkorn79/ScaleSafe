@@ -101,7 +101,7 @@ describe('Dispute Flow Integration', () => {
         contract_file_id: 'file_contract',
         communication_file_id: 'file_comm',
         session_file_ids: ['file_session_1'],
-        ce30_eligible: true,
+        ce30_fields_complete: true,
         customer_email: 'client@example.com',
         customer_billing_address: { line1: '123 Main St' },
         stripe_customer_id: 'cus_test',
@@ -189,7 +189,7 @@ describe('Dispute Flow Integration', () => {
         customer_billing_address: { line1: '123 Main', city: 'NYC', state: 'NY', postal_code: '10001' },
         offer_description: 'Coaching Program',
         contract_file_id: 'file_contract_1',
-        ce30_eligible: true,
+        ce30_fields_complete: true,
       };
 
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('fraudulent', vault, null);
@@ -199,7 +199,9 @@ describe('Dispute Flow Integration', () => {
       expect(evidence.customer_purchase_ip).toBe('1.2.3.4');
       expect(evidence.billing_address).toContain('123 Main');
       expect(evidence.uncategorized_file).toBe('file_contract_1');
-      expect(evidence.uncategorized_text).toContain('CE 3.0');
+      // Factual identity statement only — never an unverified CE 3.0 eligibility claim
+      expect(evidence.uncategorized_text).toContain('identity data captured at the time of purchase');
+      expect(evidence.uncategorized_text).not.toContain('CE 3.0');
     });
 
     it('should map product_not_received to service delivery evidence', () => {
