@@ -137,3 +137,25 @@ export function buildCommunicationEvidenceSummary(input: CommunicationEvidenceSu
 export function looksLikeHtml(value: unknown): boolean {
   return typeof value === 'string' && /<\/?[a-z][\s\S]*>/i.test(value);
 }
+
+/**
+ * Detect workflow emails whose merge fields never rendered — e.g. the live
+ * payment reminders that read "Amount: Next payment date: Payment number: of
+ * ... please contact . Thank you". A message like that in a bank-facing
+ * defense packet reads as sloppy billing and hurts more than it helps, so the
+ * exhibit builder excludes them.
+ *
+ * Only precise render-failure artifacts are flagged (a "Label: Label:" chain
+ * can't be distinguished from a capitalized value by text alone):
+ *  - raw {{merge_tag}} leftovers
+ *  - orphaned punctuation from an empty field ("please contact . Thank you")
+ *  - a label whose value is a bare connective from a split template
+ *    ("Payment number: of ...")
+ */
+export function looksLikeUnrenderedTemplate(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  if (/\{\{[^}]*\}\}/.test(value)) return true;
+  if (/\s[.,](?:\s|$)/.test(value)) return true;
+  if (/[A-Za-z]:\s+(?:of|and|or)\s/i.test(value)) return true;
+  return false;
+}

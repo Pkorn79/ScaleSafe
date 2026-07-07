@@ -2,7 +2,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { evidenceRepository } from '../repositories/evidence.repository';
 import { logger } from '../utils/logger';
 import { getDefenseSummary } from '../utils/defense-evidence';
-import { cleanCommunicationBody } from '../utils/communication-evidence';
+import { cleanCommunicationBody, looksLikeUnrenderedTemplate } from '../utils/communication-evidence';
 
 /**
  * Defense Exhibits Service — single source of truth for the numbered exhibit
@@ -522,6 +522,13 @@ export const defenseExhibitsService = {
         .order('completed_at', { ascending: true });
       if (milestonesErr) recordSourceError('evidence_milestones', milestonesErr);
       for (const ms of scopedRows((milestones || []) as any[], opts?.enrollmentId, 'completed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        // Compose the full delivery story from the record. A thin defense_summary
+        // (the live one was just "Access to ScaleSafe") must not replace it — a
+        // milestone exhibit is only persuasive when it says what was delivered,
+        // when, and what the client agreed to do with it.
+        const composedSummary = `Milestone ${ms.milestone_number ?? '?'} ("${ms.milestone_name || 'Untitled'}") marked complete ${fmtDate(ms.completed_at)}.`
+          + `${ms.description ? ` Deliverables: ${ms.description}.` : ''}`
+          + `${ms.notes ? ` Client responsibility: ${ms.notes}.` : ''}`;
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Milestone ${ms.milestone_number ?? '?'}: ${ms.milestone_name || ''}`,
@@ -529,9 +536,13 @@ export const defenseExhibitsService = {
           source: 'evidence_milestones',
           ref: ms.id,
           occurredAt: ms.completed_at,
-          summary: `Milestone ${ms.milestone_number ?? '?'} ("${ms.milestone_name || 'Untitled'}") marked complete ${fmtDate(ms.completed_at)}.${ms.description ? ` Deliverables: ${ms.description}.` : ''}`,
+          summary: composedSummary,
         });
-        applyDefenseContract(exhibits[exhibits.length - 1], ms);
+        const exhibit = exhibits[exhibits.length - 1];
+        applyDefenseContract(exhibit, ms);
+        if ((exhibit.summary || '').length < composedSummary.length) {
+          exhibit.summary = composedSummary;
+        }
       }
     } catch (err) { recordSourceError('evidence_milestones', err); }
 
@@ -615,6 +626,17 @@ export const defenseExhibitsService = {
 
       const linkedIds = new Set(linked.map((c: any) => c.id));
       for (const c of [...linked, ...keptUnlinked]) {
+        // Workflow emails whose merge fields never rendered ("Amount: Next
+        // payment date: Payment number: of") read as sloppy billing in a
+        // bank-facing packet — exclude them entirely.
+        const bodyText = cleanCommunicationBody(c.summary || c.body_preview || '');
+        if (looksLikeUnrenderedTemplate(bodyText)) {
+          logger.info(
+            { locationId, contactId, commId: c.id },
+            'defense-exhibits: excluded communication with unrendered merge fields',
+          );
+          continue;
+        }
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Communication: ${c.direction === 'inbound' ? 'From client' : 'To client'} (${c.comm_type})`,

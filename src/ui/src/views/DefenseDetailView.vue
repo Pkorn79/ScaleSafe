@@ -36,6 +36,10 @@
           <span v-if="daysRemaining !== null" style="margin-left:8px">
             ({{ daysRemaining > 0 ? pluralize(daysRemaining, 'day') + ' remaining' : daysRemaining === 0 ? 'Due today' : 'Overdue by ' + pluralize(Math.abs(daysRemaining), 'day') }})
           </span>
+          <div v-if="deadlineLooksOptimistic" class="text-sm" style="margin-top:4px;font-weight:400;opacity:0.85">
+            This deadline was defaulted from the card network's maximum window. Processors usually
+            require your response sooner — verify the actual due date with your processor.
+          </div>
         </div>
 
         <!-- Needs-review callout -->
@@ -145,6 +149,17 @@ const daysRemaining = computed(() => {
   // parseDateValue treats date-only values as local calendar dates (no UTC shift)
   const diff = Math.ceil((parseDateValue(d).getTime() - Date.now()) / 86400000);
   return diff;
+});
+
+// Deadlines defaulted before the 20-day operational cap (or hand-entered past
+// it) exceed what processors typically allow the merchant. Flag, never rewrite —
+// the stored deadline may be a real processor-supplied date.
+const deadlineLooksOptimistic = computed(() => {
+  const deadline = packet.value?.deadline || packet.value?.response_deadline;
+  const disputeDate = packet.value?.dispute_date || packet.value?.chargeback_date;
+  if (!deadline || !disputeDate) return false;
+  const diffDays = (parseDateValue(deadline).getTime() - parseDateValue(disputeDate).getTime()) / 86400000;
+  return diffDays > 20;
 });
 
 const deadlineUrgency = computed(() => {

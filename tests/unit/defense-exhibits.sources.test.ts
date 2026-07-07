@@ -105,7 +105,53 @@ describe('legacy milestone rows (enrollment id only in raw_payload)', () => {
   });
 });
 
+describe('milestone summary composition', () => {
+  test('a thin defense_summary does not replace the composed delivery story', async () => {
+    mockTableResults['evidence_milestones'] = {
+      data: [{
+        id: 'ms_1', enrollment_id: 'enr_1', milestone_number: 1, milestone_name: 'Merchant Setup',
+        completed_at: '2026-06-03T17:23:01Z',
+        description: 'Access to ScaleSafe',
+        notes: 'Access ScaleSafe and put your information into the Settings section.',
+        defense_summary: 'Access to ScaleSafe', // the thin live summary
+      }],
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+
+    const ms = list.exhibits.find((e) => e.ref === 'ms_1');
+    expect(ms?.summary).toContain('marked complete');
+    expect(ms?.summary).toContain('Deliverables: Access to ScaleSafe');
+    expect(ms?.summary).toContain('Client responsibility: Access ScaleSafe and put your information');
+  });
+});
+
 describe('noise filtering', () => {
+  test('communications with unrendered merge fields are excluded from exhibits', async () => {
+    mockTableResults['evidence_communication'] = {
+      data: [
+        {
+          id: 'comm_broken', enrollment_id: 'enr_1', comm_type: 'Email', direction: 'outbound',
+          comm_date: '2026-06-07T00:48:45Z',
+          body_preview: 'Program: ScaleSafe Beta Amount: Next payment date: Payment number: of If you have questions, please contact .',
+        },
+        {
+          id: 'comm_ok', enrollment_id: 'enr_1', comm_type: 'Email', direction: 'outbound',
+          comm_date: '2026-06-03T17:29:24Z',
+          body_preview: 'This confirms that a refund has been processed. Refund amount: $0.50 Refund date: 2026-06-03',
+        },
+      ],
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+
+    const refs = list.exhibits.map((e) => e.ref);
+    expect(refs).toContain('comm_ok');
+    expect(refs).not.toContain('comm_broken');
+  });
+
   test('internal readiness-score custom events are excluded; genuine custom events kept', async () => {
     (evidenceRepository.getTimeline as jest.Mock).mockResolvedValue({
       rows: [

@@ -346,6 +346,126 @@ describe('Defense Service - Prompt Building', () => {
   });
 });
 
+describe('Defense Service - Merchant voice & letter structure', () => {
+  test('system prompt mandates first-person merchant voice and bans tool attribution', () => {
+    const prompt = defenseService.buildSystemPrompt('services_not_provided', null, null);
+    expect(prompt).toContain('Write in the first person as the merchant');
+    expect(prompt).toContain('NEVER mention ScaleSafe');
+    expect(prompt).not.toContain('third person');
+  });
+
+  test('system prompt requires transaction identification and a Request section', () => {
+    const prompt = defenseService.buildSystemPrompt('services_not_provided', null, null);
+    expect(prompt).toContain('processor transaction ID');
+    expect(prompt).toContain('Request — a short section');
+  });
+
+  test('user message carries disputed transaction date and processor transaction ID', () => {
+    const msg = defenseService.buildUserMessage(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 0.5, disputeDate: '2026-07-02', deadline: '2026-07-22' },
+      { firstName: 'John', lastName: 'Doe' },
+      { business_name: 'Test Biz' },
+      mockExhibitList,
+      [],
+      'services_not_provided',
+      exactScope({ transactionDate: '2026-05-06T21:06:53Z', processorTransactionId: '12034706166' }) as any,
+    );
+    expect(msg).toContain('Disputed Transaction Date: 2026-05-06');
+    expect(msg).toContain('Processor Transaction ID: 12034706166');
+  });
+
+  test('fallback letter is first-person, makes a request, and never mentions ScaleSafe or review state', () => {
+    const letter = defenseService.buildStructuredFallbackLetter(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 100, disputeDate: '2026-03-20', deadline: '2026-04-10' },
+      exactScope({ transactionDate: '2026-01-15T08:00:00Z', processorTransactionId: 'txn_99' }) as any,
+      mockExhibitList,
+      [],
+      { business_name: 'Test Biz' },
+      { firstName: 'John', lastName: 'Doe' },
+      'Dispute Resolution Department',
+    );
+    expect(letter).toContain('We received this chargeback');
+    expect(letter).toContain('REQUEST');
+    expect(letter).toContain('we request that this chargeback be declined');
+    expect(letter).toContain('dated 2026-01-15');
+    expect(letter).not.toContain('ScaleSafe');
+    expect(letter).not.toContain('review before submission');
+  });
+});
+
+describe('Defense Service - Regeneration review state', () => {
+  function regenPacket(overrides: Record<string, any> = {}) {
+    return {
+      id: 'def_1', status: 'needs_review', location_id: 'loc_1', contact_id: 'c_1',
+      enrollment_id: 'enr_1', reason_code_category: 'services_not_provided',
+      chargeback_reason_code: '4855', chargeback_amount: 0.5, chargeback_date: '2026-07-02',
+      response_deadline: '2026-08-16', case_number: '123',
+      lifecycle_status: 'pending_submission',
+      error_message: 'AI draft was unavailable; a structured fallback letter was generated.',
+      ...overrides,
+    };
+  }
+
+  test('successful regeneration clears a stale fallback needs_review and does not fire ready', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce(regenPacket());
+
+    await defenseService.regenerateLetter('def_1');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'complete',
+      expect.objectContaining({ error_message: null }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+
+  test('regeneration keeps needs_review when genuine reasons persist (source errors)', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce(regenPacket());
+    (defenseExhibitsService.buildExhibitList as jest.Mock).mockResolvedValueOnce({
+      ...mockExhibitList,
+      sourceErrors: [{ source: 'evidence_milestones', message: 'column does not exist' }],
+    });
+
+    await defenseService.regenerateLetter('def_1');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review',
+      expect.objectContaining({ error_message: expect.stringContaining('evidence sources') }),
+    );
+    // The stale fallback reason must NOT survive the regeneration
+    const call = (defenseRepository.updateStatus as jest.Mock).mock.calls.find((c) => c[1] === 'needs_review');
+    expect(call[2].error_message).not.toContain('AI draft was unavailable');
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+
+  test('compile holds packet for review when a refund predates the dispute (strategy flag)', async () => {
+    const refundList: ExhibitList = {
+      ...mockExhibitList,
+      byCategory: {
+        ...mockExhibitList.byCategory,
+        termination: [{
+          letter: 'C', name: 'Refund (full)', category: 'termination' as const,
+          source: 'evidence_refund_activity' as const, ref: 'ref_1',
+          occurredAt: '2026-06-03', summary: 'Refund of $0.50 issued June 3, 2026.',
+        }],
+      },
+    };
+    (defenseExhibitsService.buildExhibitList as jest.Mock).mockResolvedValueOnce(refundList);
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '4855', disputeAmount: 0.5,
+      disputeDate: '2026-07-02', deadline: '2026-07-22',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'needs_review',
+      expect.objectContaining({ error_message: expect.stringContaining('credit already issued') }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+});
+
 describe('Defense Service - Compilation Flow', () => {
   test('compileDefense returns defenseId immediately', async () => {
     const id = await defenseService.compileDefense({

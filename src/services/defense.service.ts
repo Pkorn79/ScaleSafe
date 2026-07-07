@@ -9,7 +9,7 @@ import { triggerService } from './trigger.service';
 import { storageService } from './storage.service';
 import { defenseExhibitsService, normalizeEvidencePriorities, buildTimelineRows, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { disputeScopeService, type DisputeScope } from './dispute-scope.service';
-import { defenseReadinessService } from './defense-readiness.service';
+import { defenseReadinessService, evaluateReviewState } from './defense-readiness.service';
 import { logger } from '../utils/logger';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
@@ -246,7 +246,10 @@ export const defenseService = {
     // fighting THIS dispute type? Missing required evidence or an indefensible
     // fact pattern (e.g. billed after a cancellation request) holds the packet
     // for review with an honest recommendation instead of confident prose.
-    const readiness = defenseReadinessService.assess(category, exhibitList, scope);
+    const readiness = defenseReadinessService.assess(category, exhibitList, scope, {
+      amount: input.disputeAmount,
+      date: input.disputeDate,
+    });
 
     // 3. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
     const evidence = await evidenceRepository.getFullSnapshot(input.locationId, input.contactId);
@@ -369,22 +372,15 @@ export const defenseService = {
     // evidence source query failed (the packet is missing that source entirely). Mark
     // those needs_review and do not fire the "ready" workflow.
     const sourceErrors = exhibitList.sourceErrors || [];
-    const needsReview = usedFallback
-      || scope.scopeConfidence === 'contact_only'
-      || unknownReasonCode
-      || readiness.redFlags.length > 0
-      || readiness.missingEvidence.length > 0
-      || sourceErrors.length > 0;
+    const { needsReview, reviewReasons } = evaluateReviewState({
+      usedFallback,
+      scope,
+      unknownReasonCode,
+      readiness,
+      sourceErrors,
+      reasonCode: input.reasonCode,
+    });
     const finalStatus = needsReview ? 'needs_review' : 'complete';
-    const reviewReasons: string[] = [];
-    if (readiness.recommendAccept) reviewReasons.push('RECOMMENDATION: consider accepting this dispute rather than fighting it.');
-    if (readiness.redFlags.length) reviewReasons.push(...readiness.redFlags);
-    if (readiness.missingEvidence.length) reviewReasons.push(...readiness.missingEvidence);
-    if (usedFallback) reviewReasons.push('AI draft was unavailable; a structured fallback letter was generated.');
-    if (scope.scopeConfidence === 'contact_only') reviewReasons.push('The disputed transaction could not be tied to a specific program; evidence is contact-wide.');
-    if (unknownReasonCode) reviewReasons.push(`Reason code "${input.reasonCode}" is not recognized; the letter uses a generic strategy and must be reviewed against the network's actual requirements for this code.`);
-    if (sourceErrors.length) reviewReasons.push('Some evidence sources could not be read while assembling this packet, so the exhibit list may be incomplete.');
-    if (scope.gaps.length) reviewReasons.push(...scope.gaps);
 
     await defenseRepository.updateStatus(defenseId, finalStatus, {
       defense_letter_text: result.text,
@@ -493,7 +489,7 @@ export const defenseService = {
   buildSystemPrompt(category: string, strategy: any, template: any): string {
     const categoryStrategies: Record<string, string> = {
       fraud: 'The cardholder claims they did not authorize this transaction. Link the enrollment consent record (IP, device fingerprint, digital signature) to the transaction. Show that the same person who enrolled also used the service. Reference the signed enrollment packet as the primary exhibit.',
-      services_not_provided: 'The cardholder claims services were not provided. Itemize every delivered touchpoint with specific dates: session records, module completions, milestone sign-offs, platform access logs. Cite each as a numbered exhibit.',
+      services_not_provided: 'The cardholder claims services were not provided. Itemize every delivered touchpoint with specific dates: session records, module completions, milestone sign-offs, platform access logs. Cite each as a numbered exhibit. Where a milestone has an associated client notification or sign-off request communication, connect them ("the milestone was completed on X and the client was notified the same day"). State sign-off status factually — "sign-off was requested on DATE" or "the client signed off on DATE" — never imply a confirmation that did not occur.',
       not_as_described: 'The cardholder claims the service was not as described. Compare the offer terms presented at enrollment (from the signed enrollment packet) against what was actually delivered. Show the client reviewed and agreed to terms before purchasing.',
       credit_not_processed: 'The cardholder claims a credit/refund was promised but not received. Present the refund policy from the enrollment terms, communication logs showing what was communicated about refunds, and any refund actions that were taken.',
       authorization: 'The cardholder disputes authorization. Focus on consent proof: the signed enrollment packet with T&C acceptance timestamp, IP address, device fingerprint, scroll depth, and digital signature. This is the strongest evidence for authorization disputes.',
@@ -505,12 +501,16 @@ export const defenseService = {
 
     let prompt = `You are generating a chargeback defense letter. Your output will be submitted to a payment processor or bank as part of a formal dispute response.
 
+VOICE — THIS LETTER IS WRITTEN BY THE MERCHANT:
+- Write in the first person as the merchant ("We received...", "Our records show...", "We provided..."). The letter must read as if written by a careful business owner who keeps thorough records — human, plain, and direct. It is a letter FROM a merchant, not a report ABOUT one.
+- Open with one plain sentence that says what this letter is: that we received this chargeback and are disputing it, with the one-line reason why. Shape: "We received chargeback case <number> for $<amount>, filed on <dispute date>, and we are disputing it because our records show the charge was authorized and the services were delivered."
+- NEVER mention ScaleSafe, or any software, app, tool, platform, or "system" as the author, assembler, or source of this letter or its records. Refer to evidence as "our records", "our enrollment agreement", "our communication log". (The name of the program the client purchased may of course appear — that is what was sold.)
+
 TONE AND STYLE:
-- Use a clinical, factual tone throughout. State facts, dates, and amounts. Let the evidence speak for itself.
+- Use a factual tone throughout. State facts, dates, and amounts. Let the evidence speak for itself.
 - Do NOT use argumentative, persuasive, or emotional language.
 - Do NOT use phrases like "we strongly contest," "the cardholder is mistaken," "we believe," or "it is clear that."
 - Do NOT write "Dear Issuing Bank" or "[CASE NUMBER]" or "[Current Date]" or any bracketed placeholder. All values must come from the data provided below — if a value is missing, write "information not provided" in plain text, never leave an unfilled bracket.
-- Write in third person ("The merchant provided...", "The client enrolled...").
 
 DISPUTE CATEGORY: ${category.replace(/_/g, ' ')}
 
@@ -519,6 +519,7 @@ STRATEGY: ${categoryStrategies[category] || 'Present all available evidence of s
 CRITICAL RULES FOR EVENT INTERPRETATION:
 - Cancellation events are TERMINATION events. State the cancellation date and reason factually. Do NOT characterize cancellations as evidence of ongoing service delivery or engagement. The active service period ended on the cancellation date.
 - Refund events are financial resolution events. State whether a refund was issued, the amount, and the date. Do not editorialize on whether the refund was "fair."
+- If the evidence shows a refund matching or covering the disputed amount was issued BEFORE the dispute was filed, that fact changes the whole response: state it in the opening paragraph and make it the basis of the Request section (a credit was already issued on <date>, before this dispute; we ask that the case be resolved accordingly and that no second recovery of the same funds occur). Never bury this fact mid-letter.
 - Subscription changes (pause/resume) are lifecycle events. Pauses mean service was temporarily suspended. Resumes mean it restarted. State dates and reasons only.
 - Session no-shows are NOT evidence of service delivery. They are evidence that the client was offered a session and did not attend.
 - Only sessions with attendance_status = "attended" should be cited as evidence of service delivery.
@@ -531,13 +532,14 @@ EXHIBIT REFERENCES:
 
 LETTER STRUCTURE:
 1. Header with date, addressee, case reference, and merchant name
-2. Brief dispute summary (1-2 sentences stating the dispute facts)
+2. Opening paragraph: the plain first-person sentence described under VOICE, followed by precise identification of the disputed transaction — transaction date, processor transaction ID, amount, and (when the data shows it) its place in the payment plan. A reviewer must be able to match this response to the exact transaction from this paragraph alone.
 3. Transaction Timeline — a brief chronological list reproducing the TRANSACTION TIMELINE block from the evidence below verbatim (dates and exhibit letters exactly as given); omit if no timeline block is provided
 4. Evidence of authorization / enrollment (cite consent exhibits)
 5. Evidence of service delivery (cite delivery exhibits)
 6. Prior Undisputed Transactions section — ONLY when a "PRIOR UNDISPUTED TRANSACTIONS" block appears in the evidence below; otherwise omit this section entirely
-7. Conclusion (factual summary, not argumentative)
-8. Exhibit index (numbered list of all cited exhibits)
+7. Request — a short section stating plainly what we are asking the reviewer for: that this chargeback be declined/reversed based on the evidence above (or, when a credit was already issued before the dispute, that the case be resolved as credit previously issued with no second recovery). Factual, not pleading. Every letter must contain this section.
+8. Conclusion (factual summary, not argumentative)
+9. Exhibit index — one line per exhibit stating what it PROVES, not just what it is (e.g. "Exhibit A — Signed enrollment agreement: establishes authorization and the agreed terms")
 `;
 
     if (strategy?.evidence_priorities) {
@@ -589,7 +591,11 @@ LETTER STRUCTURE:
     msg += `- Case/ARN Number: ${input.caseNumber || 'information not provided'}\n`;
     msg += `- Reason Code: ${input.reasonCode}\n`;
     msg += `- Disputed Amount: $${Number(input.disputeAmount).toFixed(2)}\n`;
-    msg += `- Dispute Date: ${input.disputeDate}\n`;
+    // The disputed TRANSACTION (what the cardholder is charging back) — distinct
+    // from the dispute filing date. The letter's opening must identify it precisely.
+    if (scope?.transactionDate) msg += `- Disputed Transaction Date: ${new Date(scope.transactionDate).toISOString().slice(0, 10)}\n`;
+    if (scope?.processorTransactionId) msg += `- Processor Transaction ID: ${scope.processorTransactionId}\n`;
+    msg += `- Dispute Date (when the chargeback was filed): ${input.disputeDate}\n`;
     msg += `- Response Deadline: ${input.deadline}\n\n`;
 
     // Chronological transaction timeline — the reviewer's fastest path to
@@ -717,17 +723,20 @@ LETTER STRUCTURE:
     msg += ` — Disputed Amount: $${Number(input.disputeAmount).toFixed(2)}`;
     msg += ` — Merchant: ${businessName}\n\n`;
 
+    msg += `We received this chargeback and we are disputing it. `;
+    msg += `Our records for the disputed transaction are summarized below, with each fact tied to an exhibit.\n\n`;
+
     msg += `TRANSACTION AND PROGRAM\n`;
-    msg += `${businessName} responds to the chargeback filed by ${clientName} disputing a `;
-    msg += `$${Number(input.disputeAmount).toFixed(2)} charge dated ${input.disputeDate}. `;
-    msg += `This response concerns ${programName}`;
+    msg += `The cardholder, ${clientName}, disputes a $${Number(input.disputeAmount).toFixed(2)} charge`;
+    if (scope.transactionDate) msg += ` dated ${new Date(scope.transactionDate).toISOString().slice(0, 10)}`;
     if (scope.processorTransactionId) msg += ` (processor transaction ${scope.processorTransactionId})`;
-    msg += `. `;
+    msg += `; the chargeback was filed on ${input.disputeDate}. `;
+    msg += `The purchase was for ${programName}. `;
     if (scope.enrollmentStart) {
-      msg += `The service window on record runs from ${scope.enrollmentStart}${scope.enrollmentEnd ? ` to ${scope.enrollmentEnd}` : ' onward'}. `;
+      msg += `The service window on our records runs from ${scope.enrollmentStart}${scope.enrollmentEnd ? ` to ${scope.enrollmentEnd}` : ' onward'}. `;
     }
     if (scope.scopeConfidence === 'contact_only') {
-      msg += `NOTE: This charge could not be tied to a single program; the evidence below is drawn from the cardholder's account and must be reviewed before submission.`;
+      msg += `NOTE: our records could not tie this charge to a single program; the evidence below is drawn from the client's account history.`;
     }
     msg += `\n\n`;
 
@@ -761,6 +770,9 @@ LETTER STRUCTURE:
     }
     msg += `\n`;
 
+    msg += `REQUEST\n`;
+    msg += `Based on the records above, we request that this chargeback be declined and the disputed funds returned to us.\n\n`;
+
     msg += `EXHIBIT INDEX\n`;
     if (exhibitList.exhibits.length) {
       for (const ex of exhibitList.exhibits) {
@@ -771,8 +783,7 @@ LETTER STRUCTURE:
     }
     msg += `\n`;
 
-    msg += `This response was assembled by ScaleSafe from the exhibits listed above. `;
-    msg += `It requires merchant review before submission.\n\n`;
+    msg += `All facts stated in this response are supported by the exhibits listed above.\n\n`;
     msg += `Respectfully submitted,\n${businessName}`;
 
     return msg;
@@ -985,12 +996,32 @@ LETTER STRUCTURE:
       logger.error({ err: regenVersionErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
     }
 
-    // Mirror to fast-read column
-    await defenseRepository.updateStatus(defenseId, packet.status, {
+    // A successful regeneration must re-evaluate the review state: a stale
+    // "AI draft was unavailable" reason from the original compile must clear,
+    // while reasons that still apply (scope, readiness, source errors) must
+    // persist. Deliberately does NOT fire ss_defense_ready — the merchant is
+    // already in the UI, and regeneration is not a new "packet ready" event.
+    const readiness = defenseReadinessService.assess(category, exhibitList, scope, {
+      amount: packet.chargeback_amount,
+      date: packet.chargeback_date,
+    });
+    const { needsReview, reviewReasons } = evaluateReviewState({
+      usedFallback: false,
+      scope,
+      unknownReasonCode: !resolveReasonCode(input.reasonCode),
+      readiness,
+      sourceErrors: exhibitList.sourceErrors || [],
+      reasonCode: input.reasonCode,
+    });
+    const newStatus = needsReview ? 'needs_review' : 'complete';
+
+    // Mirror to fast-read column with the freshly evaluated status
+    await defenseRepository.updateStatus(defenseId, newStatus, {
       defense_letter_text: result.text,
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
-    });
+      error_message: needsReview ? reviewReasons.join(' ') : null,
+    } as any);
 
     // Rebundle PDF
     try {
@@ -998,7 +1029,7 @@ LETTER STRUCTURE:
       await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, exhibitScope);
     } catch {}
 
-    logger.info({ defenseId, version: nextVersion }, 'Defense letter regenerated');
+    logger.info({ defenseId, version: nextVersion, status: newStatus }, 'Defense letter regenerated');
     return { letterText: result.text, versionNumber: nextVersion };
   },
 

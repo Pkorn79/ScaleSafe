@@ -5,6 +5,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense letter voice + 4855 output quality (2026-07-06, from regenerated-packet review)
+
+### Changed (letter voice & structure)
+- **Letters are now written in the merchant's first-person voice.** The system prompt
+  previously mandated third person ("The merchant provided..."); it now requires a plain
+  human opening ("We received chargeback case N for $X and we are disputing it because...")
+  and first-person prose throughout — a letter FROM a merchant, not a report ABOUT one.
+- **No tool attribution anywhere in bank-facing output.** The prompt bans mentioning
+  ScaleSafe/software/systems as the author; the letter PDF footer now reads "Prepared and
+  submitted by {merchant}"; the fallback letter drops "assembled by ScaleSafe" and the
+  "requires merchant review before submission" sentence (workflow state never belongs in a
+  submitted document); the enrollment-packet footer is reworded brand-neutrally.
+- **Required letter sections added:** precise disputed-transaction identification in the
+  opening (transaction date + processor transaction ID now passed in DISPUTE DETAILS) and
+  an explicit "Request" section stating what the merchant asks the reviewer for. Exhibit
+  index lines must state what each exhibit PROVES.
+- **Milestone exhibits tell the full delivery story** (name, completion date, deliverables,
+  client responsibility) — a thin `defense_summary` ("Access to ScaleSafe") no longer
+  replaces the composed summary. The 4855 strategy now instructs connecting milestones to
+  their notification emails and stating sign-off status factually.
+
+### Added (strategy & review-state correctness)
+- **Refund-before-dispute strategy flag.** Readiness now receives the dispute amount/date;
+  a refund record predating the dispute holds the packet for review with a
+  credit-already-issued recommendation, and a refund *communication* alone triggers a
+  verify-with-processor warning (a merchant email is weak refund proof — per
+  docs/CHARGEBACK_DEFENSE_OPTIMIZATION_RESEARCH.md). New prompt rule: a pre-dispute refund
+  covering the disputed amount must lead the letter and the Request, never be buried.
+- **Successful regeneration re-evaluates review state** via a shared `evaluateReviewState`
+  (used by compile + regen): stale "AI draft was unavailable" reasons clear, genuine
+  reasons persist, `ss_defense_ready` is never fired from regeneration.
+- **Unrendered-template communications are excluded from exhibits**
+  (`looksLikeUnrenderedTemplate`: raw {{merge_tags}}, orphaned punctuation, split-template
+  label values — matches the live broken payment reminders, keeps real emails).
+- **Deadline caution in the packet UI** when the stored deadline exceeds the dispute date
+  + 20-day operational window (flag, never rewrite — it may be a real processor date).
+
+---
+
 ## Unreleased — AI letter generation fix: adaptive-thinking response parsing (2026-07-06)
 
 ### Fixed
