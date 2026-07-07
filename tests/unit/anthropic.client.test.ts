@@ -24,6 +24,21 @@ function okResponse(text = 'letter text') {
   };
 }
 
+// claude-sonnet-5+ runs adaptive thinking by default: the response leads with a
+// thinking block (empty text unless display is opted in) before the text block.
+function thinkingResponse(text = 'letter text') {
+  return {
+    data: {
+      content: [
+        { type: 'thinking', thinking: '' },
+        { type: 'text', text },
+      ],
+      usage: { input_tokens: 10, output_tokens: 20 },
+      stop_reason: 'end_turn',
+    },
+  };
+}
+
 function httpError(status: number) {
   return { response: { status }, message: `HTTP ${status}` };
 }
@@ -72,6 +87,59 @@ describe('callClaude retry behavior', () => {
 
     await expect(callClaude('sys', 'user')).rejects.toBeTruthy();
     expect(mockedPost).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('callClaude response parsing', () => {
+  // The live regression: content[0] was a thinking block, the old guard required
+  // content[0].type === 'text', so EVERY adaptive-thinking response threw
+  // "Unexpected response format" and defense letters fell back.
+  test('extracts text when a thinking block precedes it (adaptive thinking default)', async () => {
+    mockedPost.mockResolvedValueOnce(thinkingResponse('the letter'));
+
+    const result = await callClaude('sys', 'user');
+    expect(result.text).toBe('the letter');
+  });
+
+  test('joins multiple text blocks', async () => {
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        content: [
+          { type: 'thinking', thinking: '' },
+          { type: 'text', text: 'part one ' },
+          { type: 'text', text: 'part two' },
+        ],
+        usage: { input_tokens: 1, output_tokens: 2 },
+        stop_reason: 'end_turn',
+      },
+    });
+
+    const result = await callClaude('sys', 'user');
+    expect(result.text).toBe('part one part two');
+  });
+
+  test('refusal stop_reason throws immediately and does NOT try fallback models', async () => {
+    process.env.ANTHROPIC_MODEL_PRIMARY = 'model-a';
+    process.env.ANTHROPIC_MODEL_FALLBACKS = 'model-b';
+    mockedPost.mockResolvedValue({
+      data: {
+        content: [],
+        stop_reason: 'refusal',
+        stop_details: { type: 'refusal', category: 'cyber' },
+        usage: { input_tokens: 5, output_tokens: 0 },
+      },
+    });
+
+    await expect(callClaude('sys', 'user')).rejects.toThrow(/refused/i);
+    expect(mockedPost).toHaveBeenCalledTimes(1);
+  });
+
+  test('empty content with no text throws a descriptive error', async () => {
+    mockedPost.mockResolvedValue({
+      data: { content: [], stop_reason: 'end_turn', usage: {} },
+    });
+
+    await expect(callClaude('sys', 'user')).rejects.toThrow(/No text content/);
   });
 });
 

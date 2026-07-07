@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — AI letter generation fix: adaptive-thinking response parsing (2026-07-06)
+
+### Fixed
+- **Every AI defense letter was failing with "Anthropic: Unexpected response format".**
+  `claude-sonnet-5` runs adaptive thinking by default when the `thinking` parameter is
+  omitted, so responses lead with a `thinking` block — `content[0]` is no longer the text
+  block. The old guard required `content[0].type === 'text'` and threw on every response,
+  silently dropping all letters (including the original live-test packet) into the
+  deterministic fallback. `callClaude` now collects text blocks wherever they appear,
+  handles `stop_reason: "refusal"` explicitly (thrown as a content outcome — never
+  model-fallback across a refusal), and logs the response shape (stop_reason + block
+  types) when no text is found. Letter `max_tokens` raised 8192 → 16000 since thinking
+  tokens now share the output budget.
+
+---
+
 ## Unreleased — Defense live-test fixes (packet a2d357fa, 2026-07-06)
 
 > **Deploy ordering:** migration `086_defense_live_test_fixes.sql` was applied in Supabase by Philip

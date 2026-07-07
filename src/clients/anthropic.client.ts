@@ -131,14 +131,37 @@ export async function callClaude(
           timeout: 120000, // 2 minutes for long defense letters
         });
 
-        const content = res.data.content?.[0];
-        if (!content || content.type !== 'text') {
-          throw new ExternalServiceError('Anthropic', 'Unexpected response format');
+        // Newer models (claude-sonnet-5+) run adaptive thinking by default, so the
+        // response can lead with a `thinking` block before the text — content[0]
+        // is NOT guaranteed to be text. Collect every text block wherever it sits.
+        const blocks: any[] = res.data.content || [];
+
+        if (res.data.stop_reason === 'refusal') {
+          // A safety-classifier refusal is a content outcome, not an availability
+          // failure — never model-fallback across it (isModelFallbackError is
+          // status-based, and this error has no status, so it throws immediately).
+          const category = res.data.stop_details?.category;
+          throw new ExternalServiceError('Anthropic', `Request refused by safety classifiers${category ? ` (${category})` : ''}`);
+        }
+
+        const text = blocks
+          .filter((b) => b?.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text)
+          .join('');
+        if (!text) {
+          logger.error(
+            { model, stopReason: res.data.stop_reason, blockTypes: blocks.map((b) => b?.type) },
+            'Anthropic response contained no text content',
+          );
+          throw new ExternalServiceError(
+            'Anthropic',
+            `No text content in response (stop_reason: ${res.data.stop_reason || 'unknown'}; blocks: ${blocks.map((b) => b?.type).join(', ') || 'none'})`,
+          );
         }
 
         modelAttempts.push({ model, result: 'succeeded' });
         return {
-          text: content.text,
+          text,
           inputTokens: res.data.usage?.input_tokens || 0,
           outputTokens: res.data.usage?.output_tokens || 0,
           model,

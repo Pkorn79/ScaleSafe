@@ -291,7 +291,9 @@ export const defenseService = {
     let modelAttempts: unknown = null;
     let aiFailure: { message: string; status?: number } | null = null;
     try {
-      const ai = await callClaude(systemPrompt, userMessage, 8192);
+      // 16000: adaptive-thinking models (claude-sonnet-5+) spend thinking tokens
+      // out of the same max_tokens budget as the letter text.
+      const ai = await callClaude(systemPrompt, userMessage, 16000);
       result = ai;
       modelUsed = ai.model || 'claude';
       modelAttempts = ai.modelAttempts || null;
@@ -966,7 +968,8 @@ LETTER STRUCTURE:
 
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
     const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope);
-    const result = await callClaude(systemPrompt, userMessage, 8192);
+    // 16000: thinking tokens share this budget on adaptive-thinking models.
+    const result = await callClaude(systemPrompt, userMessage, 16000);
 
     // Insert new version
     const { error: regenVersionErr } = await supabase.from('defense_letter_versions').insert({
