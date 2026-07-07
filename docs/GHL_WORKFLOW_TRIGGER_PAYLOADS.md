@@ -167,6 +167,13 @@ Canonical payload variables:
 - `offer_name`
 - `form_url`
 - `pulse_check_url`
+- `pulse_url`
+- `pulse_link`
+- `pulse_check_link`
+- `check_in_url`
+- `check_in_link`
+- `link`
+- `url`
 - `pulse_interval_label`
 - `pulse_due_date_display`
 - `due_date_display`
@@ -180,11 +187,13 @@ Canonical payload variables:
 
 Recommended GHL pulse template fields:
 
-- Program: `program_name` or `offer_name`
-- Pulse interval: `pulse_interval_label`
-- Pulse link: `pulse_check_url` or `form_url`
-- Support email: `support_email`
-- Business name/signature: `business_name`
+- Program: `{{contact.offer_program_name}}`
+- Pulse interval: `{{contact.ss_pulse_interval_label}}`
+- Pulse link/button URL: `{{contact.ss_pulse_check_url}}`
+- Support email: `{{contact.offer_support_email}}`
+- Business name/signature: `{{contact.offer_business_name}}`
+
+The raw app-event payload still includes `pulse_check_url`, `form_url`, and the aliases above for diagnostics and future GHL payload-variable support. For the live beta email action, prefer the `contact.*` custom fields because ScaleSafe syncs those fields immediately before firing the workflow.
 
 Proof rule:
 

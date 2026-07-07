@@ -61,7 +61,9 @@ Use one GHL workflow per message intent. Do not combine receipt copy and welcome
 - ScaleSafe key: `ss_app_event`
 - Required workflow branch/filter: Event Type shown as `Pulse Check Due` in GHL. Payload value is `event_type = pulse_check_due`.
 - Purpose: send the pulse check link during an active enrollment
-- Important fields: `program_name`, `offer_name`, `pulse_check_url`, `form_url`, `pulse_interval_label`, `pulse_due_date_display`, `support_email`, `business_name`, `enrollment_id`, `offer_id`
+- Important event payload fields: `program_name`, `offer_name`, `pulse_check_url`, `form_url`, `pulse_interval_label`, `pulse_due_date_display`, `support_email`, `business_name`, `enrollment_id`, `offer_id`
+- Recommended email merge fields: `{{contact.offer_program_name}}`, `{{contact.ss_pulse_interval_label}}`, `{{contact.ss_pulse_check_url}}`, `{{contact.offer_support_email}}`, `{{contact.offer_business_name}}`
+- For the live email button/link, use `{{contact.ss_pulse_check_url}}`. Do not rely on `{{form_url}}` in the email body unless GHL workflow history proves the app-event payload variable is rendering for that workflow.
 - Beta note: a dedicated `ss_pulse_check_due` trigger is deferred until GHL/Marketplace support is proven. For beta, the working path is the shared `ScaleSafe App Event` trigger filtered to `Pulse Check Due`.
 - Proof rule: ScaleSafe trigger logs prove app-event delivery to GHL only. A completed pulse proof also needs GHL workflow execution, outbound email/SMS activity, received message proof, and submitted pulse evidence.
 
