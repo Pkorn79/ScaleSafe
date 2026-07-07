@@ -136,6 +136,10 @@ jest.mock('../../src/services/defense-bundle.service', () => ({
   },
 }));
 
+jest.mock('../../src/repositories/offer.repository', () => ({
+  offerRepository: { findById: jest.fn() },
+}));
+
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
     getByLocationId: jest.fn().mockResolvedValue({
@@ -194,14 +198,43 @@ jest.mock('../../src/services/notification.service', () => ({
   },
 }));
 
-import { defenseService } from '../../src/services/defense.service';
+import { defenseService, type OfferContext } from '../../src/services/defense.service';
 import { defenseRepository } from '../../src/repositories/defense.repository';
 import { callClaude } from '../../src/clients/anthropic.client';
 import { defenseExhibitsService } from '../../src/services/defense-exhibits.service';
+import { offerRepository } from '../../src/repositories/offer.repository';
+
+const offerRow = {
+  offer_name: 'Test Program',
+  program_description: 'A 6-week coaching program with weekly sessions and platform access.',
+  delivery_method: 'Self-Paced / On-Demand',
+  price: 1.0,
+  payment_type: 'installment',
+  installment_amount: 0.5,
+  installment_frequency: 'daily',
+  num_payments: 2,
+  refund_window_text: 'Full refund within 30 days of purchase.',
+  m1_name: 'Merchant Setup',
+  m1_delivers: 'Access to the platform',
+  m1_client_does: 'Enter your settings information',
+};
+
+function offerCtx(overrides: Partial<OfferContext> = {}): OfferContext {
+  return {
+    offerName: 'Test Program',
+    description: 'A 6-week coaching program with weekly sessions and platform access.',
+    deliveryMethod: 'Self-Paced / On-Demand',
+    priceText: '$1.00 total (2 daily payments of $0.50)',
+    refundPolicy: 'Full refund within 30 days of purchase.',
+    milestones: [{ name: 'Merchant Setup', delivers: 'Access to the platform', clientDoes: 'Enter your settings information' }],
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveDisputeScope.mockResolvedValue(exactScope());
+  (offerRepository.findById as jest.Mock).mockResolvedValue(offerRow);
   for (const k of Object.keys(mockInsertedRows)) delete mockInsertedRows[k];
   for (const k of Object.keys(mockUpdatedRows)) delete mockUpdatedRows[k];
 });
@@ -390,6 +423,100 @@ describe('Defense Service - Merchant voice & letter structure', () => {
     expect(letter).toContain('dated 2026-01-15');
     expect(letter).not.toContain('ScaleSafe');
     expect(letter).not.toContain('review before submission');
+  });
+});
+
+describe('Defense Service - What was sold (offer context)', () => {
+  test('system prompt instructs offer-context usage per dispute type and evidence variety', () => {
+    const prompt = defenseService.buildSystemPrompt('services_not_provided', null, null);
+    expect(prompt).toContain('OFFER CONTEXT — USE IT');
+    expect(prompt).toContain('What the client purchased');
+    expect(prompt).toContain('provisioning access to the promised materials IS delivery');
+    expect(prompt).toContain('EVIDENCE VARIETY');
+    expect(prompt).toContain('pulse check-in responses');
+    expect(prompt).toContain('Never invent or imply evidence types');
+  });
+
+  test('user message carries the WHAT WAS SOLD block when an offer is resolved', () => {
+    const msg = defenseService.buildUserMessage(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 0.5, disputeDate: '2026-07-02', deadline: '2026-07-22' },
+      { firstName: 'John' },
+      { business_name: 'Test Biz' },
+      mockExhibitList,
+      [],
+      'services_not_provided',
+      exactScope() as any,
+      offerCtx(),
+    );
+    expect(msg).toContain('WHAT WAS SOLD');
+    expect(msg).toContain('What it is: A 6-week coaching program');
+    expect(msg).toContain('Delivery method: Self-Paced / On-Demand');
+    expect(msg).toContain('Price: $1.00 total (2 daily payments of $0.50)');
+    expect(msg).toContain('Refund policy the client accepted: Full refund within 30 days');
+    expect(msg).toContain('1. Merchant Setup — Deliverables: Access to the platform — Client responsibility: Enter your settings information');
+  });
+
+  test('user message omits the block when no offer is resolved', () => {
+    const msg = defenseService.buildUserMessage(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 0.5, disputeDate: '2026-07-02', deadline: '2026-07-22' },
+      { firstName: 'John' },
+      { business_name: 'Test Biz' },
+      mockExhibitList,
+      [],
+      'services_not_provided',
+      exactScope() as any,
+      null,
+    );
+    expect(msg).not.toContain('WHAT WAS SOLD');
+  });
+
+  test('runCompilation loads the offer and feeds it into the AI prompt', async () => {
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '4855', disputeAmount: 0.5,
+      disputeDate: '2026-07-02', deadline: '2026-07-22',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(offerRepository.findById).toHaveBeenCalledWith('offer_1', 'loc_1');
+    const userMessage = (callClaude as jest.Mock).mock.calls[0][1];
+    expect(userMessage).toContain('WHAT WAS SOLD');
+    expect(userMessage).toContain('A 6-week coaching program');
+    expect(userMessage).toContain('2 daily payments of $0.50');
+    expect(userMessage).toContain('Merchant Setup — Deliverables: Access to the platform');
+  });
+
+  test('compilation still completes when the offer cannot be loaded', async () => {
+    (offerRepository.findById as jest.Mock).mockRejectedValueOnce(new Error('offer table drift'));
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    const userMessage = (callClaude as jest.Mock).mock.calls[0][1];
+    expect(userMessage).not.toContain('WHAT WAS SOLD');
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1', 'complete', expect.any(Object),
+    );
+  });
+
+  test('fallback letter describes the program when offer context is available', () => {
+    const letter = defenseService.buildStructuredFallbackLetter(
+      { locationId: 'loc_1', contactId: 'c_1', reasonCode: '4855', disputeAmount: 0.5, disputeDate: '2026-07-02', deadline: '2026-07-22' },
+      exactScope() as any,
+      mockExhibitList,
+      [],
+      { business_name: 'Test Biz' },
+      { firstName: 'John' },
+      'Sponsor Bank — Chargeback Department',
+      offerCtx(),
+    );
+    expect(letter).toContain('The program: A 6-week coaching program');
+    expect(letter).toContain('Delivery method: Self-Paced / On-Demand');
+    expect(letter).toContain('Program price: $1.00 total (2 daily payments of $0.50)');
   });
 });
 

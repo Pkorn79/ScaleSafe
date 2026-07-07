@@ -5,6 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense letters explain WHAT WAS SOLD (2026-07-06)
+
+### Added
+- **Offer context in the letter prompt.** The letter previously knew only the program's
+  NAME; it now receives the frozen offer terms from enrollment (`getOfferContext` via
+  `offers_mirror`): description, delivery method, price + payment structure, refund
+  policy, and the milestone definitions (deliverables + client responsibilities). New
+  required letter section — "What the client purchased" — describes the program in plain
+  language a reviewer with no context understands, before any evidence is argued.
+- **Reason-code-specific usage of the offer:** delivery disputes measure delivered items
+  against the promised deliverables (for self-paced/on-demand programs, provisioned
+  access to the promised materials IS delivery); description disputes compare the offer
+  as accepted vs. delivered; billing disputes state the expressly authorized payment
+  structure; fraud disputes tie enrollment identity to post-purchase engagement.
+- **Evidence-variety guidance:** merchants capture different evidence per setup —
+  enrollment/consent, milestones, sign-offs, pulse check-ins, inbound client replies,
+  sessions, external-platform activity. The letter uses whatever is present (inbound
+  engagement is strongest against "no value received") and never invents missing types.
+- Fallback letter includes the program description/delivery/price when resolvable.
+  Degrades gracefully when no offer resolves (contact-only scope path unchanged).
+
+---
+
 ## Unreleased — Defense letter voice + 4855 output quality (2026-07-06, from regenerated-packet review)
 
 ### Changed (letter voice & structure)

@@ -10,6 +10,7 @@ import { storageService } from './storage.service';
 import { defenseExhibitsService, normalizeEvidencePriorities, buildTimelineRows, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { disputeScopeService, type DisputeScope } from './dispute-scope.service';
 import { defenseReadinessService, evaluateReviewState } from './defense-readiness.service';
+import { offerRepository } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
@@ -18,6 +19,24 @@ import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants
 // and forces needs_review — it must never be silently argued as a specific
 // dispute type it isn't.
 import { resolveReasonCode } from '../constants/reason-codes';
+
+/**
+ * What the client actually purchased — the offer as presented and accepted at
+ * enrollment. Fed into the letter prompt so the letter can explain the program
+ * in plain language (what it is, what it includes, how it is delivered, what
+ * it cost) before arguing about delivery. Without this the model only knows
+ * the program's NAME, which reads as an evidence dump with no story.
+ */
+export interface OfferContext {
+  offerName: string;
+  description: string | null;
+  deliveryMethod: string | null;
+  /** Human sentence: "$1.00 total (2 daily payments of $0.50)" */
+  priceText: string | null;
+  refundPolicy: string | null;
+  /** Milestones promised at enrollment, each individually acknowledged by the client. */
+  milestones: Array<{ name: string; delivers: string; clientDoes: string }>;
+}
 
 interface CompileDefenseInput {
   locationId: string;
@@ -277,10 +296,14 @@ export const defenseService = {
     // 6. Get merchant info
     const merchant = await merchantRepository.getByLocationId(input.locationId);
 
+    // 6b. What was sold — the frozen offer terms, so the letter explains the
+    // purchase before arguing about delivery.
+    const offerContext = await this.getOfferContext(input.locationId, scope.offerId);
+
     // 7. Build the AI prompt with the rewritten clinical-tone structure
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
     const userMessage = this.buildUserMessage(
-      input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope,
+      input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope, offerContext,
     );
 
     // 8. Call Claude API. If the AI provider is unavailable AFTER retries (and any
@@ -313,7 +336,7 @@ export const defenseService = {
         inputTokens: 0,
         outputTokens: 0,
         text: this.buildStructuredFallbackLetter(
-          input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee,
+          input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee, offerContext,
         ),
       };
     }
@@ -486,6 +509,52 @@ export const defenseService = {
     }, 'Defense compilation complete');
   },
 
+  /**
+   * Load the offer the disputed enrollment was for, shaped for the letter
+   * prompt. Returns null (never throws) when the offer can't be resolved —
+   * the letter falls back to name-only and the scope gaps already cover it.
+   */
+  async getOfferContext(locationId: string, offerId: string | null | undefined): Promise<OfferContext | null> {
+    if (!offerId) return null;
+    try {
+      const offer: any = await offerRepository.findById(offerId, locationId);
+      if (!offer) return null;
+
+      const milestones: OfferContext['milestones'] = [];
+      for (let i = 1; i <= 8; i++) {
+        const name = offer[`m${i}_name`];
+        if (name) {
+          milestones.push({
+            name,
+            delivers: offer[`m${i}_delivers`] || '',
+            clientDoes: offer[`m${i}_client_does`] || '',
+          });
+        }
+      }
+
+      let priceText: string | null = null;
+      const total = Number(offer.price || 0);
+      if (offer.payment_type === 'installment' && offer.installment_amount) {
+        const freq = String(offer.installment_frequency || 'monthly').replace(/_/g, ' ');
+        priceText = `${total ? `$${total.toFixed(2)} total` : 'Installment plan'} (${offer.num_payments || '?'} ${freq} payments of $${Number(offer.installment_amount).toFixed(2)})`;
+      } else if (total) {
+        priceText = `$${total.toFixed(2)}, paid in full`;
+      }
+
+      return {
+        offerName: offer.offer_name || '',
+        description: offer.program_description || null,
+        deliveryMethod: offer.delivery_method || null,
+        priceText,
+        refundPolicy: offer.refund_window_text || null,
+        milestones,
+      };
+    } catch (err: any) {
+      logger.warn({ err: err.message, offerId, locationId }, 'Failed to load offer context for defense letter');
+      return null;
+    }
+  },
+
   buildSystemPrompt(category: string, strategy: any, template: any): string {
     const categoryStrategies: Record<string, string> = {
       fraud: 'The cardholder claims they did not authorize this transaction. Link the enrollment consent record (IP, device fingerprint, digital signature) to the transaction. Show that the same person who enrolled also used the service. Reference the signed enrollment packet as the primary exhibit.',
@@ -516,6 +585,17 @@ DISPUTE CATEGORY: ${category.replace(/_/g, ' ')}
 
 STRATEGY: ${categoryStrategies[category] || 'Present all available evidence of service delivery and client engagement.'}
 
+OFFER CONTEXT — USE IT:
+When a "WHAT WAS SOLD" block appears in the evidence below, the letter must explain the purchase before arguing about it: what the program is in plain language a reviewer with no context understands, what it includes, how it is delivered, and what it cost. Describe the offer exactly as it was presented and accepted at enrollment (cite the enrollment/consent exhibit) — never as marketing copy. Then use it according to the dispute type:
+- Delivery disputes (goods/services not provided): measure what was delivered against the promised deliverables, milestone by milestone. For self-paced or on-demand programs, provisioning access to the promised materials IS delivery — say so plainly.
+- Description disputes (not as described / misrepresentation): compare the offer as described and accepted at enrollment against what was actually delivered.
+- Billing disputes (canceled recurring / installments): state the payment structure the client expressly authorized and cite where they authorized it.
+- Fraud/authorization disputes: tie the enrollment identity (IP, device, signature) to the post-purchase engagement — the person who enrolled went on to use the service.
+- Refund disputes: state the refund policy the client accepted and what our records show about any refund activity.
+
+EVIDENCE VARIETY:
+Merchants capture different evidence depending on how their business runs — do not expect a fixed set. Use whatever is actually present in the exhibits: enrollment/consent records; completed milestones and client sign-offs; pulse check-in responses; inbound replies from the client; appointments and sessions; platform/service access records and activity captured from external platforms. Inbound client engagement (replies, check-ins, sign-offs) is especially strong for rebutting "no value received" claims — it shows the client was present and participating. Never invent or imply evidence types that are not in the exhibits.
+
 CRITICAL RULES FOR EVENT INTERPRETATION:
 - Cancellation events are TERMINATION events. State the cancellation date and reason factually. Do NOT characterize cancellations as evidence of ongoing service delivery or engagement. The active service period ended on the cancellation date.
 - Refund events are financial resolution events. State whether a refund was issued, the amount, and the date. Do not editorialize on whether the refund was "fair."
@@ -533,13 +613,14 @@ EXHIBIT REFERENCES:
 LETTER STRUCTURE:
 1. Header with date, addressee, case reference, and merchant name
 2. Opening paragraph: the plain first-person sentence described under VOICE, followed by precise identification of the disputed transaction — transaction date, processor transaction ID, amount, and (when the data shows it) its place in the payment plan. A reviewer must be able to match this response to the exact transaction from this paragraph alone.
-3. Transaction Timeline — a brief chronological list reproducing the TRANSACTION TIMELINE block from the evidence below verbatim (dates and exhibit letters exactly as given); omit if no timeline block is provided
-4. Evidence of authorization / enrollment (cite consent exhibits)
-5. Evidence of service delivery (cite delivery exhibits)
-6. Prior Undisputed Transactions section — ONLY when a "PRIOR UNDISPUTED TRANSACTIONS" block appears in the evidence below; otherwise omit this section entirely
-7. Request — a short section stating plainly what we are asking the reviewer for: that this chargeback be declined/reversed based on the evidence above (or, when a credit was already issued before the dispute, that the case be resolved as credit previously issued with no second recovery). Factual, not pleading. Every letter must contain this section.
-8. Conclusion (factual summary, not argumentative)
-9. Exhibit index — one line per exhibit stating what it PROVES, not just what it is (e.g. "Exhibit A — Signed enrollment agreement: establishes authorization and the agreed terms")
+3. What the client purchased — when a "WHAT WAS SOLD" block is provided: one short paragraph describing the program in plain language (what it is, what it includes, how it is delivered), the price and payment structure, and that the client reviewed and accepted these terms at enrollment (cite the consent exhibit). Omit this section only when no WHAT WAS SOLD block is provided.
+4. Transaction Timeline — a brief chronological list reproducing the TRANSACTION TIMELINE block from the evidence below verbatim (dates and exhibit letters exactly as given); omit if no timeline block is provided
+5. Evidence of authorization / enrollment (cite consent exhibits)
+6. Evidence of service delivery — measured against what was promised in the WHAT WAS SOLD block when present (cite delivery exhibits)
+7. Prior Undisputed Transactions section — ONLY when a "PRIOR UNDISPUTED TRANSACTIONS" block appears in the evidence below; otherwise omit this section entirely
+8. Request — a short section stating plainly what we are asking the reviewer for: that this chargeback be declined/reversed based on the evidence above (or, when a credit was already issued before the dispute, that the case be resolved as credit previously issued with no second recovery). Factual, not pleading. Every letter must contain this section.
+9. Conclusion (factual summary, not argumentative)
+10. Exhibit index — one line per exhibit stating what it PROVES, not just what it is (e.g. "Exhibit A — Signed enrollment agreement: establishes authorization and the agreed terms")
 `;
 
     if (strategy?.evidence_priorities) {
@@ -561,6 +642,7 @@ LETTER STRUCTURE:
     undisputedPayments: any[],
     category: string,
     scope?: DisputeScope,
+    offer?: OfferContext | null,
   ): string {
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const clientName = [contact.firstName || '', contact.lastName || ''].filter(Boolean).join(' ') || 'Client';
@@ -583,6 +665,28 @@ LETTER STRUCTURE:
       }
       if (scope.gaps.length) {
         msg += `- Evidence gaps: ${scope.gaps.join(' ')}\n`;
+      }
+      msg += `\n`;
+    }
+
+    // What the client actually purchased — the frozen offer terms from enrollment.
+    // This is what lets the letter tell a story a human reviewer understands
+    // ("our client signed up for X, which provides Y...") instead of dumping evidence.
+    if (offer) {
+      msg += `═══ WHAT WAS SOLD (the offer as presented and accepted at enrollment) ═══\n`;
+      msg += `- Program: ${offer.offerName}\n`;
+      if (offer.description) msg += `- What it is: ${offer.description}\n`;
+      if (offer.deliveryMethod) msg += `- Delivery method: ${offer.deliveryMethod}\n`;
+      if (offer.priceText) msg += `- Price: ${offer.priceText}\n`;
+      if (offer.refundPolicy) msg += `- Refund policy the client accepted: ${offer.refundPolicy}\n`;
+      if (offer.milestones.length) {
+        msg += `- Milestones promised at enrollment (each individually acknowledged by the client):\n`;
+        offer.milestones.forEach((m, i) => {
+          msg += `  ${i + 1}. ${m.name}`;
+          if (m.delivers) msg += ` — Deliverables: ${m.delivers}`;
+          if (m.clientDoes) msg += ` — Client responsibility: ${m.clientDoes}`;
+          msg += `\n`;
+        });
       }
       msg += `\n`;
     }
@@ -705,6 +809,7 @@ LETTER STRUCTURE:
     merchant: any,
     contact: Record<string, unknown>,
     addressee: string,
+    offer?: OfferContext | null,
   ): string {
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const clientName = [contact.firstName || '', contact.lastName || ''].filter(Boolean).join(' ') || 'the cardholder';
@@ -732,6 +837,9 @@ LETTER STRUCTURE:
     if (scope.processorTransactionId) msg += ` (processor transaction ${scope.processorTransactionId})`;
     msg += `; the chargeback was filed on ${input.disputeDate}. `;
     msg += `The purchase was for ${programName}. `;
+    if (offer?.description) msg += `The program: ${offer.description} `;
+    if (offer?.deliveryMethod) msg += `Delivery method: ${offer.deliveryMethod}. `;
+    if (offer?.priceText) msg += `Program price: ${offer.priceText}. `;
     if (scope.enrollmentStart) {
       msg += `The service window on our records runs from ${scope.enrollmentStart}${scope.enrollmentEnd ? ` to ${scope.enrollmentEnd}` : ' onward'}. `;
     }
@@ -976,9 +1084,10 @@ LETTER STRUCTURE:
       contactDetails = contactRes.data.contact || contactRes.data;
     } catch {}
     const merchant = await merchantRepository.getByLocationId(input.locationId);
+    const offerContext = await this.getOfferContext(input.locationId, scope.offerId);
 
     const systemPrompt = this.buildSystemPrompt(category, strategy, template);
-    const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope);
+    const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope, offerContext);
     // 16000: thinking tokens share this budget on adaptive-thinking models.
     const result = await callClaude(systemPrompt, userMessage, 16000);
 
