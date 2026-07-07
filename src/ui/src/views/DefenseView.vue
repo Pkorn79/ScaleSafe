@@ -80,8 +80,14 @@
         :style="{ color: daysUntil(p.deadline)! <= 3 ? '#b91c1c' : daysUntil(p.deadline)! <= 7 ? '#b45309' : 'var(--ss-navy-500)' }">
         {{ daysUntil(p.deadline)! > 0 ? pluralize(daysUntil(p.deadline), 'day') + ' remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Time expired' }}
       </div>
-      <!-- Quick outcome recording: once submitted, the merchant shouldn't have to
-           dig into the packet to tell us whether they won — one click here. -->
+      <!-- Lifecycle prompts on the card: merchants don't reopen a packet after
+           downloading it, so the submit and outcome questions live out here. -->
+      <div v-if="isPending(p) && ['complete', 'needs_review'].includes(p.status) && !isExpired(p)" class="mt-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="text-sm text-muted">Have you submitted this to the bank yet?</span>
+        <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="submittingId === p.id" @click.stop="quickSubmit(p)">
+          Mark Submitted
+        </button>
+      </div>
       <div v-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted' && !p.outcome" class="mt-2" style="display:flex;gap:8px;align-items:center">
         <span class="text-sm text-muted">Heard back from the bank?</span>
         <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="recordingOutcomeId === p.id" @click.stop="quickOutcome(p, 'won')">
@@ -442,6 +448,22 @@ async function loadPackets() {
 
 // One-click outcome from the card — after submission the merchant only comes
 // back to tell us whether they won; don't make them dig into the packet.
+// Card-level submit: after downloading the packet merchants rarely reopen it,
+// so the "did you send it?" question lives on the card. Submitting locks the
+// letter (no more edits/regeneration) — hence the confirm.
+const submittingId = ref('');
+async function quickSubmit(p: any) {
+  if (!window.confirm('Mark this packet as submitted to the bank? This locks the letter — you won\'t be able to edit or regenerate it afterwards.')) return;
+  submittingId.value = p.id;
+  try {
+    await api.post(`/api/defense/${p.id}/submit`, {});
+    await loadPackets();
+  } catch {
+    /* useApi already toasts the error */
+  }
+  submittingId.value = '';
+}
+
 const recordingOutcomeId = ref('');
 async function quickOutcome(p: any, outcome: 'won' | 'lost') {
   const amount = `$${Number(p.dispute_amount || 0).toFixed(2)}`;

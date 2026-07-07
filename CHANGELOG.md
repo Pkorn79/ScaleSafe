@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Dispute lifecycle prompts on cards + dashboard (2026-07-07)
+
+### Added
+- **"Have you submitted this to the bank yet?" on the defense card.** Ready packets
+  (complete or needs_review, not expired) show a Mark Submitted button on the list card —
+  merchants don't reopen a packet after downloading it, so the lifecycle question lives
+  outside. Submitting still locks the letter, hence the confirm. (Deliberately NOT
+  auto-marking on download: downloads happen for review too, and submission locks
+  editing/regeneration. Stripe integration can auto-submit programmatically later.)
+- **Open Disputes on the dashboard.** New card listing up to 5 actionable disputes —
+  ready-but-unsubmitted packets ("Submitted to the bank?" → Mark Submitted) and
+  submitted packets awaiting a decision ("Heard back?" → Won / Lost) — so outcomes get
+  recorded from the place merchants actually visit. Rows link to the packet.
+
+---
+
 ## Unreleased — Defense UX: stale-status refresh, deadline edit, list workflow (2026-07-07)
 
 ### Fixed

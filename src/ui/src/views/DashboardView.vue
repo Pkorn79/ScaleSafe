@@ -67,6 +67,39 @@
       />
     </div>
 
+    <!-- Open disputes: the merchant's action queue. Submit + outcome prompts live
+         here so tracking doesn't depend on anyone reopening a packet. -->
+    <div class="card mb-4" v-if="openDisputes.length > 0">
+      <SectionHeader :title="['Open', 'disputes.']">
+        <template #actions>
+          <router-link to="/defense" class="btn btn-sm btn-secondary">View All</router-link>
+        </template>
+      </SectionHeader>
+      <div v-for="d in openDisputes" :key="d.id" class="flex-between mb-4" style="gap:12px;flex-wrap:wrap;cursor:pointer" @click="$router.push(`/defense/${d.id}`)">
+        <div>
+          <div class="text-sm">
+            <strong>{{ d.contactName || 'Unknown' }}</strong>
+            <span class="badge badge-blue" style="margin-left:8px">{{ d.reason_code }}</span>
+            <span style="margin-left:8px">${{ Number(d.dispute_amount || 0).toFixed(2) }}</span>
+          </div>
+          <div class="text-sm text-muted">
+            {{ (d.lifecycleStatus || d.lifecycle_status) === 'submitted' ? 'Submitted — awaiting the bank\'s decision' : 'Packet ready — not yet submitted' }}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <template v-if="(d.lifecycleStatus || d.lifecycle_status) === 'submitted'">
+            <span class="text-sm text-muted">Heard back?</span>
+            <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="disputeActionId === d.id" @click.stop="dashOutcome(d, 'won')">Won</button>
+            <button class="btn btn-sm btn-secondary" style="padding:3px 12px;font-size:11px" :disabled="disputeActionId === d.id" @click.stop="dashOutcome(d, 'lost')">Lost</button>
+          </template>
+          <template v-else>
+            <span class="text-sm text-muted">Submitted to the bank?</span>
+            <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="disputeActionId === d.id" @click.stop="dashSubmit(d)">Mark Submitted</button>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-2">
       <div class="card" v-if="data">
         <SectionHeader :title="['Defense', 'activity.']" />
@@ -125,7 +158,7 @@ import Stat from '../components/Stat.vue';
 import EmptyState from '../components/EmptyState.vue';
 import Pill from '../components/Pill.vue';
 import Skeleton from '../components/Skeleton.vue';
-import { formatTimestamp } from '../utils/humanize';
+import { formatTimestamp, parseDateValue } from '../utils/humanize';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const STALE_THRESHOLD_MS = 2 * 60_000;
@@ -136,6 +169,46 @@ const { loading, error } = api;
 
 const data = ref<any>(null);
 const atRisk = ref<any[]>([]);
+const defensePackets = ref<any[]>([]);
+
+// Open disputes = the merchant's action queue: ready-but-unsubmitted packets
+// (deadline not yet passed) and submitted packets awaiting an outcome.
+const openDisputes = computed(() => {
+  return defensePackets.value
+    .filter((p) => {
+      const lifecycle = p.lifecycleStatus || p.lifecycle_status || 'pending_submission';
+      if (lifecycle === 'submitted') return !p.outcome;
+      if (lifecycle !== 'pending_submission') return false;
+      if (!['complete', 'needs_review'].includes(p.status)) return false;
+      const deadline = p.deadline || p.response_deadline;
+      if (deadline && parseDateValue(deadline).getTime() < Date.now() - 86400000) return false; // expired
+      return true;
+    })
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, 5);
+});
+
+const disputeActionId = ref('');
+async function dashSubmit(d: any) {
+  if (!window.confirm('Mark this packet as submitted to the bank? This locks the letter — you won\'t be able to edit or regenerate it afterwards.')) return;
+  disputeActionId.value = d.id;
+  try {
+    await api.post(`/api/defense/${d.id}/submit`, {});
+    await loadData();
+  } catch { /* useApi toasts */ }
+  disputeActionId.value = '';
+}
+
+async function dashOutcome(d: any, outcome: 'won' | 'lost') {
+  const amount = `$${Number(d.dispute_amount || 0).toFixed(2)}`;
+  if (!window.confirm(`Mark the ${amount} chargeback for ${d.contactName || 'this client'} as ${outcome.toUpperCase()}?`)) return;
+  disputeActionId.value = d.id;
+  try {
+    await api.post(`/api/defense/${d.id}/outcome`, { outcome });
+    await loadData();
+  } catch { /* useApi toasts */ }
+  disputeActionId.value = '';
+}
 const lastUpdatedAt = ref<Date | null>(null);
 const refreshing = ref(false);
 const tickNow = ref(new Date());
@@ -155,6 +228,9 @@ async function loadData() {
   const riskPromise = api.get<any>('/api/dashboard/at-risk')
     .then((risk) => ({ ok: true, risk }))
     .catch(() => ({ ok: false, risk: null }));
+  const defensePromise = api.get<any>('/api/dashboard/defense-history')
+    .then((d) => ({ ok: true, packets: d?.packets || [] }))
+    .catch(() => ({ ok: false, packets: [] as any[] }));
 
   try {
     const overview = await overviewPromise;
@@ -169,6 +245,10 @@ async function loadData() {
     const riskResult = await riskPromise;
     if (riskResult.ok) {
       atRisk.value = riskResult.risk.clients || [];
+    }
+    const defenseResult = await defensePromise;
+    if (defenseResult.ok) {
+      defensePackets.value = defenseResult.packets;
     }
   } catch {
     // Keep the dashboard stats visible if the risk scan fails.
