@@ -489,7 +489,7 @@ function buildPulsePayload(params: {
   deliveryChannel: PulseDeliveryChannel;
 }): Record<string, unknown> {
   return {
-    event_type: 'Pulse Check Due',
+    event_type: 'pulse_check_due',
     eventType: 'pulse_check_due',
     event_type_key: 'pulse_check_due',
     eventTypeKey: 'pulse_check_due',

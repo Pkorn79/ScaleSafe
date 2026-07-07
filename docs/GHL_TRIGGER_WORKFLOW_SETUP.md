@@ -59,7 +59,7 @@ Use one GHL workflow per message intent. Do not combine receipt copy and welcome
 
 - GHL trigger name: ScaleSafe App Event
 - ScaleSafe key: `ss_app_event`
-- Required workflow branch/filter: `event_type = Pulse Check Due`
+- Required workflow branch/filter: Event Type shown as `Pulse Check Due` in GHL. Payload value is `event_type = pulse_check_due`.
 - Purpose: send the pulse check link during an active enrollment
 - Important fields: `program_name`, `offer_name`, `pulse_check_url`, `form_url`, `pulse_interval_label`, `pulse_due_date_display`, `support_email`, `business_name`, `enrollment_id`, `offer_id`
 - Beta note: a dedicated `ss_pulse_check_due` trigger is deferred until GHL/Marketplace support is proven. For beta, the working path is the shared `ScaleSafe App Event` trigger filtered to `Pulse Check Due`.

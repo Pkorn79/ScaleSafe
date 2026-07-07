@@ -155,7 +155,7 @@ Recommended GHL reminder template fields:
 - Support email: `support_email`
 - Business name/signature: `business_name`
 
-## `ss_app_event` with `event_type = Pulse Check Due`
+## `ss_app_event` with `event_type = pulse_check_due`
 
 Use for pulse check invitations during active enrollments.
 
