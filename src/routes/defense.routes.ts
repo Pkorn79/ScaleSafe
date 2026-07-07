@@ -12,6 +12,7 @@ router.post('/compile', defenseController.compile);
 router.post('/:id/submit', defenseController.markSubmitted);
 router.post('/:id/outcome', defenseController.recordOutcome);
 router.post('/:id/regenerate', defenseController.regenerateLetter);
+router.patch('/:id/deadline', defenseController.updateDeadline);
 router.put('/:id/letter', defenseController.saveLetterEdit);
 router.get('/:id/versions', defenseController.getVersions);
 router.post('/:id/rebundle', defenseController.rebundle);

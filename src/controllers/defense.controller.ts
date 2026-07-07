@@ -147,6 +147,21 @@ export const defenseController = {
     } catch (err) { next(err); }
   },
 
+  /** PATCH /api/defense/:id/deadline — correct the response deadline (pre-submit only) */
+  async updateDeadline(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { deadline } = req.body;
+      if (!deadline || typeof deadline !== 'string') {
+        throw new ValidationError('deadline is required (YYYY-MM-DD)');
+      }
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      await defenseService.updateDeadline(req.params.id, deadline, locationId);
+      res.json({ status: 'ok', deadline });
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/defense/:id/regenerate — regenerate the AI letter (pre-submit only) */
   async regenerateLetter(req: Request, res: Response, next: NextFunction) {
     try {

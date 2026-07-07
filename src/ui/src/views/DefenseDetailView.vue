@@ -34,11 +34,21 @@
           <strong>Response Deadline:</strong>
           {{ formatDate(packet.deadline) }}
           <span v-if="daysRemaining !== null" style="margin-left:8px">
-            ({{ daysRemaining > 0 ? pluralize(daysRemaining, 'day') + ' remaining' : daysRemaining === 0 ? 'Due today' : 'Overdue by ' + pluralize(Math.abs(daysRemaining), 'day') }})
+            ({{ daysRemaining > 0 ? pluralize(daysRemaining, 'day') + ' remaining' : daysRemaining === 0 ? 'Due today' : 'Time expired' }})
           </span>
+          <button v-if="isPreSubmit && !editingDeadline" class="btn btn-sm btn-secondary" style="margin-left:10px;padding:2px 8px;font-size:11px" @click="startDeadlineEdit">
+            Edit
+          </button>
+          <div v-if="editingDeadline" style="margin-top:6px;display:flex;gap:8px;align-items:center">
+            <input type="date" class="form-input" style="width:auto;padding:4px 8px;font-size:12px" v-model="deadlineDraft" />
+            <button class="btn btn-sm btn-primary" style="padding:3px 10px;font-size:11px" :disabled="savingDeadline" @click="saveDeadline">
+              {{ savingDeadline ? 'Saving...' : 'Save' }}
+            </button>
+            <button class="btn btn-sm btn-secondary" style="padding:3px 10px;font-size:11px" @click="editingDeadline = false">Cancel</button>
+          </div>
           <div v-if="deadlineLooksOptimistic" class="text-sm" style="margin-top:4px;font-weight:400;opacity:0.85">
             This deadline was defaulted from the card network's maximum window. Processors usually
-            require your response sooner — verify the actual due date with your processor.
+            require your response sooner — set the actual due date from your processor using Edit.
           </div>
         </div>
 
@@ -225,14 +235,40 @@ async function regenerateLetter() {
   actionError.value = '';
   try {
     const result = await api.post<any>(`/api/defense/${route.params.id}/regenerate`, {});
-    if (result?.letterText) {
-      packet.value = { ...packet.value, defense_letter_text: result.letterText, pdf_url: result.pdfUrl || packet.value.pdf_url };
-      currentVersionNumber.value = result.versionNumber || currentVersionNumber.value + 1;
-    }
+    if (result?.versionNumber) currentVersionNumber.value = result.versionNumber;
+    // Regeneration re-evaluates the packet's status and review reasons on the
+    // server (stale "AI draft was unavailable" clears) — refetch the whole
+    // packet instead of patching the letter locally, or the old callout persists.
+    await refresh();
   } catch (e: any) {
     actionError.value = e.message || 'Failed to regenerate';
   }
   regenerating.value = false;
+}
+
+// ── Deadline editing (pre-submission only) ──
+const editingDeadline = ref(false);
+const deadlineDraft = ref('');
+const savingDeadline = ref(false);
+
+function startDeadlineEdit() {
+  const d = packet.value?.deadline || packet.value?.response_deadline || '';
+  deadlineDraft.value = String(d).slice(0, 10);
+  editingDeadline.value = true;
+}
+
+async function saveDeadline() {
+  if (!deadlineDraft.value) return;
+  savingDeadline.value = true;
+  actionError.value = '';
+  try {
+    await api.patch(`/api/defense/${route.params.id}/deadline`, { deadline: deadlineDraft.value });
+    editingDeadline.value = false;
+    await refresh();
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to update deadline';
+  }
+  savingDeadline.value = false;
 }
 
 async function saveLetterEdit(text: string) {

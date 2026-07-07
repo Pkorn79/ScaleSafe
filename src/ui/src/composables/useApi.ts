@@ -244,6 +244,23 @@ export function useApi() {
     }
   }
 
+  async function patch<T>(path: string, body?: unknown): Promise<T> {
+    loading.value = true;
+    error.value = null;
+    try {
+      return await apiFetch<T>(path, {
+        method: 'PATCH',
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (e: any) {
+      error.value = e.message;
+      toast.error(e.message);
+      throw e;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function del(path: string): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -258,7 +275,7 @@ export function useApi() {
     }
   }
 
-  return { loading, error, get, post, put, del, ssoSession };
+  return { loading, error, get, post, put, patch, del, ssoSession };
 }
 
 export { ssoSession, initSso };

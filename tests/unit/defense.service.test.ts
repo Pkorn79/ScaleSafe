@@ -520,6 +520,37 @@ describe('Defense Service - What was sold (offer context)', () => {
   });
 });
 
+describe('Defense Service - updateDeadline', () => {
+  test('updates the deadline for a pre-submission packet', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'def_1', location_id: 'loc_1', lifecycle_status: 'pending_submission',
+    });
+
+    await defenseService.updateDeadline('def_1', '2026-07-22', 'loc_1');
+
+    const updates = mockUpdatedRows['defense_packets'] || [];
+    expect(updates).toContainEqual({ response_deadline: '2026-07-22' });
+  });
+
+  test('rejects a deadline change after submission', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'def_1', location_id: 'loc_1', lifecycle_status: 'submitted',
+    });
+
+    await expect(defenseService.updateDeadline('def_1', '2026-07-22', 'loc_1'))
+      .rejects.toThrow(/after submission/);
+  });
+
+  test('rejects malformed dates', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce({
+      id: 'def_1', location_id: 'loc_1', lifecycle_status: 'pending_submission',
+    });
+
+    await expect(defenseService.updateDeadline('def_1', 'July 22', 'loc_1'))
+      .rejects.toThrow(/YYYY-MM-DD/);
+  });
+});
+
 describe('Defense Service - Regeneration review state', () => {
   function regenPacket(overrides: Record<string, any> = {}) {
     return {

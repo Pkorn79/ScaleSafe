@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Defense UX: stale-status refresh, deadline edit, list workflow (2026-07-07)
+
+### Fixed
+- **Stale needs_review callout after regeneration (UI half of the bug).** The regenerate
+  button patched the letter text locally and never refetched the packet, so the server's
+  freshly-recomputed status/error_message (shipped 2026-07-06) never reached the screen.
+  Regeneration now refetches the full packet.
+
+### Added
+- **Editable response deadline (pre-submission).** `PATCH /api/defense/:id/deadline` +
+  an Edit control on the deadline strip — the defaulted deadline may not match the
+  processor's actual due date, and the merchant is the one who knows it. The optimistic-
+  deadline caution now points at the Edit control. Rejected after submission.
+- **Defense list workflow rework:** default filter is now "Open" (was All) with expired
+  chargebacks excluded; default sort is newest-first (was deadline-soonest — the exact
+  opposite of triage order); new "Expired" tab (pending packets whose deadline passed);
+  countdown shows "Time expired" instead of counting overdue days, and only for
+  unsubmitted packets; search box (client name, reason code, case number, amount).
+- **One-click Won/Lost from the list card.** Submitted packets show "Heard back from the
+  bank? Mark Won / Mark Lost" — records the outcome via the existing endpoint without
+  opening the packet, so won chargebacks actually get tracked.
+
+---
+
 ## Unreleased — Defense letters explain WHAT WAS SOLD (2026-07-06)
 
 ### Added

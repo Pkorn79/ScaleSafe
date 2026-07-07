@@ -1143,6 +1143,28 @@ LETTER STRUCTURE:
   },
 
   /**
+   * Correct the response deadline. Only available before submission — the
+   * stored default may come from an optimistic network window, and the
+   * merchant is the one who knows the processor's actual due date.
+   */
+  async updateDeadline(defenseId: string, deadline: string, locationId?: string): Promise<void> {
+    const packet = await defenseRepository.getById(defenseId, locationId);
+    if ((packet as any).lifecycle_status !== 'pending_submission') {
+      throw new Error('Cannot change the deadline after submission');
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || Number.isNaN(new Date(deadline).getTime())) {
+      throw new Error('deadline must be a valid date in YYYY-MM-DD format');
+    }
+    const supabase = getSupabase();
+    const { error } = await supabase
+      .from('defense_packets')
+      .update({ response_deadline: deadline })
+      .eq('id', defenseId);
+    if (error) throw error;
+    logger.info({ defenseId, deadline }, 'Defense packet response deadline updated by merchant');
+  },
+
+  /**
    * Save a manual letter edit. Creates a new version.
    * Only available before submission.
    */

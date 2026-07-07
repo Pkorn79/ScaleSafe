@@ -23,20 +23,28 @@
     <!-- Filters -->
     <div class="flex-between mb-4" style="flex-wrap:wrap;gap:12px">
       <Tabs v-model="activeFilter" :tabs="filters" variant="pill" />
-      <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" v-model="sortBy">
-        <option value="deadline">Sort: Deadline (soonest)</option>
-        <option value="created">Sort: Date Created</option>
-        <option value="amount">Sort: Amount</option>
-      </select>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input
+          class="form-input"
+          style="width:220px;padding:5px 10px;font-size:12px"
+          v-model="searchQuery"
+          placeholder="Search name, code, case, amount..."
+        />
+        <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" v-model="sortBy">
+          <option value="created">Sort: Newest first</option>
+          <option value="deadline">Sort: Deadline (soonest)</option>
+          <option value="amount">Sort: Amount</option>
+        </select>
+      </div>
     </div>
 
     <!-- Packet Cards -->
     <div v-if="filteredPackets.length === 0 && !loading">
       <EmptyState
         :icon="ShieldCheck"
-        :title="activeFilter === 'all' ? 'No defense packets yet' : 'No matches'"
+        :title="packets.length === 0 ? 'No defense packets yet' : 'No matches'"
         :body="emptyBody"
-        :cta-label="activeFilter === 'all' ? 'New Defense' : ''"
+        :cta-label="packets.length === 0 ? 'New Defense' : ''"
         @cta-click="showCompile = true"
       />
     </div>
@@ -68,9 +76,20 @@
           <span v-else-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted'" class="text-muted">Awaiting decision</span>
         </div>
       </div>
-      <div v-if="daysUntil(p.deadline) !== null" class="text-sm mt-2"
+      <div v-if="isPending(p) && daysUntil(p.deadline) !== null" class="text-sm mt-2"
         :style="{ color: daysUntil(p.deadline)! <= 3 ? '#b91c1c' : daysUntil(p.deadline)! <= 7 ? '#b45309' : 'var(--ss-navy-500)' }">
-        {{ daysUntil(p.deadline)! > 0 ? pluralize(daysUntil(p.deadline), 'day') + ' remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Overdue by ' + pluralize(Math.abs(daysUntil(p.deadline)!), 'day') }}
+        {{ daysUntil(p.deadline)! > 0 ? pluralize(daysUntil(p.deadline), 'day') + ' remaining' : daysUntil(p.deadline) === 0 ? 'Due today' : 'Time expired' }}
+      </div>
+      <!-- Quick outcome recording: once submitted, the merchant shouldn't have to
+           dig into the packet to tell us whether they won — one click here. -->
+      <div v-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted' && !p.outcome" class="mt-2" style="display:flex;gap:8px;align-items:center">
+        <span class="text-sm text-muted">Heard back from the bank?</span>
+        <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="recordingOutcomeId === p.id" @click.stop="quickOutcome(p, 'won')">
+          Mark Won
+        </button>
+        <button class="btn btn-sm btn-secondary" style="padding:3px 12px;font-size:11px" :disabled="recordingOutcomeId === p.id" @click.stop="quickOutcome(p, 'lost')">
+          Mark Lost
+        </button>
       </div>
     </div>
 
@@ -187,21 +206,25 @@ const customerSearchLoading = ref(false);
 const showCustomerDropdown = ref(false);
 let customerSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
-const activeFilter = ref('all');
-const sortBy = ref('deadline');
+// Default to Open (newest first): the merchant's working queue. Expired
+// chargebacks (deadline passed, never submitted) are filtered out of Open and
+// live in their own tab.
+const activeFilter = ref('active');
+const sortBy = ref('created');
+const searchQuery = ref('');
 
 const filters = [
-  { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active' },
+  { key: 'active', label: 'Open' },
   { key: 'pending_outcome', label: 'Pending Outcome' },
   { key: 'won', label: 'Won' },
   { key: 'lost', label: 'Lost' },
-  { key: 'withdrawn', label: 'Withdrawn' },
+  { key: 'expired', label: 'Expired' },
+  { key: 'all', label: 'All' },
 ];
 const emptyBody = computed(() =>
-  activeFilter.value === 'all'
+  packets.value.length === 0
     ? 'When a chargeback comes in, compile a defense packet here. ScaleSafe pulls evidence from the client timeline automatically.'
-    : 'No defense packets match this filter. Try clearing it or selecting a different status.',
+    : 'No defense packets match this filter or search. Try clearing them or selecting a different status.',
 );
 
 const compileForm = ref({
@@ -325,15 +348,46 @@ watch(() => compileForm.value.reasonCode, () => {
   if (compileForm.value.disputeDate) recomputeDeadline();
 });
 
+// A chargeback whose response window closed before the packet was ever
+// submitted — no longer actionable, so it leaves the working queue.
+function isExpired(p: any): boolean {
+  const lifecycle = p.lifecycleStatus || p.lifecycle_status || 'pending_submission';
+  if (lifecycle !== 'pending_submission') return false;
+  const days = daysUntil(p.deadline);
+  return days !== null && days < 0;
+}
+
+function isPending(p: any): boolean {
+  return (p.lifecycleStatus || p.lifecycle_status || 'pending_submission') === 'pending_submission';
+}
+
 const filteredPackets = computed(() => {
   let list = [...packets.value];
   // Filter
   if (activeFilter.value === 'active') {
-    list = list.filter(p => ['pending_submission', 'submitted'].includes(p.lifecycleStatus || p.lifecycle_status || ''));
+    list = list.filter(p =>
+      ['pending_submission', 'submitted'].includes(p.lifecycleStatus || p.lifecycle_status || '')
+      && !isExpired(p));
   } else if (activeFilter.value === 'pending_outcome') {
     list = list.filter(p => (p.lifecycleStatus || p.lifecycle_status) === 'submitted');
+  } else if (activeFilter.value === 'expired') {
+    list = list.filter(p => isExpired(p));
   } else if (['won', 'lost', 'withdrawn'].includes(activeFilter.value)) {
     list = list.filter(p => (p.lifecycleStatus || p.lifecycle_status) === activeFilter.value);
+  }
+  // Search — name, reason code (raw + humanized), case number, amount
+  const q = searchQuery.value.trim().toLowerCase();
+  if (q) {
+    list = list.filter(p => {
+      const haystack = [
+        p.contactName,
+        p.reason_code,
+        humanizeReasonCode(p.reason_code),
+        p.case_number,
+        Number(p.dispute_amount || 0).toFixed(2),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
   }
   // Sort
   list.sort((a, b) => {
@@ -376,7 +430,7 @@ function daysUntil(d: string | null): number | null {
   return Math.ceil((parseDateValue(d).getTime() - Date.now()) / 86400000);
 }
 
-onMounted(async () => {
+async function loadPackets() {
   try {
     const data = await api.get<any>('/api/dashboard/defense-history');
     packets.value = data?.packets || [];
@@ -384,7 +438,25 @@ onMounted(async () => {
   } catch (err: any) {
     error.value = err.message || 'Failed to load defense packets.';
   }
-});
+}
+
+// One-click outcome from the card — after submission the merchant only comes
+// back to tell us whether they won; don't make them dig into the packet.
+const recordingOutcomeId = ref('');
+async function quickOutcome(p: any, outcome: 'won' | 'lost') {
+  const amount = `$${Number(p.dispute_amount || 0).toFixed(2)}`;
+  if (!window.confirm(`Mark the ${amount} chargeback for ${p.contactName || 'this client'} as ${outcome.toUpperCase()}?`)) return;
+  recordingOutcomeId.value = p.id;
+  try {
+    await api.post(`/api/defense/${p.id}/outcome`, { outcome });
+    await loadPackets();
+  } catch {
+    /* useApi already toasts the error */
+  }
+  recordingOutcomeId.value = '';
+}
+
+onMounted(loadPackets);
 
 // Customer search
 function onCustomerSearchInput() {
