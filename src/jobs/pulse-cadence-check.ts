@@ -13,10 +13,10 @@ import { logger } from '../utils/logger';
 import { buildPulseCheckUrl } from '../utils/pulse-check-link';
 
 const DEFAULT_PULSE_FREQUENCY_DAYS = 30;
-const PULSE_TRIGGER_KEY = 'ss_pulse_check_due';
-const LEGACY_APP_EVENT_TRIGGER_KEY = 'ss_app_event';
+const PULSE_TRIGGER_KEY = 'ss_app_event';
+const DEDICATED_PULSE_TRIGGER_KEY = 'ss_pulse_check_due';
 
-type PulseDeliveryChannel = 'dedicated_pulse_trigger' | 'legacy_app_event';
+type PulseDeliveryChannel = 'shared_app_event' | 'dedicated_pulse_trigger';
 
 interface PulseEnrollmentRow {
   id: string;
@@ -189,13 +189,14 @@ export async function sendPulseForEnrollment(params: {
     supportEmail,
     businessName,
   });
+  await repairPulseSubscriptionAliases(enrollment.location_id);
 
-  const [activePulseSubscriptions, activeAppEventSubscriptions] = await Promise.all([
+  const [activeAppEventSubscriptions, activeDedicatedPulseSubscriptions] = await Promise.all([
     activeSubscriptionCount(enrollment.location_id, PULSE_TRIGGER_KEY),
-    activeSubscriptionCount(enrollment.location_id, LEGACY_APP_EVENT_TRIGGER_KEY),
+    activeSubscriptionCount(enrollment.location_id, DEDICATED_PULSE_TRIGGER_KEY),
   ]);
-  const triggerKey = activePulseSubscriptions > 0 ? PULSE_TRIGGER_KEY : LEGACY_APP_EVENT_TRIGGER_KEY;
-  const deliveryChannel: PulseDeliveryChannel = activePulseSubscriptions > 0 ? 'dedicated_pulse_trigger' : 'legacy_app_event';
+  const triggerKey = activeAppEventSubscriptions > 0 ? PULSE_TRIGGER_KEY : DEDICATED_PULSE_TRIGGER_KEY;
+  const deliveryChannel: PulseDeliveryChannel = activeAppEventSubscriptions > 0 ? 'shared_app_event' : 'dedicated_pulse_trigger';
   const payload = buildPulsePayload({
     enrollment,
     offerName: offer?.offer_name || '',
@@ -219,15 +220,15 @@ export async function sendPulseForEnrollment(params: {
         enrollmentId: enrollment.id,
         triggerKey,
         failed: triggerResult.failed,
-        activePulseSubscriptions,
         activeAppEventSubscriptions,
+        activeDedicatedPulseSubscriptions,
       },
       'Pulse trigger had no successful deliveries',
     );
     return {
       success: false,
       status: 'not_delivered',
-      message: activePulseSubscriptions === 0 && activeAppEventSubscriptions === 0
+      message: activeAppEventSubscriptions === 0 && activeDedicatedPulseSubscriptions === 0
         ? 'No active pulse workflow subscription accepted the event.'
         : 'Pulse event was not delivered to any workflow.',
       triggerKey,
@@ -238,7 +239,7 @@ export async function sendPulseForEnrollment(params: {
       dueDateDisplay,
       intervalLabel,
       nextPulseDueAt: enrollment.next_pulse_due_at || null,
-      expectedNextStep: 'Check trigger subscriptions and GHL workflow publish/filter settings.',
+      expectedNextStep: 'Check that the GHL workflow is subscribed to ScaleSafe App Event and filtered to Event Type = Pulse Check Due.',
     };
   }
 
@@ -287,6 +288,7 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
   const supabase = getSupabase();
   const now = new Date();
   const merchant = await merchantRepository.getByLocationId(locationId);
+  await repairPulseSubscriptionAliases(locationId);
 
   const [dueRes, pulseSubscriptionRes, appEventSubscriptionRes, logsRes, activityRes, submissionRes] = await Promise.all([
     supabase
@@ -300,7 +302,7 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
       .from('trigger_subscriptions')
       .select('id')
       .eq('location_id', locationId)
-      .eq('trigger_key', PULSE_TRIGGER_KEY)
+      .eq('trigger_key', DEDICATED_PULSE_TRIGGER_KEY)
       .eq('is_active', true),
     supabase
       .from('trigger_subscriptions')
@@ -312,7 +314,7 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
       .from('trigger_delivery_logs')
       .select('trigger_key, status, payload, created_at')
       .eq('location_id', locationId)
-      .in('trigger_key', [PULSE_TRIGGER_KEY, LEGACY_APP_EVENT_TRIGGER_KEY])
+      .in('trigger_key', [PULSE_TRIGGER_KEY, DEDICATED_PULSE_TRIGGER_KEY])
       .order('created_at', { ascending: false })
       .limit(200),
     supabase
@@ -364,10 +366,10 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
     : !pulseEnabled
       ? 'Pulse is disabled for this merchant.'
       : activePulseSubscriptions === 0 && activeAppEventSubscriptions === 0
-        ? 'Pulse check-ins are due, but no Pulse Check Due or legacy ScaleSafe App Event workflow is subscribed.'
-        : activePulseSubscriptions > 0
-          ? `${dueCount} pulse check-in(s) are due and ready to deliver through the dedicated Pulse Check Due trigger.`
-          : `${dueCount} pulse check-in(s) are due and ready to deliver through the legacy ScaleSafe App Event trigger.`;
+        ? 'Pulse check-ins are due, but no ScaleSafe App Event workflow is subscribed for Pulse Check Due.'
+        : activeAppEventSubscriptions > 0
+          ? `${dueCount} pulse check-in(s) are due and ready to deliver through the ScaleSafe App Event trigger.`
+          : `${dueCount} pulse check-in(s) are due and ready to deliver through the future dedicated Pulse Check Due trigger.`;
 
   return {
     pulseEnabled,
@@ -429,7 +431,7 @@ function skippedPulseResult(reason: string, message: string): PulseSendResult {
     status: 'skipped',
     message,
     triggerKey: PULSE_TRIGGER_KEY,
-    deliveryChannel: 'dedicated_pulse_trigger',
+    deliveryChannel: 'shared_app_event',
     delivery: { sent: 0, failed: 0 },
     advancedSchedule: false,
     expectedNextStep: 'Resolve the skipped reason, then run a pulse test again.',
@@ -450,6 +452,27 @@ async function activeSubscriptionCount(locationId: string, triggerKey: string): 
     throw error;
   }
   return (data || []).length;
+}
+
+async function repairPulseSubscriptionAliases(locationId: string): Promise<void> {
+  try {
+    const { error } = await getSupabase()
+      .from('trigger_subscriptions')
+      .update({ trigger_key: PULSE_TRIGGER_KEY })
+      .eq('location_id', locationId)
+      .eq('trigger_key', DEDICATED_PULSE_TRIGGER_KEY)
+      .eq('is_active', true);
+
+    if (error && !isMissingTableError(error)) throw error;
+  } catch (err: any) {
+    logger.warn(
+      {
+        err: err?.message || String(err),
+        locationId,
+      },
+      'Pulse subscription alias repair skipped',
+    );
+  }
 }
 
 function buildPulsePayload(params: {
@@ -541,8 +564,8 @@ function buildPulsePayload(params: {
 }
 
 function isPulseDeliveryLog(log: any): boolean {
-  if (log?.trigger_key === PULSE_TRIGGER_KEY) return true;
-  return log?.trigger_key === LEGACY_APP_EVENT_TRIGGER_KEY && appEventTypeMatches(log.payload, 'pulse_check_due');
+  if (log?.trigger_key === DEDICATED_PULSE_TRIGGER_KEY) return true;
+  return log?.trigger_key === PULSE_TRIGGER_KEY && appEventTypeMatches(log.payload, 'pulse_check_due');
 }
 
 function communicationLooksLikePulse(row: any): boolean {

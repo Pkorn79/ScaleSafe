@@ -20,7 +20,7 @@
 - Phase 4 reconciliation diagnostics shipped and should stay visible during beta.
 - Phase 4B payment display truth shipped: unlinked payment rows and reconciliation issues now show `Unassigned payment` instead of borrowing a program from the same contact. Offer Tracking ID is available after migration `057_offer_tracking_id.sql`.
 - Phase 5 payment workflow proof is still live-testing work: enrollment complete, payment received, failed payment, Stripe refund retest, Whop refund webhook-only behavior, and chargeback/defense workflows. Payment reminders are verified working from multiple live upcoming-payment reminder sends as of Philip's 2026-06-24 retest. NMI recurring and Stripe recurring are recorded as verified working from Philip's live/sandbox tests.
-- Phase 6 pulse cadence is code-shipped but still needs GHL smoke proof: send a test pulse, confirm `ss_pulse_check_due` delivery or legacy `ss_app_event` fallback delivery, confirm GHL workflow execution/outbound email, submit SYS2-09, and verify `pulse_checkin` evidence links to the enrollment.
+- Phase 6 pulse cadence is code-shipped but still needs GHL smoke proof: send a test pulse, confirm `ss_app_event` delivery with `event_type = Pulse Check Due`, confirm GHL workflow execution/outbound email, submit SYS2-09, and verify `pulse_checkin` evidence links to the enrollment.
 - Phase 7 fresh install E2E remains blocked until Phases 5 and 6 are clean.
 - Phase 8 production hardening: automatic fallback billing and automatic NMI history sync are no longer scheduled. NMI recurring beta proof must come from the live processor webhook path, not repair/import jobs.
 
@@ -36,7 +36,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | SS contact fields | App | Enrollment, evidence, chargeback, defense, engagement, payment, refund, milestone, and workflow-compatible beta fields are created from `BETA_CUSTOM_FIELD_REGISTRY`. |
 | Offer-prefix contact fields | App | Canonical offer bridge fields plus workflow-compatible aliases are copied at enrollment. App creates these if missing. |
 | Core custom values | App | See `CUSTOM_VALUE_REGISTRY` in `src/constants/ghl-fields.ts`, including `ScaleSafe Webhook Secret`. |
-| Pulse cadence timing | App | Offers choose cadence; enrollments store next due/last event delivery; daily app job prefers the dedicated `ss_pulse_check_due` trigger and falls back to legacy `ss_app_event` with `event_type = pulse_check_due` during beta transition. |
+| Pulse cadence timing | App | Offers choose cadence; enrollments store next due/last event delivery; daily app job fires the shared `ss_app_event` trigger with `event_type = Pulse Check Due`. |
 | GHL products/prices | App | Created when offers are created/updated. |
 | Trigger subscriptions | GHL marketplace | GHL posts subscription lifecycle to `/webhooks/ghl/triggers`; app stores subscriptions and fires to those URLs. |
 
@@ -49,7 +49,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | Evidence forms SYS2-07 through SYS2-11 | Exists/partially verified | Package forms. Ensure any workflow/custom webhook action posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms` or the current production app URL, with header `x-scalesafe-webhook-secret: {{ custom_values.scalesafe_webhook_secret }}`. |
 | Notification workflows | Built/published per Cowork workflow reference | Package active V2 workflows. Do not include obsolete V1 duplicates. |
 | Evidence form workflows | WF-01/WF-02 published | Package after webhook URL/header check. |
-| `SS - Pulse Check Due` workflow | Required for beta | Package the workflow that listens to the dedicated Marketplace trigger `ss_pulse_check_due` / `Pulse Check Due`. The app owns cadence and sends `enrollment_id`, `contact_id`, `offer_name`, `form_url`, `pulse_check_url`, and context fields. Legacy `ss_app_event` with `event_type = pulse_check_due` may remain only as a temporary fallback. Exclude the old tag-driven pulse workflow. |
+| `SS - Pulse Check Due` workflow | Required for beta | Package the workflow that listens to the shared Marketplace trigger `ss_app_event` / `ScaleSafe App Event` and filters `Event Type = Pulse Check Due`. The app owns cadence and sends `enrollment_id`, `contact_id`, `offer_name`, `form_url`, `pulse_check_url`, and context fields. Exclude the old tag-driven pulse workflow. |
 | Enrollment funnel | Not started/currently biggest unknown | Build/package current V2 flow or explicitly defer if the app-hosted enrollment/Quick Pay path fully replaces it for beta. |
 
 ## Do Not Package
@@ -67,7 +67,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 
 - `SS - Post Payment Actions` and `SS Refund Notification` were previously marked for deletion in some docs, but Philip later corrected that they are real app-triggered workflows. Do not delete/unpublish them without a fresh workflow-by-workflow review.
 - `SS - Bump Acceptance Confirmation` should remain draft/deferred while order bumps are post-beta.
-- The active app has 21 valid trigger keys in `src/constants/trigger-keys.ts`, including the shared `ss_app_event` multi-event trigger and dedicated `ss_pulse_check_due` pulse trigger.
+- The active app has 20 valid trigger keys in `src/constants/trigger-keys.ts`, including the shared `ss_app_event` multi-event trigger used for upcoming payment reminders and pulse checks.
 - Current managed SS contact fields are 6, including `ss_engagement_status` for at-risk/re-engagement workflows. Merchant provisioning now creates all 6.
 
 ## Manual GHL Checklist
@@ -81,7 +81,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
    - Header name is `x-scalesafe-webhook-secret`.
    - Header value is `{{ custom_values.scalesafe_webhook_secret }}`.
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
-6. Confirm `SS - Pulse Check Due` exists, uses the dedicated Marketplace trigger `Pulse Check Due` / `ss_pulse_check_due`, sends an email/SMS with `pulse_check_url` or `form_url`, and the old tag-driven pulse cadence workflow is excluded or clearly disabled.
+6. Confirm `SS - Pulse Check Due` exists, uses the shared Marketplace trigger `ScaleSafe App Event` / `ss_app_event`, filters `Event Type = Pulse Check Due`, sends an email/SMS with `pulse_check_url` or `form_url`, and the old tag-driven pulse cadence workflow is excluded or clearly disabled.
 7. Confirm all active notification workflow email/SMS bodies use the canonical field replacements in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
 8. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_app_event` with `event_type = upcoming_payment_reminder` before billing and `ss_payment_received` after installments.
 9. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.
@@ -99,7 +99,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | P1 | Build app-owned pulse cadence | Shipped in code: migration 053, offer cadence settings, enrollment due fields, daily pulse job, and SYS2-09 enrollment linkage. Needs functional GHL workflow smoke before Snapshot export. |
 | P1 | Reconcile repo `GHL_AUTOMATION_COMPANION.md` with current Cowork workflow reference | Repo doc is stale on workflow counts, trigger counts, and Make references. |
 | P1 | Copy or mirror current E2E protocol into repo docs | The feature ledger references `docs/E2E_TEST_PROTOCOL.md`, but it currently lives only in Cowork. |
-| P1 | Wire pulse cadence to a dedicated trigger | Shipped. Code now prefers `ss_pulse_check_due` and falls back to legacy `ss_app_event` with `event_type = pulse_check_due`. Needs functional GHL workflow smoke proving app-event delivery, GHL workflow execution, outbound email, and submitted pulse evidence separately. |
+| P1 | Wire pulse cadence to `ss_app_event` | Shipped. Code fires `ss_app_event` with `event_type = Pulse Check Due`. Needs functional GHL workflow smoke proving app-event delivery, GHL workflow execution, outbound email, and submitted pulse evidence separately. |
 | P1 | Add trigger delivery observability | Shipped in migration 055 and `trigger.service.ts`. Apply migration 055 in Supabase production, then use `trigger_delivery_logs` to verify whether enrollment/payment/reminder/pulse trigger deliveries reached GHL. |
 | P1 | Reconcile workflow merge-field contract | In progress. `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` now defines canonical fields and stale-field replacements. PMG workflow bodies still need manual GHL UI edits before snapshot export. |
 | P2 | Add an install smoke script | Read-only verification for a fresh location once OAuth/install is complete. |

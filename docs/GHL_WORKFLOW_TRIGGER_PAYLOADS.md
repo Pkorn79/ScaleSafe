@@ -11,8 +11,7 @@ ScaleSafe workflows should use Marketplace trigger custom variables first. Conta
 - `enrollment_complete` sends welcome/access only after terms and signature are complete.
 - `ss_payment_failed` sends failed-payment/dunning messages only.
 - `ss_refund_processed` sends refund confirmation only.
-- `ss_app_event` handles shared app events such as upcoming payment reminders, filtered by `event_type`.
-- `ss_pulse_check_due` sends pulse check links. The legacy `ss_app_event` + `event_type = pulse_check_due` path is supported during beta transition only.
+- `ss_app_event` handles shared app events such as upcoming payment reminders and pulse checks, filtered by `event_type`.
 
 Do not use `enrollment_complete` for receipt copy.
 
@@ -156,7 +155,7 @@ Recommended GHL reminder template fields:
 - Support email: `support_email`
 - Business name/signature: `business_name`
 
-## `ss_pulse_check_due`
+## `ss_app_event` with `event_type = Pulse Check Due`
 
 Use for pulse check invitations during active enrollments.
 

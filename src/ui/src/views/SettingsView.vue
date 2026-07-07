@@ -424,8 +424,8 @@
                   <strong>Pulse setup</strong>
                   <span>Due: {{ item.details?.dueCount || 0 }}</span>
                   <span>Form URL: {{ item.details?.formUrlConfigured ? 'Present' : 'Missing' }}</span>
-                  <span>Pulse trigger subscriptions: {{ item.details?.activePulseSubscriptions || 0 }}</span>
-                  <span>Legacy App Event subscriptions: {{ item.details?.activeAppEventSubscriptions || 0 }}</span>
+                  <span>ScaleSafe App Event subscriptions: {{ item.details?.activeAppEventSubscriptions || 0 }}</span>
+                  <span>Future Pulse trigger subscriptions: {{ item.details?.activePulseSubscriptions || 0 }}</span>
                   <span v-if="item.details?.lastSkippedReason" class="text-warn">Skipped: {{ item.details.lastSkippedReason }}</span>
                 </div>
                 <div class="text-sm text-muted">
