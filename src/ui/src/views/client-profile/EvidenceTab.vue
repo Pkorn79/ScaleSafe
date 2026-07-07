@@ -238,7 +238,8 @@ function visibleProofRole(item: any): string {
 }
 
 function visibleReasonTags(item: any): string[] {
-  return evidenceType(item) === 'communication' ? [] : reasonTags(item);
+  if (['communication', 'pulse_checkin'].includes(evidenceType(item))) return [];
+  return reasonTags(item);
 }
 
 function stripHtml(value: string): string {

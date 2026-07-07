@@ -6,6 +6,7 @@ const mockLogEvidence = jest.fn();
 const mockOfferFindById = jest.fn();
 const mockOfferListByLocation = jest.fn();
 const mockSupabaseFrom = jest.fn();
+const mockVerifyPublicActionToken = jest.fn();
 
 jest.mock('../../src/repositories/ghlActivity.repository', () => ({
   ghlActivityRepository: {
@@ -33,21 +34,35 @@ jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockSupabaseFrom(...args) }),
 }));
 
+jest.mock('../../src/utils/public-action-token', () => ({
+  verifyPublicActionToken: (...args: any[]) => mockVerifyPublicActionToken(...args),
+}));
+
 import { ghlActivityService } from '../../src/services/ghl-activity.service';
 import { EVIDENCE_TYPES } from '../../src/constants/evidence-types';
 
-function mockEnrollmentQuery(enrollments: any[]) {
+function queryResult(result: any, maybeSingleData?: any) {
+  const chain: any = {
+    select: () => chain,
+    eq: () => chain,
+    in: () => chain,
+    order: () => chain,
+    gte: () => chain,
+    lte: () => chain,
+    limit: () => Promise.resolve(result),
+    maybeSingle: () => Promise.resolve({ data: maybeSingleData ?? result.data?.[0] ?? null, error: result.error || null }),
+    then: (resolve: any) => Promise.resolve(result).then(resolve),
+  };
+  return chain;
+}
+
+function mockEnrollmentQuery(enrollments: any[], offers: any[] = [{ id: 'offer_1', offer_name: 'Beta Tester' }]) {
   mockSupabaseFrom.mockImplementation((table: string) => {
     if (table === 'enrollments') {
-      const chain: any = {
-        select: () => chain,
-        eq: () => chain,
-        in: () => chain,
-        order: () => chain,
-        limit: () => chain,
-        maybeSingle: () => Promise.resolve({ data: enrollments[0] || null, error: null }),
-      };
-      return chain;
+      return queryResult({ data: enrollments, error: null });
+    }
+    if (table === 'offers_mirror') {
+      return queryResult({ data: offers, error: null });
     }
     if (table === 'ghl_activity_events') {
       const chain: any = {
@@ -57,14 +72,7 @@ function mockEnrollmentQuery(enrollments: any[]) {
       return chain;
     }
     if (table === 'evidence_communication') {
-      const chain: any = {
-        select: () => chain,
-        eq: () => chain,
-        gte: () => chain,
-        lte: () => chain,
-        limit: () => Promise.resolve({ data: [], error: null }),
-      };
-      return chain;
+      return queryResult({ data: [], error: null });
     }
     return {};
   });
@@ -79,6 +87,9 @@ beforeEach(() => {
   mockCreateEventIfNew.mockResolvedValue({
     inserted: true,
     row: { id: 'evt_1', normalized: {} },
+  });
+  mockVerifyPublicActionToken.mockImplementation(() => {
+    throw new Error('unexpected token');
   });
   mockLogEvidence.mockResolvedValue(undefined);
   mockEnrollmentQuery([{ id: 'enr_1', offer_id: 'offer_1', status: 'active' }]);
@@ -183,6 +194,84 @@ describe('ghlActivityService', () => {
 
     expect(result.status).toBe('duplicate');
     expect(mockLogEvidence).not.toHaveBeenCalled();
+  });
+
+  test('links ScaleSafe action-link communications to the exact enrollment', async () => {
+    mockVerifyPublicActionToken.mockReturnValueOnce({
+      action: 'pulse_checkin',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      enrollmentId: 'enr_pulse',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    mockEnrollmentQuery([
+      { id: 'enr_pulse', offer_id: 'offer_pulse', status: 'active' },
+    ], [
+      { id: 'offer_pulse', offer_name: 'Pulse Program' },
+    ]);
+
+    const result = await ghlActivityService.handleWebhook({
+      type: 'OutboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_1',
+      messageId: 'msg_pulse_1',
+      direction: 'outbound',
+      messageType: 'Email',
+      plainText: 'Please complete your pulse: https://dashboard.scalesafe.app/pulse-check?actionToken=tok_123',
+      dateAdded: '2026-07-07T21:59:00.000Z',
+    });
+
+    expect(result.actionTaken).toBe('communication_evidence_created');
+    expect(mockCreateEventIfNew).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_pulse',
+      offer_id: 'offer_pulse',
+      status: 'matched',
+      match_reason: 'public_action_link_pulse_checkin',
+      match_confidence: 'strong',
+      linked_enrollment_ids: ['enr_pulse'],
+    }));
+    expect(mockLinkActivityToEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_pulse',
+      offerId: 'offer_pulse',
+      reason: 'public_action_link_pulse_checkin',
+    }));
+    expect(mockLogEvidence).toHaveBeenCalledWith(
+      EVIDENCE_TYPES.COMMUNICATION,
+      'loc_1',
+      'contact_1',
+      'ghl_webhook',
+      expect.objectContaining({ enrollment_id: 'enr_pulse' }),
+    );
+  });
+
+  test('does not guess an enrollment when an offer name matches multiple active enrollments', async () => {
+    mockEnrollmentQuery([
+      { id: 'enr_a', offer_id: 'offer_1', status: 'active' },
+      { id: 'enr_b', offer_id: 'offer_1', status: 'active' },
+    ], [
+      { id: 'offer_1', offer_name: 'Beta Tester' },
+    ]);
+
+    await ghlActivityService.handleWebhook({
+      type: 'OutboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_1',
+      messageId: 'msg_ambiguous_1',
+      direction: 'outbound',
+      messageType: 'Email',
+      plainText: 'This confirms your payment for Beta Tester.',
+      dateAdded: '2026-07-07T21:59:00.000Z',
+    });
+
+    expect(mockCreateEventIfNew).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: null,
+      offer_id: null,
+      status: 'client_level',
+      match_reason: 'client_level_unmatched_to_enrollment',
+    }));
+    expect(mockLinkActivityToEnrollment).not.toHaveBeenCalled();
   });
 
   test('creates invoice evidence for invoice events with a contact', async () => {

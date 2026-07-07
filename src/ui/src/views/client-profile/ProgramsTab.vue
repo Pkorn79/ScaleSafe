@@ -392,7 +392,7 @@ async function sendTestPulse(enr: any) {
     });
     if (result?.success) {
       const trigger = result.triggerKey === 'ss_pulse_check_due' ? 'Pulse Check Due' : 'ScaleSafe App Event';
-      pulseResult.value = `Pulse test event delivered through ${trigger}. Confirm GHL workflow history, outbound email, and pulse submission.`;
+      pulseResult.value = `Pulse app event delivered through ${trigger}. If no email appears, check the GHL workflow email action/history; ScaleSafe can only confirm GHL accepted the event until the outbound message webhook returns.`;
     } else {
       actionError.value = result?.message || 'Pulse test event was not delivered.';
     }

@@ -11,6 +11,7 @@ import {
   normalizeCommunicationDirection,
   normalizeCommunicationSourceChannel,
 } from '../utils/communication-evidence';
+import { verifyPublicActionToken } from '../utils/public-action-token';
 import { logger } from '../utils/logger';
 
 type SourceObject = 'appointment' | 'invoice' | 'communication' | 'note' | 'task' | 'form' | 'opportunity' | 'unknown';
@@ -293,7 +294,114 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
 
   if (!activity.contactId) return { enrollment: null, offerId: null, reason: 'missing_contact_id', confidence: 'none', linkedEnrollmentIds: [], linkedOfferIds: [] };
 
+  const actionLinkMatch = await findEnrollmentFromActionLink(activity);
+  if (actionLinkMatch) return actionLinkMatch;
+
+  const offerNameMatch = await findEnrollmentFromUniqueOfferName(activity);
+  if (offerNameMatch) return offerNameMatch;
+
   return { enrollment: null, offerId: null, reason: 'client_level_unmatched_to_enrollment', confidence: 'client', linkedEnrollmentIds: [], linkedOfferIds: [] };
+}
+
+async function findEnrollmentFromActionLink(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] } | null> {
+  const tokenMatches = actionTokensFromText(activity.body);
+  if (tokenMatches.length === 0) return null;
+
+  const supabase = getSupabase();
+  for (const rawToken of tokenMatches) {
+    try {
+      const token = decodeURIComponent(rawToken);
+      const payload = verifyPublicActionToken(token);
+      if (payload.locationId !== activity.locationId || payload.contactId !== activity.contactId || !payload.enrollmentId) continue;
+
+      const { data } = await supabase
+        .from('enrollments')
+        .select('*')
+        .eq('location_id', activity.locationId)
+        .eq('contact_id', activity.contactId)
+        .eq('id', payload.enrollmentId)
+        .maybeSingle();
+
+      if (data) {
+        return {
+          enrollment: data,
+          offerId: data.offer_id || null,
+          reason: `public_action_link_${payload.action}`,
+          confidence: 'strong',
+          linkedEnrollmentIds: [data.id],
+          linkedOfferIds: data.offer_id ? [data.offer_id] : [],
+        };
+      }
+    } catch (err: any) {
+      logger.debug(
+        { err: err?.message || String(err), locationId: activity.locationId, contactId: activity.contactId },
+        'Ignored unverified public action token while matching GHL communication',
+      );
+    }
+  }
+
+  return null;
+}
+
+function actionTokensFromText(text: string): string[] {
+  const tokens: string[] = [];
+  const regex = /[?&]actionToken=([^\s"'<>]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(String(text || ''))) !== null) {
+    if (match[1]) tokens.push(match[1].replace(/[),.;:!?]+$/g, ''));
+  }
+  return tokens;
+}
+
+async function findEnrollmentFromUniqueOfferName(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] } | null> {
+  const body = normalizeMatchText(activity.body);
+  if (!body) return null;
+
+  const supabase = getSupabase();
+  const { data: enrollments, error: enrollmentError } = await supabase
+    .from('enrollments')
+    .select('id, offer_id, status, created_at')
+    .eq('location_id', activity.locationId)
+    .eq('contact_id', activity.contactId)
+    .in('status', ['enrolled', 'active', 'paid_pending_enrollment'])
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (enrollmentError) throw enrollmentError;
+
+  const offerIds = [...new Set((enrollments || []).map((row: any) => row.offer_id).filter(Boolean))];
+  if (offerIds.length === 0) return null;
+
+  const { data: offers, error: offerError } = await supabase
+    .from('offers_mirror')
+    .select('id, offer_name')
+    .in('id', offerIds);
+  if (offerError) throw offerError;
+
+  const offerNames = new Map((offers || []).map((offer: any) => [offer.id, String(offer.offer_name || '').trim()]));
+  const matches = (enrollments || []).filter((enrollment: any) => {
+    const offerName = offerNames.get(enrollment.offer_id);
+    return offerName && body.includes(normalizeMatchText(offerName));
+  });
+
+  if (matches.length !== 1) return null;
+  const enrollment = matches[0];
+  return {
+    enrollment,
+    offerId: enrollment.offer_id || null,
+    reason: 'unique_offer_name_in_communication',
+    confidence: 'moderate',
+    linkedEnrollmentIds: [enrollment.id],
+    linkedOfferIds: enrollment.offer_id ? [enrollment.offer_id] : [],
+  };
+}
+
+function normalizeMatchText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&amp;/g, '&')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function appointmentSummary(activity: NormalizedGhlActivity, offerName?: string): string {
