@@ -1,5 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
-import { ghlApi } from '../clients/ghl.client';
+import { clearGhlCustomFieldIdCache, ghlApi } from '../clients/ghl.client';
 import {
   OFFER_CONTACT_FIELDS,
   WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
@@ -15,8 +15,19 @@ import { buildPulseCheckUrl } from '../utils/pulse-check-link';
 const DEFAULT_PULSE_FREQUENCY_DAYS = 30;
 const PULSE_TRIGGER_KEY = 'ss_app_event';
 const DEDICATED_PULSE_TRIGGER_KEY = 'ss_pulse_check_due';
+const PULSE_CONTACT_FIELD_DEFS = [
+  { name: 'SS Pulse Check URL', fieldKey: WORKFLOW_PULSE_CONTACT_FIELDS.CHECK_URL, dataType: 'TEXT' },
+  { name: 'SS Pulse Due Date', fieldKey: WORKFLOW_PULSE_CONTACT_FIELDS.DUE_DATE, dataType: 'TEXT' },
+  { name: 'SS Pulse Interval Label', fieldKey: WORKFLOW_PULSE_CONTACT_FIELDS.INTERVAL_LABEL, dataType: 'TEXT' },
+  { name: 'SS Last Pulse Sent At', fieldKey: WORKFLOW_PULSE_CONTACT_FIELDS.LAST_SENT_AT, dataType: 'TEXT' },
+] as const;
 
 type PulseDeliveryChannel = 'shared_app_event' | 'dedicated_pulse_trigger';
+type PulseContactFieldSyncResult = {
+  success: boolean;
+  missing: string[];
+  error?: string;
+};
 
 interface PulseEnrollmentRow {
   id: string;
@@ -178,7 +189,7 @@ export async function sendPulseForEnrollment(params: {
   const supportEmail = (merchant as any).support_email || (merchant as any).email || '';
   const businessName = (merchant as any).dba_name || merchant.business_name || '';
 
-  await syncPulseContactFields({
+  const contactSync = await syncPulseContactFields({
     locationId: enrollment.location_id,
     contactId: enrollment.contact_id,
     offerName: offer?.offer_name || '',
@@ -189,6 +200,33 @@ export async function sendPulseForEnrollment(params: {
     supportEmail,
     businessName,
   });
+  if (!contactSync.success) {
+    logger.warn(
+      {
+        locationId: enrollment.location_id,
+        enrollmentId: enrollment.id,
+        contactId: enrollment.contact_id,
+        missing: contactSync.missing,
+        error: contactSync.error,
+      },
+      'Pulse contact field sync failed; not firing no-link pulse email',
+    );
+    return {
+      success: false,
+      status: 'not_delivered',
+      message: 'Pulse was not sent because ScaleSafe could not write the pulse link contact fields in GHL.',
+      triggerKey: PULSE_TRIGGER_KEY,
+      deliveryChannel: 'shared_app_event',
+      delivery: { sent: 0, failed: 0 },
+      advancedSchedule: false,
+      pulseUrl,
+      dueDateDisplay,
+      intervalLabel,
+      nextPulseDueAt: enrollment.next_pulse_due_at || null,
+      expectedNextStep: 'Run Settings > Provisioning Health > repair workflow fields, then send a test pulse again.',
+      skippedReason: 'pulse_contact_field_sync_failed',
+    };
+  }
   await repairPulseSubscriptionAliases(enrollment.location_id);
 
   const [activeAppEventSubscriptions, activeDedicatedPulseSubscriptions] = await Promise.all([
@@ -615,8 +653,10 @@ async function syncPulseContactFields(params: {
   sentAt: string;
   supportEmail: string;
   businessName: string;
-}): Promise<void> {
-  if (!params.locationId || !params.contactId) return;
+}): Promise<PulseContactFieldSyncResult> {
+  if (!params.locationId || !params.contactId) {
+    return { success: false, missing: [], error: 'missing_contact_id' };
+  }
 
   const customField: Record<string, unknown> = {
     [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: params.businessName,
@@ -631,7 +671,11 @@ async function syncPulseContactFields(params: {
 
   try {
     const api = await ghlApi(params.locationId);
+    const fieldRepair = await ensurePulseContactFields(api, params.locationId);
+    if (!fieldRepair.success) return fieldRepair;
+
     await api.put(`/contacts/${params.contactId}`, { customField });
+    return { success: true, missing: [] };
   } catch (err: any) {
     logger.warn(
       {
@@ -639,7 +683,74 @@ async function syncPulseContactFields(params: {
         locationId: params.locationId,
         contactId: params.contactId,
       },
-      'Failed to sync pulse contact fields; continuing with trigger delivery',
+      'Failed to sync pulse contact fields',
     );
+    return { success: false, missing: [], error: err?.message || String(err) };
   }
+}
+
+async function ensurePulseContactFields(api: any, locationId: string): Promise<PulseContactFieldSyncResult> {
+  try {
+    const existing = await loadCustomFieldKeys(api, locationId);
+    const missing = PULSE_CONTACT_FIELD_DEFS
+      .filter((field) => !existing.has(normalizeContactFieldKey(field.fieldKey)) && !existing.has(normalizeContactFieldName(field.name)))
+      .map((field) => field.fieldKey);
+
+    if (missing.length === 0) return { success: true, missing: [] };
+
+    for (const field of PULSE_CONTACT_FIELD_DEFS.filter((def) => missing.includes(def.fieldKey))) {
+      try {
+        await api.post(`/locations/${locationId}/customFields`, {
+          name: field.name,
+          dataType: field.dataType,
+        });
+      } catch (err: any) {
+        const status = err?.response?.status || err?.ghlStatus || err?.status;
+        if (status !== 409 && status !== 422) throw err;
+      }
+    }
+
+    clearGhlCustomFieldIdCache(locationId);
+    const afterRepair = await loadCustomFieldKeys(api, locationId);
+    const stillMissing = PULSE_CONTACT_FIELD_DEFS
+      .filter((field) => !afterRepair.has(normalizeContactFieldKey(field.fieldKey)) && !afterRepair.has(normalizeContactFieldName(field.name)))
+      .map((field) => field.fieldKey);
+
+    return {
+      success: stillMissing.length === 0,
+      missing: stillMissing,
+      error: stillMissing.length > 0 ? 'pulse_custom_fields_missing_after_repair' : undefined,
+    };
+  } catch (err: any) {
+    return { success: false, missing: [], error: err?.message || String(err) };
+  }
+}
+
+async function loadCustomFieldKeys(api: any, locationId: string): Promise<Set<string>> {
+  const res = await api.get(`/locations/${locationId}/customFields`);
+  const fields = res.data?.customFields || res.data?.fields || (Array.isArray(res.data) ? res.data : []);
+  const keys = new Set<string>();
+  for (const field of fields) {
+    if (field?.fieldKey || field?.key) {
+      keys.add(normalizeContactFieldKey(String(field.fieldKey || field.key)));
+    }
+    if (field?.name) {
+      keys.add(normalizeContactFieldName(String(field.name)));
+    }
+  }
+  return keys;
+}
+
+function normalizeContactFieldKey(key: string): string {
+  const trimmed = key.trim();
+  return trimmed.startsWith('contact.') ? trimmed : `contact.${trimmed}`;
+}
+
+function normalizeContactFieldName(name: string): string {
+  const key = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key ? normalizeContactFieldKey(key) : '';
 }

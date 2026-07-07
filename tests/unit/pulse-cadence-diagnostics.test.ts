@@ -1,6 +1,9 @@
 const mockFrom = jest.fn();
 const mockMerchant = jest.fn();
+const mockGhlGet = jest.fn();
 const mockGhlPut = jest.fn();
+const mockGhlPost = jest.fn();
+const mockClearGhlCustomFieldIdCache = jest.fn();
 const mockIdempotencyExists = jest.fn();
 const mockIdempotencyRecord = jest.fn();
 
@@ -9,7 +12,8 @@ jest.mock('../../src/clients/supabase.client', () => ({
 }));
 
 jest.mock('../../src/clients/ghl.client', () => ({
-  ghlApi: jest.fn(async () => ({ put: mockGhlPut })),
+  clearGhlCustomFieldIdCache: (...args: any[]) => mockClearGhlCustomFieldIdCache(...args),
+  ghlApi: jest.fn(async () => ({ get: mockGhlGet, post: mockGhlPost, put: mockGhlPut })),
 }));
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
@@ -156,6 +160,17 @@ describe('runPulseCadenceCheck', () => {
       business_name: 'ScaleSafe Merchant',
       support_email: 'support@example.com',
     });
+    mockGhlGet.mockResolvedValue({
+      data: {
+        customFields: [
+          { id: 'field_pulse_url', name: 'SS Pulse Check URL', fieldKey: 'contact.ss_pulse_check_url' },
+          { id: 'field_pulse_due', name: 'SS Pulse Due Date', fieldKey: 'contact.ss_pulse_due_date' },
+          { id: 'field_pulse_interval', name: 'SS Pulse Interval Label', fieldKey: 'contact.ss_pulse_interval_label' },
+          { id: 'field_pulse_last', name: 'SS Last Pulse Sent At', fieldKey: 'contact.ss_last_pulse_sent_at' },
+        ],
+      },
+    });
+    mockGhlPost.mockResolvedValue({ data: {} });
     mockGhlPut.mockResolvedValue({ data: {} });
     mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
     mockIdempotencyExists.mockResolvedValue(false);
@@ -253,6 +268,56 @@ describe('runPulseCadenceCheck', () => {
       'loc_1',
       expect.objectContaining({ sent: 1, failed: 0, next_pulse_due_at: '2026-06-29T00:00:00.000Z' }),
     );
+  });
+
+  it('does not fire or advance when pulse contact fields cannot be repaired', async () => {
+    const updatePayloads: any[] = [];
+    const row = {
+      id: 'enr_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      pulse_cadence_enabled: true,
+      pulse_frequency_days: 14,
+      next_pulse_due_at: '2026-06-29T00:00:00.000Z',
+    };
+    mockGhlGet.mockResolvedValue({ data: { customFields: [] } });
+    mockGhlPost.mockRejectedValue(new Error('missing scope'));
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        const query: any = {
+          ...enrollmentQuery(row),
+          ...updateQuery((payload: any) => updatePayloads.push(payload)),
+        };
+        return query;
+      }
+      if (table === 'offers_mirror') {
+        const query: any = {
+          select: jest.fn(() => query),
+          eq: jest.fn(() => query),
+          maybeSingle: jest.fn(async () => ({
+            data: { offer_name: 'Beta Program', pulse_frequency_days: 14 },
+            error: null,
+          })),
+        };
+        return query;
+      }
+      if (table === 'trigger_subscriptions') {
+        return subscriptionQuery((triggerKey) => ({
+          data: triggerKey === 'ss_app_event' ? [{ id: 'sub_app' }] : [],
+          error: null,
+        }));
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await runPulseCadenceCheck();
+
+    expect(mockGhlPut).not.toHaveBeenCalled();
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+    expect(updatePayloads).toEqual([]);
+    expect(mockIdempotencyRecord).not.toHaveBeenCalled();
   });
 
   it('does not resend the same due pulse when already recorded', async () => {

@@ -52,6 +52,23 @@ function normalizeContactFieldKey(key: string): string {
   return trimmed.startsWith('contact.') ? trimmed : `contact.${trimmed}`;
 }
 
+function fieldNameToContactFieldKey(name: string): string {
+  const key = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key ? normalizeContactFieldKey(key) : '';
+}
+
+export function clearGhlCustomFieldIdCache(locationId?: string): void {
+  if (locationId) {
+    customFieldIdCache.delete(locationId);
+    return;
+  }
+  customFieldIdCache.clear();
+}
+
 async function getContactCustomFieldIdMap(
   api: AxiosInstance,
   locationId: string,
@@ -67,13 +84,24 @@ async function getContactCustomFieldIdMap(
 
   for (const field of fields) {
     const id = field?.id;
-    const rawKey = field?.fieldKey || field?.key;
-    if (!id || !rawKey) continue;
+    if (!id) continue;
 
-    const contactKey = normalizeContactFieldKey(String(rawKey));
-    const bareKey = contactKey.replace(/^contact\./, '');
-    map.set(contactKey, id);
-    map.set(bareKey, id);
+    const rawKey = field?.fieldKey || field?.key;
+    if (rawKey) {
+      const contactKey = normalizeContactFieldKey(String(rawKey));
+      const bareKey = contactKey.replace(/^contact\./, '');
+      map.set(contactKey, id);
+      map.set(bareKey, id);
+    }
+
+    if (field?.name) {
+      const nameKey = fieldNameToContactFieldKey(String(field.name));
+      if (nameKey) {
+        const bareNameKey = nameKey.replace(/^contact\./, '');
+        map.set(nameKey, id);
+        map.set(bareNameKey, id);
+      }
+    }
   }
 
   customFieldIdCache.set(locationId, {
