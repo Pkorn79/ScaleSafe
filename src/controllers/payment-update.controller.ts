@@ -10,6 +10,11 @@ import {
   verifyPublicActionToken,
 } from '../utils/public-action-token';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import {
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_MILESTONE_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -553,6 +558,18 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const milestoneDelivers = (offer as any)?.[`m${milestoneNumber}_delivers`] || '';
     const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
     const workSummary = [milestoneDelivers, milestoneClientDoes].filter(Boolean).join('. Client responsibility: ') || null;
+    const offerName = (offer as any)?.offer_name || '';
+    let signoffMerchant: any = null;
+    try {
+      signoffMerchant = await merchantRepository.findByLocationId(locationId);
+    } catch (merchantErr: any) {
+      logger.debug(
+        { err: merchantErr?.message || String(merchantErr), locationId },
+        'Milestone signoff merchant lookup skipped',
+      );
+    }
+    const signoffBusinessName = signoffMerchant?.dba_name || signoffMerchant?.business_name || '';
+    const signoffSupportEmail = signoffMerchant?.support_email || signoffMerchant?.email || '';
 
     let signoffContactName = '';
     let signoffContactEmail = '';
@@ -592,7 +609,16 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
       signed_at: signedAt,
       contact_name: signoffContactName || null,
       contact_email: signoffContactEmail || null,
-      raw_payload: { contactId, locationId, enrollmentId: enrollment.id, milestoneNumber, milestoneDelivers, milestoneClientDoes },
+      raw_payload: {
+        contactId,
+        locationId,
+        enrollmentId: enrollment.id,
+        offerId: enrollment.offer_id || '',
+        offerName,
+        milestoneNumber,
+        milestoneDelivers,
+        milestoneClientDoes,
+      },
       description: `${signoffContactName || 'Client'} digitally signed off on Milestone ${milestoneNumber} (${milestoneName}) on ${fmtSignedDate} from IP ${clientIp || 'unknown'} (${browserDisplay}).${milestoneDelivers ? ` Work delivered: ${milestoneDelivers}.` : ''}`,
       ...buildDefenseEvidenceFields({
         summary: `${signoffContactName || 'Client'} digitally signed off on Milestone ${milestoneNumber} (${milestoneName}) on ${fmtSignedDate} from IP ${clientIp || 'unknown'} using ${browserDisplay}.${milestoneDelivers ? ` Work delivered: ${milestoneDelivers}.` : ''}`,
@@ -624,6 +650,26 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     // Fire trigger — flat doc contract
     const { triggerService } = require('../services/trigger.service');
     const signatureTimestamp = new Date().toISOString();
+    try {
+      const api = await ghlApi(locationId);
+      await api.put(`/contacts/${contactId}`, {
+        customField: {
+          [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: signoffBusinessName,
+          [OFFER_CONTACT_FIELDS.OFFER_NAME]: offerName,
+          [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: offerName,
+          [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: signoffSupportEmail,
+          [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
+          [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
+          [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(milestoneNumber),
+          [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary || '',
+        },
+      });
+    } catch (fieldErr: any) {
+      logger.warn(
+        { err: fieldErr?.message || String(fieldErr), locationId, contactId, milestoneNumber },
+        'Milestone signoff contact field sync failed (non-fatal)',
+      );
+    }
     await triggerService.fireTrigger(locationId, 'ss_milestone_signedoff', {
       event_type: 'milestone_signedoff',
       location_id: locationId,
@@ -634,10 +680,20 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
       enrollmentId: enrollment.id,
       offer_id: enrollment.offer_id || '',
       offerId: enrollment.offer_id || '',
+      offer_name: offerName,
+      offerName,
+      program_name: offerName,
+      programName: offerName,
       milestone_number: milestoneNumber,
       milestoneNumber,
       milestone_name: milestoneName,
       milestoneName,
+      work_summary: workSummary || '',
+      workSummary: workSummary || '',
+      support_email: signoffSupportEmail,
+      supportEmail: signoffSupportEmail,
+      business_name: signoffBusinessName,
+      businessName: signoffBusinessName,
       signature_timestamp: signatureTimestamp,
       signatureTimestamp,
       ip_address: clientIp,

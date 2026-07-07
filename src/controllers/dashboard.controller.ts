@@ -8,7 +8,11 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { config } from '../config';
 import { createPublicActionToken } from '../utils/public-action-token';
-import { WORKFLOW_MILESTONE_CONTACT_FIELDS } from '../constants/ghl-fields';
+import {
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_MILESTONE_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { logger } from '../utils/logger';
 import { merchantRepository } from '../repositories/merchant.repository';
@@ -1002,6 +1006,18 @@ export const dashboardController = {
       const milestoneName = (offer as any)?.[`m${requestedMilestoneNumber}_name`] || `Milestone ${requestedMilestoneNumber}`;
       const milestoneDelivers = (offer as any)?.[`m${requestedMilestoneNumber}_delivers`] || '';
       const milestoneClientDoes = (offer as any)?.[`m${requestedMilestoneNumber}_client_does`] || '';
+      const offerName = (offer as any)?.offer_name || '';
+      let milestoneMerchant: any = null;
+      try {
+        milestoneMerchant = await merchantRepository.findByLocationId(locationId);
+      } catch (merchantErr: any) {
+        logger.debug(
+          { err: merchantErr?.message || String(merchantErr), locationId },
+          'Milestone merchant lookup skipped',
+        );
+      }
+      const milestoneBusinessName = milestoneMerchant?.dba_name || milestoneMerchant?.business_name || '';
+      const milestoneSupportEmail = milestoneMerchant?.support_email || milestoneMerchant?.email || '';
 
       const completedAt = new Date().toISOString();
       const signoffToken = createPublicActionToken({
@@ -1030,10 +1046,14 @@ export const dashboardController = {
         milestoneName,
         offer_id: enrollment.offer_id || '',
         offerId: enrollment.offer_id || '',
-        offer_name: (offer as any)?.offer_name || '',
-        offerName: (offer as any)?.offer_name || '',
-        program_name: (offer as any)?.offer_name || '',
-        programName: (offer as any)?.offer_name || '',
+        offer_name: offerName,
+        offerName,
+        program_name: offerName,
+        programName: offerName,
+        support_email: milestoneSupportEmail,
+        supportEmail: milestoneSupportEmail,
+        business_name: milestoneBusinessName,
+        businessName: milestoneBusinessName,
         signoff_link: signoffLink,
         signoffLink,
         milestone_signoff_link: signoffLink,
@@ -1102,7 +1122,7 @@ export const dashboardController = {
             service: {
               enrollmentId,
               offerId: enrollment.offer_id || null,
-              offerName: (offer as any)?.offer_name || null,
+              offerName: offerName || null,
               deliverableName: milestoneName,
               serviceDate: completedAt,
             },
@@ -1126,6 +1146,10 @@ export const dashboardController = {
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(requestedMilestoneNumber),
             [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,
+            [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: milestoneBusinessName,
+            [OFFER_CONTACT_FIELDS.OFFER_NAME]: offerName,
+            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: offerName,
+            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: milestoneSupportEmail,
           },
         });
       } catch (fieldErr: any) {

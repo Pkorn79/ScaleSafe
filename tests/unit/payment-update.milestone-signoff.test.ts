@@ -1,5 +1,7 @@
 const mockSupabaseFrom = jest.fn();
 const mockFireTrigger = jest.fn();
+const mockGhlPut = jest.fn();
+const mockFindMerchantByLocationId = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockSupabaseFrom(...args) }),
@@ -8,6 +10,16 @@ jest.mock('../../src/clients/supabase.client', () => ({
 jest.mock('../../src/services/trigger.service', () => ({
   triggerService: {
     fireTrigger: (...args: any[]) => mockFireTrigger(...args),
+  },
+}));
+
+jest.mock('../../src/clients/ghl.client', () => ({
+  ghlApi: jest.fn(async () => ({ put: mockGhlPut })),
+}));
+
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    findByLocationId: (...args: any[]) => mockFindMerchantByLocationId(...args),
   },
 }));
 
@@ -61,6 +73,10 @@ describe('submitMilestoneSignoff', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.PUBLIC_ACTION_TOKEN_SECRET = 'unit-test-public-action-secret';
+    mockFindMerchantByLocationId.mockResolvedValue({
+      business_name: 'WholePay',
+      support_email: 'support@scalesafe.test',
+    });
   });
 
   afterEach(() => {
@@ -129,8 +145,23 @@ describe('submitMilestoneSignoff', () => {
     expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_milestone_signedoff', expect.objectContaining({
       enrollment_id: 'enr_exact',
       enrollmentId: 'enr_exact',
+      offer_id: 'offer_1',
+      offer_name: 'Beta Tester',
+      program_name: 'Beta Tester',
       milestone_number: 2,
       milestoneNumber: 2,
+      milestone_name: 'Delivery',
+      support_email: 'support@scalesafe.test',
+      business_name: 'WholePay',
+    }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.offer_business_name': 'WholePay',
+        'contact.offer_name': 'Beta Tester',
+        'contact.offer_program_name': 'Beta Tester',
+        'contact.offer_support_email': 'support@scalesafe.test',
+        'contact.ss_current_milestone_name': 'Delivery',
+      }),
     }));
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });

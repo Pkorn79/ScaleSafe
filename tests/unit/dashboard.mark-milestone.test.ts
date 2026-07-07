@@ -79,6 +79,8 @@ describe('dashboardController.markMilestone', () => {
     process.env.PUBLIC_ACTION_TOKEN_SECRET = 'unit-test-public-action-secret';
     process.env.APP_URL = 'https://app.scalesafe.test';
     mockFindMerchantByLocationId.mockResolvedValue({
+      business_name: 'WholePay',
+      support_email: 'support@scalesafe.test',
       config: { enrollment_funnel_url: 'https://wholepay.co' },
     });
   });
@@ -216,6 +218,11 @@ describe('dashboardController.markMilestone', () => {
     expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', expect.objectContaining({
       customField: expect.objectContaining({
         'contact.sign_off_link': expect.stringContaining('https://wholepay.co/milestone-approval-page?actionToken='),
+        'contact.offer_business_name': 'WholePay',
+        'contact.offer_name': 'Beta Tester',
+        'contact.offer_program_name': 'Beta Tester',
+        'contact.offer_support_email': 'support@scalesafe.test',
+        'contact.ss_current_milestone_name': 'Delivery',
       }),
     }));
   });

@@ -94,7 +94,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'manual',
     audience: 'contact',
     betaStatus: 'critical',
-    requiredPayloadFields: ['contact_id', 'milestone_number', 'milestone_name', 'offer_id', 'signoff_link'],
+    requiredPayloadFields: ['contact_id', 'enrollment_id', 'milestone_number', 'milestone_name', 'offer_id', 'offer_name', 'signoff_link'],
   },
   ss_milestone_signedoff: {
     key: 'ss_milestone_signedoff',
@@ -104,7 +104,7 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     sourceType: 'webhook',
     audience: 'contact',
     betaStatus: 'important',
-    requiredPayloadFields: ['contact_id', 'milestone_number', 'milestone_name', 'signature_timestamp'],
+    requiredPayloadFields: ['contact_id', 'enrollment_id', 'milestone_number', 'milestone_name', 'offer_id', 'offer_name', 'signature_timestamp'],
   },
   ss_payment_received: {
     key: 'ss_payment_received',
