@@ -24,6 +24,7 @@ router.post('/add-client', dashboardController.addClient);
 router.post('/assign-offer', dashboardController.assignOffer);
 router.post('/pay-first-enrollment', dashboardController.recordPayFirstEnrollment);
 router.post('/enrollments/:enrollmentId/resend-paid-link', dashboardController.resendPaidEnrollmentLink);
+router.post('/enrollments/:enrollmentId/send-test-pulse', dashboardController.sendTestPulse);
 router.get('/manual-sale/config', dashboardController.manualSaleConfig);
 router.post('/manual-sale/whop-session', dashboardController.createManualSaleWhopSession);
 router.post('/manual-sale/stripe-ach/intent', dashboardController.createManualSaleStripeAchIntent);

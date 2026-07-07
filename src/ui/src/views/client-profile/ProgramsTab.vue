@@ -39,6 +39,9 @@
           <button v-if="canResendPaidLink(enr)" class="btn btn-sm btn-secondary" @click="resendPaidLink(enr)" :disabled="resendLoading === enr.id">
             {{ resendLoading === enr.id ? 'Sending...' : 'Resend Link' }}
           </button>
+          <button v-if="canSendPulse(enr)" class="btn btn-sm btn-secondary" @click="sendTestPulse(enr)" :disabled="pulseLoading === enr.id">
+            {{ pulseLoading === enr.id ? 'Sending...' : 'Test Pulse' }}
+          </button>
           <button v-if="enr.packetPdfPath && ['enrolled','completed'].includes(enr.status)"
             class="btn btn-sm btn-secondary" @click="downloadPacket(enr.id)" :disabled="packetLoading">
             {{ packetLoading ? '...' : 'Packet' }}
@@ -83,6 +86,11 @@
               {{ item.label }}
             </div>
           </div>
+          <div v-if="enr.pulseCadenceEnabled" class="payment-detail-line">
+            <span>Pulse: {{ pulseCadenceLabel(enr) }}</span>
+            <span v-if="enr.lastPulseEventDeliveredAt">Last event: {{ formatDateTimeShort(enr.lastPulseEventDeliveredAt) }}</span>
+            <span v-if="enr.nextPulseDueAt">Next due: {{ formatDateTimeShort(enr.nextPulseDueAt) }}</span>
+          </div>
         </div>
         <div class="text-sm" v-if="enr.deliveryMethod">
           <strong>Delivery:</strong> {{ enr.deliveryMethod }}
@@ -118,6 +126,7 @@
     <div v-if="packetError || actionError" class="text-sm mt-2" style="color:#ef4444">{{ packetError || actionError }}</div>
     <div v-if="resendResult" class="text-sm mt-2" style="color:#047857">{{ resendResult }}</div>
     <div v-if="milestoneResult" class="text-sm mt-2" style="color:#047857">{{ milestoneResult }}</div>
+    <div v-if="pulseResult" class="text-sm mt-2" style="color:#047857">{{ pulseResult }}</div>
 
     <!-- Mark Complete confirmation modal -->
     <Modal v-model:open="showMilestoneModal" title="Mark milestone complete">
@@ -202,6 +211,8 @@ const actionLoading = ref(false);
 const actionError = ref('');
 const resendLoading = ref('');
 const resendResult = ref('');
+const pulseLoading = ref('');
+const pulseResult = ref('');
 
 // Milestone modal
 const showMilestoneModal = ref(false);
@@ -258,6 +269,9 @@ function canComplete(enr: any): boolean {
 function canResendPaidLink(enr: any): boolean {
   return enr.status === 'paid_pending_enrollment';
 }
+function canSendPulse(enr: any): boolean {
+  return Boolean(enr.pulseCadenceEnabled) && ['enrolled', 'active'].includes(enr.status);
+}
 
 function shortFrequency(freq?: string): string {
   const map: Record<string, string> = {
@@ -270,6 +284,15 @@ function shortFrequency(freq?: string): string {
   };
   if (!freq) return 'mo';
   return map[freq.toLowerCase()] || freq;
+}
+
+function pulseCadenceLabel(enr: any): string {
+  const days = Number(enr.pulseFrequencyDays || 30);
+  if (days === 1) return 'daily';
+  if (days === 7) return 'weekly';
+  if (days === 14) return 'every 2 weeks';
+  if (days >= 28 && days <= 31) return 'monthly';
+  return `every ${days} days`;
 }
 
 function checkoutItemAmount(item: any): number {
@@ -359,6 +382,27 @@ async function resendPaidLink(enr: any) {
   }
 }
 
+async function sendTestPulse(enr: any) {
+  pulseLoading.value = enr.id;
+  actionError.value = '';
+  pulseResult.value = '';
+  try {
+    const result = await api.post<any>(`/api/dashboard/enrollments/${enr.id}/send-test-pulse`, {
+      advanceSchedule: false,
+    });
+    if (result?.success) {
+      const trigger = result.triggerKey === 'ss_pulse_check_due' ? 'Pulse Check Due' : 'ScaleSafe App Event';
+      pulseResult.value = `Pulse test event delivered through ${trigger}. Confirm GHL workflow history, outbound email, and pulse submission.`;
+    } else {
+      actionError.value = result?.message || 'Pulse test event was not delivered.';
+    }
+  } catch (e: any) {
+    actionError.value = e.message || 'Failed to send pulse test';
+  } finally {
+    pulseLoading.value = '';
+  }
+}
+
 function formatDateShort(d: string): string {
   if (!d) return '-';
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
@@ -366,6 +410,16 @@ function formatDateShort(d: string): string {
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
     : new Date(d);
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDateTimeShort(d: string): string {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function enrollmentBadge(status: string): string {

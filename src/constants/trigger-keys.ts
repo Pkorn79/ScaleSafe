@@ -25,6 +25,7 @@ export const VALID_TRIGGER_KEYS = [
   'ss_send_enrollment_link',
   'ss_subscription_paused',
   'ss_subscription_resumed',
+  'ss_pulse_check_due',
   'ss_app_event',
 ] as const;
 
@@ -56,12 +57,13 @@ const TRIGGER_KEY_ALIASES: Record<string, TriggerKey> = {
   sendenrollmentlink: 'ss_send_enrollment_link',
   subscriptionpaused: 'ss_subscription_paused',
   subscriptionresumed: 'ss_subscription_resumed',
+  pulsecheckdue: 'ss_pulse_check_due',
+  pulse_check_due: 'ss_pulse_check_due',
+  sspulsecheckdue: 'ss_pulse_check_due',
   scalesafeappevent: 'ss_app_event',
   appcontrolledscalesafeeventforworkflowautomation: 'ss_app_event',
   upcomingpaymentreminder: 'ss_app_event',
   upcoming_payment_reminder: 'ss_app_event',
-  pulsecheckdue: 'ss_app_event',
-  pulse_check_due: 'ss_app_event',
 };
 
 function normalizeAliasKey(value: string): string {

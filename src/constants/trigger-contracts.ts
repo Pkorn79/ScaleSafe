@@ -216,6 +216,16 @@ export const TRIGGER_CONTRACTS: Record<TriggerKey, TriggerContract> = {
     betaStatus: 'important',
     requiredPayloadFields: ['contact_id', 'offer_name', 'next_billing_date', 'payments_remaining'],
   },
+  ss_pulse_check_due: {
+    key: 'ss_pulse_check_due',
+    label: 'Pulse Check Due',
+    owner: 'pulse',
+    firesFrom: 'App-owned pulse cadence when an enrollment pulse check is due',
+    sourceType: 'scheduled',
+    audience: 'contact',
+    betaStatus: 'critical',
+    requiredPayloadFields: ['contact_id', 'enrollment_id', 'offer_id', 'offer_name', 'pulse_check_url', 'pulse_interval_label'],
+  },
   ss_app_event: {
     key: 'ss_app_event',
     label: 'ScaleSafe App Event',

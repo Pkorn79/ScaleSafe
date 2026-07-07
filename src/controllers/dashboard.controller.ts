@@ -18,6 +18,7 @@ import { payFirstEnrollmentService } from '../services/pay-first-enrollment.serv
 import { cleanCommunicationBody } from '../utils/communication-evidence';
 import { createProcessorClient, resolveProcessor } from '../services/processor.factory';
 import { stripeAchService } from '../services/stripe-ach.service';
+import { sendPulseForEnrollment } from '../jobs/pulse-cadence-check';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -704,7 +705,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items')
+        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items, pulse_cadence_enabled, pulse_frequency_days, next_pulse_due_at, last_pulse_sent_at')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -860,6 +861,10 @@ export const dashboardController = {
           digitalSignature: e.digital_signature || '',
           packetPdfPath: e.packet_pdf_path || null,
           nextBillingDate: e.next_billing_date || null,
+          pulseCadenceEnabled: Boolean(e.pulse_cadence_enabled),
+          pulseFrequencyDays: e.pulse_frequency_days || null,
+          nextPulseDueAt: e.next_pulse_due_at || null,
+          lastPulseEventDeliveredAt: e.last_pulse_sent_at || null,
           currentMilestone: e.current_milestone || 0,
           milestones: buildMilestoneList(offer),
         };
@@ -878,7 +883,27 @@ export const dashboardController = {
     } catch (err) { next(err); }
   },
 
-  /** POST /api/dashboard/client-note — add a note to a GHL contact */
+  /** POST /api/dashboard/enrollments/:enrollmentId/send-test-pulse - deliver a pulse test without advancing cadence */
+  async sendTestPulse(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const { enrollmentId } = req.params;
+      if (!enrollmentId) throw new ValidationError('enrollmentId required');
+
+      const result = await sendPulseForEnrollment({
+        enrollmentId,
+        locationId,
+        advanceSchedule: req.body?.advanceSchedule === true,
+        useIdempotency: req.body?.advanceSchedule === true,
+        requireDue: false,
+        source: 'manual_test',
+      });
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
+  /** POST /api/dashboard/client-note - add a note to a GHL contact */
   async addClientNote(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = resolveLocationId(req);

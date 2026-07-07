@@ -51,6 +51,43 @@ function thenableQuery(result: any) {
   return query;
 }
 
+function subscriptionQuery(resultForKey: (triggerKey?: string) => any) {
+  const filters: Record<string, unknown> = {};
+  const query: any = {
+    select: jest.fn(() => query),
+    eq: jest.fn((field: string, value: unknown) => {
+      filters[field] = value;
+      return query;
+    }),
+    then: (resolve: any) => Promise.resolve(resultForKey(filters.trigger_key as string | undefined)).then(resolve),
+  };
+  return query;
+}
+
+function enrollmentQuery(row: Record<string, unknown>) {
+  const query: any = {
+    select: jest.fn(() => query),
+    eq: jest.fn(() => query),
+    in: jest.fn(() => query),
+    lte: jest.fn(() => query),
+    maybeSingle: jest.fn(async () => ({ data: row, error: null })),
+    then: (resolve: any) => Promise.resolve({ data: [row], error: null }).then(resolve),
+  };
+  return query;
+}
+
+function updateQuery(onUpdate: (payload: any) => void) {
+  const query: any = {
+    eq: jest.fn(() => query),
+  };
+  return {
+    update: jest.fn((payload: any) => {
+      onUpdate(payload);
+      return query;
+    }),
+  };
+}
+
 describe('pulse cadence diagnostics', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -63,24 +100,29 @@ describe('pulse cadence diagnostics', () => {
       if (table === 'enrollments') return thenableQuery({ data: [{ id: 'enr_1' }], error: null });
       if (table === 'trigger_subscriptions') return thenableQuery({ data: [{ id: 'sub_1' }], error: null });
       if (table === 'trigger_delivery_logs') return thenableQuery({ data: [], error: null });
+      if (table === 'ghl_activity_events') return thenableQuery({ data: [], error: null });
+      if (table === 'evidence_pulse_checkins') return thenableQuery({ data: [], error: null });
       throw new Error(`Unexpected table: ${table}`);
     });
   });
 
-  it('reports due pulse check-ins as ready when the app-event workflow is subscribed', async () => {
+  it('reports due pulse check-ins as ready when a pulse workflow is subscribed', async () => {
     const report = await getPulseCadenceDiagnostics('loc_1');
 
     expect(report.status).toBe('ready');
     expect(report.dueCount).toBe(1);
     expect(report.formUrlConfigured).toBe(true);
+    expect(report.activePulseSubscriptions).toBe(1);
     expect(report.lastSkippedReason).toBeNull();
   });
 
-  it('reports due pulse check-ins as setup-needed when the app-event workflow is not subscribed', async () => {
+  it('reports due pulse check-ins as setup-needed when no pulse workflow is subscribed', async () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') return thenableQuery({ data: [{ id: 'enr_1' }], error: null });
       if (table === 'trigger_subscriptions') return thenableQuery({ data: [], error: null });
       if (table === 'trigger_delivery_logs') return thenableQuery({ data: [], error: null });
+      if (table === 'ghl_activity_events') return thenableQuery({ data: [], error: null });
+      if (table === 'evidence_pulse_checkins') return thenableQuery({ data: [], error: null });
       throw new Error(`Unexpected table: ${table}`);
     });
 
@@ -88,7 +130,7 @@ describe('pulse cadence diagnostics', () => {
 
     expect(report.status).toBe('needs_setup');
     expect(report.formUrlConfigured).toBe(true);
-    expect(report.lastSkippedReason).toBe('ss_app_event_subscription_missing');
+    expect(report.lastSkippedReason).toBe('pulse_workflow_subscription_missing');
   });
 
   it('reports due pulse check-ins as setup-needed when pulse is disabled', async () => {
@@ -122,35 +164,21 @@ describe('runPulseCadenceCheck', () => {
 
   it('syncs pulse contact fields and fires the shared app-event payload with durable aliases', async () => {
     const updatePayloads: any[] = [];
-    const makeUpdateQuery = () => {
-      const query: any = {
-        eq: jest.fn(() => query),
-      };
-      return query;
+    const row = {
+      id: 'enr_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      pulse_cadence_enabled: true,
+      pulse_frequency_days: 14,
+      next_pulse_due_at: '2026-06-29T00:00:00.000Z',
     };
     mockFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') {
         const query: any = {
-          select: jest.fn(() => query),
-          eq: jest.fn(() => query),
-          in: jest.fn(() => query),
-          lte: jest.fn(() => query),
-          update: jest.fn((payload: any) => {
-            updatePayloads.push(payload);
-            return makeUpdateQuery();
-          }),
-          then: (resolve: any) => Promise.resolve({
-            data: [{
-              id: 'enr_1',
-              location_id: 'loc_1',
-              contact_id: 'contact_1',
-              offer_id: 'offer_1',
-              status: 'enrolled',
-              pulse_frequency_days: 14,
-              next_pulse_due_at: '2026-06-29T00:00:00.000Z',
-            }],
-            error: null,
-          }).then(resolve),
+          ...enrollmentQuery(row),
+          ...updateQuery((payload: any) => updatePayloads.push(payload)),
         };
         return query;
       }
@@ -164,6 +192,12 @@ describe('runPulseCadenceCheck', () => {
           })),
         };
         return query;
+      }
+      if (table === 'trigger_subscriptions') {
+        return subscriptionQuery((triggerKey) => ({
+          data: triggerKey === 'ss_app_event' ? [{ id: 'sub_app' }] : [],
+          error: null,
+        }));
       }
       throw new Error(`Unexpected table: ${table}`);
     });
@@ -220,27 +254,19 @@ describe('runPulseCadenceCheck', () => {
 
   it('does not resend the same due pulse when already recorded', async () => {
     mockIdempotencyExists.mockResolvedValue(true);
+    const row = {
+      id: 'enr_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      pulse_cadence_enabled: true,
+      pulse_frequency_days: 14,
+      next_pulse_due_at: '2026-06-29T00:00:00.000Z',
+    };
     mockFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') {
-        const query: any = {
-          select: jest.fn(() => query),
-          eq: jest.fn(() => query),
-          in: jest.fn(() => query),
-          lte: jest.fn(() => query),
-          then: (resolve: any) => Promise.resolve({
-            data: [{
-              id: 'enr_1',
-              location_id: 'loc_1',
-              contact_id: 'contact_1',
-              offer_id: 'offer_1',
-              status: 'enrolled',
-              pulse_frequency_days: 14,
-              next_pulse_due_at: '2026-06-29T00:00:00.000Z',
-            }],
-            error: null,
-          }).then(resolve),
-        };
-        return query;
+        return enrollmentQuery(row);
       }
       throw new Error(`Unexpected table: ${table}`);
     });

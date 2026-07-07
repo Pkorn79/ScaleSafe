@@ -55,6 +55,15 @@ Use one GHL workflow per message intent. Do not combine receipt copy and welcome
 - Purpose: reminder before recurring/installment payment
 - Important fields: `program_name`, `amount_display`, `next_billing_date`, `next_payment_number`, `payments_remaining`, `support_email`
 
+## Pulse Check Due
+
+- GHL trigger name: Pulse Check Due
+- ScaleSafe key: `ss_pulse_check_due`
+- Purpose: send the pulse check link during an active enrollment
+- Important fields: `program_name`, `offer_name`, `pulse_check_url`, `form_url`, `pulse_interval_label`, `pulse_due_date_display`, `support_email`, `business_name`, `enrollment_id`, `offer_id`
+- Beta compatibility: the legacy `ScaleSafe App Event` workflow filtered to `event_type = pulse_check_due` is still supported, but the dedicated `Pulse Check Due` trigger is the source of truth going forward.
+- Proof rule: ScaleSafe trigger logs prove app-event delivery to GHL only. A completed pulse proof also needs GHL workflow execution, outbound email/SMS activity, received message proof, and submitted pulse evidence.
+
 ## Expected Message Timing
 
 - Full enrollment: `ss_payment_received` sends the receipt and `enrollment_complete` sends welcome/access.

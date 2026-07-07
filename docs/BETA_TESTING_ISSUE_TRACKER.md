@@ -52,7 +52,7 @@ Purpose: keep live beta test failures visible until they are proven fixed. This 
 - Status: UNPROVEN / LIKELY NOT WORKING
 - Owner: Codex to define and test the exact pulse path.
 - Finding: Philip has not received a pulse notification and is not sure how to force/test it. Pulse likely needs to be tied to an offer/enrollment cadence and the shared `ss_app_event` workflow.
-- Expected: due pulse fires `ss_app_event` with `event_type = pulse_check_due`, GHL sends the message, and client submission creates pulse evidence linked to the enrollment.
+- Expected: due pulse fires `ss_pulse_check_due` when subscribed, or legacy `ss_app_event` with `event_type = pulse_check_due` as fallback; GHL workflow execution and outbound message are verified separately; client submission creates pulse evidence linked to the enrollment.
 
 ### Workflow live proof
 

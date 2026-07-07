@@ -1,8 +1,8 @@
 import { VALID_TRIGGER_KEYS, isValidTriggerKey, normalizeTriggerKey } from '../../src/constants/trigger-keys';
 
 describe('Trigger Keys', () => {
-  test('has 20 trigger keys', () => {
-    expect(VALID_TRIGGER_KEYS).toHaveLength(20);
+  test('has 21 trigger keys', () => {
+    expect(VALID_TRIGGER_KEYS).toHaveLength(21);
   });
 
   test('enrollment_complete is valid (no ss_ prefix)', () => {
@@ -26,6 +26,7 @@ describe('Trigger Keys', () => {
     expect(normalizeTriggerKey('Enrollment Complete')).toBe('enrollment_complete');
     expect(normalizeTriggerKey('Payment Failed')).toBe('ss_payment_failed');
     expect(normalizeTriggerKey('ScaleSafe App Event')).toBe('ss_app_event');
+    expect(normalizeTriggerKey('Pulse Check Due')).toBe('ss_pulse_check_due');
   });
 
   test('normalizes all known Marketplace trigger labels', () => {
@@ -50,6 +51,7 @@ describe('Trigger Keys', () => {
       'Subscription Paused': 'ss_subscription_paused',
       'Subscription Resumed': 'ss_subscription_resumed',
       'ScaleSafe App Event': 'ss_app_event',
+      'Pulse Check Due': 'ss_pulse_check_due',
     };
 
     for (const [label, key] of Object.entries(labels)) {

@@ -11,7 +11,8 @@ ScaleSafe workflows should use Marketplace trigger custom variables first. Conta
 - `enrollment_complete` sends welcome/access only after terms and signature are complete.
 - `ss_payment_failed` sends failed-payment/dunning messages only.
 - `ss_refund_processed` sends refund confirmation only.
-- `ss_app_event` handles shared app events, filtered by `event_type`.
+- `ss_app_event` handles shared app events such as upcoming payment reminders, filtered by `event_type`.
+- `ss_pulse_check_due` sends pulse check links. The legacy `ss_app_event` + `event_type = pulse_check_due` path is supported during beta transition only.
 
 Do not use `enrollment_complete` for receipt copy.
 
@@ -154,6 +155,42 @@ Recommended GHL reminder template fields:
 - Total payments: `total_payments`
 - Support email: `support_email`
 - Business name/signature: `business_name`
+
+## `ss_pulse_check_due`
+
+Use for pulse check invitations during active enrollments.
+
+Canonical payload variables:
+
+- `event_type`
+- `event_type_key`
+- `program_name`
+- `offer_name`
+- `form_url`
+- `pulse_check_url`
+- `pulse_interval_label`
+- `pulse_due_date_display`
+- `due_date_display`
+- `support_email`
+- `merchant_support_email`
+- `business_name`
+- `merchant_business_name`
+- `enrollment_id`
+- `offer_id`
+- `contact_id`
+
+Recommended GHL pulse template fields:
+
+- Program: `program_name` or `offer_name`
+- Pulse interval: `pulse_interval_label`
+- Pulse link: `pulse_check_url` or `form_url`
+- Support email: `support_email`
+- Business name/signature: `business_name`
+
+Proof rule:
+
+- A `sent` row in `trigger_delivery_logs` proves ScaleSafe delivered the pulse event to GHL.
+- It does not prove the customer received an email/SMS. Confirm GHL workflow history, outbound activity, received message proof, and submitted pulse evidence separately.
 
 ## `ss_payment_failed`
 
