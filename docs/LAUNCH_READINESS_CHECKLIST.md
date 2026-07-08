@@ -145,6 +145,9 @@ non-negotiable.
   enrollment-level scoring and not a win-probability prediction.
 - [ ] 🟡 Pulse beta proof captured: due app event sent, GHL workflow delivered, client submitted,
   and pulse evidence linked to the enrollment.
+- [ ] 🟡 Pulse merchant alerting defined and tested: submitted pulse responses appear somewhere
+  visible for the merchant, and any response marked as needing attention creates an obvious dashboard
+  warning/notification tied to the correct client, program, and enrollment.
 - [ ] 🟡 Processor-side prevention setup checklist exists for WholePay/NMI merchants covering
   descriptor clarity, Ethoca/Verifi/RDR availability, and optional 3DS/Radar guidance without
   implying ScaleSafe-native network-alert automation.
