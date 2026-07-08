@@ -148,6 +148,14 @@ non-negotiable.
 - [ ] 🟡 Pulse merchant alerting defined and tested: submitted pulse responses appear somewhere
   visible for the merchant, and any response marked as needing attention creates an obvious dashboard
   warning/notification tied to the correct client, program, and enrollment.
+  - Implemented 2026-07-08: dashboard "Pulse check-ins" card (`GET /api/dashboard/pulse-checkins`)
+    lists recent submissions with client, program, score, and feedback; `follow_up_needed` or a
+    satisfaction of 2/5 or lower shows a red "needs attention" badge with the reason, attention
+    items sort first, and rows click through to the client profile. Unlinked legacy rows show a
+    "Not linked to a program — review" badge instead of guessing an enrollment. Data comes from
+    ScaleSafe's own `evidence_pulse_checkins` (not GHL delivery). Manual verify: submit one pulse
+    normally and one with the follow-up box checked, then confirm both render on the dashboard
+    with the flagged one on top.
 - [ ] 🟡 Processor-side prevention setup checklist exists for WholePay/NMI merchants covering
   descriptor clarity, Ethoca/Verifi/RDR availability, and optional 3DS/Radar guidance without
   implying ScaleSafe-native network-alert automation.

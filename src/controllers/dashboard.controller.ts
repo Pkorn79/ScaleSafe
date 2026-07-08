@@ -502,6 +502,89 @@ export const dashboardController = {
     } catch (err) { next(err); }
   },
 
+  /** GET /api/dashboard/pulse-checkins — recent client pulse submissions for merchant
+   *  visibility. The merchant must see pulse responses (especially "needs attention"
+   *  ones) in the app itself — never only via GHL workflow email delivery. */
+  async pulseCheckins(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+
+      const supabase = getSupabase();
+      const { data: rows, error } = await supabase
+        .from('evidence_pulse_checkins')
+        .select('id, contact_id, contact_name, enrollment_id, sentiment_score, feedback_text, follow_up_needed, follow_up_action, checkin_date, created_at, raw_payload')
+        .eq('location_id', locationId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      const checkins = rows || [];
+
+      // Resolve program names through the checkin's own enrollment — never inferred
+      // from the contact's other/newest enrollments. Unlinked rows stay unlinked.
+      const enrollmentIds = [...new Set(checkins.map((r: any) => r.enrollment_id).filter(Boolean))];
+      const linkByEnrollment: Record<string, { offerId: string | null; offerName: string | null }> = {};
+      if (enrollmentIds.length) {
+        const { data: enrs } = await supabase
+          .from('enrollments')
+          .select('id, offer_id')
+          .eq('location_id', locationId)
+          .in('id', enrollmentIds);
+        const offerIds = [...new Set((enrs || []).map((e: any) => e.offer_id).filter(Boolean))];
+        const offerNames: Record<string, string> = {};
+        if (offerIds.length) {
+          const { data: offers } = await supabase
+            .from('offers_mirror')
+            .select('id, offer_name')
+            .in('id', offerIds);
+          for (const o of offers || []) offerNames[o.id] = o.offer_name;
+        }
+        for (const e of enrs || []) {
+          linkByEnrollment[e.id] = {
+            offerId: e.offer_id || null,
+            offerName: e.offer_id ? offerNames[e.offer_id] || null : null,
+          };
+        }
+      }
+
+      const shaped = checkins.map((r: any) => {
+        const link = r.enrollment_id ? linkByEnrollment[r.enrollment_id] : undefined;
+        const lowScore = typeof r.sentiment_score === 'number' && r.sentiment_score <= 2;
+        const followUpNeeded = r.follow_up_needed === true;
+        const needsAttention = followUpNeeded || lowScore;
+        return {
+          id: r.id,
+          contactId: r.contact_id,
+          contactName: r.contact_name || null,
+          enrollmentId: r.enrollment_id || null,
+          offerId: link?.offerId ?? r.raw_payload?.offerId ?? null,
+          offerName: link?.offerName ?? null,
+          /** False for legacy rows with no enrollment link — surfaced for review, never guessed. */
+          linked: !!r.enrollment_id,
+          satisfaction: r.sentiment_score ?? null,
+          feedback: (r.feedback_text || '').slice(0, 280),
+          followUpNeeded,
+          needsAttention,
+          attentionReason: followUpNeeded
+            ? 'Client requested follow-up'
+            : lowScore ? `Low satisfaction (${r.sentiment_score}/5)` : null,
+          submittedAt: r.created_at || r.checkin_date || null,
+        };
+      });
+
+      // Attention items first, then newest
+      shaped.sort((a, b) =>
+        Number(b.needsAttention) - Number(a.needsAttention)
+        || new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime());
+
+      res.json({
+        checkins: shaped,
+        attentionCount: shaped.filter((s) => s.needsAttention).length,
+      });
+    } catch (err) { next(err); }
+  },
+
   /** GET /api/dashboard/defense-history — past chargebacks with outcomes */
   async defenseHistory(req: Request, res: Response, next: NextFunction) {
     try {

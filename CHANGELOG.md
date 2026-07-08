@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Pulse merchant alerting (2026-07-08)
+
+### Added
+- **Dashboard "Pulse check-ins" card** (`GET /api/dashboard/pulse-checkins`): recent client
+  pulse submissions from ScaleSafe's own `evidence_pulse_checkins` data (never dependent on
+  GHL email delivery) — client name, program name resolved through the check-in's OWN
+  enrollment, satisfaction score badge, submitted time, feedback snippet, click-through to
+  the client profile.
+- **Needs-attention warning:** `follow_up_needed` (the client checked the follow-up box) or
+  satisfaction ≤ 2/5 renders a red "needs attention" badge with the reason; attention items
+  sort first and the card header shows an attention count.
+- **Evidence integrity preserved:** legacy rows without an enrollment link show
+  "Not linked to a program — review" instead of guessing; the submit path (token-resolved
+  enrollment, ambiguity rejected upstream) is untouched; pulse email trigger path unchanged.
+- Launch checklist pulse-alerting item annotated with the implementation + manual retest steps.
+
+---
+
 ## Unreleased — Dispute lifecycle prompts on cards + dashboard (2026-07-07)
 
 ### Added

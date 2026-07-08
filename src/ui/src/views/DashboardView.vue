@@ -100,6 +100,37 @@
       </div>
     </div>
 
+    <!-- Pulse check-ins: the merchant must see client pulse responses here, in the
+         app — especially ones flagged as needing attention — not only via email. -->
+    <div class="card mb-4" v-if="pulseCheckins.length > 0">
+      <SectionHeader :title="['Pulse', 'check-ins.']">
+        <template #actions>
+          <span v-if="pulseAttentionCount > 0" class="badge badge-red">
+            {{ pulseAttentionCount }} need{{ pulseAttentionCount === 1 ? 's' : '' }} attention
+          </span>
+        </template>
+      </SectionHeader>
+      <div v-for="pc in pulseCheckins.slice(0, 5)" :key="pc.id" class="flex-between mb-4" style="gap:12px;flex-wrap:wrap;cursor:pointer" @click="$router.push(`/clients/${pc.contactId}`)">
+        <div style="min-width:0">
+          <div class="text-sm">
+            <strong>{{ pc.contactName || 'Unknown client' }}</strong>
+            <span v-if="pc.offerName" class="text-muted" style="margin-left:8px">{{ pc.offerName }}</span>
+            <span v-else-if="!pc.linked" class="badge badge-yellow" style="margin-left:8px">Not linked to a program — review</span>
+            <span v-if="pc.needsAttention" class="badge badge-red" style="margin-left:8px">⚠ {{ pc.attentionReason }}</span>
+          </div>
+          <div v-if="pc.feedback" class="text-sm text-muted" style="max-width:640px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{ pc.feedback }}
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
+          <span v-if="pc.satisfaction !== null" class="badge" :class="pc.satisfaction <= 2 ? 'badge-red' : pc.satisfaction === 3 ? 'badge-yellow' : 'badge-green'">
+            {{ pc.satisfaction }}/5
+          </span>
+          <span class="text-sm text-muted">{{ formatTimestamp(pc.submittedAt) }}</span>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-2">
       <div class="card" v-if="data">
         <SectionHeader :title="['Defense', 'activity.']" />
@@ -170,6 +201,8 @@ const { loading, error } = api;
 const data = ref<any>(null);
 const atRisk = ref<any[]>([]);
 const defensePackets = ref<any[]>([]);
+const pulseCheckins = ref<any[]>([]);
+const pulseAttentionCount = ref(0);
 
 // Open disputes = the merchant's action queue: ready-but-unsubmitted packets
 // (deadline not yet passed) and submitted packets awaiting an outcome.
@@ -231,6 +264,9 @@ async function loadData() {
   const defensePromise = api.get<any>('/api/dashboard/defense-history')
     .then((d) => ({ ok: true, packets: d?.packets || [] }))
     .catch(() => ({ ok: false, packets: [] as any[] }));
+  const pulsePromise = api.get<any>('/api/dashboard/pulse-checkins?limit=10')
+    .then((p) => ({ ok: true, checkins: p?.checkins || [], attentionCount: p?.attentionCount || 0 }))
+    .catch(() => ({ ok: false, checkins: [] as any[], attentionCount: 0 }));
 
   try {
     const overview = await overviewPromise;
@@ -249,6 +285,11 @@ async function loadData() {
     const defenseResult = await defensePromise;
     if (defenseResult.ok) {
       defensePackets.value = defenseResult.packets;
+    }
+    const pulseResult = await pulsePromise;
+    if (pulseResult.ok) {
+      pulseCheckins.value = pulseResult.checkins;
+      pulseAttentionCount.value = pulseResult.attentionCount;
     }
   } catch {
     // Keep the dashboard stats visible if the risk scan fails.

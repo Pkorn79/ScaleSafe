@@ -12,6 +12,7 @@ router.get('/clients', dashboardController.clients);
 router.get('/at-risk', dashboardController.atRisk);
 router.get('/evidence-health', dashboardController.evidenceHealth);
 router.get('/defense-history', dashboardController.defenseHistory);
+router.get('/pulse-checkins', dashboardController.pulseCheckins);
 router.get('/client-info/:contactId', dashboardController.clientInfo);
 router.get('/client-enrollments/:contactId', dashboardController.clientEnrollments);
 router.get('/client-activity/:contactId', dashboardController.clientActivity);
