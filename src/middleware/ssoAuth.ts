@@ -3,6 +3,7 @@ import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { AuthenticationError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { extractGhlSsoContext } from '../utils/ghl-sso-context';
 
 /**
  * GHL SSO middleware.
@@ -22,12 +23,13 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
   if (ssoPayload) {
     try {
       const userData = decryptSsoPayload(ssoPayload, config.ghl.ssoKey);
+      const ssoContext = extractGhlSsoContext(userData);
       req.tenantContext = {
-        locationId: userData.activeLocation || userData.locationId || userData.location_id || '',
-        companyId: userData.companyId || userData.company_id || '',
-        userId: userData.userId || userData.user_id || '',
-        email: userData.email || '',
-        role: userData.role || 'user',
+        locationId: ssoContext.locationId,
+        companyId: ssoContext.companyId,
+        userId: ssoContext.userId,
+        email: ssoContext.email,
+        role: ssoContext.role,
       };
       return next();
     } catch (err) {
@@ -56,12 +58,13 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
   if (ssoKey) {
     try {
       const userData = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
+      const ssoContext = extractGhlSsoContext(userData);
       req.tenantContext = {
-        locationId: userData.activeLocation || userData.locationId || userData.location_id || '',
-        companyId: userData.companyId || userData.company_id || '',
-        userId: userData.userId || userData.user_id || '',
-        email: userData.email || '',
-        role: userData.role || 'user',
+        locationId: ssoContext.locationId,
+        companyId: ssoContext.companyId,
+        userId: ssoContext.userId,
+        email: ssoContext.email,
+        role: ssoContext.role,
       };
       return next();
     } catch (err) {

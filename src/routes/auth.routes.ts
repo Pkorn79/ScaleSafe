@@ -7,6 +7,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError } from '../utils/errors';
 import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
+import { extractGhlSsoContext } from '../utils/ghl-sso-context';
 
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
@@ -121,21 +122,20 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     if (!payload) throw new ValidationError('Missing SSO payload');
 
     const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
+    const ssoContext = extractGhlSsoContext(userData);
 
     if (config.isDev) {
       logger.debug({
         ssoPayloadKeys: Object.keys(userData),
-        hasLocation: !!(userData.activeLocation || userData.locationId || userData.location_id),
-        hasCompany: !!(userData.companyId || userData.company_id),
+        hasLocation: !!ssoContext.locationId,
+        hasCompany: !!ssoContext.companyId,
         role: userData.role,
         type: userData.type,
         userType: userData.userType,
       }, 'SSO payload received');
     }
 
-    // Try all known field names for location ID
-    const locationId = userData.activeLocation || userData.locationId || userData.location_id || '';
-    const companyId = userData.companyId || userData.company_id || '';
+    const { locationId, companyId } = ssoContext;
 
     // Find merchant — try locationId first, fall back to companyId lookup
     let merchant = locationId ? await merchantRepository.findByLocationId(locationId) : null;
@@ -181,10 +181,10 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     res.json({
       locationId: resolvedLocationId,
       companyId,
-      userId: userData.userId || userData.user_id || '',
-      email: userData.email || '',
-      role: userData.role || 'user',
-      userName: userData.userName || userData.name || '',
+      userId: ssoContext.userId,
+      email: ssoContext.email,
+      role: ssoContext.role,
+      userName: ssoContext.userName,
       snapshotStatus: merchant.snapshot_status,
     });
   } catch (err) {

@@ -249,6 +249,27 @@ describe('POST /auth/sso', () => {
     expect(res.body.locationId).toBe('loc-abc');
   });
 
+  it('establishes session when activeLocation is a nested GHL object', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      activeLocation: { id: 'loc-abc', name: 'WholePay App Test' },
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+      email: 'philip@test.com',
+    });
+    mockFindByLocationId.mockResolvedValue(MERCHANT_RECORD);
+    mockFindAllByCompanyId.mockResolvedValue([
+      MERCHANT_RECORD,
+      { ...MERCHANT_RECORD, location_id: 'loc-other' },
+    ]);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-abc');
+    expect(mockFindByLocationId).toHaveBeenCalledWith('loc-abc');
+    expect(mockFindAllByCompanyId).not.toHaveBeenCalled();
+  });
+
   it('establishes session when SSO has location_id (snake_case)', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       location_id: 'loc-snake',
