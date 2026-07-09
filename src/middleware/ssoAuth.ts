@@ -4,6 +4,7 @@ import { config } from '../config';
 import { AuthenticationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { extractGhlSsoContext } from '../utils/ghl-sso-context';
+import { merchantRepository } from '../repositories/merchant.repository';
 
 /**
  * GHL SSO middleware.
@@ -17,15 +18,32 @@ import { extractGhlSsoContext } from '../utils/ghl-sso-context';
  *    the decrypted context, it can send the locationId directly for subsequent calls.
  *    Less secure but sufficient when the initial SSO was validated.
  */
-export function ssoAuth(req: Request, _res: Response, next: NextFunction): void {
+async function resolveAgencySelectedLocation(
+  companyId: string,
+  selectedLocationId: string | undefined,
+): Promise<string> {
+  const locationId = String(selectedLocationId || '').trim();
+  if (!companyId || !locationId) return '';
+
+  const merchant = await merchantRepository.findByLocationId(locationId);
+  if (!merchant || merchant.company_id !== companyId) {
+    throw new AuthenticationError('Selected ScaleSafe location is not available for this agency.');
+  }
+  return merchant.location_id;
+}
+
+export async function ssoAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   // Path 1: Encrypted SSO payload (most secure)
   const ssoPayload = req.headers['x-sso-payload'] as string | undefined;
   if (ssoPayload) {
     try {
       const userData = decryptSsoPayload(ssoPayload, config.ghl.ssoKey);
       const ssoContext = extractGhlSsoContext(userData);
+      const selectedLocationId = req.headers['x-location-id'] as string | undefined;
+      const locationId = ssoContext.locationId
+        || await resolveAgencySelectedLocation(ssoContext.companyId, selectedLocationId);
       req.tenantContext = {
-        locationId: ssoContext.locationId,
+        locationId,
         companyId: ssoContext.companyId,
         userId: ssoContext.userId,
         email: ssoContext.email,
@@ -33,6 +51,9 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
       };
       return next();
     } catch (err) {
+      if (err instanceof AuthenticationError) {
+        return next(err);
+      }
       logger.warn({ err }, 'SSO payload decryption failed');
       return next(new AuthenticationError('Invalid SSO payload'));
     }
@@ -59,8 +80,11 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
     try {
       const userData = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
       const ssoContext = extractGhlSsoContext(userData);
+      const selectedLocationId = req.headers['x-location-id'] as string | undefined;
+      const locationId = ssoContext.locationId
+        || await resolveAgencySelectedLocation(ssoContext.companyId, selectedLocationId);
       req.tenantContext = {
-        locationId: ssoContext.locationId,
+        locationId,
         companyId: ssoContext.companyId,
         userId: ssoContext.userId,
         email: ssoContext.email,
@@ -68,6 +92,9 @@ export function ssoAuth(req: Request, _res: Response, next: NextFunction): void 
       };
       return next();
     } catch (err) {
+      if (err instanceof AuthenticationError) {
+        return next(err);
+      }
       logger.warn({ err }, 'SSO query param decryption failed');
       return next(new AuthenticationError('Invalid SSO key'));
     }

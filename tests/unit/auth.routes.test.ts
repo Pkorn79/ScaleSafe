@@ -299,6 +299,60 @@ describe('POST /auth/sso', () => {
     expect(mockFindAllByCompanyId).toHaveBeenCalledWith('comp-xyz');
   });
 
+  it('returns location choices when agency SSO has multiple installed locations', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+      email: 'philip@test.com',
+    });
+    mockFindAllByCompanyId.mockResolvedValue([
+      { ...MERCHANT_RECORD, location_id: 'loc-abc', business_name: 'Account A' },
+      { ...MERCHANT_RECORD, location_id: 'loc-def', business_name: 'Account B' },
+    ]);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('MULTIPLE_LOCATIONS');
+    expect(res.body.locations).toEqual([
+      expect.objectContaining({ locationId: 'loc-abc', name: 'Account A' }),
+      expect.objectContaining({ locationId: 'loc-def', name: 'Account B' }),
+    ]);
+  });
+
+  it('uses selectedLocationId when agency SSO selects an installed location', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+      email: 'philip@test.com',
+    });
+    mockFindByLocationId.mockResolvedValue(MERCHANT_RECORD);
+
+    const res = await request(app)
+      .post('/auth/sso')
+      .send({ payload: 'encrypted-data', selectedLocationId: 'loc-abc' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc-abc');
+    expect(mockFindByLocationId).toHaveBeenCalledWith('loc-abc');
+    expect(mockFindAllByCompanyId).not.toHaveBeenCalled();
+  });
+
+  it('rejects selectedLocationId when it belongs to another agency', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      companyId: 'comp-xyz',
+      userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, company_id: 'comp-other' });
+
+    const res = await request(app)
+      .post('/auth/sso')
+      .send({ payload: 'encrypted-data', selectedLocationId: 'loc-abc' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/not available/i);
+  });
+
   it('returns 401 when no merchant found by locationId or companyId', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp-unknown',

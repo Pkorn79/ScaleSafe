@@ -12,6 +12,22 @@ import { extractGhlSsoContext } from '../utils/ghl-sso-context';
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
 
+function locationOption(merchant: any) {
+  const name = merchant.dba_name || merchant.business_name || merchant.location_id;
+  return {
+    locationId: merchant.location_id,
+    name,
+    status: merchant.status || '',
+    snapshotStatus: merchant.snapshot_status || '',
+  };
+}
+
+function selectedLocationId(req: Request): string {
+  const body = req.body || {};
+  const raw = body.selectedLocationId || body.locationId || body.location_id;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
 function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
   if (config.isProd || !debug) return undefined;
   return debug;
@@ -120,6 +136,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { payload } = req.body;
     if (!payload) throw new ValidationError('Missing SSO payload');
+    const requestedLocationId = selectedLocationId(req);
 
     const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
     const ssoContext = extractGhlSsoContext(userData);
@@ -137,8 +154,21 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
 
     const { locationId, companyId } = ssoContext;
 
-    // Find merchant — try locationId first, fall back to companyId lookup
+    // Find merchant — try locationId first, fall back to a validated agency selection.
     let merchant = locationId ? await merchantRepository.findByLocationId(locationId) : null;
+
+    if (!merchant && companyId && requestedLocationId) {
+      const selected = await merchantRepository.findByLocationId(requestedLocationId);
+      if (!selected || selected.company_id !== companyId) {
+        logger.warn(
+          { companyId, requestedLocationId, found: !!selected },
+          'SSO: selected location is not installed for this company',
+        );
+        throw new AuthenticationError('Selected ScaleSafe location is not available for this agency.');
+      }
+      merchant = selected;
+      logger.info({ locationId: merchant.location_id }, 'SSO: agency user selected installed location');
+    }
 
     if (!merchant && companyId) {
       logger.info('No merchant found by locationId, trying companyId lookup');
@@ -147,11 +177,19 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
         merchant = companyMerchants[0];
         logger.info('Single merchant found for company');
       } else if (companyMerchants.length > 1) {
-        logger.error({ count: companyMerchants.length },
-          'SSO: multiple locations for company — cannot resolve without explicit locationId');
-        throw new AuthenticationError(
-          'Multiple locations found for this company. Please access ScaleSafe from a specific location.'
+        logger.info(
+          { count: companyMerchants.length },
+          'SSO: multiple locations for company — returning location choices',
         );
+        res.status(409).json({
+          error: 'MULTIPLE_LOCATIONS',
+          message: 'Multiple ScaleSafe installs were found for this agency. Select the sub-account to open.',
+          companyId,
+          locations: companyMerchants
+            .filter((m: any) => m?.location_id)
+            .map(locationOption),
+        });
+        return;
       }
     }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ssoSession } from './composables/useApi';
+import { ssoSession, selectSsoLocation } from './composables/useApi';
 import ToastContainer from './components/ToastContainer.vue';
 import {
   LayoutDashboard, Package, Users, CreditCard,
@@ -13,6 +13,34 @@ import {
     <div class="text-center text-slate-500 text-sm">
       <div class="w-9 h-9 border-3 border-slate-200 border-t-ss-primary-500 rounded-full mx-auto mb-4 animate-spin"></div>
       <p>Connecting to GoHighLevel...</p>
+    </div>
+  </div>
+
+  <!-- Agency-level launch - choose which installed sub-account to open -->
+  <div
+    v-else-if="!ssoSession.locationId && ssoSession.locationOptions.length > 0"
+    class="flex items-center justify-center min-h-screen bg-slate-50 p-6"
+  >
+    <div class="bg-white rounded-xl p-10 max-w-lg w-full shadow-sm">
+      <h1 class="text-xl font-semibold text-slate-900 mb-2">Choose Sub-Account</h1>
+      <p class="text-slate-500 text-sm leading-relaxed mb-5">
+        ScaleSafe is installed in more than one sub-account for this agency. Choose which account to open.
+      </p>
+      <div class="space-y-2">
+        <button
+          v-for="location in ssoSession.locationOptions"
+          :key="location.locationId"
+          type="button"
+          class="w-full text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-ss-primary-500 hover:bg-ss-primary-50 disabled:opacity-60"
+          :disabled="ssoSession.selectingLocation"
+          @click="selectSsoLocation(location.locationId)"
+        >
+          <div class="font-semibold text-slate-900">{{ location.name || 'ScaleSafe sub-account' }}</div>
+          <div class="text-xs text-slate-400 mt-1">{{ location.locationId }}</div>
+        </button>
+      </div>
+      <p v-if="ssoSession.selectingLocation" class="text-sm text-slate-500 mt-4">Opening ScaleSafe...</p>
+      <p v-if="ssoSession.error" class="text-sm text-red-600 mt-4">{{ ssoSession.error }}</p>
     </div>
   </div>
 

@@ -10,6 +10,13 @@ interface SsoSession {
   userName: string;
   ready: boolean;
   error: string | null;
+  locationOptions: Array<{
+    locationId: string;
+    name: string;
+    status?: string;
+    snapshotStatus?: string;
+  }>;
+  selectingLocation: boolean;
 }
 
 const ssoSession = reactive<SsoSession>({
@@ -21,6 +28,8 @@ const ssoSession = reactive<SsoSession>({
   userName: '',
   ready: false,
   error: null,
+  locationOptions: [],
+  selectingLocation: false,
 });
 
 let ssoInitPromise: Promise<void> | null = null;
@@ -55,6 +64,49 @@ function allowedParentOrigins(): string[] {
 
 function isAllowedParentOrigin(origin: string): boolean {
   return allowedParentOrigins().includes(origin);
+}
+
+function applySsoData(data: any): void {
+  ssoSession.locationId = data.locationId;
+  ssoSession.companyId = data.companyId;
+  ssoSession.userId = data.userId;
+  ssoSession.email = data.email;
+  ssoSession.role = data.role;
+  ssoSession.userName = data.userName;
+  ssoSession.error = null;
+  ssoSession.locationOptions = [];
+  ssoSession.ready = true;
+
+  sessionStorage.setItem('ss_location_id', data.locationId);
+  sessionStorage.setItem('ss_company_id', data.companyId || '');
+  sessionStorage.setItem('ss_user_id', data.userId || '');
+}
+
+async function completeSsoHandshake(encryptedPayload: string, selectedLocationId?: string): Promise<void> {
+  const res = await fetch('/auth/sso', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      payload: encryptedPayload,
+      ...(selectedLocationId ? { selectedLocationId } : {}),
+    }),
+  });
+
+  const body = await res.json().catch(() => ({}));
+
+  if (res.status === 409 && body.error === 'MULTIPLE_LOCATIONS') {
+    ssoSession.companyId = body.companyId || '';
+    ssoSession.locationOptions = Array.isArray(body.locations) ? body.locations : [];
+    ssoSession.error = null;
+    ssoSession.ready = true;
+    return;
+  }
+
+  if (!res.ok) {
+    throw new Error(body.message || `SSO validation failed (${res.status})`);
+  }
+
+  applySsoData(body);
 }
 
 /**
@@ -100,30 +152,7 @@ function initSso(): Promise<void> {
 
       // Decrypt via our backend
       try {
-        const res = await fetch('/auth/sso', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ payload: encryptedPayload }),
-        });
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.message || `SSO validation failed (${res.status})`);
-        }
-
-        const data = await res.json();
-        ssoSession.locationId = data.locationId;
-        ssoSession.companyId = data.companyId;
-        ssoSession.userId = data.userId;
-        ssoSession.email = data.email;
-        ssoSession.role = data.role;
-        ssoSession.userName = data.userName;
-        ssoSession.ready = true;
-
-        // Cache locationId for API headers
-        sessionStorage.setItem('ss_location_id', data.locationId);
-        sessionStorage.setItem('ss_company_id', data.companyId || '');
-        sessionStorage.setItem('ss_user_id', data.userId || '');
+        await completeSsoHandshake(encryptedPayload);
       } catch (err: any) {
         ssoSession.error = err.message;
         ssoSession.ready = true;
@@ -169,8 +198,30 @@ function authHeaders(): Record<string, string> {
   if (payload) {
     headers['x-sso-payload'] = payload;
   }
+  const locationId = sessionStorage.getItem('ss_location_id');
+  if (locationId) {
+    headers['x-location-id'] = locationId;
+  }
 
   return headers;
+}
+
+async function selectSsoLocation(locationId: string): Promise<void> {
+  const encryptedPayload = sessionStorage.getItem('ss_sso_payload');
+  if (!encryptedPayload) {
+    ssoSession.error = 'Missing GHL SSO payload. Reload ScaleSafe from GoHighLevel.';
+    return;
+  }
+
+  ssoSession.selectingLocation = true;
+  ssoSession.error = null;
+  try {
+    await completeSsoHandshake(encryptedPayload, locationId);
+  } catch (err: any) {
+    ssoSession.error = err.message || 'Could not open that ScaleSafe location.';
+  } finally {
+    ssoSession.selectingLocation = false;
+  }
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -275,7 +326,7 @@ export function useApi() {
     }
   }
 
-  return { loading, error, get, post, put, patch, del, ssoSession };
+  return { loading, error, get, post, put, patch, del, ssoSession, selectSsoLocation };
 }
 
-export { ssoSession, initSso };
+export { ssoSession, initSso, selectSsoLocation };
