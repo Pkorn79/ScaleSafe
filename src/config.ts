@@ -40,6 +40,7 @@ export const config = {
     clientId: required('GHL_APP_CLIENT_ID'),
     clientSecret: required('GHL_APP_CLIENT_SECRET'),
     ssoKey: required('GHL_APP_SSO_KEY'),
+    appId: process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '',
     apiDomain: optional('GHL_API_DOMAIN', 'https://services.leadconnectorhq.com'),
   },
 

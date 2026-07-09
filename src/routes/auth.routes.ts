@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { exchangeCodeForTokens } from '../clients/ghl.client';
+import { exchangeCodeForTokens, InstalledLocation } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { decryptSsoPayload } from '../utils/crypto';
@@ -39,6 +39,20 @@ function validateOAuthCode(code: string): void {
   }
 }
 
+function installTargets(locationId: string, installedLocations: InstalledLocation[] = []): InstalledLocation[] {
+  if (locationId) return [{ locationId }];
+
+  const seen = new Set<string>();
+  const targets: InstalledLocation[] = [];
+  for (const location of installedLocations) {
+    const id = String(location.locationId || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    targets.push({ locationId: id, ...(location.name ? { name: location.name } : {}) });
+  }
+  return targets;
+}
+
 router.get('/install', (_req: Request, res: Response) => {
   const state = createGhlOAuthState();
   const params = new URLSearchParams({
@@ -70,9 +84,10 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     logger.info('OAuth callback received, exchanging code for tokens');
 
     const tokenResponse = await exchangeCodeForTokens(code);
-    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes, _debug } = tokenResponse;
+    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes, installedLocations, _debug } = tokenResponse;
+    const targets = installTargets(locationId, installedLocations);
 
-    if (!locationId) {
+    if (targets.length === 0) {
       logger.error({
         debug: config.isDev ? _debug : undefined,
         hasCompany: !!companyId,
@@ -81,6 +96,57 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         error: 'VALIDATION_ERROR',
         message: 'GHL token response missing locationId — cannot provision merchant',
         debug: oauthDebugResponse(_debug),
+      });
+      return;
+    }
+
+    if (!locationId || targets.length > 1) {
+      const provisionTargets: string[] = [];
+
+      for (const target of targets) {
+        const targetLocationId = target.locationId;
+        const existing = await merchantRepository.findByLocationId(targetLocationId);
+
+        if (existing) {
+          await merchantRepository.update(targetLocationId, {
+            company_id: companyId || existing.company_id,
+            ghl_access_token: accessToken,
+            ghl_refresh_token: refreshToken,
+            ghl_token_expires_at: expiresAt.toISOString(),
+            ghl_scopes: scopes.join(' '),
+            business_name: existing.business_name || target.name || undefined,
+            status: 'active',
+          } as any);
+          logger.info({ locationId: targetLocationId }, 'Existing merchant re-authenticated');
+          if (existing.snapshot_status !== 'installed') {
+            provisionTargets.push(targetLocationId);
+          }
+        } else {
+          await merchantRepository.create({
+            location_id: targetLocationId,
+            company_id: companyId,
+            ghl_access_token: accessToken,
+            ghl_refresh_token: refreshToken,
+            ghl_token_expires_at: expiresAt.toISOString(),
+            ghl_scopes: scopes.join(' '),
+            business_name: target.name,
+          });
+          logger.info({ locationId: targetLocationId }, 'New merchant provisioned');
+          provisionTargets.push(targetLocationId);
+        }
+      }
+
+      for (const targetLocationId of provisionTargets) {
+        merchantService.provisionMerchant(targetLocationId).catch((err) => {
+          logger.error({ err, locationId: targetLocationId }, 'Background provisioning failed');
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'ScaleSafe installed successfully for connected sub-accounts',
+        locationId: targets[0].locationId,
+        locations: targets.map((target) => target.locationId),
       });
       return;
     }

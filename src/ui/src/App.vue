@@ -24,7 +24,7 @@ import {
     <div class="bg-white rounded-xl p-10 max-w-lg w-full shadow-sm">
       <h1 class="text-xl font-semibold text-slate-900 mb-2">Choose Sub-Account</h1>
       <p class="text-slate-500 text-sm leading-relaxed mb-5">
-        ScaleSafe is installed in more than one sub-account for this agency. Choose which account to open.
+        GoHighLevel opened ScaleSafe from the agency view instead of a specific sub-account. Choose the account you intended to open.
       </p>
       <div class="space-y-2">
         <button

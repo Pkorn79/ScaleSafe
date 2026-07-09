@@ -15,6 +15,7 @@ jest.mock('../../src/config', () => ({
     ghl: {
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
+      appId: 'app-123',
       apiDomain: 'https://services.leadconnectorhq.com',
     },
   },
@@ -73,6 +74,28 @@ describe('exchangeCodeForTokens', () => {
     expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 
+  it('parses v3-style camelCase token fields from GHL response', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        accessToken: 'at-v3',
+        refreshToken: 'rt-v3',
+        expiresIn: 86400,
+        locationId: 'loc-v3',
+        companyId: 'comp-v3',
+        userId: 'user-v3',
+        scopes: ['contacts.readonly', 'locations.readonly'],
+      },
+    });
+
+    const result = await exchangeCodeForTokens('code-v3');
+
+    expect(result.accessToken).toBe('at-v3');
+    expect(result.refreshToken).toBe('rt-v3');
+    expect(result.locationId).toBe('loc-v3');
+    expect(result.scopes).toEqual(['contacts.readonly', 'locations.readonly']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
   it('resolves locationId via installedLocations when token has companyId but no locationId', async () => {
     mockedAxios.post.mockResolvedValue({
       data: {
@@ -98,11 +121,45 @@ describe('exchangeCodeForTokens', () => {
     expect(result.companyId).toBe('comp-agency');
     expect(result._debug?.installedLocationsResponse).toBeDefined();
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      'https://services.leadconnectorhq.com/locations/search',
+      'https://services.leadconnectorhq.com/oauth/installed-locations',
       expect.objectContaining({
-        params: { companyId: 'comp-agency' },
+        params: { companyId: 'comp-agency', appId: 'app-123' },
       }),
     );
+  });
+
+  it('returns all installed locations without guessing when multiple sub-accounts are installed', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-agency',
+        refresh_token: 'rt-agency',
+        expires_in: 86400,
+        companyId: 'comp-agency',
+        scope: 'contacts.readonly',
+      },
+    });
+
+    mockedAxios.get.mockResolvedValue({
+      status: 200,
+      data: {
+        locations: [
+          { locationId: 'loc-a', name: 'Account A' },
+          { location_id: 'loc-b', location_name: 'Account B' },
+        ],
+      },
+    });
+
+    const result = await exchangeCodeForTokens('code-agency');
+
+    expect(result.locationId).toBe('');
+    expect(result.installedLocations).toEqual([
+      { locationId: 'loc-a', name: 'Account A' },
+      { locationId: 'loc-b', name: 'Account B' },
+    ]);
+    expect(result._debug?.installedLocationsResponse).toMatchObject({
+      locationCount: 2,
+      multipleInstalledLocations: true,
+    });
   });
 
   it('returns empty locationId when installedLocations returns no locations', async () => {

@@ -195,6 +195,40 @@ describe('GET /auth/callback', () => {
     expect(res.body.debug.hadLocationId).toBe(false);
   });
 
+  it('provisions all installed sub-accounts when GHL returns an agency token', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue({
+      ...BASE_TOKEN_RESPONSE,
+      locationId: '',
+      installedLocations: [
+        { locationId: 'loc-new', name: 'New Test Account' },
+        { locationId: 'loc-existing', name: 'Existing Account' },
+      ],
+    });
+    mockFindByLocationId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ location_id: 'loc-existing', company_id: 'comp-xyz', snapshot_status: 'installed', status: 'active' });
+    mockCreate.mockResolvedValue({});
+    mockUpdate.mockResolvedValue({});
+
+    const res = await request(app).get('/auth/callback?code=agency-code');
+
+    expect(res.status).toBe(200);
+    expect(res.body.locations).toEqual(['loc-new', 'loc-existing']);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location_id: 'loc-new',
+        business_name: 'New Test Account',
+      }),
+    );
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'loc-existing',
+      expect.objectContaining({
+        status: 'active',
+        business_name: 'Existing Account',
+      }),
+    );
+  });
+
   it('does not expose OAuth debug info in production', async () => {
     (testConfig as any).isProd = true;
     mockExchangeCodeForTokens.mockResolvedValue({
