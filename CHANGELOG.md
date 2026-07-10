@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Hotfix: white screens after chooser removal (2026-07-09)
+
+### Fixed
+- **All data views rendered blank** after the sub-account-chooser removal: `useApi()`'s
+  return object still referenced the deleted `selectSsoLocation`, throwing a ReferenceError
+  in every view that calls `useApi()` (Roadmap alone survived — it makes no API calls).
+  Vite builds don't type-check, so the dangling reference shipped silently.
+
+---
+
 ## Unreleased — GHL install fix + fail-closed SSO (2026-07-09)
 
 > **Deploy ordering:** migration `088_merchant_token_columns_nullable.sql` must be applied in
