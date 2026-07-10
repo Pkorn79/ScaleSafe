@@ -126,7 +126,7 @@ describe('exchangeCodeForTokens', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith(
       'https://services.leadconnectorhq.com/oauth/installed-locations',
       expect.objectContaining({
-        params: { companyId: 'comp-agency', appId: 'app-123' },
+        params: expect.objectContaining({ companyId: 'comp-agency', appId: 'app-123' }),
       }),
     );
   });
@@ -160,9 +160,75 @@ describe('exchangeCodeForTokens', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith(
       'https://services.leadconnectorhq.com/oauth/installed-locations',
       expect.objectContaining({
-        params: { companyId: 'comp-agency', appId: '665c6bb13d4e5364bdec0e2f' },
+        params: expect.objectContaining({ companyId: 'comp-agency', appId: '665c6bb13d4e5364bdec0e2f' }),
       }),
     );
+  });
+
+  it('falls back to legacy installedLocations endpoint when the current path is unavailable', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-agency',
+        refresh_token: 'rt-agency',
+        expires_in: 86400,
+        companyId: 'comp-agency',
+        scope: 'contacts.readonly',
+      },
+    });
+
+    mockedAxios.get
+      .mockRejectedValueOnce({ message: 'Not found', response: { status: 404, data: {} } })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          locations: [
+            { _id: 'loc-legacy', name: 'Legacy Endpoint Account' },
+          ],
+        },
+      });
+
+    const result = await exchangeCodeForTokens('code-legacy-endpoint');
+
+    expect(result.locationId).toBe('loc-legacy');
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      1,
+      'https://services.leadconnectorhq.com/oauth/installed-locations',
+      expect.any(Object),
+    );
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      2,
+      'https://services.leadconnectorhq.com/oauth/installedLocations',
+      expect.any(Object),
+    );
+  });
+
+  it('retries installed location lookup when GHL initially returns an empty list', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-agency',
+        refresh_token: 'rt-agency',
+        expires_in: 86400,
+        companyId: 'comp-agency',
+        scope: 'contacts.readonly',
+      },
+    });
+
+    mockedAxios.get
+      .mockResolvedValueOnce({ status: 200, data: { locations: [] } })
+      .mockResolvedValueOnce({ status: 200, data: { locations: [] } })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          locations: [
+            { locationId: 'loc-after-delay', name: 'Delayed Install Account' },
+          ],
+        },
+      });
+
+    const result = await exchangeCodeForTokens('code-delayed-install');
+
+    expect(result.locationId).toBe('loc-after-delay');
+    expect(mockedAxios.get).toHaveBeenCalledTimes(3);
   });
 
   it('returns all installed locations without guessing when multiple sub-accounts are installed', async () => {

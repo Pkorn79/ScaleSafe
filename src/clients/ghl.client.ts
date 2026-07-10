@@ -7,6 +7,10 @@ import { encrypt, decrypt } from '../utils/field-encryption';
 
 const TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const CUSTOM_FIELD_ID_CACHE_TTL_MS = 5 * 60 * 1000;
+const INSTALLED_LOCATIONS_PATHS = ['/oauth/installed-locations', '/oauth/installedLocations'];
+const INSTALLED_LOCATIONS_RETRY_DELAYS_MS = process.env.NODE_ENV === 'test'
+  ? [0, 1]
+  : [0, 750, 1500, 3000, 5000];
 
 const customFieldIdCache = new Map<string, {
   expiresAt: number;
@@ -50,6 +54,10 @@ function marketplaceAppId(): string {
 
   const clientIdPrefix = String(config.ghl.clientId || '').split('-')[0];
   return /^[a-f0-9]{24}$/i.test(clientIdPrefix) ? clientIdPrefix : '';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 interface TokenResponse extends TokenPair {
@@ -228,25 +236,15 @@ async function resolveInstalledLocationsFromCompany(
       logger.warn('GHL Marketplace appId is unavailable for installed-locations lookup');
     }
 
-    const res = await axios.get(`${config.ghl.apiDomain}/oauth/installed-locations`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Version: '2021-07-28',
-        Accept: 'application/json',
-      },
-      params,
-    });
+    const resolved = await fetchInstalledLocations(accessToken, params);
+    Object.assign(debug, resolved.debug);
 
-    debug.httpStatus = res.status;
-    debug.responseKeys = Object.keys(res.data || {});
-
-    const locations = normalizeInstalledLocationsResponse(res.data);
-    debug.locationCount = locations.length;
-    if (config.isDev) {
-      debug.rawLocations = locations.map((l) => ({ id: l.locationId, name: l.name || '' }));
-    }
-
-    logger.info({ locationCount: locations.length }, 'Installed locations response');
+    const locations = resolved.installedLocations;
+    logger.info({
+      locationCount: locations.length,
+      path: resolved.debug.path,
+      attempts: resolved.debug.attempts,
+    }, 'Installed locations response');
 
     if (locations.length === 0) {
       logger.error('No installed locations found for company');
@@ -272,6 +270,108 @@ async function resolveInstalledLocationsFromCompany(
     }, 'Failed to resolve installed locations');
     return { installedLocations: [], debug };
   }
+}
+
+async function fetchInstalledLocations(
+  accessToken: string,
+  params: Record<string, string>,
+): Promise<{ installedLocations: InstalledLocation[]; debug: Record<string, unknown> }> {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    Version: '2021-07-28',
+    Accept: 'application/json',
+  };
+  const requestParams = {
+    ...params,
+    isInstalled: 'true',
+    limit: '100',
+  };
+
+  const debug: Record<string, unknown> = {
+    attempts: 0,
+    pathsTried: [],
+    hasCompanyId: !!params.companyId,
+    hasAppId: !!params.appId,
+  };
+  let lastError: any;
+  let lastEmptyResponse: Record<string, unknown> | null = null;
+
+  for (const delayMs of INSTALLED_LOCATIONS_RETRY_DELAYS_MS) {
+    if (delayMs > 0) await sleep(delayMs);
+
+    for (const path of INSTALLED_LOCATIONS_PATHS) {
+      debug.attempts = Number(debug.attempts || 0) + 1;
+      (debug.pathsTried as string[]).push(path);
+
+      try {
+        const res = await axios.get(`${config.ghl.apiDomain}${path}`, {
+          headers,
+          params: requestParams,
+        });
+
+        const locations = normalizeInstalledLocationsResponse(res.data);
+        const responseDebug = {
+          httpStatus: res.status,
+          responseKeys: Object.keys(res.data || {}),
+          locationCount: locations.length,
+          path,
+        };
+
+        if (locations.length > 0) {
+          return {
+            installedLocations: locations,
+            debug: {
+              ...debug,
+              ...responseDebug,
+              ...(config.isDev ? {
+                rawLocations: locations.map((l) => ({ id: l.locationId, name: l.name || '' })),
+              } : {}),
+            },
+          };
+        }
+
+        lastEmptyResponse = responseDebug;
+      } catch (err: any) {
+        lastError = err;
+        const status = err.response?.status;
+        if (status === 404 || status === 405) {
+          continue;
+        }
+
+        if (status === 400 || status === 401 || status === 422) {
+          return {
+            installedLocations: [],
+            debug: {
+              ...debug,
+              error: err.message,
+              errorStatus: status,
+              errorBodyKeys: err.response?.data ? Object.keys(err.response.data) : [],
+            },
+          };
+        }
+      }
+    }
+  }
+
+  if (lastEmptyResponse) {
+    return {
+      installedLocations: [],
+      debug: {
+        ...debug,
+        ...lastEmptyResponse,
+      },
+    };
+  }
+
+  return {
+    installedLocations: [],
+    debug: {
+      ...debug,
+      error: lastError?.message || 'Installed locations lookup failed',
+      errorStatus: lastError?.response?.status,
+      errorBodyKeys: lastError?.response?.data ? Object.keys(lastError.response.data) : [],
+    },
+  };
 }
 
 function normalizeInstalledLocationsResponse(data: any): InstalledLocation[] {
