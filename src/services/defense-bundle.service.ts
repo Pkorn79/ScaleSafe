@@ -99,6 +99,8 @@ export const defenseBundleService = {
       exhibitsPdfBuffer = await renderHtmlToPdf(exhibitsHtml);
     }
 
+    const externalAttachmentBuffers = await buildExternalAttachmentPdfs(exhibitList.exhibits, locationId);
+
     // 5. Load the signed enrollment packet PDF from storage (AS-IS, never re-rendered)
     let enrollmentPdfBuffer: Buffer | null = null;
     if (exhibitList.enrollmentPacketPath) {
@@ -114,7 +116,7 @@ export const defenseBundleService = {
     // 6. Merge all parts via pdf-lib
     const merged = await PDFDocument.create();
 
-    for (const buf of [letterPdfBuffer, exhibitsPdfBuffer, enrollmentPdfBuffer]) {
+    for (const buf of [letterPdfBuffer, exhibitsPdfBuffer, ...externalAttachmentBuffers, enrollmentPdfBuffer]) {
       if (!buf) continue;
       try {
         const src = await PDFDocument.load(buf);
@@ -161,6 +163,54 @@ export const defenseBundleService = {
     return signedUrl;
   },
 };
+
+async function buildExternalAttachmentPdfs(exhibits: any[], locationId: string): Promise<Buffer[]> {
+  const seen = new Set<string>();
+  const attachments: any[] = [];
+  for (const exhibit of exhibits) {
+    const rows = exhibit?.meta?.defenseMetadata?.connector?.attachments;
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      if (!row?.storagePath || seen.has(row.storagePath)) continue;
+      if (!String(row.storagePath).startsWith(`external-evidence/${locationId}/`)) continue;
+      seen.add(row.storagePath);
+      attachments.push(row);
+      if (attachments.length >= 20) break;
+    }
+    if (attachments.length >= 20) break;
+  }
+
+  const output: Buffer[] = [];
+  for (const attachment of attachments) {
+    try {
+      const { buffer } = await storageService.downloadPrivateFileWithLegacy(attachment.storagePath);
+      const contentType = String(attachment.contentType || '').toLowerCase();
+      if (contentType === 'application/pdf') {
+        await PDFDocument.load(buffer);
+        output.push(buffer);
+        continue;
+      }
+      if (contentType === 'image/png' || contentType === 'image/jpeg') {
+        const doc = await PDFDocument.create();
+        const image = contentType === 'image/png' ? await doc.embedPng(buffer) : await doc.embedJpg(buffer);
+        const page = doc.addPage([612, 792]);
+        const scale = Math.min(540 / image.width, 700 / image.height, 1);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        page.drawImage(image, { x: (612 - width) / 2, y: (792 - height) / 2, width, height });
+        output.push(Buffer.from(await doc.save()));
+        continue;
+      }
+      if (contentType === 'text/plain' || contentType === 'text/csv') {
+        const body = esc(buffer.toString('utf8').slice(0, 100_000));
+        output.push(await renderHtmlToPdf(`<!doctype html><html><body><h2>${esc(attachment.filename || 'External evidence attachment')}</h2><pre style="white-space:pre-wrap;font:10px monospace">${body}</pre></body></html>`));
+      }
+    } catch (err: any) {
+      logger.warn({ err: err.message, storagePath: attachment.storagePath }, 'Validated connector attachment could not be added to defense bundle');
+    }
+  }
+  return output;
+}
 
 // ── Exhibits summary HTML (lightweight; lists each exhibit with its server-rendered summary) ──
 

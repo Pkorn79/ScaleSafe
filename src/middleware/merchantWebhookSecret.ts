@@ -47,8 +47,8 @@ function observe(req: Request, reason: string, extra: Record<string, unknown> = 
   );
 }
 
-export async function requireMerchantWebhookSecret(req: Request, res: Response, next: NextFunction) {
-  const enforce = shouldEnforce();
+async function validateMerchantWebhookSecret(req: Request, res: Response, next: NextFunction, forceEnforce: boolean) {
+  const enforce = forceEnforce || shouldEnforce();
   const secret = getHeaderSecret(req);
   const bodyLocationId = String(req.body?.locationId || req.body?.location_id || '').trim();
 
@@ -101,4 +101,14 @@ export async function requireMerchantWebhookSecret(req: Request, res: Response, 
     }
     next();
   }
+}
+
+export async function requireMerchantWebhookSecret(req: Request, res: Response, next: NextFunction) {
+  return validateMerchantWebhookSecret(req, res, next, false);
+}
+
+/** External evidence compatibility endpoints are always authenticated, even
+ * while legacy GHL workflow webhooks remain in observe mode. */
+export async function requireMerchantWebhookSecretStrict(req: Request, res: Response, next: NextFunction) {
+  return validateMerchantWebhookSecret(req, res, next, true);
 }

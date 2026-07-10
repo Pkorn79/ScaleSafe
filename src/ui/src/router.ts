@@ -18,6 +18,7 @@ const routes = [
   { path: '/roadmap/:id', name: 'feature-preview', component: () => import('./views/FeaturePreviewView.vue') },
   { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
   { path: '/settings/payments', name: 'settings-payments', component: () => import('./views/SettingsPayments.vue') },
+  { path: '/settings/evidence-connections', name: 'settings-evidence-connections', component: () => import('./views/EvidenceConnectionsView.vue') },
 ];
 
 export const router = createRouter({

@@ -24,6 +24,7 @@ import termsRoutes from './terms.routes';
 import paymentUpdateRoutes from './payment-update.routes';
 import paymentLifecycleRoutes from './payment-lifecycle.routes';
 import processorConfigRoutes from './processor-config.routes';
+import { evidenceConnectionManagementRoutes, evidenceConnectorPublicRoutes } from './evidence-connector.routes';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.use('/api/enrollment', apiLimiter, enrollmentRoutes);
 router.use('/api/enrollments', apiLimiter, phase2EnrollmentRoutes);
 router.use('/api/evidence', apiLimiter, evidenceUploadRoutes);
 router.use('/api/evidence', apiLimiter, evidenceRoutes);
+router.use('/api/evidence-connections', apiLimiter, evidenceConnectionManagementRoutes);
 router.use('/api/defense', apiLimiter, defenseRoutes);
 router.use('/api/dashboard', apiLimiter, dashboardRoutes);
 router.use('/api/admin', apiLimiter, adminRoutes);
@@ -68,6 +70,9 @@ router.use('/api/efws', apiLimiter, efwRoutes);
 // Stripe management (SSO-gated)
 router.use('/api/stripe', apiLimiter, stripeConnectRoutes);
 router.use('/api/stripe', apiLimiter, stripeDefenseRoutes);
+
+// Provider-neutral external evidence API (uses tenant-derived connector credentials).
+router.use('/api/v1/evidence', evidenceConnectorPublicRoutes);
 
 // Payment update widget (public, rate limited — client-facing)
 router.use(paymentUpdateRoutes);

@@ -3,6 +3,18 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Universal external evidence connector (2026-07-10)
+
+### Added
+- Tenant-bound canonical evidence API and configurable raw-webhook connections with hashed credentials, HMAC support, secret rotation, persistent idempotency, PostgreSQL-leased processing, and exact enrollment resolution.
+- Private external evidence attachments with signed upload preparation, HTTPS/domain/network validation, file signature checks, immutable storage paths, and defense-bundle inclusion.
+- Merchant Evidence Connections settings and ScaleSafe HQ health diagnostics for connections, resource mappings, synthetic tests, event delivery, quarantine, and credential controls.
+- Enrollment-scoped external sessions, access, assignments, resources, approved custom activity, pulse, and supplemental payment evidence now use the shared defense evidence contract.
+
+### Security
+- The legacy `/webhooks/external` route now always requires a valid merchant webhook secret and feeds the enrollment-safe event ledger; payload tenant identifiers can no longer select another sub-account.
+- Connector test events, rejected mappings, unresolved events, and provider-supplied defense classifications can never enter a defense packet.
+
 ---
 
 ## Unreleased — Stripe queue + submission clarity fixes (2026-07-10)

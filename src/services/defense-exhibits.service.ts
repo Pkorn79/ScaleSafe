@@ -44,7 +44,9 @@ export type ExhibitSource =
   | 'evidence_pulse_checkins'
   | 'evidence_failed_payment'
   | 'evidence_attendance'
-  | 'evidence_resource_delivery';
+  | 'evidence_resource_delivery'
+  | 'evidence_assignments'
+  | 'evidence_custom_events';
 
 export type ExhibitCategory =
   | 'consent'
@@ -214,6 +216,8 @@ const SOURCE_PRIORITY_KEYS: Record<string, string[]> = {
   evidence_signoffs: ['signoffs', 'milestones'],
   evidence_service_access: ['service_access', 'ip_device_match'],
   evidence_resource_delivery: ['deliverables'],
+  evidence_assignments: ['deliverables', 'modules'],
+  evidence_custom_events: ['service_access', 'deliverables'],
   evidence_communication: ['communication'],
   evidence_invoices: ['payment_history'],
   evidence_enrollment_payment: ['payment_history'],
@@ -589,6 +593,87 @@ export const defenseExhibitsService = {
         applyDefenseContract(exhibits[exhibits.length - 1], c);
       }
     } catch (err) { recordSourceError('evidence_course_completion', err); }
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('evidence_external_sessions')
+        .select(`id, enrollment_id, platform, session_date, duration_minutes, session_type, notes, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId).eq('contact_id', contactId).order('session_date', { ascending: true });
+      if (error) recordSourceError('evidence_external_sessions', error);
+      for (const row of scopedRows((rows || []) as any[], opts?.enrollmentId, 'session_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++), name: exhibitName(row, `External Session: ${row.session_type || 'Session'}`),
+          category: 'service_delivery', source: 'evidence_external_sessions', ref: row.id, occurredAt: row.session_date,
+          summary: exhibitSummary(row, `${row.platform || 'External provider'} recorded a ${row.session_type || 'session'} on ${fmtDate(row.session_date)}${row.duration_minutes ? ` lasting ${row.duration_minutes} minutes` : ''}.`),
+          meta: exhibitMeta(row),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_external_sessions', err); }
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('evidence_service_access')
+        .select(`id, enrollment_id, platform, event_type, access_date, duration_seconds, content_accessed, ip_address, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId).eq('contact_id', contactId).order('access_date', { ascending: true });
+      if (error) recordSourceError('evidence_service_access', error);
+      for (const row of scopedRows((rows || []) as any[], opts?.enrollmentId, 'access_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++), name: exhibitName(row, `Service Access: ${row.content_accessed || row.event_type || 'Activity'}`),
+          category: 'service_delivery', source: 'evidence_service_access', ref: row.id, occurredAt: row.access_date,
+          summary: exhibitSummary(row, `${row.platform || 'External provider'} recorded ${row.event_type || 'service activity'} on ${fmtDate(row.access_date)}${row.content_accessed ? ` for ${row.content_accessed}` : ''}.`),
+          meta: exhibitMeta(row, { ip: row.ip_address }),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_service_access', err); }
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('evidence_assignments')
+        .select(`id, enrollment_id, title, submitted_at, grade, feedback, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId).eq('contact_id', contactId).order('submitted_at', { ascending: true });
+      if (error) recordSourceError('evidence_assignments', error);
+      for (const row of scopedRows((rows || []) as any[], opts?.enrollmentId, 'submitted_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++), name: exhibitName(row, `Assignment: ${row.title || 'Submission'}`),
+          category: 'service_delivery', source: 'evidence_assignments', ref: row.id, occurredAt: row.submitted_at,
+          summary: exhibitSummary(row, `Assignment “${row.title || 'Untitled'}” was submitted on ${fmtDate(row.submitted_at)}${row.grade ? ` with result ${row.grade}` : ''}.`),
+          meta: exhibitMeta(row),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_assignments', err); }
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('evidence_resource_delivery')
+        .select(`id, enrollment_id, resource_type, title, delivered_at, access_confirmed, delivery_method, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId).eq('contact_id', contactId).order('delivered_at', { ascending: true });
+      if (error) recordSourceError('evidence_resource_delivery', error);
+      for (const row of scopedRows((rows || []) as any[], opts?.enrollmentId, 'delivered_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++), name: exhibitName(row, `Resource: ${row.title || row.resource_type || 'Delivery'}`),
+          category: 'service_delivery', source: 'evidence_resource_delivery', ref: row.id, occurredAt: row.delivered_at,
+          summary: exhibitSummary(row, `Resource “${row.title || row.resource_type || 'Untitled'}” was delivered on ${fmtDate(row.delivered_at)}${row.access_confirmed ? ' and access was confirmed' : ''}.`),
+          meta: exhibitMeta(row),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_resource_delivery', err); }
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('evidence_custom_events')
+        .select(`id, enrollment_id, event_type, event_timestamp, description, metadata, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId).eq('contact_id', contactId).order('event_timestamp', { ascending: true });
+      if (error) recordSourceError('evidence_custom_events', error);
+      const approved = (rows || []).filter((row: any) => row.metadata?.approved_for_defense === true);
+      for (const row of scopedRows(approved as any[], opts?.enrollmentId, 'event_timestamp', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        exhibits.push({
+          letter: indexToLetter(nextIdx++), name: exhibitName(row, `External Activity: ${row.event_type || 'Custom Event'}`),
+          category: 'service_delivery', source: 'evidence_custom_events', ref: row.id, occurredAt: row.event_timestamp,
+          summary: exhibitSummary(row, row.description || `Approved external activity recorded on ${fmtDate(row.event_timestamp)}.`),
+          meta: exhibitMeta(row),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_custom_events', err); }
 
     // ── 4. Communication log ──
     // Communications are the highest-volume, lowest-signal evidence type (GHL syncs

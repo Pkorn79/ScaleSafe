@@ -35,7 +35,7 @@ export function createApp(): express.Application {
 
   // Parse JSON with raw body capture for webhook signature verification
   app.use(express.json({ verify: captureRawBody as any }));
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.urlencoded({ extended: true, verify: captureRawBody as any }));
 
   // Request logging
   app.use(requestLogger);

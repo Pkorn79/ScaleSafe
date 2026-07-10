@@ -6,6 +6,7 @@ import { runPaymentReminderCheck } from './jobs/payment-reminder-check';
 import { runPifCompletionCheck } from './jobs/pif-completion-check';
 import { runPulseCadenceCheck } from './jobs/pulse-cadence-check';
 import { storageService } from './services/storage.service';
+import { evidenceConnectorWorker } from './services/evidence-connector-worker';
 
 const app = createApp();
 
@@ -36,4 +37,7 @@ app.listen(config.port, () => {
     runPifCompletionCheck().catch(err => logger.error({ err }, 'PIF completion check failed'));
     setInterval(() => runPifCompletionCheck().catch(err => logger.error({ err }, 'PIF completion check failed')), DAY_MS);
   }, 5 * 60 * 1000);
+
+  // Database-leased worker; safe to run on multiple Railway instances.
+  evidenceConnectorWorker.start();
 });

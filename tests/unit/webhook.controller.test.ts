@@ -12,6 +12,8 @@ const mockIdempotencyIsDuplicate = jest.fn().mockResolvedValue(false);
 const mockGhlActivityHandleWebhook = jest.fn();
 const mockTriggerUpsertSubscription = jest.fn();
 const mockTriggerDeactivateSubscription = jest.fn();
+const mockEnsureLegacyConnection = jest.fn();
+const mockIngestLegacyEvidence = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -87,6 +89,18 @@ jest.mock('../../src/services/ghl-activity.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/evidence-connection.service', () => ({
+  evidenceConnectionService: {
+    ensureLegacy: (...args: any[]) => mockEnsureLegacyConnection(...args),
+  },
+}));
+
+jest.mock('../../src/services/evidence-connector.service', () => ({
+  evidenceConnectorService: {
+    ingestLegacy: (...args: any[]) => mockIngestLegacyEvidence(...args),
+  },
+}));
+
 jest.mock('../../src/services/notification.service', () => ({
   notificationService: { firePaymentFailed: jest.fn() },
 }));
@@ -98,7 +112,13 @@ jest.mock('../../src/clients/ghl.client', () => ({
 import { webhookController } from '../../src/controllers/webhook.controller';
 
 function mockReqRes(body: Record<string, unknown>) {
-  const req = { body, ip: '127.0.0.1', headers: {} } as any;
+  const locationId = String((body as any).location_id || (body as any).locationId || '');
+  const req = {
+    body,
+    ip: '127.0.0.1',
+    headers: {},
+    tenantContext: locationId ? { locationId, companyId: '', userId: '', email: '', role: 'user' } : undefined,
+  } as any;
   const res = { json: jest.fn(), status: jest.fn().mockReturnThis() } as any;
   const next = jest.fn();
   return { req, res, next };
@@ -561,10 +581,7 @@ describe('Webhook Controller - ghlUnified', () => {
 });
 
 describe('Webhook Controller - external', () => {
-  test('uses stable event id for identical payloads', async () => {
-    const { evidenceService } = await import('../../src/services/evidence.service');
-    (evidenceService.handleExternalEvent as jest.Mock).mockResolvedValue('external_session');
-
+  test('routes authenticated legacy payloads through the durable connector ledger', async () => {
     const body = {
       source: 'calendly',
       event_type: 'session_completed',
@@ -572,22 +589,24 @@ describe('Webhook Controller - external', () => {
       contact_id: 'contact_1',
       data: { session_date: '2026-04-30', duration: 60, topics: ['A', 'B'] },
     };
-    const first = mockReqRes(body);
-    const second = mockReqRes({ ...body, data: { duration: 60, topics: ['A', 'B'], session_date: '2026-04-30' } });
+    const connection = { id: 'conn_1', location_id: 'loc_1', merchant_id: 'merchant_1' };
+    mockEnsureLegacyConnection.mockResolvedValue(connection);
+    mockIngestLegacyEvidence.mockResolvedValue({ duplicate: false, processingStatus: 'accepted', event: { id: 'event_1' } });
+    const { req, res, next } = mockReqRes(body);
 
-    await webhookController.external(first.req, first.res, first.next);
-    await webhookController.external(second.req, second.res, second.next);
+    await webhookController.external(req, res, next);
 
-    const firstEventId = mockIdempotencyIsDuplicate.mock.calls[0][0];
-    const secondEventId = mockIdempotencyIsDuplicate.mock.calls[1][0];
-    expect(firstEventId).toBe(secondEventId);
-    expect(firstEventId).toMatch(/^ext_calendly_session_completed_contact_1_[a-f0-9]{24}$/);
-    expect(evidenceService.handleExternalEvent).toHaveBeenCalledTimes(2);
+    expect(mockEnsureLegacyConnection).toHaveBeenCalledWith('loc_1', 'calendly');
+    expect(mockIngestLegacyEvidence).toHaveBeenCalledWith(expect.objectContaining({ connection, payload: body }));
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith({ status: 'accepted', eventId: 'event_1' });
+    expect(next).not.toHaveBeenCalled();
   });
 
-  test('returns duplicate when stable external event id has already been seen', async () => {
-    mockIdempotencyIsDuplicate.mockResolvedValue(true);
-
+  test('acknowledges duplicate ledger events without republishing evidence', async () => {
+    const connection = { id: 'conn_1', location_id: 'loc_1', merchant_id: 'merchant_1' };
+    mockEnsureLegacyConnection.mockResolvedValue(connection);
+    mockIngestLegacyEvidence.mockResolvedValue({ duplicate: true, processingStatus: 'duplicate', event: { id: 'event_1' } });
     const { req, res, next } = mockReqRes({
       source: 'zoom',
       event_type: 'session_completed',
@@ -598,10 +617,9 @@ describe('Webhook Controller - external', () => {
 
     await webhookController.external(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({
-      status: 'duplicate',
-      eventId: expect.stringMatching(/^ext_zoom_session_completed_contact_1_[a-f0-9]{24}$/),
-    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ status: 'duplicate', eventId: 'event_1' });
+    expect(next).not.toHaveBeenCalled();
   });
 });
 

@@ -5,6 +5,8 @@ import { merchantRepository, MerchantRecord } from '../repositories/merchant.rep
 import { config } from '../config';
 import { debugLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
+import { evidenceConnectorRepository } from '../repositories/evidence-connector.repository';
+import { evidenceConnectionService } from '../services/evidence-connection.service';
 
 const router = Router();
 
@@ -203,6 +205,52 @@ router.get('/internal/hq/api/merchants/:locationId', debugLimiter, requireHqToke
   }
 });
 
+router.get('/internal/hq/api/evidence-connections', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const connections = await evidenceConnectorRepository.getHqSummary();
+    const rows = await Promise.all(connections.map(async (connection: any) => {
+      const { data: events, error } = await getSupabase()
+        .from('external_evidence_events')
+        .select('status, is_test, received_at')
+        .eq('connection_id', connection.id)
+        .gte('received_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+      if (error) throw error;
+      const counts: Record<string, number> = {};
+      for (const event of events || []) counts[event.status] = (counts[event.status] || 0) + 1;
+      return { ...connection, counts };
+    }));
+    await audit(req, 'hq.list_evidence_connections', { metadata: { count: rows.length } });
+    res.json({ connections: rows });
+  } catch (err: any) {
+    logger.error({ err: err.message }, 'HQ evidence connection list failed');
+    res.status(500).json({ error: 'HQ evidence connection list failed' });
+  }
+});
+
+router.post('/internal/hq/api/evidence-connections/:id/status', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const { data: connection, error } = await getSupabase().from('evidence_connections').select('id, location_id').eq('id', req.params.id).single();
+    if (error || !connection) throw error || new Error('Connection not found');
+    const updated = await evidenceConnectionService.setStatus(connection.location_id, connection.id, adminLabel(req), req.body?.enabled === true);
+    await audit(req, 'hq.evidence_connection_status', { targetLocationId: connection.location_id, targetType: 'evidence_connection', targetId: connection.id, metadata: { enabled: req.body?.enabled === true } });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Connection status update failed' });
+  }
+});
+
+router.post('/internal/hq/api/evidence-connections/:id/rotate', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const { data: connection, error } = await getSupabase().from('evidence_connections').select('id, location_id').eq('id', req.params.id).single();
+    if (error || !connection) throw error || new Error('Connection not found');
+    const result = await evidenceConnectionService.rotate(connection.location_id, connection.id, adminLabel(req), Number(req.body?.graceHours || 0));
+    await audit(req, 'hq.evidence_connection_rotate', { targetLocationId: connection.location_id, targetType: 'evidence_connection', targetId: connection.id });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Connection rotation failed' });
+  }
+});
+
 function hqHtml(): string {
   return `<!doctype html>
 <html lang="en">
@@ -225,7 +273,7 @@ pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-ra
 <body><main>
 <h1>ScaleSafe HQ</h1><div class="muted">Internal read-only install overview. No merchant impersonation.</div>
 <div class="bar"><input id="token" type="password" placeholder="HQ admin token" /><button id="load">Load installs</button></div>
-<div id="error" class="error"></div><div id="summary" class="grid"></div><div id="table"></div><div id="detail"></div>
+<div id="error" class="error"></div><div id="summary" class="grid"></div><div id="table"></div><div id="connectors"></div><div id="detail"></div>
 </main>
 <script>
 const $=id=>document.getElementById(id); const err=$('error');
@@ -235,9 +283,10 @@ function showError(msg){err.textContent=msg;err.style.display='block'} function 
 function fmtDate(v){return v?new Date(v).toLocaleString():''}
 async function api(path){const r=await fetch(path,{headers:headers()});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed');return d}
 function pills(p){return ['stripeConfigured','nmiConfigured','whopConfigured','fanbasisConfigured'].map(k=>'<span class="pill '+(p[k]?'':'warn')+'">'+k.replace('Configured','')+': '+(p[k]?'yes':'no')+'</span>').join(' ')}
-async function load(){clearError();localStorage.setItem('ss_hq_token',$('token').value);try{const d=await api('/internal/hq/api/merchants');render(d.merchants||[])}catch(e){showError(e.message)}}
+async function load(){clearError();localStorage.setItem('ss_hq_token',$('token').value);try{const [d,c]=await Promise.all([api('/internal/hq/api/merchants'),api('/internal/hq/api/evidence-connections')]);render(d.merchants||[]);renderConnectors(c.connections||[])}catch(e){showError(e.message)}}
 function render(rows){$('summary').innerHTML='<div class="card"><h2>'+rows.length+'</h2><div class="muted">Active merchants</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.failedTriggerDeliveries,0)+'</h2><div class="muted">Recent trigger issues</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.billingIssues,0)+'</h2><div class="muted">Billing setup issues</div></div>';
 $('table').innerHTML='<table><thead><tr><th>Merchant</th><th>Status</th><th>Processors</th><th>Counts</th><th>Updated</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><a onclick="detail(\\''+r.locationId+'\\')">'+escapeHtml(r.businessName)+'</a><div class="muted">'+escapeHtml(r.locationId)+'</div></td><td><span class="pill">'+r.status+'</span> <span class="pill '+(r.snapshotStatus==='installed'?'':'warn')+'">'+r.snapshotStatus+'</span></td><td>'+pills(r.processors)+'</td><td>'+r.counts.activeEnrollments+' enrollments<br>'+r.counts.recentPayments+' payments/30d<br>'+r.counts.failedTriggerDeliveries+' trigger issues/7d</td><td>'+fmtDate(r.updatedAt)+'</td></tr>').join('')+'</tbody></table>'}
+function renderConnectors(rows){$('connectors').innerHTML='<h2>Evidence connections</h2><table><thead><tr><th>Connection</th><th>Location</th><th>Health</th><th>Events / 7d</th><th>Last event</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.name)+'<div class="muted">'+escapeHtml(r.source_label)+' · '+escapeHtml(r.connection_type)+'</div></td><td>'+escapeHtml(r.location_id)+'</td><td><span class="pill '+(r.health_status==='error'?'bad':r.health_status==='warning'?'warn':'')+'">'+escapeHtml(r.health_status)+'</span></td><td>'+escapeHtml(JSON.stringify(r.counts||{}))+'</td><td>'+fmtDate(r.last_event_at)+'</td></tr>').join('')+'</tbody></table>'}
 async function detail(locationId){clearError();try{const d=await api('/internal/hq/api/merchants/'+encodeURIComponent(locationId));$('detail').innerHTML='<h2>Merchant detail</h2><pre>'+escapeHtml(JSON.stringify(d,null,2))+'</pre>'}catch(e){showError(e.message)}}
 function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 $('load').addEventListener('click',load); if(localStorage.getItem('ss_hq_token')){$('token').value=localStorage.getItem('ss_hq_token')}

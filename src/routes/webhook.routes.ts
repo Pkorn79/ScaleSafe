@@ -6,7 +6,9 @@ import { handleNmiSilentPost } from '../controllers/nmi-silent-post.controller';
 import { handleNmiWebhookEvent } from '../controllers/nmi-webhook-events.controller';
 import { handleWhopWebhook } from '../controllers/whop-webhook.controller';
 import { requireGhlWebhookSignature } from '../middleware/ghlWebhookSignature';
-import { requireMerchantWebhookSecret } from '../middleware/merchantWebhookSecret';
+import { requireMerchantWebhookSecret, requireMerchantWebhookSecretStrict } from '../middleware/merchantWebhookSecret';
+import { requireRawEvidenceConnection } from '../middleware/evidenceConnectorAuth';
+import { evidenceConnectorController } from '../controllers/evidence-connector.controller';
 
 const router = Router();
 
@@ -21,7 +23,9 @@ router.post('/ghl/payment', requireGhlWebhookSignature, webhookController.ghlPay
 router.post('/ghl/activity', requireGhlWebhookSignature, webhookController.ghlActivity);
 router.post('/ghl/course-activity', requireMerchantWebhookSecret, webhookController.ghlCourseActivity);
 router.post('/ghl/forms', requireMerchantWebhookSecret, webhookController.ghlForms);
-router.post('/external', requireMerchantWebhookSecret, webhookController.external);
+router.post('/external', requireMerchantWebhookSecretStrict, webhookController.external);
+router.post('/connectors/:connectionId', requireRawEvidenceConnection, evidenceConnectorController.ingestRaw);
+router.post('/connectors/:connectionId/:secret', requireRawEvidenceConnection, evidenceConnectorController.ingestRaw);
 
 // Stripe webhooks: signature verified inside the handler using req.rawBody.
 router.post('/stripe/:locationId', handleStripeWebhook);

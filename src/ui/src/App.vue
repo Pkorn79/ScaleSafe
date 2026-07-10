@@ -4,6 +4,7 @@ import ToastContainer from './components/ToastContainer.vue';
 import {
   LayoutDashboard, Package, Users, CreditCard,
   Shield, Activity, Settings, ChevronRight, Map,
+  Plug,
 } from 'lucide-vue-next';
 </script>
 
@@ -98,6 +99,9 @@ import {
       </router-link>
       <router-link to="/settings/payments" class="nav-link nav-sub" :class="{ 'nav-active': $route.name === 'settings-payments' }">
         <ChevronRight :size="14" /> Payments
+      </router-link>
+      <router-link to="/settings/evidence-connections" class="nav-link nav-sub" :class="{ 'nav-active': $route.name === 'settings-evidence-connections' }">
+        <Plug :size="14" /> Evidence Connections
       </router-link>
     </nav>
     <main class="flex-1 overflow-y-auto bg-slate-50">

@@ -13,6 +13,8 @@ import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { ghlActivityService } from '../services/ghl-activity.service';
 import { triggerController } from './trigger.controller';
 import { merchantRepository } from '../repositories/merchant.repository';
+import { evidenceConnectionService } from '../services/evidence-connection.service';
+import { evidenceConnectorService } from '../services/evidence-connector.service';
 
 function webhookType(body: Record<string, any>): string {
   return String(body.type || body.event_type || body.eventType || body.triggerData?.eventType || '').trim();
@@ -315,42 +317,32 @@ export const webhookController = {
       if (!source || !event_type || !location_id) {
         throw new ValidationError('source, event_type, location_id required');
       }
+      const tenantLocationId = req.tenantContext?.locationId;
+      if (!tenantLocationId || tenantLocationId !== location_id) throw new ValidationError('Webhook tenant does not match payload location');
+      if (!contact_id && !contact_email) throw new ValidationError('contact_id or contact_email required');
 
-      const contactId = contact_id || '';
-      if (!contactId && !contact_email) {
-        throw new ValidationError('contact_id or contact_email required');
-      }
-
-      const eventId = stableExternalEventId(source, event_type, contactId || contact_email, data || {});
-      if (await idempotencyRepository.isDuplicate(eventId, 'external', location_id)) {
-        res.json({ status: 'duplicate', eventId });
-        return;
-      }
-
-      // If no contactId, look up by email via GHL
-      let resolvedContactId = contactId;
-      if (!resolvedContactId && contact_email) {
-        try {
-          const { ghlApi: getApi } = await import('../clients/ghl.client');
-          const api = await getApi(location_id);
-          const search = await api.get('/contacts/search/duplicate', {
-            params: { locationId: location_id, email: contact_email },
-          });
-          resolvedContactId = search.data.contact?.id || '';
-        } catch {
-          logger.warn({ hasContactEmail: !!contact_email, location_id }, 'Could not resolve contact by email');
-        }
-      }
-
-      if (!resolvedContactId) {
-        throw new ValidationError(`Could not resolve contact for ${contact_email}`);
-      }
-
-      const evidenceType = await evidenceService.handleExternalEvent(
-        event_type, location_id, resolvedContactId, source, data || {},
-      );
-
-      res.json({ status: 'ok', eventId, evidenceType });
+      const connection = await evidenceConnectionService.ensureLegacy(tenantLocationId, source);
+      const result = await evidenceConnectorService.ingestLegacy({
+        connection,
+        auth: {
+          connection,
+          credential: {
+            id: 'legacy_merchant_secret',
+            connection_id: connection.id,
+            credential_type: 'api_key',
+            key_prefix: 'legacy',
+            secret_hash: '',
+            secret_encrypted: null,
+            status: 'active',
+            expires_at: null,
+          },
+          authMethod: 'api_key',
+          signatureVerified: false,
+        },
+        payload: { source, event_type, location_id, contact_id, contact_email, data },
+        rawBody: req.rawBody,
+      });
+      res.status(result.duplicate ? 200 : 202).json({ status: result.processingStatus, eventId: result.event.id });
     } catch (err) { next(err); }
   },
 
