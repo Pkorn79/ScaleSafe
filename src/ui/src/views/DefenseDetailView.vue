@@ -23,10 +23,18 @@
               @click="markSubmitted"
               :disabled="submitting"
             >
-              {{ submitting ? 'Submitting...' : 'Mark Submitted' }}
+              <template v-if="packet.isStripeDispute">{{ submitting ? 'Submitting to Stripe...' : 'Submit to Stripe' }}</template>
+              <template v-else>{{ submitting ? 'Submitting...' : 'Mark Submitted' }}</template>
             </button>
             <router-link to="/defense" class="btn btn-sm btn-secondary">Back</router-link>
           </div>
+        </div>
+
+        <!-- Stripe-rail packets: Submit to Stripe is the real submission -->
+        <div v-if="packet.isStripeDispute && isPreSubmit" class="deadline-strip" style="margin-bottom:8px">
+          This chargeback came through Stripe. <strong>Submit to Stripe</strong> sends the letter and
+          the full packet PDF directly to Stripe as your dispute evidence — review everything first,
+          because the packet can't be edited after submission.
         </div>
 
         <!-- Deadline countdown -->
@@ -219,6 +227,9 @@ async function refresh() {
 }
 
 async function markSubmitted() {
+  if (packet.value?.isStripeDispute) {
+    if (!confirm('Submit this evidence to Stripe now? This sends the letter and packet PDF to Stripe for the dispute. You will not be able to edit the packet afterwards.')) return;
+  }
   submitting.value = true;
   actionError.value = '';
   try {

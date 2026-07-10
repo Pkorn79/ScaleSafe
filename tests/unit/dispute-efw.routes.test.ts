@@ -141,6 +141,8 @@ describe('GET /api/disputes/:merchantId — list disputes', () => {
     expect(mockFrom).toHaveBeenCalledWith('dispute_events');
     expect(mockFrom).toHaveBeenCalledWith('defense_packets');
     expect(q.eq).toHaveBeenCalledWith('merchant_id', MERCHANT_ID);
+    // Stripe queue only — NMI/manual dispute rows stay in the Defense tab
+    expect(q.eq).toHaveBeenCalledWith('processor', 'stripe');
     expect(packetQ.in).toHaveBeenCalledWith('dispute_event_id', ['d1', 'd2']);
   });
 

@@ -50,10 +50,13 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
   if (!merchantId) return;
   try {
     const supabase = getSupabase();
+    // Stripe queue only — NMI/manual dispute rows (created server-side by
+    // compileDefense) live in the Defense tab, not here.
     const { data: disputes } = await supabase
       .from('dispute_events')
       .select('*')
       .eq('merchant_id', merchantId)
+      .eq('processor', 'stripe')
       .order('created_at', { ascending: false })
       .limit(50);
 

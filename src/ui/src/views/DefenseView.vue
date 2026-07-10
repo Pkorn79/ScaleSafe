@@ -83,9 +83,9 @@
       <!-- Lifecycle prompts on the card: merchants don't reopen a packet after
            downloading it, so the submit and outcome questions live out here. -->
       <div v-if="isPending(p) && ['complete', 'needs_review'].includes(p.status) && !isExpired(p)" class="mt-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span class="text-sm text-muted">Have you submitted this to the bank yet?</span>
+        <span class="text-sm text-muted">{{ p.isStripeDispute ? 'Ready to send this evidence to Stripe?' : 'Have you submitted this to the bank yet?' }}</span>
         <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="submittingId === p.id" @click.stop="quickSubmit(p)">
-          Mark Submitted
+          {{ p.isStripeDispute ? 'Submit to Stripe' : 'Mark Submitted' }}
         </button>
       </div>
       <div v-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted' && !p.outcome" class="mt-2" style="display:flex;gap:8px;align-items:center">
@@ -453,7 +453,10 @@ async function loadPackets() {
 // letter (no more edits/regeneration) — hence the confirm.
 const submittingId = ref('');
 async function quickSubmit(p: any) {
-  if (!window.confirm('Mark this packet as submitted to the bank? This locks the letter — you won\'t be able to edit or regenerate it afterwards.')) return;
+  const message = p.isStripeDispute
+    ? 'Submit this evidence to Stripe now? This sends the letter and packet PDF to Stripe for the dispute, and locks the packet — no more edits afterwards.'
+    : 'Mark this packet as submitted to the bank? This locks the letter — you won\'t be able to edit or regenerate it afterwards.';
+  if (!window.confirm(message)) return;
   submittingId.value = p.id;
   try {
     await api.post(`/api/defense/${p.id}/submit`, {});

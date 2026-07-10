@@ -2,7 +2,7 @@
   <div>
     <div class="flex-between mb-4">
       <h1 class="page-title">Active Disputes</h1>
-      <router-link to="/defense/dashboard" class="btn btn-secondary">Back to Dashboard</router-link>
+      <router-link to="/defense" class="btn btn-secondary">Back to Defense</router-link>
     </div>
 
     <div v-if="loadError" class="error-msg">{{ loadError }}</div>
@@ -183,7 +183,7 @@ async function prepareDefense(dispute: any) {
 }
 
 async function acceptDispute(dispute: any) {
-  if (!confirm(`Accept this dispute for $${Number(dispute.amount || 0).toFixed(2)}? This cannot be undone.`)) return;
+  if (!confirm(`Accept this $${Number(dispute.amount || 0).toFixed(2)} dispute? This permanently concedes the chargeback — the cardholder keeps the funds, it counts as a loss, and it cannot be undone.`)) return;
   accepting.value = dispute.id;
   try {
     await api.post(`/api/disputes/${ssoSession.locationId}/${dispute.id}/accept`);

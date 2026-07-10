@@ -914,7 +914,19 @@ LETTER STRUCTURE:
 
   async getPacket(defenseId: string, locationId?: string) {
     const packet = await defenseRepository.getById(defenseId, locationId);
-    return shapePacketResponseWithFreshUrl(packet);
+    const shaped = await shapePacketResponseWithFreshUrl(packet);
+    // Rail flag: Stripe-linked packets are pushed to Stripe by Mark Submitted,
+    // so the UI must present that action as "Submit to Stripe".
+    shaped.isStripeDispute = false;
+    if ((packet as any).dispute_event_id) {
+      const { data: de } = await getSupabase()
+        .from('dispute_events')
+        .select('stripe_dispute_id')
+        .eq('id', (packet as any).dispute_event_id)
+        .maybeSingle();
+      shaped.isStripeDispute = !!de?.stripe_dispute_id;
+    }
+    return shaped;
   },
 
   async listForContact(locationId: string, contactId: string) {

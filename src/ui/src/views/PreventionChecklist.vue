@@ -2,7 +2,7 @@
   <div>
     <div class="flex-between mb-4">
       <h1 class="page-title">Prevention Checklist</h1>
-      <router-link to="/defense/dashboard" class="btn btn-secondary">Back to Dashboard</router-link>
+      <router-link to="/defense" class="btn btn-secondary">Back to Defense</router-link>
     </div>
 
     <div v-if="loadError" class="error-msg">{{ loadError }}</div>

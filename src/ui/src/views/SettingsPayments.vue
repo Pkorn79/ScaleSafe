@@ -278,7 +278,7 @@
               Risk Level: <strong :class="'risk-level-' + riskAudit.overallRiskLevel">{{ riskAudit.overallRiskLevel }}</strong>
             </p>
             <p class="text-sm">Dispute Rate Score: {{ riskAudit.scoreDisputeRate }}/100</p>
-            <router-link to="/defense/dashboard" class="btn btn-secondary btn-sm mt-2">View Defense Dashboard</router-link>
+            <router-link to="/risk-health" class="btn btn-secondary btn-sm mt-2">View Risk &amp; Health Dashboard</router-link>
           </div>
           <button class="btn btn-danger btn-sm mt-2" @click="disconnectStripe">Disconnect</button>
         </div>

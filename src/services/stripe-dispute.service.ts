@@ -469,9 +469,11 @@ export const stripeDisputeService = {
       { stripeAccount: merchant.stripe_user_id },
     );
 
-    // Record submission in database
+    // Record submission in database. Stripe already accepted the evidence, so a
+    // recording failure must not fail the call — but it MUST be loud: the
+    // double-submit guard reads evidence_submitted.
     const submissionMode = params.submissionMode || (params.autoSubmit ? 'auto' : 'manual');
-    await supabase
+    const { error: recordError } = await supabase
       .from('dispute_events')
       .update({
         evidence_submitted: true,
@@ -481,6 +483,12 @@ export const stripeDisputeService = {
       })
       .eq('stripe_dispute_id', params.stripeDisputeId)
       .eq('merchant_id', params.merchantId);
+    if (recordError) {
+      logger.error(
+        { err: recordError.message, disputeId: params.stripeDisputeId, merchantId: params.merchantId },
+        'Evidence submitted to Stripe but dispute_events recording FAILED — double-submit guard is not set for this dispute',
+      );
+    }
 
     logger.info(
       { disputeId: params.stripeDisputeId, merchantId: params.merchantId, autoSubmit: params.autoSubmit },

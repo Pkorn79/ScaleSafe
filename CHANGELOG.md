@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Stripe queue + submission clarity fixes (2026-07-10)
+
+### Changed
+- Stripe dispute queue now shows only Stripe disputes (processor filter); NMI/manual
+  chargeback rows stay in the Defense tab where they are worked.
+- Submission actions are rail-aware: Stripe-linked packets say **"Submit to Stripe"** with an
+  explainer and a confirm describing exactly what is sent (letter + packet PDF, locked after);
+  manual rails keep "Mark Submitted" / "Have you submitted this to the bank yet?".
+  New `isStripeDispute` flag on packet and defense-history responses.
+- Accept-dispute confirmation spells out the consequence: permanent concession, cardholder
+  keeps the funds, counts as a loss.
+- Sidebar: Stripe Risk Health now sits under Defense (was visually nested under Roadmap).
+
+### Fixed
+- Dead `/defense/dashboard` links in DisputeManagement, PreventionChecklist, and
+  SettingsPayments opened a broken packet-detail view (route falls through to `/defense/:id`).
+- A failed dispute_events write after successful Stripe evidence submission was silently
+  ignored; it is now logged loudly (the double-submit guard depends on that flag).
+
+---
+
 ## Unreleased — Stripe MVP-1: gated dispute evidence submission (2026-07-10)
 
 ### Added

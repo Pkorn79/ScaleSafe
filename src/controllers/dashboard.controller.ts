@@ -595,9 +595,23 @@ export const dashboardController = {
 
       const { data: packets } = await supabase
         .from('defense_packets')
-        .select('id, contact_id, chargeback_reason_code, reason_code_category, chargeback_amount, chargeback_date, response_deadline, status, lifecycle_status, created_at')
+        .select('id, contact_id, chargeback_reason_code, reason_code_category, chargeback_amount, chargeback_date, response_deadline, status, lifecycle_status, created_at, dispute_event_id')
         .eq('location_id', locationId)
         .order('created_at', { ascending: false });
+
+      // Stripe-rail flag: packets whose dispute row has a Stripe dispute id are
+      // submitted to Stripe by Mark Submitted — the UI words the action differently.
+      const disputeEventIds = [...new Set((packets || []).map(p => (p as any).dispute_event_id).filter(Boolean))];
+      const stripeDisputeEvents = new Set<string>();
+      if (disputeEventIds.length > 0) {
+        const { data: disputeRows } = await supabase
+          .from('dispute_events')
+          .select('id, stripe_dispute_id')
+          .in('id', disputeEventIds);
+        for (const d of (disputeRows || [])) {
+          if (d.stripe_dispute_id) stripeDisputeEvents.add(d.id);
+        }
+      }
 
       // Get outcomes for completed packets
       const packetIds = (packets || []).map(p => p.id);
@@ -641,6 +655,7 @@ export const dashboardController = {
         lifecycleStatus: p.lifecycle_status || 'pending_submission',
         created_at: p.created_at,
         outcome: outcomeMap.get(p.id) || null,
+        isStripeDispute: stripeDisputeEvents.has((p as any).dispute_event_id),
       }));
 
       // Summary stats
