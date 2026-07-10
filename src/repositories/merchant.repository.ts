@@ -55,11 +55,15 @@ export const merchantRepository = {
 
   encryptTokenUpdates<T extends Record<string, any>>(updates: T): T {
     const next: Record<string, any> = { ...updates };
-    if (typeof next.ghl_access_token === 'string') {
+    // Empty strings (e.g. INSTALL-webhook merchant stubs created before OAuth
+    // completes) are stored as-is: encrypting '' and nulling the plaintext
+    // column violates the legacy NOT NULL constraint on schemas without
+    // migration 088, and an empty token has nothing worth encrypting.
+    if (typeof next.ghl_access_token === 'string' && next.ghl_access_token) {
       next.ghl_access_token_encrypted = encrypt(next.ghl_access_token);
       next.ghl_access_token = null;
     }
-    if (typeof next.ghl_refresh_token === 'string') {
+    if (typeof next.ghl_refresh_token === 'string' && next.ghl_refresh_token) {
       next.ghl_refresh_token_encrypted = encrypt(next.ghl_refresh_token);
       next.ghl_refresh_token = null;
     }

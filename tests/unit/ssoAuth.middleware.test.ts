@@ -43,8 +43,29 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('ssoAuth agency location selection', () => {
-  it('accepts x-location-id only when it belongs to the authenticated agency', async () => {
+// SECURITY CONTRACT: a merchant session is bound to the sub-account inside the
+// encrypted SSO payload. Agency-context payloads (no locationId) fail closed,
+// and the x-location-id header can NEVER select a location the payload
+// doesn't carry — even one belonging to the same agency.
+describe('ssoAuth location binding', () => {
+  it('binds the session to the payload locationId, ignoring x-location-id', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc_1',
+      companyId: 'comp_1',
+      userId: 'user_1',
+    });
+
+    const res = await request(app())
+      .get('/protected')
+      .set('x-sso-payload', 'encrypted')
+      .set('x-location-id', 'loc_other');
+
+    expect(res.status).toBe(200);
+    expect(res.body.locationId).toBe('loc_1');
+    expect(mockFindByLocationId).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for agency-context payloads even with a same-agency x-location-id', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp_1',
       userId: 'user_1',
@@ -59,27 +80,22 @@ describe('ssoAuth agency location selection', () => {
       .set('x-sso-payload', 'encrypted')
       .set('x-location-id', 'loc_1');
 
-    expect(res.status).toBe(200);
-    expect(res.body.locationId).toBe('loc_1');
-    expect(mockFindByLocationId).toHaveBeenCalledWith('loc_1');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/sub-account/i);
+    expect(mockFindByLocationId).not.toHaveBeenCalled();
   });
 
-  it('rejects x-location-id for a different agency', async () => {
+  it('fails closed for agency-context payloads with no header at all', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp_1',
       userId: 'user_1',
     });
-    mockFindByLocationId.mockResolvedValue({
-      location_id: 'loc_2',
-      company_id: 'comp_2',
-    });
 
     const res = await request(app())
       .get('/protected')
-      .set('x-sso-payload', 'encrypted')
-      .set('x-location-id', 'loc_2');
+      .set('x-sso-payload', 'encrypted');
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toMatch(/not available/i);
+    expect(res.body.message).toMatch(/sub-account/i);
   });
 });

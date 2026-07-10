@@ -5,6 +5,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — GHL install fix + fail-closed SSO (2026-07-09)
+
+> **Deploy ordering:** migration `088_merchant_token_columns_nullable.sql` must be applied in
+> Supabase for new merchant installs to succeed (root cause of the INTERNAL_ERROR install
+> failure: `encryptTokenUpdates` nulls the plaintext token columns, but migration 068 never
+> dropped 001's NOT NULL on them — every new-merchant insert since the encryption change
+> failed with 23502).
+
+### Fixed (Marketplace install)
+- **Migration 088**: `merchants.ghl_access_token` / `ghl_refresh_token` are now nullable
+  (encrypted columns are canonical; plaintext kept for legacy reads).
+- `encryptTokenUpdates` no longer encrypts empty-string tokens (INSTALL-webhook stubs stay
+  valid on pre-088 schemas).
+- **Per-target isolation in the OAuth callback:** one sub-account's DB failure no longer
+  aborts the whole multi-location install; the response reports installed vs failed
+  locations, and step-tagged logging identifies the failing location and step.
+
+### Added (install architecture)
+- **GHL Marketplace INSTALL/UNINSTALL webhook handling** on the default `/ghl` route
+  (previously logged as "Unhandled"): per-location INSTALL upserts a merchant row
+  (token-less stub until OAuth supplies tokens; reactivates uninstalled merchants),
+  UNINSTALL marks the merchant uninstalled. Makes installs visible to ScaleSafe even when
+  the OAuth callback fails, and scales to bulk agency installs.
+
+### Security (fail-closed SSO — merchant sessions are single-location)
+- **Removed the merchant-facing "Choose Sub-Account" screen.** A merchant session is bound
+  to exactly one GHL sub-account. Agency-context launches (SSO payload without a
+  locationId) now fail closed with a clear "open ScaleSafe from the sub-account" screen —
+  no chooser, no single-merchant auto-pick, and `selectedLocationId` is no longer accepted.
+- `ssoAuth` no longer lets an agency-context payload select a company location via the
+  `x-location-id` header; sessions bind only to the payload's own locationId. Cross-merchant
+  access remains exclusive to the HQ admin console (separate admin auth).
+
+---
+
 ## Unreleased — Pulse merchant alerting (2026-07-08)
 
 ### Added

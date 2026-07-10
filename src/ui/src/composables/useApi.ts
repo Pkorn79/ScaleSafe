@@ -10,13 +10,9 @@ interface SsoSession {
   userName: string;
   ready: boolean;
   error: string | null;
-  locationOptions: Array<{
-    locationId: string;
-    name: string;
-    status?: string;
-    snapshotStatus?: string;
-  }>;
-  selectingLocation: boolean;
+  /** True when GHL launched ScaleSafe from agency context (no sub-account).
+   *  The app fails closed — there is deliberately NO sub-account chooser. */
+  agencyContext: boolean;
 }
 
 const ssoSession = reactive<SsoSession>({
@@ -28,8 +24,7 @@ const ssoSession = reactive<SsoSession>({
   userName: '',
   ready: false,
   error: null,
-  locationOptions: [],
-  selectingLocation: false,
+  agencyContext: false,
 });
 
 let ssoInitPromise: Promise<void> | null = null;
@@ -74,7 +69,7 @@ function applySsoData(data: any): void {
   ssoSession.role = data.role;
   ssoSession.userName = data.userName;
   ssoSession.error = null;
-  ssoSession.locationOptions = [];
+  ssoSession.agencyContext = false;
   ssoSession.ready = true;
 
   sessionStorage.setItem('ss_location_id', data.locationId);
@@ -82,22 +77,20 @@ function applySsoData(data: any): void {
   sessionStorage.setItem('ss_user_id', data.userId || '');
 }
 
-async function completeSsoHandshake(encryptedPayload: string, selectedLocationId?: string): Promise<void> {
+async function completeSsoHandshake(encryptedPayload: string): Promise<void> {
   const res = await fetch('/auth/sso', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      payload: encryptedPayload,
-      ...(selectedLocationId ? { selectedLocationId } : {}),
-    }),
+    body: JSON.stringify({ payload: encryptedPayload }),
   });
 
   const body = await res.json().catch(() => ({}));
 
-  if (res.status === 409 && body.error === 'MULTIPLE_LOCATIONS') {
-    ssoSession.companyId = body.companyId || '';
-    ssoSession.locationOptions = Array.isArray(body.locations) ? body.locations : [];
-    ssoSession.error = null;
+  // Agency-context launch: fail closed. A merchant session is bound to one
+  // sub-account — no chooser, by design.
+  if (res.status === 403 && body.error === 'AGENCY_CONTEXT') {
+    ssoSession.agencyContext = true;
+    ssoSession.error = body.message || 'Open ScaleSafe from the sub-account you want to manage.';
     ssoSession.ready = true;
     return;
   }
@@ -206,24 +199,6 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
-async function selectSsoLocation(locationId: string): Promise<void> {
-  const encryptedPayload = sessionStorage.getItem('ss_sso_payload');
-  if (!encryptedPayload) {
-    ssoSession.error = 'Missing GHL SSO payload. Reload ScaleSafe from GoHighLevel.';
-    return;
-  }
-
-  ssoSession.selectingLocation = true;
-  ssoSession.error = null;
-  try {
-    await completeSsoHandshake(encryptedPayload, locationId);
-  } catch (err: any) {
-    ssoSession.error = err.message || 'Could not open that ScaleSafe location.';
-  } finally {
-    ssoSession.selectingLocation = false;
-  }
-}
-
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   // Wait for SSO to complete before making any API call
   await initSso();
@@ -329,4 +304,4 @@ export function useApi() {
   return { loading, error, get, post, put, patch, del, ssoSession, selectSsoLocation };
 }
 
-export { ssoSession, initSso, selectSsoLocation };
+export { ssoSession, initSso };

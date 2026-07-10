@@ -52,6 +52,18 @@ jest.mock('../../src/repositories/trigger.repository', () => ({
   },
 }));
 
+const mockMerchantFindByLocationId = jest.fn();
+const mockMerchantCreate = jest.fn();
+const mockMerchantUpdate = jest.fn();
+
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    findByLocationId: (...args: any[]) => mockMerchantFindByLocationId(...args),
+    create: (...args: any[]) => mockMerchantCreate(...args),
+    update: (...args: any[]) => mockMerchantUpdate(...args),
+  },
+}));
+
 jest.mock('../../src/services/phase2Enrollment.service', () => ({
   phase2EnrollmentService: {
     completeEnrollment: (...args: any[]) => mockCompleteEnrollment(...args),
@@ -352,6 +364,91 @@ describe('Webhook Controller - ghlPayment', () => {
     await webhookController.ghlPayment(req, res, jest.fn());
 
     expect(res.json).toHaveBeenCalledWith({ status: 'ok', skipped: true });
+  });
+});
+
+describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
+  test('per-location INSTALL creates a merchant stub when none exists', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue(null);
+    mockMerchantCreate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'INSTALL',
+      appId: 'app_1',
+      installType: 'Location',
+      locationId: 'loc_new',
+      companyId: 'comp_1',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location_id: 'loc_new',
+        company_id: 'comp_1',
+        ghl_access_token: '',
+        ghl_refresh_token: '',
+      }),
+    );
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('per-location INSTALL reactivates an existing merchant', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_new', company_id: 'comp_1', status: 'uninstalled' });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'INSTALL',
+      locationId: 'loc_new',
+      companyId: 'comp_1',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantCreate).not.toHaveBeenCalled();
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_new', expect.objectContaining({ status: 'active' }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('company-level INSTALL (no locationId) is acknowledged without creating rows', async () => {
+    const { req, res, next } = mockReqRes({
+      type: 'INSTALL',
+      installType: 'Company',
+      companyId: 'comp_1',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantCreate).not.toHaveBeenCalled();
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('UNINSTALL marks the merchant uninstalled', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active' });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      locationId: 'loc_gone',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_gone', { status: 'uninstalled' });
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('a DB failure is logged but still acknowledged (GHL retries cannot fix it)', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue(null);
+    mockMerchantCreate.mockRejectedValue(new Error('db down'));
+    const { req, res, next } = mockReqRes({
+      type: 'INSTALL',
+      locationId: 'loc_new',
+      companyId: 'comp_1',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
   });
 });
 

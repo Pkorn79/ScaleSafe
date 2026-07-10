@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ssoSession, selectSsoLocation } from './composables/useApi';
+import { ssoSession } from './composables/useApi';
 import ToastContainer from './components/ToastContainer.vue';
 import {
   LayoutDashboard, Package, Users, CreditCard,
@@ -16,31 +16,26 @@ import {
     </div>
   </div>
 
-  <!-- Agency-level launch - choose which installed sub-account to open -->
+  <!-- Agency-level launch: fail closed. A merchant session is bound to exactly
+       one sub-account — there is deliberately no sub-account chooser here. -->
   <div
-    v-else-if="!ssoSession.locationId && ssoSession.locationOptions.length > 0"
+    v-else-if="ssoSession.agencyContext"
     class="flex items-center justify-center min-h-screen bg-slate-50 p-6"
   >
-    <div class="bg-white rounded-xl p-10 max-w-lg w-full shadow-sm">
-      <h1 class="text-xl font-semibold text-slate-900 mb-2">Choose Sub-Account</h1>
+    <div class="bg-white rounded-xl p-10 max-w-lg w-full shadow-sm text-center">
+      <div class="w-12 h-12 rounded-full bg-amber-50 text-amber-600 text-2xl font-bold flex items-center justify-center mx-auto mb-4">!</div>
+      <h1 class="text-xl font-semibold text-slate-900 mb-2">Open ScaleSafe from a Sub-Account</h1>
       <p class="text-slate-500 text-sm leading-relaxed mb-5">
-        GoHighLevel opened ScaleSafe from the agency view instead of a specific sub-account. Choose the account you intended to open.
+        GoHighLevel opened ScaleSafe from the agency view. ScaleSafe works inside one
+        sub-account at a time.
       </p>
-      <div class="space-y-2">
-        <button
-          v-for="location in ssoSession.locationOptions"
-          :key="location.locationId"
-          type="button"
-          class="w-full text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-ss-primary-500 hover:bg-ss-primary-50 disabled:opacity-60"
-          :disabled="ssoSession.selectingLocation"
-          @click="selectSsoLocation(location.locationId)"
-        >
-          <div class="font-semibold text-slate-900">{{ location.name || 'ScaleSafe sub-account' }}</div>
-          <div class="text-xs text-slate-400 mt-1">{{ location.locationId }}</div>
-        </button>
+      <div class="text-left bg-slate-50 rounded-lg p-4 text-sm text-slate-700">
+        <p class="mb-2"><strong>To open ScaleSafe:</strong></p>
+        <ol class="pl-5 space-y-1 list-decimal">
+          <li>In GoHighLevel, use the account switcher to enter the sub-account you want to manage</li>
+          <li>Open <strong>ScaleSafe</strong> from that sub-account's menu</li>
+        </ol>
       </div>
-      <p v-if="ssoSession.selectingLocation" class="text-sm text-slate-500 mt-4">Opening ScaleSafe...</p>
-      <p v-if="ssoSession.error" class="text-sm text-red-600 mt-4">{{ ssoSession.error }}</p>
     </div>
   </div>
 

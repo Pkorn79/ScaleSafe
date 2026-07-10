@@ -12,6 +12,7 @@ import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { ghlActivityService } from '../services/ghl-activity.service';
 import { triggerController } from './trigger.controller';
+import { merchantRepository } from '../repositories/merchant.repository';
 
 function webhookType(body: Record<string, any>): string {
   return String(body.type || body.event_type || body.eventType || body.triggerData?.eventType || '').trim();
@@ -115,6 +116,67 @@ function isGhlActivityWebhook(type: string, body: Record<string, any>): boolean 
 
 export const webhookController = {
   /**
+   * GHL Marketplace app lifecycle events (INSTALL / UNINSTALL).
+   *
+   * These are the authoritative per-location install signal — GHL fires a
+   * company-level INSTALL (no locationId) and then one per sub-account
+   * (locationId + companyId). The OAuth callback still supplies tokens, but
+   * a merchant row is guaranteed here even if the callback fails, so the
+   * install is never invisible to ScaleSafe.
+   */
+  async ghlAppLifecycle(req: Request, res: Response, _next: NextFunction) {
+    const body = req.body || {};
+    const type = webhookType(body);
+    const locationId = String(body.locationId || '').trim();
+    const companyId = String(body.companyId || '').trim();
+
+    try {
+      if (type === 'INSTALL') {
+        if (!locationId) {
+          logger.info({ companyId }, 'GHL app INSTALL (company-level) received; per-location events follow');
+          res.json({ received: true });
+          return;
+        }
+        const existing = await merchantRepository.findByLocationId(locationId);
+        if (existing) {
+          await merchantRepository.update(locationId, {
+            company_id: companyId || existing.company_id,
+            status: 'active',
+          } as any);
+          logger.info({ locationId, companyId }, 'GHL app INSTALL: existing merchant reactivated');
+        } else {
+          // Token-less stub — the OAuth callback (or a location-token mint)
+          // fills tokens; provisioning waits until tokens exist.
+          await merchantRepository.create({
+            location_id: locationId,
+            company_id: companyId || undefined,
+            ghl_access_token: '',
+            ghl_refresh_token: '',
+          });
+          logger.info({ locationId, companyId }, 'GHL app INSTALL: merchant stub created (tokens pending OAuth)');
+        }
+      } else if (type === 'UNINSTALL' && locationId) {
+        const existing = await merchantRepository.findByLocationId(locationId);
+        if (existing) {
+          await merchantRepository.update(locationId, { status: 'uninstalled' } as any);
+          logger.info({ locationId }, 'GHL app UNINSTALL: merchant marked uninstalled');
+        } else {
+          logger.info({ locationId }, 'GHL app UNINSTALL for unknown location — ignored');
+        }
+      }
+      res.json({ received: true });
+    } catch (err: any) {
+      // Log loudly but always 200 — GHL retrying a failing lifecycle webhook
+      // can't fix a DB problem, and the OAuth callback reconciles state anyway.
+      logger.error(
+        { err: err?.message || String(err), code: err?.code, type, locationId, companyId },
+        'GHL app lifecycle webhook handling failed',
+      );
+      res.json({ received: true });
+    }
+  },
+
+  /**
    * POST /webhooks/ghl
    * Default HighLevel Marketplace webhook URL. HighLevel allows custom URLs
    * per event, but this default route must accept and route mixed event types.
@@ -135,6 +197,11 @@ export const webhookController = {
 
     if (isGhlActivityWebhook(type, body)) {
       await webhookController.ghlActivity(req, res, next);
+      return;
+    }
+
+    if (type === 'INSTALL' || type === 'UNINSTALL') {
+      await webhookController.ghlAppLifecycle(req, res, next);
       return;
     }
 

@@ -229,6 +229,42 @@ describe('GET /auth/callback', () => {
     );
   });
 
+  it('one failing sub-account does not abort the install for the others', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue({
+      ...BASE_TOKEN_RESPONSE,
+      locationId: '',
+      installedLocations: [
+        { locationId: 'loc-bad', name: 'Broken Account' },
+        { locationId: 'loc-good', name: 'Good Account' },
+      ],
+    });
+    mockFindByLocationId.mockResolvedValue(null);
+    mockCreate
+      .mockRejectedValueOnce(Object.assign(new Error('null value in column "ghl_access_token" violates not-null constraint'), { code: '23502' }))
+      .mockResolvedValueOnce({});
+
+    const res = await request(app).get('/auth/callback?code=agency-code');
+
+    expect(res.status).toBe(200);
+    expect(res.body.locations).toEqual(['loc-good']);
+    expect(res.body.failed).toEqual(['loc-bad']);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 500 when every sub-account fails to install', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue({
+      ...BASE_TOKEN_RESPONSE,
+      locationId: '',
+      installedLocations: [{ locationId: 'loc-bad', name: 'Broken Account' }],
+    });
+    mockFindByLocationId.mockResolvedValue(null);
+    mockCreate.mockRejectedValue(new Error('database exploded'));
+
+    const res = await request(app).get('/auth/callback?code=agency-code');
+
+    expect(res.status).toBe(500);
+  });
+
   it('does not expose OAuth debug info in production', async () => {
     (testConfig as any).isProd = true;
     mockExchangeCodeForTokens.mockResolvedValue({
@@ -317,23 +353,28 @@ describe('POST /auth/sso', () => {
     expect(res.body.locationId).toBe('loc-snake');
   });
 
-  it('falls back to companyId lookup when no locationId in SSO', async () => {
+  // SECURITY CONTRACT: agency-context launches (no locationId in the SSO
+  // payload) fail closed. No sub-account chooser, no single-merchant
+  // auto-pick, and a client-supplied selectedLocationId is never honored.
+
+  it('fails closed (403 AGENCY_CONTEXT) when SSO has no locationId — even with a single installed location', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp-xyz',
       userId: 'user-1',
       email: 'philip@test.com',
     });
-    mockFindByLocationId.mockResolvedValue(null); // won't be called with empty string
-    mockFindAllByCompanyId.mockResolvedValue([MERCHANT_RECORD]); // single location = safe
+    mockFindAllByCompanyId.mockResolvedValue([MERCHANT_RECORD]);
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.locationId).toBe('loc-abc'); // resolved from merchant record
-    expect(mockFindAllByCompanyId).toHaveBeenCalledWith('comp-xyz');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('AGENCY_CONTEXT');
+    expect(res.body.message).toMatch(/sub-account/i);
+    expect(res.body.locations).toBeUndefined();
+    expect(mockFindAllByCompanyId).not.toHaveBeenCalled();
   });
 
-  it('returns location choices when agency SSO has multiple installed locations', async () => {
+  it('fails closed for agencies with multiple installed locations — no chooser payload', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp-xyz',
       userId: 'user-1',
@@ -346,15 +387,13 @@ describe('POST /auth/sso', () => {
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('MULTIPLE_LOCATIONS');
-    expect(res.body.locations).toEqual([
-      expect.objectContaining({ locationId: 'loc-abc', name: 'Account A' }),
-      expect.objectContaining({ locationId: 'loc-def', name: 'Account B' }),
-    ]);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('AGENCY_CONTEXT');
+    expect(res.body.locations).toBeUndefined();
+    expect(mockFindAllByCompanyId).not.toHaveBeenCalled();
   });
 
-  it('uses selectedLocationId when agency SSO selects an installed location', async () => {
+  it('ignores a client-supplied selectedLocationId — agency context cannot select a sub-account', async () => {
     mockDecryptSsoPayload.mockReturnValue({
       companyId: 'comp-xyz',
       userId: 'user-1',
@@ -366,33 +405,18 @@ describe('POST /auth/sso', () => {
       .post('/auth/sso')
       .send({ payload: 'encrypted-data', selectedLocationId: 'loc-abc' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.locationId).toBe('loc-abc');
-    expect(mockFindByLocationId).toHaveBeenCalledWith('loc-abc');
-    expect(mockFindAllByCompanyId).not.toHaveBeenCalled();
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('AGENCY_CONTEXT');
+    expect(mockFindByLocationId).not.toHaveBeenCalled();
   });
 
-  it('rejects selectedLocationId when it belongs to another agency', async () => {
+  it('returns 401 when no merchant exists for the sub-account in the payload', async () => {
     mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-not-installed',
       companyId: 'comp-xyz',
       userId: 'user-1',
     });
-    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, company_id: 'comp-other' });
-
-    const res = await request(app)
-      .post('/auth/sso')
-      .send({ payload: 'encrypted-data', selectedLocationId: 'loc-abc' });
-
-    expect(res.status).toBe(401);
-    expect(res.body.message).toMatch(/not available/i);
-  });
-
-  it('returns 401 when no merchant found by locationId or companyId', async () => {
-    mockDecryptSsoPayload.mockReturnValue({
-      companyId: 'comp-unknown',
-      userId: 'user-1',
-    });
-    mockFindAllByCompanyId.mockResolvedValue([]); // no merchants for company
+    mockFindByLocationId.mockResolvedValue(null);
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 

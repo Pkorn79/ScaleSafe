@@ -12,22 +12,6 @@ import { extractGhlSsoContext } from '../utils/ghl-sso-context';
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
 
-function locationOption(merchant: any) {
-  const name = merchant.dba_name || merchant.business_name || merchant.location_id;
-  return {
-    locationId: merchant.location_id,
-    name,
-    status: merchant.status || '',
-    snapshotStatus: merchant.snapshot_status || '',
-  };
-}
-
-function selectedLocationId(req: Request): string {
-  const body = req.body || {};
-  const raw = body.selectedLocationId || body.locationId || body.location_id;
-  return typeof raw === 'string' ? raw.trim() : '';
-}
-
 function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
   if (config.isProd || !debug) return undefined;
   return debug;
@@ -102,38 +86,57 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     if (!locationId || targets.length > 1) {
       const provisionTargets: string[] = [];
+      const installedTargets: string[] = [];
+      const failedTargets: Array<{ locationId: string; error: string }> = [];
 
+      // Each target is isolated: one location's DB failure must never abort the
+      // install for the others (a single bad row previously turned the entire
+      // callback into INTERNAL_ERROR after some merchants were already created).
       for (const target of targets) {
         const targetLocationId = target.locationId;
-        const existing = await merchantRepository.findByLocationId(targetLocationId);
+        try {
+          const existing = await merchantRepository.findByLocationId(targetLocationId);
 
-        if (existing) {
-          await merchantRepository.update(targetLocationId, {
-            company_id: companyId || existing.company_id,
-            ghl_access_token: accessToken,
-            ghl_refresh_token: refreshToken,
-            ghl_token_expires_at: expiresAt.toISOString(),
-            ghl_scopes: scopes.join(' '),
-            business_name: existing.business_name || target.name || undefined,
-            status: 'active',
-          } as any);
-          logger.info({ locationId: targetLocationId }, 'Existing merchant re-authenticated');
-          if (existing.snapshot_status !== 'installed') {
+          if (existing) {
+            await merchantRepository.update(targetLocationId, {
+              company_id: companyId || existing.company_id,
+              ghl_access_token: accessToken,
+              ghl_refresh_token: refreshToken,
+              ghl_token_expires_at: expiresAt.toISOString(),
+              ghl_scopes: scopes.join(' '),
+              business_name: existing.business_name || target.name || undefined,
+              status: 'active',
+            } as any);
+            logger.info({ locationId: targetLocationId }, 'Existing merchant re-authenticated');
+            if (existing.snapshot_status !== 'installed') {
+              provisionTargets.push(targetLocationId);
+            }
+          } else {
+            await merchantRepository.create({
+              location_id: targetLocationId,
+              company_id: companyId,
+              ghl_access_token: accessToken,
+              ghl_refresh_token: refreshToken,
+              ghl_token_expires_at: expiresAt.toISOString(),
+              ghl_scopes: scopes.join(' '),
+              business_name: target.name,
+            });
+            logger.info({ locationId: targetLocationId }, 'New merchant provisioned');
             provisionTargets.push(targetLocationId);
           }
-        } else {
-          await merchantRepository.create({
-            location_id: targetLocationId,
-            company_id: companyId,
-            ghl_access_token: accessToken,
-            ghl_refresh_token: refreshToken,
-            ghl_token_expires_at: expiresAt.toISOString(),
-            ghl_scopes: scopes.join(' '),
-            business_name: target.name,
-          });
-          logger.info({ locationId: targetLocationId }, 'New merchant provisioned');
-          provisionTargets.push(targetLocationId);
+          installedTargets.push(targetLocationId);
+        } catch (targetErr: any) {
+          failedTargets.push({ locationId: targetLocationId, error: targetErr?.message || String(targetErr) });
+          logger.error(
+            { err: targetErr?.message || String(targetErr), code: targetErr?.code, locationId: targetLocationId, step: 'merchant_upsert' },
+            'Install failed for sub-account during OAuth callback',
+          );
         }
+      }
+
+      if (installedTargets.length === 0) {
+        // Every target failed — surface the first real error to the handler.
+        throw new Error(`ScaleSafe install failed for all sub-accounts: ${failedTargets[0]?.error || 'unknown error'}`);
       }
 
       for (const targetLocationId of provisionTargets) {
@@ -144,9 +147,12 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
       res.json({
         success: true,
-        message: 'ScaleSafe installed successfully for connected sub-accounts',
-        locationId: targets[0].locationId,
-        locations: targets.map((target) => target.locationId),
+        message: failedTargets.length
+          ? 'ScaleSafe installed for some sub-accounts; others failed — see failed list'
+          : 'ScaleSafe installed successfully for connected sub-accounts',
+        locationId: installedTargets[0],
+        locations: installedTargets,
+        ...(failedTargets.length ? { failed: failedTargets.map((f) => f.locationId) } : {}),
       });
       return;
     }
@@ -194,15 +200,16 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
  * Decrypts the GHL SSO payload sent by the frontend via postMessage handshake.
  * Returns decrypted user/location context for the Vue app to use in subsequent API calls.
  *
- * GHL may send locationId under different field names depending on whether the user
- * is accessing from a sub-account or agency level. When only companyId is present,
- * we look up the merchant by company_id instead.
+ * SECURITY: a merchant session is scoped to exactly one GHL sub-account. An
+ * agency-context launch (payload without a locationId) FAILS CLOSED — no
+ * sub-account chooser, no single-merchant auto-pick. Cross-merchant selection
+ * exists only in the ScaleSafe HQ admin console behind admin auth, never
+ * behind GHL merchant SSO.
  */
 router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { payload } = req.body;
     if (!payload) throw new ValidationError('Missing SSO payload');
-    const requestedLocationId = selectedLocationId(req);
 
     const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
     const ssoContext = extractGhlSsoContext(userData);
@@ -220,44 +227,17 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
 
     const { locationId, companyId } = ssoContext;
 
-    // Find merchant — try locationId first, fall back to a validated agency selection.
-    let merchant = locationId ? await merchantRepository.findByLocationId(locationId) : null;
-
-    if (!merchant && companyId && requestedLocationId) {
-      const selected = await merchantRepository.findByLocationId(requestedLocationId);
-      if (!selected || selected.company_id !== companyId) {
-        logger.warn(
-          { companyId, requestedLocationId, found: !!selected },
-          'SSO: selected location is not installed for this company',
-        );
-        throw new AuthenticationError('Selected ScaleSafe location is not available for this agency.');
-      }
-      merchant = selected;
-      logger.info({ locationId: merchant.location_id }, 'SSO: agency user selected installed location');
+    if (!locationId) {
+      logger.warn({ hasCompanyId: !!companyId }, 'SSO: agency-context launch without a sub-account — failing closed');
+      res.status(403).json({
+        error: 'AGENCY_CONTEXT',
+        message: 'ScaleSafe must be opened from the sub-account you want to manage. '
+          + 'In GoHighLevel, switch into that sub-account and open ScaleSafe from there.',
+      });
+      return;
     }
 
-    if (!merchant && companyId) {
-      logger.info('No merchant found by locationId, trying companyId lookup');
-      const companyMerchants = await merchantRepository.findAllByCompanyId(companyId);
-      if (companyMerchants.length === 1) {
-        merchant = companyMerchants[0];
-        logger.info('Single merchant found for company');
-      } else if (companyMerchants.length > 1) {
-        logger.info(
-          { count: companyMerchants.length },
-          'SSO: multiple locations for company — returning location choices',
-        );
-        res.status(409).json({
-          error: 'MULTIPLE_LOCATIONS',
-          message: 'Multiple ScaleSafe installs were found for this agency. Select the sub-account to open.',
-          companyId,
-          locations: companyMerchants
-            .filter((m: any) => m?.location_id)
-            .map(locationOption),
-        });
-        return;
-      }
-    }
+    const merchant = await merchantRepository.findByLocationId(locationId);
 
     if (!merchant) {
       logger.error({ hasLocationId: !!locationId, hasCompanyId: !!companyId }, 'SSO: no merchant found');
