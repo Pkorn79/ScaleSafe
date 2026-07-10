@@ -16,6 +16,15 @@ function optional(key: string, fallback: string): string {
 
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
+const ghlClientId = required('GHL_APP_CLIENT_ID');
+
+function deriveGhlAppId(clientId: string): string {
+  const explicit = process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '';
+  if (explicit) return explicit;
+
+  const prefix = clientId.split('-')[0];
+  return /^[a-f0-9]{24}$/i.test(prefix) ? prefix : '';
+}
 
 function failIfProductionFlagEnabled(key: string): void {
   if (isProd && process.env[key] === 'true') {
@@ -37,10 +46,10 @@ if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
 export const config = {
   // GHL Marketplace App
   ghl: {
-    clientId: required('GHL_APP_CLIENT_ID'),
+    clientId: ghlClientId,
     clientSecret: required('GHL_APP_CLIENT_SECRET'),
     ssoKey: required('GHL_APP_SSO_KEY'),
-    appId: process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '',
+    appId: deriveGhlAppId(ghlClientId),
     apiDomain: optional('GHL_API_DOMAIN', 'https://services.leadconnectorhq.com'),
   },
 

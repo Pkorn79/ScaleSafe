@@ -91,10 +91,10 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       logger.error({
         debug: config.isDev ? _debug : undefined,
         hasCompany: !!companyId,
-      }, 'GHL token response missing locationId');
+      }, 'GHL OAuth callback did not resolve any installed sub-accounts');
       res.status(400).json({
         error: 'VALIDATION_ERROR',
-        message: 'GHL token response missing locationId — cannot provision merchant',
+        message: 'GHL did not return any installed sub-accounts for this ScaleSafe app install. Confirm the Marketplace app ID and retry the install.',
         debug: oauthDebugResponse(_debug),
       });
       return;

@@ -27,9 +27,12 @@ jest.mock('../../src/utils/logger', () => ({
 
 // Must import after mocks are set up
 import { exchangeCodeForTokens } from '../../src/clients/ghl.client';
+import { config as testConfig } from '../../src/config';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (testConfig.ghl as any).clientId = 'test-client-id';
+  (testConfig.ghl as any).appId = 'app-123';
 });
 
 describe('exchangeCodeForTokens', () => {
@@ -124,6 +127,40 @@ describe('exchangeCodeForTokens', () => {
       'https://services.leadconnectorhq.com/oauth/installed-locations',
       expect.objectContaining({
         params: { companyId: 'comp-agency', appId: 'app-123' },
+      }),
+    );
+  });
+
+  it('derives Marketplace appId from GHL clientId when explicit appId env is missing', async () => {
+    (testConfig.ghl as any).clientId = '665c6bb13d4e5364bdec0e2f-mawqjyjd';
+    (testConfig.ghl as any).appId = '';
+
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-agency',
+        refresh_token: 'rt-agency',
+        expires_in: 86400,
+        companyId: 'comp-agency',
+        scope: 'contacts.readonly',
+      },
+    });
+
+    mockedAxios.get.mockResolvedValue({
+      status: 200,
+      data: {
+        locations: [
+          { locationId: 'loc-derived', name: 'Derived App ID Account' },
+        ],
+      },
+    });
+
+    const result = await exchangeCodeForTokens('code-derived-app-id');
+
+    expect(result.locationId).toBe('loc-derived');
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      'https://services.leadconnectorhq.com/oauth/installed-locations',
+      expect.objectContaining({
+        params: { companyId: 'comp-agency', appId: '665c6bb13d4e5364bdec0e2f' },
       }),
     );
   });

@@ -45,6 +45,13 @@ function parseScopeList(value: unknown): string[] {
   return [];
 }
 
+function marketplaceAppId(): string {
+  if (config.ghl.appId) return config.ghl.appId;
+
+  const clientIdPrefix = String(config.ghl.clientId || '').split('-')[0];
+  return /^[a-f0-9]{24}$/i.test(clientIdPrefix) ? clientIdPrefix : '';
+}
+
 interface TokenResponse extends TokenPair {
   locationId: string;
   companyId: string;
@@ -212,7 +219,14 @@ async function resolveInstalledLocationsFromCompany(
     logger.info('No locationId in token response - resolving via installed locations');
 
     const params: Record<string, string> = { companyId };
-    if (config.ghl.appId) params.appId = config.ghl.appId;
+    const appId = marketplaceAppId();
+    if (appId) {
+      params.appId = appId;
+      debug.hasAppId = true;
+    } else {
+      debug.missingAppId = true;
+      logger.warn('GHL Marketplace appId is unavailable for installed-locations lookup');
+    }
 
     const res = await axios.get(`${config.ghl.apiDomain}/oauth/installed-locations`, {
       headers: {
@@ -405,7 +419,7 @@ async function refreshLocationToken(
  * This is required for Agency-level installs to access location-level endpoints
  * (custom fields, custom values, contacts, etc.).
  *
- * POST /oauth/locationToken
+ * POST /oauth/location-token
  * Body: { companyId, locationId }
  * Auth: Bearer <company_access_token>
  */
@@ -416,17 +430,32 @@ async function getLocationToken(
 ): Promise<TokenPair> {
   logger.info('Exchanging company token for location token');
 
-  const res = await axios.post(
-    `${config.ghl.apiDomain}/oauth/locationToken`,
-    { companyId, locationId },
-    {
-      headers: {
-        Authorization: `Bearer ${companyAccessToken}`,
-        Version: '2021-07-28',
-        Accept: 'application/json',
-      },
+  const requestConfig = {
+    headers: {
+      Authorization: `Bearer ${companyAccessToken}`,
+      Version: '2021-07-28',
+      Accept: 'application/json',
     },
-  );
+  };
+
+  let res;
+  try {
+    res = await axios.post(
+      `${config.ghl.apiDomain}/oauth/location-token`,
+      { companyId, locationId },
+      requestConfig,
+    );
+  } catch (err: any) {
+    const status = err.response?.status;
+    if (status !== 404 && status !== 405) throw err;
+
+    logger.warn({ status }, 'GHL location-token endpoint unavailable; retrying legacy locationToken endpoint');
+    res = await axios.post(
+      `${config.ghl.apiDomain}/oauth/locationToken`,
+      { companyId, locationId },
+      requestConfig,
+    );
+  }
 
   const data = res.data;
   logger.info({

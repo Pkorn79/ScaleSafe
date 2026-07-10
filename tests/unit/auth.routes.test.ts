@@ -179,7 +179,7 @@ describe('GET /auth/callback', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('returns 400 with debug info when GHL response has no locationId', async () => {
+  it('returns 400 with debug info when GHL returns no installed sub-account', async () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
@@ -190,7 +190,7 @@ describe('GET /auth/callback', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('VALIDATION_ERROR');
-    expect(res.body.message).toMatch(/missing locationId/);
+    expect(res.body.message).toMatch(/did not return any installed sub-accounts/);
     expect(res.body.debug).toBeDefined();
     expect(res.body.debug.hadLocationId).toBe(false);
   });
