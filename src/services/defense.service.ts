@@ -12,6 +12,7 @@ import { disputeScopeService, type DisputeScope } from './dispute-scope.service'
 import { defenseReadinessService, evaluateReviewState } from './defense-readiness.service';
 import { offerRepository } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
+import { ValidationError, ConflictError, ExternalServiceError } from '../utils/errors';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 // Reason-code → network/category/deadline resolution lives in the registry.
@@ -979,7 +980,247 @@ LETTER STRUCTURE:
   },
 
   /**
+   * Auto-prepare a defense packet for a Stripe dispute (webhook path and
+   * on-demand "Prepare defense" from the dispute queue). NEVER auto-submits —
+   * the packet lands in the normal review flow with all needs_review gates.
+   * Returns null when the dispute can't be tied to a ScaleSafe contact
+   * (we refuse to guess; the merchant prepares manually from the queue).
+   */
+  async prepareForStripeDispute(params: { merchant: any; stripeDispute: any }): Promise<string | null> {
+    const supabase = getSupabase();
+    const { merchant, stripeDispute } = params;
+
+    const { data: disputeEvent } = await supabase
+      .from('dispute_events')
+      .select('*')
+      .eq('stripe_dispute_id', stripeDispute.id)
+      .eq('merchant_id', merchant.id)
+      .maybeSingle();
+    if (!disputeEvent) {
+      throw new Error(`No dispute_events row for Stripe dispute ${stripeDispute.id}`);
+    }
+
+    // Idempotent: one packet per dispute
+    const { data: existingPacket } = await supabase
+      .from('defense_packets')
+      .select('id')
+      .eq('dispute_event_id', disputeEvent.id)
+      .limit(1)
+      .maybeSingle();
+    if (existingPacket?.id) {
+      logger.info({ defenseId: existingPacket.id, stripeDisputeId: stripeDispute.id }, 'Defense packet already exists for dispute — skipping auto-prepare');
+      return existingPacket.id;
+    }
+
+    // Resolve the disputed transaction → contact/enrollment. We only trust an
+    // exact payment_events match on the PaymentIntent; no match = no guessing.
+    const paymentIntentId = typeof stripeDispute.payment_intent === 'string'
+      ? stripeDispute.payment_intent
+      : stripeDispute.payment_intent?.id || null;
+    let paymentEvent: any = null;
+    if (paymentIntentId) {
+      const { data } = await supabase
+        .from('payment_events')
+        .select('id, contact_id, enrollment_id')
+        .eq('location_id', merchant.location_id)
+        .eq('processor', 'stripe')
+        .eq('processor_transaction_id', paymentIntentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      paymentEvent = data || null;
+    }
+    if (!paymentEvent?.contact_id) {
+      logger.warn(
+        { stripeDisputeId: stripeDispute.id, paymentIntentId },
+        'Stripe dispute could not be matched to a ScaleSafe contact — auto-prepare skipped (merchant can prepare manually)',
+      );
+      return null;
+    }
+
+    // Enrich the dispute row so the queue shows who it belongs to
+    await supabase.from('dispute_events').update({
+      contact_id: paymentEvent.contact_id,
+      payment_event_id: paymentEvent.id,
+    }).eq('id', disputeEvent.id);
+
+    // Offer comes from the enrollment when we have one
+    let offerId: string | undefined;
+    if (paymentEvent.enrollment_id) {
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('offer_id')
+        .eq('id', paymentEvent.enrollment_id)
+        .maybeSingle();
+      offerId = enr?.offer_id || undefined;
+    }
+
+    // Prefer the card network's reason code (e.g. 10.4/13.1) over Stripe's
+    // coarse reason string. An unrecognized code flows into the unknown-reason
+    // needs_review gate downstream — never silently defaulted.
+    const reasonCode = stripeDispute.payment_method_details?.card?.network_reason_code
+      || stripeDispute.reason
+      || 'unknown';
+
+    const disputeDate = stripeDispute.created
+      ? new Date(stripeDispute.created * 1000).toISOString()
+      : new Date().toISOString();
+    const deadline = disputeEvent.evidence_due_by
+      || (stripeDispute.evidence_details?.due_by
+        ? new Date(stripeDispute.evidence_details.due_by * 1000).toISOString()
+        : new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString());
+
+    return this.compileDefense({
+      locationId: merchant.location_id,
+      contactId: paymentEvent.contact_id,
+      offerId,
+      reasonCode,
+      disputeAmount: Number(disputeEvent.amount || (stripeDispute.amount || 0) / 100),
+      disputeDate,
+      deadline,
+      caseNumber: stripeDispute.id,
+      disputeEventId: disputeEvent.id,
+      processor: 'stripe',
+      paymentEventId: paymentEvent.id,
+      enrollmentId: paymentEvent.enrollment_id || undefined,
+    });
+  },
+
+  /**
+   * Push a Stripe-rail packet's evidence to Stripe (Disputes API) with hard
+   * safeguards. Throws on any gate failure — markSubmitted must NOT mark the
+   * packet submitted locally when the Stripe push fails.
+   *
+   * Gates (SECURITY/INTEGRITY — do not relax):
+   *  - idempotent: refuses when evidence was already submitted for the dispute
+   *  - scope: refuses packets not linked to a specific enrollment (never
+   *    submit contact-wide evidence to Stripe)
+   *  - letter: refuses when the current letter is the automatic fallback draft
+   */
+  async submitPacketEvidenceToStripe(packet: any, disputeEvent: any): Promise<void> {
+    const supabase = getSupabase();
+    const { stripeDisputeService } = require('./stripe-dispute.service');
+
+    if (disputeEvent.evidence_submitted) {
+      throw new ConflictError('Evidence for this dispute has already been submitted to Stripe.');
+    }
+    if (!packet.enrollment_id) {
+      throw new ValidationError(
+        'This packet is not linked to a specific program/transaction. ScaleSafe will not submit '
+        + 'contact-wide evidence to Stripe — regenerate the packet with the disputed transaction selected.',
+      );
+    }
+    const { data: latestVersion } = await supabase
+      .from('defense_letter_versions')
+      .select('generated_by')
+      .eq('defense_packet_id', packet.id)
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestVersion?.generated_by === 'system') {
+      throw new ValidationError('The current letter is the automatic fallback draft. Regenerate or edit the letter before submitting to Stripe.');
+    }
+
+    const merchant = await merchantRepository.getByLocationId(packet.location_id);
+    if (!(merchant as any)?.stripe_user_id) {
+      throw new ValidationError('No connected Stripe account for this merchant.');
+    }
+
+    // Baseline: vault-assembled evidence for this dispute (non-fatal if unavailable)
+    let evidence: Record<string, string> = {};
+    try {
+      const assembled = await stripeDisputeService.assembleEvidencePacket(
+        disputeEvent.stripe_dispute_id, (merchant as any).id,
+      );
+      evidence = { ...(assembled?.evidence || {}) };
+    } catch (err: any) {
+      logger.warn({ err: err?.message, defenseId: packet.id }, 'Vault evidence assembly failed; submitting packet-scoped evidence only');
+    }
+
+    // Packet-scoped fields take precedence over vault baseline
+    const offer = await this.getOfferContext(packet.location_id, packet.offer_id);
+    if (offer?.offerName || offer?.description) {
+      evidence.product_description = [offer.offerName, offer.description].filter(Boolean).join(' — ').slice(0, 1500);
+    }
+    if (packet.defense_letter_text) {
+      // Stripe caps combined text evidence at 150k chars — leave headroom for other fields.
+      evidence.uncategorized_text = String(packet.defense_letter_text).slice(0, 100000);
+    }
+    try {
+      const api = await ghlApi(packet.location_id);
+      const contactRes = await api.get(`/contacts/${packet.contact_id}`);
+      const contact = contactRes.data.contact || contactRes.data;
+      if (contact?.email) evidence.customer_email_address = contact.email;
+      const clientName = [contact?.firstName, contact?.lastName].filter(Boolean).join(' ');
+      if (clientName) evidence.customer_name = clientName;
+    } catch (err: any) {
+      logger.warn({ err: err?.message, defenseId: packet.id }, 'Contact identity lookup failed for Stripe evidence');
+    }
+    try {
+      const { data: enr } = await supabase
+        .from('enrollments')
+        .select('consent_captured_at, created_at')
+        .eq('id', packet.enrollment_id)
+        .maybeSingle();
+      const serviceDate = enr?.consent_captured_at || enr?.created_at;
+      if (serviceDate) evidence.service_date = String(serviceDate).slice(0, 10);
+    } catch (err: any) {
+      logger.warn({ err: err?.message, defenseId: packet.id }, 'Enrollment date lookup failed for Stripe evidence');
+    }
+
+    // Upload the bundled defense packet PDF (letter + exhibits)
+    if (packet.pdf_storage_path) {
+      const { buffer } = await storageService.downloadPrivateFileWithLegacy(packet.pdf_storage_path);
+      const MAX_EVIDENCE_FILE_BYTES = 4.5 * 1024 * 1024;
+      if (buffer.length > MAX_EVIDENCE_FILE_BYTES) {
+        throw new ValidationError(
+          `The defense packet PDF is ${(buffer.length / 1024 / 1024).toFixed(1)}MB — over Stripe's ~4.5MB evidence limit. `
+          + 'Reduce the exhibit count and rebundle before submitting.',
+        );
+      }
+      const fileId = await stripeDisputeService.uploadDefensePacketFile({
+        merchantStripeAccountId: (merchant as any).stripe_user_id,
+        buffer,
+        filename: `scalesafe-defense-packet-${packet.id}.pdf`,
+      });
+      evidence.uncategorized_file = fileId;
+
+      const { error: fileRecordError } = await supabase.from('dispute_evidence_files').insert({
+        dispute_event_id: disputeEvent.id,
+        merchant_id: (merchant as any).id,
+        stripe_file_id: fileId,
+        file_purpose: 'dispute_evidence',
+        file_type: 'defense_packet_pdf',
+        description: `ScaleSafe defense packet ${packet.id} (letter + exhibits)`,
+      });
+      if (fileRecordError) {
+        logger.warn({ err: fileRecordError.message, defenseId: packet.id }, 'Failed to record dispute evidence file (non-fatal)');
+      }
+    }
+
+    try {
+      await stripeDisputeService.submitEvidence({
+        stripeDisputeId: disputeEvent.stripe_dispute_id,
+        merchantId: (merchant as any).id,
+        evidence,
+        autoSubmit: true,
+        submissionMode: 'manual',
+      });
+    } catch (err: any) {
+      if (err?.statusCode) throw err;
+      throw new ExternalServiceError('Stripe', `Evidence submission failed — the packet was NOT marked submitted. ${err?.message || err}`);
+    }
+
+    logger.info(
+      { defenseId: packet.id, stripeDisputeId: disputeEvent.stripe_dispute_id, fields: Object.keys(evidence).length },
+      'Defense packet evidence submitted to Stripe',
+    );
+  },
+
+  /**
    * Mark a defense packet as submitted. Locks the letter + PDF.
+   * For Stripe-rail packets this ALSO pushes the evidence to Stripe first —
+   * a failed Stripe push aborts (the packet stays pending_submission).
    */
   async markSubmitted(defenseId: string, locationId?: string): Promise<void> {
     const supabase = getSupabase();
@@ -987,6 +1228,18 @@ LETTER STRUCTURE:
 
     if ((packet as any).lifecycle_status !== 'pending_submission') {
       throw new Error(`Cannot submit a packet with status '${(packet as any).lifecycle_status}'`);
+    }
+
+    // Stripe-rail: submit evidence through the Disputes API before marking local state.
+    if ((packet as any).dispute_event_id) {
+      const { data: disputeEvent } = await supabase
+        .from('dispute_events')
+        .select('*')
+        .eq('id', (packet as any).dispute_event_id)
+        .maybeSingle();
+      if (disputeEvent?.stripe_dispute_id) {
+        await this.submitPacketEvidenceToStripe(packet, disputeEvent);
+      }
     }
 
     // Lock the current letter version

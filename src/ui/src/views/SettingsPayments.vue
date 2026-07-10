@@ -544,7 +544,7 @@ async function loadProcessorStatus() {
 
     if (stripeConnected.value) {
       try {
-        const audit = await api.get<any>(`/api/stripe/risk-audit/${ssoSession.locationId}`);
+        const audit = await api.get<any>('/api/stripe/risk-audit');
         riskAudit.value = audit;
       } catch {
         // Risk audit may not be available yet

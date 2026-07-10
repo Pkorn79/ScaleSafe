@@ -87,7 +87,7 @@ async function loadPreventionData() {
   loadError.value = null;
   try {
     const [audit, prevention] = await Promise.all([
-      api.get<any>(`/api/stripe/risk-audit/${ssoSession.locationId}`).catch(() => null),
+      api.get<any>('/api/stripe/risk-audit').catch(() => null),
       api.get<any>(`/api/stripe/prevention/${ssoSession.locationId}`).catch(() => ({ items: [] })),
     ]);
     riskAudit.value = audit;

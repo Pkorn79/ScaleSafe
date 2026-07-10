@@ -5,6 +5,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased — Stripe MVP-1: gated dispute evidence submission (2026-07-10)
+
+### Added
+- **Mark Submitted now pushes evidence to Stripe** for Stripe-rail packets: the reviewed
+  defense letter, the bundled packet PDF (uploaded via Stripe Files, recorded in
+  `dispute_evidence_files`), the offer description, client identity, and enrollment date
+  are submitted through the Disputes API. Hard safeguard gates — all failures abort with
+  the packet left pending: refuses contact-wide packets (no enrollment link), refuses the
+  automatic fallback draft (must regenerate/edit first), refuses double submission
+  (idempotent), and enforces Stripe's ~4.5MB evidence-file limit.
+- **Webhook auto-prepare**: `charge.dispute.created` now auto-prepares a defense packet
+  through the normal review pipeline (exact payment-intent match only — no contact
+  guessing; prefers the card network reason code over Stripe's coarse reason string).
+  The old score-gated **auto-submit of raw vault evidence is removed** — evidence only
+  reaches Stripe through a reviewed packet.
+- `POST /api/disputes/:merchantId/:disputeId/prepare` — on-demand "Prepare Defense" from
+  the dispute queue, sharing the same gated builder (422 when no contact match).
+- Dispute list API now attaches `defense_packet_id` so the queue links to the packet flow.
+
+### Changed
+- `POST /api/disputes/:merchantId/:disputeId/submit` (ungated direct vault submit) is
+  deprecated: returns 409 `USE_DEFENSE_PACKET_FLOW` with the packet id.
+- Dispute queue UI: Submit button replaced with **Review & Submit** (links to the packet)
+  or **Prepare Defense**; Accept fixed to the real 3-segment route.
+- `submitEvidence` records `evidence_submitted_mode` ('auto'/'manual') alongside the
+  existing auto-submit flag.
+
+### Fixed
+- Dispute queue UI called `/api/disputes/:id/submit-evidence` and `/api/disputes/:id/accept`
+  (2-segment paths that 404) — now uses the real tenant-scoped routes.
+- `StripeRiskHealth`, `PreventionChecklist`, and `SettingsPayments` called
+  `/api/stripe/health/:locationId` and `/api/stripe/risk-audit/:locationId` — the real
+  routes take no param, so health/risk data silently never loaded.
+- Dispute amounts rendered as $0.00: UI read `amount_cents` but `dispute_events.amount`
+  stores dollars.
+- Gate failures now surface actionable messages to the merchant (typed 400/409/502 errors
+  instead of a generic "unexpected error").
+
+---
+
 ## Unreleased — Hotfix: white screens after chooser removal (2026-07-09)
 
 ### Fixed

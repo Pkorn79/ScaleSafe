@@ -10,6 +10,9 @@ import type { ExhibitList } from '../../src/services/defense-exhibits.service';
 // internal_debug is written to defense_packets.
 const mockInsertedRows: Record<string, any[]> = {};
 const mockUpdatedRows: Record<string, any[]> = {};
+// Per-table single-row results for select().maybeSingle()/single(). Tests that
+// need a specific table to return a row set mockSelectResults[table] = row.
+const mockSelectResults: Record<string, any> = {};
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
     from: (table: string) => ({
@@ -22,15 +25,24 @@ jest.mock('../../src/clients/supabase.client', () => ({
       update: (row: any) => {
         (mockUpdatedRows[table] = mockUpdatedRows[table] || []).push(row);
         const p: any = Promise.resolve({ data: null, error: null });
-        p.eq = () => Promise.resolve({ data: null, error: null });
+        p.eq = () => {
+          const q: any = Promise.resolve({ data: null, error: null });
+          q.eq = () => q;
+          q.order = () => q;
+          q.limit = () => q;
+          return q;
+        };
         return p;
       },
       select: () => {
         const b: any = {};
-        for (const m of ['eq', 'order', 'limit', 'gte', 'lte']) b[m] = () => b;
-        b.maybeSingle = () => Promise.resolve({ data: null, error: null });
-        b.single = () => Promise.resolve({ data: null, error: null });
-        b.then = (resolve: any, reject: any) => Promise.resolve({ data: [], error: null }).then(resolve, reject);
+        for (const m of ['eq', 'order', 'limit', 'gte', 'lte', 'in']) b[m] = () => b;
+        b.maybeSingle = () => Promise.resolve({ data: mockSelectResults[table] ?? null, error: null });
+        b.single = () => Promise.resolve({ data: mockSelectResults[table] ?? null, error: null });
+        b.then = (resolve: any, reject: any) => Promise.resolve({
+          data: mockSelectResults[table] ? [mockSelectResults[table]] : [],
+          error: null,
+        }).then(resolve, reject);
         return b;
       },
     }),
@@ -198,6 +210,25 @@ jest.mock('../../src/services/notification.service', () => ({
   },
 }));
 
+const mockUploadDefensePacketFile = jest.fn();
+const mockStripeSubmitEvidence = jest.fn();
+const mockAssembleEvidencePacket = jest.fn();
+jest.mock('../../src/services/stripe-dispute.service', () => ({
+  stripeDisputeService: {
+    uploadDefensePacketFile: (...args: any[]) => mockUploadDefensePacketFile(...args),
+    submitEvidence: (...args: any[]) => mockStripeSubmitEvidence(...args),
+    assembleEvidencePacket: (...args: any[]) => mockAssembleEvidencePacket(...args),
+  },
+}));
+
+const mockDownloadPrivateFile = jest.fn();
+jest.mock('../../src/services/storage.service', () => ({
+  storageService: {
+    downloadPrivateFileWithLegacy: (...args: any[]) => mockDownloadPrivateFile(...args),
+    createPrivateSignedUrl: jest.fn().mockResolvedValue('https://signed.test/url'),
+  },
+}));
+
 import { defenseService, type OfferContext } from '../../src/services/defense.service';
 import { defenseRepository } from '../../src/repositories/defense.repository';
 import { callClaude } from '../../src/clients/anthropic.client';
@@ -235,8 +266,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockResolveDisputeScope.mockResolvedValue(exactScope());
   (offerRepository.findById as jest.Mock).mockResolvedValue(offerRow);
+  mockUploadDefensePacketFile.mockResolvedValue('file_123');
+  mockStripeSubmitEvidence.mockResolvedValue({ submitted: true });
+  mockAssembleEvidencePacket.mockResolvedValue({ evidence: { receipt: 'file_receipt' } });
+  mockDownloadPrivateFile.mockResolvedValue({ buffer: Buffer.from('%PDF-1.4 test'), bucket: 'private' });
   for (const k of Object.keys(mockInsertedRows)) delete mockInsertedRows[k];
   for (const k of Object.keys(mockUpdatedRows)) delete mockUpdatedRows[k];
+  for (const k of Object.keys(mockSelectResults)) delete mockSelectResults[k];
 });
 
 describe('Defense Service - Reason Code Mapping', () => {
@@ -936,5 +972,205 @@ describe('Defense Service - Scope resolution & needs_review gating', () => {
     expect(letter).toContain('EVIDENCE GAPS');
     expect(letter).toContain('EXHIBIT INDEX');
     expect(letter).toContain('A gap to review.');
+  });
+});
+
+describe('Defense Service - markSubmitted Stripe push', () => {
+  const { merchantRepository } = require('../../src/repositories/merchant.repository');
+
+  function stripePacket(overrides: Record<string, any> = {}) {
+    return {
+      id: 'def_1',
+      location_id: 'loc_1',
+      contact_id: 'c_1',
+      lifecycle_status: 'pending_submission',
+      dispute_event_id: 'de_1',
+      enrollment_id: 'enr_1',
+      offer_id: 'offer_1',
+      defense_letter_text: 'We got this chargeback and here is why we are disputing it.',
+      pdf_storage_path: 'defense/def_1.pdf',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    (merchantRepository.getByLocationId as jest.Mock).mockResolvedValue({
+      id: 'merch_1',
+      location_id: 'loc_1',
+      business_name: 'Test Business',
+      stripe_user_id: 'acct_1',
+      config: {},
+      trigger_ids: {},
+    });
+    (defenseRepository.getById as jest.Mock).mockResolvedValue(stripePacket());
+    mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: 'dp_1', evidence_submitted: false };
+    mockSelectResults['defense_letter_versions'] = { generated_by: 'ai' };
+    mockSelectResults['enrollments'] = { consent_captured_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T09:00:00Z', offer_id: 'offer_1' };
+  });
+
+  test('happy path: uploads the packet PDF, overlays packet evidence, submits, then marks submitted', async () => {
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    expect(mockUploadDefensePacketFile).toHaveBeenCalledWith(expect.objectContaining({
+      merchantStripeAccountId: 'acct_1',
+      filename: expect.stringContaining('def_1'),
+    }));
+
+    expect(mockStripeSubmitEvidence).toHaveBeenCalledTimes(1);
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs).toMatchObject({
+      stripeDisputeId: 'dp_1',
+      merchantId: 'merch_1',
+      autoSubmit: true,
+      submissionMode: 'manual',
+    });
+    // Vault baseline survives, packet fields overlay it
+    expect(submitArgs.evidence.receipt).toBe('file_receipt');
+    expect(submitArgs.evidence.uncategorized_text).toContain('here is why we are disputing it');
+    expect(submitArgs.evidence.uncategorized_file).toBe('file_123');
+    expect(submitArgs.evidence.product_description).toContain('Test Program');
+    expect(submitArgs.evidence.customer_email_address).toBe('john@test.com');
+    expect(submitArgs.evidence.customer_name).toBe('John Doe');
+    expect(submitArgs.evidence.service_date).toBe('2026-01-15');
+
+    // Bookkeeping row for the uploaded file
+    expect(mockInsertedRows['dispute_evidence_files']).toEqual([
+      expect.objectContaining({ dispute_event_id: 'de_1', merchant_id: 'merch_1', stripe_file_id: 'file_123' }),
+    ]);
+
+    // Local lifecycle only flips after the Stripe push succeeded
+    expect(mockUpdatedRows['defense_packets']).toEqual([
+      expect.objectContaining({ lifecycle_status: 'submitted' }),
+    ]);
+  });
+
+  test('refuses contact-wide packets (no enrollment_id) — nothing reaches Stripe', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValue(stripePacket({ enrollment_id: null }));
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/not linked to a specific program/i);
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+    expect(mockUploadDefensePacketFile).not.toHaveBeenCalled();
+    expect(mockUpdatedRows['defense_packets']).toBeUndefined();
+  });
+
+  test('refuses to submit the automatic fallback letter', async () => {
+    mockSelectResults['defense_letter_versions'] = { generated_by: 'system' };
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/fallback draft/i);
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+    expect(mockUpdatedRows['defense_packets']).toBeUndefined();
+  });
+
+  test('idempotent: refuses when evidence was already submitted for the dispute', async () => {
+    mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: 'dp_1', evidence_submitted: true };
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/already been submitted/i);
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+  });
+
+  test('a Stripe submission failure aborts markSubmitted — the packet stays pending', async () => {
+    mockStripeSubmitEvidence.mockRejectedValue(new Error('Stripe API down'));
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow('Stripe API down');
+    expect(mockUpdatedRows['defense_packets']).toBeUndefined();
+  });
+
+  test('vault assembly failure is non-fatal — packet-scoped evidence still submits', async () => {
+    mockAssembleEvidencePacket.mockRejectedValue(new Error('vault empty'));
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs.evidence.receipt).toBeUndefined();
+    expect(submitArgs.evidence.uncategorized_text).toContain('disputing it');
+    expect(mockUpdatedRows['defense_packets']).toEqual([
+      expect.objectContaining({ lifecycle_status: 'submitted' }),
+    ]);
+  });
+
+  test('non-Stripe (NMI) packets skip the Stripe push entirely and still mark submitted', async () => {
+    mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: null, evidence_submitted: false };
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+    expect(mockUploadDefensePacketFile).not.toHaveBeenCalled();
+    expect(mockUpdatedRows['defense_packets']).toEqual([
+      expect.objectContaining({ lifecycle_status: 'submitted' }),
+    ]);
+  });
+});
+
+describe('Defense Service - prepareForStripeDispute (webhook auto-prepare)', () => {
+  const merchant = { id: 'merch_1', location_id: 'loc_1', stripe_user_id: 'acct_1' };
+  const stripeDispute = {
+    id: 'dp_1',
+    payment_intent: 'pi_1',
+    reason: 'fraudulent',
+    amount: 5000,
+    created: 1751500800,
+    payment_method_details: { card: { network_reason_code: '10.4' } },
+    evidence_details: { due_by: 1753228800 },
+  };
+  let compileSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    compileSpy = jest.spyOn(defenseService, 'compileDefense').mockResolvedValue('def_new');
+    mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: 'dp_1', amount: 50, evidence_due_by: '2026-07-23T00:00:00Z' };
+    mockSelectResults['payment_events'] = { id: 'pe_1', contact_id: 'c_1', enrollment_id: 'enr_1' };
+    mockSelectResults['enrollments'] = { offer_id: 'offer_1' };
+  });
+
+  afterEach(() => {
+    compileSpy.mockRestore();
+  });
+
+  test('compiles a packet scoped to the exact disputed transaction, preferring the network reason code', async () => {
+    const result = await defenseService.prepareForStripeDispute({ merchant, stripeDispute });
+
+    expect(result).toBe('def_new');
+    expect(compileSpy).toHaveBeenCalledWith(expect.objectContaining({
+      locationId: 'loc_1',
+      contactId: 'c_1',
+      offerId: 'offer_1',
+      reasonCode: '10.4',
+      disputeAmount: 50,
+      caseNumber: 'dp_1',
+      disputeEventId: 'de_1',
+      processor: 'stripe',
+      paymentEventId: 'pe_1',
+      enrollmentId: 'enr_1',
+    }));
+    // Queue enrichment: dispute row learns its contact + payment event
+    expect(mockUpdatedRows['dispute_events']).toEqual([
+      expect.objectContaining({ contact_id: 'c_1', payment_event_id: 'pe_1' }),
+    ]);
+  });
+
+  test('never guesses: no payment_events match means no packet (returns null)', async () => {
+    delete mockSelectResults['payment_events'];
+
+    const result = await defenseService.prepareForStripeDispute({ merchant, stripeDispute });
+
+    expect(result).toBeNull();
+    expect(compileSpy).not.toHaveBeenCalled();
+    expect(mockUpdatedRows['dispute_events']).toBeUndefined();
+  });
+
+  test('idempotent: an existing packet for the dispute short-circuits', async () => {
+    mockSelectResults['defense_packets'] = { id: 'def_existing' };
+
+    const result = await defenseService.prepareForStripeDispute({ merchant, stripeDispute });
+
+    expect(result).toBe('def_existing');
+    expect(compileSpy).not.toHaveBeenCalled();
+  });
+
+  test('falls back to the Stripe reason string when no network code is present', async () => {
+    const dispute = { ...stripeDispute, payment_method_details: undefined };
+
+    await defenseService.prepareForStripeDispute({ merchant, stripeDispute: dispute });
+
+    expect(compileSpy).toHaveBeenCalledWith(expect.objectContaining({ reasonCode: 'fraudulent' }));
   });
 });

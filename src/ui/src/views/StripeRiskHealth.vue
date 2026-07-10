@@ -166,8 +166,8 @@ async function loadDashboardData() {
 
     // Load health snapshot, risk audit, and disputes in parallel
     const [health, audit, disputes] = await Promise.all([
-      api.get<any>(`/api/stripe/health/${ssoSession.locationId}`).catch(() => ({ snapshot: null })),
-      api.get<any>(`/api/stripe/risk-audit/${ssoSession.locationId}`).catch(() => null),
+      api.get<any>('/api/stripe/health').catch(() => ({ snapshot: null })),
+      api.get<any>('/api/stripe/risk-audit').catch(() => null),
       api.get<any>(`/api/disputes/${ssoSession.locationId}`).catch(() => ({ disputes: [] })),
     ]);
 
@@ -184,7 +184,7 @@ async function loadDashboardData() {
 async function refreshHealth() {
   refreshing.value = true;
   try {
-    await api.post(`/api/stripe/risk-audit/${ssoSession.locationId}`);
+    await api.post('/api/stripe/risk-audit');
     await loadDashboardData();
   } catch (err) {
     console.error('Failed to refresh:', err);

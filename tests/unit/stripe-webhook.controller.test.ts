@@ -34,6 +34,11 @@ jest.mock('../../src/services/stripe-efw.service', () => ({
   stripeEfwService: { handleEfw: jest.fn() },
 }));
 
+const mockPrepareForStripeDispute = jest.fn();
+jest.mock('../../src/services/defense.service', () => ({
+  defenseService: { prepareForStripeDispute: mockPrepareForStripeDispute },
+}));
+
 jest.mock('../../src/services/recurring-payment.service', () => ({
   handleRecurringPaymentSuccess: jest.fn(),
   handleRecurringPaymentFailure: jest.fn(),
@@ -102,6 +107,25 @@ function tableMock(table: string) {
     return chain;
   }
 
+  if (table === 'payment_events') {
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    return chain;
+  }
+
+  if (table === 'dispute_events') {
+    const chain: any = {
+      upsert: jest.fn().mockResolvedValue({ error: null }),
+      update: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      then: (resolve: any) => resolve({ error: null }),
+    };
+    return chain;
+  }
+
   return {};
 }
 
@@ -152,6 +176,77 @@ describe('handleStripeWebhook', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'Stripe account mismatch' });
+  });
+
+  it('auto-PREPARES a defense packet on charge.dispute.created and never auto-submits', async () => {
+    const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
+    (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 85 });
+    mockPrepareForStripeDispute.mockResolvedValue('def_1');
+
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_2',
+      type: 'charge.dispute.created',
+      account: 'acct_1',
+      data: {
+        object: {
+          id: 'dp_1',
+          charge: 'ch_1',
+          payment_intent: 'pi_1',
+          reason: 'fraudulent',
+          status: 'needs_response',
+          amount: 5000,
+          currency: 'usd',
+          evidence_details: { due_by: 1780000000 },
+        },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockPrepareForStripeDispute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        merchant: expect.objectContaining({ id: 'merch_1' }),
+        stripeDispute: expect.objectContaining({ id: 'dp_1' }),
+      }),
+    );
+    // The old ungated path must be gone: no direct evidence submission from the webhook.
+    expect(stripeDisputeService.submitEvidence).not.toHaveBeenCalled();
+    expect(stripeDisputeService.assembleEvidencePacket).not.toHaveBeenCalled();
+  });
+
+  it('still returns 200 when auto-prepare fails (dispute row is already persisted)', async () => {
+    const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
+    (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 10 });
+    mockPrepareForStripeDispute.mockRejectedValue(new Error('contact lookup blew up'));
+
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_3',
+      type: 'charge.dispute.created',
+      account: 'acct_1',
+      data: {
+        object: { id: 'dp_2', charge: 'ch_2', reason: 'general', status: 'needs_response', amount: 100, currency: 'usd' },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(stripeDisputeService.submitEvidence).not.toHaveBeenCalled();
   });
 
   it('keeps the legacy global webhook route working with the global secret', async () => {

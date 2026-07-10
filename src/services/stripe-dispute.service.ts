@@ -417,11 +417,34 @@ export const stripeDisputeService = {
 
   // ─── Evidence Submission ──────────────────────────────────────────
 
+  /**
+   * Upload a defense-packet PDF to Stripe's Files API on the merchant's
+   * connected account, for referencing in dispute evidence (uncategorized_file).
+   */
+  async uploadDefensePacketFile(params: {
+    merchantStripeAccountId: string;
+    buffer: Buffer;
+    filename: string;
+  }): Promise<string> {
+    const stripe = getStripe();
+    const file = await stripe.files.create(
+      {
+        purpose: 'dispute_evidence',
+        file: { data: params.buffer, name: params.filename, type: 'application/pdf' },
+      },
+      { stripeAccount: params.merchantStripeAccountId },
+    );
+    return file.id;
+  },
+
   async submitEvidence(params: {
     stripeDisputeId: string;
     merchantId: string;
     evidence: Record<string, string>;
     autoSubmit: boolean;
+    /** Who initiated the submission — recorded in dispute_events. Defaults to
+     *  the legacy autoSubmit-derived value for existing callers. */
+    submissionMode?: 'auto' | 'manual';
   }): Promise<{ success: boolean; staged: boolean }> {
     const supabase = getSupabase();
 
@@ -447,13 +470,14 @@ export const stripeDisputeService = {
     );
 
     // Record submission in database
+    const submissionMode = params.submissionMode || (params.autoSubmit ? 'auto' : 'manual');
     await supabase
       .from('dispute_events')
       .update({
         evidence_submitted: true,
         evidence_submitted_at: new Date().toISOString(),
-        evidence_submitted_mode: params.autoSubmit ? 'auto' : 'manual',
-        evidence_auto_submitted: params.autoSubmit,
+        evidence_submitted_mode: submissionMode,
+        evidence_auto_submitted: submissionMode === 'auto',
       })
       .eq('stripe_dispute_id', params.stripeDisputeId)
       .eq('merchant_id', params.merchantId);

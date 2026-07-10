@@ -61,6 +61,13 @@ jest.mock('../../src/services/stripe-efw.service', () => ({
   },
 }));
 
+const mockPrepareForStripeDispute = jest.fn();
+jest.mock('../../src/services/defense.service', () => ({
+  defenseService: {
+    prepareForStripeDispute: (...args: any[]) => mockPrepareForStripeDispute(...args),
+  },
+}));
+
 const mockDisputesClose = jest.fn().mockResolvedValue({});
 jest.mock('stripe', () => jest.fn(() => ({
   disputes: { close: mockDisputesClose },
@@ -100,10 +107,12 @@ function query(result: { data: any; error?: any }) {
   const res = { data: result.data, error: result.error ?? null };
   c.select = jest.fn(() => c);
   c.eq = jest.fn(() => c);
+  c.in = jest.fn(() => c);
   c.order = jest.fn(() => c);
   c.limit = jest.fn(() => c);
   c.update = jest.fn(() => c);
   c.single = jest.fn(() => Promise.resolve(res));
+  c.maybeSingle = jest.fn(() => Promise.resolve(res));
   c.then = (resolve: any) => resolve(res); // awaitable terminal
   return c;
 }
@@ -116,17 +125,23 @@ beforeEach(() => {
 // ─── Dispute routes ──────────────────────────────────────────────────
 
 describe('GET /api/disputes/:merchantId — list disputes', () => {
-  it('returns the disputes scoped to the resolved merchant', async () => {
-    const disputes = [{ id: 'd1', stripe_dispute_id: 'dp_1' }];
+  it('returns the disputes scoped to the resolved merchant, with defense packet links attached', async () => {
+    const disputes = [{ id: 'd1', stripe_dispute_id: 'dp_1' }, { id: 'd2', stripe_dispute_id: 'dp_2' }];
     const q = query({ data: disputes });
-    mockFrom.mockReturnValueOnce(q);
+    const packetQ = query({ data: [{ id: 'def_1', dispute_event_id: 'd1' }] });
+    mockFrom.mockReturnValueOnce(q).mockReturnValueOnce(packetQ);
 
     const res = await request(app).get(`/api/disputes/${MERCHANT_ID}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.disputes).toEqual(disputes);
+    expect(res.body.disputes).toEqual([
+      { id: 'd1', stripe_dispute_id: 'dp_1', defense_packet_id: 'def_1' },
+      { id: 'd2', stripe_dispute_id: 'dp_2', defense_packet_id: null },
+    ]);
     expect(mockFrom).toHaveBeenCalledWith('dispute_events');
+    expect(mockFrom).toHaveBeenCalledWith('defense_packets');
     expect(q.eq).toHaveBeenCalledWith('merchant_id', MERCHANT_ID);
+    expect(packetQ.in).toHaveBeenCalledWith('dispute_event_id', ['d1', 'd2']);
   });
 
   it('also accepts the locationId form of the tenant identifier in the URL', async () => {
@@ -181,60 +196,66 @@ describe('GET /api/disputes/:merchantId/:disputeId — single dispute', () => {
   });
 });
 
-describe('POST /api/disputes/:merchantId/:disputeId/submit — submit evidence', () => {
-  it('assembles the packet and submits evidence to Stripe', async () => {
-    const dispute = { id: 'd1', stripe_dispute_id: 'dp_1' };
-    const packet = { evidence: { customer_name: 'Jane' } };
+describe('POST /api/disputes/:merchantId/:disputeId/prepare — prepare defense packet', () => {
+  it('builds a defense packet via the gated auto-prepare path (never submits)', async () => {
+    const dispute = { id: 'd1', stripe_dispute_id: 'dp_1', raw_dispute_object: { id: 'dp_1', reason: 'fraudulent' } };
     mockFrom.mockReturnValueOnce(query({ data: dispute }));
-    mockAssembleEvidencePacket.mockResolvedValueOnce(packet);
-    mockSubmitEvidence.mockResolvedValueOnce({ success: true, staged: false });
+    mockPrepareForStripeDispute.mockResolvedValueOnce('def_1');
+
+    const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/d1/prepare`).send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ defensePacketId: 'def_1' });
+    expect(mockPrepareForStripeDispute).toHaveBeenCalledWith({
+      merchant: MERCHANT,
+      stripeDispute: { id: 'dp_1', reason: 'fraudulent' },
+    });
+    expect(mockSubmitEvidence).not.toHaveBeenCalled();
+  });
+
+  it('422s when the dispute cannot be matched to a contact (no guessing)', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: { id: 'd1', stripe_dispute_id: 'dp_1', raw_dispute_object: null } }));
+    mockPrepareForStripeDispute.mockResolvedValueOnce(null);
+
+    const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/d1/prepare`).send({});
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('CONTACT_UNRESOLVED');
+  });
+
+  it('404s when the dispute does not exist', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: null }));
+
+    const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/nope/prepare`).send({});
+
+    expect(res.status).toBe(404);
+    expect(mockPrepareForStripeDispute).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/disputes/:merchantId/:disputeId/submit — deprecated direct submit', () => {
+  it('409s and points the caller at the defense packet flow (never submits directly)', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: { id: 'def_1' } }));
 
     const res = await request(app)
       .post(`/api/disputes/${MERCHANT_ID}/d1/submit`)
       .send({ autoSubmit: true });
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true, staged: false });
-    expect(mockSubmitEvidence).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stripeDisputeId: 'dp_1',
-        merchantId: MERCHANT_ID,
-        evidence: packet.evidence,
-        autoSubmit: true,
-      }),
-    );
-  });
-
-  it('defaults autoSubmit to true when the body omits it', async () => {
-    mockFrom.mockReturnValueOnce(query({ data: { id: 'd1', stripe_dispute_id: 'dp_1' } }));
-    mockAssembleEvidencePacket.mockResolvedValueOnce({ evidence: {} });
-    mockSubmitEvidence.mockResolvedValueOnce({ success: true, staged: false });
-
-    await request(app).post(`/api/disputes/${MERCHANT_ID}/d1/submit`).send({});
-
-    expect(mockSubmitEvidence).toHaveBeenCalledWith(
-      expect.objectContaining({ autoSubmit: true }),
-    );
-  });
-
-  it('404s when the dispute does not exist (does not call submitEvidence)', async () => {
-    mockFrom.mockReturnValueOnce(query({ data: null }));
-
-    const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/nope/submit`).send({});
-
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('USE_DEFENSE_PACKET_FLOW');
+    expect(res.body.defensePacketId).toBe('def_1');
     expect(mockSubmitEvidence).not.toHaveBeenCalled();
+    expect(mockAssembleEvidencePacket).not.toHaveBeenCalled();
   });
 
-  it('500s when the submit service throws (chargeback would go unanswered)', async () => {
-    mockFrom.mockReturnValueOnce(query({ data: { id: 'd1', stripe_dispute_id: 'dp_1' } }));
-    mockAssembleEvidencePacket.mockResolvedValueOnce({ evidence: {} });
-    mockSubmitEvidence.mockRejectedValueOnce(new Error('Stripe API down'));
+  it('409s with a null packet id when no packet exists yet', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: null }));
 
     const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/d1/submit`).send({});
 
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Failed to submit evidence');
+    expect(res.status).toBe(409);
+    expect(res.body.defensePacketId).toBeNull();
+    expect(mockSubmitEvidence).not.toHaveBeenCalled();
   });
 });
 

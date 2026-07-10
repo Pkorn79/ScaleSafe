@@ -52,7 +52,7 @@
                   {{ daysLeftLabel(d.evidence_due_by) }}
                 </div>
               </td>
-              <td class="text-sm">${{ (d.amount_cents / 100).toFixed(2) }}</td>
+              <td class="text-sm">${{ Number(d.amount || 0).toFixed(2) }}</td>
               <td><span class="badge badge-blue">{{ formatReasonCode(d.reason) }}</span></td>
               <td>
                 <div v-if="d.triage_score != null" class="text-sm">
@@ -83,16 +83,16 @@
               </td>
               <td>
                 <div class="flex gap-2">
-                  <router-link v-if="d.defense_packet_id" :to="`/defense/${d.defense_packet_id}`" class="btn btn-sm btn-secondary">
-                    View
+                  <router-link v-if="d.defense_packet_id" :to="`/defense/${d.defense_packet_id}`" class="btn btn-sm btn-primary">
+                    Review &amp; Submit
                   </router-link>
                   <button
-                    v-if="d.status === 'needs_response' || d.status === 'warning_needs_response'"
+                    v-else-if="d.status === 'needs_response' || d.status === 'warning_needs_response'"
                     class="btn btn-sm btn-primary"
-                    @click="submitEvidence(d)"
-                    :disabled="submitting === d.id"
+                    @click="prepareDefense(d)"
+                    :disabled="preparing === d.id"
                   >
-                    {{ submitting === d.id ? '...' : 'Submit' }}
+                    {{ preparing === d.id ? 'Preparing...' : 'Prepare Defense' }}
                   </button>
                   <button
                     v-if="d.status === 'needs_response' || d.status === 'warning_needs_response'"
@@ -118,15 +118,17 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useApi, ssoSession } from '../composables/useApi';
 import { pluralize } from '../utils/humanize';
 
 const api = useApi();
+const router = useRouter();
 
 const pageLoading = ref(true);
 const loadError = ref<string | null>(null);
 const disputes = ref<any[]>([]);
-const submitting = ref<string | null>(null);
+const preparing = ref<string | null>(null);
 const accepting = ref<string | null>(null);
 
 const sortedDisputes = computed(() => {
@@ -144,7 +146,7 @@ const wonCount = computed(() => disputes.value.filter(d => d.outcome === 'won').
 const totalExposure = computed(() => {
   return disputes.value
     .filter(d => !d.outcome || d.outcome === 'pending')
-    .reduce((sum: number, d: any) => sum + (d.amount_cents || 0), 0);
+    .reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0);
 });
 
 onMounted(async () => {
@@ -164,23 +166,27 @@ async function loadDisputes() {
   }
 }
 
-async function submitEvidence(dispute: any) {
-  submitting.value = dispute.id;
+async function prepareDefense(dispute: any) {
+  preparing.value = dispute.id;
   try {
-    await api.post(`/api/disputes/${dispute.id}/submit-evidence`);
+    const result = await api.post<any>(`/api/disputes/${ssoSession.locationId}/${dispute.id}/prepare`);
+    if (result?.defensePacketId) {
+      router.push(`/defense/${result.defensePacketId}`);
+      return;
+    }
     await loadDisputes();
   } catch (err: any) {
-    loadError.value = err.message || 'Failed to submit evidence';
+    loadError.value = err.message || 'Failed to prepare defense packet';
   } finally {
-    submitting.value = null;
+    preparing.value = null;
   }
 }
 
 async function acceptDispute(dispute: any) {
-  if (!confirm(`Accept this dispute for $${(dispute.amount_cents / 100).toFixed(2)}? This cannot be undone.`)) return;
+  if (!confirm(`Accept this dispute for $${Number(dispute.amount || 0).toFixed(2)}? This cannot be undone.`)) return;
   accepting.value = dispute.id;
   try {
-    await api.post(`/api/disputes/${dispute.id}/accept`);
+    await api.post(`/api/disputes/${ssoSession.locationId}/${dispute.id}/accept`);
     await loadDisputes();
   } catch (err: any) {
     loadError.value = err.message || 'Failed to accept dispute';

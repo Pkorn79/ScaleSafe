@@ -49,14 +49,28 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
   const merchantId = await requireMatchingMerchant(req, res);
   if (!merchantId) return;
   try {
-    const { data: disputes } = await getSupabase()
+    const supabase = getSupabase();
+    const { data: disputes } = await supabase
       .from('dispute_events')
       .select('*')
       .eq('merchant_id', merchantId)
       .order('created_at', { ascending: false })
       .limit(50);
 
-    res.json({ disputes: disputes || [] });
+    // Attach the defense packet id (if one was prepared) so the UI can link
+    // straight to the review/submit flow.
+    const rows = disputes || [];
+    const disputeIds = rows.map((d: any) => d.id);
+    if (disputeIds.length) {
+      const { data: packets } = await supabase
+        .from('defense_packets')
+        .select('id, dispute_event_id')
+        .in('dispute_event_id', disputeIds);
+      const packetByDispute = new Map((packets || []).map((p: any) => [p.dispute_event_id, p.id]));
+      rows.forEach((d: any) => { d.defense_packet_id = packetByDispute.get(d.id) || null; });
+    }
+
+    res.json({ disputes: rows });
   } catch (err: any) {
     logger.error({ err: err.message }, 'Failed to list disputes');
     res.status(500).json({ error: 'Failed to list disputes' });
@@ -92,14 +106,13 @@ router.get('/:merchantId/:disputeId', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/disputes/:merchantId/:disputeId/submit — submit evidence
-router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response) => {
+// POST /api/disputes/:merchantId/:disputeId/prepare — build a defense packet
+// for this dispute (same gated path as the webhook auto-prepare). Never submits.
+router.post('/:merchantId/:disputeId/prepare', async (req: Request, res: Response) => {
   const merchantId = await requireMatchingMerchant(req, res);
   if (!merchantId) return;
   try {
-    const { autoSubmit } = req.body;
     const supabase = getSupabase();
-
     const { data: dispute } = await supabase
       .from('dispute_events')
       .select('*')
@@ -107,28 +120,50 @@ router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response
       .eq('id', req.params.disputeId)
       .single();
 
-    if (!dispute) {
+    if (!dispute?.stripe_dispute_id) {
       res.status(404).json({ error: 'Dispute not found' });
       return;
     }
 
-    const packet = await stripeDisputeService.assembleEvidencePacket(
-      dispute.stripe_dispute_id,
-      merchantId,
-    );
-
-    const result = await stripeDisputeService.submitEvidence({
-      stripeDisputeId: dispute.stripe_dispute_id,
-      merchantId,
-      evidence: packet.evidence,
-      autoSubmit: autoSubmit !== false,
+    const merchant = await merchantRepository.findByLocationId(req.tenantContext!.locationId!);
+    const { defenseService } = require('../services/defense.service');
+    const defenseId = await defenseService.prepareForStripeDispute({
+      merchant,
+      stripeDispute: dispute.raw_dispute_object || { id: dispute.stripe_dispute_id },
     });
 
-    res.json(result);
+    if (!defenseId) {
+      res.status(422).json({
+        error: 'CONTACT_UNRESOLVED',
+        message: 'This dispute could not be matched to a ScaleSafe contact, so a defense packet cannot be prepared automatically. Create one from the client\'s profile instead.',
+      });
+      return;
+    }
+
+    res.json({ defensePacketId: defenseId });
   } catch (err: any) {
-    logger.error({ err: err.message }, 'Failed to submit evidence');
-    res.status(500).json({ error: 'Failed to submit evidence' });
+    logger.error({ err: err.message }, 'Failed to prepare defense packet for dispute');
+    res.status(500).json({ error: 'Failed to prepare defense packet' });
   }
+});
+
+// POST /api/disputes/:merchantId/:disputeId/submit — DEPRECATED direct vault
+// submit. Evidence now only reaches Stripe through a reviewed defense packet's
+// Mark Submitted flow (scope + fallback-letter + idempotency gates).
+router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response) => {
+  const merchantId = await requireMatchingMerchant(req, res);
+  if (!merchantId) return;
+  const { data: packet } = await getSupabase()
+    .from('defense_packets')
+    .select('id')
+    .eq('dispute_event_id', req.params.disputeId)
+    .limit(1)
+    .maybeSingle();
+  res.status(409).json({
+    error: 'USE_DEFENSE_PACKET_FLOW',
+    message: 'Evidence is submitted by reviewing the defense packet and marking it submitted — direct submission is disabled.',
+    defensePacketId: packet?.id || null,
+  });
 });
 
 // POST /api/disputes/:merchantId/:disputeId/accept — accept (don't fight)

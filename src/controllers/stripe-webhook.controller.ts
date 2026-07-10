@@ -340,19 +340,14 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
       // Triage the dispute
       const result = await stripeDisputeService.triageDispute(dispute, merchant);
 
-      // Auto-submit if merchant has it enabled AND score >= 60
-      if (merchant.dispute_auto_submit && result.score >= 60) {
-        try {
-          const packet = await stripeDisputeService.assembleEvidencePacket(dispute.id, merchant.id);
-          await stripeDisputeService.submitEvidence({
-            stripeDisputeId: dispute.id,
-            merchantId: merchant.id,
-            evidence: packet.evidence,
-            autoSubmit: true,
-          });
-        } catch (err: any) {
-          logger.error({ err: err.message, disputeId: dispute.id }, 'Auto-submit failed');
-        }
+      // Auto-PREPARE a defense packet (never auto-submit — evidence only goes
+      // to Stripe through the reviewed packet's Mark Submitted flow, which
+      // enforces the scope/fallback-letter/idempotency gates).
+      try {
+        const { defenseService } = require('../services/defense.service');
+        await defenseService.prepareForStripeDispute({ merchant, stripeDispute: dispute });
+      } catch (err: any) {
+        logger.error({ err: err.message, disputeId: dispute.id, score: result?.score }, 'Auto-prepare defense packet failed');
       }
       break;
     }
