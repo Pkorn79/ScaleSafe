@@ -301,7 +301,7 @@ export function useApi() {
     }
   }
 
-  return { loading, error, get, post, put, patch, del, ssoSession, selectSsoLocation };
+  return { loading, error, get, post, put, patch, del, ssoSession };
 }
 
 export { ssoSession, initSso };
