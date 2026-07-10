@@ -658,6 +658,29 @@ export const dashboardController = {
         isStripeDispute: stripeDisputeEvents.has((p as any).dispute_event_id),
       }));
 
+      // Unmatched open Stripe disputes: no defense packet exists (contact could
+      // not be resolved), so they are invisible in the packet list — surface
+      // them or the merchant misses the deadline entirely.
+      const packetDisputeEventIds = new Set((packets || []).map(p => (p as any).dispute_event_id).filter(Boolean));
+      const { data: openStripeDisputes } = await supabase
+        .from('dispute_events')
+        .select('id, stripe_dispute_id, reason, amount, currency, status, evidence_due_by, created_at')
+        .eq('location_id', locationId)
+        .eq('processor', 'stripe')
+        .in('status', ['needs_response', 'warning_needs_response']);
+      const unmatchedDisputes = (openStripeDisputes || [])
+        .filter(d => !packetDisputeEventIds.has(d.id))
+        .map(d => ({
+          id: d.id,
+          stripe_dispute_id: d.stripe_dispute_id,
+          reason: d.reason,
+          amount: d.amount,
+          currency: d.currency,
+          status: d.status,
+          evidence_due_by: d.evidence_due_by,
+          created_at: d.created_at,
+        }));
+
       // Summary stats
       const won = (outcomes || []).filter(o => o.outcome === 'won');
       const lost = (outcomes || []).filter(o => o.outcome === 'lost');
@@ -674,6 +697,7 @@ export const dashboardController = {
             ? Math.round((won.length / (won.length + lost.length)) * 100)
             : 0,
         },
+        unmatchedDisputes,
       });
     } catch (err) { next(err); }
   },

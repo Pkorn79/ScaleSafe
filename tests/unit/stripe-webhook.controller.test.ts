@@ -222,6 +222,32 @@ describe('handleStripeWebhook', () => {
     expect(stripeDisputeService.assembleEvidencePacket).not.toHaveBeenCalled();
   });
 
+  it('skips auto-prepare when the dispute arrives already resolved (e.g. RDR auto-refund)', async () => {
+    const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
+    (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 50 });
+
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_4',
+      type: 'charge.dispute.created',
+      account: 'acct_1',
+      data: {
+        object: { id: 'dp_3', charge: 'ch_3', reason: 'fraudulent', status: 'charge_refunded', amount: 2500, currency: 'usd' },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockPrepareForStripeDispute).not.toHaveBeenCalled();
+  });
+
   it('still returns 200 when auto-prepare fails (dispute row is already persisted)', async () => {
     const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
     (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 10 });

@@ -114,17 +114,17 @@ export class StripePreventionService {
 
     steps.push({
       id: 'rdr_beta_request',
-      title: 'Request RDR beta access',
+      title: 'Enable RDR in Stripe Dashboard',
       complete: false,
-      instructions: 'Email dispute-prevention-beta@stripe.com to request RDR access. Mention you are a high-ticket service provider and want to configure custom RDR rules.',
-      actionUrl: 'mailto:dispute-prevention-beta@stripe.com',
+      instructions: 'Navigate to Stripe Dashboard > Settings > Disputes > Dispute Prevention and enable Rapid Dispute Resolution. If the option is not shown for your account yet, email dispute-prevention-beta@stripe.com to request access.',
+      actionUrl: 'https://dashboard.stripe.com/settings/disputes',
     });
 
     steps.push({
       id: 'rdr_ruleset',
-      title: 'Configure RDR ruleset',
+      title: 'Configure RDR auto-resolve rules',
       complete: false,
-      instructions: 'Once approved, ScaleSafe will help configure your RDR rules. Recommended: auto-refund transactions under $500 with fraud reason, over 120 days old, or from repeat disputers. Fight high-value transactions with strong evidence.',
+      instructions: 'Set rules for which Visa pre-disputes get auto-refunded before they become chargebacks — e.g. auto-resolve low-ticket amounts where the dispute fee plus your time costs more than the refund. RDR-resolved cases do not count toward your dispute rate and carry no dispute fee. Fight high-value transactions with strong evidence instead.',
     });
 
     return {

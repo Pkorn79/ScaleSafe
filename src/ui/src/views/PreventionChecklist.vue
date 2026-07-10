@@ -29,26 +29,42 @@
         </div>
       </div>
 
-      <!-- Prevention Items -->
-      <div v-if="preventionItems.length > 0" class="card">
-        <h3 class="section-title">Prevention Coverage</h3>
-        <div v-for="item in preventionItems" :key="item.id" class="prevention-item">
-          <div class="flex gap-2" style="align-items:flex-start">
-            <span class="prevention-icon" :class="item.completed ? 'icon-done' : 'icon-pending'">
-              {{ item.completed ? '!' : '?' }}
-            </span>
-            <div style="flex:1">
-              <div class="text-sm" style="font-weight:500">{{ item.title }}</div>
-              <div class="text-sm text-muted">{{ item.description }}</div>
+      <!-- Prevention Coverage: enrollment checklists per network program -->
+      <div v-if="checklists.length > 0" class="card">
+        <h3 class="section-title">
+          Dispute Prevention Coverage
+          <span v-if="coverage" class="badge badge-blue" style="margin-left:8px">{{ coverage.overallCoverage }}% complete</span>
+        </h3>
+        <p class="text-sm text-muted mb-4">
+          These programs stop chargebacks before they start. Enrollment happens in your Stripe
+          Dashboard — ScaleSafe can't enroll for you, but it tracks what's ready on your side.
+        </p>
+        <div v-for="cl in checklists" :key="cl.module" class="mb-4">
+          <div class="flex-between mb-2">
+            <span class="text-sm" style="font-weight:600">{{ cl.module }} <span class="badge badge-gray" style="margin-left:6px">{{ cl.network }}</span></span>
+            <span class="text-sm text-muted">{{ cl.overallProgress }}%</span>
+          </div>
+          <div v-for="step in cl.steps" :key="step.id" class="prevention-item">
+            <div class="flex gap-2" style="align-items:flex-start">
+              <span class="prevention-icon" :class="step.complete ? 'icon-done' : 'icon-pending'">
+                {{ step.complete ? '✓' : '·' }}
+              </span>
+              <div style="flex:1">
+                <div class="text-sm" style="font-weight:500">{{ step.title }}</div>
+                <div class="text-sm text-muted">{{ step.instructions }}</div>
+                <a v-if="step.actionUrl && !step.complete" :href="step.actionUrl" target="_blank" rel="noopener" class="text-sm" style="font-weight:500">
+                  {{ step.actionUrl.startsWith('mailto:') ? 'Email Stripe' : 'Open Stripe Dashboard' }} →
+                </a>
+              </div>
+              <span class="badge" :class="step.complete ? 'badge-green' : 'badge-yellow'">
+                {{ step.complete ? 'Done' : 'Pending' }}
+              </span>
             </div>
-            <span class="badge" :class="item.completed ? 'badge-green' : 'badge-yellow'">
-              {{ item.completed ? 'Done' : 'Pending' }}
-            </span>
           </div>
         </div>
       </div>
 
-      <div v-if="!riskAudit && preventionItems.length === 0" class="empty-state">
+      <div v-if="!riskAudit && checklists.length === 0" class="empty-state">
         <p>No prevention data available yet. Connect Stripe and run a risk audit to see your prevention checklist.</p>
         <router-link to="/settings/payments" class="btn btn-primary mt-4">Connect Stripe</router-link>
       </div>
@@ -58,14 +74,24 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useApi, ssoSession } from '../composables/useApi';
+import { useApi } from '../composables/useApi';
 
 const api = useApi();
 
 const pageLoading = ref(true);
 const loadError = ref<string | null>(null);
 const riskAudit = ref<any>(null);
-const preventionItems = ref<any[]>([]);
+const coverage = ref<any>(null);
+
+// Flatten {visa: {oi, rdr}, mastercard: {ethoca}} into a renderable list
+const checklists = computed(() => {
+  if (!coverage.value) return [];
+  return [
+    coverage.value.visa?.oi,
+    coverage.value.visa?.rdr,
+    coverage.value.mastercard?.ethoca,
+  ].filter((cl) => cl?.steps?.length);
+});
 
 const riskScores = computed(() => {
   if (!riskAudit.value) return [];
@@ -88,10 +114,10 @@ async function loadPreventionData() {
   try {
     const [audit, prevention] = await Promise.all([
       api.get<any>('/api/stripe/risk-audit').catch(() => null),
-      api.get<any>(`/api/stripe/prevention/${ssoSession.locationId}`).catch(() => ({ items: [] })),
+      api.get<any>('/api/stripe/prevention').catch(() => null),
     ]);
     riskAudit.value = audit;
-    preventionItems.value = prevention.items || [];
+    coverage.value = prevention;
   } catch (err: any) {
     loadError.value = err.message || 'Failed to load prevention data';
   } finally {

@@ -342,7 +342,14 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
 
       // Auto-PREPARE a defense packet (never auto-submit — evidence only goes
       // to Stripe through the reviewed packet's Mark Submitted flow, which
-      // enforces the scope/fallback-letter/idempotency gates).
+      // enforces the scope/fallback-letter/idempotency gates). Disputes that
+      // arrive already resolved (e.g. RDR/Ethoca auto-refunded, or closed)
+      // need no defense — preparing one would just confuse the queue.
+      const terminalStatuses = ['won', 'lost', 'charge_refunded', 'warning_closed'];
+      if (terminalStatuses.includes(dispute.status)) {
+        logger.info({ disputeId: dispute.id, status: dispute.status }, 'Dispute arrived already resolved — skipping defense auto-prepare');
+        break;
+      }
       try {
         const { defenseService } = require('../services/defense.service');
         await defenseService.prepareForStripeDispute({ merchant, stripeDispute: dispute });

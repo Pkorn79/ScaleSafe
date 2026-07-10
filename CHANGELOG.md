@@ -3,6 +3,39 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased — Stripe Defense MVP-2: pre-dispute refunds + visibility (2026-07-10)
+
+### Added
+- **Early Fraud Warnings queue** on Stripe Risk Health: lists issuer fraud reports with the
+  triage recommendation (+reason), 72-hour response deadline, and **Refund** / **Hold** actions
+  wired to the existing respond endpoint (Refund issues a real Stripe refund; confirm explains
+  it usually prevents the dispute + fee but the fraud report still counts toward Visa VAMP).
+  EFW metric tile now shows an "awaiting your response" link into the queue.
+- **Dispute Prevention card** in Settings → Payments (Stripe connected): explains RDR (Visa)
+  and Ethoca (Mastercard) auto-refund rules with a deep link to the Stripe Dashboard
+  dispute-prevention page, plus links to the Prevention Checklist and EFW queue.
+- **Unmatched Stripe disputes on the dashboard**: open disputes with no defense packet (contact
+  couldn't be resolved) now appear on the Open Disputes card pointing to the dispute queue —
+  previously they were invisible outside the queue page.
+- **Deadline urgency banner** on the dashboard: "N disputes due within 3 days" across packets
+  and unmatched disputes.
+
+### Fixed
+- **Prevention Checklist rendered empty**: the view called `/api/stripe/prevention/:locationId`
+  (path param) and read `.items` — the real route takes no param and returns
+  `{visa, mastercard, overallCoverage}`; the `.catch` hid the 404. The RDR/Ethoca/Order Insights
+  enrollment checklists (written long ago server-side) now actually render.
+- Webhook skips defense auto-prepare for disputes that arrive already resolved
+  (won/lost/charge_refunded/warning_closed — e.g. RDR/Ethoca auto-refunds).
+
+### Changed
+- RDR checklist copy is dashboard-first (enable at dashboard.stripe.com/settings/disputes;
+  beta email only as fallback) and explains the auto-resolve rule trade-off.
+- Removed the disabled "Dispute Submission Helpers (coming soon)" placeholder in Settings —
+  replaced by the Dispute Prevention card.
+
+---
+
 ## Unreleased - Universal external evidence connector (2026-07-10)
 
 ### Added

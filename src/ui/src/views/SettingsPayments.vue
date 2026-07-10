@@ -385,21 +385,27 @@
         <p v-if="fanbasisStatus?.lastError" class="text-sm mt-2" style="color:#dc2626">{{ fanbasisStatus.lastError }}</p>
       </div>
 
-      <!-- Dispute submission helper placeholder -->
+      <!-- Dispute prevention: enrollment lives in the Stripe Dashboard (no API) -->
       <div v-if="stripeConnected" class="card">
-        <h3 class="section-title">Dispute Submission Helpers <span class="text-xs text-muted">(coming soon)</span></h3>
-        <p class="text-sm text-muted mb-4">Future tools may help prepare processor-ready dispute submissions. For now, every dispute packet is reviewed and submitted manually by the merchant.</p>
-        <!-- #30: the persistence endpoint is not built yet - disable the control so merchants are
-             not misled into believing auto-submit is active (it currently resets to OFF silently). -->
-        <label class="toggle-switch-label">
-          <span class="toggle-container">
-            <input type="checkbox" v-model="autoSubmit" disabled />
-            <span class="toggle-track" :class="{ active: autoSubmit }">
-              <span class="toggle-thumb" :class="{ active: autoSubmit }"></span>
-            </span>
-          </span>
-          <span class="text-sm">Automated submission is not available - every dispute packet is reviewed manually before submission.</span>
-        </label>
+        <h3 class="section-title">Dispute Prevention (Stripe)</h3>
+        <p class="text-sm mb-4">
+          Stripe offers programs that <strong>refund a charge before it becomes a chargeback</strong>:
+          Rapid Dispute Resolution for Visa and Ethoca Alerts for Mastercard. You set a rule once
+          (e.g. auto-resolve anything under a dollar amount you choose) and matching pre-disputes are
+          refunded automatically — they never hit your dispute rate and carry no dispute fee.
+        </p>
+        <p class="text-sm text-muted mb-4">
+          Enrollment happens in your Stripe Dashboard — ScaleSafe can't turn it on for you.
+          ScaleSafe handles the case-by-case side: early fraud warnings appear on the
+          Stripe Risk Health page, where you can refund or hold each one.
+        </p>
+        <div class="flex gap-2" style="flex-wrap:wrap">
+          <a href="https://dashboard.stripe.com/settings/disputes" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+            Open Stripe Dispute Prevention
+          </a>
+          <router-link to="/defense/prevention" class="btn btn-secondary btn-sm">Full Prevention Checklist</router-link>
+          <router-link to="/risk-health" class="btn btn-secondary btn-sm">Early Fraud Warnings</router-link>
+        </div>
       </div>
 
       <div class="card">

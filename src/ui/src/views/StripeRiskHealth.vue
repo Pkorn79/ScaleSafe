@@ -37,6 +37,9 @@
         <div class="card">
           <div class="card-title">Early Fraud Warnings (30d)</div>
           <div class="card-value">{{ healthSnapshot.total_efws || 0 }}</div>
+          <a v-if="unansweredEfwCount > 0" href="#efw-queue" class="text-sm" style="color:#dc2626;font-weight:500">
+            {{ unansweredEfwCount }} awaiting your response ↓
+          </a>
         </div>
 
         <div class="card">
@@ -80,6 +83,65 @@
               {{ formatMcStatus(healthSnapshot.mc_status) }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- Early Fraud Warnings queue: the pre-dispute refund election. A card
+           issuer reported suspected fraud; refunding now usually prevents the
+           formal dispute + fee (the fraud report still counts toward VAMP). -->
+      <div v-if="efws.length > 0" id="efw-queue" class="card">
+        <h3 class="section-title">
+          Early Fraud Warnings
+          <span v-if="unansweredEfwCount > 0" class="badge badge-red" style="margin-left:8px">{{ unansweredEfwCount }} unanswered</span>
+        </h3>
+        <p class="text-sm text-muted mb-4">
+          A card issuer flagged these charges as suspected fraud — most fraud chargebacks start here.
+          Refunding usually prevents the dispute and its fee. Either way, the fraud report itself
+          still counts toward Visa's monitoring thresholds, so prevention matters most.
+        </p>
+        <div style="overflow-x:auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Received</th>
+                <th>Charge</th>
+                <th>Fraud Type</th>
+                <th>Recommendation</th>
+                <th>Respond By</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="e in efws" :key="e.id">
+                <td class="text-sm">{{ formatDate(e.created_at) }}</td>
+                <td class="text-sm">
+                  {{ e.stripe_charge_id || e.stripe_payment_intent_id || '--' }}
+                  <span v-if="e.amount"> (${{ Number(e.amount).toFixed(2) }})</span>
+                </td>
+                <td><span class="badge badge-blue">{{ formatFraudType(e.fraud_type) }}</span></td>
+                <td>
+                  <span class="badge" :class="e.recommendation === 'refund' ? 'badge-yellow' : 'badge-green'">
+                    {{ (e.recommendation || 'review').toUpperCase() }}
+                  </span>
+                  <div v-if="e.recommendation_reason" class="text-sm text-muted" style="max-width:340px">{{ e.recommendation_reason }}</div>
+                </td>
+                <td class="text-sm">{{ e.responded ? '--' : formatDate(e.response_deadline) }}</td>
+                <td>
+                  <span v-if="e.responded" class="badge" :class="e.response_action === 'refunded' ? 'badge-gray' : 'badge-green'">
+                    {{ e.response_action === 'refunded' ? 'Refunded' : 'Holding' }}
+                  </span>
+                  <div v-else class="flex gap-2">
+                    <button class="btn btn-sm btn-primary" :disabled="respondingEfwId === e.id" @click="respondEfw(e, 'refund')">
+                      {{ respondingEfwId === e.id ? '...' : 'Refund' }}
+                    </button>
+                    <button class="btn btn-sm btn-secondary" :disabled="respondingEfwId === e.id" @click="respondEfw(e, 'hold')">
+                      Hold
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -135,6 +197,10 @@ const stripeConnected = ref(false);
 const healthSnapshot = ref<any>({});
 const riskAudit = ref<any>(null);
 const activeDisputeCount = ref(0);
+const efws = ref<any[]>([]);
+const respondingEfwId = ref<string | null>(null);
+
+const unansweredEfwCount = computed(() => efws.value.filter((e) => !e.responded).length);
 
 const hasReasonCodes = computed(() => {
   return healthSnapshot.value.reason_code_breakdown && Object.keys(healthSnapshot.value.reason_code_breakdown).length > 0;
@@ -164,16 +230,22 @@ async function loadDashboardData() {
       return;
     }
 
-    // Load health snapshot, risk audit, and disputes in parallel
-    const [health, audit, disputes] = await Promise.all([
+    // Load health snapshot, risk audit, disputes, and EFWs in parallel
+    const [health, audit, disputes, efwData] = await Promise.all([
       api.get<any>('/api/stripe/health').catch(() => ({ snapshot: null })),
       api.get<any>('/api/stripe/risk-audit').catch(() => null),
       api.get<any>(`/api/disputes/${ssoSession.locationId}`).catch(() => ({ disputes: [] })),
+      api.get<any>(`/api/efws/${ssoSession.locationId}`).catch(() => ({ efws: [] })),
     ]);
 
     healthSnapshot.value = health.snapshot || {};
     riskAudit.value = audit;
     activeDisputeCount.value = disputes.disputes?.filter((d: any) => d.outcome === null || d.outcome === 'pending').length || 0;
+    // Unanswered first, then newest
+    efws.value = (efwData.efws || []).sort((a: any, b: any) => {
+      if (!!a.responded !== !!b.responded) return a.responded ? 1 : -1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   } catch (err) {
     console.error('Failed to load dashboard:', err);
   } finally {
@@ -191,6 +263,40 @@ async function refreshHealth() {
   } finally {
     refreshing.value = false;
   }
+}
+
+async function respondEfw(efw: any, action: 'refund' | 'hold') {
+  const message = action === 'refund'
+    ? 'Refund this charge in Stripe? This usually prevents the fraud dispute and its fee. The issuer\'s fraud report still counts toward Visa\'s monitoring thresholds either way. This cannot be undone.'
+    : 'Hold this charge (no refund)? If the issuer escalates it to a formal dispute, you\'ll fight it with a defense packet.';
+  if (!window.confirm(message)) return;
+  respondingEfwId.value = efw.id;
+  try {
+    await api.post(`/api/efws/${ssoSession.locationId}/${efw.id}/respond`, { action });
+    await loadDashboardData();
+  } catch {
+    /* useApi already toasts the error */
+  } finally {
+    respondingEfwId.value = null;
+  }
+}
+
+function formatDate(d: string): string {
+  if (!d) return '--';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatFraudType(type: string): string {
+  const map: Record<string, string> = {
+    card_never_received: 'Card Never Received',
+    fraudulent_card_application: 'Fraudulent Card Application',
+    made_with_counterfeit_card: 'Counterfeit Card',
+    made_with_lost_card: 'Lost Card',
+    made_with_stolen_card: 'Stolen Card',
+    misc: 'Miscellaneous',
+    unauthorized_use_of_card: 'Unauthorized Use',
+  };
+  return map[type] || type || 'Unknown';
 }
 
 function formatVampStatus(status: string): string {

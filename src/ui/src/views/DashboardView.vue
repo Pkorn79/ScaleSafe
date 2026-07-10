@@ -67,14 +67,37 @@
       />
     </div>
 
+    <!-- Deadline urgency: a chargeback response window missed = automatic loss -->
+    <div v-if="dueSoonCount > 0" class="card mb-4" style="background:#fee2e2;border:1px solid #fca5a5">
+      <div class="text-sm" style="color:#991b1b;font-weight:600">
+        ⚠ {{ dueSoonCount }} dispute{{ dueSoonCount === 1 ? '' : 's' }} due within 3 days.
+        A missed response deadline is an automatic loss — submit the evidence now.
+      </div>
+    </div>
+
     <!-- Open disputes: the merchant's action queue. Submit + outcome prompts live
          here so tracking doesn't depend on anyone reopening a packet. -->
-    <div class="card mb-4" v-if="openDisputes.length > 0">
+    <div class="card mb-4" v-if="openDisputes.length > 0 || unmatchedDisputes.length > 0">
       <SectionHeader :title="['Open', 'disputes.']">
         <template #actions>
           <router-link to="/defense" class="btn btn-sm btn-secondary">View All</router-link>
         </template>
       </SectionHeader>
+      <!-- Unmatched Stripe disputes: no packet exists — the merchant must act
+           from the dispute queue or the deadline passes silently. -->
+      <div v-for="d in unmatchedDisputes" :key="d.id" class="flex-between mb-4" style="gap:12px;flex-wrap:wrap;cursor:pointer" @click="$router.push('/defense/disputes')">
+        <div>
+          <div class="text-sm">
+            <strong>Unmatched Stripe dispute</strong>
+            <span class="badge badge-red" style="margin-left:8px">{{ d.reason || 'unknown' }}</span>
+            <span style="margin-left:8px">${{ Number(d.amount || 0).toFixed(2) }}</span>
+          </div>
+          <div class="text-sm text-muted">
+            Couldn't be matched to a client automatically{{ d.evidence_due_by ? ` — respond by ${new Date(d.evidence_due_by).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '' }}
+          </div>
+        </div>
+        <span class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px">Open Dispute Queue</span>
+      </div>
       <div v-for="d in openDisputes" :key="d.id" class="flex-between mb-4" style="gap:12px;flex-wrap:wrap;cursor:pointer" @click="$router.push(`/defense/${d.id}`)">
         <div>
           <div class="text-sm">
@@ -203,6 +226,23 @@ const atRisk = ref<any[]>([]);
 const defensePackets = ref<any[]>([]);
 const pulseCheckins = ref<any[]>([]);
 const pulseAttentionCount = ref(0);
+// Open Stripe disputes with NO defense packet (contact couldn't be matched) —
+// invisible in the packet list, so they must be surfaced here.
+const unmatchedDisputes = ref<any[]>([]);
+
+// Deadline urgency: everything due within 3 days (packets + unmatched disputes)
+const dueSoonCount = computed(() => {
+  const cutoff = Date.now() + 3 * 86400000;
+  const packetCount = openDisputes.value.filter((p) => {
+    if ((p.lifecycleStatus || p.lifecycle_status) === 'submitted') return false;
+    const deadline = p.deadline || p.response_deadline;
+    return deadline && parseDateValue(deadline).getTime() <= cutoff;
+  }).length;
+  const unmatchedCount = unmatchedDisputes.value.filter((d) =>
+    d.evidence_due_by && new Date(d.evidence_due_by).getTime() <= cutoff,
+  ).length;
+  return packetCount + unmatchedCount;
+});
 
 // Open disputes = the merchant's action queue: ready-but-unsubmitted packets
 // (deadline not yet passed) and submitted packets awaiting an outcome.
@@ -262,8 +302,8 @@ async function loadData() {
     .then((risk) => ({ ok: true, risk }))
     .catch(() => ({ ok: false, risk: null }));
   const defensePromise = api.get<any>('/api/dashboard/defense-history')
-    .then((d) => ({ ok: true, packets: d?.packets || [] }))
-    .catch(() => ({ ok: false, packets: [] as any[] }));
+    .then((d) => ({ ok: true, packets: d?.packets || [], unmatched: d?.unmatchedDisputes || [] }))
+    .catch(() => ({ ok: false, packets: [] as any[], unmatched: [] as any[] }));
   const pulsePromise = api.get<any>('/api/dashboard/pulse-checkins?limit=10')
     .then((p) => ({ ok: true, checkins: p?.checkins || [], attentionCount: p?.attentionCount || 0 }))
     .catch(() => ({ ok: false, checkins: [] as any[], attentionCount: 0 }));
@@ -285,6 +325,7 @@ async function loadData() {
     const defenseResult = await defensePromise;
     if (defenseResult.ok) {
       defensePackets.value = defenseResult.packets;
+      unmatchedDisputes.value = defenseResult.unmatched;
     }
     const pulseResult = await pulsePromise;
     if (pulseResult.ok) {
