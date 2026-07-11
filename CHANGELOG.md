@@ -3,6 +3,14 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Zoom Beta Catalog Release (2026-07-11)
+
+> **Deploy ordering:** apply migration `094_enable_zoom_beta_catalog.sql` to expose the Zoom Connect button.
+
+### Fixed
+- Released the implemented Zoom OAuth integration as a Beta catalog option for every ScaleSafe sub-account. Each merchant still connects an isolated Zoom authorization stored against that merchant's GHL location; no per-merchant Railway variable is used.
+- Zoom OAuth now refreshes the Evidence Connections catalog when the authorization popup closes. The setup no longer depends solely on `window.opener.postMessage`, which can be unavailable after Zoom's cross-origin authorization flow, and proceeds to the meeting-to-offer mapping step reliably.
+
 ## Unreleased - Integration Catalog and Access Gating Foundation (2026-07-11)
 
 > **Deploy ordering:** apply migration `092_integration_catalog_and_access_gating.sql` before deploying this code.

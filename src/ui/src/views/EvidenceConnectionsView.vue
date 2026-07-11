@@ -70,6 +70,8 @@ const zoomSetup = ref<any | null>(null);
 const zoomSelections = ref<Record<string, string>>({});
 const savingMappings = ref(false);
 let oauthPopup: Window | null = null;
+let oauthCloseTimer: number | null = null;
+let oauthRefreshInFlight = false;
 
 const categories = [
   ['all', 'All'],
@@ -169,6 +171,42 @@ function beginConnect(provider: Provider) {
   connectOpen.value = true;
 }
 
+function stopOAuthCloseWatcher() {
+  if (oauthCloseTimer !== null) {
+    window.clearInterval(oauthCloseTimer);
+    oauthCloseTimer = null;
+  }
+}
+
+async function refreshAfterZoomOAuth() {
+  if (oauthRefreshInFlight) return;
+  oauthRefreshInFlight = true;
+  try {
+    connectOpen.value = false;
+    await load();
+    const zoom = providers.value.find((provider) => provider.key === 'zoom');
+    const connection = zoom?.connections.find((item) => ['testing', 'active'].includes(item.setupStatus))
+      || zoom?.connections[0];
+    if (connection) await openConnection(connection.id);
+  } finally {
+    oauthRefreshInFlight = false;
+  }
+}
+
+function watchOAuthPopupClose() {
+  stopOAuthCloseWatcher();
+  const startedAt = Date.now();
+  oauthCloseTimer = window.setInterval(() => {
+    if (!oauthPopup || oauthPopup.closed) {
+      stopOAuthCloseWatcher();
+      oauthPopup = null;
+      void refreshAfterZoomOAuth();
+      return;
+    }
+    if (Date.now() - startedAt > 5 * 60_000) stopOAuthCloseWatcher();
+  }, 400);
+}
+
 async function createConnection() {
   if (!connectProvider.value) return;
   connecting.value = true;
@@ -181,6 +219,7 @@ async function createConnection() {
       );
       if (!oauthPopup) throw new Error('Allow popups to connect this account');
       oauthPopup.location.href = result.authorizationUrl;
+      watchOAuthPopupClose();
       return;
     }
     credentialResult.value = await api.post<any>(
@@ -212,13 +251,10 @@ async function saveZoomMappings() {
 
 async function handleOAuthMessage(event: MessageEvent) {
   if (event.origin !== window.location.origin || event.data?.type !== 'zoom_connect_result') return;
+  stopOAuthCloseWatcher();
   oauthPopup = null;
   if (!event.data.success) return;
-  connectOpen.value = false;
-  await load();
-  const zoom = providers.value.find((provider) => provider.key === 'zoom');
-  const connection = zoom?.connections[0];
-  if (connection) await openConnection(connection.id);
+  await refreshAfterZoomOAuth();
 }
 
 async function disableConnection() {
@@ -233,7 +269,10 @@ onMounted(() => {
   window.addEventListener('message', handleOAuthMessage);
   load();
 });
-onBeforeUnmount(() => window.removeEventListener('message', handleOAuthMessage));
+onBeforeUnmount(() => {
+  stopOAuthCloseWatcher();
+  window.removeEventListener('message', handleOAuthMessage);
+});
 </script>
 
 <template>
