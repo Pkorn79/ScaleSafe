@@ -1,4 +1,5 @@
 const mockConstructEvent = jest.fn();
+const mockDisputesRetrieve = jest.fn();
 const mockFrom = jest.fn();
 const mockDecrypt = jest.fn((value: string) => value.replace('enc:', ''));
 
@@ -6,6 +7,9 @@ jest.mock('stripe', () => {
   return jest.fn(() => ({
     webhooks: {
       constructEvent: mockConstructEvent,
+    },
+    disputes: {
+      retrieve: mockDisputesRetrieve,
     },
   }));
 });
@@ -152,6 +156,8 @@ describe('handleStripeWebhook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPacketRow = null;
+    // Default: re-fetch fails → handler falls back to the webhook payload
+    mockDisputesRetrieve.mockRejectedValue(new Error('not mocked'));
     mockFrom.mockImplementation(tableMock);
     mockConstructEvent.mockReturnValue({
       id: 'evt_1',
@@ -240,6 +246,72 @@ describe('handleStripeWebhook', () => {
     // The old ungated path must be gone: no direct evidence submission from the webhook.
     expect(stripeDisputeService.submitEvidence).not.toHaveBeenCalled();
     expect(stripeDisputeService.assembleEvidencePacket).not.toHaveBeenCalled();
+  });
+
+  it('re-fetches the dispute with the modern API version so CE 3.0 eligibility survives old webhook endpoints', async () => {
+    const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
+    (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 70 });
+    mockPrepareForStripeDispute.mockResolvedValue('def_1');
+    // Webhook payload rendered at api_version 2022-11-15: eligibility stripped
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_5',
+      type: 'charge.dispute.created',
+      account: 'acct_1',
+      data: {
+        object: {
+          id: 'dp_ce3', charge: 'ch_5', payment_intent: 'pi_5', reason: 'fraudulent',
+          status: 'needs_response', amount: 5000, currency: 'usd',
+          enhanced_eligibility_types: [],
+        },
+      },
+    });
+    // Modern retrieve returns the full eligibility
+    mockDisputesRetrieve.mockResolvedValue({
+      id: 'dp_ce3', charge: 'ch_5', payment_intent: 'pi_5', reason: 'fraudulent',
+      status: 'needs_response', amount: 5000, currency: 'usd',
+      enhanced_eligibility_types: ['visa_compelling_evidence_3'],
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockDisputesRetrieve).toHaveBeenCalledWith('dp_ce3', undefined, { stripeAccount: 'acct_1' });
+    // The ENRICHED dispute flows through (auto-prepare receives eligibility)
+    expect(mockPrepareForStripeDispute).toHaveBeenCalledWith(expect.objectContaining({
+      stripeDispute: expect.objectContaining({ enhanced_eligibility_types: ['visa_compelling_evidence_3'] }),
+    }));
+  });
+
+  it('a triage failure does not 500 the webhook (dispute row already persisted)', async () => {
+    const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
+    (stripeDisputeService.triageDispute as jest.Mock).mockRejectedValue(new Error('stripe rate limit'));
+    mockPrepareForStripeDispute.mockResolvedValue('def_1');
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_6',
+      type: 'charge.dispute.created',
+      account: 'acct_1',
+      data: {
+        object: { id: 'dp_6', charge: 'ch_6', reason: 'general', status: 'needs_response', amount: 100, currency: 'usd' },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    // Auto-prepare still runs even when triage blew up
+    expect(mockPrepareForStripeDispute).toHaveBeenCalled();
   });
 
   it('skips auto-prepare when the dispute arrives already resolved (e.g. RDR auto-refund)', async () => {

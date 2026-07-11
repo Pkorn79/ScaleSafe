@@ -1152,6 +1152,40 @@ describe('Defense Service - markSubmitted Stripe push', () => {
     expect(mockStripeSubmitEvidence.mock.calls[0][0].evidence.enhanced_evidence).toBeUndefined();
   });
 
+  test('a PDF upload failure is non-fatal: evidence still submits, error recorded on the packet', async () => {
+    mockUploadDefensePacketFile.mockRejectedValue(Object.assign(new Error('Invalid request (check your POST parameters)'), { type: 'StripeInvalidRequestError' }));
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs.evidence.uncategorized_file).toBeUndefined();
+    expect(submitArgs.evidence.uncategorized_text).toContain('disputing it');
+    // The failure is recorded for the merchant/debugging, and the packet still submits
+    expect(mockUpdatedRows['defense_packets']).toEqual(expect.arrayContaining([
+      expect.objectContaining({ internal_debug: expect.objectContaining({ pdf_attach_error: expect.stringContaining('upload to Stripe failed') }) }),
+      expect.objectContaining({ lifecycle_status: 'submitted' }),
+    ]));
+  });
+
+  test('non-file values are stripped from file-only Stripe evidence fields before submission', async () => {
+    mockAssembleEvidencePacket.mockResolvedValue({
+      evidence: {
+        receipt: 'file_receipt',                       // valid file id — kept
+        refund_policy: 'No refunds after start.',      // TEXT in a file field — dropped
+        customer_communication: 'supabase/comms.pdf',  // non-Stripe ref — dropped
+      },
+    });
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs.evidence.receipt).toBe('file_receipt');
+    expect(submitArgs.evidence.refund_policy).toBeUndefined();
+    expect(submitArgs.evidence.customer_communication).toBeUndefined();
+    // Our uploaded packet PDF survives the sanitizer
+    expect(submitArgs.evidence.uncategorized_file).toBe('file_123');
+  });
+
   test('non-Stripe (NMI) packets skip the Stripe push entirely and still mark submitted', async () => {
     mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: null, evidence_submitted: false };
 

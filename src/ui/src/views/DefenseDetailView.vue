@@ -307,9 +307,12 @@ async function saveLetterEdit(text: string) {
   try {
     const result = await api.put<any>(`/api/defense/${route.params.id}/letter`, { letterText: text });
     if (result?.versionNumber) {
-      packet.value = { ...packet.value, defense_letter_text: text, pdf_url: result.pdfUrl || packet.value.pdf_url };
       currentVersionNumber.value = result.versionNumber;
     }
+    // Full refetch: the edit rebundles the PDF server-side, so every derived
+    // field (pdf_url, review state) must come back fresh — hand-patching left
+    // stale PDF links visible after edits.
+    await refresh();
   } catch (e: any) {
     actionError.value = e.message || 'Failed to save';
   }

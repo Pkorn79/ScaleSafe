@@ -312,22 +312,27 @@ describe('Dispute Triage Service', () => {
       expect(evidence['uncategorized_text']).toContain('Client attended the kickoff session');
     });
 
-    it('uses app communication text when no communication file is available', () => {
+    it('routes app communication TEXT to uncategorized_text — customer_communication is a FILE-only field', () => {
       const vault = makeVaultEntry({ communication_file_id: null });
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('product_not_received', vault, null, {
         communicationText: 'Exhibit D: Client Communication - Enrollment link sent and subsequent check-in message delivered.',
       });
 
-      expect(evidence['customer_communication']).toContain('Enrollment link sent');
+      expect(evidence['customer_communication']).toBeUndefined();
+      expect(evidence['uncategorized_text']).toContain('Enrollment link sent');
     });
 
-    it('maps general reason with contract, communication, refund policy', () => {
+    it('maps general reason with contract, communication, refund policy (text goes to *_disclosure fields)', () => {
       const vault = makeVaultEntry();
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('general', vault, null);
       expect(evidence['uncategorized_file']).toBe('file_contract_1');
       expect(evidence['customer_communication']).toBe('file_comm_1');
-      expect(evidence['refund_policy']).toContain('No refunds');
-      expect(evidence['cancellation_policy']).toContain('No refunds');
+      // refund_policy / cancellation_policy only accept Stripe file ids — the
+      // text versions must land in the *_disclosure fields or Stripe 400s.
+      expect(evidence['refund_policy']).toBeUndefined();
+      expect(evidence['cancellation_policy']).toBeUndefined();
+      expect(evidence['refund_policy_disclosure']).toContain('No refunds');
+      expect(evidence['cancellation_policy_disclosure']).toContain('No refunds');
     });
 
     it('maps general reason: falls back to offer terms file when no contract', () => {
@@ -339,7 +344,8 @@ describe('Dispute Triage Service', () => {
     it('maps credit_not_processed with refund policy and contract', () => {
       const vault = makeVaultEntry();
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('credit_not_processed', vault, null);
-      expect(evidence['refund_policy']).toContain('No refunds');
+      expect(evidence['refund_policy_disclosure']).toContain('No refunds');
+      expect(evidence['refund_policy']).toBeUndefined();
       expect(evidence['uncategorized_file']).toBe('file_contract_1');
       expect(evidence['uncategorized_text']).toContain('no-refund policy');
     });
@@ -350,7 +356,7 @@ describe('Dispute Triage Service', () => {
         terminationText: 'Exhibit G: Refund Review - Merchant reviewed the refund request and recorded the policy basis for denial.',
       });
 
-      expect(evidence['refund_policy']).toContain('No refunds');
+      expect(evidence['refund_policy_disclosure']).toContain('No refunds');
       expect(evidence['uncategorized_text']).toContain('no-refund policy');
       expect(evidence['uncategorized_text']).toContain('policy basis for denial');
     });
@@ -367,7 +373,7 @@ describe('Dispute Triage Service', () => {
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('some_other_reason', vault, null);
       expect(evidence['uncategorized_file']).toBe('file_contract_1');
       expect(evidence['customer_communication']).toBe('file_comm_1');
-      expect(evidence['refund_policy']).toContain('No refunds');
+      expect(evidence['refund_policy_disclosure']).toContain('No refunds');
     });
 
     it('can build text-only evidence when the Stripe vault is missing but app evidence exists', () => {
@@ -376,7 +382,17 @@ describe('Dispute Triage Service', () => {
       });
 
       expect(evidence['uncategorized_text']).toContain('signed packet');
-      expect(evidence['cancellation_policy']).toContain('No cancellations');
+      expect(evidence['cancellation_policy_disclosure']).toContain('No cancellations');
+    });
+
+    it('never puts non-Stripe ids into file-only fields', () => {
+      const vault = makeVaultEntry({
+        contract_file_id: 'supabase/path/contract.pdf',
+        communication_file_id: 'not-a-stripe-id',
+      });
+      const evidence = stripeDisputeService.mapReasonCodeToEvidence('general', vault, null);
+      expect(evidence['uncategorized_file']).toBeUndefined();
+      expect(evidence['customer_communication']).toBeUndefined();
     });
   });
 

@@ -274,8 +274,23 @@ async function handlePaymentFailure(event: any, merchant: any): Promise<void> {
 // ─── Dispute handler (Phase S3) ─────────────────────────
 
 async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
-  const dispute = event.data.object;
+  let dispute = event.data.object;
   logger.info({ merchantId: merchant.id, disputeId: dispute.id, type: event.type }, 'Dispute event received');
+
+  // Webhook payloads are rendered at the ENDPOINT's pinned API version. Older
+  // endpoints (e.g. 2022-11-15) predate CE 3.0, so enhanced_eligibility comes
+  // through empty. Re-fetch with the SDK's modern version so eligibility and
+  // any newer fields survive into raw_dispute_object. Fall back to the payload
+  // if the fetch fails — persisting the dispute matters more than enriching it.
+  if (merchant.stripe_user_id && dispute?.id) {
+    try {
+      // 3-arg form: retrieve(id, params, options) — 2-arg treats options as params.
+      const fresh = await getStripe().disputes.retrieve(dispute.id, undefined, { stripeAccount: merchant.stripe_user_id });
+      if (fresh?.id === dispute.id) dispute = fresh;
+    } catch (err: any) {
+      logger.warn({ err: err?.message, disputeId: dispute.id }, 'Dispute re-fetch failed — using webhook payload as-is');
+    }
+  }
 
   const supabase = getSupabase();
 
@@ -299,7 +314,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
           evidence_due_by: dispute.evidence_details?.due_by
             ? new Date(dispute.evidence_details.due_by * 1000).toISOString()
             : null,
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         }, { onConflict: 'stripe_dispute_id' });
       if (disputeUpsertError) {
         throw new Error(`Failed to persist dispute ${dispute.id}: ${disputeUpsertError.message}`);
@@ -337,8 +352,14 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         }
       }
 
-      // Triage the dispute
-      const result = await stripeDisputeService.triageDispute(dispute, merchant);
+      // Triage the dispute (non-fatal: the dispute row is already persisted,
+      // and a triage hiccup must not 500 the webhook into endless retries)
+      let result: any = null;
+      try {
+        result = await stripeDisputeService.triageDispute(dispute, merchant);
+      } catch (err: any) {
+        logger.error({ err: err.message, disputeId: dispute.id }, 'Dispute triage failed (non-fatal)');
+      }
 
       // Auto-PREPARE a defense packet (never auto-submit — evidence only goes
       // to Stripe through the reviewed packet's Mark Submitted flow, which
@@ -369,7 +390,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         .from('dispute_events')
         .update({
           status: mapDisputeStatus(dispute.status),
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);
@@ -388,7 +409,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
           status: mapDisputeStatus(dispute.status),
           outcome,
           outcome_at: new Date().toISOString(),
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);
@@ -441,7 +462,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         .update({
           funds_withdrawn: true,
           funds_withdrawn_amount_cents: dispute.amount,
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);
@@ -454,7 +475,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         .update({
           funds_reinstated: true,
           funds_reinstated_amount_cents: dispute.amount,
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);
@@ -467,7 +488,7 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         .from('dispute_events')
         .update({
           status: mapDisputeStatus(dispute.status),
-          raw_dispute_object: event.data.object,
+          raw_dispute_object: dispute,
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);

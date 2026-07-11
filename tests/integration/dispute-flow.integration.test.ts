@@ -235,7 +235,9 @@ describe('Dispute Flow Integration', () => {
 
       const evidence = stripeDisputeService.mapReasonCodeToEvidence('credit_not_processed', vault, null);
 
-      expect(evidence.refund_policy).toBe('No refunds after 14 days');
+      // refund_policy is a FILE-only Stripe field — the text goes to *_disclosure
+      expect(evidence.refund_policy_disclosure).toBe('No refunds after 14 days');
+      expect(evidence.refund_policy).toBeUndefined();
       expect(evidence.uncategorized_text).toContain('accepted terms');
     });
   });

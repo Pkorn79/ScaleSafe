@@ -12,7 +12,7 @@ import { disputeScopeService, type DisputeScope } from './dispute-scope.service'
 import { defenseReadinessService, evaluateReviewState } from './defense-readiness.service';
 import { offerRepository } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
-import { ValidationError, ConflictError, ExternalServiceError } from '../utils/errors';
+import { AppError, ValidationError, ConflictError, ExternalServiceError } from '../utils/errors';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 
 // Reason-code → network/category/deadline resolution lives in the registry.
@@ -1187,33 +1187,75 @@ LETTER STRUCTURE:
       logger.warn({ err: err?.message, defenseId: packet.id }, 'Enrollment date lookup failed for Stripe evidence');
     }
 
-    // Upload the bundled defense packet PDF (letter + exhibits)
+    // Upload the bundled defense packet PDF (letter + exhibits). A failed
+    // attachment must NOT block the submission — near a deadline, the letter
+    // text + structured evidence reaching Stripe beats losing everything over
+    // one attachment. Failures are logged with Stripe's full diagnostics and
+    // recorded on the packet.
+    let pdfAttachError: string | null = null;
     if (packet.pdf_storage_path) {
-      const { buffer } = await storageService.downloadPrivateFileWithLegacy(packet.pdf_storage_path);
-      const MAX_EVIDENCE_FILE_BYTES = 4.5 * 1024 * 1024;
-      if (buffer.length > MAX_EVIDENCE_FILE_BYTES) {
-        throw new ValidationError(
-          `The defense packet PDF is ${(buffer.length / 1024 / 1024).toFixed(1)}MB — over Stripe's ~4.5MB evidence limit. `
-          + 'Reduce the exhibit count and rebundle before submitting.',
+      try {
+        const { buffer } = await storageService.downloadPrivateFileWithLegacy(packet.pdf_storage_path);
+        const MAX_EVIDENCE_FILE_BYTES = 4.5 * 1024 * 1024;
+        if (buffer.length > MAX_EVIDENCE_FILE_BYTES) {
+          pdfAttachError = `Packet PDF is ${(buffer.length / 1024 / 1024).toFixed(1)}MB — over Stripe's ~4.5MB evidence limit; submitted without the PDF attachment. Reduce the exhibit count and rebundle.`;
+        } else {
+          const fileId = await stripeDisputeService.uploadDefensePacketFile({
+            merchantStripeAccountId: (merchant as any).stripe_user_id,
+            buffer,
+            filename: `scalesafe-defense-packet-${packet.id}.pdf`,
+          });
+          evidence.uncategorized_file = fileId;
+
+          const { error: fileRecordError } = await supabase.from('dispute_evidence_files').insert({
+            dispute_event_id: disputeEvent.id,
+            merchant_id: (merchant as any).id,
+            stripe_file_id: fileId,
+            file_purpose: 'dispute_evidence',
+            file_type: 'defense_packet_pdf',
+            description: `ScaleSafe defense packet ${packet.id} (letter + exhibits)`,
+          });
+          if (fileRecordError) {
+            logger.warn({ err: fileRecordError.message, defenseId: packet.id }, 'Failed to record dispute evidence file (non-fatal)');
+          }
+        }
+      } catch (err: any) {
+        pdfAttachError = `Packet PDF upload to Stripe failed — evidence was submitted without the attachment. (${err?.message || err})`;
+        logger.error(
+          {
+            defenseId: packet.id,
+            err: err?.message,
+            stripeErrorType: err?.type,
+            stripeParam: err?.param,
+            stripeRequestId: err?.requestId || err?.raw?.requestId,
+          },
+          'Defense packet PDF upload to Stripe FAILED — submitting evidence without the attachment',
         );
       }
-      const fileId = await stripeDisputeService.uploadDefensePacketFile({
-        merchantStripeAccountId: (merchant as any).stripe_user_id,
-        buffer,
-        filename: `scalesafe-defense-packet-${packet.id}.pdf`,
-      });
-      evidence.uncategorized_file = fileId;
+    }
+    if (pdfAttachError) {
+      const { error: debugError } = await supabase
+        .from('defense_packets')
+        .update({ internal_debug: { ...((packet as any).internal_debug || {}), pdf_attach_error: pdfAttachError } })
+        .eq('id', packet.id);
+      if (debugError) {
+        logger.warn({ err: debugError.message, defenseId: packet.id }, 'Failed to record PDF attach error (non-fatal)');
+      }
+    }
 
-      const { error: fileRecordError } = await supabase.from('dispute_evidence_files').insert({
-        dispute_event_id: disputeEvent.id,
-        merchant_id: (merchant as any).id,
-        stripe_file_id: fileId,
-        file_purpose: 'dispute_evidence',
-        file_type: 'defense_packet_pdf',
-        description: `ScaleSafe defense packet ${packet.id} (letter + exhibits)`,
-      });
-      if (fileRecordError) {
-        logger.warn({ err: fileRecordError.message, defenseId: packet.id }, 'Failed to record dispute evidence file (non-fatal)');
+    // Stripe FILE-type evidence fields only accept uploaded file ids — a raw
+    // text value (e.g. a refund-policy string from the vault assembler) 400s
+    // the ENTIRE submission. Drop anything that isn't a Stripe file id.
+    const FILE_ONLY_EVIDENCE_FIELDS = [
+      'cancellation_policy', 'customer_communication', 'customer_signature',
+      'duplicate_charge_documentation', 'receipt', 'refund_policy',
+      'service_documentation', 'shipping_documentation', 'uncategorized_file',
+    ];
+    for (const field of FILE_ONLY_EVIDENCE_FIELDS) {
+      const value = evidence[field];
+      if (value && typeof value === 'string' && !value.startsWith('file_')) {
+        logger.warn({ defenseId: packet.id, field }, 'Dropped non-file value from file-only Stripe evidence field');
+        delete evidence[field];
       }
     }
 
@@ -1256,8 +1298,13 @@ LETTER STRUCTURE:
         submissionMode: 'manual',
       });
     } catch (err: any) {
-      if (err?.statusCode) throw err;
-      throw new ExternalServiceError('Stripe', `Evidence submission failed — the packet was NOT marked submitted. ${err?.message || err}`);
+      // Only our own typed errors pass through — raw Stripe errors also carry
+      // a statusCode, so an instanceof check is required to avoid leaking them
+      // as generic "unexpected error" responses.
+      if (err instanceof AppError) throw err;
+      const detail = [err?.message || String(err), err?.param ? `(param: ${err.param})` : '']
+        .filter(Boolean).join(' ');
+      throw new ExternalServiceError('Stripe', `Evidence submission failed — the packet was NOT marked submitted. ${detail}`);
     }
 
     logger.info(

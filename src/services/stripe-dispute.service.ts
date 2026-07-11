@@ -322,7 +322,7 @@ export const stripeDisputeService = {
           const addr = vault.customer_billing_address as any;
           evidence['billing_address'] = `${addr.line1 || ''}, ${addr.city || ''} ${addr.state || ''} ${addr.postal_code || ''}`.trim();
         }
-        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
+        if (vault?.contract_file_id?.startsWith?.('file_')) evidence['uncategorized_file'] = vault.contract_file_id;
         // Only state facts we actually hold. Actual Visa CE 3.0 eligibility requires
         // two prior undisputed transactions (settled 120-365 days before the dispute)
         // with matching data elements — we do not verify that yet, so we must never
@@ -346,15 +346,23 @@ export const stripeDisputeService = {
 
       case 'product_not_received':
         if (vault?.service_start_date) evidence['service_date'] = vault.service_start_date;
-        if (vault?.communication_file_id) {
+        // customer_communication is a FILE-only field — free text 400s the
+        // submission. Text summaries go to uncategorized_text instead.
+        if (vault?.communication_file_id?.startsWith?.('file_')) {
           evidence['customer_communication'] = vault.communication_file_id;
         } else if (appEvidence?.communicationText) {
-          evidence['customer_communication'] = appEvidence.communicationText;
+          mergeEvidenceText(evidence, 'uncategorized_text', appEvidence.communicationText);
         }
         if (vault?.session_file_ids?.length > 0) {
-          evidence['uncategorized_file'] = vault.session_file_ids[0];
+          if (vault.session_file_ids[0]?.startsWith?.('file_')) {
+            evidence['uncategorized_file'] = vault.session_file_ids[0];
+          }
           if (vault.session_file_ids.length > 1) {
-            evidence['uncategorized_text'] = `${vault.session_file_ids.length} session logs on file documenting service delivery. Primary log attached. Client was active throughout the engagement.`;
+            mergeEvidenceText(
+              evidence,
+              'uncategorized_text',
+              `${vault.session_file_ids.length} session logs on file documenting service delivery. Primary log attached. Client was active throughout the engagement.`,
+            );
           }
         }
         mergeEvidenceText(
@@ -365,24 +373,26 @@ export const stripeDisputeService = {
         break;
 
       case 'general':
-        if (vault?.contract_file_id) {
+        if (vault?.contract_file_id?.startsWith?.('file_')) {
           evidence['uncategorized_file'] = vault.contract_file_id;
-        } else if (offerTermsFileId) {
+        } else if (offerTermsFileId?.startsWith?.('file_')) {
           evidence['uncategorized_file'] = offerTermsFileId;
         }
-        if (vault?.communication_file_id) {
+        if (vault?.communication_file_id?.startsWith?.('file_')) {
           evidence['customer_communication'] = vault.communication_file_id;
         } else if (appEvidence?.communicationText) {
-          evidence['customer_communication'] = appEvidence.communicationText;
+          mergeEvidenceText(evidence, 'uncategorized_text', appEvidence.communicationText);
         }
-        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
-        evidence['cancellation_policy'] = vault?.refund_policy_text || 'No cancellations after program commencement per signed agreement.';
+        // refund_policy / cancellation_policy are FILE-only fields; the text
+        // versions belong in the *_disclosure fields.
+        if (vault?.refund_policy_text) evidence['refund_policy_disclosure'] = vault.refund_policy_text;
+        evidence['cancellation_policy_disclosure'] = vault?.refund_policy_text || 'No cancellations after program commencement per signed agreement.';
         mergeEvidenceText(evidence, 'uncategorized_text', appEvidence?.summaryText);
         break;
 
       case 'credit_not_processed':
-        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
-        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
+        if (vault?.refund_policy_text) evidence['refund_policy_disclosure'] = vault.refund_policy_text;
+        if (vault?.contract_file_id?.startsWith?.('file_')) evidence['uncategorized_file'] = vault.contract_file_id;
         evidence['uncategorized_text'] = vault?.terms_accepted
           ? `Client accepted terms including no-refund policy on ${vault.terms_accepted_at || 'date of enrollment'}.`
           : 'Offer terms were presented to client at time of purchase.';
@@ -401,13 +411,13 @@ export const stripeDisputeService = {
         break;
 
       default:
-        if (vault?.contract_file_id) evidence['uncategorized_file'] = vault.contract_file_id;
-        if (vault?.communication_file_id) {
+        if (vault?.contract_file_id?.startsWith?.('file_')) evidence['uncategorized_file'] = vault.contract_file_id;
+        if (vault?.communication_file_id?.startsWith?.('file_')) {
           evidence['customer_communication'] = vault.communication_file_id;
         } else if (appEvidence?.communicationText) {
-          evidence['customer_communication'] = appEvidence.communicationText;
+          mergeEvidenceText(evidence, 'uncategorized_text', appEvidence.communicationText);
         }
-        if (vault?.refund_policy_text) evidence['refund_policy'] = vault.refund_policy_text;
+        if (vault?.refund_policy_text) evidence['refund_policy_disclosure'] = vault.refund_policy_text;
         mergeEvidenceText(evidence, 'uncategorized_text', appEvidence?.summaryText);
         break;
     }

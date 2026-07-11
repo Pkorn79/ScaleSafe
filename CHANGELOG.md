@@ -3,6 +3,39 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased — Stripe dispute E2E fixes: ingestion, CE 3.0 payloads, submission resilience (2026-07-11)
+
+> Found via the first live Stripe-dispute end-to-end test. Migration
+> `097_dispute_events_unique_stripe_id.sql` was already applied manually in production
+> on 2026-07-11 (guarded — safe to re-run).
+
+### Fixed
+- **Stripe dispute webhooks failed since inception**: the ingest upsert uses
+  `ON CONFLICT (stripe_dispute_id)` but no migration ever created the required unique
+  constraint (017 made a plain index) — every `charge.dispute.*` webhook 500'd. Migration 097
+  adds the constraint.
+- **CE 3.0 eligibility was stripped by old webhook endpoints**: payloads render at the
+  endpoint's pinned API version (2022-11-15 predates CE 3.0). Disputes are now re-fetched via
+  the SDK's modern version before storing, so `enhanced_eligibility_types` survives.
+- **Text in file-only evidence fields 400'd submissions**: the vault evidence mapper put
+  policy/communication TEXT into `refund_policy` / `cancellation_policy` /
+  `customer_communication` (file-id-only fields). Text now goes to the `*_disclosure` fields /
+  `uncategorized_text`; non-`file_` ids are dropped at the source AND sanitized again before
+  submission.
+- Raw Stripe errors leaked as generic "unexpected error" (they carry a statusCode, defeating
+  the AppError passthrough check) — merchants now see the real message incl. the offending param.
+- Stale PDF after a letter edit: the packet view now fully refetches (the edit rebundles the
+  PDF server-side).
+
+### Changed
+- **Packet PDF upload failure no longer blocks submission**: near a deadline, the letter +
+  structured evidence still reach Stripe; the attach failure is logged with Stripe's full
+  diagnostics (type/param/request id) and recorded on the packet.
+- Webhook triage failures are non-fatal (the dispute row is already persisted; a triage error
+  must not force endless Stripe retries).
+
+---
+
 ## Unreleased - Zoom Beta Catalog Release (2026-07-11)
 
 > **Deploy ordering:** apply migration `094_enable_zoom_beta_catalog.sql` to expose the Zoom Connect button.
