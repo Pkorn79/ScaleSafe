@@ -331,7 +331,7 @@ onBeforeUnmount(() => window.removeEventListener('message', handleOAuthMessage))
             <span>{{ zoomSetup.connection?.externalAccountName }}</span>
           </div>
           <div v-for="resource in zoomSetup.resources" :key="resource.id" class="mapping-row">
-            <div><strong>{{ resource.name }}</strong><small>Meeting {{ resource.id }}</small></div>
+            <div><strong>{{ resource.name }}</strong><small>{{ resource.metadata?.hostName || resource.metadata?.hostEmail || 'Zoom host' }} · Meeting {{ resource.id }}</small></div>
             <select v-model="zoomSelections[resource.id]">
               <option value="">Do not collect</option>
               <option v-for="offer in zoomSetup.offers" :key="offer.id" :value="offer.id">{{ offer.offer_name }}</option>

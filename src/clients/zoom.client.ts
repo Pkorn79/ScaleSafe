@@ -23,6 +23,9 @@ export interface ZoomMeetingResource {
   startTime?: string;
   timezone?: string;
   joinUrl?: string;
+  hostId?: string;
+  hostEmail?: string;
+  hostName?: string;
 }
 
 function requirePlatformCredentials(): void {
@@ -107,28 +110,61 @@ export const zoomClient = {
   },
 
   async listMeetings(accessToken: string): Promise<ZoomMeetingResource[]> {
-    const meetings: ZoomMeetingResource[] = [];
+    const users: Array<{ id: string; email: string; name: string }> = [];
     let nextPageToken = '';
     for (let page = 0; page < 10; page += 1) {
-      const response = await axios.get('https://api.zoom.us/v2/users/me/meetings', {
+      const response = await axios.get('https://api.zoom.us/v2/users', {
         headers: { Authorization: `Bearer ${accessToken}` },
-        params: { type: 'scheduled', page_size: 100, next_page_token: nextPageToken || undefined },
+        params: { status: 'active', page_size: 100, next_page_token: nextPageToken || undefined },
         timeout: 15000,
       });
-      for (const row of response.data?.meetings || []) {
-        if (!row?.id) continue;
-        meetings.push({
+      for (const row of response.data?.users || []) {
+        if (row?.id) users.push({
           id: String(row.id),
-          topic: String(row.topic || `Zoom meeting ${row.id}`),
-          type: Number(row.type || 2),
-          startTime: row.start_time ? String(row.start_time) : undefined,
-          timezone: row.timezone ? String(row.timezone) : undefined,
-          joinUrl: row.join_url ? String(row.join_url) : undefined,
+          email: String(row.email || ''),
+          name: String(row.display_name || `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email || 'Zoom Host'),
         });
       }
       nextPageToken = String(response.data?.next_page_token || '');
       if (!nextPageToken) break;
     }
-    return meetings;
+
+    const meetings: ZoomMeetingResource[] = [];
+    for (let offset = 0; offset < users.length; offset += 5) {
+      const batch = users.slice(offset, offset + 5);
+      const results = await Promise.all(batch.map(async (user) => {
+        const rows: ZoomMeetingResource[] = [];
+        let meetingPageToken = '';
+        for (let page = 0; page < 10; page += 1) {
+          const response = await axios.get(`https://api.zoom.us/v2/users/${encodeURIComponent(user.id)}/meetings`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            params: { type: 'scheduled', page_size: 100, next_page_token: meetingPageToken || undefined },
+            timeout: 15000,
+          });
+          for (const row of response.data?.meetings || []) {
+            if (!row?.id) continue;
+            rows.push({
+              id: String(row.id),
+              topic: String(row.topic || `Zoom meeting ${row.id}`),
+              type: Number(row.type || 2),
+              startTime: row.start_time ? String(row.start_time) : undefined,
+              timezone: row.timezone ? String(row.timezone) : undefined,
+              joinUrl: row.join_url ? String(row.join_url) : undefined,
+              hostId: user.id,
+              hostEmail: user.email,
+              hostName: user.name,
+            });
+          }
+          meetingPageToken = String(response.data?.next_page_token || '');
+          if (!meetingPageToken) break;
+        }
+        return rows;
+      }));
+      meetings.push(...results.flat());
+    }
+
+    const unique = new Map<string, ZoomMeetingResource>();
+    for (const meeting of meetings) unique.set(meeting.id, meeting);
+    return Array.from(unique.values()).sort((left, right) => left.topic.localeCompare(right.topic));
   },
 };

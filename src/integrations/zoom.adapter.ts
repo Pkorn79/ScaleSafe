@@ -16,6 +16,9 @@ export const zoomAdapter: ProviderAdapter = {
         meetingType: meeting.type,
         startTime: meeting.startTime || null,
         timezone: meeting.timezone || null,
+        hostId: meeting.hostId || null,
+        hostEmail: meeting.hostEmail || null,
+        hostName: meeting.hostName || null,
       },
     }));
   },
