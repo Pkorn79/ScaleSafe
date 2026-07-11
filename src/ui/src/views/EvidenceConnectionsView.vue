@@ -66,9 +66,6 @@ const connectProvider = ref<Provider | null>(null);
 const connectionName = ref('');
 const connecting = ref(false);
 const credentialResult = ref<any | null>(null);
-const zoomSetup = ref<any | null>(null);
-const zoomSelections = ref<Record<string, string>>({});
-const savingMappings = ref(false);
 let oauthPopup: Window | null = null;
 let oauthCloseTimer: number | null = null;
 let oauthRefreshInFlight = false;
@@ -154,14 +151,6 @@ async function openConnection(id: string) {
   if (!selectedConnection.value) return;
   const result = await api.get<any>(`/api/evidence-connections/${id}/events`);
   events.value = result.events || [];
-  zoomSetup.value = null;
-  zoomSelections.value = {};
-  if (selectedConnection.value.providerKey === 'zoom') {
-    zoomSetup.value = await api.get<any>(`/api/evidence-connections/${id}/zoom-setup`);
-    for (const resource of zoomSetup.value.resources || []) {
-      zoomSelections.value[resource.id] = resource.mapping?.offer_id || resource.suggestedOfferId || '';
-    }
-  }
 }
 
 function beginConnect(provider: Provider) {
@@ -229,23 +218,6 @@ async function createConnection() {
     await load();
   } finally {
     connecting.value = false;
-  }
-}
-
-async function saveZoomMappings() {
-  if (!selectedConnection.value || !zoomSetup.value) return;
-  savingMappings.value = true;
-  try {
-    await api.post(`/api/evidence-connections/${selectedConnection.value.id}/zoom-mappings`, {
-      mappings: (zoomSetup.value.resources || []).map((resource: any) => ({
-        resourceId: resource.id,
-        offerId: zoomSelections.value[resource.id] || '',
-      })),
-    });
-    await load();
-    await openConnection(selectedConnection.value.id);
-  } finally {
-    savingMappings.value = false;
   }
 }
 
@@ -327,10 +299,13 @@ onBeforeUnmount(() => {
           <div class="capabilities">
             <span v-for="capability in provider.capabilities" :key="capability"><Check :size="12" />{{ capabilityLabel(capability) }}</span>
           </div>
-          <button v-if="provider.connectable" class="connect-button" @click="beginConnect(provider)">
+          <button v-if="provider.connected" class="connected-button" disabled><CheckCircle2 :size="15" /> Connected</button>
+          <button v-else-if="provider.hasConnection" class="connect-button" @click="openConnection(provider.connections[0].id)">
+            <ChevronRight :size="15" /> View connection
+          </button>
+          <button v-else-if="provider.connectable" class="connect-button" @click="beginConnect(provider)">
             <Plug :size="15" /> Connect
           </button>
-          <button v-else-if="provider.connected" class="connected-button" disabled><CheckCircle2 :size="15" /> Connected</button>
           <div v-else class="availability"><Clock3 :size="14" />{{ releaseLabel(provider) }}</div>
         </article>
         <div v-if="!visibleProviders.length" class="no-results">No matching integrations</div>
@@ -363,24 +338,6 @@ onBeforeUnmount(() => {
           <div><span>Last evidence</span><strong>{{ formatDate(selectedConnection.lastEvidenceAt) }}</strong></div>
           <div><span>Published</span><strong>{{ selectedConnection.publishedCount }}</strong></div>
           <div><span>Programs</span><strong>{{ selectedConnection.affectedPrograms.length }}</strong></div>
-        </div>
-        <div v-if="selectedConnection.providerKey === 'zoom' && zoomSetup" class="zoom-mapping">
-          <div class="mapping-head">
-            <div><h3>Meeting matches</h3><p>Match each client-facing Zoom meeting to the ScaleSafe offer it delivers.</p></div>
-            <span>{{ zoomSetup.connection?.externalAccountName }}</span>
-          </div>
-          <div v-for="resource in zoomSetup.resources" :key="resource.id" class="mapping-row">
-            <div><strong>{{ resource.name }}</strong><small>{{ resource.metadata?.hostName || resource.metadata?.hostEmail || 'Zoom host' }} · Meeting {{ resource.id }}</small></div>
-            <select v-model="zoomSelections[resource.id]">
-              <option value="">Do not collect</option>
-              <option v-for="offer in zoomSetup.offers" :key="offer.id" :value="offer.id">{{ offer.offer_name }}</option>
-            </select>
-          </div>
-          <div v-if="!zoomSetup.resources.length" class="empty-cell">No scheduled meetings were returned by Zoom.</div>
-          <div class="mapping-actions">
-            <span>Attendance only. Zoom chats are not collected.</span>
-            <button class="primary-button" :disabled="savingMappings" @click="saveZoomMappings"><Check :size="15" />{{ savingMappings ? 'Saving...' : 'Save and activate' }}</button>
-          </div>
         </div>
         <h3>Recent activity</h3>
         <table><thead><tr><th>Received</th><th>Activity</th><th>Program</th><th>Status</th></tr></thead><tbody>

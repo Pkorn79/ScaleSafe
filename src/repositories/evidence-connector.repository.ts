@@ -415,6 +415,17 @@ export const evidenceConnectorRepository = {
     return data || [];
   },
 
+  async findSubjectsByEmail(locationId: string, normalizedEmail: string): Promise<any[]> {
+    const { data, error } = await getSupabase()
+      .from('evidence_subjects')
+      .select('*, enrollment:enrollments(*), offer:offers_mirror(id, offer_name, delivery_method)')
+      .eq('location_id', locationId)
+      .eq('normalized_email', normalizedEmail)
+      .limit(50);
+    if (error) throw error;
+    return data || [];
+  },
+
   async persistIdentity(input: Record<string, unknown>): Promise<void> {
     const rows: Record<string, unknown>[] = [];
     if (input.external_contact_id) rows.push({ ...input, external_enrollment_id: null });

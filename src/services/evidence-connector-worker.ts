@@ -22,6 +22,58 @@ async function resourceOfferId(connection: EvidenceConnectionRecord, event: Cano
   return mapping?.offer_id || null;
 }
 
+function normalizedLabel(value: unknown): string {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function enrollmentEligibleAt(subject: any, occurredAt: string): boolean {
+  const enrollment = subject?.enrollment || subject;
+  if (!enrollment?.id) return false;
+  const occurred = new Date(occurredAt).getTime();
+  if (!Number.isFinite(occurred)) return false;
+  const enrolledAt = enrollment.enrolled_at ? new Date(enrollment.enrolled_at).getTime() : 0;
+  if (Number.isFinite(enrolledAt) && enrolledAt > 0 && occurred < enrolledAt) return false;
+  const cancelledAt = enrollment.cancelled_at ? new Date(enrollment.cancelled_at).getTime() : 0;
+  if (Number.isFinite(cancelledAt) && cancelledAt > 0 && occurred > cancelledAt) return false;
+  const completedAt = enrollment.completed_at ? new Date(enrollment.completed_at).getTime() : 0;
+  if (Number.isFinite(completedAt) && completedAt > 0 && occurred > completedAt) return false;
+  return !['pending', 'consent_captured', 'paid_pending_enrollment'].includes(String(enrollment.status || ''));
+}
+
+function uniqueSubjects(rows: any[]): any[] {
+  return Array.from(new Map(rows.filter(Boolean).map((row) => [row.id, row])).values());
+}
+
+async function resolveUnmappedZoomSubject(connection: EvidenceConnectionRecord, event: CanonicalEvidenceEvent): Promise<Resolution> {
+  const normalizedEmail = String(event.subject.email || event.actor?.email || '').trim().toLowerCase();
+  if (!normalizedEmail) throw resolutionError('ZOOM_PARTICIPANT_EMAIL_MISSING', false);
+
+  let identityMatches: any[] = [];
+  if (event.subject.external_contact_id) {
+    identityMatches = await evidenceConnectorRepository.findSubjectsByIdentity(
+      connection.id,
+      event.subject.external_contact_id,
+      undefined,
+    );
+  }
+  const emailMatches = await evidenceConnectorRepository.findSubjectsByEmail(connection.location_id, normalizedEmail);
+  const eligible = uniqueSubjects([...identityMatches, ...emailMatches])
+    .filter((subject) => enrollmentEligibleAt(subject, event.occurred_at));
+
+  if (eligible.length === 1) return { subject: eligible[0], method: 'zoom_exact_email_unique_enrollment' };
+  if (!eligible.length) throw resolutionError('ZOOM_ENROLLMENT_NOT_READY', true);
+
+  const meetingName = normalizedLabel(event.resource?.name);
+  if (meetingName) {
+    const topicMatches = eligible.filter((subject) => normalizedLabel(subject.offer?.offer_name) === meetingName);
+    if (topicMatches.length === 1) return { subject: topicMatches[0], method: 'zoom_email_and_exact_offer_name' };
+  }
+
+  const liveVirtual = eligible.filter((subject) => /zoom|meet|virtual/i.test(String(subject.offer?.delivery_method || '')));
+  if (liveVirtual.length === 1) return { subject: liveVirtual[0], method: 'zoom_email_and_unique_live_virtual_enrollment' };
+  throw resolutionError('AMBIGUOUS_ZOOM_ENROLLMENT', false);
+}
+
 export async function resolveConnectorSubject(connection: EvidenceConnectionRecord, event: CanonicalEvidenceEvent): Promise<Resolution> {
   if (event.subject.enrollment_ref) {
     const subject = await evidenceConnectorRepository.findSubjectByRef(connection.location_id, event.subject.enrollment_ref);
@@ -40,6 +92,9 @@ export async function resolveConnectorSubject(connection: EvidenceConnectionReco
   }
 
   const offerId = await resourceOfferId(connection, event);
+  if (!offerId && connection.provider_key === 'zoom') {
+    return resolveUnmappedZoomSubject(connection, event);
+  }
   if (!offerId) throw resolutionError('RESOURCE_NOT_MAPPED', false);
 
   if (event.subject.external_contact_id) {

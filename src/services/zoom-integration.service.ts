@@ -132,9 +132,10 @@ export const zoomIntegrationService = {
         external_account_id: profile.accountId,
         external_account_name: profile.accountName,
         provider_metadata: { zoomUserId: profile.userId, zoomEmail: profile.email, chatCollection: false },
-        setup_status: 'testing',
-        status: 'disabled',
-        health_status: 'ready',
+        setup_status: 'active',
+        status: 'active',
+        health_status: 'healthy',
+        activated_at: new Date().toISOString(),
         last_error_message: null,
       });
       await evidenceConnectorRepository.audit(claimed.location_id, connection.id, 'zoom.oauth_completed', claimed.requested_by || 'merchant_user', {
@@ -351,7 +352,7 @@ export const zoomIntegrationService = {
       },
       activity: {
         status: 'attended',
-        description: 'Zoom recorded the client joining and leaving this mapped meeting.',
+        description: 'Zoom recorded the client joining and leaving this meeting.',
         duration_seconds: durationSeconds || undefined,
         started_at: attendance.joined_at,
         ended_at: leftAt,

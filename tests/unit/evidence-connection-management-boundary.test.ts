@@ -21,6 +21,8 @@ describe('merchant evidence connection boundary', () => {
       'POST /:id/rotate',
       'POST /:id/preview',
       'POST /:id/test',
+      'GET /:id/zoom-setup',
+      'POST /:id/zoom-mappings',
     ]));
   });
 });
