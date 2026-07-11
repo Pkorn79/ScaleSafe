@@ -62,9 +62,6 @@
               <div class="evidence-detail">
                 <div v-if="exhibitTitle(item)" class="evidence-title">{{ exhibitTitle(item) }}</div>
                 <div>{{ summarize(item) }}</div>
-                <div v-if="visibleReasonTags(item).length" class="evidence-tags">
-                  <span v-for="tag in visibleReasonTags(item)" :key="tag" class="badge badge-gray">{{ formatEvidenceType(tag) }}</span>
-                </div>
               </div>
             </td>
             <td class="text-sm evidence-link-cell">
@@ -229,11 +226,6 @@ function proofRole(item: any): string {
   return String(item.proof_role || evidenceData(item).proof_role || '').trim();
 }
 
-function reasonTags(item: any): string[] {
-  const tags = item.reason_code_tags || evidenceData(item).reason_code_tags || [];
-  return Array.isArray(tags) ? tags.filter(Boolean).slice(0, 4) : [];
-}
-
 function evidenceType(item: any): string {
   return String(item.evidence_type || item.type || '').trim();
 }
@@ -242,11 +234,6 @@ function visibleProofRole(item: any): string {
   if (evidenceType(item) === 'communication') return '';
   const role = proofRole(item);
   return role && role !== evidenceType(item) ? role : '';
-}
-
-function visibleReasonTags(item: any): string[] {
-  if (['communication', 'pulse_checkin'].includes(evidenceType(item))) return [];
-  return reasonTags(item);
 }
 
 function stripHtml(value: string): string {
@@ -478,12 +465,6 @@ onMounted(async () => {
   color: var(--text, #111827);
   font-weight: 600;
   line-height: 1.35;
-}
-
-.evidence-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 .evidence-link-cell {
