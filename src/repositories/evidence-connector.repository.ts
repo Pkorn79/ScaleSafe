@@ -510,7 +510,7 @@ export const evidenceConnectorRepository = {
   async getHqSummary(): Promise<any[]> {
     const { data, error } = await getSupabase()
       .from('evidence_connections')
-      .select('id, location_id, name, source_label, connection_type, status, setup_status, setup_mode, identity_strategy, activated_at, health_status, last_event_at, last_success_at, last_error_at, last_error_message, created_at')
+      .select('id, location_id, name, source_label, connection_type, provider_key, auth_mode, external_account_id, external_account_name, provider_capabilities, status, setup_status, setup_mode, identity_strategy, activated_at, health_status, last_event_at, last_success_at, last_error_at, last_error_message, created_at')
       .order('last_event_at', { ascending: false, nullsFirst: false });
     if (error) throw error;
     return data || [];

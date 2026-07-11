@@ -1,6 +1,6 @@
 # Universal Evidence Connector: Assisted Automation Plan
 
-**Implementation status (2026-07-10):** Implemented in code behind migration 090 and `EVIDENCE_CONNECTOR_AUTOMATION_ENABLED`. Migration review/application and live test-sub-account certification remain required before deployment.
+**Implementation status (2026-07-11):** The universal intake and exact enrollment binding are implemented by migrations 089/090. Migration 092 adds the merchant integration catalog, database-controlled provider rollout, provider authorization contracts, external commerce truth, per-offer access policy, and entitlement reconciliation. Named adapters remain release-gated until individually certified.
 
 ## Objective
 
@@ -16,7 +16,7 @@ No universal connector can infer the meaning of arbitrary third-party data witho
 2. A stable external client/enrollment identity plus a resource-to-offer association.
 3. A named provider adapter that discovers those identities and resources through the provider API.
 
-The merchant does not need to perform this work. During beta, ScaleSafe/WholePay performs the one-time setup in ScaleSafe HQ. Named adapters can later replace operator setup with OAuth and guided discovery.
+The merchant does not map individual events. Named adapters use OAuth or a guided provider credential inside the merchant's ScaleSafe account, discover resources, and ask for one offer match confirmation. ScaleSafe HQ remains available for custom connectors and support.
 
 ## Connection Paths
 
@@ -34,7 +34,7 @@ The merchant sees health and recent activity, not payload paths or mapping contr
 
 ### Named Provider Adapter
 
-A future adapter uses OAuth, provider signatures, resource discovery, and API enrichment. ScaleSafe discovers products and customers, proposes associations, and activates them after one setup confirmation. Named Zoom, Meet, LMS, or course-platform adapters remain outside this development pass.
+The shared adapter contract supports OAuth, provider signatures, resource discovery, evidence normalization, external commerce import, and access reconciliation. Each provider remains unavailable until its adapter and provider-specific tests are certified.
 
 ## Phase A: Correct the Current Experience
 

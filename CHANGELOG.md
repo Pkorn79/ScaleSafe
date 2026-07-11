@@ -3,6 +3,26 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Integration Catalog and Access Gating Foundation (2026-07-11)
+
+> **Deploy ordering:** apply migration `092_integration_catalog_and_access_gating.sql` before deploying this code.
+
+### Added
+- Merchant-facing Evidence Connections catalog covering coaching, course, agency delivery, support, files, checkout, and reporting providers with honest release and capability labels.
+- Database-controlled provider/sub-account rollout, encrypted authorization storage contract, OAuth state ledger, external commerce ledger, per-offer delivery modes, and entitlement reconciliation state.
+- Offer controls for evidence-only, ScaleSafe checkout with managed access, ScaleSafe consent with provider checkout, and provider checkout import. Controls appear only for active, approved provider resources with the required capabilities.
+- Provider adapter contract for resource discovery, signed webhooks, commerce normalization, and access grant/revoke/reconciliation.
+
+### Changed
+- Removed `EVIDENCE_CONNECTOR_AUTOMATION_LOCATION_IDS`; Railway now contains only the global emergency switch. Provider rollout is tenant-bound in Supabase.
+- Merchant connector management now exposes catalog, health, safe connection disablement, and the supported custom API credential flow while keeping raw mapper and replay tools in ScaleSafe HQ.
+
+### Security
+- External commerce records cannot mutate ScaleSafe payment truth.
+- Access policies never revoke on partial refunds or the first failed installment; ambiguous events cannot change entitlements.
+
+---
+
 ## Unreleased — Stripe Defense MVP-4: Visa Compelling Evidence 3.0 (2026-07-10)
 
 > **Deploy ordering:** migration `091_ce3_vault_fingerprints.sql` must be applied in Supabase

@@ -159,6 +159,9 @@ export const evidenceConnectionService = {
       setup_status: 'draft',
       setup_mode: input.setupMode || 'operator_managed',
       identity_strategy: input.identityStrategy || 'enrollment_context',
+      provider_key: input.providerKey || null,
+      auth_mode: input.authMode || null,
+      provider_capabilities: Array.isArray(input.providerCapabilities) ? input.providerCapabilities : [],
       configured_by: actorLabel,
       created_by: actorLabel,
     });

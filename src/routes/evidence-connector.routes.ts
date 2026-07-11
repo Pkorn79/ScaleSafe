@@ -6,7 +6,11 @@ import { requireCanonicalEvidenceApiKey } from '../middleware/evidenceConnectorA
 
 export const evidenceConnectionManagementRoutes = Router();
 evidenceConnectionManagementRoutes.use(ssoAuth, requireTenant);
+evidenceConnectionManagementRoutes.get('/catalog', evidenceConnectorController.catalog);
+evidenceConnectionManagementRoutes.get('/offer-options', evidenceConnectorController.offerOptions);
+evidenceConnectionManagementRoutes.post('/catalog/:providerKey/connect', evidenceConnectorController.connectCatalogProvider);
 evidenceConnectionManagementRoutes.get('/', evidenceConnectorController.list);
+evidenceConnectionManagementRoutes.post('/:id/status', evidenceConnectorController.merchantStatus);
 evidenceConnectionManagementRoutes.get('/:id/events', evidenceConnectorController.events);
 
 export const evidenceConnectorPublicRoutes = Router();

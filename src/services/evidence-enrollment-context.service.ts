@@ -20,9 +20,8 @@ function tokenHash(token: string): string {
 }
 
 function automationEnabled(locationId: string): boolean {
-  const automation = config.evidenceConnectorAutomation || { enabled: false, locationIds: [] };
-  return automation.enabled
-    && (automation.locationIds.length === 0 || automation.locationIds.includes(locationId));
+  void locationId;
+  return config.evidenceConnectorAutomation?.enabled === true;
 }
 
 function requireAutomation(locationId: string): void {

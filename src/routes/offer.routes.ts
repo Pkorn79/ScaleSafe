@@ -14,6 +14,8 @@ router.get('/dual-pricing/config', offerController.dualPricingConfig);
 router.put('/dual-pricing/config', offerController.updateDualPricingConfig);
 router.post('/quote', offerController.quote);
 router.get('/:id', offerController.getById);
+router.get('/:id/evidence-integration', offerController.getEvidenceIntegration);
+router.put('/:id/evidence-integration', offerController.updateEvidenceIntegration);
 router.put('/:id', offerController.update);
 router.delete('/:id', offerController.delete);
 router.get('/:id/enrollment-link', offerController.getEnrollmentLink);

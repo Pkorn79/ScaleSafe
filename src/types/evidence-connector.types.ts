@@ -1,4 +1,4 @@
-export type EvidenceConnectionType = 'canonical_api' | 'raw_webhook' | 'legacy_external';
+export type EvidenceConnectionType = 'canonical_api' | 'raw_webhook' | 'legacy_external' | 'provider_adapter';
 export type EvidenceCredentialType = 'api_key' | 'hmac' | 'url_secret';
 export type EvidenceConnectionSetupStatus = 'draft' | 'testing' | 'active' | 'needs_attention' | 'disabled';
 export type EvidenceConnectionSetupMode = 'operator_managed' | 'developer_api' | 'native_adapter';
@@ -115,6 +115,12 @@ export interface EvidenceConnectionRecord {
   identity_strategy: 'enrollment_context' | 'external_enrollment' | 'external_contact_resource' | 'email_resource_bootstrap';
   activated_at: string | null;
   configured_by: string | null;
+  provider_key: string | null;
+  auth_mode: 'native' | 'oauth2' | 'api_key' | 'signed_webhook' | 'guided_webhook' | 'zapier' | null;
+  external_account_id: string | null;
+  external_account_name: string | null;
+  provider_capabilities: string[];
+  provider_metadata: Record<string, unknown>;
 }
 
 export interface EvidenceEnrollmentContextRecord {

@@ -399,6 +399,46 @@
         <p v-if="whopSyncError" class="text-sm" style="color:#dc2626">{{ whopSyncError }}</p>
       </div>
 
+      <h3 class="mt-4 mb-4">Connected Delivery</h3>
+      <div v-if="!isEdit" class="integration-note">
+        Save this offer before connecting a course, community, or delivery platform.
+      </div>
+      <div v-else-if="!offerIntegrationOptions.length" class="integration-note">
+        No connected platform resources are mapped to this offer.
+        <router-link to="/settings/evidence-connections">Open Evidence Connections</router-link>
+      </div>
+      <div v-else class="delivery-integration-panel">
+        <div class="form-group">
+          <label class="form-label">Platform resource</label>
+          <select class="form-select" v-model="form.evidenceIntegrationOption">
+            <option value="">No connected delivery platform</option>
+            <option v-for="option in offerIntegrationOptions" :key="option.mappingId" :value="option.mappingId">
+              {{ option.providerName }} · {{ option.resourceName }}
+            </option>
+          </select>
+        </div>
+        <div v-if="selectedIntegrationOption" class="form-group">
+          <label class="form-label">Checkout and access</label>
+          <select class="form-select" v-model="form.evidenceAccessMode">
+            <option value="evidence_only">Collect evidence only</option>
+            <option v-if="selectedIntegrationCapabilities.has('access_management')" value="scalesafe_checkout_managed_access">ScaleSafe checkout + manage access</option>
+            <option v-if="selectedIntegrationCapabilities.has('native_purchases')" value="scalesafe_consent_provider_checkout">ScaleSafe consent + provider checkout</option>
+            <option v-if="selectedIntegrationCapabilities.has('native_purchases')" value="provider_checkout_import">Provider checkout + ScaleSafe import</option>
+          </select>
+        </div>
+        <div v-if="form.evidenceAccessMode === 'scalesafe_checkout_managed_access'" class="access-policy-grid">
+          <div class="form-group">
+            <label class="form-label">Failed payment grace period</label>
+            <div class="input-suffix"><input class="form-input" type="number" min="0" max="90" v-model.number="form.evidenceGracePeriodDays" /><span>days</span></div>
+          </div>
+          <div class="access-toggles">
+            <label class="checkbox-label"><input type="checkbox" v-model="form.evidenceRevokeOnCancellation" /> Revoke after confirmed cancellation</label>
+            <label class="checkbox-label"><input type="checkbox" v-model="form.evidenceRevokeOnFullRefund" /> Revoke after full refund</label>
+            <label class="checkbox-label"><input type="checkbox" v-model="form.evidenceRevokeOnDunningExhausted" /> Revoke after dunning is exhausted</label>
+          </div>
+        </div>
+      </div>
+
       <!-- Payment Processor Override -->
       <h3 v-if="form.checkoutType === 'direct'" class="mt-4 mb-4">Payment Processor</h3>
       <div v-if="form.checkoutType === 'direct'" class="grid grid-2">
@@ -497,6 +537,18 @@ const whopPlanId = ref('');
 const whopSyncStatus = ref('');
 const whopSyncError = ref('');
 const nmiProcessorIds = ref<Array<{ id: string; label: string }>>([]);
+interface IntegrationOption {
+  mappingId: string;
+  connectionId: string;
+  providerKey: string;
+  providerName: string;
+  capabilities: string[];
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  mappedOfferId: string;
+}
+const integrationOptions = ref<IntegrationOption[]>([]);
 
 const standardClauses = [
   { key: 'purchase_summary', label: 'Purchase Summary', text: 'I confirm that I am purchasing the program described for the total amount and payment terms shown above.', recommended: true },
@@ -559,7 +611,17 @@ const form = ref({
   quickCheckoutShowRefundPolicy: true,
   pulseCadenceEnabled: true,
   pulseFrequencyDays: 30,
+  evidenceIntegrationOption: '',
+  evidenceAccessMode: 'evidence_only',
+  evidenceGracePeriodDays: 7,
+  evidenceRevokeOnCancellation: false,
+  evidenceRevokeOnFullRefund: false,
+  evidenceRevokeOnDunningExhausted: false,
 });
+
+const offerIntegrationOptions = computed(() => integrationOptions.value.filter(option => option.mappedOfferId === String(route.params.id || '')));
+const selectedIntegrationOption = computed(() => offerIntegrationOptions.value.find(option => option.mappingId === form.value.evidenceIntegrationOption) || null);
+const selectedIntegrationCapabilities = computed(() => new Set(selectedIntegrationOption.value?.capabilities || []));
 
 const visibleMilestoneCount = ref(1);
 
@@ -631,6 +693,12 @@ onMounted(async () => {
     whopConnected.value = !!whop?.connected;
   } catch {
     whopConnected.value = false;
+  }
+  try {
+    const integrationResult = await api.get<any>('/api/evidence-connections/offer-options');
+    integrationOptions.value = integrationResult.options || [];
+  } catch {
+    integrationOptions.value = [];
   }
 
   // Clear any 404 errors from optional config fetches above
@@ -710,6 +778,25 @@ onMounted(async () => {
       form.value.quickCheckoutShowRefundPolicy = offer.quick_checkout_show_refund_policy ?? true;
       form.value.pulseCadenceEnabled = offer.pulse_cadence_enabled ?? true;
       form.value.pulseFrequencyDays = offer.pulse_frequency_days || 30;
+      try {
+        const integrationResult = await api.get<any>(`/api/offers/${route.params.id}/evidence-integration`);
+        const integration = integrationResult.integration;
+        if (integration) {
+          const option = offerIntegrationOptions.value.find(candidate =>
+            candidate.connectionId === integration.connection_id
+            && candidate.resourceType === integration.external_resource_type
+            && candidate.resourceId === integration.external_resource_id,
+          );
+          form.value.evidenceIntegrationOption = option?.mappingId || '';
+          form.value.evidenceAccessMode = integration.access_mode || 'evidence_only';
+          form.value.evidenceGracePeriodDays = integration.grace_period_days ?? 7;
+          form.value.evidenceRevokeOnCancellation = integration.revoke_on_cancellation === true;
+          form.value.evidenceRevokeOnFullRefund = integration.revoke_on_full_refund === true;
+          form.value.evidenceRevokeOnDunningExhausted = integration.revoke_on_dunning_exhausted === true;
+        }
+      } catch {
+        // Offer remains editable if no integration has been configured.
+      }
     } catch (err: any) {
       error.value = err?.message || 'Failed to load offer.';
     }
@@ -732,6 +819,17 @@ watch(() => form.value.dualPricingEnabled, (enabled) => {
 watch(() => form.value.checkoutMode, (mode) => {
   if (!isEdit.value) {
     form.value.pulseCadenceEnabled = mode !== 'quick_checkout';
+  }
+});
+
+watch(() => form.value.evidenceIntegrationOption, () => {
+  const capabilities = selectedIntegrationCapabilities.value;
+  if (form.value.evidenceAccessMode === 'scalesafe_checkout_managed_access' && !capabilities.has('access_management')) {
+    form.value.evidenceAccessMode = 'evidence_only';
+  }
+  if (['scalesafe_consent_provider_checkout', 'provider_checkout_import'].includes(form.value.evidenceAccessMode)
+    && !capabilities.has('native_purchases')) {
+    form.value.evidenceAccessMode = 'evidence_only';
   }
 });
 
@@ -801,6 +899,18 @@ async function save() {
   try {
     if (isEdit.value) {
       await api.put(`/api/offers/${route.params.id}`, payload);
+      const integration = selectedIntegrationOption.value;
+      await api.put(`/api/offers/${route.params.id}/evidence-integration`, integration ? {
+        accessMode: form.value.evidenceAccessMode,
+        connectionId: integration.connectionId,
+        resourceType: integration.resourceType,
+        resourceId: integration.resourceId,
+        resourceName: integration.resourceName,
+        gracePeriodDays: form.value.evidenceGracePeriodDays,
+        revokeOnCancellation: form.value.evidenceRevokeOnCancellation,
+        revokeOnFullRefund: form.value.evidenceRevokeOnFullRefund,
+        revokeOnDunningExhausted: form.value.evidenceRevokeOnDunningExhausted,
+      } : { accessMode: 'none' });
     } else {
       await api.post('/api/offers', payload);
     }
@@ -954,5 +1064,54 @@ async function save() {
 .whop-sync-panel {
   border-left: 3px solid #f59e0b;
   padding-left: 16px;
+}
+
+.integration-note {
+  border: 1px solid #dbe3ea;
+  background: #f8fafc;
+  border-radius: 6px;
+  color: #475569;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.integration-note a {
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.delivery-integration-panel {
+  border-left: 3px solid #0f766e;
+  padding-left: 16px;
+}
+
+.access-policy-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.input-suffix {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-suffix span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.access-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 24px;
+}
+
+@media (max-width: 680px) {
+  .access-policy-grid { grid-template-columns: 1fr; }
+  .access-toggles { padding-top: 0; }
 }
 </style>

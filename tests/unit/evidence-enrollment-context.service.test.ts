@@ -13,7 +13,7 @@ const repository = {
 jest.mock('../../src/config', () => ({
   config: {
     appUrl: 'https://dashboard.scalesafe.app',
-    evidenceConnectorAutomation: { enabled: true, locationIds: ['loc-1'] },
+    evidenceConnectorAutomation: { enabled: true },
   },
 }));
 jest.mock('../../src/repositories/evidence-connector.repository', () => ({ evidenceConnectorRepository: repository }));
@@ -119,14 +119,18 @@ describe('automatic evidence enrollment context', () => {
     })).rejects.toThrow('not approved');
   });
 
-  it('checks the rollout tenant before atomically claiming the context', async () => {
+  it('checks the stored tenant and offer before atomically claiming the context', async () => {
     repository.findEnrollmentContextByTokenHash.mockResolvedValue({ location_id: 'loc-2', offer_id: 'offer-1' });
-    await expect(evidenceEnrollmentContextService.claimForCheckout({
+    repository.claimEnrollmentContext.mockResolvedValue({
+      context_id: 'ctx-1', enrollment_id: 'enrollment-1', location_id: 'loc-2', merchant_id: 'merchant-2', offer_id: 'offer-1', context_status: 'attached',
+    });
+    const result = await evidenceEnrollmentContextService.claimForCheckout({
       token: 'ss_ctx_token',
       offerId: 'offer-1',
       email: 'client@example.com',
-    })).rejects.toThrow('not enabled');
-    expect(repository.claimEnrollmentContext).not.toHaveBeenCalled();
+    });
+    expect(result.locationId).toBe('loc-2');
+    expect(repository.claimEnrollmentContext).toHaveBeenCalled();
   });
 
   it('binds server identities only through a tenant-scoped enrollment reference', async () => {

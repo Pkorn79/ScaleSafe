@@ -5,6 +5,7 @@ import { evidenceConnectorRepository } from '../repositories/evidence-connector.
 import { externalEvidenceAttachmentService } from '../services/external-evidence-attachment.service';
 import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 import { ValidationError } from '../utils/errors';
+import { integrationCatalogService } from '../services/integration-catalog.service';
 
 function tenant(req: Request): string {
   const locationId = req.tenantContext?.locationId;
@@ -55,6 +56,33 @@ function publicEvent(row: any) {
 export const evidenceConnectorController = {
   async list(req: Request, res: Response, next: NextFunction) {
     try { res.json({ connections: await evidenceConnectionService.list(tenant(req)) }); } catch (err) { next(err); }
+  },
+
+  async catalog(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await integrationCatalogService.list(tenant(req))); } catch (err) { next(err); }
+  },
+
+  async connectCatalogProvider(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.status(201).json(await integrationCatalogService.connect(
+        tenant(req),
+        actor(req),
+        String(req.params.providerKey || ''),
+        req.body || {},
+      ));
+    } catch (err) { next(err); }
+  },
+
+  async offerOptions(req: Request, res: Response, next: NextFunction) {
+    try { res.json({ options: await integrationCatalogService.offerOptions(tenant(req)) }); } catch (err) { next(err); }
+  },
+
+  async merchantStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await integrationCatalogService.setMerchantStatus(
+        tenant(req), req.params.id, actor(req), req.body?.enabled === true,
+      ));
+    } catch (err) { next(err); }
   },
 
   async create(req: Request, res: Response, next: NextFunction) {

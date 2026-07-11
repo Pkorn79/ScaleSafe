@@ -6,6 +6,11 @@ import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 import { dualPricingService } from '../services/dual-pricing.service';
 import { logger } from '../utils/logger';
+import { offerEvidenceIntegrationService } from '../services/offer-evidence-integration.service';
+
+function actor(req: Request): string {
+  return req.tenantContext?.email || req.tenantContext?.userId || 'merchant_offer_editor';
+}
 
 export const offerController = {
   async create(req: Request, res: Response, next: NextFunction) {
@@ -90,6 +95,24 @@ export const offerController = {
         paymentMethod === 'ach' ? 'ach' : 'card',
       );
       res.json(quote);
+    } catch (err) { next(err); }
+  },
+
+  async getEvidenceIntegration(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const integration = await offerEvidenceIntegrationService.get(locationId, req.params.id);
+      res.json({ integration });
+    } catch (err) { next(err); }
+  },
+
+  async updateEvidenceIntegration(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+      const integration = await offerEvidenceIntegrationService.save(locationId, req.params.id, actor(req), req.body || {});
+      res.json({ integration });
     } catch (err) { next(err); }
   },
 

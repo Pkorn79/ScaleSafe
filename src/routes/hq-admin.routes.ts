@@ -7,6 +7,7 @@ import { debugLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
 import { evidenceConnectorRepository } from '../repositories/evidence-connector.repository';
 import { evidenceConnectionService } from '../services/evidence-connection.service';
+import { integrationCatalogService } from '../services/integration-catalog.service';
 
 const router = Router();
 
@@ -224,6 +225,37 @@ router.get('/internal/hq/api/evidence-connections', debugLimiter, requireHqToken
   } catch (err: any) {
     logger.error({ err: err.message }, 'HQ evidence connection list failed');
     res.status(500).json({ error: 'HQ evidence connection list failed' });
+  }
+});
+
+router.get('/internal/hq/api/evidence-provider-catalog/:locationId', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const catalog = await integrationCatalogService.list(req.params.locationId);
+    await audit(req, 'hq.evidence_provider_catalog_viewed', { targetLocationId: req.params.locationId });
+    res.json(catalog);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Provider catalog could not be loaded' });
+  }
+});
+
+router.put('/internal/hq/api/evidence-provider-catalog/:locationId/:providerKey', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    await merchantRepository.getByLocationId(req.params.locationId);
+    const release = await integrationCatalogService.setLocationRelease(
+      req.params.providerKey,
+      req.params.locationId,
+      adminLabel(req),
+      req.body?.enabled === true,
+    );
+    await audit(req, 'hq.evidence_provider_release_changed', {
+      targetLocationId: req.params.locationId,
+      targetType: 'evidence_provider',
+      targetId: req.params.providerKey,
+      metadata: { enabled: req.body?.enabled === true },
+    });
+    res.json({ release });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Provider release could not be updated' });
   }
 });
 
