@@ -747,9 +747,11 @@ LETTER STRUCTURE:
       }
     }
 
-    // 3. Communication exhibits
+    // 3. Communication and client-engagement exhibits. This group can include
+    // scheduled/confirmed appointments; those records show engagement or an
+    // opportunity to perform, but must never be described as completed delivery.
     if (exhibitList.byCategory.communication.length > 0) {
-      msg += `═══ COMMUNICATION EVIDENCE (${exhibitList.byCategory.communication.length} exhibits) ═══\n`;
+      msg += `═══ COMMUNICATION / CLIENT ENGAGEMENT EVIDENCE (${exhibitList.byCategory.communication.length} exhibits — scheduled appointments are NOT proof of completed delivery) ═══\n`;
       for (const ex of exhibitList.byCategory.communication) {
         msg += `  Exhibit ${ex.letter}: ${ex.name}\n    ${ex.summary}\n\n`;
       }

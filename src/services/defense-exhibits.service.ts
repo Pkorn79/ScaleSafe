@@ -101,6 +101,14 @@ export interface ExhibitList {
   sourceErrors: ExhibitSourceError[];
 }
 
+export function appointmentExhibitCategory(row: any): ExhibitCategory {
+  const status = String(row?.appointment_status || '').trim().toLowerCase();
+  const proofRole = String(row?.proof_role || '').trim().toLowerCase();
+  const delivered = proofRole === 'service_delivery'
+    || ['completed', 'attended', 'showed'].includes(status);
+  return delivered ? 'service_delivery' : 'communication';
+}
+
 /** Convert column index to letter: 1→A, 2→B… 26→Z, 27→AA… */
 function indexToLetter(n: number): string {
   let result = '';
@@ -457,15 +465,17 @@ export const defenseExhibitsService = {
         .order('start_time', { ascending: true });
       if (appointmentsErr) recordSourceError('evidence_appointments', appointmentsErr);
       for (const a of scopedRows((appointments || []) as any[], opts?.enrollmentId, 'start_time', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        const category = appointmentExhibitCategory(a);
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(a, `Appointment: ${a.appointment_title || 'GHL appointment'}`),
-          category: 'service_delivery',
+          category,
           source: 'evidence_appointments',
           ref: a.id,
           occurredAt: a.start_time || null,
           summary: exhibitSummary(a, `GHL appointment "${a.appointment_title || 'Untitled'}" recorded as ${a.appointment_status || 'unknown'} on ${fmtDate(a.start_time)}.`),
           meta: exhibitMeta(a, { calendarId: a.calendar_id, deliveryRole: a.delivery_role, appointmentStatus: a.appointment_status }),
+          deprioritized: category !== 'service_delivery',
         });
       }
     } catch (err) { recordSourceError('evidence_appointments', err); }

@@ -13,8 +13,22 @@ import {
   sortExhibitsByPriority,
   normalizeEvidencePriorities,
   buildTimelineRows,
+  appointmentExhibitCategory,
   type ExhibitEntry,
 } from '../../src/services/defense-exhibits.service';
+
+describe('appointment exhibit classification', () => {
+  test('scheduled appointments are engagement, not delivery', () => {
+    expect(appointmentExhibitCategory({ appointment_status: 'confirmed', proof_role: 'client_engagement' })).toBe('communication');
+    expect(appointmentExhibitCategory({ appointment_status: 'cancelled' })).toBe('communication');
+  });
+
+  test('only completed or attended appointments count as delivery', () => {
+    expect(appointmentExhibitCategory({ appointment_status: 'completed' })).toBe('service_delivery');
+    expect(appointmentExhibitCategory({ appointment_status: 'attended' })).toBe('service_delivery');
+    expect(appointmentExhibitCategory({ appointment_status: 'confirmed', proof_role: 'service_delivery' })).toBe('service_delivery');
+  });
+});
 
 function ex(source: string, name: string, occurredAt = '2026-01-01'): ExhibitEntry {
   return {
