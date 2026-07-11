@@ -13,5 +13,9 @@ describe('integration provider catalog', () => {
     expect(INTEGRATION_PROVIDER_MAP.get('zoom')?.capabilities).toContain('attendance');
     expect(INTEGRATION_PROVIDER_MAP.get('agencyanalytics')?.capabilities).toContain('reporting');
     expect(INTEGRATION_PROVIDER_MAP.get('calendly')?.capabilities).not.toContain('attendance');
+    expect(INTEGRATION_PROVIDER_MAP.get('ghl_native')).toMatchObject({
+      name: 'GHL Fulfillment',
+      capabilities: expect.arrayContaining(['evidence', 'attendance', 'progress', 'communications']),
+    });
   });
 });

@@ -8,6 +8,7 @@ export const evidenceConnectionManagementRoutes = Router();
 evidenceConnectionManagementRoutes.use(ssoAuth, requireTenant);
 evidenceConnectionManagementRoutes.get('/catalog', evidenceConnectorController.catalog);
 evidenceConnectionManagementRoutes.get('/offer-options', evidenceConnectorController.offerOptions);
+evidenceConnectionManagementRoutes.get('/native/ghl', evidenceConnectorController.ghlNativeHealth);
 evidenceConnectionManagementRoutes.post('/catalog/:providerKey/connect', evidenceConnectorController.connectCatalogProvider);
 evidenceConnectionManagementRoutes.get('/', evidenceConnectorController.list);
 evidenceConnectionManagementRoutes.post('/:id/status', evidenceConnectorController.merchantStatus);

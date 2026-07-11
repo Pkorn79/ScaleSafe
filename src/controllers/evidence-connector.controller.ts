@@ -6,6 +6,7 @@ import { externalEvidenceAttachmentService } from '../services/external-evidence
 import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 import { ValidationError } from '../utils/errors';
 import { integrationCatalogService } from '../services/integration-catalog.service';
+import { ghlFulfillmentService } from '../services/ghl-fulfillment.service';
 
 function tenant(req: Request): string {
   const locationId = req.tenantContext?.locationId;
@@ -75,6 +76,10 @@ export const evidenceConnectorController = {
 
   async offerOptions(req: Request, res: Response, next: NextFunction) {
     try { res.json({ options: await integrationCatalogService.offerOptions(tenant(req)) }); } catch (err) { next(err); }
+  },
+
+  async ghlNativeHealth(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await ghlFulfillmentService.getHealth(tenant(req))); } catch (err) { next(err); }
   },
 
   async merchantStatus(req: Request, res: Response, next: NextFunction) {

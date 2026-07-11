@@ -5,6 +5,7 @@ import { providerAdapterRegistry } from '../integrations/provider-adapter';
 import { ValidationError } from '../utils/errors';
 import { evidenceConnectionService } from './evidence-connection.service';
 import { zoomIntegrationService } from './zoom-integration.service';
+import { ghlFulfillmentService } from './ghl-fulfillment.service';
 import '../integrations/zoom.adapter';
 
 const RELEASED = new Set<IntegrationReleaseStatus>(['native', 'available', 'beta']);
@@ -18,10 +19,11 @@ function derivedProviderKey(connection: any): string {
 
 export const integrationCatalogService = {
   async list(locationId: string) {
-    const [releaseRows, locationRows, connections] = await Promise.all([
+    const [releaseRows, locationRows, connections, ghlNativeHealth] = await Promise.all([
       integrationCatalogRepository.listReleases(),
       integrationCatalogRepository.listLocationReleases(locationId),
       integrationCatalogRepository.listConnections(locationId),
+      ghlFulfillmentService.getHealth(locationId),
     ]);
     const releases = new Map(releaseRows.map((row) => [row.provider_key, row]));
     const tenantReleases = new Map(locationRows.map((row) => [row.provider_key, row.enabled === true]));
@@ -57,6 +59,12 @@ export const integrationCatalogService = {
           lastSuccessAt: connection.last_success_at,
           error: connection.last_error_message,
         })),
+        nativeHealth: native ? {
+          healthStatus: ghlNativeHealth.healthStatus,
+          needsAttention: ghlNativeHealth.needsAttention,
+          statusMessage: ghlNativeHealth.statusMessage,
+          lastEventAt: ghlNativeHealth.lastEventAt,
+        } : null,
       };
     });
     return { providers };

@@ -10,6 +10,7 @@ describe('merchant evidence connection boundary', () => {
       'GET /',
       'GET /catalog',
       'GET /offer-options',
+      'GET /native/ghl',
       'POST /catalog/:providerKey/connect',
       'POST /:id/status',
       'GET /:id/events',

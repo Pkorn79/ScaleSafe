@@ -49,7 +49,7 @@ const p = (
 ): IntegrationProviderDefinition => ({ key, name, category, wave, authMode, capabilities, summary });
 
 export const INTEGRATION_PROVIDERS: IntegrationProviderDefinition[] = [
-  p('ghl_native', 'GoHighLevel', 'native', 0, 'native', ['evidence', 'communications'], 'Native ScaleSafe contact, workflow, communication, and enrollment evidence.'),
+  p('ghl_native', 'GHL Fulfillment', 'native', 0, 'native', ['evidence', 'attendance', 'progress', 'communications'], 'Native appointment, communication, invoice, course, and client-fulfillment evidence from this GoHighLevel sub-account.'),
   p('custom_api', 'Custom Software API', 'advanced', 0, 'api_key', ['evidence', 'progress', 'attachments'], 'Send authenticated, enrollment-bound evidence from custom software.'),
   p('raw_webhook', 'Guided Webhook', 'advanced', 0, 'guided_webhook', ['evidence', 'progress', 'attachments'], 'ScaleSafe-assisted setup for a supported webhook payload.'),
 
