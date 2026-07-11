@@ -37,6 +37,14 @@ const LINKABLE_EVIDENCE_TABLES = new Set([
   'evidence_resource_delivery',
 ]);
 
+export function isMerchantVisibleEvidenceRow(row: any): boolean {
+  const eventType = String(row?.data?.event_type || row?.data?.eventType || '').trim();
+  // Readiness thresholds are internal trigger bookkeeping. They are not client
+  // activity and should not obscure the evidence record that caused the score
+  // to cross the threshold.
+  return !(row?.evidence_type === 'custom_event' && eventType === 'evidence_milestone');
+}
+
 export const evidenceRepository = {
   /**
    * Insert a record into the appropriate evidence table.
@@ -111,12 +119,14 @@ export const evidenceRepository = {
     const timelineRows = (timelineResult.data || [])
       .filter((row: any) => row.type !== 'communication')
       .map((row: any) => ({ ...row, evidence_table: row.evidence_table || null }));
-    const evidenceRows = (evidenceResult.data as any[] || []).map((e: any) => ({
-      ...e,
-      type: e.evidence_type,
-      source: 'scalesafe',
-      evidence_table: 'evidence',
-    }));
+    const evidenceRows = (evidenceResult.data as any[] || [])
+      .filter(isMerchantVisibleEvidenceRow)
+      .map((e: any) => ({
+        ...e,
+        type: e.evidence_type,
+        source: 'scalesafe',
+        evidence_table: 'evidence',
+      }));
     const appointmentRows = (appointmentResult.data as any[] || []).map((e: any) => ({
       ...e,
       type: 'appointment',

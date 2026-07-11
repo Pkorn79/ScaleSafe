@@ -51,7 +51,7 @@
         </thead>
         <tbody>
           <tr v-for="(item, i) in timeline" :key="i">
-            <td class="text-sm">{{ formatDate(item.created_at || item.event_date) }}</td>
+            <td class="text-sm">{{ formatDate(displayDate(item)) }}</td>
             <td>
               <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
                 <span class="badge badge-blue">{{ formatEvidenceType(item.evidence_type || item.type) }}</span>
@@ -176,6 +176,13 @@ const typeOptions = [
 function formatDate(d: string): string {
   if (!d) return '-';
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function displayDate(item: any): string {
+  const type = evidenceType(item);
+  const data = evidenceData(item);
+  if (type === 'appointment') return item.start_time || data.start_time || item.created_at || item.event_date;
+  return item.created_at || item.event_date;
 }
 
 function formatEvidenceType(type: string): string {
