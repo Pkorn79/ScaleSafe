@@ -9,8 +9,8 @@ export const enrollmentController = {
   /** POST /api/enrollment/device-capture — Page 1 widget */
   async deviceCapture(req: Request, res: Response, next: NextFunction) {
     try {
-      const { offerId, email, paidEnrollmentToken, ipAddress, userAgent, deviceFingerprint, screenResolution, timezone, browserLanguage } = req.body;
-      if (!offerId || (!email && !paidEnrollmentToken)) {
+      const { offerId, email, paidEnrollmentToken, evidenceContextToken, ipAddress, userAgent, deviceFingerprint, screenResolution, timezone, browserLanguage } = req.body;
+      if (!offerId || (!email && !paidEnrollmentToken && !evidenceContextToken)) {
         res.status(400).json({ error: 'offerId and email are required' });
         return;
       }
@@ -19,6 +19,7 @@ export const enrollmentController = {
         offerId,
         email,
         paidEnrollmentToken,
+        evidenceContextToken,
         ipAddress: ipAddress || req.ip || '',
         userAgent: userAgent || req.headers['user-agent'] || '',
         deviceFingerprint: deviceFingerprint || '',
@@ -85,11 +86,11 @@ export const enrollmentController = {
         offerId, email, consentTimestamp, ipAddress,
         userAgent, deviceFingerprint, screenResolution,
         timezone, browserLanguage, tcVersionHash,
-        digitalSignature, clausesAccepted, scrollDepth, paidEnrollmentToken,
+        digitalSignature, clausesAccepted, scrollDepth, paidEnrollmentToken, evidenceContextToken,
         selectedAddonIds,
       } = req.body;
 
-      if (!offerId || (!email && !paidEnrollmentToken) || !digitalSignature) {
+      if (!offerId || (!email && !paidEnrollmentToken && !evidenceContextToken) || !digitalSignature) {
         res.status(400).json({ error: 'offerId, email, and digitalSignature are required' });
         return;
       }
@@ -98,6 +99,7 @@ export const enrollmentController = {
         offerId,
         email,
         paidEnrollmentToken,
+        evidenceContextToken,
         consentTimestamp: consentTimestamp || new Date().toISOString(),
         ipAddress: ipAddress || req.ip || '',
         userAgent: userAgent || req.headers['user-agent'] || '',

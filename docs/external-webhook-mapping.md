@@ -6,7 +6,7 @@ A connection can contain up to 50 ordered mapping rules. A rule may define a saf
 
 ## Authentication
 
-Choose one method when creating the connection:
+The ScaleSafe HQ operator chooses one method during assisted setup:
 
 - Secret webhook URL for systems that cannot add headers.
 - Bearer API key.
@@ -45,4 +45,4 @@ Mappings use property names and numeric array indexes only. They cannot run scri
 
 Map each outside product, course, calendar, or service to one ScaleSafe offer. The mapping is configured once. Events are then resolved automatically; merchants do not link individual evidence rows.
 
-Use **Mapping Preview** with a sample payload before enabling the source. Preview never creates evidence.
+Use the HQ sample preview before activation. Suggested offer matches use exact identifiers or normalized names, but an HQ operator must approve every mapping. Preview and test events never create evidence.

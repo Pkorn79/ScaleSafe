@@ -3,6 +3,7 @@ import { evidenceConnectionService } from '../services/evidence-connection.servi
 import { evidenceConnectorService } from '../services/evidence-connector.service';
 import { evidenceConnectorRepository } from '../repositories/evidence-connector.repository';
 import { externalEvidenceAttachmentService } from '../services/external-evidence-attachment.service';
+import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 import { ValidationError } from '../utils/errors';
 
 function tenant(req: Request): string {
@@ -21,6 +22,12 @@ function requireConnector(req: Request) {
 }
 
 function publicEvent(row: any) {
+  const enrollment = Array.isArray(row.enrollment) ? row.enrollment[0] : row.enrollment;
+  const offer = Array.isArray(row.offer) ? row.offer[0] : row.offer;
+  const email = String(enrollment?.email || '');
+  const maskedEmail = email.includes('@')
+    ? `${email.slice(0, 2)}***@${email.split('@')[1]}`
+    : '';
   return {
     id: row.id,
     sourceEventId: row.source_event_id,
@@ -34,6 +41,14 @@ function publicEvent(row: any) {
     evidenceType: row.evidence_type,
     errorCode: row.error_code,
     errorMessage: row.error_message,
+    target: row.enrollment_id ? {
+      enrollmentId: row.enrollment_id,
+      contactId: enrollment?.contact_id || row.contact_id || '',
+      client: maskedEmail,
+      offerId: row.offer_id || enrollment?.offer_id || '',
+      offerName: offer?.offer_name || enrollment?.offer_name || '',
+      matchMethod: row.resolution_method || '',
+    } : null,
   };
 }
 
@@ -90,33 +105,31 @@ export const evidenceConnectorController = {
   async sendTest(req: Request, res: Response, next: NextFunction) {
     try {
       const locationId = tenant(req);
-      const connection = await evidenceConnectorRepository.getConnection(locationId, req.params.id);
-      if (!connection) throw new ValidationError('Evidence connection not found');
-      const subject = await evidenceConnectorRepository.getSubjectByEnrollment(locationId, String(req.body?.enrollmentId || ''));
-      if (!subject) throw new ValidationError('Choose a valid enrollment for the test');
-      const credentials = await evidenceConnectorRepository.listActiveCredentials(connection.id);
-      if (!credentials[0]) throw new ValidationError('Connection has no active credential');
-      const eventType = String(req.body?.eventType || 'service.login');
-      const event = {
-        schema_version: '1.0',
-        event_id: `test_${Date.now()}`,
-        event_type: eventType,
-        occurred_at: new Date().toISOString(),
-        subject: { enrollment_ref: subject.enrollment_ref },
-        resource: { type: 'test', id: 'test_resource', name: 'Connector Test Activity' },
-        actor: { type: 'client' },
-        activity: { status: 'completed', description: 'Synthetic validation event. This does not become evidence.' },
-        attachments: [],
-        metadata: {},
-      };
-      const result = await evidenceConnectorService.ingestCanonical({
-        connection,
-        credential: credentials[0],
-        authMethod: credentials[0].credential_type,
-        signatureVerified: credentials[0].credential_type === 'hmac',
-      }, event, undefined, true);
-      await evidenceConnectorRepository.audit(locationId, connection.id, 'connection.test_sent', actor(req), { enrollmentId: subject.enrollment_id });
-      res.status(202).json({ event: publicEvent(result.event), message: 'Test accepted. It will validate matching but will not create evidence.' });
+      const result = await evidenceConnectionService.sendTest(
+        locationId,
+        req.params.id,
+        String(req.body?.enrollmentId || ''),
+        actor(req),
+        String(req.body?.eventType || 'service.login'),
+      );
+      res.status(202).json({
+        event: publicEvent(result.event),
+        target: result.target,
+        message: 'Test accepted. It will validate matching but will not create evidence.',
+      });
+    } catch (err) { next(err); }
+  },
+
+  async createEnrollmentLink(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await evidenceEnrollmentContextService.createEnrollmentLink(requireConnector(req), req.body || {});
+      res.status(result.idempotentReplay ? 200 : 201).json(result);
+    } catch (err) { next(err); }
+  },
+
+  async bindSubject(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json(await evidenceEnrollmentContextService.bindExistingSubject(requireConnector(req), req.body || {}));
     } catch (err) { next(err); }
   },
 

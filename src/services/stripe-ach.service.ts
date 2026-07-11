@@ -654,7 +654,7 @@ export const stripeAchService = {
         const shouldCompleteEnrollment =
           checkoutMode !== 'quick_manual_sale'
           && (paymentStatus === 'settled' || releaseOnSubmission)
-          && ['payment_processing', 'consent_captured'].includes(enrollmentStatus);
+          && ['device_captured', 'payment_processing', 'consent_captured'].includes(enrollmentStatus);
 
         if (shouldCompleteEnrollment) {
           await phase2EnrollmentService.completeEnrollment({

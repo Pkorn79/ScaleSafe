@@ -875,6 +875,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var cardElement = null;
   var paymentToken = null;
   var consentToken = params.get('consentToken') || '';
+  var evidenceContextToken = params.get('evidenceContextToken') || '';
+  try {
+    if (!evidenceContextToken && offerId) evidenceContextToken = sessionStorage.getItem('ss_evidence_context_token_' + offerId) || '';
+    if (evidenceContextToken && offerId) sessionStorage.setItem('ss_evidence_context_token_' + offerId, evidenceContextToken);
+    if (params.has('evidenceContextToken')) {
+      params.delete('evidenceContextToken');
+      var cleanCheckoutUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+      window.history.replaceState({}, document.title, cleanCheckoutUrl);
+    }
+  } catch (e) {}
   var paymentChoice = params.get('paymentChoice') || '';
   var enrollmentEmail = '';
   var selectedPaymentMethod = 'card';
@@ -1513,6 +1523,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       body: JSON.stringify({
         offerId: offerId,
         consentToken: consentToken,
+        evidenceContextToken: evidenceContextToken,
         contactId: prefillContactId || '',
         contactName: custName,
         contactEmail: custEmail || enrollmentEmail,
@@ -1686,6 +1697,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             amount: amount,
             currency: 'usd',
             consentToken: consentToken,
+            evidenceContextToken: evidenceContextToken,
             contactId: prefillContactId || '',
             contactName: custName,
             contactEmail: custEmail || enrollmentEmail,
@@ -1756,6 +1768,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           currency: 'usd',
           offerId: offerId,
           consentToken: consentToken,
+          evidenceContextToken: evidenceContextToken,
           contactId: prefillContactId || '',
           contactName: custName,
           contactEmail: custEmail || enrollmentEmail,

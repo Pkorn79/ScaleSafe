@@ -5,21 +5,25 @@ ScaleSafe accepts enrollment-scoped activity from custom software, automation to
 ## Connection Options
 
 - **Canonical API:** the sender builds ScaleSafe's standard event body and posts it to `POST https://dashboard.scalesafe.app/api/v1/evidence/events`.
-- **Raw webhook:** the source sends its native JSON to the secret endpoint generated in **Settings > Evidence Connections**. A saved mapping converts it to the canonical event shape.
+- **Raw webhook:** the source sends its native JSON to the operator-installed secret endpoint. An HQ-approved mapping converts it to the canonical event shape.
 - **Legacy endpoint:** `/webhooks/external` remains available during beta, but now requires the merchant webhook secret and routes through the same enrollment-safe intake ledger.
 
 CSV import, generic polling, and named provider integrations are not part of the first release.
 
 ## Setup
 
-1. Open the correct GHL sub-account.
-2. In ScaleSafe, open **Settings > Evidence Connections**.
-3. Create a Canonical API or Raw Webhook connection.
-4. Record the credential when it is displayed. ScaleSafe stores only its hash unless HMAC verification requires encrypted retrieval.
-5. For raw webhooks, configure resource mappings from the outside course, product, calendar, or service to a ScaleSafe offer.
-6. Preview a sample payload.
-7. Run a synthetic connection test against a selected enrollment.
-8. Confirm the event reports as a test and does not appear as client evidence.
+During beta, ScaleSafe/WholePay performs setup once in the internal ScaleSafe HQ console:
+
+1. Select the exact GHL sub-account.
+2. Create a disabled Canonical API or Raw Webhook draft.
+3. Install the one-time credential in the outside system or provide it to the merchant's developer.
+4. Preview sample payloads without creating evidence.
+5. Approve each external resource-to-offer mapping.
+6. Choose the identity strategy.
+7. Run an exact tenant and enrollment test.
+8. Activate only after the test publishes as test-only diagnostic activity.
+
+The merchant's **Settings > Evidence Connections** page is read-only. It shows connection health, recent evidence, and affected programs. Merchants do not create credentials, map resources, replay events, or repair individual records.
 
 ## Documentation
 

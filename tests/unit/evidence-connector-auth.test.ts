@@ -16,7 +16,7 @@ describe('evidence connector authentication', () => {
     (evidenceConnectorRepository.findCredentialByHash as jest.Mock).mockResolvedValue({
       credential: { id: 'cred-1', credential_type: 'api_key' },
       connection: {
-        id: 'conn-1', location_id: 'location-a', status: 'active', connection_type: 'canonical_api', rate_limit_per_minute: 300,
+        id: 'conn-1', location_id: 'location-a', status: 'active', setup_status: 'active', connection_type: 'canonical_api', rate_limit_per_minute: 300,
       },
     });
     (evidenceConnectorRepository.consumeRateLimit as jest.Mock).mockResolvedValue(true);
@@ -38,6 +38,23 @@ describe('evidence connector authentication', () => {
   it('rejects an invalid key before intake', async () => {
     (evidenceConnectorRepository.findCredentialByHash as jest.Mock).mockResolvedValue(null);
     const req: any = { headers: { authorization: 'Bearer invalid' } };
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+
+    await requireCanonicalEvidenceApiKey(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects an operator connection that has not passed activation', async () => {
+    (evidenceConnectorRepository.findCredentialByHash as jest.Mock).mockResolvedValue({
+      credential: { id: 'cred-1', credential_type: 'api_key' },
+      connection: {
+        id: 'conn-1', location_id: 'location-a', status: 'active', setup_status: 'testing', connection_type: 'canonical_api', rate_limit_per_minute: 300,
+      },
+    });
+    const req: any = { headers: { authorization: 'Bearer ss_ev_secret' } };
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const next = jest.fn();
 

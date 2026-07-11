@@ -14,6 +14,13 @@ function optional(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
+function csv(key: string): string[] {
+  return (process.env[key] || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
 const ghlClientId = required('GHL_APP_CLIENT_ID');
@@ -85,6 +92,13 @@ export const config = {
 
   // Internal ScaleSafe HQ console. If unset, HQ routes return 404.
   hqAdminToken: process.env.SCALESAFE_HQ_ADMIN_TOKEN || '',
+
+  // Operator-managed third-party evidence automation. An optional location
+  // allowlist permits a controlled rollout before enabling every tenant.
+  evidenceConnectorAutomation: {
+    enabled: process.env.EVIDENCE_CONNECTOR_AUTOMATION_ENABLED === 'true',
+    locationIds: csv('EVIDENCE_CONNECTOR_AUTOMATION_LOCATION_IDS'),
+  },
 
   // Public action links (payment update, cancellation, milestone signoff)
   publicActionTokenSecret: optional('PUBLIC_ACTION_TOKEN_SECRET', ''),

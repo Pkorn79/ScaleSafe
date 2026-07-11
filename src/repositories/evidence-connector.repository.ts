@@ -2,6 +2,7 @@ import { getSupabase } from '../clients/supabase.client';
 import {
   EvidenceConnectionRecord,
   EvidenceCredentialRecord,
+  EvidenceEnrollmentContextRecord,
   ExternalEvidenceEventRecord,
 } from '../types/evidence-connector.types';
 
@@ -182,6 +183,7 @@ export const evidenceConnectorRepository = {
       .eq('connection_id', connectionId)
       .eq('resource_type', resourceType)
       .eq('external_resource_id', externalResourceId)
+      .eq('approval_status', 'approved')
       .maybeSingle();
     if (error) throw error;
     return data || null;
@@ -209,13 +211,135 @@ export const evidenceConnectorRepository = {
   async listEvents(locationId: string, connectionId: string, limit = 50): Promise<ExternalEvidenceEventRecord[]> {
     const { data, error } = await getSupabase()
       .from('external_evidence_events')
-      .select('*')
+      .select('*, enrollment:enrollments(id, contact_id, email, offer_id, offer_name), offer:offers_mirror(id, offer_name)')
       .eq('location_id', locationId)
       .eq('connection_id', connectionId)
       .order('received_at', { ascending: false })
       .limit(Math.max(1, Math.min(limit, 200)));
     if (error) throw error;
     return (data || []) as ExternalEvidenceEventRecord[];
+  },
+
+  async connectionEventSummary(locationId: string, connectionId: string): Promise<any[]> {
+    const { data, error } = await getSupabase()
+      .from('external_evidence_events')
+      .select('status, is_test, offer_id, published_at, received_at, offer:offers_mirror(id, offer_name)')
+      .eq('location_id', locationId)
+      .eq('connection_id', connectionId)
+      .eq('is_test', false)
+      .order('received_at', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async findEnrollmentContextByRequest(connectionId: string, requestId: string): Promise<EvidenceEnrollmentContextRecord | null> {
+    const { data, error } = await getSupabase()
+      .from('evidence_enrollment_contexts')
+      .select('*')
+      .eq('connection_id', connectionId)
+      .eq('request_id', requestId)
+      .maybeSingle();
+    if (error) throw error;
+    return data as EvidenceEnrollmentContextRecord | null;
+  },
+
+  async findEnrollmentContextByTokenHash(value: string): Promise<EvidenceEnrollmentContextRecord | null> {
+    const { data, error } = await getSupabase()
+      .from('evidence_enrollment_contexts')
+      .select('*')
+      .eq('token_hash', value)
+      .maybeSingle();
+    if (error) throw error;
+    return data as EvidenceEnrollmentContextRecord | null;
+  },
+
+  async createEnrollmentContext(input: Record<string, unknown>): Promise<EvidenceEnrollmentContextRecord> {
+    const { data, error } = await getSupabase()
+      .from('evidence_enrollment_contexts')
+      .insert(input)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data as EvidenceEnrollmentContextRecord;
+  },
+
+  async claimEnrollmentContext(input: {
+    tokenHash: string;
+    offerId: string;
+    email?: string;
+    deviceEvidence?: Record<string, unknown> | null;
+  }): Promise<any> {
+    const { data, error } = await getSupabase().rpc('claim_evidence_enrollment_context', {
+      p_token_hash: input.tokenHash,
+      p_offer_id: input.offerId,
+      p_email: input.email || null,
+      p_device_evidence: input.deviceEvidence || null,
+    });
+    if (error) throw error;
+    return Array.isArray(data) ? data[0] : data;
+  },
+
+  async updateEnrollmentContext(id: string, updates: Record<string, unknown>): Promise<void> {
+    const { error } = await getSupabase().from('evidence_enrollment_contexts').update(updates).eq('id', id);
+    if (error) throw error;
+  },
+
+  async expireEnrollmentContexts(): Promise<number> {
+    const { data, error } = await getSupabase().rpc('expire_evidence_enrollment_contexts');
+    if (error) throw error;
+    return Number(data || 0);
+  },
+
+  async replayEligibleEvents(locationId: string, connectionId: string): Promise<number> {
+    const eligibleCodes = [
+      'ENROLLMENT_NOT_READY',
+      'RESOURCE_NOT_MAPPED',
+      'SUBJECT_IDENTITY_MISSING',
+      'AMBIGUOUS_EMAIL_AND_OFFER',
+      'AMBIGUOUS_EXTERNAL_CONTACT',
+      'AMBIGUOUS_EXTERNAL_ENROLLMENT',
+    ];
+    const { data, error } = await getSupabase()
+      .from('external_evidence_events')
+      .update({
+        status: 'retrying',
+        next_attempt_at: new Date().toISOString(),
+        lease_owner: null,
+        lease_expires_at: null,
+        error_code: null,
+        error_message: null,
+      })
+      .eq('location_id', locationId)
+      .eq('connection_id', connectionId)
+      .eq('is_test', false)
+      .in('status', ['quarantined', 'retrying'])
+      .in('error_code', eligibleCodes)
+      .select('id');
+    if (error) throw error;
+    return (data || []).length;
+  },
+
+  async credentialCount(connectionId: string): Promise<number> {
+    const { count, error } = await getSupabase()
+      .from('evidence_connection_credentials')
+      .select('id', { count: 'exact', head: true })
+      .eq('connection_id', connectionId)
+      .in('status', ['active', 'expiring']);
+    if (error) throw error;
+    return count || 0;
+  },
+
+  async successfulTestCount(locationId: string, connectionId: string): Promise<number> {
+    const { count, error } = await getSupabase()
+      .from('external_evidence_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('location_id', locationId)
+      .eq('connection_id', connectionId)
+      .eq('is_test', true)
+      .eq('status', 'published');
+    if (error) throw error;
+    return count || 0;
   },
 
   async claimEvents(workerId: string, limit = 20): Promise<ExternalEvidenceEventRecord[]> {
@@ -386,7 +510,7 @@ export const evidenceConnectorRepository = {
   async getHqSummary(): Promise<any[]> {
     const { data, error } = await getSupabase()
       .from('evidence_connections')
-      .select('id, location_id, name, source_label, connection_type, status, health_status, last_event_at, last_success_at, last_error_at, last_error_message, created_at')
+      .select('id, location_id, name, source_label, connection_type, status, setup_status, setup_mode, identity_strategy, activated_at, health_status, last_event_at, last_success_at, last_error_at, last_error_message, created_at')
       .order('last_event_at', { ascending: false, nullsFirst: false });
     if (error) throw error;
     return data || [];

@@ -12,6 +12,7 @@ import {
   hashConnectorSecret,
 } from '../utils/evidence-connector-security';
 import { isSafeMappingPath, mapConfiguredRawWebhook, rawWebhookMappingRules, validateCanonicalEvent } from '../utils/evidence-event-mapper';
+import { evidenceConnectorService } from './evidence-connector.service';
 
 function publicId(): string {
   return `evc_${crypto.randomBytes(12).toString('base64url')}`;
@@ -105,11 +106,32 @@ export const evidenceConnectionService = {
 
   async list(locationId: string) {
     const rows = await evidenceConnectorRepository.listConnections(locationId);
-    return Promise.all(rows.map(async (connection) => ({
-      ...connection,
-      endpoints: endpoints(connection.public_id, connection.connection_type === 'canonical_api' ? 'api_key' : 'hmac'),
-      mappings: await evidenceConnectorRepository.listResourceMappings(locationId, connection.id),
-    })));
+    return Promise.all(rows.map(async (connection) => {
+      const events = await evidenceConnectorRepository.connectionEventSummary(locationId, connection.id);
+      const published = events.filter((event: any) => event.status === 'published');
+      const programs = new Map<string, string>();
+      for (const event of published) {
+        const offer = Array.isArray(event.offer) ? event.offer[0] : event.offer;
+        if (event.offer_id) programs.set(event.offer_id, offer?.offer_name || 'Program');
+      }
+      return {
+        id: connection.id,
+        name: connection.name,
+        source: connection.source_label,
+        connectionType: connection.connection_type,
+        status: connection.status,
+        setupStatus: connection.setup_status,
+        healthStatus: connection.health_status,
+        lastEvidenceAt: published[0]?.published_at || connection.last_success_at || null,
+        lastEventAt: connection.last_event_at,
+        publishedCount: published.length,
+        affectedPrograms: Array.from(programs.entries()).map(([offerId, offerName]) => ({ offerId, offerName })),
+        needsAttention: connection.setup_status === 'needs_attention'
+          || connection.health_status === 'warning'
+          || connection.health_status === 'error',
+        statusMessage: connection.last_error_message || null,
+      };
+    }));
   },
 
   async create(locationId: string, actorLabel: string, input: Record<string, any>) {
@@ -132,6 +154,12 @@ export const evidenceConnectionService = {
       mapping_config: mapper,
       allowed_attachment_domains: sanitizeDomains(input.allowedAttachmentDomains),
       rate_limit_per_minute: clampRateLimit(input.rateLimitPerMinute),
+      status: 'disabled',
+      health_status: 'disabled',
+      setup_status: 'draft',
+      setup_mode: input.setupMode || 'operator_managed',
+      identity_strategy: input.identityStrategy || 'enrollment_context',
+      configured_by: actorLabel,
       created_by: actorLabel,
     });
 
@@ -165,6 +193,17 @@ export const evidenceConnectionService = {
     }
     if (input.allowedAttachmentDomains !== undefined) updates.allowed_attachment_domains = sanitizeDomains(input.allowedAttachmentDomains);
     if (input.rateLimitPerMinute !== undefined) updates.rate_limit_per_minute = clampRateLimit(input.rateLimitPerMinute);
+    if (input.identityStrategy !== undefined) {
+      const strategy = String(input.identityStrategy);
+      if (!['enrollment_context', 'external_enrollment', 'external_contact_resource', 'email_resource_bootstrap'].includes(strategy)) {
+        throw new ValidationError('Unsupported connector identity strategy');
+      }
+      updates.identity_strategy = strategy;
+    }
+    updates.setup_status = 'testing';
+    updates.status = 'disabled';
+    updates.health_status = 'ready';
+    updates.configured_by = actorLabel;
     const updated = await evidenceConnectorRepository.updateConnection(locationId, id, updates);
     if (input.resourceMappings !== undefined) await this.replaceMappings(locationId, id, input.resourceMappings);
     await evidenceConnectorRepository.audit(locationId, id, 'connection.updated', actorLabel, { fields: Object.keys(updates) });
@@ -186,6 +225,15 @@ export const evidenceConnectionService = {
         resource_type: resourceType,
         external_resource_id: externalResourceId,
         external_resource_name: String(mapping.externalResourceName || '').trim() || null,
+        approval_status: mapping.approvalStatus === 'approved' ? 'approved' : 'proposed',
+        proposed_match_confidence: Number.isFinite(Number(mapping.proposedMatchConfidence))
+          ? Math.max(0, Math.min(1, Number(mapping.proposedMatchConfidence)))
+          : null,
+        approved_by: mapping.approvalStatus === 'approved' ? String(mapping.approvedBy || 'hq_operator') : null,
+        approved_at: mapping.approvalStatus === 'approved' ? new Date().toISOString() : null,
+        provider_metadata: mapping.providerMetadata && typeof mapping.providerMetadata === 'object'
+          ? mapping.providerMetadata
+          : {},
       });
     }
     await evidenceConnectorRepository.replaceResourceMappings(locationId, connectionId, rows);
@@ -207,12 +255,73 @@ export const evidenceConnectionService = {
   },
 
   async setStatus(locationId: string, id: string, actorLabel: string, enabled: boolean) {
+    if (enabled) return this.activate(locationId, id, actorLabel);
     const updated = await evidenceConnectorRepository.updateConnection(locationId, id, {
-      status: enabled ? 'active' : 'disabled',
-      health_status: enabled ? 'ready' : 'disabled',
+      status: 'disabled',
+      setup_status: 'disabled',
+      health_status: 'disabled',
     });
     await evidenceConnectorRepository.audit(locationId, id, enabled ? 'connection.enabled' : 'connection.disabled', actorLabel);
     return updated;
+  },
+
+  async activate(locationId: string, id: string, actorLabel: string) {
+    const connection = await evidenceConnectorRepository.getConnection(locationId, id);
+    if (!connection) throw new ValidationError('Evidence connection not found');
+    const credentialCount = await evidenceConnectorRepository.credentialCount(id);
+    if (credentialCount < 1) throw new ValidationError('Install or generate a connection credential before activation');
+    const successfulTests = await evidenceConnectorRepository.successfulTestCount(locationId, id);
+    if (successfulTests < 1) throw new ValidationError('Run a successful tenant and enrollment resolution test before activation');
+    const mappings = await evidenceConnectorRepository.listResourceMappings(locationId, id);
+    if (!mappings.some((mapping: any) => mapping.approval_status === 'approved')) {
+      throw new ValidationError('Approve at least one external resource to ScaleSafe offer mapping before activation');
+    }
+    if (connection.connection_type === 'raw_webhook') validateMapper(connection.mapping_config);
+    const updated = await evidenceConnectorRepository.updateConnection(locationId, id, {
+      status: 'active',
+      setup_status: 'active',
+      health_status: 'ready',
+      activated_at: new Date().toISOString(),
+      configured_by: actorLabel,
+      last_error_message: null,
+    });
+    await evidenceConnectorRepository.audit(locationId, id, 'connection.activated', actorLabel, {
+      approvedMappings: mappings.filter((mapping: any) => mapping.approval_status === 'approved').length,
+    });
+    return updated;
+  },
+
+  async replay(locationId: string, id: string, actorLabel: string) {
+    const connection = await evidenceConnectorRepository.getConnection(locationId, id);
+    if (!connection) throw new ValidationError('Evidence connection not found');
+    const replayed = await evidenceConnectorRepository.replayEligibleEvents(locationId, id);
+    await evidenceConnectorRepository.audit(locationId, id, 'events.replayed', actorLabel, { replayed });
+    return { replayed };
+  },
+
+  async suggestMappings(locationId: string, id: string, resources: Array<Record<string, any>>) {
+    const connection = await evidenceConnectorRepository.getConnection(locationId, id);
+    if (!connection) throw new ValidationError('Evidence connection not found');
+    const offers = (await offerRepository.listByLocation(locationId)).filter((offer) => offer.active);
+    const normalized = (value: unknown) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return resources.slice(0, 100).map((resource) => {
+      const resourceType = String(resource.resourceType || resource.type || '').trim();
+      const externalResourceId = String(resource.externalResourceId || resource.id || '').trim();
+      const externalResourceName = String(resource.externalResourceName || resource.name || '').trim();
+      const exactIdentifier = offers.find((offer) => offer.id === externalResourceId || offer.tracking_id === externalResourceId);
+      const nameMatch = offers.find((offer) => normalized(offer.offer_name) === normalized(externalResourceName));
+      const match = exactIdentifier || nameMatch || null;
+      return {
+        resourceType,
+        externalResourceId,
+        externalResourceName,
+        suggestedOfferId: match?.id || null,
+        suggestedOfferName: match?.offer_name || null,
+        confidence: exactIdentifier ? 1 : nameMatch ? 0.95 : 0,
+        reason: exactIdentifier ? 'exact_identifier' : nameMatch ? 'normalized_name' : 'no_exact_match',
+        requiresOperatorApproval: true,
+      };
+    });
   },
 
   async preview(locationId: string, id: string, payload: Record<string, unknown>) {
@@ -223,6 +332,48 @@ export const evidenceConnectionService = {
     if (!event) return { valid: false, errors: ['No configured mapping matched this sample payload'], normalizedEvent: null, createsEvidence: false };
     const errors = validateCanonicalEvent(event, (connection.mapping_config as RawWebhookMappingConfig).approvedCustomTypes || []);
     return { valid: errors.length === 0, errors, normalizedEvent: event, createsEvidence: false };
+  },
+
+  async sendTest(locationId: string, id: string, enrollmentId: string, actorLabel: string, eventType = 'service.login') {
+    const connection = await evidenceConnectorRepository.getConnection(locationId, id);
+    if (!connection) throw new ValidationError('Evidence connection not found');
+    const subject = await evidenceConnectorRepository.getSubjectByEnrollment(locationId, enrollmentId);
+    if (!subject) throw new ValidationError('Choose a valid enrollment for the test');
+    const credentials = await evidenceConnectorRepository.listActiveCredentials(connection.id);
+    if (!credentials[0]) throw new ValidationError('Connection has no active credential');
+    const event = {
+      schema_version: '1.0' as const,
+      event_id: `test_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      event_type: String(eventType || 'service.login'),
+      occurred_at: new Date().toISOString(),
+      subject: { enrollment_ref: subject.enrollment_ref },
+      resource: { type: 'test', id: 'test_resource', name: 'Connector Test Activity' },
+      actor: { type: 'client' as const },
+      activity: { status: 'completed', description: 'Synthetic validation event. This does not become evidence.' },
+      attachments: [],
+      metadata: {},
+    };
+    const result = await evidenceConnectorService.ingestCanonical({
+      connection,
+      credential: credentials[0],
+      authMethod: credentials[0].credential_type,
+      signatureVerified: credentials[0].credential_type === 'hmac',
+    }, event, undefined, true);
+    await evidenceConnectorRepository.audit(locationId, connection.id, 'connection.test_sent', actorLabel, {
+      enrollmentId: subject.enrollment_id,
+      offerId: subject.offer_id,
+    });
+    return {
+      event: result.event,
+      target: {
+        enrollmentId: subject.enrollment_id,
+        contactId: subject.contact_id,
+        email: subject.normalized_email || subject.enrollment?.email || '',
+        offerId: subject.offer_id,
+        offerName: subject.offer?.offer_name || subject.enrollment?.offer_name || '',
+        matchMethod: 'enrollment_ref',
+      },
+    };
   },
 };
 

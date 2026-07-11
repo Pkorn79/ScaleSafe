@@ -36,6 +36,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## Unreleased - Automatic evidence connection and enrollment binding (2026-07-10)
+
+### Added
+- Operator-managed ScaleSafe HQ setup for draft connections, one-time credentials, safe raw-payload previews, approved resource mappings, exact-enrollment tests, activation, rotation, disabling, and idempotent replay.
+- Server-only enrollment-link and subject-binding APIs that derive tenant ownership from the connector credential and bind stable outside identities to one exact ScaleSafe enrollment.
+- Migration 090 with short-lived encrypted enrollment contexts, hashed bearer tokens, atomic context claims, automatic subject identity binding, activation state, mapping approval metadata, and expiration cleanup.
+- Context propagation through full-enrollment widgets and quick checkout for Stripe, NMI, Stripe ACH, and Whop. QMS remains unchanged.
+
+### Changed
+- Merchant Evidence Connections is now read-only and shows source health, last evidence, published count, affected programs, and needs-attention state.
+- Operator-managed connectors cannot accept public events until a credential, approved offer mapping, and successful exact-enrollment test exist.
+
+### Security
+- Merchant SSO can no longer create or rotate connector credentials, edit raw mappings, enumerate subject references, run tests, activate connections, or replay quarantined events.
+- Enrollment context URLs contain only an opaque token; tenant, external contact, and external enrollment identifiers remain server-side.
+
+---
+
 ## Unreleased - Universal external evidence connector (2026-07-10)
 
 ### Added

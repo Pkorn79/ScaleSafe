@@ -26,6 +26,7 @@
 
   var ownParams = new URLSearchParams(window.location.search);
   var paidEnrollmentToken = ownParams.get('paidEnrollmentToken') || '';
+  var evidenceContextToken = ownParams.get('evidenceContextToken') || '';
   try {
     if (!paidEnrollmentToken) paidEnrollmentToken = sessionStorage.getItem('ss_paid_enrollment_token') || '';
   } catch (e) { /* silent */ }
@@ -39,6 +40,7 @@
       var parentParams = new URLSearchParams(window.parent.location.search);
       offerId = parentParams.get('offerId');
       if (!paidEnrollmentToken) paidEnrollmentToken = parentParams.get('paidEnrollmentToken') || '';
+      if (!evidenceContextToken) evidenceContextToken = parentParams.get('evidenceContextToken') || '';
     } catch (e) { /* Cross-origin — expected */ }
   }
 
@@ -48,6 +50,7 @@
       var refUrl = new URL(document.referrer);
       offerId = refUrl.searchParams.get('offerId');
       if (!paidEnrollmentToken) paidEnrollmentToken = refUrl.searchParams.get('paidEnrollmentToken') || '';
+      if (!evidenceContextToken) evidenceContextToken = refUrl.searchParams.get('evidenceContextToken') || '';
     } catch (e) { /* ignore */ }
   }
 
@@ -58,6 +61,10 @@
   if (paidEnrollmentToken) {
     try { sessionStorage.setItem('ss_paid_enrollment_token', paidEnrollmentToken); } catch (e) { /* silent */ }
   }
+  try {
+    if (!evidenceContextToken) evidenceContextToken = sessionStorage.getItem('ss_evidence_context_token_' + offerId) || '';
+    if (evidenceContextToken) sessionStorage.setItem('ss_evidence_context_token_' + offerId, evidenceContextToken);
+  } catch (e) { /* silent */ }
 
   async function sha256(text) {
     var encoder = new TextEncoder();
@@ -115,6 +122,7 @@
         offerId: offerId,
         email: email,
         paidEnrollmentToken: paidEnrollmentToken,
+        evidenceContextToken: evidenceContextToken,
         ipAddress: ipAddress,
         userAgent: userAgent,
         deviceFingerprint: deviceFingerprint,
@@ -124,7 +132,7 @@
       };
 
       // Paid enrollment links can be captured with the token even if email did not reach this iframe.
-      if (payload.email || paidEnrollmentToken) {
+      if (payload.email || paidEnrollmentToken || evidenceContextToken) {
         await sendDeviceCapture(payload);
       } else {
         // Store payload, wait for email via postMessage

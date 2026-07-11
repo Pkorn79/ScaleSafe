@@ -11,7 +11,9 @@ function bearer(req: Request): string {
 }
 
 async function finishAuth(req: Request, res: Response, next: NextFunction, auth: any): Promise<void> {
-  if (!auth.connection || auth.connection.status !== 'active') {
+  const setupActive = auth.connection?.connection_type === 'legacy_external'
+    || auth.connection?.setup_status === 'active';
+  if (!auth.connection || auth.connection.status !== 'active' || !setupActive) {
     res.status(401).json({ error: 'CONNECTOR_DISABLED', message: 'Evidence connection is disabled.' });
     return;
   }

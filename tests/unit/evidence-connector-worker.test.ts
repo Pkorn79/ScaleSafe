@@ -13,7 +13,7 @@ jest.mock('../../src/services/external-evidence-attachment.service', () => ({
 }));
 
 import { evidenceConnectorRepository } from '../../src/repositories/evidence-connector.repository';
-import { resolveConnectorSubject } from '../../src/services/evidence-connector-worker';
+import { connectorCanProcess, resolveConnectorSubject } from '../../src/services/evidence-connector-worker';
 import { CanonicalEvidenceEvent, EvidenceConnectionRecord } from '../../src/types/evidence-connector.types';
 
 const repository = evidenceConnectorRepository as jest.Mocked<typeof evidenceConnectorRepository>;
@@ -84,5 +84,18 @@ describe('evidence connector enrollment resolution', () => {
     await expect(resolveConnectorSubject(connection, event({
       subject: { email: 'client@example.com' },
     }))).rejects.toMatchObject({ code: 'ENROLLMENT_NOT_READY', retryable: true });
+  });
+});
+
+describe('evidence connector setup gates', () => {
+  it('allows diagnostic tests on drafts but blocks real intake until activation', () => {
+    const draft = { ...connection, status: 'disabled', setup_status: 'draft' } as EvidenceConnectionRecord;
+    expect(connectorCanProcess(draft, true)).toBe(true);
+    expect(connectorCanProcess(draft, false)).toBe(false);
+  });
+
+  it('allows real events only after operator activation', () => {
+    const active = { ...connection, status: 'active', setup_status: 'active' } as EvidenceConnectionRecord;
+    expect(connectorCanProcess(active, false)).toBe(true);
   });
 });

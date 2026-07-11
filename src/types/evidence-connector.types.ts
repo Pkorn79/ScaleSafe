@@ -1,5 +1,7 @@
 export type EvidenceConnectionType = 'canonical_api' | 'raw_webhook' | 'legacy_external';
 export type EvidenceCredentialType = 'api_key' | 'hmac' | 'url_secret';
+export type EvidenceConnectionSetupStatus = 'draft' | 'testing' | 'active' | 'needs_attention' | 'disabled';
+export type EvidenceConnectionSetupMode = 'operator_managed' | 'developer_api' | 'native_adapter';
 export type ExternalEvidenceEventStatus =
   | 'received'
   | 'verified'
@@ -106,6 +108,36 @@ export interface EvidenceConnectionRecord {
   last_success_at: string | null;
   last_error_at: string | null;
   last_error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  setup_status: EvidenceConnectionSetupStatus;
+  setup_mode: EvidenceConnectionSetupMode;
+  identity_strategy: 'enrollment_context' | 'external_enrollment' | 'external_contact_resource' | 'email_resource_bootstrap';
+  activated_at: string | null;
+  configured_by: string | null;
+}
+
+export interface EvidenceEnrollmentContextRecord {
+  id: string;
+  connection_id: string;
+  merchant_id: string;
+  location_id: string;
+  request_id: string;
+  external_contact_id: string;
+  external_enrollment_id: string;
+  resource_type: string;
+  external_resource_id: string;
+  offer_id: string;
+  checkout_mode: 'full_enrollment' | 'quick_checkout';
+  token_hash: string;
+  token_encrypted: string | null;
+  status: 'pending' | 'attached' | 'bound' | 'expired' | 'revoked';
+  expires_at: string;
+  enrollment_id: string | null;
+  attached_at: string | null;
+  bound_at: string | null;
+  revoked_at: string | null;
+  binding_error: string | null;
   created_at: string;
   updated_at: string;
 }

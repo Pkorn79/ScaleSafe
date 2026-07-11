@@ -19,6 +19,7 @@ import {
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
 import crypto from 'crypto';
+import { evidenceEnrollmentContextService } from './evidence-enrollment-context.service';
 
 function formatDate(value: Date = new Date()): string {
   return value.toISOString().split('T')[0];
@@ -54,6 +55,7 @@ interface DeviceCaptureInput {
   offerId: string;
   email: string;
   paidEnrollmentToken?: string;
+  evidenceContextToken?: string;
   ipAddress: string;
   userAgent: string;
   deviceFingerprint: string;
@@ -66,6 +68,7 @@ interface FunnelConsentInput {
   offerId: string;
   email: string;
   paidEnrollmentToken?: string;
+  evidenceContextToken?: string;
   consentTimestamp: string;
   ipAddress: string;
   userAgent: string;
@@ -183,12 +186,27 @@ export const enrollmentService = {
       paidEnrollmentId = paidEnrollment.id;
     }
 
+    let evidenceContextEnrollmentId = '';
+    if (input.evidenceContextToken) {
+      const context = await evidenceEnrollmentContextService.claimForCheckout({
+        token: input.evidenceContextToken,
+        offerId: input.offerId,
+        email: input.email,
+        deviceEvidence,
+      });
+      if (context.locationId !== offer.location_id) {
+        throw new ValidationError('Evidence enrollment context does not match this offer');
+      }
+      evidenceContextEnrollmentId = context.enrollmentId;
+    }
+
     // Check for existing record by email + offerId, including pay-first records.
     const existingQuery = supabase
       .from('enrollments')
       .select('id, status');
-    const { data: existing } = paidEnrollmentId
-      ? await existingQuery.eq('id', paidEnrollmentId).maybeSingle()
+    const exactEnrollmentId = paidEnrollmentId || evidenceContextEnrollmentId;
+    const { data: existing } = exactEnrollmentId
+      ? await existingQuery.eq('id', exactEnrollmentId).maybeSingle()
       : await existingQuery
         .eq('email', input.email)
         .eq('offer_id', input.offerId)
@@ -355,12 +373,26 @@ export const enrollmentService = {
     }
     const effectiveEmail = input.email || paidEnrollmentEmail;
 
+    let evidenceContextEnrollmentId = '';
+    if (input.evidenceContextToken) {
+      const context = await evidenceEnrollmentContextService.claimForCheckout({
+        token: input.evidenceContextToken,
+        offerId: input.offerId,
+        email: effectiveEmail,
+      });
+      if (context.locationId !== offer.location_id) {
+        throw new ValidationError('Evidence enrollment context does not match this offer');
+      }
+      evidenceContextEnrollmentId = context.enrollmentId;
+    }
+
     // Find existing enrollment (created by device-capture on Page 1)
-    const { data: existingRows } = paidEnrollmentId
+    const exactEnrollmentId = paidEnrollmentId || evidenceContextEnrollmentId;
+    const { data: existingRows } = exactEnrollmentId
       ? await supabase
         .from('enrollments')
         .select('id, status')
-        .eq('id', paidEnrollmentId)
+        .eq('id', exactEnrollmentId)
         .limit(1)
       : await supabase
         .from('enrollments')

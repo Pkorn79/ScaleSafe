@@ -4,12 +4,18 @@
   var params = new URLSearchParams(window.location.search || '');
   var paidEnrollmentToken = params.get('paidEnrollmentToken') || '';
   var offerId = params.get('offerId') || '';
+  var evidenceContextToken = params.get('evidenceContextToken') || '';
+  try {
+    if (!evidenceContextToken && offerId) evidenceContextToken = sessionStorage.getItem('ss_evidence_context_token_' + offerId) || '';
+    if (evidenceContextToken && offerId) sessionStorage.setItem('ss_evidence_context_token_' + offerId, evidenceContextToken);
+  } catch (e) { /* silent */ }
 
-  if (!paidEnrollmentToken && !offerId) return;
+  if (!paidEnrollmentToken && !evidenceContextToken && !offerId) return;
 
   var passthroughKeys = [
     'offerId',
     'paidEnrollmentToken',
+    'evidenceContextToken',
     'paidEnrollment',
     'firstName',
     'lastName',
@@ -31,7 +37,7 @@
     try {
       var url = new URL(rawUrl, window.location.href);
       passthroughKeys.forEach(function (key) {
-        var value = params.get(key);
+        var value = key === 'evidenceContextToken' ? evidenceContextToken : params.get(key);
         if (value && !url.searchParams.get(key)) url.searchParams.set(key, value);
       });
       return url.toString();
@@ -79,6 +85,13 @@
   function run() {
     patchFrames();
     fillKnownIdentityFields();
+    if (params.has('evidenceContextToken')) {
+      try {
+        params.delete('evidenceContextToken');
+        var cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (e) { /* silent */ }
+    }
   }
 
   if (document.readyState === 'loading') {

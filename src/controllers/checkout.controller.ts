@@ -17,6 +17,7 @@ import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-car
 import { turnstileService } from '../services/turnstile.service';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import crypto from 'crypto';
+import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -187,7 +188,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
   try {
     const {
       offerId, amount, currency, consentToken, contactId, contactEmail, contactName,
-      paymentChoice, checkoutMode, publishableKey, selectedAddonIds,
+      paymentChoice, checkoutMode, publishableKey, selectedAddonIds, evidenceContextToken,
     } = req.body || {};
     if (!offerId || !amount || !contactEmail || !contactName) {
       res.status(400).json({ success: false, error: 'offerId, amount, contactName, and contactEmail are required' });
@@ -248,6 +249,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       }
     }
 
+    let consentEnrollmentId = '';
     if (consentToken) {
       const { data: enrollment } = await getSupabase()
         .from('enrollments')
@@ -258,6 +260,31 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       if (!enrollment) {
         res.status(400).json({ success: false, error: 'Consent verification failed. Please complete the enrollment process.' });
         return;
+      }
+      consentEnrollmentId = enrollment.id;
+    }
+
+    let contextEnrollmentId = '';
+    let evidenceContextId = '';
+    let resolvedContextContactId = String(contactId || '');
+    if (evidenceContextToken) {
+      const context = await evidenceEnrollmentContextService.claimForCheckout({
+        token: String(evidenceContextToken),
+        offerId: offer.id,
+        email: String(contactEmail),
+      });
+      if (context.locationId !== offer.location_id || (consentEnrollmentId && context.enrollmentId !== consentEnrollmentId)) {
+        res.status(400).json({ success: false, error: 'Evidence enrollment context does not match this checkout' });
+        return;
+      }
+      contextEnrollmentId = context.enrollmentId;
+      evidenceContextId = context.contextId;
+      if (!consentToken && !resolvedContextContactId) {
+        resolvedContextContactId = await resolveQuickCheckoutContact({
+          locationId: offer.location_id,
+          email: String(contactEmail),
+          name: String(contactName),
+        });
       }
     }
 
@@ -288,6 +315,8 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
         selected_addon_ids: cartSelectedAddonIds.join(','),
         line_items: JSON.stringify(quote.lineItems),
         consent_token: String(consentToken || ''),
+        enrollment_id: contextEnrollmentId || consentEnrollmentId || '',
+        evidence_context_id: evidenceContextId,
         contact_id: String(contactId || ''),
         customer_email: String(contactEmail),
         first_name: nameParts[0] || '',
@@ -297,6 +326,16 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       },
       setupFutureUsage: isRecurringPaymentType,
     });
+
+    if (contextEnrollmentId && resolvedContextContactId) {
+      const { error: contextContactError } = await getSupabase().from('enrollments').update({
+        contact_id: resolvedContextContactId,
+        email: String(contactEmail).trim().toLowerCase(),
+      }).eq('id', contextEnrollmentId).eq('location_id', offer.location_id);
+      if (contextContactError) {
+        logger.error({ err: contextContactError.message, contextEnrollmentId }, 'Stripe ACH context contact binding failed after intent creation');
+      }
+    }
 
     res.json({
       success: true,
@@ -573,6 +612,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     offerId, ghlProductId, consentToken, saveCard,
     deviceFingerprint, browserInfo,
     productDetails, requestThreeDSecure, selectedAddonIds,
+    evidenceContextToken,
   } = req.body;
 
   if (!paymentToken || !amount) {
@@ -644,6 +684,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
   const supabase = getSupabase();
 
   // Verify consent token if present
+  let consentEnrollmentId = '';
   if (consentToken) {
     const { data: enrollment } = await supabase
       .from('enrollments')
@@ -654,6 +695,32 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     if (!enrollment) {
       res.status(400).json({ success: false, error: 'Consent verification failed. Please complete the enrollment process.' });
+      return;
+    }
+    consentEnrollmentId = enrollment.id;
+  }
+
+  let contextEnrollmentId = '';
+  let evidenceContextId = '';
+  if (evidenceContextToken) {
+    if (!resolvedOffer || !offerId) {
+      res.status(400).json({ success: false, error: 'Evidence enrollment checkout requires a ScaleSafe offer' });
+      return;
+    }
+    try {
+      const context = await evidenceEnrollmentContextService.claimForCheckout({
+        token: String(evidenceContextToken),
+        offerId: String(offerId),
+        email: String(contactEmail || ''),
+      });
+      if (context.locationId !== merchant.locationId || (consentEnrollmentId && context.enrollmentId !== consentEnrollmentId)) {
+        res.status(400).json({ success: false, error: 'Evidence enrollment context does not match this checkout' });
+        return;
+      }
+      contextEnrollmentId = context.enrollmentId;
+      evidenceContextId = context.contextId;
+    } catch (contextErr: any) {
+      res.status(400).json({ success: false, error: contextErr.message || 'Evidence enrollment context is invalid' });
       return;
     }
   }
@@ -739,6 +806,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       merchant.locationId,
       offerId || ghlProductId || '',
       consentToken || '',
+      evidenceContextId || '',
       contactId || contactEmail || '',
       paymentToken,
       amount,
@@ -771,6 +839,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         selected_addon_ids: (cartQuote?.lineItems || []).filter((item) => item.addonId).map((item) => item.addonId).join(','),
         line_items: cartQuote ? JSON.stringify(cartQuote.lineItems) : '',
         consent_token: consentToken || '',
+        enrollment_id: contextEnrollmentId || consentEnrollmentId || '',
+        evidence_context_id: evidenceContextId,
         ghl_transaction_id: transactionId || '',
         ghl_order_id: orderId || '',
         customer_email: contactEmail || '',
@@ -801,7 +871,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // (or the GHL upsert fallback) resolves it. We track the resolved value in
     // `finalContactId` and run the save-card block once at the end.
     let finalContactId = contactId || '';
-    let finalEnrollmentId = '';
+    let finalEnrollmentId = contextEnrollmentId;
     let recurringSubscriptionId = '';
     let billingSetupIssue: BillingSetupIssue | null = null;
 
@@ -823,7 +893,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // Log payment event
     const enrollmentLookup = consentToken
       ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('consent_token', consentToken).single()
-      : null;
+      : contextEnrollmentId
+        ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('id', contextEnrollmentId).eq('location_id', merchant.locationId).single()
+        : null;
 
     await supabase.from('payment_events').insert({
       merchant_id: merchant.merchantId,
@@ -1087,7 +1159,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       // ─── Quick Pay enrollment + receipt ──────────────────────────
       // For installment/subscription Quick Pay offers, create a synthetic enrollment
       // row so the payment-reminder job and processor subscription setup can key off it.
-      let quickPayEnrollmentId: string | null = null;
+      let quickPayEnrollmentId: string | null = contextEnrollmentId || null;
       let quickPayPaymentKind: 'one_off' | 'installment' | 'subscription' = 'one_off';
       let quickPayPaymentsTotal: number | null = null;
       let quickPayPaymentsRemaining = 0;
@@ -1096,12 +1168,59 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         try {
           const offer = resolvedOffer || await offerRepository.findById(offerId, merchant.locationId);
           const offerPaymentType = (offer as any)?.payment_type || 'one_time';
-          if (offerPaymentType === 'installment' || offerPaymentType === 'installments' || offerPaymentType === 'subscription') {
+          const isRecurringQuickPay = offerPaymentType === 'installment'
+            || offerPaymentType === 'installments'
+            || offerPaymentType === 'subscription';
+          if (isRecurringQuickPay || contextEnrollmentId) {
+            if (isRecurringQuickPay) {
             quickPayPaymentKind = offerPaymentType === 'subscription' ? 'subscription' : 'installment';
             quickPayPaymentsTotal = offerPaymentType === 'subscription' ? null : ((offer as any)?.num_payments || null);
             quickPayPaymentsRemaining = quickPayPaymentsTotal ? Math.max(0, quickPayPaymentsTotal - 1) : 0;
+            }
 
             if (resolvedQuickPayContact) {
+              if (contextEnrollmentId) {
+                const contextPaymentType = isRecurringQuickPay
+                  ? quickPayPaymentKind
+                  : normalizePaymentType(String(req.body.paymentChoice || offerPaymentType || 'pif'));
+                const contextBillingComplete = quickPayPaymentKind === 'one_off'
+                  || (quickPayPaymentKind === 'installment' && quickPayPaymentsTotal != null && quickPayPaymentsTotal <= 1);
+                const contextNextBilling = contextBillingComplete
+                  ? null
+                  : computeNextBillingDate((offer as any)?.installment_frequency);
+                const contextEnrolledAt = new Date().toISOString();
+                const { error: contextEnrollmentError } = await supabase
+                  .from('enrollments')
+                  .update({
+                    merchant_id: merchant.merchantId,
+                    contact_id: resolvedQuickPayContact,
+                    offer_id: offerId,
+                    email: quickPayEmail || null,
+                    status: paymentProcessing ? 'payment_processing' : 'enrolled',
+                    payment_amount: amount / 100,
+                    payment_type: contextPaymentType,
+                    payment_transaction_id: result.transactionId,
+                    processor_type: procConfig.processor_type,
+                    initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
+                    initial_payment_method: paymentMethod,
+                    payments_made: paymentProcessing ? 0 : 1,
+                    payments_total: quickPayPaymentsTotal,
+                    next_billing_date: contextNextBilling,
+                    billing_setup_status: contextBillingComplete ? 'ok' : 'pending',
+                    ...(contextBillingComplete ? { billing_completed_at: contextEnrolledAt } : {}),
+                    enrolled_at: paymentProcessing ? null : contextEnrolledAt,
+                    selected_checkout_items: cartQuote?.lineItems || [],
+                  } as any)
+                  .eq('id', contextEnrollmentId)
+                  .eq('location_id', merchant.locationId)
+                  .eq('offer_id', offerId);
+                if (contextEnrollmentError) throw contextEnrollmentError;
+                quickPayEnrollmentId = contextEnrollmentId;
+                await supabase.from('payment_events')
+                  .update({ enrollment_id: contextEnrollmentId, contact_id: resolvedQuickPayContact })
+                  .eq('processor_transaction_id', result.transactionId)
+                  .eq('location_id', merchant.locationId);
+              } else {
               // Idempotency: skip if an enrollment already exists for this transaction.
               const { data: existingEnr } = await supabase
                 .from('enrollments')
@@ -1157,6 +1276,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   }
                   logger.info({ enrollmentId: quickPayEnrollmentId, contactId: resolvedQuickPayContact, offerId, paymentKind: quickPayPaymentKind, nextBilling }, 'Quick Pay: synthetic enrollment created for recurring billing');
                 }
+              }
               }
             } else {
               logger.warn({ offerId }, 'Quick Pay: installment/subscription offer but no resolvable contactId — skipping enrollment creation');
@@ -1478,7 +1598,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
 
     // Flag payment without consent (do NOT block — just warn)
-    if (paymentSettled && !consentToken && offerId) {
+    if (paymentSettled && !consentToken && !evidenceContextToken && offerId) {
       logger.warn({
         event: 'payment_without_consent',
         merchantId: merchant.merchantId,
@@ -1550,7 +1670,7 @@ async function resolveQuickCheckoutContact(params: {
 
 export async function createWhopCheckoutSession(req: Request, res: Response): Promise<void> {
   try {
-    const { offerId, consentToken, contactId, contactEmail, contactName, contactPhone, checkoutMode, paymentChoice, selectedAddonIds } = req.body || {};
+    const { offerId, consentToken, contactId, contactEmail, contactName, contactPhone, checkoutMode, paymentChoice, selectedAddonIds, evidenceContextToken } = req.body || {};
     if (!offerId) {
       res.status(400).json({ success: false, error: 'offerId required' });
       return;
@@ -1602,6 +1722,27 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       }
     }
 
+    if (evidenceContextToken) {
+      const context = await evidenceEnrollmentContextService.claimForCheckout({
+        token: String(evidenceContextToken),
+        offerId: offer.id,
+        email: resolvedEmail,
+      });
+      if (context.locationId !== offer.location_id || (enrollmentId && context.enrollmentId !== enrollmentId)) {
+        res.status(400).json({ success: false, error: 'Evidence enrollment context does not match this checkout' });
+        return;
+      }
+      enrollmentId = context.enrollmentId;
+      if (!resolvedContactId && resolvedEmail) {
+        resolvedContactId = await resolveQuickCheckoutContact({
+          locationId: offer.location_id,
+          email: resolvedEmail,
+          name: resolvedName,
+          phone: resolvedPhone,
+        });
+      }
+    }
+
     const normalizedChoice = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif'));
     const cartSelectedAddonIds = consentToken
       ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
@@ -1630,6 +1771,10 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
           whop_checkout_session_id: session.sessionId,
           whop_checkout_url: session.checkoutUrl || null,
           selected_checkout_items: quote.lineItems || [],
+          ...(evidenceContextToken && resolvedContactId ? {
+            contact_id: resolvedContactId,
+            email: resolvedEmail.trim().toLowerCase(),
+          } : {}),
         } as any)
         .eq('id', enrollmentId)
         .eq('location_id', offer.location_id);

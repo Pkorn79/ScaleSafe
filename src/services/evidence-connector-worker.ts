@@ -65,7 +65,19 @@ function resolutionError(code: string, retryable: boolean): Error & { code: stri
   return Object.assign(new Error(code.replace(/_/g, ' ').toLowerCase()), { code, retryable });
 }
 
-async function persistIdentity(connection: EvidenceConnectionRecord, subject: any, event: CanonicalEvidenceEvent): Promise<void> {
+export function connectorCanProcess(connection: EvidenceConnectionRecord, isTest: boolean): boolean {
+  const setupActive = connection.connection_type === 'legacy_external' || connection.setup_status === 'active';
+  if (isTest) return ['draft', 'testing', 'active'].includes(connection.setup_status || '');
+  return connection.status === 'active' && setupActive;
+}
+
+async function persistIdentity(
+  connection: EvidenceConnectionRecord,
+  subject: any,
+  event: CanonicalEvidenceEvent,
+  resolutionMethod: string,
+  intake: ExternalEvidenceEventRecord,
+): Promise<void> {
   if (!event.subject.external_contact_id && !event.subject.external_enrollment_id) return;
   await evidenceConnectorRepository.persistIdentity({
     connection_id: connection.id,
@@ -73,6 +85,13 @@ async function persistIdentity(connection: EvidenceConnectionRecord, subject: an
     location_id: connection.location_id,
     external_contact_id: event.subject.external_contact_id || null,
     external_enrollment_id: event.subject.external_enrollment_id || null,
+    binding_method: resolutionMethod,
+    verification_metadata: {
+      auth_method: intake.auth_method,
+      signature_verified: intake.signature_verified,
+      resource_type: event.resource?.type || null,
+      external_resource_id: event.resource?.id || null,
+    },
     verified_at: new Date().toISOString(),
   });
 }
@@ -107,7 +126,10 @@ async function retryOrQuarantine(event: ExternalEvidenceEventRecord, err: any): 
 async function processEvent(event: ExternalEvidenceEventRecord): Promise<void> {
   try {
     const connection = await evidenceConnectorRepository.getConnection(event.location_id, event.connection_id);
-    if (!connection || connection.status !== 'active') throw resolutionError('CONNECTION_DISABLED', false);
+    if (!connection) throw resolutionError('CONNECTION_DISABLED', false);
+    if (!connectorCanProcess(connection, event.is_test)) {
+      throw resolutionError('CONNECTION_DISABLED', false);
+    }
     const canonical = event.normalized_payload as CanonicalEvidenceEvent | null;
     if (!canonical) throw resolutionError('NORMALIZED_PAYLOAD_MISSING', false);
 
@@ -122,7 +144,7 @@ async function processEvent(event: ExternalEvidenceEventRecord): Promise<void> {
       offer_id: enrollment.offer_id,
     };
 
-    await persistIdentity(connection, resolution.subject, canonical);
+    await persistIdentity(connection, resolution.subject, canonical, resolution.method, event);
 
     if (event.is_test) {
       await evidenceConnectorRepository.updateEvent(event.id, {
@@ -213,12 +235,31 @@ async function tick(): Promise<void> {
   }
 }
 
+let lastContextCleanupAt = 0;
+
+async function cleanupExpiredContexts(): Promise<void> {
+  if (Date.now() - lastContextCleanupAt < 60 * 60 * 1000) return;
+  lastContextCleanupAt = Date.now();
+  try {
+    const expired = await evidenceConnectorRepository.expireEnrollmentContexts();
+    if (expired > 0) logger.info({ expired }, 'Expired evidence enrollment contexts cleaned up');
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'Evidence enrollment context cleanup failed');
+  }
+}
+
 export const evidenceConnectorWorker = {
   start(): void {
     if (timer) return;
-    timer = setInterval(() => void tick(), 5000);
+    timer = setInterval(() => {
+      void tick();
+      void cleanupExpiredContexts();
+    }, 5000);
     timer.unref();
-    setTimeout(() => void tick(), 1000).unref();
+    setTimeout(() => {
+      void tick();
+      void cleanupExpiredContexts();
+    }, 1000).unref();
   },
   async runOnce(): Promise<void> {
     await tick();

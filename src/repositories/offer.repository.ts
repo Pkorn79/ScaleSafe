@@ -29,6 +29,7 @@ export interface OfferRecord {
   processor_override: string | null;
   nmi_processor_id: string | null;
   checkout_type: 'direct' | 'whop';
+  checkout_mode: 'full_enrollment' | 'quick_checkout';
   dual_pricing_enabled: boolean;
   ach_enabled: boolean;
   dual_pricing_control_id: string | null;
