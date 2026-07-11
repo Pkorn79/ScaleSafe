@@ -110,14 +110,36 @@ export const stripeEvidenceVaultService = {
     try {
       const supabase = getSupabase();
 
-      // Check for existing entry
+      // Card fingerprint: present when the webhook object was a Charge
+      // (charge.succeeded path spreads the charge fields through) or when
+      // latest_charge arrived expanded. payment_intent.succeeded payloads
+      // don't carry it — the charge.succeeded event fills it in (see below).
+      const cardFingerprint = paymentIntent.payment_method_details?.card?.fingerprint
+        || (typeof paymentIntent.latest_charge === 'object'
+          ? paymentIntent.latest_charge?.payment_method_details?.card?.fingerprint
+          : null)
+        || null;
+
+      // Check for existing entry. Both charge.succeeded and
+      // payment_intent.succeeded fire for one payment; whichever arrives
+      // second may carry identity fields the first one lacked — fill gaps.
       const { data: existing } = await supabase
         .from('stripe_evidence_vault')
-        .select('id')
+        .select('id, card_fingerprint, customer_device_fingerprint')
         .eq('stripe_payment_intent_id', paymentIntent.id)
         .single();
 
-      if (existing) return;
+      if (existing) {
+        const gapFill: Record<string, string> = {};
+        if (!existing.card_fingerprint && cardFingerprint) gapFill.card_fingerprint = cardFingerprint;
+        if (!existing.customer_device_fingerprint && paymentIntent.metadata?.customer_device_fingerprint) {
+          gapFill.customer_device_fingerprint = paymentIntent.metadata.customer_device_fingerprint;
+        }
+        if (Object.keys(gapFill).length > 0) {
+          await supabase.from('stripe_evidence_vault').update(gapFill).eq('id', existing.id);
+        }
+        return;
+      }
 
       const metadata = paymentIntent.metadata || {};
       const chargeId = typeof paymentIntent.latest_charge === 'string'
@@ -150,6 +172,8 @@ export const stripeEvidenceVaultService = {
         offer_title: paymentIntent.description || null,
         offer_description: metadata.offer_description || paymentIntent.description || null,
         customer_ip: metadata.customer_ip || null,
+        customer_device_fingerprint: metadata.customer_device_fingerprint || null,
+        card_fingerprint: cardFingerprint,
         terms_accepted: metadata.terms_accepted === 'true',
         terms_accepted_at: metadata.terms_accepted_at || null,
         ce30_eligible: false,

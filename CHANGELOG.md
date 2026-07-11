@@ -3,6 +3,31 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased — Stripe Defense MVP-4: Visa Compelling Evidence 3.0 (2026-07-10)
+
+> **Deploy ordering:** migration `091_ce3_vault_fingerprints.sql` must be applied in Supabase
+> BEFORE this deploys — the evidence vault writes the new fingerprint columns on every payment.
+
+### Added
+- **Visa CE 3.0 on eligible fraud disputes**: when Stripe marks a 10.4 "unauthorized charge"
+  dispute CE 3.0-eligible, Submit to Stripe automatically attaches prior-transaction proof —
+  exactly 2 prior undisputed Stripe transactions from the same client sharing identity elements
+  (IP/device fingerprint + email), shifting liability back to the issuing bank. Standard evidence
+  stays attached as fallback. New matching engine `stripe-ce3.service.ts` with the integrity rule:
+  candidates come only from payment_events rows tied to the same contact — never guessed.
+- **CE 3.0 surfacing**: packet page shows an eligibility panel (pre-submit explainer,
+  post-submit qualified/not_qualified, and "why not" reasons when proof can't be assembled);
+  dispute queue rows get a CE 3.0 badge.
+- **Capture hardening (migration 091)**: `stripe_evidence_vault` gains `card_fingerprint`
+  (from charge webhooks — verifies same-payment-method priors, feeds future Radar blocking) and
+  `customer_device_fingerprint` (checkout already sends it; now stored per transaction as a
+  CE 3.0 main identity element). Late-arriving webhook fills gaps on existing entries.
+
+### Changed
+- Evidence pipeline accepts nested `enhanced_evidence` (was flat string map).
+
+---
+
 ## Unreleased — Stripe Defense MVP-3: self-closing outcomes + setup instructions (2026-07-10)
 
 ### Added

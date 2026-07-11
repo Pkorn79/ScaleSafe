@@ -37,6 +37,25 @@
           because the packet can't be edited after submission.
         </div>
 
+        <!-- Visa CE 3.0: prior-transaction proof that shifts fraud liability to the issuer -->
+        <div v-if="packet.ce3?.eligible" class="deadline-strip" style="margin-bottom:8px;background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46">
+          <strong>Visa Compelling Evidence 3.0:</strong>
+          <template v-if="packet.ce3.status === 'qualified'">
+            qualified — Visa's pre-check accepted the prior-transaction proof. Strongest possible position.
+          </template>
+          <template v-else-if="packet.ce3.status === 'not_qualified'">
+            the submitted set didn't qualify — the dispute continues through standard review with your full evidence packet.
+          </template>
+          <template v-else>
+            this "unauthorized charge" dispute qualifies for prior-transaction proof. When you submit,
+            ScaleSafe automatically attaches evidence of this client's past purchases (matching IP,
+            email, and device) to shift liability back to the bank.
+          </template>
+          <div v-if="packet.internal_debug?.ce3_skipped_reasons?.length" class="text-sm" style="margin-top:4px;font-weight:400;opacity:.85">
+            Prior-transaction proof couldn't be assembled: {{ packet.internal_debug.ce3_skipped_reasons.join(' ') }}
+          </div>
+        </div>
+
         <!-- Deadline countdown -->
         <div class="deadline-strip" :class="deadlineUrgency">
           <strong>Response Deadline:</strong>

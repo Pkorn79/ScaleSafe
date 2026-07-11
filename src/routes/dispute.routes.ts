@@ -72,6 +72,7 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
       const packetByDispute = new Map((packets || []).map((p: any) => [p.dispute_event_id, p.id]));
       rows.forEach((d: any) => { d.defense_packet_id = packetByDispute.get(d.id) || null; });
     }
+    rows.forEach((d: any) => { d.ce3_eligible = stripeDisputeService.getCe3Eligibility(d).eligible; });
 
     res.json({ disputes: rows });
   } catch (err: any) {

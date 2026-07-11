@@ -845,6 +845,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         ghl_order_id: orderId || '',
         customer_email: contactEmail || '',
         customer_ip: clientIp,
+        customer_device_fingerprint: deviceFingerprint || '',
         terms_accepted: consentToken ? 'true' : '',
         terms_accepted_at: consentToken ? new Date().toISOString() : '',
         ce30_eligible: consentToken ? 'true' : 'false',

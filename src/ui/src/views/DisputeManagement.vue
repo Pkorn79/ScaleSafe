@@ -53,7 +53,10 @@
                 </div>
               </td>
               <td class="text-sm">${{ Number(d.amount || 0).toFixed(2) }}</td>
-              <td><span class="badge badge-blue">{{ formatReasonCode(d.reason) }}</span></td>
+              <td>
+                <span class="badge badge-blue">{{ formatReasonCode(d.reason) }}</span>
+                <span v-if="d.ce3_eligible" class="badge badge-green" style="margin-left:4px" title="Qualifies for Visa Compelling Evidence 3.0 — prior-transaction proof attaches automatically on submit">CE 3.0</span>
+              </td>
               <td>
                 <div v-if="d.triage_score != null" class="text-sm">
                   <strong>{{ d.triage_score }}</strong>/100

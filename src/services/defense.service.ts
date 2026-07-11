@@ -918,13 +918,18 @@ LETTER STRUCTURE:
     // Rail flag: Stripe-linked packets are pushed to Stripe by Mark Submitted,
     // so the UI must present that action as "Submit to Stripe".
     shaped.isStripeDispute = false;
+    shaped.ce3 = null;
     if ((packet as any).dispute_event_id) {
       const { data: de } = await getSupabase()
         .from('dispute_events')
-        .select('stripe_dispute_id')
+        .select('stripe_dispute_id, raw_dispute_object')
         .eq('id', (packet as any).dispute_event_id)
         .maybeSingle();
       shaped.isStripeDispute = !!de?.stripe_dispute_id;
+      if (de?.stripe_dispute_id) {
+        const { stripeDisputeService } = require('./stripe-dispute.service');
+        shaped.ce3 = stripeDisputeService.getCe3Eligibility(de);
+      }
     }
     return shaped;
   },
@@ -1139,7 +1144,7 @@ LETTER STRUCTURE:
     }
 
     // Baseline: vault-assembled evidence for this dispute (non-fatal if unavailable)
-    let evidence: Record<string, string> = {};
+    let evidence: Record<string, any> = {};
     try {
       const assembled = await stripeDisputeService.assembleEvidencePacket(
         disputeEvent.stripe_dispute_id, (merchant as any).id,
@@ -1208,6 +1213,36 @@ LETTER STRUCTURE:
       if (fileRecordError) {
         logger.warn({ err: fileRecordError.message, defenseId: packet.id }, 'Failed to record dispute evidence file (non-fatal)');
       }
+    }
+
+    // Visa CE 3.0: on eligible 10.4 fraud disputes, attach prior-transaction
+    // proof from the same client. Standard evidence fields above stay populated
+    // as the fallback (a not_qualified set still goes through normal review).
+    try {
+      const ce3Eligibility = stripeDisputeService.getCe3Eligibility(disputeEvent);
+      if (ce3Eligibility.eligible) {
+        const { stripeCe3Service } = require('./stripe-ce3.service');
+        const ce3 = await stripeCe3Service.buildCe3Evidence({
+          merchant,
+          disputeEvent,
+          productDescription: evidence.product_description || null,
+        });
+        if (ce3.evidence) {
+          evidence.enhanced_evidence = { visa_compelling_evidence_3: ce3.evidence };
+          logger.info({ defenseId: packet.id, stripeDisputeId: disputeEvent.stripe_dispute_id }, 'CE 3.0 enhanced evidence attached to submission');
+        } else {
+          logger.info({ defenseId: packet.id, reasons: ce3.reasons }, 'Dispute is CE 3.0 eligible but prior-transaction proof could not be assembled — submitting standard evidence');
+          const { error: debugError } = await supabase
+            .from('defense_packets')
+            .update({ internal_debug: { ...((packet as any).internal_debug || {}), ce3_skipped_reasons: ce3.reasons } })
+            .eq('id', packet.id);
+          if (debugError) {
+            logger.warn({ err: debugError.message, defenseId: packet.id }, 'Failed to record CE 3.0 skip reasons (non-fatal)');
+          }
+        }
+      }
+    } catch (err: any) {
+      logger.warn({ err: err?.message, defenseId: packet.id }, 'CE 3.0 evidence assembly failed (non-fatal) — submitting standard evidence');
     }
 
     try {

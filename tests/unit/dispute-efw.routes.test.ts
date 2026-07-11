@@ -51,6 +51,11 @@ jest.mock('../../src/services/stripe-dispute.service', () => ({
   stripeDisputeService: {
     assembleEvidencePacket: (...args: any[]) => mockAssembleEvidencePacket(...args),
     submitEvidence: (...args: any[]) => mockSubmitEvidence(...args),
+    getCe3Eligibility: (de: any) => ({
+      eligible: !!de?.raw_dispute_object?.enhanced_eligibility_types?.includes?.('visa_compelling_evidence_3'),
+      status: null,
+      requiredActions: [],
+    }),
   },
 }));
 
@@ -135,8 +140,8 @@ describe('GET /api/disputes/:merchantId — list disputes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.disputes).toEqual([
-      { id: 'd1', stripe_dispute_id: 'dp_1', defense_packet_id: 'def_1' },
-      { id: 'd2', stripe_dispute_id: 'dp_2', defense_packet_id: null },
+      { id: 'd1', stripe_dispute_id: 'dp_1', defense_packet_id: 'def_1', ce3_eligible: false },
+      { id: 'd2', stripe_dispute_id: 'dp_2', defense_packet_id: null, ce3_eligible: false },
     ]);
     expect(mockFrom).toHaveBeenCalledWith('dispute_events');
     expect(mockFrom).toHaveBeenCalledWith('defense_packets');

@@ -437,10 +437,29 @@ export const stripeDisputeService = {
     return file.id;
   },
 
+  /**
+   * Read Visa CE 3.0 eligibility off a stored dispute_events row. Stripe stamps
+   * `enhanced_eligibility_types` and `evidence_details.enhanced_eligibility`
+   * on the dispute object, which we persist verbatim in raw_dispute_object.
+   */
+  getCe3Eligibility(disputeEvent: any): { eligible: boolean; status: string | null; requiredActions: string[] } {
+    const raw = disputeEvent?.raw_dispute_object || {};
+    const eligible = Array.isArray(raw.enhanced_eligibility_types)
+      && raw.enhanced_eligibility_types.includes('visa_compelling_evidence_3');
+    const detail = raw.evidence_details?.enhanced_eligibility?.visa_compelling_evidence_3 || null;
+    return {
+      eligible,
+      status: detail?.status || null,
+      requiredActions: Array.isArray(detail?.required_actions) ? detail.required_actions : [],
+    };
+  },
+
   async submitEvidence(params: {
     stripeDisputeId: string;
     merchantId: string;
-    evidence: Record<string, string>;
+    /** Flat Stripe evidence fields, plus optionally the nested
+     *  `enhanced_evidence.visa_compelling_evidence_3` object (CE 3.0). */
+    evidence: Record<string, any>;
     autoSubmit: boolean;
     /** Who initiated the submission — recorded in dispute_events. Defaults to
      *  the legacy autoSubmit-derived value for existing callers. */

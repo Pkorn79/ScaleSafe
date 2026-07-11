@@ -218,6 +218,19 @@ jest.mock('../../src/services/stripe-dispute.service', () => ({
     uploadDefensePacketFile: (...args: any[]) => mockUploadDefensePacketFile(...args),
     submitEvidence: (...args: any[]) => mockStripeSubmitEvidence(...args),
     assembleEvidencePacket: (...args: any[]) => mockAssembleEvidencePacket(...args),
+    // Mirror the real reader: eligibility comes off raw_dispute_object
+    getCe3Eligibility: (de: any) => ({
+      eligible: !!de?.raw_dispute_object?.enhanced_eligibility_types?.includes?.('visa_compelling_evidence_3'),
+      status: de?.raw_dispute_object?.evidence_details?.enhanced_eligibility?.visa_compelling_evidence_3?.status || null,
+      requiredActions: [],
+    }),
+  },
+}));
+
+const mockBuildCe3Evidence = jest.fn();
+jest.mock('../../src/services/stripe-ce3.service', () => ({
+  stripeCe3Service: {
+    buildCe3Evidence: (...args: any[]) => mockBuildCe3Evidence(...args),
   },
 }));
 
@@ -1086,6 +1099,57 @@ describe('Defense Service - markSubmitted Stripe push', () => {
     expect(mockUpdatedRows['defense_packets']).toEqual([
       expect.objectContaining({ lifecycle_status: 'submitted' }),
     ]);
+  });
+
+  test('CE 3.0-eligible disputes get enhanced_evidence attached alongside standard evidence', async () => {
+    mockSelectResults['dispute_events'] = {
+      id: 'de_1',
+      stripe_dispute_id: 'dp_1',
+      evidence_submitted: false,
+      raw_dispute_object: { enhanced_eligibility_types: ['visa_compelling_evidence_3'] },
+    };
+    const ce3Payload = {
+      disputed_transaction: { customer_email_address: 'a@b.com', customer_purchase_ip: '1.2.3.4', merchandise_or_services: 'services', product_description: 'Program' },
+      prior_undisputed_transactions: [
+        { charge: 'ch_1', customer_email_address: 'a@b.com', customer_purchase_ip: '1.2.3.4', product_description: 'Program' },
+        { charge: 'ch_2', customer_email_address: 'a@b.com', customer_purchase_ip: '1.2.3.4', product_description: 'Program' },
+      ],
+    };
+    mockBuildCe3Evidence.mockResolvedValue({ evidence: ce3Payload, reasons: [] });
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs.evidence.enhanced_evidence).toEqual({ visa_compelling_evidence_3: ce3Payload });
+    // Standard fallback evidence stays populated
+    expect(submitArgs.evidence.uncategorized_text).toContain('disputing it');
+    expect(submitArgs.evidence.uncategorized_file).toBe('file_123');
+  });
+
+  test('CE 3.0 assembly failure is non-fatal: standard evidence submits, reasons recorded', async () => {
+    mockSelectResults['dispute_events'] = {
+      id: 'de_1',
+      stripe_dispute_id: 'dp_1',
+      evidence_submitted: false,
+      raw_dispute_object: { enhanced_eligibility_types: ['visa_compelling_evidence_3'] },
+    };
+    mockBuildCe3Evidence.mockResolvedValue({ evidence: null, reasons: ['Only 1 prior transaction(s) share enough identity elements'] });
+
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    const submitArgs = mockStripeSubmitEvidence.mock.calls[0][0];
+    expect(submitArgs.evidence.enhanced_evidence).toBeUndefined();
+    expect(mockUpdatedRows['defense_packets']).toEqual(expect.arrayContaining([
+      expect.objectContaining({ internal_debug: expect.objectContaining({ ce3_skipped_reasons: expect.any(Array) }) }),
+      expect.objectContaining({ lifecycle_status: 'submitted' }),
+    ]));
+  });
+
+  test('non-CE3 disputes never invoke the matching engine', async () => {
+    await defenseService.markSubmitted('def_1', 'loc_1');
+
+    expect(mockBuildCe3Evidence).not.toHaveBeenCalled();
+    expect(mockStripeSubmitEvidence.mock.calls[0][0].evidence.enhanced_evidence).toBeUndefined();
   });
 
   test('non-Stripe (NMI) packets skip the Stripe push entirely and still mark submitted', async () => {
