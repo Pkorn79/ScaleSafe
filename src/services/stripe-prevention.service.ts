@@ -122,9 +122,17 @@ export class StripePreventionService {
 
     steps.push({
       id: 'rdr_ruleset',
-      title: 'Configure RDR auto-resolve rules',
+      title: 'Activate RDR and set your parameters',
       complete: false,
-      instructions: 'Set rules for which Visa pre-disputes get auto-refunded before they become chargebacks — e.g. auto-resolve low-ticket amounts where the dispute fee plus your time costs more than the refund. RDR-resolved cases do not count toward your dispute rate and carry no dispute fee. Fight high-value transactions with strong evidence instead.',
+      instructions: 'Once on the Dispute Prevention page, click Activate on Rapid Dispute Resolution, then set your parameters — the rules for which Visa pre-disputes get auto-refunded before they become chargebacks (amount threshold, dispute reason, transaction age). Recommended: auto-resolve low-ticket amounts where the dispute fee plus your time costs more than the refund. RDR-resolved cases do not count toward your dispute rate and carry no dispute fee. Fight high-value transactions with strong evidence instead.',
+    });
+
+    steps.push({
+      id: 'stripe_dispute_emails',
+      title: "Turn on Stripe's dispute notification emails",
+      complete: false,
+      instructions: 'In Stripe Dashboard > Settings > Communication preferences, enable dispute notifications so you get Stripe\'s own email the moment a dispute or early fraud warning arrives. ScaleSafe shows everything in-app; the email is your out-of-app safety net.',
+      actionUrl: 'https://dashboard.stripe.com/settings/communication-preferences',
     });
 
     return {
@@ -162,8 +170,16 @@ export class StripePreventionService {
       id: 'ethoca_enrollment',
       title: 'Enable Ethoca Alerts in Stripe Dashboard',
       complete: false,
-      instructions: 'Navigate to Stripe Dashboard > Disputes > Dispute Prevention. Enable Ethoca Alerts for Mastercard dispute prevention. Configure auto-resolve rules.',
+      instructions: 'Navigate to Stripe Dashboard > Disputes > Dispute Prevention. Click Activate on Ethoca Alerts for Mastercard dispute prevention, then set your parameters (auto-resolve rules for which alerts get refunded automatically).',
       actionUrl: 'https://dashboard.stripe.com/settings/disputes',
+    });
+
+    steps.push({
+      id: 'stripe_dispute_emails',
+      title: "Turn on Stripe's dispute notification emails",
+      complete: false,
+      instructions: 'In Stripe Dashboard > Settings > Communication preferences, enable dispute notifications so you get Stripe\'s own email the moment a dispute or early fraud warning arrives.',
+      actionUrl: 'https://dashboard.stripe.com/settings/communication-preferences',
     });
 
     steps.push({

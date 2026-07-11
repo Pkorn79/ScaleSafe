@@ -88,8 +88,8 @@
           {{ p.isStripeDispute ? 'Submit to Stripe' : 'Mark Submitted' }}
         </button>
       </div>
-      <div v-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted' && !p.outcome" class="mt-2" style="display:flex;gap:8px;align-items:center">
-        <span class="text-sm text-muted">Heard back from the bank?</span>
+      <div v-if="(p.lifecycleStatus || p.lifecycle_status) === 'submitted' && !p.outcome" class="mt-2" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="text-sm text-muted">{{ p.isStripeDispute ? 'Stripe reports the outcome automatically — you can also record it yourself:' : 'Heard back from the bank?' }}</span>
         <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="recordingOutcomeId === p.id" @click.stop="quickOutcome(p, 'won')">
           Mark Won
         </button>

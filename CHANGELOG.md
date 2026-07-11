@@ -3,6 +3,29 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased — Stripe Defense MVP-3: self-closing outcomes + setup instructions (2026-07-10)
+
+### Added
+- **Stripe verdicts auto-record on the defense packet**: when Stripe reports a dispute won or
+  lost (`charge.dispute.closed`), the linked packet's outcome is recorded automatically
+  (outcome row, lifecycle, GHL contact status) — no more manual Won/Lost clicks for Stripe-rail
+  disputes. Manual buttons remain as fallback with a "Stripe reports this automatically" caption.
+  Idempotent: skips packets that already have a terminal outcome.
+- **RDR/Ethoca first-contact detector**: disputes that arrive or close already resolved log a
+  stable `possible_rdr_or_ethoca_resolution` marker (raw payload already stored) so the first
+  live auto-resolution self-documents for future flag bookkeeping.
+- Prevention checklists: explicit "click **Activate**, then set your parameters" step for RDR and
+  Ethoca, and a new step to enable Stripe's own dispute notification emails (Communication
+  preferences) — replaces any need for ScaleSafe push notifications. Settings → Payments card
+  carries the same instructions.
+
+### Fixed
+- **Dismissed inquiries were counted as losses**: `charge.dispute.closed` with `warning_closed`
+  (inquiry ended without escalating) or `charge_refunded` recorded outcome `lost`; now recorded
+  as `withdrawn` so win-rate stats aren't corrupted.
+
+---
+
 ## Unreleased — Stripe Defense MVP-2: pre-dispute refunds + visibility (2026-07-10)
 
 ### Added

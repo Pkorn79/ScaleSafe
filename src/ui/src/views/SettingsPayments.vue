@@ -396,8 +396,12 @@
         </p>
         <p class="text-sm text-muted mb-4">
           Enrollment happens in your Stripe Dashboard — ScaleSafe can't turn it on for you.
-          ScaleSafe handles the case-by-case side: early fraud warnings appear on the
-          Stripe Risk Health page, where you can refund or hold each one.
+          After opening the page below, click <strong>Activate</strong> on each program and set
+          your parameters (the auto-refund rules). While you're in the Dashboard, also enable
+          dispute notification emails under Settings &gt; Communication preferences so Stripe
+          emails you the moment anything arrives. ScaleSafe handles the case-by-case side:
+          early fraud warnings appear on the Stripe Risk Health page, where you can refund or
+          hold each one.
         </p>
         <div class="flex gap-2" style="flex-wrap:wrap">
           <a href="https://dashboard.stripe.com/settings/disputes" target="_blank" rel="noopener" class="btn btn-primary btn-sm">

@@ -347,7 +347,12 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
       // need no defense — preparing one would just confuse the queue.
       const terminalStatuses = ['won', 'lost', 'charge_refunded', 'warning_closed'];
       if (terminalStatuses.includes(dispute.status)) {
-        logger.info({ disputeId: dispute.id, status: dispute.status }, 'Dispute arrived already resolved — skipping defense auto-prepare');
+        // First-contact detector for RDR/Ethoca auto-resolutions (see the
+        // matching marker in charge.dispute.closed).
+        logger.warn(
+          { marker: 'possible_rdr_or_ethoca_resolution', disputeId: dispute.id, status: dispute.status, reason: dispute.reason },
+          'Dispute arrived already resolved — skipping defense auto-prepare; possible RDR/Ethoca auto-resolution',
+        );
         break;
       }
       try {
@@ -372,7 +377,11 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
     }
 
     case 'charge.dispute.closed': {
-      const outcome = dispute.status === 'won' ? 'won' : 'lost';
+      // won → won; lost → lost. A dismissed inquiry (warning_closed) or a
+      // refunded charge is NOT a defense loss — recording it as one would
+      // corrupt the merchant's win rate.
+      const dismissed = ['warning_closed', 'charge_refunded'].includes(dispute.status);
+      const outcome = dispute.status === 'won' ? 'won' : dismissed ? 'withdrawn' : 'lost';
       await supabase
         .from('dispute_events')
         .update({
@@ -383,6 +392,42 @@ async function handleDisputeEvent(event: any, merchant: any): Promise<void> {
         })
         .eq('stripe_dispute_id', dispute.id)
         .eq('merchant_id', merchant.id);
+
+      if (dismissed) {
+        // First-contact detector for RDR/Ethoca auto-resolutions: no live
+        // example exists yet, so log a stable marker — raw_dispute_object is
+        // stored, letting the first real occurrence self-document.
+        logger.warn(
+          { marker: 'possible_rdr_or_ethoca_resolution', disputeId: dispute.id, status: dispute.status, reason: dispute.reason },
+          'Dispute closed without a merchant verdict — possible RDR/Ethoca auto-resolution; inspect raw_dispute_object',
+        );
+      }
+
+      // Auto-record the packet outcome — Stripe just told us the verdict, so
+      // the merchant shouldn't have to click Won/Lost on data we already have.
+      try {
+        const { data: disputeRow } = await supabase
+          .from('dispute_events')
+          .select('id')
+          .eq('stripe_dispute_id', dispute.id)
+          .eq('merchant_id', merchant.id)
+          .maybeSingle();
+        if (disputeRow?.id) {
+          const { data: packet } = await supabase
+            .from('defense_packets')
+            .select('id, lifecycle_status')
+            .eq('dispute_event_id', disputeRow.id)
+            .limit(1)
+            .maybeSingle();
+          if (packet?.id && !['won', 'lost', 'withdrawn'].includes(packet.lifecycle_status)) {
+            const { defenseService } = require('../services/defense.service');
+            await defenseService.recordOutcome(packet.id, outcome, { notes: 'Recorded automatically from Stripe' });
+            logger.info({ disputeId: dispute.id, defenseId: packet.id, outcome }, 'Defense outcome auto-recorded from Stripe verdict');
+          }
+        }
+      } catch (err: any) {
+        logger.error({ err: err.message, disputeId: dispute.id }, 'Failed to auto-record defense outcome from Stripe verdict');
+      }
 
       if (outcome === 'won' && dispute.reason === 'fraudulent') {
         logger.info({ disputeId: dispute.id }, 'Won fraud dispute — card fingerprint should be blocked (Phase S4)');

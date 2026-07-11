@@ -111,7 +111,7 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <template v-if="(d.lifecycleStatus || d.lifecycle_status) === 'submitted'">
-            <span class="text-sm text-muted">Heard back?</span>
+            <span class="text-sm text-muted">{{ d.isStripeDispute ? 'Stripe reports this automatically' : 'Heard back?' }}</span>
             <button class="btn btn-sm btn-primary" style="padding:3px 12px;font-size:11px" :disabled="disputeActionId === d.id" @click.stop="dashOutcome(d, 'won')">Won</button>
             <button class="btn btn-sm btn-secondary" style="padding:3px 12px;font-size:11px" :disabled="disputeActionId === d.id" @click.stop="dashOutcome(d, 'lost')">Lost</button>
           </template>

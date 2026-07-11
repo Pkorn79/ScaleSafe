@@ -35,9 +35,16 @@ jest.mock('../../src/services/stripe-efw.service', () => ({
 }));
 
 const mockPrepareForStripeDispute = jest.fn();
+const mockRecordOutcome = jest.fn();
 jest.mock('../../src/services/defense.service', () => ({
-  defenseService: { prepareForStripeDispute: mockPrepareForStripeDispute },
+  defenseService: {
+    prepareForStripeDispute: mockPrepareForStripeDispute,
+    recordOutcome: mockRecordOutcome,
+  },
 }));
+
+// Per-test row for the defense_packets lookup in charge.dispute.closed
+let mockPacketRow: any = null;
 
 jest.mock('../../src/services/recurring-payment.service', () => ({
   handleRecurringPaymentSuccess: jest.fn(),
@@ -120,8 +127,20 @@ function tableMock(table: string) {
     const chain: any = {
       upsert: jest.fn().mockResolvedValue({ error: null }),
       update: jest.fn(() => chain),
+      select: jest.fn(() => chain),
       eq: jest.fn(() => chain),
+      maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'de_row_1' }, error: null }),
       then: (resolve: any) => resolve({ error: null }),
+    };
+    return chain;
+  }
+
+  if (table === 'defense_packets') {
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      limit: jest.fn(() => chain),
+      maybeSingle: jest.fn().mockImplementation(() => Promise.resolve({ data: mockPacketRow, error: null })),
     };
     return chain;
   }
@@ -132,6 +151,7 @@ function tableMock(table: string) {
 describe('handleStripeWebhook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPacketRow = null;
     mockFrom.mockImplementation(tableMock);
     mockConstructEvent.mockReturnValue({
       id: 'evt_1',
@@ -273,6 +293,77 @@ describe('handleStripeWebhook', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(stripeDisputeService.submitEvidence).not.toHaveBeenCalled();
+  });
+
+  function closedEvent(status: string, id = 'dp_closed') {
+    return {
+      id: 'evt_closed',
+      type: 'charge.dispute.closed',
+      account: 'acct_1',
+      data: { object: { id, charge: 'ch_9', reason: 'fraudulent', status, amount: 5000, currency: 'usd' } },
+    };
+  }
+
+  const closedReq = () => ({
+    params: { locationId: 'loc_1' },
+    headers: { 'stripe-signature': 'sig_1' },
+    rawBody: Buffer.from('{}'),
+  } as any);
+
+  it('auto-records a WON verdict on the linked defense packet', async () => {
+    mockPacketRow = { id: 'def_9', lifecycle_status: 'submitted' };
+    mockConstructEvent.mockReturnValue(closedEvent('won'));
+
+    const res = mockResponse();
+    await handleStripeWebhook(closedReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockRecordOutcome).toHaveBeenCalledWith('def_9', 'won', { notes: 'Recorded automatically from Stripe' });
+  });
+
+  it('records a dismissed inquiry (warning_closed) as withdrawn — NEVER as lost', async () => {
+    mockPacketRow = { id: 'def_9', lifecycle_status: 'submitted' };
+    mockConstructEvent.mockReturnValue(closedEvent('warning_closed'));
+
+    const res = mockResponse();
+    await handleStripeWebhook(closedReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockRecordOutcome).toHaveBeenCalledWith('def_9', 'withdrawn', expect.any(Object));
+    expect(mockRecordOutcome).not.toHaveBeenCalledWith(expect.anything(), 'lost', expect.anything());
+  });
+
+  it('does not auto-record when no defense packet is linked to the dispute', async () => {
+    mockPacketRow = null;
+    mockConstructEvent.mockReturnValue(closedEvent('lost'));
+
+    const res = mockResponse();
+    await handleStripeWebhook(closedReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockRecordOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does not double-record when the packet already has a terminal outcome', async () => {
+    mockPacketRow = { id: 'def_9', lifecycle_status: 'won' };
+    mockConstructEvent.mockReturnValue(closedEvent('won'));
+
+    const res = mockResponse();
+    await handleStripeWebhook(closedReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockRecordOutcome).not.toHaveBeenCalled();
+  });
+
+  it('still 200s when auto-recording fails (dispute_events already updated)', async () => {
+    mockPacketRow = { id: 'def_9', lifecycle_status: 'submitted' };
+    mockRecordOutcome.mockRejectedValueOnce(new Error('GHL down'));
+    mockConstructEvent.mockReturnValue(closedEvent('won'));
+
+    const res = mockResponse();
+    await handleStripeWebhook(closedReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('keeps the legacy global webhook route working with the global secret', async () => {
