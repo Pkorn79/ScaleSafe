@@ -7,6 +7,7 @@ const mockOfferFindById = jest.fn();
 const mockOfferListByLocation = jest.fn();
 const mockSupabaseFrom = jest.fn();
 const mockVerifyPublicActionToken = jest.fn();
+const mockSchedulingUpsert = jest.fn();
 
 jest.mock('../../src/repositories/ghlActivity.repository', () => ({
   ghlActivityRepository: {
@@ -36,6 +37,12 @@ jest.mock('../../src/clients/supabase.client', () => ({
 
 jest.mock('../../src/utils/public-action-token', () => ({
   verifyPublicActionToken: (...args: any[]) => mockVerifyPublicActionToken(...args),
+}));
+
+jest.mock('../../src/repositories/scheduling-event.repository', () => ({
+  schedulingEventRepository: {
+    upsert: (...args: any[]) => mockSchedulingUpsert(...args),
+  },
 }));
 
 import { ghlActivityService } from '../../src/services/ghl-activity.service';
@@ -92,6 +99,7 @@ beforeEach(() => {
     throw new Error('unexpected token');
   });
   mockLogEvidence.mockResolvedValue(undefined);
+  mockSchedulingUpsert.mockResolvedValue({ id: 'schedule_1' });
   mockEnrollmentQuery([{ id: 'enr_1', offer_id: 'offer_1', status: 'active' }]);
 });
 
@@ -107,6 +115,7 @@ describe('ghlActivityService', () => {
         title: 'Strategy Session',
         appointmentStatus: 'confirmed',
         startTime: '2026-06-01T15:00:00.000Z',
+        address: 'https://us02web.zoom.us/j/12345678901?pwd=secret',
       },
     });
 
@@ -116,9 +125,11 @@ describe('ghlActivityService', () => {
     expect(normalized.sourceRecordId).toBe('appt_1');
     expect(normalized.calendarId).toBe('cal_1');
     expect(normalized.status).toBe('confirmed');
+    expect(normalized.meetingProvider).toBe('zoom');
+    expect(normalized.meetingId).toBe('12345678901');
   });
 
-  test('creates client-level appointment evidence without requiring calendar mapping', async () => {
+  test('stores an appointment bridge and uses the unique eligible enrollment', async () => {
     const result = await ghlActivityService.handleWebhook({
       type: 'AppointmentCreate',
       locationId: 'loc_1',
@@ -129,6 +140,7 @@ describe('ghlActivityService', () => {
         title: 'Strategy Session',
         appointmentStatus: 'confirmed',
         startTime: '2026-06-01T15:00:00.000Z',
+        address: 'https://us02web.zoom.us/j/12345678901',
       },
     });
 
@@ -138,8 +150,17 @@ describe('ghlActivityService', () => {
       contact_id: 'contact_1',
       source_object: 'appointment',
       source_record_id: 'appt_1',
-      status: 'client_level',
-      match_reason: 'client_level_unmatched_to_enrollment',
+      status: 'matched',
+      enrollment_id: 'enr_1',
+      match_reason: 'unique_enrollment_at_appointment_time',
+    }));
+    expect(mockSchedulingUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1',
+      source_provider: 'ghl',
+      source_event_id: 'appt_1',
+      meeting_provider: 'zoom',
+      meeting_id: '12345678901',
+      enrollment_id: 'enr_1',
     }));
     expect(mockLogEvidence).toHaveBeenCalledWith(
       EVIDENCE_TYPES.APPOINTMENT,
@@ -147,7 +168,7 @@ describe('ghlActivityService', () => {
       'contact_1',
       'ghl_calendar',
       expect.objectContaining({
-        enrollment_id: null,
+        enrollment_id: 'enr_1',
         appointment_id: 'appt_1',
         appointment_title: 'Strategy Session',
       }),

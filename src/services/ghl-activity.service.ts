@@ -13,6 +13,9 @@ import {
 } from '../utils/communication-evidence';
 import { verifyPublicActionToken } from '../utils/public-action-token';
 import { logger } from '../utils/logger';
+import { extractMeetingReference } from '../utils/meeting-reference';
+import { schedulingEventRepository } from '../repositories/scheduling-event.repository';
+import crypto from 'crypto';
 
 type SourceObject = 'appointment' | 'invoice' | 'communication' | 'note' | 'task' | 'form' | 'opportunity' | 'unknown';
 
@@ -40,6 +43,9 @@ interface NormalizedGhlActivity {
   direction: string;
   channel: string;
   body: string;
+  meetingProvider: string;
+  meetingId: string;
+  meetingUrl: string;
   sourceRefs: Record<string, string[]>;
   raw: Record<string, unknown>;
 }
@@ -202,6 +208,18 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     primary._id,
   );
   const sourceRefs = collectSourceRefs(body, primary);
+  const meeting = extractMeetingReference(
+    primary.address,
+    primary.location,
+    primary.meetingLocation,
+    primary.meeting_location,
+    primary.notes,
+    body.address,
+    body.location,
+    body.meetingLocation,
+    body.meeting_location,
+    body.notes,
+  );
 
   return {
     locationId: stringValue(payload.locationId, payload.location_id, body.locationId, body.location_id, body.location?.id),
@@ -227,6 +245,9 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedGhlActivi
     direction: stringValue(body.direction, primary.direction, nestedMessage.direction, defaultDirectionForEvent(eventType)),
     channel: stringValue(body.messageType, body.message_type, body.messageTypeString, body.channel, primary.type, primary.messageType, primary.messageTypeString, nestedMessage.type, nestedMessage.messageType, nestedMessage.messageTypeString),
     body: cleanCommunicationBody(body.plainText, primary.plainText, nestedMessage.plainText, body.text, primary.text, nestedMessage.text, body.message, primary.message, nestedMessage.message, body.body, primary.body, nestedMessage.body, body.html, primary.html, nestedMessage.html),
+    meetingProvider: meeting.provider || '',
+    meetingId: meeting.id || '',
+    meetingUrl: meeting.url || '',
     sourceRefs,
     raw: payload,
   };
@@ -300,7 +321,44 @@ async function findMappedEnrollment(activity: NormalizedGhlActivity): Promise<{ 
   const offerNameMatch = await findEnrollmentFromUniqueOfferName(activity);
   if (offerNameMatch) return offerNameMatch;
 
+  if (activity.sourceObject === 'appointment') {
+    const uniqueAppointmentMatch = await findUniqueAppointmentEnrollment(activity);
+    if (uniqueAppointmentMatch) return uniqueAppointmentMatch;
+  }
+
   return { enrollment: null, offerId: null, reason: 'client_level_unmatched_to_enrollment', confidence: 'client', linkedEnrollmentIds: [], linkedOfferIds: [] };
+}
+
+async function findUniqueAppointmentEnrollment(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] } | null> {
+  const occurred = new Date(activity.startTime || activity.occurredAt).getTime();
+  if (!Number.isFinite(occurred)) return null;
+  const { data, error } = await getSupabase()
+    .from('enrollments')
+    .select('*')
+    .eq('location_id', activity.locationId)
+    .eq('contact_id', activity.contactId)
+    .in('status', ['enrolled', 'active', 'at_risk', 'paused', 'completed', 'cancelled'])
+    .limit(100);
+  if (error) throw error;
+  const eligible = (data || []).filter((enrollment: any) => {
+    const enrolledAt = enrollment.enrolled_at ? new Date(enrollment.enrolled_at).getTime() : 0;
+    const completedAt = enrollment.completed_at ? new Date(enrollment.completed_at).getTime() : 0;
+    const cancelledAt = enrollment.cancelled_at ? new Date(enrollment.cancelled_at).getTime() : 0;
+    if (enrolledAt && occurred < enrolledAt) return false;
+    if (completedAt && occurred > completedAt) return false;
+    if (cancelledAt && occurred > cancelledAt) return false;
+    return true;
+  });
+  if (eligible.length !== 1) return null;
+  const enrollment = eligible[0];
+  return {
+    enrollment,
+    offerId: enrollment.offer_id || null,
+    reason: 'unique_enrollment_at_appointment_time',
+    confidence: 'strong',
+    linkedEnrollmentIds: [enrollment.id],
+    linkedOfferIds: enrollment.offer_id ? [enrollment.offer_id] : [],
+  };
 }
 
 async function findEnrollmentFromActionLink(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] } | null> {
@@ -490,6 +548,28 @@ export const ghlActivityService = {
       }
 
       if (activity.sourceObject === 'appointment' && activity.contactId) {
+        if (activity.sourceRecordId) {
+          await schedulingEventRepository.upsert({
+            location_id: activity.locationId,
+            source_provider: 'ghl',
+            source_event_id: activity.sourceRecordId,
+            contact_id: activity.contactId,
+            contact_email: activity.contactEmail ? activity.contactEmail.toLowerCase() : null,
+            external_calendar_id: activity.calendarId || null,
+            title: activity.title || 'GHL appointment',
+            status: normalizeAppointmentStatus(activity.eventType, activity.status),
+            starts_at: activity.startTime || activity.occurredAt || null,
+            ends_at: activity.endTime || null,
+            meeting_provider: activity.meetingProvider || null,
+            meeting_id: activity.meetingId || null,
+            meeting_url: activity.meetingUrl || null,
+            enrollment_id: match.enrollment?.id || null,
+            offer_id: match.offerId,
+            match_method: match.reason,
+            match_confidence: match.confidence,
+            source_payload_hash: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+          });
+        }
         const offer = match.offerId ? await offerRepository.findById(match.offerId, activity.locationId).catch(() => null) : null;
         const status = normalizeAppointmentStatus(activity.eventType, activity.status);
         const summary = appointmentSummary(activity, offer?.offer_name);

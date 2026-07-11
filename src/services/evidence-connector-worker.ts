@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { materializeExternalEvidence } from './evidence-event-materializer';
 import { evidenceService } from './evidence.service';
 import { externalEvidenceAttachmentService } from './external-evidence-attachment.service';
+import { schedulingEventRepository } from '../repositories/scheduling-event.repository';
 
 const workerId = `connector_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 const retryDelaysMs = [5 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -46,6 +47,36 @@ function uniqueSubjects(rows: any[]): any[] {
 
 async function resolveUnmappedZoomSubject(connection: EvidenceConnectionRecord, event: CanonicalEvidenceEvent): Promise<Resolution> {
   const normalizedEmail = String(event.subject.email || event.actor?.email || '').trim().toLowerCase();
+  const scheduledAt = String(event.metadata?.meeting_start_time || event.occurred_at);
+  const schedulingMatches = event.resource?.id
+    ? await schedulingEventRepository.findMeetingCandidates(
+      connection.location_id,
+      'zoom',
+      String(event.resource.id),
+      scheduledAt,
+    )
+    : [];
+
+  if (schedulingMatches.length) {
+    const scheduledSubjects = (await Promise.all(schedulingMatches
+      .filter((row: any) => row.enrollment_id)
+      .map((row: any) => evidenceConnectorRepository.getSubjectByEnrollment(connection.location_id, row.enrollment_id))))
+      .filter(Boolean);
+    const uniqueScheduledSubjects = uniqueSubjects(scheduledSubjects)
+      .filter((subject) => enrollmentEligibleAt(subject, event.occurred_at));
+
+    if (uniqueScheduledSubjects.length === 1 && schedulingMatches.length === 1) {
+      return { subject: uniqueScheduledSubjects[0], method: 'zoom_exact_scheduled_appointment' };
+    }
+    if (normalizedEmail) {
+      const emailScheduled = uniqueScheduledSubjects.filter((subject: any) =>
+        String(subject.normalized_email || '').toLowerCase() === normalizedEmail);
+      if (emailScheduled.length === 1) {
+        return { subject: emailScheduled[0], method: 'zoom_scheduled_appointment_and_email' };
+      }
+    }
+  }
+
   if (!normalizedEmail) throw resolutionError('ZOOM_PARTICIPANT_EMAIL_MISSING', false);
 
   let identityMatches: any[] = [];

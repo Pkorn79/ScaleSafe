@@ -357,7 +357,13 @@ export const zoomIntegrationService = {
         started_at: attendance.joined_at,
         ended_at: leftAt,
       },
-      metadata: { meeting_uuid: meetingUuid, verification: 'zoom_signed_webhook' },
+      metadata: {
+        meeting_uuid: meetingUuid,
+        meeting_id: meetingId,
+        meeting_start_time: String(meeting.start_time || attendance.joined_at),
+        host_id: String(meeting.host_id || ''),
+        verification: 'zoom_signed_webhook',
+      },
     };
     const authContext: ConnectorAuthContext = {
       connection,

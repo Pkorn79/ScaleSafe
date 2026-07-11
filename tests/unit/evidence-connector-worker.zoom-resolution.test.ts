@@ -1,12 +1,21 @@
 const findResourceMapping = jest.fn();
 const findSubjectsByIdentity = jest.fn();
 const findSubjectsByEmail = jest.fn();
+const getSubjectByEnrollment = jest.fn();
+const findMeetingCandidates = jest.fn();
 
 jest.mock('../../src/repositories/evidence-connector.repository', () => ({
   evidenceConnectorRepository: {
     findResourceMapping: (...args: any[]) => findResourceMapping(...args),
     findSubjectsByIdentity: (...args: any[]) => findSubjectsByIdentity(...args),
     findSubjectsByEmail: (...args: any[]) => findSubjectsByEmail(...args),
+    getSubjectByEnrollment: (...args: any[]) => getSubjectByEnrollment(...args),
+  },
+}));
+
+jest.mock('../../src/repositories/scheduling-event.repository', () => ({
+  schedulingEventRepository: {
+    findMeetingCandidates: (...args: any[]) => findMeetingCandidates(...args),
   },
 }));
 
@@ -54,6 +63,22 @@ describe('automatic Zoom enrollment resolution', () => {
     jest.clearAllMocks();
     findResourceMapping.mockResolvedValue(null);
     findSubjectsByIdentity.mockResolvedValue([]);
+    findMeetingCandidates.mockResolvedValue([]);
+    getSubjectByEnrollment.mockResolvedValue(null);
+  });
+
+  it('uses an exact scheduled appointment even when Zoom omits participant email', async () => {
+    const scheduledSubject = subject('scheduled', 'Private Coaching');
+    findMeetingCandidates.mockResolvedValue([{ id: 'schedule-1', enrollment_id: 'enrollment-scheduled' }]);
+    getSubjectByEnrollment.mockResolvedValue(scheduledSubject);
+    findSubjectsByEmail.mockResolvedValue([]);
+    const scheduledEvent = event('Private Session');
+    scheduledEvent.subject = { external_contact_id: 'zoom_participant_1' };
+
+    await expect(resolveConnectorSubject(connection, scheduledEvent)).resolves.toMatchObject({
+      subject: { id: 'scheduled' },
+      method: 'zoom_exact_scheduled_appointment',
+    });
   });
 
   it('uses the only eligible enrollment for the participant email', async () => {

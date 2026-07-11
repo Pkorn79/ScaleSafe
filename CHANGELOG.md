@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Released the implemented Zoom OAuth integration as a Beta catalog option for every ScaleSafe sub-account. Each merchant still connects an isolated Zoom authorization stored against that merchant's GHL location; no per-merchant Railway variable is used.
 - Zoom OAuth now refreshes the Evidence Connections catalog when the authorization popup closes. The setup no longer depends solely on `window.opener.postMessage`, which can be unavailable after Zoom's cross-origin authorization flow, and proceeds to the meeting-to-offer mapping step reliably.
 - Removed merchant-managed Zoom meeting-to-offer mapping. OAuth now activates the tenant connection immediately; attendance resolves automatically using participant identity, exact enrollment eligibility, meeting-topic/offer matches, and unique live-virtual enrollment context. Ambiguous events quarantine for ScaleSafe HQ instead of asking merchants to repair them or guessing across programs.
+- Added a provider-neutral scheduling bridge for deterministic attendance matching. GHL appointment webhooks now preserve the booking contact, calendar, meeting URL/ID, scheduled time, and enrollment match; Zoom attendance uses that signed booking record before email or offer-name inference. The same ledger is ready for future Calendly, Google Calendar/Meet, Acuity, SavvyCal, and Microsoft integrations.
 
 ## Unreleased - Integration Catalog and Access Gating Foundation (2026-07-11)
 
