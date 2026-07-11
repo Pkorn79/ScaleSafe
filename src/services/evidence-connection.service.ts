@@ -118,6 +118,7 @@ export const evidenceConnectionService = {
         id: connection.id,
         name: connection.name,
         source: connection.source_label,
+        providerKey: connection.provider_key,
         connectionType: connection.connection_type,
         status: connection.status,
         setupStatus: connection.setup_status,

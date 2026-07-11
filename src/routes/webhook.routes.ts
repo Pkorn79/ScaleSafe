@@ -9,6 +9,7 @@ import { requireGhlWebhookSignature } from '../middleware/ghlWebhookSignature';
 import { requireMerchantWebhookSecret, requireMerchantWebhookSecretStrict } from '../middleware/merchantWebhookSecret';
 import { requireRawEvidenceConnection } from '../middleware/evidenceConnectorAuth';
 import { evidenceConnectorController } from '../controllers/evidence-connector.controller';
+import { zoomIntegrationController } from '../controllers/zoom-integration.controller';
 
 const router = Router();
 
@@ -39,5 +40,9 @@ router.post('/nmi/events/:processorConfigId', handleNmiWebhookEvent);
 
 // Whop Standard Webhooks: signature verified inside the handler using req.rawBody.
 router.post('/whop', handleWhopWebhook);
+
+// Zoom meeting attendance. URL validation and signed event verification are
+// handled in the controller using the exact captured request body.
+router.post('/zoom', zoomIntegrationController.webhook);
 
 export default router;

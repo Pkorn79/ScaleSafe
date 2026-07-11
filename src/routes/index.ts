@@ -25,6 +25,7 @@ import paymentUpdateRoutes from './payment-update.routes';
 import paymentLifecycleRoutes from './payment-lifecycle.routes';
 import processorConfigRoutes from './processor-config.routes';
 import { evidenceConnectionManagementRoutes, evidenceConnectorPublicRoutes } from './evidence-connector.routes';
+import zoomIntegrationRoutes from './zoom-integration.routes';
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.use(healthRoutes);
 // Auth — no rate limiting (OAuth callbacks)
 router.use('/auth', authRoutes);
 router.use('/auth/stripe', stripeConnectRoutes);
+router.use('/auth/zoom', zoomIntegrationRoutes);
 
 // API routes (rate limited)
 router.use('/api/merchants', apiLimiter, merchantRoutes);

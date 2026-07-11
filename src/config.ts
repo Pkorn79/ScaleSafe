@@ -67,6 +67,15 @@ export const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
   },
 
+  // Zoom General App credentials. These belong to ScaleSafe's Zoom app;
+  // each merchant's OAuth tokens are encrypted in the database.
+  zoom: {
+    clientId: process.env.ZOOM_CLIENT_ID || '',
+    clientSecret: process.env.ZOOM_CLIENT_SECRET || '',
+    webhookSecretToken: process.env.ZOOM_WEBHOOK_SECRET_TOKEN || '',
+    redirectUri: process.env.ZOOM_REDIRECT_URI || `${optional('APP_URL', 'http://localhost:3000').replace(/\/$/, '')}/auth/zoom/callback`,
+  },
+
   // Processor encryption (AES-256-GCM for NMI keys)
   processorEncryptionKey: process.env.PROCESSOR_ENCRYPTION_KEY || '',
 

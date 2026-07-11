@@ -16,6 +16,10 @@ const defaults: Record<string, string> = {
   GHL_APP_SSO_KEY: 'test_ghl_app_sso_key_789',
   PUBLIC_ACTION_TOKEN_SECRET: 'test_public_action_secret_1234567890',
   STRIPE_SECRET_KEY: 'sk_test_51MockedScaleSafeStripeKey1234567890',
+  PROCESSOR_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  ZOOM_CLIENT_ID: 'zoom_test_client_id',
+  ZOOM_CLIENT_SECRET: 'zoom_test_client_secret',
+  ZOOM_WEBHOOK_SECRET_TOKEN: 'zoom_test_webhook_secret',
   ALLOW_DEV_LOCATION_AUTH: 'true',
 };
 

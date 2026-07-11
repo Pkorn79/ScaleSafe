@@ -4,6 +4,8 @@ import { INTEGRATION_PROVIDER_MAP, INTEGRATION_PROVIDERS, IntegrationCapability,
 import { providerAdapterRegistry } from '../integrations/provider-adapter';
 import { ValidationError } from '../utils/errors';
 import { evidenceConnectionService } from './evidence-connection.service';
+import { zoomIntegrationService } from './zoom-integration.service';
+import '../integrations/zoom.adapter';
 
 const RELEASED = new Set<IntegrationReleaseStatus>(['native', 'available', 'beta']);
 
@@ -65,6 +67,9 @@ export const integrationCatalogService = {
     const provider = catalog.providers.find((candidate) => candidate.key === providerKey);
     if (!provider) throw new ValidationError('Unknown integration provider');
     if (!provider.connectable) throw new ValidationError(`${provider.name} is not enabled for self-service connection yet`);
+    if (providerKey === 'zoom') {
+      return zoomIntegrationService.begin(locationId, actorLabel, String(input.name || 'Zoom'));
+    }
     if (providerKey !== 'custom_api') {
       throw new ValidationError(`${provider.name} requires its certified provider adapter before it can be connected`);
     }
@@ -107,6 +112,10 @@ export const integrationCatalogService = {
   async setMerchantStatus(locationId: string, connectionId: string, actorLabel: string, enabled: boolean) {
     const connection = await evidenceConnectorRepository.getConnection(locationId, connectionId);
     if (!connection) throw new ValidationError('Evidence connection not found');
+    if (connection.provider_key === 'zoom') {
+      if (enabled) throw new ValidationError('Reconnect Zoom through the integration catalog');
+      return zoomIntegrationService.disable(locationId, connectionId, actorLabel);
+    }
     return evidenceConnectionService.setStatus(locationId, connectionId, actorLabel, enabled);
   },
 
