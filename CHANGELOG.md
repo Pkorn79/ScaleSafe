@@ -3,6 +3,17 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased — Packet PDF upload: bypass stripe-node multipart (2026-07-12)
+
+### Fixed
+- **Packet PDF attach to Stripe disputes**: `stripe.files.create` returned Stripe's generic
+  "Invalid request (check your POST parameters)" for a valid PDF (stripe-node's multipart
+  upload path has runtime-specific regressions — see stripe-node #2538/#2420). The upload now
+  POSTs directly to files.stripe.com via Node's built-in fetch + FormData on the merchant's
+  connected account; failures surface Stripe's real message + param.
+
+---
+
 ## Unreleased — Stripe dispute E2E fixes: ingestion, CE 3.0 payloads, submission resilience (2026-07-11)
 
 > Found via the first live Stripe-dispute end-to-end test. Migration

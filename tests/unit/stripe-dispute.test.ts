@@ -397,6 +397,53 @@ describe('Dispute Triage Service', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
+  // PACKET PDF UPLOAD (direct fetch — bypasses the SDK's multipart path)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('uploadDefensePacketFile', () => {
+    const realFetch = (global as any).fetch;
+    afterEach(() => { (global as any).fetch = realFetch; });
+
+    it('POSTs a multipart form to files.stripe.com on the connected account', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true, status: 200, json: async () => ({ id: 'file_up_1' }),
+      });
+      (global as any).fetch = fetchMock;
+
+      const id = await stripeDisputeService.uploadDefensePacketFile({
+        merchantStripeAccountId: 'acct_1',
+        buffer: Buffer.from('%PDF-1.4 test'),
+        filename: 'packet.pdf',
+      });
+
+      expect(id).toBe('file_up_1');
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://files.stripe.com/v1/files');
+      expect(init.method).toBe('POST');
+      expect(init.headers['Stripe-Account']).toBe('acct_1');
+      expect(init.headers.Authorization).toMatch(/^Bearer sk_test/);
+      expect(init.body).toBeInstanceOf(FormData);
+      expect(init.body.get('purpose')).toBe('dispute_evidence');
+      const filePart = init.body.get('file');
+      expect(filePart).toBeTruthy();
+      expect(filePart.type).toBe('application/pdf');
+    });
+
+    it('throws with Stripe error detail (message + param) on failure', async () => {
+      (global as any).fetch = jest.fn().mockResolvedValue({
+        ok: false, status: 400,
+        json: async () => ({ error: { message: 'Invalid purpose', param: 'purpose' } }),
+      });
+
+      await expect(stripeDisputeService.uploadDefensePacketFile({
+        merchantStripeAccountId: 'acct_1',
+        buffer: Buffer.from('x'),
+        filename: 'p.pdf',
+      })).rejects.toThrow('Invalid purpose (param: purpose)');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
   // EVIDENCE SUBMISSION
   // ═══════════════════════════════════════════════════════════════════
 

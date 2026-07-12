@@ -430,21 +430,42 @@ export const stripeDisputeService = {
   /**
    * Upload a defense-packet PDF to Stripe's Files API on the merchant's
    * connected account, for referencing in dispute evidence (uncategorized_file).
+   *
+   * Deliberately bypasses the stripe-node SDK: its multipart upload path has a
+   * history of runtime-specific regressions (stripe-node #2538, #2420), and in
+   * production `stripe.files.create` returned Stripe's generic "Invalid request
+   * (check your POST parameters)" for a valid PDF. Node's built-in fetch +
+   * FormData produce a standard multipart body that Stripe accepts.
    */
   async uploadDefensePacketFile(params: {
     merchantStripeAccountId: string;
     buffer: Buffer;
     filename: string;
   }): Promise<string> {
-    const stripe = getStripe();
-    const file = await stripe.files.create(
-      {
-        purpose: 'dispute_evidence',
-        file: { data: params.buffer, name: params.filename, type: 'application/pdf' },
-      },
-      { stripeAccount: params.merchantStripeAccountId },
+    const form = new FormData();
+    form.append('purpose', 'dispute_evidence');
+    form.append(
+      'file',
+      new Blob([new Uint8Array(params.buffer)], { type: 'application/pdf' }),
+      params.filename,
     );
-    return file.id;
+
+    const res = await fetch('https://files.stripe.com/v1/files', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.stripe.secretKey}`,
+        'Stripe-Account': params.merchantStripeAccountId,
+      },
+      body: form,
+    });
+
+    const body: any = await res.json().catch(() => ({}));
+    if (!res.ok || !body?.id) {
+      const detail = body?.error?.message || `HTTP ${res.status}`;
+      const param = body?.error?.param ? ` (param: ${body.error.param})` : '';
+      throw new Error(`Stripe file upload failed: ${detail}${param}`);
+    }
+    return body.id as string;
   },
 
   /**
