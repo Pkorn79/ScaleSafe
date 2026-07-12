@@ -1,3 +1,5 @@
+import { AuthenticationError } from './errors';
+
 type SsoPayload = Record<string, unknown>;
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -59,4 +61,41 @@ export function extractGhlSsoContext(userData: SsoPayload): {
     role: firstText(userData.role) || 'user',
     userName: firstText(userData.userName, userData.name),
   };
+}
+
+export function assertActiveGhlMerchantBinding(
+  merchant: Record<string, any> | null | undefined,
+  context: { locationId: string; companyId?: string },
+): void {
+  if (!merchant) {
+    throw new AuthenticationError('Merchant not found for this ScaleSafe install.');
+  }
+  if (merchant.location_id !== context.locationId) {
+    throw new AuthenticationError('ScaleSafe merchant does not match the GHL sub-account.');
+  }
+  if (merchant.status !== 'active') {
+    throw new AuthenticationError('ScaleSafe is not actively installed for this sub-account.');
+  }
+  if (context.companyId && merchant.company_id && context.companyId !== merchant.company_id) {
+    throw new AuthenticationError('ScaleSafe installation does not match the GHL agency.');
+  }
+
+  const config = (merchant.config || {}) as Record<string, unknown>;
+  const tokenScope = String(config.ghl_token_scope || '').toLowerCase();
+  const tokenLocationId = String(config.ghl_token_location_id || '').trim();
+  const tokenCompanyId = String(config.ghl_token_company_id || '').trim();
+  if (tokenScope === 'location' && tokenLocationId && tokenLocationId !== context.locationId) {
+    throw new AuthenticationError('Stored GHL authorization belongs to a different sub-account.');
+  }
+  if (tokenScope === 'company' && tokenCompanyId && context.companyId && tokenCompanyId !== context.companyId) {
+    throw new AuthenticationError('Stored GHL authorization belongs to a different agency.');
+  }
+
+  const hasAccessToken = Boolean(merchant.ghl_access_token_encrypted || merchant.ghl_access_token);
+  const hasRefreshToken = Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token);
+  if (!hasAccessToken || !hasRefreshToken) {
+    throw new AuthenticationError(
+      'ScaleSafe installation is waiting for GoHighLevel authorization. Reinstall the app in this sub-account.',
+    );
+  }
 }

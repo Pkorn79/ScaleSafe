@@ -8,6 +8,12 @@ const mockGhlPut = jest.fn();
 const mockGhlPost = jest.fn();
 const mockTriggerFire = jest.fn();
 const mockLogEvidence = jest.fn();
+const mockMoneyBegin = jest.fn();
+const mockMoneyMarkProviderStarted = jest.fn();
+const mockMoneyMarkProviderAccepted = jest.fn();
+const mockMoneyMarkRecorded = jest.fn();
+const mockMoneyMarkUnknown = jest.fn();
+const mockProcessorResume = jest.fn();
 
 jest.mock('../../src/services/processor.factory', () => ({
   resolveProcessor: (...args: any[]) => mockResolveProcessor(...args),
@@ -36,6 +42,16 @@ jest.mock('../../src/services/trigger.service', () => ({
 
 jest.mock('../../src/services/evidence.service', () => ({
   evidenceService: { logEvidence: (...args: any[]) => mockLogEvidence(...args) },
+}));
+
+jest.mock('../../src/services/money-operation.service', () => ({
+  moneyOperationService: {
+    begin: (...args: any[]) => mockMoneyBegin(...args),
+    markProviderStarted: (...args: any[]) => mockMoneyMarkProviderStarted(...args),
+    markProviderAccepted: (...args: any[]) => mockMoneyMarkProviderAccepted(...args),
+    markRecorded: (...args: any[]) => mockMoneyMarkRecorded(...args),
+    markUnknown: (...args: any[]) => mockMoneyMarkUnknown(...args),
+  },
 }));
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
@@ -81,6 +97,7 @@ function builder(table: string) {
           offer_id: 'offer-1',
           payments_made: 1,
           payments_total: 5,
+          status: 'paused',
           processor_type: 'whop',
           processor_subscription_id: 'mem_123',
           next_billing_date: '2026-07-01',
@@ -92,7 +109,14 @@ function builder(table: string) {
         error: null,
       };
     }
-    if (table === 'offers_mirror') return { data: { offer_name: 'Whop Program', num_payments: 5 }, error: null };
+    if (table === 'offers_mirror') return {
+      data: { offer_name: 'Whop Program', num_payments: 5, installment_amount: 2.2, installment_frequency: 'weekly' },
+      error: null,
+    };
+    if (table === 'payment_methods') return {
+      data: { id: 'pm-1', processor_type: 'nmi', nmi_customer_vault_id: 'vault-1' },
+      error: null,
+    };
     return { data: null, error: null };
   });
   b.single = b.maybeSingle;
@@ -110,6 +134,15 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
     mockGhlPut.mockResolvedValue({});
     mockGhlPost.mockResolvedValue({});
     mockSupabaseFrom.mockImplementation((table: string) => builder(table));
+    mockMoneyBegin.mockResolvedValue({ action: 'execute', operation: { id: 'money-op-1' } });
+    mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
+    mockMoneyMarkRecorded.mockResolvedValue(undefined);
+    mockMoneyMarkUnknown.mockResolvedValue(undefined);
+    mockProcessorResume.mockResolvedValue({
+      success: true,
+      subscriptionId: 'sub-replacement',
+      nextPaymentDate: '2026-07-08T00:00:00Z',
+    });
   });
 
   it('pauses Whop membership through Whop without creating a generic processor client', async () => {
@@ -157,5 +190,34 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
 
     expect(mockPauseWhop).not.toHaveBeenCalled();
     expect(mockResolveProcessor).not.toHaveBeenCalled();
+  });
+
+  it('recovers an accepted NMI resume without creating a second subscription', async () => {
+    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockCreateProcessorClient.mockReturnValue({ resumeSubscription: mockProcessorResume });
+    mockMoneyBegin.mockResolvedValue({
+      action: 'blocked',
+      operation: {
+        id: 'money-op-accepted',
+        status: 'provider_accepted',
+        response_payload: {
+          subscriptionId: 'sub-already-created',
+          nextPaymentDate: '2026-07-08T00:00:00Z',
+        },
+      },
+    });
+
+    await paymentLifecycleService.resumeSubscription({
+      ...whopParams,
+      processorType: 'nmi',
+      processorSubscriptionId: 'sub-old',
+    });
+
+    expect(mockProcessorResume).not.toHaveBeenCalled();
+    expect(mockMoneyMarkProviderAccepted).not.toHaveBeenCalled();
+    expect(mockMoneyMarkRecorded).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'money-op-accepted',
+      processorReference: 'sub-already-created',
+    }));
   });
 });

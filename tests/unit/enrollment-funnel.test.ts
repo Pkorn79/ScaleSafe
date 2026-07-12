@@ -324,6 +324,7 @@ describe('Enrollment Funnel Service', () => {
       digitalSignature: 'John Smith',
       clausesAccepted: ['clause_1', 'clause_2'],
       scrollDepth: 100,
+      paymentChoice: 'pif',
     };
 
     it('should generate consent_token and update existing enrollment', async () => {
@@ -364,6 +365,7 @@ describe('Enrollment Funnel Service', () => {
           digital_signature: 'John Smith',
           clauses_accepted: ['clause_1', 'clause_2'],
           scroll_depth: 100,
+          payment_type: 'pif',
         }),
       );
     });
@@ -428,6 +430,25 @@ describe('Enrollment Funnel Service', () => {
 
       await expect(enrollmentService.captureFunnelConsent(validConsent))
         .rejects.toThrow('Offer not found or inactive');
+    });
+
+    it('never searches paid-pending enrollments without a paid enrollment token', async () => {
+      mockFindById.mockResolvedValue({
+        id: 'offer-789',
+        location_id: 'loc-1',
+        active: true,
+        price: 100,
+        payment_type: 'pif',
+      });
+      const lookupChain = mockSupabaseChain(null);
+      mockFrom.mockReturnValueOnce(lookupChain);
+
+      await expect(enrollmentService.captureFunnelConsent({
+        ...validConsent,
+        paymentChoice: 'subscription',
+      })).rejects.toThrow('Selected payment option is not available');
+
+      expect(lookupChain.in).toHaveBeenCalledWith('status', ['device_captured', 'pending']);
     });
   });
 });

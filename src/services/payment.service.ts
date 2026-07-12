@@ -280,7 +280,16 @@ export const paymentService = {
    * other enrollments follow only as secondary relationship evidence. Without an
    * enrollmentId, behavior is unchanged (all contact payments, oldest first).
    */
-  async getUndisputedPayments(locationId: string, contactId: string, enrollmentId?: string): Promise<any[]> {
+  async getUndisputedPayments(
+    locationId: string,
+    contactId: string,
+    enrollmentId?: string,
+    exclude?: {
+      paymentEventId?: string | null;
+      processorTransactionId?: string | null;
+      onOrAfter?: string | null;
+    },
+  ): Promise<any[]> {
     const { getSupabase } = await import('../clients/supabase.client');
     const supabase = getSupabase();
 
@@ -292,7 +301,29 @@ export const paymentService = {
       .order('created_at', { ascending: true });
 
     if (error) throw error;
-    const rows = payments || [];
+    const cutoff = exclude?.onOrAfter ? new Date(exclude.onOrAfter).getTime() : Number.NaN;
+    const rows = (payments || []).filter((payment: any) => {
+      const metadata = payment.defense_metadata || {};
+      const raw = payment.raw_payload || {};
+      const linkedPaymentEventId = payment.payment_event_id
+        || metadata.transaction?.paymentEventId
+        || raw.payment_event_id
+        || raw.paymentEventId;
+      if (exclude?.paymentEventId && linkedPaymentEventId === exclude.paymentEventId) return false;
+
+      const processorTransactionId = payment.ghl_transaction_id
+        || payment.source_record_id
+        || metadata.transaction?.transactionId
+        || raw.processor_transaction_id
+        || raw.transaction_id;
+      if (exclude?.processorTransactionId && processorTransactionId === exclude.processorTransactionId) return false;
+
+      if (Number.isFinite(cutoff)) {
+        const paymentTime = new Date(payment.payment_date || payment.created_at || 0).getTime();
+        if (!Number.isFinite(paymentTime) || paymentTime >= cutoff) return false;
+      }
+      return true;
+    });
     if (!enrollmentId) return rows;
 
     // Same-enrollment first (primary), everything else after (secondary relationship evidence).

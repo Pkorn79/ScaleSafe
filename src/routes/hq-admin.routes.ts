@@ -8,6 +8,11 @@ import { logger } from '../utils/logger';
 import { evidenceConnectorRepository } from '../repositories/evidence-connector.repository';
 import { evidenceConnectionService } from '../services/evidence-connection.service';
 import { integrationCatalogService } from '../services/integration-catalog.service';
+import {
+  providerOutcomeResolutionService,
+  type ProviderOutcomeKind,
+  type ProviderOutcomeResolution,
+} from '../services/provider-outcome-resolution.service';
 
 const router = Router();
 
@@ -115,13 +120,16 @@ async function processorSummary(merchant: MerchantRecord) {
 async function merchantOverview(merchant: MerchantRecord) {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const recent = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const [processors, activeEnrollments, billingIssues, recentPayments, failedTriggerDeliveries, triggerSubscriptions] = await Promise.all([
+  const [processors, activeEnrollments, billingIssues, recentPayments, failedTriggerDeliveries, triggerSubscriptions, unresolvedMoneyOperations, unresolvedRefundClaims, unresolvedDefenseSubmissions] = await Promise.all([
     processorSummary(merchant),
     countRows('enrollments', (q) => q.eq('location_id', merchant.location_id).in('status', ['enrolled', 'active', 'paid_pending_enrollment'])),
     countRows('enrollments', (q) => q.eq('location_id', merchant.location_id).neq('billing_setup_status', 'ok').not('billing_setup_status', 'is', null)),
     countRows('payment_events', (q) => q.eq('location_id', merchant.location_id).gte('created_at', since)),
     countRows('trigger_delivery_logs', (q) => q.eq('location_id', merchant.location_id).in('status', ['failed', 'no_subscription']).gte('created_at', recent)),
     countRows('trigger_subscriptions', (q) => q.eq('location_id', merchant.location_id).eq('is_active', true)),
+    countRows('money_operations', (q) => q.eq('location_id', merchant.location_id).in('status', ['provider_accepted', 'unknown'])),
+    countRows('payment_refund_claims', (q) => q.eq('location_id', merchant.location_id).in('status', ['provider_accepted', 'unknown'])),
+    countRows('defense_submission_claims', (q) => q.eq('location_id', merchant.location_id).in('status', ['provider_accepted', 'unknown'])),
   ]);
   return {
     id: merchant.id,
@@ -140,6 +148,9 @@ async function merchantOverview(merchant: MerchantRecord) {
       recentPayments,
       failedTriggerDeliveries,
       triggerSubscriptions,
+      unresolvedMoneyOperations,
+      unresolvedRefundClaims,
+      unresolvedDefenseSubmissions,
     },
   };
 }
@@ -172,7 +183,7 @@ router.get('/internal/hq/api/merchants/:locationId', debugLimiter, requireHqToke
     const merchant = await merchantRepository.getByLocationId(locationId);
     await audit(req, 'hq.view_merchant', { targetLocationId: locationId, targetType: 'merchant', targetId: merchant.id });
     const supabase = getSupabase();
-    const [overview, payments, triggers, enrollments] = await Promise.all([
+    const [overview, payments, triggers, enrollments, moneyOperations, refundClaims, defenseSubmissions, billingSetups] = await Promise.all([
       merchantOverview(merchant),
       supabase
         .from('payment_events')
@@ -192,17 +203,71 @@ router.get('/internal/hq/api/merchants/:locationId', debugLimiter, requireHqToke
         .eq('location_id', locationId)
         .order('created_at', { ascending: false })
         .limit(20),
+      supabase
+        .from('money_operations')
+        .select('id, operation_type, status, processor_type, processor_reference, error_message, reconciliation_attempts, created_at, updated_at')
+        .eq('location_id', locationId)
+        .in('status', ['provider_accepted', 'unknown'])
+        .order('updated_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('payment_refund_claims')
+        .select('id, original_payment_event_id, amount_cents, status, processor, processor_refund_id, error_message, reconciliation_attempts, created_at, updated_at')
+        .eq('location_id', locationId)
+        .in('status', ['provider_accepted', 'unknown'])
+        .order('updated_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('defense_submission_claims')
+        .select('id, defense_packet_id, dispute_event_id, status, provider_reference, error_message, created_at, updated_at')
+        .eq('location_id', locationId)
+        .in('status', ['provider_accepted', 'unknown'])
+        .order('updated_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('enrollments')
+        .select('id, offer_name, processor_type, processor_subscription_id, billing_setup_status, billing_setup_error, next_billing_date, updated_at')
+        .eq('location_id', locationId)
+        .eq('billing_setup_status', 'needs_reconciliation')
+        .order('updated_at', { ascending: false })
+        .limit(20),
     ]);
     res.json({
       merchant: overview,
       recentPayments: payments.data || [],
       recentTriggers: triggers.data || [],
       recentEnrollments: enrollments.data || [],
-      warnings: [payments.error, triggers.error, enrollments.error].filter(Boolean).map((err: any) => err.message),
+      unresolvedMoneyOperations: moneyOperations.data || [],
+      unresolvedRefundClaims: refundClaims.data || [],
+      unresolvedDefenseSubmissions: defenseSubmissions.data || [],
+      unresolvedBillingSetups: (billingSetups.data || []).map((row: any) => ({ ...row, status: row.billing_setup_status })),
+      warnings: [payments.error, triggers.error, enrollments.error, moneyOperations.error, refundClaims.error, defenseSubmissions.error, billingSetups.error].filter(Boolean).map((err: any) => err.message),
     });
   } catch (err: any) {
     logger.error({ err: err?.message || String(err), locationId: req.params.locationId }, 'HQ merchant detail failed');
     res.status(500).json({ error: err?.message || 'HQ merchant detail failed' });
+  }
+});
+
+router.post('/internal/hq/api/provider-outcomes/:kind/:id/resolve', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const result = await providerOutcomeResolutionService.resolve({
+      kind: req.params.kind as ProviderOutcomeKind,
+      id: req.params.id,
+      resolution: req.body?.resolution as ProviderOutcomeResolution,
+      confirmation: String(req.body?.confirmation || ''),
+      providerReference: String(req.body?.providerReference || ''),
+      responsePayload: req.body?.responsePayload,
+      reconciliationPayload: req.body?.reconciliationPayload,
+      nextBillingDate: String(req.body?.nextBillingDate || ''),
+      adminLabel: adminLabel(req),
+      ipAddress: clientIp(req),
+      userAgent: String(req.headers['user-agent'] || ''),
+    });
+    res.json(result);
+  } catch (err: any) {
+    logger.warn({ err: err?.message || String(err), kind: req.params.kind, id: req.params.id }, 'HQ provider outcome resolution rejected');
+    res.status(Number(err?.statusCode || 400)).json({ error: err?.message || 'Provider outcome could not be resolved' });
   }
 });
 
@@ -499,7 +564,7 @@ pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-ra
 </main>
 <script>
 const $=id=>document.getElementById(id); const err=$('error');
-let merchantRows=[];let activeSetup=null;
+let merchantRows=[];let activeSetup=null;let activeDetailLocation='';
 function token(){return $('token').value || sessionStorage.getItem('ss_hq_token') || ''}
 function headers(){return {Authorization:'Bearer '+token(),'Content-Type':'application/json','x-scalesafe-admin-label':'hq_console'}}
 function showError(msg){err.textContent=msg;err.style.display='block'} function clearError(){err.style.display='none'}
@@ -509,7 +574,7 @@ function request(path,method,body){return api(path,{method,body:JSON.stringify(b
 function showNotice(message){const node=$('notice');node.textContent=message;node.style.display='block'}
 function pills(p){return ['stripeConfigured','nmiConfigured','whopConfigured','fanbasisConfigured'].map(k=>'<span class="pill '+(p[k]?'':'warn')+'">'+k.replace('Configured','')+': '+(p[k]?'yes':'no')+'</span>').join(' ')}
 async function load(){clearError();sessionStorage.setItem('ss_hq_token',$('token').value);try{const [d,c]=await Promise.all([api('/internal/hq/api/merchants'),api('/internal/hq/api/evidence-connections')]);merchantRows=d.merchants||[];render(merchantRows);renderNewConnector();renderConnectors(c.connections||[])}catch(e){showError(e.message)}}
-function render(rows){$('summary').innerHTML='<div class="card"><h2>'+rows.length+'</h2><div class="muted">Active merchants</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.failedTriggerDeliveries,0)+'</h2><div class="muted">Recent trigger issues</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.billingIssues,0)+'</h2><div class="muted">Billing setup issues</div></div>';
+function render(rows){$('summary').innerHTML='<div class="card"><h2>'+rows.length+'</h2><div class="muted">Active merchants</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.failedTriggerDeliveries,0)+'</h2><div class="muted">Recent trigger issues</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.billingIssues,0)+'</h2><div class="muted">Billing setup issues</div></div><div class="card"><h2>'+rows.reduce((s,r)=>s+r.counts.unresolvedMoneyOperations+r.counts.unresolvedRefundClaims+r.counts.unresolvedDefenseSubmissions,0)+'</h2><div class="muted">Provider results needing reconciliation</div></div>';
 $('table').innerHTML='<table><thead><tr><th>Merchant</th><th>Status</th><th>Processors</th><th>Counts</th><th>Updated</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><a onclick="detail(\\''+r.locationId+'\\')">'+escapeHtml(r.businessName)+'</a><div class="muted">'+escapeHtml(r.locationId)+'</div></td><td><span class="pill">'+r.status+'</span> <span class="pill '+(r.snapshotStatus==='installed'?'':'warn')+'">'+r.snapshotStatus+'</span></td><td>'+pills(r.processors)+'</td><td>'+r.counts.activeEnrollments+' enrollments<br>'+r.counts.recentPayments+' payments/30d<br>'+r.counts.failedTriggerDeliveries+' trigger issues/7d</td><td>'+fmtDate(r.updatedAt)+'</td></tr>').join('')+'</tbody></table>'}
 function renderConnectors(rows){$('connectors').innerHTML='<h2>Evidence connections</h2><table><thead><tr><th>Connection</th><th>Location</th><th>Health</th><th>Events / 7d</th><th>Last event</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.name)+'<div class="muted">'+escapeHtml(r.source_label)+' · '+escapeHtml(r.connection_type)+'</div></td><td>'+escapeHtml(r.location_id)+'</td><td><span class="pill '+(r.health_status==='error'?'bad':r.health_status==='warning'?'warn':'')+'">'+escapeHtml(r.health_status)+'</span></td><td>'+escapeHtml(JSON.stringify(r.counts||{}))+'</td><td>'+fmtDate(r.last_event_at)+'</td></tr>').join('')+'</tbody></table>'}
 function renderNewConnector(){const options=merchantRows.map(r=>'<option value="'+attr(r.locationId)+'">'+escapeHtml(r.businessName)+' · '+escapeHtml(r.locationId)+'</option>').join('');$('newConnector').innerHTML='<h2>New evidence connection</h2><div class="panel fields"><select id="newLocation"><option value="">Select sub-account</option>'+options+'</select><input id="newName" placeholder="Connection name"/><input id="newSource" placeholder="Source name"/><select id="newType"><option value="canonical_api">Canonical API</option><option value="raw_webhook">Raw webhook</option></select><select id="newAuth"><option value="api_key">API key</option><option value="hmac">HMAC</option><option value="url_secret">Secret URL</option></select><button onclick="createConnector()">Create draft</button></div>'}
@@ -529,7 +594,9 @@ async function activateConnector(){clearError();try{await request('/internal/hq/
 async function disableConnector(){clearError();try{await request('/internal/hq/api/evidence-connections/'+activeSetup.connection.id+'/status','POST',{enabled:false});showNotice('Connection disabled.');await load();await openSetup(activeSetup.connection.id)}catch(e){showError(e.message)}}
 async function rotateConnector(){clearError();try{const result=await request('/internal/hq/api/evidence-connections/'+activeSetup.connection.id+'/rotate','POST',{graceHours:24});showNotice('New credential shown once: '+result.credential.secret+' | Endpoint: '+(result.endpoints.canonicalUrl||result.endpoints.webhookUrl));await openSetup(activeSetup.connection.id)}catch(e){showError(e.message)}}
 async function replayConnector(){clearError();try{const result=await request('/internal/hq/api/evidence-connections/'+activeSetup.connection.id+'/replay','POST',{});showNotice(result.replayed+' eligible events queued for replay.');await openSetup(activeSetup.connection.id)}catch(e){showError(e.message)}}
-async function detail(locationId){clearError();try{const d=await api('/internal/hq/api/merchants/'+encodeURIComponent(locationId));$('detail').innerHTML='<h2>Merchant detail</h2><pre>'+escapeHtml(JSON.stringify(d,null,2))+'</pre>'}catch(e){showError(e.message)}}
+function outcomeRows(title,kind,rows){if(!rows||!rows.length)return '';return '<h3>'+escapeHtml(title)+'</h3><table><thead><tr><th>Type</th><th>Status</th><th>Provider reference</th><th>Error</th><th>Updated</th><th>Resolution</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.operation_type||r.offer_name||r.defense_packet_id||r.original_payment_event_id||'')+'</td><td><span class="pill '+(r.status==='unknown'||r.status==='needs_reconciliation'?'bad':'warn')+'">'+escapeHtml(r.status)+'</span></td><td>'+escapeHtml(r.processor_reference||r.processor_refund_id||r.provider_reference||r.processor_subscription_id||'')+'</td><td>'+escapeHtml(r.error_message||r.billing_setup_error||'')+'</td><td>'+fmtDate(r.updated_at)+'</td><td>'+(r.status==='unknown'||r.status==='needs_reconciliation'?'<button data-kind="'+attr(kind)+'" data-id="'+attr(r.id)+'" data-operation="'+attr(r.operation_type||'')+'" onclick="resolveOutcome(this.dataset.kind,this.dataset.id,this.dataset.operation)">Resolve</button>':'Worker retrying local records')+'</td></tr>').join('')+'</tbody></table>'}
+async function resolveOutcome(kind,id,operationType){clearError();const resolution=window.prompt('Type provider_accepted if the processor confirms success, or not_processed only after confirming nothing was processed.');if(!resolution)return;if(resolution!=='provider_accepted'&&resolution!=='not_processed'){showError('Resolution was not recognized.');return}let providerReference='';let responsePayload;let reconciliationPayload;let nextBillingDate='';if(resolution==='provider_accepted'){providerReference=window.prompt('Enter the exact processor reference from the provider dashboard.')||'';if(!providerReference)return;if(kind==='billing_setup'){nextBillingDate=window.prompt('Enter the next processor billing date as YYYY-MM-DD.')||'';if(!nextBillingDate)return}if(operationType==='checkout_ach_intent'||operationType==='manual_sale_ach_intent'){const raw=window.prompt('Paste verified Stripe response JSON containing clientSecret and paymentIntentId.');if(!raw)return;try{responsePayload=JSON.parse(raw)}catch(e){showError('Stripe response JSON is invalid.');return}}}const confirmation=window.prompt('Type '+(resolution==='provider_accepted'?'CONFIRM PROVIDER ACCEPTED':'CONFIRM NOT PROCESSED')+' exactly.');if(!confirmation)return;try{await request('/internal/hq/api/provider-outcomes/'+kind+'/'+encodeURIComponent(id)+'/resolve','POST',{resolution,confirmation,providerReference,responsePayload,reconciliationPayload,nextBillingDate});showNotice('Provider outcome resolved. Accepted local records will finish reconciliation automatically.');await detail(activeDetailLocation);await load()}catch(e){showError(e.message)}}
+async function detail(locationId){clearError();activeDetailLocation=locationId;try{const d=await api('/internal/hq/api/merchants/'+encodeURIComponent(locationId));const summary={merchant:d.merchant,recentPayments:d.recentPayments,recentTriggers:d.recentTriggers,recentEnrollments:d.recentEnrollments,warnings:d.warnings};$('detail').innerHTML='<h2>Merchant detail</h2><pre>'+escapeHtml(JSON.stringify(summary,null,2))+'</pre>'+outcomeRows('Money operations','money_operation',d.unresolvedMoneyOperations)+outcomeRows('Refund claims','refund_claim',d.unresolvedRefundClaims)+outcomeRows('Defense submissions','defense_submission',d.unresolvedDefenseSubmissions)+outcomeRows('Recurring billing setup','billing_setup',d.unresolvedBillingSetups)}catch(e){showError(e.message)}}
 function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function attr(s){return escapeHtml(s).replace(/'/g,'&#39;')}
 $('load').addEventListener('click',load); if(sessionStorage.getItem('ss_hq_token')){$('token').value=sessionStorage.getItem('ss_hq_token')}

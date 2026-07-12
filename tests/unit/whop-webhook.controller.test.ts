@@ -13,6 +13,7 @@ const mockPaymentEventFindByTransactionId = jest.fn();
 const mockPaymentEventCreate = jest.fn();
 const mockTriggerFire = jest.fn();
 const mockGhlPost = jest.fn();
+const mockNotifyRefundProcessed = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -83,6 +84,12 @@ jest.mock('../../src/services/trigger.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/payment-lifecycle.service', () => ({
+  paymentLifecycleService: {
+    notifyRefundProcessed: (...args: any[]) => mockNotifyRefundProcessed(...args),
+  },
+}));
+
 import { handleWhopWebhook } from '../../src/controllers/whop-webhook.controller';
 
 function queryBuilder(result: any = null) {
@@ -125,6 +132,7 @@ describe('handleWhopWebhook', () => {
     mockPaymentEventFindByTransactionId.mockResolvedValue(null);
     mockPaymentEventCreate.mockResolvedValue({ id: 'pe_1' });
     mockGhlPost.mockResolvedValue({ data: { contact: { id: 'contact_from_ghl' } } });
+    mockNotifyRefundProcessed.mockResolvedValue(undefined);
   });
 
   it('processes a Whop renewal payment by membership id as recurring, not as a new initial sale', async () => {
@@ -290,5 +298,96 @@ describe('handleWhopWebhook', () => {
       line_items: insertedEnrollment.selected_checkout_items,
     }));
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('records distinct partial refunds on one payment once each using the Whop refund id', async () => {
+    const enrollment = {
+      id: 'enr_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      processor_subscription_id: 'mem_123',
+    };
+    const insertedRefunds: any[] = [];
+    const persistedRefundIds = new Set<string>();
+
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table !== 'payment_events') return queryBuilder(null);
+
+      const builder = queryBuilder(null);
+      let transactionId = '';
+      builder.eq = jest.fn((column: string, value: string) => {
+        if (column === 'processor_transaction_id') transactionId = value;
+        return builder;
+      });
+      builder.maybeSingle = jest.fn(async () => ({
+        data: persistedRefundIds.has(transactionId) ? { id: `pe_${transactionId}` } : null,
+        error: null,
+      }));
+      builder.insert = jest.fn(async (row: any) => {
+        insertedRefunds.push(row);
+        persistedRefundIds.add(row.processor_transaction_id);
+        return { data: null, error: null };
+      });
+      return builder;
+    });
+
+    const refundPayload = (messageId: string, refundId: string, amount: number) => ({
+      id: messageId,
+      type: 'refund.created',
+      company_id: 'biz_1',
+      data: {
+        id: refundId,
+        amount,
+        currency: 'usd',
+        payment: {
+          id: 'pay_original_1',
+          metadata: { location_id: 'loc_1', enrollment_id: 'enr_1' },
+        },
+      },
+    });
+    const send = async (payload: any) => {
+      const req: any = {
+        rawBody: Buffer.from(JSON.stringify(payload)),
+        body: payload,
+        headers: { 'webhook-id': payload.id },
+      };
+      const res: any = {
+        status: jest.fn(() => res),
+        json: jest.fn(),
+      };
+      await handleWhopWebhook(req, res);
+      expect(res.json).toHaveBeenCalledWith({ received: true });
+    };
+
+    const firstRefund = refundPayload('msg_refund_1', 'rf_partial_1', 2.5);
+    await send(firstRefund);
+    await send(refundPayload('msg_refund_2', 'rf_partial_2', 1.25));
+    await send(firstRefund);
+
+    expect(insertedRefunds).toHaveLength(2);
+    expect(insertedRefunds.map((row) => row.processor_transaction_id)).toEqual([
+      'rf_partial_1',
+      'rf_partial_2',
+    ]);
+    expect(insertedRefunds.map((row) => row.raw_webhook_payload.original_processor_transaction_id)).toEqual([
+      'pay_original_1',
+      'pay_original_1',
+    ]);
+    expect(mockNotifyRefundProcessed).toHaveBeenCalledTimes(2);
+    expect(mockNotifyRefundProcessed).toHaveBeenNthCalledWith(
+      1,
+      'loc_1',
+      'contact_1',
+      expect.objectContaining({ transactionId: 'rf_partial_1', amount: 2.5 }),
+    );
+    expect(mockNotifyRefundProcessed).toHaveBeenNthCalledWith(
+      2,
+      'loc_1',
+      'contact_1',
+      expect.objectContaining({ transactionId: 'rf_partial_2', amount: 1.25 }),
+    );
   });
 });

@@ -391,17 +391,23 @@ describe('Payment Management Controller', () => {
     ]);
     const insertChain = mockChain({ id: 'refund-event-1' });
     const offerChain = mockChain({ offer_name: 'Program' });
+    const reservedClaimsChain = mockChain([]);
     const claimChain = mockChain({ id: 'claim-1' });
-    const updateClaimChain = mockChain(null);
+    const providerStartedChain = mockChain(null);
+    const providerAcceptedChain = mockChain(null);
+    const recordedClaimChain = mockChain(null);
     const refund = jest.fn().mockResolvedValue({ success: true, refundId: 'refund-2' });
 
     mockFrom
       .mockReturnValueOnce(originalChain)
       .mockReturnValueOnce(priorRefundChain)
+      .mockReturnValueOnce(reservedClaimsChain)
       .mockReturnValueOnce(claimChain)
-      .mockReturnValueOnce(updateClaimChain)
+      .mockReturnValueOnce(providerStartedChain)
+      .mockReturnValueOnce(providerAcceptedChain)
       .mockReturnValueOnce(offerChain)
-      .mockReturnValueOnce(insertChain);
+      .mockReturnValueOnce(insertChain)
+      .mockReturnValueOnce(recordedClaimChain);
 
     const processorFactory = require('../../src/services/processor.factory');
     processorFactory.resolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });

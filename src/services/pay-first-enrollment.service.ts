@@ -3,7 +3,6 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { offerRepository } from '../repositories/offer.repository';
-import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
 import { phase2EvidenceRepository } from '../repositories/phase2Evidence.repository';
 import { offerService } from './offer.service';
@@ -19,6 +18,7 @@ import type { ProcessorType } from '../types/processor.types';
 import { dualPricingService } from './dual-pricing.service';
 import { checkoutCartService } from './checkout-cart.service';
 import { whopService } from './whop.service';
+import { moneyOperationService } from './money-operation.service';
 import { deliverEnrollmentLink, type EnrollmentLinkDeliveryResult } from './enrollment-link-delivery.service';
 import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import {
@@ -56,6 +56,7 @@ interface ChargeManualSaleInput {
   phone?: string;
   amount: number;
   paymentToken: string;
+  paymentAttemptId: string;
   paymentType?: string;
   paymentMethod?: 'card' | 'ach';
   achSecCode?: 'WEB' | 'PPD' | 'CCD' | 'TEL';
@@ -177,8 +178,6 @@ function merchantBusinessName(merchant: any): string {
   return merchant?.dba_name || merchant?.business_name || '';
 }
 
-const inFlightManualSalePayments = new Set<string>();
-
 function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
   return crypto
     .createHash('sha256')
@@ -186,14 +185,8 @@ function paymentAttemptKey(parts: Array<string | number | null | undefined>): st
     .digest('hex');
 }
 
-function claimPaymentAttempt(key: string): boolean {
-  if (inFlightManualSalePayments.has(key)) return false;
-  inFlightManualSalePayments.add(key);
-  return true;
-}
-
-function releasePaymentAttempt(key: string): void {
-  if (key) inFlightManualSalePayments.delete(key);
+function isUnknownStripeSubscriptionResult(err: any): boolean {
+  return err?.processor === 'stripe' && err?.code === 'STRIPE_SUBSCRIPTION_RESULT_UNKNOWN';
 }
 
 async function fireManualSaleTrigger(
@@ -360,8 +353,11 @@ export const payFirstEnrollmentService = {
   },
 
   async chargeCardAndCreatePaidEnrollment(input: ChargeManualSaleInput) {
-    if (!input.locationId || !input.email || !input.amount || !input.paymentToken) {
-      throw new ValidationError('locationId, email, amount, and paymentToken required');
+    if (!input.locationId || !input.email || !input.amount || !input.paymentToken || !input.paymentAttemptId) {
+      throw new ValidationError('locationId, email, amount, paymentToken, and paymentAttemptId required');
+    }
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(input.paymentAttemptId))) {
+      throw new ValidationError('paymentAttemptId is invalid');
     }
 
     const merchant = await merchantRepository.getByLocationId(input.locationId);
@@ -406,21 +402,40 @@ export const payFirstEnrollmentService = {
     }
     const attemptKey = paymentAttemptKey([
       input.locationId,
-      input.offerId || '',
-      contactId || input.email,
-      input.paymentToken,
-      amountCents,
-      paymentMethod,
-      paymentType,
+      input.paymentAttemptId,
     ]);
-    if (await idempotencyRepository.isDuplicate(attemptKey, 'quick_manual_sale_payment', input.locationId)) {
-      throw new ValidationError('Payment is already processing. Please wait.');
+    const moneyOperation = await moneyOperationService.begin({
+      locationId: input.locationId,
+      merchantId: merchant.id,
+      operationType: 'manual_sale_charge',
+      operationKey: attemptKey,
+      request: {
+        offerId: input.offerId || null,
+        contactId,
+        email: input.email,
+        amountCents,
+        paymentMethod,
+        paymentType,
+        paymentAttemptId: input.paymentAttemptId,
+      },
+    });
+    if (moneyOperation.action === 'replay') {
+      return moneyOperation.response as any;
     }
-    if (!claimPaymentAttempt(attemptKey)) {
-      throw new ValidationError('Payment is already processing. Please wait.');
+    if (moneyOperation.action === 'blocked') {
+      throw new ValidationError(
+        moneyOperation.operation.status === 'provider_accepted' || moneyOperation.operation.status === 'unknown'
+          ? 'Payment was submitted and is awaiting reconciliation. Do not submit it again.'
+          : 'Payment is already processing. Please wait.',
+      );
     }
     let charge;
     try {
+      await moneyOperationService.markProviderStarted({
+        id: moneyOperation.operation.id,
+        locationId: input.locationId,
+        processorType: procConfig.processor_type,
+      });
       charge = await processor.charge({
         amount: amountCents,
         currency: 'usd',
@@ -442,14 +457,55 @@ export const payFirstEnrollmentService = {
         shouldVault: true,
         customerEmail: input.email,
         customerName,
+        idempotencyKey: `manual-sale-${attemptKey}`,
       });
-    } finally {
-      releasePaymentAttempt(attemptKey);
+    } catch (chargeErr: any) {
+      await moneyOperationService.markUnknown({
+        id: moneyOperation.operation.id,
+        locationId: input.locationId,
+        processorType: procConfig.processor_type,
+        error: chargeErr.message || 'Processor result is unknown',
+      });
+      throw chargeErr;
     }
 
     if (!charge.success) {
+      const failedResponse = {
+        success: false,
+        error: charge.errorMessage || 'Card charge failed',
+        paymentAttemptStatus: charge.status === 'declined' ? 'declined' : 'failed',
+      };
+      await moneyOperationService.markRecorded({
+        id: moneyOperation.operation.id,
+        locationId: input.locationId,
+        response: failedResponse,
+        processorType: procConfig.processor_type,
+        processorReference: charge.transactionId || charge.chargeId || null,
+        providerCalled: true,
+      });
       throw new ValidationError(charge.errorMessage || 'Card charge failed');
     }
+    await moneyOperationService.markProviderAccepted({
+      id: moneyOperation.operation.id,
+      locationId: input.locationId,
+      processorType: procConfig.processor_type,
+      processorReference: charge.transactionId || charge.chargeId || null,
+      response: {
+        success: true,
+        transactionId: charge.transactionId || charge.chargeId || null,
+        paymentStatus: charge.status === 'processing' ? 'processing' : 'succeeded',
+      },
+      reconciliationPayload: {
+        transactionId: charge.transactionId || charge.chargeId || null,
+        chargeId: charge.chargeId || charge.transactionId || null,
+        status: charge.status,
+        vaultedCustomerId: charge.vaultedCustomerId || null,
+        vaultedCardLastFour: charge.vaultedCardLastFour || null,
+        vaultedCardBrand: charge.vaultedCardBrand || null,
+        vaultedCardExpMonth: charge.vaultedCardExpMonth || null,
+        vaultedCardExpYear: charge.vaultedCardExpYear || null,
+      },
+    });
     const paymentProcessing = charge.status === 'processing';
     const transactionId = charge.transactionId || charge.chargeId || '';
     const postChargeIssues: ManualSaleIssue[] = [];
@@ -643,6 +699,7 @@ export const payFirstEnrollmentService = {
                 payment_type: paymentType,
                 payment_source: 'quick_manual_sale',
               },
+              idempotencyKey: `manual-sale-subscription-${attemptKey}`,
             });
 
             if (subResult.success && subResult.subscriptionId) {
@@ -692,12 +749,15 @@ export const payFirstEnrollmentService = {
             }).eq('id', enrollmentId).eq('location_id', input.locationId);
           }
         } catch (err: any) {
+          const resultUnknown = isUnknownStripeSubscriptionResult(err);
           billingSetupIssue = {
-            code: 'processor_subscription_creation_error',
+            code: resultUnknown
+              ? 'processor_subscription_result_unknown'
+              : 'processor_subscription_creation_error',
             message: err?.message || 'Payment was received, but recurring billing setup failed.',
           };
           await getSupabase().from('enrollments').update({
-            billing_setup_status: 'failed',
+            billing_setup_status: resultUnknown ? 'needs_reconciliation' : 'failed',
             billing_setup_error: billingSetupIssue.message,
             next_billing_date: null,
           }).eq('id', enrollmentId).eq('location_id', input.locationId);
@@ -898,7 +958,7 @@ export const payFirstEnrollmentService = {
       logger.warn({ ...logContext, issues: postChargeIssues }, 'Quick Manual Sale completed with post-charge issues');
     }
 
-    return {
+    const response = {
       success: true,
       contactId,
       enrollmentId,
@@ -917,11 +977,57 @@ export const payFirstEnrollmentService = {
       cardLastFour: saveResult.cardLastFour,
       cardBrand: saveResult.cardBrand,
     };
+    const criticalRecordingCodes = new Set([
+      'payment_method_recording_failed',
+      'enrollment_recording_failed',
+      'processor_subscription_save_failed',
+      'payment_event_recording_failed',
+      'evidence_recording_failed',
+    ]);
+    const criticalBillingCodes = new Set([
+      'processor_subscription_save_failed',
+      'processor_subscription_result_unknown',
+    ]);
+    const hasCriticalRecordingIssue = postChargeIssues.some((issue) => criticalRecordingCodes.has(issue.code))
+      || Boolean(billingSetupIssue && criticalBillingCodes.has(billingSetupIssue.code));
+    if (hasCriticalRecordingIssue) {
+      await moneyOperationService.markProviderAccepted({
+        id: moneyOperation.operation.id,
+        locationId: input.locationId,
+        processorType: procConfig.processor_type,
+        processorReference: transactionId,
+        response,
+        reconciliationPayload: {
+          transactionId,
+          enrollmentId,
+          contactId,
+          paymentType,
+          paymentsTotal,
+          paymentProcessing,
+          processorSubscriptionId: processorSubscriptionId || null,
+          nextBillingDate: nextBillingDate || null,
+          clientResponse: response,
+        },
+      });
+    } else {
+      await moneyOperationService.markRecorded({
+        id: moneyOperation.operation.id,
+        locationId: input.locationId,
+        response,
+        processorType: procConfig.processor_type,
+        processorReference: transactionId,
+        providerCalled: true,
+      });
+    }
+    return response;
   },
 
   async createStripeAchManualSaleIntent(input: Omit<ChargeManualSaleInput, 'paymentToken'>) {
-    if (!input.locationId || !input.email || !input.amount) {
-      throw new ValidationError('locationId, email, and amount required');
+    if (!input.locationId || !input.email || !input.amount || !input.paymentAttemptId) {
+      throw new ValidationError('locationId, email, amount, and paymentAttemptId required');
+    }
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(input.paymentAttemptId))) {
+      throw new ValidationError('paymentAttemptId is invalid');
     }
 
     const merchant = await merchantRepository.getByLocationId(input.locationId);
@@ -955,6 +1061,34 @@ export const payFirstEnrollmentService = {
       }
     }
 
+    const attemptKey = paymentAttemptKey([input.locationId, input.paymentAttemptId]);
+    const moneyOperation = await moneyOperationService.begin({
+      locationId: input.locationId,
+      merchantId: merchant.id,
+      operationType: 'manual_sale_ach_intent',
+      operationKey: attemptKey,
+      request: {
+        offerId: input.offerId || null,
+        contactId,
+        email: input.email.trim().toLowerCase(),
+        amountCents,
+        paymentType,
+        paymentAttemptId: input.paymentAttemptId,
+      },
+    });
+    if (moneyOperation.action === 'replay') return moneyOperation.response as any;
+    if (moneyOperation.action === 'blocked') {
+      throw new ValidationError(
+        moneyOperation.operation.status === 'provider_accepted' || moneyOperation.operation.status === 'unknown'
+          ? 'Bank payment setup was submitted and is awaiting reconciliation. Do not submit it again.'
+          : 'Bank payment setup is already processing. Please wait.',
+      );
+    }
+
+    let providerCallStarted = false;
+    let providerAccepted = false;
+    try {
+
     let enrollmentId: string | null = null;
     if (offer) {
       const { data: enrollment, error: enrollmentError } = await getSupabase()
@@ -986,6 +1120,12 @@ export const payFirstEnrollmentService = {
     }
 
     const stripeClient = createProcessorClient(procConfig) as any;
+    await moneyOperationService.markProviderStarted({
+      id: moneyOperation.operation.id,
+      locationId: input.locationId,
+      processorType: 'stripe',
+    });
+    providerCallStarted = true;
     const intent = await stripeClient.createAchPaymentIntent({
       amount: amountCents,
       currency: 'usd',
@@ -1009,15 +1149,10 @@ export const payFirstEnrollmentService = {
         send_enrollment: input.sendEnrollment === false ? 'false' : 'true',
       },
       setupFutureUsage: ['installment', 'subscription'].includes(paymentType),
+      idempotencyKey: `manual-sale-ach-${attemptKey}`,
     });
 
-    if (enrollmentId) {
-      await getSupabase().from('enrollments').update({
-        payment_transaction_id: intent.paymentIntentId,
-      }).eq('id', enrollmentId).eq('location_id', input.locationId);
-    }
-
-    return {
+    const response = {
       success: true,
       contactId,
       enrollmentId,
@@ -1026,6 +1161,56 @@ export const payFirstEnrollmentService = {
       stripeAccountId: intent.stripeAccountId,
       stripePublishableKey: config.stripe.publishableKey,
     };
+    await moneyOperationService.markProviderAccepted({
+      id: moneyOperation.operation.id,
+      locationId: input.locationId,
+      processorType: 'stripe',
+      processorReference: intent.paymentIntentId,
+      response,
+      reconciliationPayload: {
+        enrollmentId,
+        contactId,
+        paymentIntentId: intent.paymentIntentId,
+        clientResponse: response,
+      },
+    });
+    providerAccepted = true;
+
+    if (enrollmentId) {
+      const { error: enrollmentUpdateError } = await getSupabase().from('enrollments').update({
+        payment_transaction_id: intent.paymentIntentId,
+      }).eq('id', enrollmentId).eq('location_id', input.locationId);
+      if (enrollmentUpdateError) throw enrollmentUpdateError;
+    }
+
+    await moneyOperationService.markRecorded({
+      id: moneyOperation.operation.id,
+      locationId: input.locationId,
+      response,
+      processorType: 'stripe',
+      processorReference: intent.paymentIntentId,
+      providerCalled: true,
+    });
+    return response;
+    } catch (err: any) {
+      if (!providerAccepted) {
+        if (providerCallStarted) {
+          await moneyOperationService.markUnknown({
+            id: moneyOperation.operation.id,
+            locationId: input.locationId,
+            processorType: 'stripe',
+            error: err.message || 'Stripe ACH intent result is unknown',
+          });
+        } else {
+          await moneyOperationService.markFailedBeforeProvider({
+            id: moneyOperation.operation.id,
+            locationId: input.locationId,
+            error: err.message || 'Stripe ACH setup failed before processor call',
+          });
+        }
+      }
+      throw err;
+    }
   },
 
   async recordPaymentAndSendEnrollment(input: RecordPayFirstInput) {
@@ -1117,7 +1302,20 @@ export const payFirstEnrollmentService = {
       },
     });
 
-    const enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId);
+    const paidToken = createPublicActionToken({
+      action: 'paid_enrollment',
+      locationId: input.locationId,
+      contactId,
+      enrollmentId: enrollment.id,
+      ttlSeconds: 30 * 24 * 60 * 60,
+    });
+    const enrollmentUrl = await buildEnrollmentUrl(input.locationId, input.offerId, paidToken, {
+      firstName: input.firstName,
+      lastName: input.lastName,
+      email: input.email,
+      phone: input.phone,
+      paymentType,
+    });
     try {
       const api = await ghlApi(input.locationId);
       await api.put(`/contacts/${contactId}`, {

@@ -3,7 +3,8 @@ import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { AuthenticationError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { extractGhlSsoContext } from '../utils/ghl-sso-context';
+import { merchantRepository } from '../repositories/merchant.repository';
+import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
 
 const AGENCY_CONTEXT_MESSAGE =
   'ScaleSafe must be opened from the sub-account you want to manage. '
@@ -27,12 +28,21 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction):
   // Path 1: Encrypted SSO payload (most secure)
   const ssoPayload = req.headers['x-sso-payload'] as string | undefined;
   if (ssoPayload) {
+    let ssoContext: ReturnType<typeof extractGhlSsoContext>;
     try {
       const userData = decryptSsoPayload(ssoPayload, config.ghl.ssoKey);
-      const ssoContext = extractGhlSsoContext(userData);
-      if (!ssoContext.locationId) {
-        return next(new AuthenticationError(AGENCY_CONTEXT_MESSAGE));
-      }
+      ssoContext = extractGhlSsoContext(userData);
+    } catch (err) {
+      logger.warn({ err }, 'SSO payload decryption failed');
+      return next(new AuthenticationError('Invalid SSO payload'));
+    }
+
+    if (!ssoContext.locationId) {
+      return next(new AuthenticationError(AGENCY_CONTEXT_MESSAGE));
+    }
+    try {
+      const merchant = await merchantRepository.findByLocationId(ssoContext.locationId);
+      assertActiveGhlMerchantBinding(merchant as any, ssoContext);
       req.tenantContext = {
         locationId: ssoContext.locationId,
         companyId: ssoContext.companyId,
@@ -45,8 +55,8 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction):
       if (err instanceof AuthenticationError) {
         return next(err);
       }
-      logger.warn({ err }, 'SSO payload decryption failed');
-      return next(new AuthenticationError('Invalid SSO payload'));
+      logger.error({ err, locationId: ssoContext.locationId }, 'SSO merchant binding lookup failed');
+      return next(err);
     }
   }
 
@@ -67,13 +77,15 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction):
 
   // Path 3: Legacy query param support (for direct URL testing)
   const ssoKey = (req.query.sso_key || req.query.ssoKey) as string | undefined;
-  if (ssoKey) {
+  if (ssoKey && config.nodeEnv !== 'production') {
     try {
       const userData = decryptSsoPayload(ssoKey, config.ghl.ssoKey);
       const ssoContext = extractGhlSsoContext(userData);
       if (!ssoContext.locationId) {
         return next(new AuthenticationError(AGENCY_CONTEXT_MESSAGE));
       }
+      const merchant = await merchantRepository.findByLocationId(ssoContext.locationId);
+      assertActiveGhlMerchantBinding(merchant as any, ssoContext);
       req.tenantContext = {
         locationId: ssoContext.locationId,
         companyId: ssoContext.companyId,

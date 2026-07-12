@@ -173,6 +173,10 @@ describe('ghlActivityService', () => {
         appointment_title: 'Strategy Session',
       }),
     );
+    const evidence = mockLogEvidence.mock.calls[0][4];
+    expect(evidence.proof_role).toBe('client_engagement');
+    expect(evidence.reason_code_tags).toEqual(['general']);
+    expect(evidence.dispute_relevance).toEqual(expect.objectContaining({ priority: 'low' }));
   });
 
   test('keeps GHL invoices client-level instead of guessing a program from line items', async () => {

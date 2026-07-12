@@ -51,4 +51,11 @@ describe('public widget CSP', () => {
     expect(response.text).toContain('<script nonce="');
     expect(response.text).not.toContain('onclick=');
   });
+
+  it.each(['/checkout', '/quick-checkout'])('%s rotates attempt ids only after a confirmed decline', async (path) => {
+    const response = await request(app()).get(path).expect(200);
+
+    expect(response.text).toContain("paymentAttemptStatus === 'declined'");
+    expect(response.text).toContain('removeItem(');
+  });
 });

@@ -13,6 +13,7 @@ import { whopService } from '../services/whop.service';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
+import { moneyOperationService } from '../services/money-operation.service';
 
 function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
@@ -135,6 +136,10 @@ function dollarsToCents(value: number): number {
   return Math.round(Number(value || 0) * 100);
 }
 
+function isSafePaymentAttemptId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_.:-]{8,128}$/.test(value);
+}
+
 function isRefundLinkedToPayment(refund: any, originalEvent: any, paymentEventId: string): boolean {
   const raw = refund?.raw_webhook_payload || {};
   return raw.original_payment_event_id === paymentEventId
@@ -157,7 +162,8 @@ async function updateRefundClaim(
     .update(updates)
     .eq('id', claimId);
   if (error) {
-    logger.warn({ err: error.message, claimId }, 'Refund claim status update failed');
+    logger.error({ err: error.message, claimId }, 'Refund claim status update failed');
+    throw error;
   }
 }
 
@@ -715,26 +721,34 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
     const locationId = resolveLocationId(req);
     const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
     const { contactId, paymentMethodId, amount, description } = req.body;
+    const paymentAttemptId = req.body.paymentAttemptId || req.body.idempotencyKey;
 
-    if (!contactId || !paymentMethodId || !amount) {
+    if (!contactId || !paymentMethodId || amount === undefined || amount === null) {
       res.status(400).json({ error: 'contactId, paymentMethodId, and amount are required' });
       return;
     }
 
-    if (typeof amount !== 'number' || amount <= 0) {
+    const amountCents = dollarsToCents(amount);
+    if (typeof amount !== 'number' || !Number.isInteger(amountCents) || amountCents <= 0 || amountCents > 99999999) {
       res.status(400).json({ error: 'Amount must be a positive number' });
+      return;
+    }
+    if (!isSafePaymentAttemptId(paymentAttemptId)) {
+      res.status(400).json({ error: 'A stable paymentAttemptId is required for this charge' });
       return;
     }
 
     const supabase = getSupabase();
 
     // Look up saved payment method
-    const { data: method } = await supabase
+    const { data: method, error: methodError } = await supabase
       .from('payment_methods')
       .select('*')
       .eq('id', paymentMethodId)
       .eq('location_id', locationId)
-      .single();
+      .eq('contact_id', contactId)
+      .maybeSingle();
+    if (methodError) throw methodError;
 
     if (!method) {
       res.status(404).json({ error: 'Payment method not found' });
@@ -751,80 +765,230 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
     // charge() with a vault id in paymentToken; the latter fails on both NMI and Stripe.
     const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
     const storedPaymentMethodId = method.stripe_payment_method_id || method.nmi_customer_vault_id || '';
+    if (!customerId || !storedPaymentMethodId) {
+      res.status(400).json({ error: 'Saved payment method is missing its processor reference' });
+      return;
+    }
+
+    const operation = await moneyOperationService.begin({
+      locationId,
+      merchantId,
+      operationType: 'manual_sale_charge',
+      operationKey: `payment-management:${paymentAttemptId}`,
+      request: {
+        paymentAttemptId,
+        contactId,
+        paymentMethodId,
+        amountCents,
+        currency: 'usd',
+        paymentMethod: 'card',
+        description: description || 'One-time charge',
+        processorType: procConfig.processor_type,
+        source: 'payment_management',
+      },
+    });
+    if (operation.action === 'replay') {
+      res.json(operation.response);
+      return;
+    }
+    if (operation.action === 'blocked') {
+      res.status(409).json({
+        success: false,
+        error: 'This charge is already processing or requires reconciliation.',
+      });
+      return;
+    }
+
     let result: any;
+    let providerStarted = false;
     try {
+      await moneyOperationService.markProviderStarted({
+        id: operation.operation.id,
+        locationId,
+        processorType: procConfig.processor_type,
+      });
+      providerStarted = true;
       result = await processor.chargeStoredCard(customerId, storedPaymentMethodId, {
-        amount: Math.round(amount * 100),
+        amount: amountCents,
         currency: 'usd',
         paymentToken: storedPaymentMethodId,
         description: description || 'One-time charge',
-        metadata: { contact_id: contactId, source: 'payment_management' },
+        metadata: {
+          contact_id: contactId,
+          source: 'payment_management',
+          money_operation_id: operation.operation.id,
+        },
+        idempotencyKey: `payment-management-${operation.operation.id}`,
       });
     } catch (err: any) {
       const message = err?.message || 'Saved payment method charge failed';
       logger.warn(
         { err: message, contactId, locationId, processor: procConfig.processor_type },
-        'Manual saved-card charge failed before processor approval',
+        'Manual saved-card charge result is unknown',
       );
-      await supabase.from('payment_events').insert({
+      if (providerStarted) {
+        await moneyOperationService.markUnknown({
+          id: operation.operation.id,
+          locationId,
+          processorType: procConfig.processor_type,
+          error: message,
+        });
+      }
+      throw err;
+    }
+
+    const processorReference = result.transactionId || result.chargeId || null;
+    const clientChargeId = result.chargeId || result.transactionId || null;
+    const response = result.success
+      ? { success: true, chargeId: clientChargeId }
+      : { success: false, chargeId: clientChargeId, error: result.errorMessage || 'Saved payment method charge failed' };
+
+    if (!result.success) {
+      const { error: failureLedgerError } = await supabase.from('payment_events').insert({
         merchant_id: merchantId,
         location_id: locationId,
         contact_id: contactId,
         event_type: 'payment_failed',
         processor: procConfig.processor_type,
-        processor_transaction_id: null,
+        processor_transaction_id: processorReference,
         amount,
         currency: 'usd',
         payment_status: 'failed',
-        failure_reason: message,
+        failure_reason: result.errorMessage || 'Saved payment method charge failed',
         source: 'manual_charge',
         is_recurring: false,
+        raw_webhook_payload: { money_operation_id: operation.operation.id },
       });
-      await fireManualChargeFailedTrigger({
+      const failureResponse = failureLedgerError
+        ? { ...response, recordingIssue: 'The failed charge could not be written to the payment ledger.' }
+        : response;
+      if (failureLedgerError) {
+        logger.error({ err: failureLedgerError.message, operationId: operation.operation.id }, 'Failed saved-card charge ledger insert failed');
+      }
+      await moneyOperationService.markRecorded({
+        id: operation.operation.id,
         locationId,
-        contactId,
-        amount,
-        failureReason: message,
+        response: failureResponse,
+        processorType: procConfig.processor_type,
+        processorReference,
+        providerCalled: true,
       });
-      res.status(402).json({ success: false, error: message });
-      return;
-    }
-
-    // Log payment event
-    await supabase.from('payment_events').insert({
-      merchant_id: merchantId,
-      location_id: locationId,
-      contact_id: contactId,
-      event_type: result.success ? 'sale' : 'payment_failed',
-      processor: procConfig.processor_type,
-      processor_transaction_id: result.transactionId,
-      amount,
-      currency: 'usd',
-      payment_status: result.success ? 'succeeded' : 'failed',
-      failure_reason: result.errorMessage || null,
-      source: 'manual_charge',
-      is_recurring: false,
-    });
-
-    if (!result.success) {
       await fireManualChargeFailedTrigger({
         locationId,
         contactId,
         amount,
         failureReason: result.errorMessage || 'Saved payment method charge failed',
-        transactionId: result.transactionId,
+        transactionId: processorReference,
       });
+      logger.info({ contactId, amount, success: false }, 'Manual charge processed');
+      res.json(failureResponse);
+      return;
     }
 
-    logger.info({ contactId, amount, success: result.success }, 'Manual charge processed');
-    res.json({ success: result.success, chargeId: result.chargeId || result.transactionId, error: result.errorMessage });
+    if (!processorReference) {
+      await moneyOperationService.markUnknown({
+        id: operation.operation.id,
+        locationId,
+        processorType: procConfig.processor_type,
+        error: 'Processor approved the charge without returning a transaction reference',
+      });
+      res.status(502).json({
+        success: false,
+        error: 'Charge was submitted, but its processor reference is missing. Contact support before retrying.',
+      });
+      return;
+    }
+
+    try {
+      await moneyOperationService.markProviderAccepted({
+        id: operation.operation.id,
+        locationId,
+        processorType: procConfig.processor_type,
+        processorReference,
+        response,
+        reconciliationPayload: {
+          contactId,
+          chargeId: clientChargeId,
+          status: 'succeeded',
+          clientResponse: response,
+        },
+      });
+    } catch (acceptError: any) {
+      logger.error({ err: acceptError.message, operationId: operation.operation.id, processorReference }, 'Saved-card charge accepted but durable acceptance update failed');
+      res.status(202).json({
+        ...response,
+        recordingIssue: 'Charge succeeded, but its local reconciliation record could not be updated. Contact support before retrying.',
+      });
+      return;
+    }
+
+    let { data: paymentEvent, error: paymentEventError } = await supabase.from('payment_events').insert({
+      merchant_id: merchantId,
+      location_id: locationId,
+      contact_id: contactId,
+      event_type: 'sale',
+      processor: procConfig.processor_type,
+      processor_transaction_id: processorReference,
+      amount,
+      currency: 'usd',
+      payment_status: 'succeeded',
+      failure_reason: null,
+      source: 'manual_charge',
+      is_recurring: false,
+      payment_method_type: 'card',
+      selected_payment_method: 'card',
+      raw_webhook_payload: { money_operation_id: operation.operation.id },
+    }).select('id').single();
+
+    if (paymentEventError?.code === '23505') {
+      const existing = await supabase
+        .from('payment_events')
+        .select('id')
+        .eq('location_id', locationId)
+        .eq('processor', procConfig.processor_type)
+        .eq('processor_transaction_id', processorReference)
+        .maybeSingle();
+      paymentEvent = existing.data;
+      paymentEventError = existing.error || (existing.data ? null : paymentEventError);
+    }
+
+    let recordingIssue: string | undefined;
+    if (paymentEventError || !paymentEvent?.id) {
+      recordingIssue = 'Charge succeeded and is awaiting local ledger reconciliation.';
+      logger.error({
+        err: paymentEventError?.message || 'Payment event ID was not returned',
+        operationId: operation.operation.id,
+        processorReference,
+      }, 'Saved-card charge accepted but payment ledger insert failed');
+    } else {
+      try {
+        await moneyOperationService.markRecorded({
+          id: operation.operation.id,
+          locationId,
+          response: { ...response, paymentEventId: paymentEvent.id },
+          processorType: procConfig.processor_type,
+          processorReference,
+          providerCalled: true,
+        });
+      } catch (recordError: any) {
+        recordingIssue = 'Charge was recorded in the payment ledger and its reconciliation status is still pending.';
+        logger.error({ err: recordError.message, operationId: operation.operation.id, processorReference }, 'Saved-card money operation finalization failed');
+      }
+    }
+
+    logger.info({ contactId, amount, success: true, recordingIssue }, 'Manual charge processed');
+    res.json({ ...response, paymentEventId: paymentEvent?.id || null, recordingIssue });
   } catch (err) { next(err); }
 }
 
 // ─── POST /api/payments/refund ──────────────────────────────────
 
 export async function issueRefund(req: Request, res: Response, next: NextFunction) {
-  let refundClaim: { supabase: ReturnType<typeof getSupabase>; id: string } | null = null;
+  let refundClaim: {
+    supabase: ReturnType<typeof getSupabase>;
+    id: string;
+    processorMayHaveAccepted: boolean;
+  } | null = null;
   try {
     const locationId = resolveLocationId(req);
     const merchantId = getMerchantId(req) || await resolveMerchantId(locationId);
@@ -876,9 +1040,24 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     const priorRefundCents = (priorRefunds || [])
       .filter((refund: any) => isRefundLinkedToPayment(refund, originalEvent, paymentEventId))
       .reduce((sum: number, refund: any) => sum + dollarsToCents(Math.abs(Number(refund.amount || 0))), 0);
+    const recordedClaimIds = new Set(
+      (priorRefunds || [])
+        .map((refund: any) => String(refund?.raw_webhook_payload?.refund_claim_id || ''))
+        .filter(Boolean),
+    );
+    const { data: reservedClaims, error: reservedClaimsError } = await supabase
+      .from('payment_refund_claims')
+      .select('id, amount_cents, status, refund_payment_event_id')
+      .eq('location_id', locationId)
+      .eq('original_payment_event_id', paymentEventId)
+      .in('status', ['processing', 'provider_accepted', 'unknown', 'recorded', 'succeeded']);
+    if (reservedClaimsError) throw reservedClaimsError;
+    const reservedClaimCents = (reservedClaims || [])
+      .filter((claim: any) => !claim.refund_payment_event_id && !recordedClaimIds.has(String(claim.id)))
+      .reduce((sum: number, claim: any) => sum + Number(claim.amount_cents || 0), 0);
     const originalAmountCents = dollarsToCents(Number(originalEvent.amount || 0));
     const requestedAmountCents = dollarsToCents(amount);
-    const remainingRefundableCents = originalAmountCents - priorRefundCents;
+    const remainingRefundableCents = originalAmountCents - priorRefundCents - reservedClaimCents;
 
     if (requestedAmountCents <= 0 || requestedAmountCents > remainingRefundableCents) {
       res.status(400).json({ error: 'Refund amount exceeds remaining refundable balance' });
@@ -894,6 +1073,12 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
         status: 'processing',
         processor: originalEvent.processor || null,
         claimed_by: getMerchantId(req) || merchantId || null,
+        request_fingerprint: moneyOperationService.fingerprint({
+          locationId,
+          paymentEventId,
+          amountCents: requestedAmountCents,
+          reason: reason || '',
+        }),
       })
       .select('id')
       .single();
@@ -908,60 +1093,89 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     if (!claim?.id) {
       throw new Error('Refund claim could not be created');
     }
-    refundClaim = { supabase, id: claim.id };
+    refundClaim = { supabase, id: claim.id, processorMayHaveAccepted: false };
     const refundIdempotencyKey = `refund:${locationId}:${claim.id}`;
 
     const originalProcessor = String(originalEvent.processor || '').toLowerCase();
     let processorType = originalProcessor;
     let result: any;
-    if (originalProcessor === 'whop') {
-      if (!String(originalEvent.processor_transaction_id || '').startsWith('pay_')) {
+    try {
+      if (originalProcessor === 'whop') {
+        if (!String(originalEvent.processor_transaction_id || '').startsWith('pay_')) {
+          refundClaim.processorMayHaveAccepted = false;
+          await updateRefundClaim(supabase, refundClaim.id, {
+            status: 'failed',
+            error_message: 'Whop payment is missing a refundable Whop payment ID',
+          });
+          refundClaim = null;
+          res.status(400).json({ error: 'This Whop payment is missing a refundable Whop payment ID. Refund directly in Whop; ScaleSafe will record the refund webhook.' });
+          return;
+        }
         await updateRefundClaim(supabase, refundClaim.id, {
-          status: 'failed',
-          error_message: 'Whop payment is missing a refundable Whop payment ID',
+          status: 'unknown',
+          provider_called: true,
+          provider_started_at: new Date().toISOString(),
+          error_message: 'Whop refund request started; awaiting confirmed result.',
         });
-        refundClaim = null;
-        res.status(400).json({ error: 'This Whop payment is missing a refundable Whop payment ID. Refund directly in Whop; ScaleSafe will record the refund webhook.' });
-        return;
-      }
-      result = await whopService.refundPayment(locationId, {
-        paymentId: originalEvent.processor_transaction_id,
-        partialAmount: requestedAmountCents < remainingRefundableCents ? amount : undefined,
-      });
-      processorType = 'whop';
-    } else {
-      const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
-        processor_override: originalEvent.processor || null,
-        nmi_processor_id: null,
-      });
-      processorType = procConfig.processor_type;
-      const processor = createProcessorClient(procConfig);
+        refundClaim.processorMayHaveAccepted = true;
+        result = await whopService.refundPayment(locationId, {
+          paymentId: originalEvent.processor_transaction_id,
+          partialAmount: requestedAmountCents < originalAmountCents ? amount : undefined,
+        });
+        processorType = 'whop';
+      } else {
+        const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
+          processor_override: originalEvent.processor || null,
+          nmi_processor_id: null,
+        });
+        processorType = procConfig.processor_type;
+        const processor = createProcessorClient(procConfig);
 
-      result = await processor.refund({
-        transactionId: originalEvent.processor_transaction_id,
-        amount: requestedAmountCents,
-        idempotencyKey: refundIdempotencyKey,
-      });
+        await updateRefundClaim(supabase, refundClaim.id, {
+          status: 'unknown',
+          provider_called: true,
+          provider_started_at: new Date().toISOString(),
+          error_message: `${processorType.toUpperCase()} refund request started; awaiting confirmed result.`,
+        });
+        refundClaim.processorMayHaveAccepted = true;
+        result = await processor.refund({
+          transactionId: originalEvent.processor_transaction_id,
+          amount: requestedAmountCents,
+          idempotencyKey: refundIdempotencyKey,
+        });
+      }
+    } catch (processorError: any) {
+      if (refundClaim) {
+        await updateRefundClaim(supabase, refundClaim.id, {
+          status: 'unknown',
+          error_message: processorError.message || 'Processor refund result is unknown',
+        });
+      }
+      throw processorError;
     }
 
     // #11: a 'pending' refund is ACCEPTED by the processor (it will settle), not a failure.
     // Treat only a genuine failure as a hard stop; record pending refunds so the refundable
     // balance reflects them and a re-issue cannot double-refund.
     if (!result.success && result.status !== 'pending') {
+      refundClaim.processorMayHaveAccepted = false;
       await updateRefundClaim(supabase, refundClaim.id, {
         status: 'failed',
         error_message: result.errorMessage || 'Refund failed',
       });
       logger.warn({ paymentEventId, amount, reason, error: result.errorMessage }, 'Refund failed');
       res.json({ success: false, error: result.errorMessage || 'Refund failed' });
+      refundClaim = null;
       return;
     }
     const refundPending = result.status === 'pending';
 
     const refundTransactionId = result.refundId || `${originalEvent.processor_transaction_id}:refund:${refundClaim.id}`;
     await updateRefundClaim(supabase, refundClaim.id, {
-      status: 'succeeded',
+      status: 'provider_accepted',
+      provider_called: true,
       processor_refund_id: refundTransactionId,
+      provider_accepted_at: new Date().toISOString(),
       error_message: null,
     });
     const refundType = amount < Number(originalEvent.amount) ? 'partial' : 'full';
@@ -1012,6 +1226,17 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     } else {
       refundEventId = refundEvent?.id || null;
       try {
+        await updateRefundClaim(supabase, refundClaim.id, {
+          status: 'recorded',
+          refund_payment_event_id: refundEventId,
+          recorded_at: new Date().toISOString(),
+          error_message: null,
+        });
+      } catch (claimRecordError: any) {
+        recordingIssue = 'Refund was recorded, but ScaleSafe could not finalize its reconciliation claim. Contact support before attempting another refund.';
+        logger.error({ err: claimRecordError, paymentEventId, refundTransactionId }, 'Refund event recorded but refund claim finalization failed');
+      }
+      try {
         await paymentLifecycleService.notifyRefundProcessed(locationId, originalEvent.contact_id, {
           amount,
           refundType,
@@ -1041,10 +1266,19 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
     });
   } catch (err: any) {
     if (refundClaim) {
-      await updateRefundClaim(refundClaim.supabase, refundClaim.id, {
-        status: 'failed',
-        error_message: err?.message || 'Refund request failed before processor confirmation',
-      });
+      try {
+        await updateRefundClaim(refundClaim.supabase, refundClaim.id, refundClaim.processorMayHaveAccepted
+          ? {
+              status: 'unknown',
+              error_message: err?.message || 'Refund result requires reconciliation',
+            }
+          : {
+              status: 'failed',
+              error_message: err?.message || 'Refund request failed before processor confirmation',
+            });
+      } catch (claimError: any) {
+        logger.error({ err: claimError.message, claimId: refundClaim.id }, 'Refund failure claim could not be updated');
+      }
     }
     next(err);
   }

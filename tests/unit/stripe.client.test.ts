@@ -76,6 +76,7 @@ describe('StripeClient', () => {
         currency: 'usd',
         paymentToken: 'pm_test1',
         description: 'Test charge',
+        idempotencyKey: 'checkout-attempt-123',
         metadata: {
           scalesafe_offer_id: 'offer_1',
           terms_accepted: 'true',
@@ -93,6 +94,7 @@ describe('StripeClient', () => {
       // Verify stripeAccount header
       const [params, opts] = mockStripe.paymentIntents.create.mock.calls[0];
       expect(opts.stripeAccount).toBe('acct_test123');
+      expect(opts.idempotencyKey).toBe('checkout-attempt-123');
       expect(params.amount).toBe(5000);
       expect(params.payment_method).toBe('pm_test1');
       expect(params.confirm).toBe(true);
@@ -143,6 +145,31 @@ describe('StripeClient', () => {
       expect(result.success).toBe(false);
       expect(result.status).toBe('declined');
       expect(result.errorMessage).toBe('Your card was declined');
+    });
+  });
+
+  describe('createAchPaymentIntent', () => {
+    it('uses stable idempotency keys for both customer and PaymentIntent creation', async () => {
+      mockStripe.customers.list.mockResolvedValue({ data: [] });
+      mockStripe.customers.create.mockResolvedValue({ id: 'cus_ach' });
+      mockStripe.paymentIntents.create.mockResolvedValue({
+        id: 'pi_ach', client_secret: 'secret', status: 'requires_payment_method',
+      });
+
+      await client.createAchPaymentIntent({
+        amount: 5000,
+        customerEmail: 'ach@example.com',
+        idempotencyKey: 'checkout-ach-attempt-123',
+      });
+
+      expect(mockStripe.customers.create).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'ach@example.com' }),
+        expect.objectContaining({ stripeAccount: 'acct_test123', idempotencyKey: 'checkout-ach-attempt-123-customer' }),
+      );
+      expect(mockStripe.paymentIntents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 5000, customer: 'cus_ach' }),
+        expect.objectContaining({ stripeAccount: 'acct_test123', idempotencyKey: 'checkout-ach-attempt-123' }),
+      );
     });
   });
 
@@ -252,6 +279,58 @@ describe('StripeClient', () => {
       const [params] = mockStripe.subscriptions.create.mock.calls[0];
       expect(params.billing_cycle_anchor).toBeUndefined();
       expect(params.proration_behavior).toBeUndefined();
+    });
+
+    it('uses stable idempotency keys for both price and subscription creation', async () => {
+      await client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_1',
+        planAmount: 5000,
+        interval: 'monthly',
+        totalPayments: 0,
+        idempotencyKey: 'ach-recurring-enrollment-1',
+      });
+
+      expect(mockStripe.prices.create.mock.calls[0][1]).toEqual(expect.objectContaining({
+        idempotencyKey: 'ach-recurring-enrollment-1-price',
+      }));
+      expect(mockStripe.subscriptions.create.mock.calls[0][1]).toEqual(expect.objectContaining({
+        idempotencyKey: 'ach-recurring-enrollment-1-subscription',
+      }));
+    });
+
+    it('throws an unknown-result error when subscriptions.create loses the response', async () => {
+      const connectionError = new Error('Connection closed after request');
+      (connectionError as any).type = 'StripeConnectionError';
+      mockStripe.subscriptions.create.mockRejectedValueOnce(connectionError);
+
+      await expect(client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_1',
+        planAmount: 5000,
+        interval: 'monthly',
+        totalPayments: 0,
+        idempotencyKey: 'ach-recurring-enrollment-2',
+      })).rejects.toEqual(expect.objectContaining({
+        code: 'STRIPE_SUBSCRIPTION_RESULT_UNKNOWN',
+        isRetryable: true,
+      }));
+    });
+
+    it('returns a definitive failure when Stripe rejects subscription parameters', async () => {
+      const invalidRequest = new Error('Invalid customer');
+      (invalidRequest as any).type = 'StripeInvalidRequestError';
+      mockStripe.subscriptions.create.mockRejectedValueOnce(invalidRequest);
+
+      const result = await client.createSubscription({
+        paymentMethodId: 'pm_1',
+        customerId: 'cus_bad',
+        planAmount: 5000,
+        interval: 'monthly',
+        totalPayments: 0,
+      });
+
+      expect(result).toEqual(expect.objectContaining({ success: false, status: 'failed' }));
     });
   });
 

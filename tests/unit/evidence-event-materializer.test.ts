@@ -49,4 +49,42 @@ describe('external evidence materializer', () => {
     expect(result.table).toBe('evidence_payment_confirmation');
     expect(result.record.defense_summary).toContain('does not alter ScaleSafe payment state');
   });
+
+  it('does not label a scheduled session as delivered service', () => {
+    const result = materializeExternalEvidence({
+      connection,
+      intake,
+      subject,
+      event: {
+        schema_version: '1.0', event_id: 'provider-scheduled', event_type: 'session.scheduled',
+        occurred_at: '2026-07-10T14:30:00Z', subject: { enrollment_ref: 'ref' },
+        resource: { type: 'coaching', id: 'session-2', name: 'Future Call' },
+        actor: { type: 'merchant' }, activity: { status: 'scheduled' },
+      },
+    });
+
+    expect(result.record.proof_role).toBe('client_engagement');
+    expect(result.record.reason_code_tags).toEqual(['general']);
+    expect(result.record.dispute_relevance).toEqual(expect.objectContaining({ priority: 'low' }));
+  });
+
+  it('does not treat revoked access as proof that access was confirmed', () => {
+    const result = materializeExternalEvidence({
+      connection,
+      intake,
+      subject,
+      event: {
+        schema_version: '1.0', event_id: 'provider-revoked', event_type: 'service.access_revoked',
+        occurred_at: '2026-07-10T14:30:00Z', subject: { enrollment_ref: 'ref' },
+        resource: { type: 'community', id: 'community-1', name: 'Member Portal' },
+        actor: { type: 'system' }, activity: { status: 'revoked' },
+      },
+    });
+
+    expect(result.record.proof_role).toBe('system_event');
+    expect(result.record.reason_code_tags).toEqual(['general']);
+    expect(result.record.defense_metadata).toEqual(expect.objectContaining({
+      service: expect.objectContaining({ accessConfirmed: false }),
+    }));
+  });
 });

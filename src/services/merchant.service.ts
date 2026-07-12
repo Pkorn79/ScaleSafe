@@ -1,5 +1,9 @@
 import { ghlApi } from '../clients/ghl.client';
-import { merchantRepository, MerchantRecord } from '../repositories/merchant.repository';
+import {
+  merchantHasOAuthCredentials,
+  merchantRepository,
+  MerchantRecord,
+} from '../repositories/merchant.repository';
 import { paymentProviderService } from './payment-provider.service';
 import { logger } from '../utils/logger';
 import { BETA_CUSTOM_FIELD_REGISTRY, CUSTOM_VALUE_REGISTRY } from '../constants/ghl-fields';
@@ -125,8 +129,16 @@ export interface ProvisioningHealthReport {
   items: ProvisioningHealthItem[];
 }
 
+export interface ProvisioningRunResult {
+  locationId: string;
+  status: 'installed' | 'in_progress' | 'waiting_for_oauth' | 'failed' | 'skipped';
+  error?: string;
+}
+
 const WEBHOOK_SECRET_CUSTOM_VALUE_KEY = 'WEBHOOK_SECRET';
 const WEBHOOK_SECRET_MERGE_FIELD = '{{ custom_values.scalesafe_webhook_secret }}';
+const PROVISIONING_MAX_ATTEMPTS = 5;
+const PROVISIONING_STALE_MS = 10 * 60 * 1000;
 
 // ─── Provisioning constants ──────────────────────────────────────────
 
@@ -201,20 +213,43 @@ export const merchantService = {
   // PROVISIONING (existing — runs after OAuth install)
   // ═══════════════════════════════════════════════════════════════════
 
-  async provisionMerchant(locationId: string): Promise<void> {
+  async provisionMerchant(locationId: string): Promise<ProvisioningRunResult> {
     logger.info({ locationId }, 'Starting merchant provisioning');
-    await merchantRepository.updateSnapshotStatus(locationId, 'installing');
+    let beforeClaim = await merchantRepository.getByLocationId(locationId);
+    if (beforeClaim.snapshot_status === 'installed') {
+      return { locationId, status: 'installed' };
+    }
+    if (!merchantHasOAuthCredentials(beforeClaim)) {
+      if (beforeClaim.company_id) {
+        const adopted = await merchantRepository.adoptCompanyAuthorization(locationId, beforeClaim.company_id);
+        if (adopted) beforeClaim = adopted;
+      }
+      if (!merchantHasOAuthCredentials(beforeClaim)) {
+        logger.info({ locationId }, 'Provisioning is waiting for the OAuth callback to store credentials');
+        return { locationId, status: 'waiting_for_oauth' };
+      }
+    }
+
+    const claimed = await merchantRepository.claimProvisioning(
+      locationId,
+      new Date(Date.now() - PROVISIONING_STALE_MS),
+      PROVISIONING_MAX_ATTEMPTS,
+    );
+    if (!claimed) {
+      const current = await merchantRepository.getByLocationId(locationId);
+      return {
+        locationId,
+        status: current.snapshot_status === 'installed' ? 'installed' : 'in_progress',
+      };
+    }
 
     try {
-      try {
-        await merchantRepository.ensureWebhookSecret(locationId);
-      } catch (err: any) {
-        logger.warn({ locationId, err: err.message }, 'Webhook secret provisioning skipped - migration may not be applied yet');
-      }
+      const webhookSecret = await merchantRepository.ensureWebhookSecret(locationId);
+      if (!webhookSecret) throw new Error('Workflow webhook secret could not be provisioned');
 
       const api = await ghlApi(locationId);
 
-      await Promise.all([
+      const [fieldReport] = await Promise.all([
         this.createCustomFields(api, locationId),
         this.createCustomValues(api, locationId),
       ]);
@@ -223,35 +258,55 @@ export const merchantService = {
 
       // Check if all custom values were captured
       const cvIds = merchant.custom_value_ids || {};
-      const expectedCount = CUSTOM_VALUE_REGISTRY.length;
-      const actualCount = Object.keys(cvIds).length;
-
-      if (actualCount < expectedCount) {
-        await merchantRepository.updateSnapshotStatus(locationId, 'partial',
-          `${actualCount}/${expectedCount} custom values provisioned. Missing: ${CUSTOM_VALUE_REGISTRY.filter(e => !cvIds[e.key]).map(e => e.key).join(', ')}`);
-        logger.warn({ locationId, actualCount, expectedCount }, 'Provisioning partial — some custom values missing');
-      } else {
-        await merchantRepository.updateSnapshotStatus(locationId, 'installed');
-        logger.info({ locationId }, 'Merchant provisioning complete');
+      const missingValues = CUSTOM_VALUE_REGISTRY
+        .filter((entry) => !cvIds[entry.key])
+        .map((entry) => entry.key);
+      if (fieldReport.failed.length || missingValues.length) {
+        throw new Error([
+          fieldReport.failed.length ? `Missing custom fields: ${fieldReport.failed.join(', ')}` : '',
+          missingValues.length ? `Missing custom values: ${missingValues.join(', ')}` : '',
+        ].filter(Boolean).join('. '));
       }
+      await merchantRepository.updateSnapshotStatus(locationId, 'installed');
+      logger.info({ locationId }, 'Merchant provisioning complete');
 
       // Register as custom payment provider + generate API keys (non-blocking)
+      this.fetchLocationInfo(locationId).catch((err: any) => {
+        logger.warn({ err: err.message, locationId }, 'Location profile hydration failed');
+      });
       this.registerPaymentProvider(locationId).catch((err: any) => {
         logger.warn({ err: err.message, locationId }, 'Payment provider registration failed — can retry later');
       });
     } catch (err: any) {
       logger.error({ err, locationId }, 'Merchant provisioning failed');
       await merchantRepository.updateSnapshotStatus(locationId, 'failed', err.message);
-
-      const merchant = await merchantRepository.getByLocationId(locationId);
-      if (merchant.snapshot_attempts < 3) {
-        const delay = Math.pow(2, merchant.snapshot_attempts) * 5000;
-        logger.info({ locationId, attempt: merchant.snapshot_attempts, retryIn: delay }, 'Scheduling provisioning retry');
-        setTimeout(() => this.provisionMerchant(locationId), delay);
-      } else {
-        logger.error({ locationId, attempts: merchant.snapshot_attempts }, 'Provisioning failed after max retries');
-      }
+      return { locationId, status: 'failed', error: err.message || String(err) };
     }
+    return { locationId, status: 'installed' };
+  },
+
+  async recoverPendingProvisioning(limit = 50): Promise<{
+    inspected: number;
+    started: number;
+    failed: number;
+    waitingForOauth: number;
+  }> {
+    const candidates = await merchantRepository.listProvisioningCandidates(limit);
+    let started = 0;
+    let failed = 0;
+    let waitingForOauth = 0;
+
+    for (let i = 0; i < candidates.length; i += 3) {
+      const results = await Promise.allSettled(candidates.slice(i, i + 3).map(async (candidate) => {
+        const result = await this.provisionMerchant(candidate.location_id);
+        if (result.status === 'waiting_for_oauth') waitingForOauth++;
+        if (result.status === 'installed' || result.status === 'in_progress') started++;
+        if (result.status === 'failed') failed++;
+      }));
+      failed += results.filter((result) => result.status === 'rejected').length;
+    }
+
+    return { inspected: candidates.length, started, failed, waitingForOauth };
   },
 
   async getProvisioningHealth(locationId: string): Promise<ProvisioningHealthReport> {
@@ -271,6 +326,45 @@ export const merchantService = {
         snapshotStatus: merchant.snapshot_status,
         snapshotAttempts: merchant.snapshot_attempts,
       },
+    });
+
+    const oauthConfig = merchant.config || {};
+    const tokenScope = String(oauthConfig.ghl_token_scope || 'legacy');
+    const boundLocationId = String(oauthConfig.ghl_token_location_id || '');
+    const boundCompanyId = String(oauthConfig.ghl_token_company_id || '');
+    const hasOauthCredentials = merchantHasOAuthCredentials(merchant)
+      && Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token);
+    const bindingMismatch = (tokenScope === 'location' && boundLocationId && boundLocationId !== locationId)
+      || (tokenScope === 'company' && boundCompanyId && merchant.company_id && boundCompanyId !== merchant.company_id);
+    add({
+      key: 'ghl_oauth',
+      label: 'GHL OAuth connection',
+      status: !hasOauthCredentials || bindingMismatch ? 'fail' : tokenScope === 'legacy' ? 'warn' : 'pass',
+      message: !hasOauthCredentials
+        ? 'OAuth credentials are not available; reinstall ScaleSafe for this sub-account.'
+        : bindingMismatch
+          ? 'Stored OAuth credentials are bound to a different GHL account.'
+          : tokenScope === 'legacy'
+            ? 'OAuth credentials are present, but this older install has no explicit token-scope binding.'
+            : `OAuth credentials are ${tokenScope}-scoped and tenant-bound.`,
+      details: {
+        tokenScope,
+        companyId: merchant.company_id,
+        boundCompanyId: boundCompanyId || null,
+        boundLocationId: boundLocationId || null,
+        expiresAt: merchant.ghl_token_expires_at,
+      },
+    });
+
+    const triggerCallbackSecretConfigured = Boolean(process.env.GHL_TRIGGER_SUBSCRIPTION_SECRET);
+    add({
+      key: 'trigger_callback_auth',
+      label: 'Workflow trigger callback authentication',
+      status: triggerCallbackSecretConfigured ? 'pass' : 'fail',
+      message: triggerCallbackSecretConfigured
+        ? 'Custom-trigger subscription callbacks require the ScaleSafe shared-secret header.'
+        : 'GHL_TRIGGER_SUBSCRIPTION_SECRET is missing; new or republished workflow triggers cannot subscribe securely.',
+      details: { configured: triggerCallbackSecretConfigured },
     });
 
     add({

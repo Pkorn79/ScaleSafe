@@ -23,6 +23,8 @@ interface TokenPair {
   expiresAt: Date;
 }
 
+export type GhlTokenScope = 'location' | 'company';
+
 function readEncryptedToken(encrypted?: string | null, plaintext?: string | null): string {
   if (encrypted) return decrypt(encrypted);
   return plaintext || '';
@@ -60,11 +62,62 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-interface TokenResponse extends TokenPair {
+async function persistCredentialRotation<T>(
+  write: () => PromiseLike<{ data: T; error: any }>,
+  valid: (data: T) => boolean,
+  description: string,
+): Promise<T> {
+  const delays = [0, 100, 250, 500, 1000];
+  let lastError: any = null;
+  for (const delay of delays) {
+    if (delay) await sleep(delay);
+    try {
+      const result = await write();
+      if (!result.error && valid(result.data)) return result.data;
+      lastError = result.error || new Error(`${description} did not update a row`);
+    } catch (err) {
+      lastError = err;
+    }
+    logger.warn({ err: lastError?.message || String(lastError), description }, 'GHL credential persistence will retry');
+  }
+  throw new GHLApiError(`${description} failed after retry: ${lastError?.message || String(lastError)}`);
+}
+
+function jwtPayload(token: string): Record<string, any> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function inferLegacyTokenScope(accessToken: string, cfg: Record<string, unknown>): GhlTokenScope {
+  if (
+    cfg.location_access_token
+    || cfg.location_access_token_encrypted
+    || cfg.location_refresh_token
+    || cfg.location_refresh_token_encrypted
+  ) return 'company';
+
+  const claims = jwtPayload(accessToken);
+  const claimScope = String(claims?.userType || claims?.user_type || claims?.type || '').toLowerCase();
+  if (claimScope === 'company') return 'company';
+  if (claimScope === 'location' || claims?.locationId || claims?.location_id) return 'location';
+
+  // company_id is present on both HighLevel token types. Defaulting legacy
+  // rows to company would break every ordinary sub-account install.
+  return 'location';
+}
+
+export interface TokenResponse extends TokenPair {
   locationId: string;
   companyId: string;
   userId: string;
   scopes: string[];
+  tokenScope: GhlTokenScope;
+  approvedLocations: InstalledLocation[];
   installedLocations?: InstalledLocation[];
   _debug?: Record<string, unknown>;
 }
@@ -177,12 +230,32 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   const refreshToken = data.refresh_token || data.refreshToken || '';
   const expiresIn = Number(data.expires_in || data.expiresIn || 86400);
   const scopes = parseScopeList(data.scope || data.scopes);
+  const userType = String(data.userType || data.user_type || '').trim().toLowerCase();
+  const tokenScope: GhlTokenScope = locationId || userType === 'location' ? 'location' : 'company';
+  const approvedLocations = normalizeInstalledLocationsResponse(
+    data.approvedLocations || data.approved_locations || [],
+  );
+
+  if (!accessToken || !refreshToken) {
+    throw new GHLApiError('OAuth token response did not include durable access and refresh credentials');
+  }
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+    throw new GHLApiError('OAuth token response contained an invalid expiration');
+  }
+  if (tokenScope === 'location' && !locationId) {
+    throw new GHLApiError('Location-scoped OAuth token response did not include a locationId');
+  }
+  if (tokenScope === 'company' && !companyId) {
+    throw new GHLApiError('Company-scoped OAuth token response did not include a companyId');
+  }
 
   // Collect debug info to surface in error responses
   const debug: Record<string, unknown> = {
     tokenResponseKeys: Object.keys(data),
     hadLocationId: !!(data.locationId || data.location_id),
     hadCompanyId: !!companyId,
+    tokenScope,
+    approvedLocationCount: approvedLocations.length,
   };
 
   let installedLocations: InstalledLocation[] = [];
@@ -192,12 +265,22 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   // generic sub-account search because that can attach the install to the
   // wrong location in multi-location agencies.
   if (!locationId && companyId && accessToken) {
-    const resolved = await resolveInstalledLocationsFromCompany(accessToken, companyId);
-    installedLocations = resolved.installedLocations;
+    // Modern company-token responses identify the exact locations approved in
+    // this authorization. Prefer that list so installing one new sub-account
+    // never causes ScaleSafe to reconcile every older installation in the
+    // agency. The installed-locations lookup remains a legacy fallback.
+    if (approvedLocations.length > 0) {
+      installedLocations = approvedLocations;
+      debug.locationResolutionSource = 'approvedLocations';
+    } else {
+      const resolved = await resolveInstalledLocationsFromCompany(accessToken, companyId);
+      installedLocations = resolved.installedLocations;
+      debug.installedLocationsResponse = resolved.debug;
+      debug.locationResolutionSource = 'installedLocations';
+    }
     if (installedLocations.length === 1) {
       locationId = installedLocations[0].locationId;
     }
-    debug.installedLocationsResponse = resolved.debug;
   }
 
   return {
@@ -208,6 +291,8 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     companyId,
     userId,
     scopes,
+    tokenScope,
+    approvedLocations,
     installedLocations,
     _debug: debug,
   };
@@ -234,6 +319,7 @@ async function resolveInstalledLocationsFromCompany(
     } else {
       debug.missingAppId = true;
       logger.warn('GHL Marketplace appId is unavailable for installed-locations lookup');
+      return { installedLocations: [], debug };
     }
 
     const resolved = await fetchInstalledLocations(accessToken, params);
@@ -390,17 +476,17 @@ function normalizeInstalledLocationsResponse(data: any): InstalledLocation[] {
   const result: InstalledLocation[] = [];
 
   for (const item of raw) {
-    const locationId = String(
-      item?.locationId
-      || item?.location_id
-      || item?.id
-      || item?._id
-      || item?.location?.locationId
-      || item?.location?.location_id
-      || item?.location?.id
-      || item?.location?._id
-      || '',
-    ).trim();
+    const locationId = String(typeof item === 'string'
+      ? item
+      : item?.locationId
+        || item?.location_id
+        || item?.id
+        || item?._id
+        || item?.location?.locationId
+        || item?.location?.location_id
+        || item?.location?.id
+        || item?.location?._id
+        || '').trim();
 
     if (!locationId || seen.has(locationId)) continue;
     seen.add(locationId);
@@ -425,12 +511,177 @@ function arrayOrNull(value: unknown): any[] | null {
   return Array.isArray(value) ? value : null;
 }
 
+function tokenPairFromResponse(data: any, currentRefreshToken = ''): TokenPair {
+  const accessToken = String(data?.access_token || data?.accessToken || '').trim();
+  const refreshToken = String(data?.refresh_token || data?.refreshToken || currentRefreshToken || '').trim();
+  const expiresIn = Number(data?.expires_in || data?.expiresIn || 86400);
+  if (!accessToken || !refreshToken) {
+    throw new GHLApiError('Token refresh response did not include durable credentials');
+  }
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+    throw new GHLApiError('Token refresh response contained an invalid expiration');
+  }
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: new Date(Date.now() + expiresIn * 1000),
+  };
+}
+
+function assertReturnedTokenBinding(
+  data: any,
+  expectedScope: GhlTokenScope,
+  expectedLocationId = '',
+  expectedCompanyId = '',
+): void {
+  const returnedScope = String(data?.userType || data?.user_type || '').trim().toLowerCase();
+  const returnedLocationId = String(data?.locationId || data?.location_id || '').trim();
+  const returnedCompanyId = String(data?.companyId || data?.company_id || '').trim();
+
+  if (returnedScope !== expectedScope) {
+    throw new GHLApiError(
+      `Expected a ${expectedScope}-scoped token but GHL returned ${returnedScope || 'no token scope'}`,
+    );
+  }
+  if (expectedLocationId && returnedLocationId !== expectedLocationId) {
+    throw new GHLApiError('GHL returned a token for a different sub-account');
+  }
+  if (expectedScope === 'company' && expectedCompanyId && returnedCompanyId !== expectedCompanyId) {
+    throw new GHLApiError('GHL returned a token for a different agency');
+  }
+  if (expectedScope === 'location' && expectedCompanyId
+    && returnedCompanyId && returnedCompanyId !== expectedCompanyId) {
+    throw new GHLApiError('GHL returned a token for a different agency');
+  }
+}
+
+async function recoverConcurrentCompanyRefresh(
+  locationId: string,
+  companyId: string,
+  staleRefreshToken: string,
+): Promise<TokenPair | null> {
+  let result = await getSupabase()
+    .from('merchants')
+    .select('ghl_access_token, ghl_refresh_token, ghl_access_token_encrypted, ghl_refresh_token_encrypted, ghl_token_expires_at, company_id, config, status')
+    .eq('location_id', locationId)
+    .eq('status', 'active')
+    .single();
+
+  if (isMissingEncryptedTokenColumn(result.error)) {
+    result = await getSupabase()
+      .from('merchants')
+      .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config, status')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+  }
+  if (result.error || !result.data) return null;
+
+  const merchant: any = result.data;
+  const cfg = (merchant.config || {}) as Record<string, unknown>;
+  const configuredScope = String(cfg.ghl_token_scope || '').toLowerCase();
+  const boundCompanyId = String(cfg.ghl_token_company_id || '').trim();
+  if (configuredScope === 'location') return null;
+  if (companyId && merchant.company_id && merchant.company_id !== companyId) return null;
+  if (companyId && boundCompanyId && boundCompanyId !== companyId) return null;
+
+  const accessToken = readEncryptedToken(
+    merchant.ghl_access_token_encrypted,
+    merchant.ghl_access_token,
+  );
+  const refreshToken = readEncryptedToken(
+    merchant.ghl_refresh_token_encrypted,
+    merchant.ghl_refresh_token,
+  );
+  const expiresAt = merchant.ghl_token_expires_at
+    ? new Date(merchant.ghl_token_expires_at)
+    : null;
+  if (!accessToken || !refreshToken || refreshToken === staleRefreshToken
+    || !expiresAt || !Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) {
+    return null;
+  }
+
+  logger.info({ locationId, companyId }, 'Using company credentials rotated by another instance');
+  return { accessToken, refreshToken, expiresAt };
+}
+
 /**
  * Refresh an expired Company-level access token.
  * Updates the company tokens in the merchants table.
  */
-async function refreshCompanyToken(locationId: string, currentRefreshToken: string): Promise<TokenPair> {
+async function refreshCompanyToken(
+  locationId: string,
+  currentRefreshToken: string,
+  companyId = '',
+): Promise<TokenPair> {
+  if (!currentRefreshToken) throw new GHLApiError('Missing GHL company refresh token');
   logger.info('Refreshing GHL company access token');
+  let res;
+  try {
+    res = await axios.post(TOKEN_URL, new URLSearchParams({
+      client_id: config.ghl.clientId,
+      client_secret: config.ghl.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: currentRefreshToken,
+    }).toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+  } catch (err) {
+    // Company refresh tokens rotate. Two Railway instances can notice expiry
+    // together; the loser reloads the winner's persisted credentials instead
+    // of failing every sibling sub-account that shared the old refresh token.
+    const recovered = await recoverConcurrentCompanyRefresh(locationId, companyId, currentRefreshToken);
+    if (recovered) return recovered;
+    throw err;
+  }
+
+  logger.info({
+    locationId,
+    userType: res.data.userType,
+    locationIdReturned: res.data.locationId,
+    companyIdReturned: res.data.companyId,
+  }, 'GHL company token refresh response');
+
+  assertReturnedTokenBinding(res.data, 'company', '', companyId);
+  const tokens = tokenPairFromResponse(res.data, currentRefreshToken);
+
+  // A company refresh token is shared by every approved sub-account row. GHL
+  // rotates refresh tokens, so persisting only the row that noticed expiry
+  // strands every sibling location with the now-invalid prior token.
+  await persistCredentialRotation(
+    async () => {
+      let updateQuery: any = getSupabase()
+        .from('merchants')
+        .update({
+          ghl_access_token: null,
+          ghl_refresh_token: null,
+          ghl_access_token_encrypted: encrypt(tokens.accessToken),
+          ghl_refresh_token_encrypted: encrypt(tokens.refreshToken),
+          ghl_token_expires_at: tokens.expiresAt.toISOString(),
+        });
+      updateQuery = companyId
+        ? updateQuery
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          // A company can contain both bulk-installed company authorizations and
+          // directly installed location authorizations. Never overwrite the latter.
+          .or('config->>ghl_token_scope.eq.company,config->>ghl_token_scope.is.null')
+        : updateQuery.eq('location_id', locationId).eq('status', 'active');
+      return updateQuery.select('location_id');
+    },
+    (rows) => Array.isArray(rows) && rows.length > 0,
+    'Persisting refreshed GHL company credentials',
+  );
+
+  return tokens;
+}
+
+async function refreshPrimaryLocationToken(
+  locationId: string,
+  currentRefreshToken: string,
+): Promise<TokenPair> {
+  if (!currentRefreshToken) throw new GHLApiError('Missing GHL location refresh token');
+  logger.info({ locationId }, 'Refreshing primary GHL location access token');
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
     client_secret: config.ghl.clientSecret,
@@ -440,35 +691,25 @@ async function refreshCompanyToken(locationId: string, currentRefreshToken: stri
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 
-  logger.info({
-    locationId,
-    userType: res.data.userType,
-    locationIdReturned: res.data.locationId,
-    companyIdReturned: res.data.companyId,
-  }, 'GHL company token refresh response');
-
-  const tokens: TokenPair = {
-    accessToken: res.data.access_token,
-    refreshToken: res.data.refresh_token,
-    expiresAt: new Date(Date.now() + res.data.expires_in * 1000),
-  };
-
-  // Persist new company tokens
-  const { error } = await getSupabase()
-    .from('merchants')
-    .update({
-      ghl_access_token: null,
-      ghl_refresh_token: null,
-      ghl_access_token_encrypted: encrypt(tokens.accessToken),
-      ghl_refresh_token_encrypted: encrypt(tokens.refreshToken),
-      ghl_token_expires_at: tokens.expiresAt.toISOString(),
-    })
-    .eq('location_id', locationId);
-
-  if (error) {
-    logger.error({ error }, 'Failed to persist refreshed company tokens');
-  }
-
+  assertReturnedTokenBinding(res.data, 'location', locationId);
+  const tokens = tokenPairFromResponse(res.data, currentRefreshToken);
+  await persistCredentialRotation(
+    () => getSupabase()
+      .from('merchants')
+      .update({
+        ghl_access_token: null,
+        ghl_refresh_token: null,
+        ghl_access_token_encrypted: encrypt(tokens.accessToken),
+        ghl_refresh_token_encrypted: encrypt(tokens.refreshToken),
+        ghl_token_expires_at: tokens.expiresAt.toISOString(),
+      })
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .select('location_id')
+      .maybeSingle(),
+    (row) => Boolean(row),
+    'Persisting refreshed GHL location credentials',
+  );
   return tokens;
 }
 
@@ -477,6 +718,7 @@ async function refreshLocationToken(
   currentRefreshToken: string,
   existingConfig: Record<string, unknown>,
 ): Promise<TokenPair> {
+  if (!currentRefreshToken) throw new GHLApiError('Missing GHL location refresh token');
   logger.info({ locationId }, 'Refreshing GHL location access token');
   const res = await axios.post(TOKEN_URL, new URLSearchParams({
     client_id: config.ghl.clientId,
@@ -487,29 +729,29 @@ async function refreshLocationToken(
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 
-  const tokens: TokenPair = {
-    accessToken: res.data.access_token,
-    refreshToken: res.data.refresh_token || currentRefreshToken,
-    expiresAt: new Date(Date.now() + (res.data.expires_in || 86400) * 1000),
-  };
+  assertReturnedTokenBinding(res.data, 'location', locationId);
+  const tokens = tokenPairFromResponse(res.data, currentRefreshToken);
 
-  const { error } = await getSupabase()
-    .from('merchants')
-    .update({
-      config: {
-        ...existingConfig,
-        location_access_token: null,
-        location_refresh_token: null,
-        location_access_token_encrypted: encrypt(tokens.accessToken),
-        location_refresh_token_encrypted: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
-        location_token_expires_at: tokens.expiresAt.toISOString(),
-      },
-    })
-    .eq('location_id', locationId);
-
-  if (error) {
-    logger.error({ error }, 'Failed to persist refreshed location token');
-  }
+  await persistCredentialRotation(
+    () => getSupabase()
+      .from('merchants')
+      .update({
+        config: {
+          ...existingConfig,
+          location_access_token: null,
+          location_refresh_token: null,
+          location_access_token_encrypted: encrypt(tokens.accessToken),
+          location_refresh_token_encrypted: encrypt(tokens.refreshToken),
+          location_token_expires_at: tokens.expiresAt.toISOString(),
+        },
+      })
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .select('location_id')
+      .maybeSingle(),
+    (row) => Boolean(row),
+    'Persisting refreshed GHL child-location credentials',
+  );
 
   return tokens;
 }
@@ -565,22 +807,23 @@ async function getLocationToken(
     responseKeys: Object.keys(data),
   }, 'Location token obtained');
 
-  const tokens: TokenPair = {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token || '',
-    expiresAt: new Date(Date.now() + (data.expires_in || 86400) * 1000),
-  };
+  assertReturnedTokenBinding(data, 'location', locationId, companyId);
+  const tokens = tokenPairFromResponse(data);
 
   // Store location token in config JSONB
-  try {
-    const { data: current } = await getSupabase()
+  const currentMerchant = await persistCredentialRotation(
+    () => getSupabase()
       .from('merchants')
       .select('config')
       .eq('location_id', locationId)
-      .single();
+      .single(),
+    (row) => Boolean(row),
+    'Loading merchant for new GHL child-location credentials',
+  );
 
-    const existingConfig = ((current?.config || {}) as Record<string, unknown>);
-    await getSupabase()
+  const existingConfig = (((currentMerchant as any).config || {}) as Record<string, unknown>);
+  await persistCredentialRotation(
+    () => getSupabase()
       .from('merchants')
       .update({
         config: {
@@ -588,14 +831,17 @@ async function getLocationToken(
           location_access_token: null,
           location_refresh_token: null,
           location_access_token_encrypted: encrypt(tokens.accessToken),
-          location_refresh_token_encrypted: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
+          location_refresh_token_encrypted: encrypt(tokens.refreshToken),
           location_token_expires_at: tokens.expiresAt.toISOString(),
         },
       })
-      .eq('location_id', locationId);
-  } catch (err) {
-    logger.error({ err }, 'Failed to persist location token');
-  }
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .select('location_id')
+      .maybeSingle(),
+    (row) => Boolean(row),
+    'Persisting new GHL child-location credentials',
+  );
 
   return tokens;
 }
@@ -615,7 +861,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
   const merchantResult = await supabase
     .from('merchants')
-    .select('ghl_access_token, ghl_refresh_token, ghl_access_token_encrypted, ghl_refresh_token_encrypted, ghl_token_expires_at, company_id, config')
+    .select('ghl_access_token, ghl_refresh_token, ghl_access_token_encrypted, ghl_refresh_token_encrypted, ghl_token_expires_at, company_id, config, status')
     .eq('location_id', locationId)
     .single();
   let merchant: any = merchantResult.data;
@@ -628,7 +874,7 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     );
     const legacyResult = await supabase
       .from('merchants')
-      .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config')
+      .select('ghl_access_token, ghl_refresh_token, ghl_token_expires_at, company_id, config, status')
       .eq('location_id', locationId)
       .single();
     merchant = legacyResult.data;
@@ -637,6 +883,9 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
 
   if (error || !merchant) {
     throw new GHLApiError(`Merchant not found: ${locationId}`);
+  }
+  if (merchant.status !== 'active') {
+    throw new GHLApiError(`ScaleSafe is not actively installed for merchant: ${locationId}`);
   }
 
   const companyId = (merchant as any).company_id || '';
@@ -649,61 +898,93 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
     (merchant as any).ghl_refresh_token_encrypted,
     (merchant as any).ghl_refresh_token,
   );
-
-  // Determine if we need a location token exchange
-  let accessToken = '';
-  const locationTokenExpiry = cfg.location_token_expires_at
-    ? new Date(cfg.location_token_expires_at as string)
-    : null;
-  const locationTokenValid = locationTokenExpiry && locationTokenExpiry > new Date();
-
-  const cachedLocationAccessToken = readConfigToken(cfg, 'location_access_token_encrypted', 'location_access_token');
-  const cachedLocationRefreshToken = readConfigToken(cfg, 'location_refresh_token_encrypted', 'location_refresh_token');
-  if (locationTokenValid && cachedLocationAccessToken) {
-    // Use cached location token
-    accessToken = cachedLocationAccessToken;
-  } else if (cachedLocationRefreshToken) {
-    try {
-      const refreshedLocation = await refreshLocationToken(locationId, cachedLocationRefreshToken, cfg);
-      accessToken = refreshedLocation.accessToken;
-    } catch (err: any) {
-      logger.warn(
-        { err: err?.message || String(err), status: err?.response?.status, locationId },
-        'GHL location token refresh failed; trying company token path',
-      );
-    }
+  const configuredScope = String(cfg.ghl_token_scope || '').toLowerCase();
+  const tokenScope: GhlTokenScope = configuredScope === 'location'
+    ? 'location'
+    : configuredScope === 'company'
+      ? 'company'
+      : inferLegacyTokenScope(storedAccessToken, cfg);
+  if (!configuredScope) {
+    logger.warn({ locationId, inferredTokenScope: tokenScope }, 'Using inferred scope for legacy GHL OAuth credentials');
   }
+  const boundLocationId = String(cfg.ghl_token_location_id || '').trim();
+  const boundCompanyId = String(cfg.ghl_token_company_id || '').trim();
+  if (tokenScope === 'location' && boundLocationId && boundLocationId !== locationId) {
+    throw new GHLApiError('Stored GHL token is bound to a different sub-account');
+  }
+  if (tokenScope === 'company' && boundCompanyId && companyId && boundCompanyId !== companyId) {
+    throw new GHLApiError('Stored GHL token is bound to a different agency');
+  }
+  let primaryRefreshToken = storedRefreshToken;
 
-  if (!accessToken && companyId) {
-    // Need to get a location token from company token
-    let companyAccessToken = storedAccessToken;
+  let accessToken = '';
+  let cachedLocationRefreshToken = '';
+  let companyAccessToken = tokenScope === 'company' ? storedAccessToken : '';
 
-    // Check if company token is expired and refresh if needed
-    const companyExpiry = merchant.ghl_token_expires_at
-      ? new Date(merchant.ghl_token_expires_at)
+  if (tokenScope === 'company') {
+    if (!companyId) throw new GHLApiError(`Missing GHL company binding for merchant: ${locationId}`);
+    const locationTokenExpiry = cfg.location_token_expires_at
+      ? new Date(cfg.location_token_expires_at as string)
       : null;
-    if (companyExpiry && companyExpiry <= new Date()) {
+    const locationTokenValid = locationTokenExpiry
+      && Number.isFinite(locationTokenExpiry.getTime())
+      && locationTokenExpiry > new Date();
+    const cachedLocationAccessToken = readConfigToken(cfg, 'location_access_token_encrypted', 'location_access_token');
+    cachedLocationRefreshToken = readConfigToken(cfg, 'location_refresh_token_encrypted', 'location_refresh_token');
+
+    if (locationTokenValid && cachedLocationAccessToken) {
+      accessToken = cachedLocationAccessToken;
+    } else if (cachedLocationRefreshToken) {
       try {
-        const refreshed = await refreshCompanyToken(locationId, storedRefreshToken);
-        companyAccessToken = refreshed.accessToken;
+        const refreshedLocation = await refreshLocationToken(locationId, cachedLocationRefreshToken, cfg);
+        accessToken = refreshedLocation.accessToken;
+        cachedLocationRefreshToken = refreshedLocation.refreshToken;
       } catch (err: any) {
-        logger.error({ err: err.message }, 'Failed to refresh company token');
-        throw new GHLApiError(`Company token refresh failed: ${err.message}`);
+        logger.warn(
+          { err: err?.message || String(err), status: err?.response?.status, locationId },
+          'GHL location token refresh failed; exchanging the company token again',
+        );
       }
     }
 
-    // Exchange company token for location token
-    try {
-      const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
-      accessToken = locationTokens.accessToken;
-    } catch (err: any) {
-      logger.error({ err: err.message }, 'Failed to get location token');
-      // Fall back to company token: some endpoints may work.
-      accessToken = companyAccessToken;
+    if (!accessToken) {
+      const companyExpiry = merchant.ghl_token_expires_at
+        ? new Date(merchant.ghl_token_expires_at)
+        : null;
+      if (companyExpiry && Number.isFinite(companyExpiry.getTime()) && companyExpiry <= new Date()) {
+        try {
+          const refreshed = await refreshCompanyToken(locationId, storedRefreshToken, companyId);
+          companyAccessToken = refreshed.accessToken;
+          primaryRefreshToken = refreshed.refreshToken;
+        } catch (err: any) {
+          logger.error({ err: err.message, locationId, companyId }, 'Failed to refresh company token');
+          throw new GHLApiError(`Company token refresh failed: ${err.message}`);
+        }
+      }
+      if (!companyAccessToken) throw new GHLApiError(`Missing GHL company access token for merchant: ${locationId}`);
+
+      try {
+        const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
+        accessToken = locationTokens.accessToken;
+        cachedLocationRefreshToken = locationTokens.refreshToken;
+      } catch (err: any) {
+        // A company token is never used directly for a location API call. That
+        // fallback made a failed location binding look healthy and could query
+        // an agency-wide surface with ambiguous tenant semantics.
+        logger.error({ err: err.message, locationId, companyId }, 'Failed to obtain tenant-bound GHL location token');
+        throw new GHLApiError(`Location token exchange failed: ${err.message}`);
+      }
     }
-  } else if (!accessToken) {
-    // No companyId: use the stored token directly for Location-level installs.
+  } else {
     accessToken = storedAccessToken;
+    const primaryExpiry = merchant.ghl_token_expires_at
+      ? new Date(merchant.ghl_token_expires_at)
+      : null;
+    if (primaryExpiry && Number.isFinite(primaryExpiry.getTime()) && primaryExpiry <= new Date()) {
+      const refreshed = await refreshPrimaryLocationToken(locationId, primaryRefreshToken);
+      accessToken = refreshed.accessToken;
+      primaryRefreshToken = refreshed.refreshToken;
+    }
   }
 
   if (!accessToken) {
@@ -758,18 +1039,41 @@ export async function ghlApi(locationId: string): Promise<AxiosInstance> {
         logger.info('GHL token rejected, refreshing');
 
         try {
-          if (cachedLocationRefreshToken) {
-            const locationTokens = await refreshLocationToken(locationId, cachedLocationRefreshToken, cfg);
-            accessToken = locationTokens.accessToken;
-          } else {
-            const refreshed = await refreshCompanyToken(locationId, storedRefreshToken);
-
-            if (companyId) {
-              const locationTokens = await getLocationToken(refreshed.accessToken, companyId, locationId);
+          if (tokenScope === 'company' && cachedLocationRefreshToken) {
+            try {
+              const locationTokens = await refreshLocationToken(locationId, cachedLocationRefreshToken, cfg);
               accessToken = locationTokens.accessToken;
-            } else {
-              accessToken = refreshed.accessToken;
+              cachedLocationRefreshToken = locationTokens.refreshToken;
+            } catch (locationRefreshError: any) {
+              logger.warn(
+                { err: locationRefreshError.message, locationId },
+                'Rejected cached location refresh; minting a new location token from company authorization',
+              );
+              cachedLocationRefreshToken = '';
+              try {
+                const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
+                accessToken = locationTokens.accessToken;
+                cachedLocationRefreshToken = locationTokens.refreshToken;
+              } catch {
+                const refreshed = await refreshCompanyToken(locationId, primaryRefreshToken, companyId);
+                primaryRefreshToken = refreshed.refreshToken;
+                companyAccessToken = refreshed.accessToken;
+                const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
+                accessToken = locationTokens.accessToken;
+                cachedLocationRefreshToken = locationTokens.refreshToken;
+              }
             }
+          } else if (tokenScope === 'company') {
+            const refreshed = await refreshCompanyToken(locationId, primaryRefreshToken, companyId);
+            primaryRefreshToken = refreshed.refreshToken;
+            companyAccessToken = refreshed.accessToken;
+            const locationTokens = await getLocationToken(companyAccessToken, companyId, locationId);
+            accessToken = locationTokens.accessToken;
+            cachedLocationRefreshToken = locationTokens.refreshToken;
+          } else {
+            const refreshed = await refreshPrimaryLocationToken(locationId, primaryRefreshToken);
+            accessToken = refreshed.accessToken;
+            primaryRefreshToken = refreshed.refreshToken;
           }
 
           original.headers = { ...original.headers, Authorization: `Bearer ${accessToken}` };

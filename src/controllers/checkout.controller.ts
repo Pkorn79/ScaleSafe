@@ -15,9 +15,9 @@ import { whopService } from '../services/whop.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import { checkoutCartService, CheckoutCartQuote } from '../services/checkout-cart.service';
 import { turnstileService } from '../services/turnstile.service';
-import { idempotencyRepository } from '../repositories/idempotency.repository';
 import crypto from 'crypto';
 import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
+import { moneyOperationService } from '../services/money-operation.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -131,8 +131,6 @@ async function fireCheckoutPaymentFailedTrigger(params: {
   }
 }
 
-const inFlightCheckoutPayments = new Set<string>();
-
 function paymentAttemptKey(parts: Array<string | number | null | undefined>): string {
   return crypto
     .createHash('sha256')
@@ -140,14 +138,8 @@ function paymentAttemptKey(parts: Array<string | number | null | undefined>): st
     .digest('hex');
 }
 
-function claimPaymentAttempt(key: string): boolean {
-  if (inFlightCheckoutPayments.has(key)) return false;
-  inFlightCheckoutPayments.add(key);
-  return true;
-}
-
-function releasePaymentAttempt(key: string): void {
-  if (key) inFlightCheckoutPayments.delete(key);
+function isUnknownStripeSubscriptionResult(err: any): boolean {
+  return err?.processor === 'stripe' && err?.code === 'STRIPE_SUBSCRIPTION_RESULT_UNKNOWN';
 }
 
 export async function getCheckoutQuote(req: Request, res: Response): Promise<void> {
@@ -185,10 +177,14 @@ export async function getCheckoutQuote(req: Request, res: Response): Promise<voi
 }
 
 export async function createStripeAchPaymentIntent(req: Request, res: Response): Promise<void> {
+  let achOperation: Awaited<ReturnType<typeof moneyOperationService.begin>> | null = null;
+  let providerCallStarted = false;
+  let providerAccepted = false;
   try {
     const {
       offerId, amount, currency, consentToken, contactId, contactEmail, contactName,
       paymentChoice, checkoutMode, publishableKey, selectedAddonIds, evidenceContextToken,
+      paymentAttemptId,
     } = req.body || {};
     if (!offerId || !amount || !contactEmail || !contactName) {
       res.status(400).json({ success: false, error: 'offerId, amount, contactName, and contactEmail are required' });
@@ -204,8 +200,6 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       res.status(400).json({ success: false, error: 'This offer uses Whop checkout.' });
       return;
     }
-    await turnstileService.verifyForOffer(req, offer);
-
     const normalizedCurrency = String(currency || 'usd').toLowerCase();
     if (normalizedCurrency !== 'usd') {
       res.status(400).json({ success: false, error: 'Invalid currency' });
@@ -218,6 +212,11 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
     const submittedAmount = Number(amount);
     if (!Number.isFinite(submittedAmount) || submittedAmount <= 0 || submittedAmount > 99999999) {
       res.status(400).json({ success: false, error: 'Invalid amount' });
+      return;
+    }
+    const normalizedPaymentAttemptId = String(paymentAttemptId || '').trim();
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(normalizedPaymentAttemptId)) {
+      res.status(400).json({ success: false, error: 'A valid paymentAttemptId is required' });
       return;
     }
 
@@ -250,10 +249,11 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
     }
 
     let consentEnrollmentId = '';
+    let boundPaymentChoice = normalizedChoice;
     if (consentToken) {
       const { data: enrollment } = await getSupabase()
         .from('enrollments')
-        .select('id, location_id')
+        .select('id, location_id, offer_id, payment_type')
         .eq('consent_token', consentToken)
         .eq('location_id', offer.location_id)
         .maybeSingle();
@@ -261,8 +261,55 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
         res.status(400).json({ success: false, error: 'Consent verification failed. Please complete the enrollment process.' });
         return;
       }
+      const storedPaymentChoice = enrollment.payment_type
+        ? normalizePaymentType(String(enrollment.payment_type))
+        : '';
+      if (
+        String(enrollment.offer_id || '') !== String(offer.id)
+        || !storedPaymentChoice
+        || storedPaymentChoice !== normalizedChoice
+      ) {
+        res.status(400).json({ success: false, error: 'Consent does not match the selected offer or payment option.' });
+        return;
+      }
       consentEnrollmentId = enrollment.id;
+      boundPaymentChoice = storedPaymentChoice;
     }
+
+    const achAttemptKey = paymentAttemptKey([offer.location_id, normalizedPaymentAttemptId]);
+    achOperation = await moneyOperationService.begin({
+      locationId: offer.location_id,
+      merchantId: merchantRow.id,
+      operationType: 'checkout_ach_intent',
+      operationKey: achAttemptKey,
+      request: {
+        offerId: offer.id,
+        amountCents: submittedAmount,
+        currency: normalizedCurrency,
+        contactId: String(contactId || ''),
+        contactEmail: String(contactEmail).trim().toLowerCase(),
+        paymentChoice: boundPaymentChoice,
+        selectedAddonIds: cartSelectedAddonIds,
+        checkoutMode: String(checkoutMode || 'checkout'),
+        evidenceContextFingerprint: evidenceContextToken ? paymentAttemptKey([evidenceContextToken]) : null,
+        paymentAttemptId: normalizedPaymentAttemptId,
+      },
+    });
+    if (achOperation.action === 'replay') {
+      res.json(achOperation.response);
+      return;
+    }
+    if (achOperation.action === 'blocked') {
+      res.status(409).json({
+        success: false,
+        error: achOperation.operation.status === 'provider_accepted' || achOperation.operation.status === 'unknown'
+          ? 'Bank payment setup was submitted and is awaiting reconciliation. Do not submit it again.'
+          : 'Bank payment setup is already processing. Please wait.',
+      });
+      return;
+    }
+
+    await turnstileService.verifyForOffer(req, offer);
 
     let contextEnrollmentId = '';
     let evidenceContextId = '';
@@ -299,6 +346,12 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
 
     const stripeClient = createProcessorClient(procConfig) as any;
     const nameParts = String(contactName || '').trim().split(/\s+/);
+    await moneyOperationService.markProviderStarted({
+      id: achOperation.operation.id,
+      locationId: offer.location_id,
+      processorType: 'stripe',
+    });
+    providerCallStarted = true;
     const intent = await stripeClient.createAchPaymentIntent({
       amount: submittedAmount,
       currency: normalizedCurrency,
@@ -321,11 +374,33 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
         customer_email: String(contactEmail),
         first_name: nameParts[0] || '',
         last_name: nameParts.slice(1).join(' '),
-        payment_choice: normalizedChoice,
+        payment_choice: boundPaymentChoice,
         payment_method: 'ach',
       },
       setupFutureUsage: isRecurringPaymentType,
+      idempotencyKey: `checkout-ach-${achAttemptKey}`,
     });
+    await moneyOperationService.markProviderAccepted({
+      id: achOperation.operation.id,
+      locationId: offer.location_id,
+      processorType: 'stripe',
+      processorReference: intent.paymentIntentId,
+      response: { paymentIntentId: intent.paymentIntentId, status: intent.status },
+      reconciliationPayload: {
+        enrollmentId: contextEnrollmentId || consentEnrollmentId || null,
+        contactId: resolvedContextContactId || String(contactId || ''),
+        contactEmail: String(contactEmail).trim().toLowerCase(),
+        clientResponse: {
+          success: true,
+          clientSecret: intent.clientSecret,
+          paymentIntentId: intent.paymentIntentId,
+          status: intent.status,
+          stripeAccountId: intent.stripeAccountId,
+          stripePublishableKey: config.stripe.publishableKey,
+        },
+      },
+    });
+    providerAccepted = true;
 
     if (contextEnrollmentId && resolvedContextContactId) {
       const { error: contextContactError } = await getSupabase().from('enrollments').update({
@@ -334,18 +409,48 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       }).eq('id', contextEnrollmentId).eq('location_id', offer.location_id);
       if (contextContactError) {
         logger.error({ err: contextContactError.message, contextEnrollmentId }, 'Stripe ACH context contact binding failed after intent creation');
+        throw contextContactError;
       }
     }
 
-    res.json({
+    const response = {
       success: true,
       clientSecret: intent.clientSecret,
       paymentIntentId: intent.paymentIntentId,
       status: intent.status,
       stripeAccountId: intent.stripeAccountId,
       stripePublishableKey: config.stripe.publishableKey,
+    };
+    await moneyOperationService.markRecorded({
+      id: achOperation.operation.id,
+      locationId: offer.location_id,
+      response,
+      processorType: 'stripe',
+      processorReference: intent.paymentIntentId,
+      providerCalled: true,
     });
+    res.json(response);
   } catch (err: any) {
+    if (achOperation?.action === 'execute' && !providerAccepted) {
+      try {
+        if (providerCallStarted) {
+          await moneyOperationService.markUnknown({
+            id: achOperation.operation.id,
+            locationId: achOperation.operation.location_id,
+            processorType: 'stripe',
+            error: err.message || 'Stripe ACH intent result is unknown',
+          });
+        } else {
+          await moneyOperationService.markFailedBeforeProvider({
+            id: achOperation.operation.id,
+            locationId: achOperation.operation.location_id,
+            error: err.message || 'Stripe ACH setup failed before processor call',
+          });
+        }
+      } catch (operationError: any) {
+        logger.error({ err: operationError.message }, 'Failed to persist Stripe ACH operation failure state');
+      }
+    }
     logger.error({ err: err.message }, 'Stripe ACH payment intent creation failed');
     res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Stripe ACH setup failed' });
   }
@@ -612,7 +717,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     offerId, ghlProductId, consentToken, saveCard,
     deviceFingerprint, browserInfo,
     productDetails, requestThreeDSecure, selectedAddonIds,
-    evidenceContextToken,
+    evidenceContextToken, paymentAttemptId,
   } = req.body;
 
   if (!paymentToken || !amount) {
@@ -638,6 +743,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
   if (typeof paymentToken !== 'string' || paymentToken.length < 3) {
     res.status(400).json({ success: false, error: 'Invalid payment token' });
+    return;
+  }
+
+  const normalizedPaymentAttemptId = String(paymentAttemptId || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(normalizedPaymentAttemptId)) {
+    res.status(400).json({ success: false, error: 'A valid paymentAttemptId is required' });
     return;
   }
 
@@ -685,10 +796,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
   // Verify consent token if present
   let consentEnrollmentId = '';
+  let boundPaymentChoice = String(req.body.paymentChoice || '');
   if (consentToken) {
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, status')
+      .select('id, status, offer_id, payment_type')
       .eq('consent_token', consentToken)
       .eq('location_id', merchant.locationId)
       .single();
@@ -697,7 +809,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       res.status(400).json({ success: false, error: 'Consent verification failed. Please complete the enrollment process.' });
       return;
     }
+    const storedPaymentChoice = enrollment.payment_type
+      ? normalizePaymentType(String(enrollment.payment_type))
+      : '';
+    if (
+      !offerId
+      || String(enrollment.offer_id || '') !== String(offerId)
+      || !storedPaymentChoice
+      || storedPaymentChoice !== normalizePaymentType(String(req.body.paymentChoice || ''))
+    ) {
+      res.status(400).json({ success: false, error: 'Consent does not match the selected offer or payment option.' });
+      return;
+    }
     consentEnrollmentId = enrollment.id;
+    boundPaymentChoice = storedPaymentChoice;
   }
 
   let contextEnrollmentId = '';
@@ -725,7 +850,6 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
   }
 
-  let claimedPaymentAttemptKey = '';
   let cartQuote: CheckoutCartQuote | null = null;
   try {
     // Resolve offer hint for per-offer processor override
@@ -756,14 +880,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       });
       return;
     }
-    await turnstileService.verifyForOffer(req, resolvedOffer);
-
     const paymentMethod = req.body.paymentMethod === 'ach' ? 'ach' : 'card';
     if (resolvedOffer) {
       const cartSelectedAddonIds = consentToken
         ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
         : checkoutCartService.normalizeAddonIds(selectedAddonIds);
-      cartQuote = await checkoutCartService.quoteOffer(resolvedOffer, cartSelectedAddonIds, req.body.paymentChoice, paymentMethod);
+      cartQuote = await checkoutCartService.quoteOffer(resolvedOffer, cartSelectedAddonIds, boundPaymentChoice, paymentMethod);
       if (cartQuote.selectedAmountCents > 0 && cartQuote.selectedAmountCents !== amount) {
         logger.warn({
           offerId: resolvedOffer.id,
@@ -791,7 +913,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     // - NMI: tokens are single-use, must vault atomically (customer_vault=add_customer)
     // - Stripe: setup_future_usage='off_session' saves card for recurring
     const isRecurringPaymentType = ['installments', 'installment', 'subscription']
-      .includes(String(req.body.paymentChoice || '').toLowerCase());
+      .includes(String(boundPaymentChoice || '').toLowerCase());
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
       res.status(400).json({
         success: false,
@@ -804,26 +926,65 @@ export async function processPayment(req: Request, res: Response): Promise<void>
 
     const checkoutAttemptKey = paymentAttemptKey([
       merchant.locationId,
-      offerId || ghlProductId || '',
-      consentToken || '',
-      evidenceContextId || '',
-      contactId || contactEmail || '',
-      paymentToken,
-      amount,
-      paymentMethod,
-      req.body.paymentChoice || '',
+      normalizedPaymentAttemptId,
     ]);
-    if (await idempotencyRepository.isDuplicate(checkoutAttemptKey, 'checkout_payment', merchant.locationId)) {
-      res.status(409).json({ success: false, error: 'Payment is already processing. Please wait.' });
+    const moneyOperation = await moneyOperationService.begin({
+      locationId: merchant.locationId,
+      merchantId: merchant.merchantId,
+      operationType: 'checkout_charge',
+      operationKey: checkoutAttemptKey,
+      request: {
+        offerId: offerId || null,
+        ghlProductId: ghlProductId || null,
+        consentTokenFingerprint: consentToken ? paymentAttemptKey([consentToken]) : null,
+        evidenceContextId: evidenceContextId || null,
+        enrollmentId: contextEnrollmentId || consentEnrollmentId || null,
+        contactId: contactId || null,
+        contactEmail: contactEmail || null,
+        amountCents: amount,
+        currency: normalizedCurrency,
+        paymentMethod,
+        paymentChoice: boundPaymentChoice || null,
+        paymentAttemptId: normalizedPaymentAttemptId,
+        ghlTransactionId: transactionId || null,
+        ghlOrderId: orderId || null,
+        ghlSubscriptionId: subscriptionId || null,
+        lineItems: cartQuote?.lineItems || [],
+      },
+    });
+    if (moneyOperation.action === 'replay') {
+      res.json(moneyOperation.response);
       return;
     }
-    if (!claimPaymentAttempt(checkoutAttemptKey)) {
-      res.status(409).json({ success: false, error: 'Payment is already processing. Please wait.' });
+    if (moneyOperation.action === 'blocked') {
+      res.status(409).json({
+        success: false,
+        error: moneyOperation.operation.status === 'provider_accepted' || moneyOperation.operation.status === 'unknown'
+          ? 'Payment was submitted and is awaiting reconciliation. Do not submit it again.'
+          : 'Payment is already processing. Please wait.',
+      });
       return;
     }
-    claimedPaymentAttemptKey = checkoutAttemptKey;
 
-    const result = await processor.charge({
+    try {
+      await turnstileService.verifyForOffer(req, resolvedOffer);
+    } catch (turnstileError: any) {
+      await moneyOperationService.markFailedBeforeProvider({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        error: turnstileError.message || 'Security check failed before processor call',
+      });
+      throw turnstileError;
+    }
+
+    let result;
+    try {
+      await moneyOperationService.markProviderStarted({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        processorType: procConfig.processor_type,
+      });
+      result = await processor.charge({
       amount,
       currency: normalizedCurrency,
       paymentToken,
@@ -859,7 +1020,41 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       shouldVault: shouldVaultDuringCharge,
       customerEmail: shouldVaultDuringCharge ? contactEmail : undefined,
       customerName: shouldVaultDuringCharge ? contactName : undefined,
-    });
+      idempotencyKey: `checkout-${checkoutAttemptKey}`,
+      });
+    } catch (chargeErr: any) {
+      await moneyOperationService.markUnknown({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        processorType: procConfig.processor_type,
+        error: chargeErr.message || 'Processor result is unknown',
+      });
+      throw chargeErr;
+    }
+
+    if (result.success) {
+      await moneyOperationService.markProviderAccepted({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        processorType: procConfig.processor_type,
+        processorReference: result.transactionId || result.chargeId || null,
+        response: {
+          success: true,
+          chargeId: result.chargeId || result.transactionId || null,
+          paymentStatus: result.status === 'processing' ? 'processing' : 'succeeded',
+        },
+        reconciliationPayload: {
+          transactionId: result.transactionId || result.chargeId || null,
+          chargeId: result.chargeId || result.transactionId || null,
+          status: result.status,
+          vaultedCustomerId: result.vaultedCustomerId || null,
+          vaultedCardLastFour: result.vaultedCardLastFour || null,
+          vaultedCardBrand: result.vaultedCardBrand || null,
+          vaultedCardExpMonth: result.vaultedCardExpMonth || null,
+          vaultedCardExpYear: result.vaultedCardExpYear || null,
+        },
+      });
+    }
 
     const paymentSettled = result.success && result.status !== 'processing';
     const paymentProcessing = result.success && result.status === 'processing';
@@ -874,11 +1069,12 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     let finalContactId = contactId || '';
     let finalEnrollmentId = contextEnrollmentId;
     let recurringSubscriptionId = '';
+    let recurringNextBillingDate = '';
     let billingSetupIssue: BillingSetupIssue | null = null;
 
     // Create transaction mapping
     if (transactionId || orderId) {
-      await supabase.from('transaction_mappings').insert({
+      const { error: mappingError } = await supabase.from('transaction_mappings').insert({
         merchant_id: merchant.merchantId,
         location_id: merchant.locationId,
         ghl_transaction_id: transactionId || null,
@@ -889,16 +1085,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         processor_type: procConfig.processor_type,
         contact_id: contactId,
       });
+      if (mappingError) throw new Error(`Payment succeeded, but transaction mapping failed: ${mappingError.message}`);
     }
 
     // Log payment event
     const enrollmentLookup = consentToken
-      ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('consent_token', consentToken).single()
+      ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('consent_token', consentToken).eq('location_id', merchant.locationId).single()
       : contextEnrollmentId
         ? await supabase.from('enrollments').select('id, offer_id, contact_id').eq('id', contextEnrollmentId).eq('location_id', merchant.locationId).single()
         : null;
+    if (enrollmentLookup?.error) {
+      throw new Error(`Payment succeeded, but enrollment lookup failed: ${enrollmentLookup.error.message}`);
+    }
 
-    await supabase.from('payment_events').insert({
+    const { error: paymentEventError } = await supabase.from('payment_events').insert({
       merchant_id: merchant.merchantId,
       location_id: merchant.locationId,
       contact_id: contactId || '',
@@ -922,6 +1122,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       is_recurring: false,
       line_items: cartQuote?.lineItems || [],
     });
+    if (paymentEventError) throw new Error(`Payment succeeded, but payment ledger recording failed: ${paymentEventError.message}`);
 
     if (!result.success) {
       const failedContactId = contactId
@@ -948,7 +1149,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           .update({
             status: 'payment_processing',
             payment_amount: amount / 100,
-            payment_type: normalizePaymentType(req.body.paymentChoice),
+            payment_type: normalizePaymentType(boundPaymentChoice),
             payment_transaction_id: result.transactionId || result.chargeId || '',
             processor_type: procConfig.processor_type,
             initial_payment_status: 'processing',
@@ -983,7 +1184,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           logger.info({ enrollmentId: enrollment.id, hasEmail: !!enrollEmail, contactId: enrollContactId, status: (enrollment as any).status, paymentChoice: req.body.paymentChoice }, 'POST-PAYMENT: enrollment found');
 
           // Resolve payment type and installment count
-          const resolvedPaymentType = normalizePaymentType(req.body.paymentChoice);
+          const resolvedPaymentType = normalizePaymentType(boundPaymentChoice);
           let paymentsTotal: number | null = null;
           if (resolvedPaymentType === 'installment' && (enrollment as any).offer_id) {
             const { data: offerRow } = await supabase
@@ -1498,10 +1699,13 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                         location_id: merchant.locationId,
                         payment_type: recurringPaymentType,
                       },
+                      idempotencyKey: `checkout-subscription-${checkoutAttemptKey}`,
                     });
 
                     if (subResult.success && subResult.subscriptionId) {
                       recurringSubscriptionId = subResult.subscriptionId;
+                      recurringNextBillingDate = subResult.nextPaymentDate?.split('T')[0]
+                        || String(enrForSub.next_billing_date || '');
                       const { error: subSaveErr } = await supabase.from('enrollments')
                         .update({ processor_subscription_id: subResult.subscriptionId, processor_type: procConfig.processor_type })
                         .eq('id', finalEnrollmentId);
@@ -1539,8 +1743,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                 }
               }
             } catch (subErr: any) {
+              const resultUnknown = isUnknownStripeSubscriptionResult(subErr);
               billingSetupIssue = {
-                code: 'processor_subscription_creation_error',
+                code: resultUnknown
+                  ? 'processor_subscription_result_unknown'
+                  : 'processor_subscription_creation_error',
                 message: subErr.message || 'Payment was received, but recurring billing setup failed.',
               };
               logger.error({
@@ -1581,7 +1788,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         if (billingSetupIssue) {
           // The processor subscription was created but its ID could not be saved -> the
           // processor WILL bill; flag for reconciliation rather than as a dead enrollment.
-          const needsReconciliation = billingSetupIssue.code === 'processor_subscription_save_failed';
+          const needsReconciliation = [
+            'processor_subscription_save_failed',
+            'processor_subscription_result_unknown',
+          ].includes(billingSetupIssue.code);
           await supabase.from('enrollments').update({
             billing_setup_status: needsReconciliation ? 'needs_reconciliation' : 'failed',
             billing_setup_error: billingSetupIssue.message || billingSetupIssue.code,
@@ -1623,21 +1833,54 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       timestamp: new Date().toISOString(),
     }, result.success ? 'Payment succeeded' : 'Payment failed');
 
-    res.json({
+    const checkoutResponse = {
       success: result.success,
       chargeId: result.chargeId || result.transactionId,
       paymentStatus: paymentProcessing ? 'processing' : (result.success ? 'succeeded' : 'failed'),
+      paymentAttemptStatus: result.success
+        ? 'accepted'
+        : (result.status === 'declined' ? 'declined' : 'failed'),
       paymentMethod,
       subscriptionId: recurringSubscriptionId || undefined,
       billingIssue: billingSetupIssue || undefined,
       error: result.errorMessage,
       threeDSecureUrl: result.threeDSecureUrl,
-    });
+    };
+    const subscriptionNeedsReconciliation = [
+      'processor_subscription_save_failed',
+      'processor_subscription_result_unknown',
+    ].includes(billingSetupIssue?.code || '');
+    if (subscriptionNeedsReconciliation) {
+      await moneyOperationService.markProviderAccepted({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        processorType: procConfig.processor_type,
+        processorReference: result.transactionId || result.chargeId || null,
+        response: checkoutResponse,
+        reconciliationPayload: {
+          transactionId: result.transactionId || result.chargeId || null,
+          enrollmentId: finalEnrollmentId || null,
+          contactId: finalContactId || null,
+          processorSubscriptionId: recurringSubscriptionId || null,
+          nextBillingDate: recurringNextBillingDate || null,
+          paymentProcessing,
+          clientResponse: checkoutResponse,
+        },
+      });
+    } else {
+      await moneyOperationService.markRecorded({
+        id: moneyOperation.operation.id,
+        locationId: merchant.locationId,
+        response: checkoutResponse,
+        processorType: procConfig.processor_type,
+        processorReference: result.transactionId || result.chargeId || null,
+        providerCalled: true,
+      });
+    }
+    res.json(checkoutResponse);
   } catch (err: any) {
     logger.error({ err: err.message, stack: err.stack, merchantId: merchant.merchantId }, 'Checkout payment failed');
     res.status(err.statusCode || 500).json({ success: false, error: err.message || 'Payment processing error' });
-  } finally {
-    releasePaymentAttempt(claimedPaymentAttemptKey);
   }
 }
 
@@ -1690,6 +1933,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
 
     const supabase = getSupabase();
     let enrollmentId = '';
+    let boundPaymentChoice = String(paymentChoice || offer.payment_type || 'pif');
     let resolvedContactId = typeof contactId === 'string' ? contactId : '';
     let resolvedEmail = typeof contactEmail === 'string' ? contactEmail : '';
     let resolvedName = typeof contactName === 'string' ? contactName : '';
@@ -1697,7 +1941,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
     if (consentToken) {
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('id, location_id, contact_id, email, first_name, last_name, status')
+        .select('id, location_id, contact_id, email, first_name, last_name, status, offer_id, payment_type')
         .eq('consent_token', consentToken)
         .eq('location_id', offer.location_id)
         .maybeSingle();
@@ -1705,7 +1949,19 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
         res.status(400).json({ success: false, error: 'Consent verification failed. Please complete enrollment before payment.' });
         return;
       }
+      const storedPaymentChoice = enrollment.payment_type
+        ? normalizePaymentType(String(enrollment.payment_type))
+        : '';
+      if (
+        String(enrollment.offer_id || '') !== String(offer.id)
+        || !storedPaymentChoice
+        || storedPaymentChoice !== normalizePaymentType(String(paymentChoice || ''))
+      ) {
+        res.status(400).json({ success: false, error: 'Consent does not match the selected offer or payment option.' });
+        return;
+      }
       enrollmentId = enrollment.id;
+      boundPaymentChoice = storedPaymentChoice;
       resolvedContactId = enrollment.contact_id || resolvedContactId;
       resolvedEmail = enrollment.email || resolvedEmail;
       resolvedName = [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' ') || resolvedName;
@@ -1744,7 +2000,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       }
     }
 
-    const normalizedChoice = normalizePaymentType(String(paymentChoice || offer.payment_type || 'pif'));
+    const normalizedChoice = normalizePaymentType(boundPaymentChoice);
     const cartSelectedAddonIds = consentToken
       ? await checkoutCartService.selectedAddonIdsForConsent(String(consentToken))
       : checkoutCartService.normalizeAddonIds(selectedAddonIds);

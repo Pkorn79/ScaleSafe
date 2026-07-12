@@ -161,6 +161,7 @@ router.post('/:merchantId/:disputeId/submit', async (req: Request, res: Response
     .from('defense_packets')
     .select('id')
     .eq('dispute_event_id', req.params.disputeId)
+    .eq('location_id', req.tenantContext!.locationId!)
     .limit(1)
     .maybeSingle();
   res.status(409).json({

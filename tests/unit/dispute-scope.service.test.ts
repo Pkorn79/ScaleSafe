@@ -86,4 +86,15 @@ describe('resolveDisputeScope', () => {
     expect(scope.enrollmentId).toBeNull();
     expect(scope.gaps.length).toBeGreaterThan(0);
   });
+
+  test('an unverified explicit enrollment never remains exact or enters evidence scope', async () => {
+    const scope = await disputeScopeService.resolveDisputeScope({
+      locationId: 'loc_1', contactId: 'c_1', enrollmentId: 'enr_other_tenant', offerId: 'offer_other',
+    });
+
+    expect(scope.scopeConfidence).toBe('contact_only');
+    expect(scope.enrollmentId).toBeNull();
+    expect(scope.offerId).toBeNull();
+    expect(scope.gaps.join(' ')).toContain('could not be verified');
+  });
 });

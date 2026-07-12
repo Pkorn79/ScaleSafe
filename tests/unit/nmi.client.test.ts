@@ -247,6 +247,7 @@ describe('NmiClient', () => {
         currency: 'usd',
         paymentToken: NMI_TEST_TOKEN,
         description: 'Test charge',
+        idempotencyKey: 'checkout-attempt-123',
         metadata: { first_name: 'Jane', last_name: 'Smith', email: 'jane@test.com' },
       });
 
@@ -261,6 +262,7 @@ describe('NmiClient', () => {
       expect(params.get('type')).toBe('sale');
       expect(params.get('amount')).toBe('10.50');
       expect(params.get('payment_token')).toBe(NMI_TEST_TOKEN);
+      expect(params.get('orderid')).toBe('checkout-attempt-123');
       expect(params.get('first_name')).toBe('Jane');
       expect(params.get('email')).toBe('jane@test.com');
     });

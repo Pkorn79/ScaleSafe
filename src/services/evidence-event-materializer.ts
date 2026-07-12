@@ -12,6 +12,19 @@ export interface EvidenceMaterialization {
 const CLIENT_ACTIVITY_TAGS: DefenseReasonCodeTag[] = ['services_not_provided', 'not_as_described', 'fraud'];
 const DELIVERY_TAGS: DefenseReasonCodeTag[] = ['services_not_provided', 'not_as_described'];
 
+function isPositiveAccessEvent(eventType: string): boolean {
+  return [
+    'service.access_granted',
+    'service.login',
+    'service.usage',
+    'content.viewed',
+    'content.downloaded',
+    'course.started',
+    'course.progressed',
+    'course.completed',
+  ].includes(eventType);
+}
+
 function clean(value: unknown, fallback = '', max = 500): string {
   const text = String(value ?? fallback).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
   return text.slice(0, max);
@@ -57,7 +70,7 @@ function evidenceFields(params: {
         offerName: params.enrollment.offer_name || params.enrollment.offer?.offer_name || null,
         deliverableName: params.event.resource?.name || params.event.activity?.title || null,
         serviceDate: params.event.occurred_at,
-        accessConfirmed: params.event.event_type.includes('access') || params.event.event_type.includes('login'),
+        accessConfirmed: isPositiveAccessEvent(params.event.event_type),
       },
       source: {
         system: params.connection.source_label,
@@ -136,12 +149,20 @@ export function materializeExternalEvidence(params: {
         },
       };
     }
+    const delivered = event.event_type === 'session.completed' || event.event_type === 'session.attended';
     const summary = `${provider} reported that the client ${status} ${resource} on ${event.occurred_at}${formatDuration(event.activity?.duration_seconds)}.`;
     return {
       evidenceType: EVIDENCE_TYPES.EXTERNAL_SESSION,
       table: 'evidence_external_sessions',
       record: {
-        ...common({ ...base, title: `Session ${capitalize(status)}: ${resource}`, summary, proofRole: 'service_delivery', tags: DELIVERY_TAGS, priority: event.event_type === 'session.completed' || event.event_type === 'session.attended' ? 'high' : 'medium' }),
+        ...common({
+          ...base,
+          title: `Session ${capitalize(status)}: ${resource}`,
+          summary,
+          proofRole: delivered ? 'service_delivery' : 'client_engagement',
+          tags: delivered ? DELIVERY_TAGS : ['general'],
+          priority: delivered ? 'high' : 'low',
+        }),
         platform: provider,
         session_date: event.occurred_at,
         duration_minutes: event.activity?.duration_seconds ? Math.round(event.activity.duration_seconds / 60) : null,
@@ -153,12 +174,21 @@ export function materializeExternalEvidence(params: {
 
   if (event.event_type.startsWith('appointment.')) {
     const normalizedStatus = event.event_type.endsWith('no_show') ? 'no_show' : event.event_type.endsWith('cancelled') ? 'cancelled' : 'attended';
+    const attended = normalizedStatus === 'attended';
+    const noShow = normalizedStatus === 'no_show';
     const summary = `${provider} reported appointment status "${normalizedStatus}" for ${resource} on ${event.occurred_at}.`;
     return {
       evidenceType: EVIDENCE_TYPES.SESSION_ATTENDANCE,
       table: 'evidence_attendance',
       record: {
-        ...common({ ...base, title: `Appointment ${capitalize(normalizedStatus)}: ${resource}`, summary, proofRole: 'client_engagement', tags: ['services_not_provided'], priority: 'medium' }),
+        ...common({
+          ...base,
+          title: `Appointment ${capitalize(normalizedStatus)}: ${resource}`,
+          summary,
+          proofRole: attended ? 'service_delivery' : 'client_engagement',
+          tags: attended ? DELIVERY_TAGS : noShow ? ['services_not_provided'] : ['general'],
+          priority: attended ? 'high' : noShow ? 'medium' : 'low',
+        }),
         session_date: event.occurred_at,
         status: normalizedStatus,
         notes: clean(event.activity?.description, '', 1000) || null,
@@ -199,12 +229,20 @@ export function materializeExternalEvidence(params: {
   }
 
   if (event.event_type.startsWith('service.') || event.event_type.startsWith('content.') || event.event_type.startsWith('course.')) {
+    const positiveAccess = isPositiveAccessEvent(event.event_type);
     const summary = `${provider} reported client activity "${event.event_type}" for ${resource} on ${event.occurred_at}${formatDuration(event.activity?.duration_seconds)}.`;
     return {
       evidenceType: EVIDENCE_TYPES.SERVICE_ACCESS,
       table: 'evidence_service_access',
       record: {
-        ...common({ ...base, title: `Service Activity: ${resource}`, summary, proofRole: 'service_access', tags: CLIENT_ACTIVITY_TAGS, priority: 'high' }),
+        ...common({
+          ...base,
+          title: `Service Activity: ${resource}`,
+          summary,
+          proofRole: positiveAccess ? 'service_access' : 'system_event',
+          tags: positiveAccess ? CLIENT_ACTIVITY_TAGS : ['general'],
+          priority: positiveAccess ? 'high' : 'low',
+        }),
         platform: provider,
         event_type: event.event_type,
         access_date: event.occurred_at,

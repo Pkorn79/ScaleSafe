@@ -20,6 +20,7 @@ export interface ChargeRequest {
   shouldVault?: boolean; // When true, vault card during charge (NMI atomic sale+vault)
   customerEmail?: string; // Required when shouldVault=true
   customerName?: string; // Optional, for vault customer record
+  idempotencyKey?: string;
 }
 
 export interface ChargeResult {
@@ -114,6 +115,7 @@ export interface CreateSubscriptionRequest {
   startDate?: string; // ISO date
   description?: string;
   metadata?: Record<string, string>;
+  idempotencyKey?: string;
 }
 
 export interface ResumeSubscriptionRequest {
@@ -125,6 +127,7 @@ export interface ResumeSubscriptionRequest {
   remainingPayments: number;     // how many payments left
   startDate?: string;            // ISO date for next charge
   description?: string;
+  idempotencyKey?: string;
 }
 
 export interface SubscriptionResult {

@@ -2,6 +2,8 @@ import crypto from 'crypto';
 
 const mockSupabaseFrom = jest.fn();
 const mockCreateProcessorClient = jest.fn();
+const mockResolveProcessor = jest.fn();
+const mockQuoteOffer = jest.fn();
 const mockHandleRecurringPaymentSuccess = jest.fn();
 const mockHandleRecurringPaymentFailure = jest.fn();
 const mockDiagnosticCreate = jest.fn();
@@ -16,6 +18,13 @@ jest.mock('../../src/clients/supabase.client', () => ({
 
 jest.mock('../../src/services/processor.factory', () => ({
   createProcessorClient: (...args: any[]) => mockCreateProcessorClient(...args),
+  resolveProcessor: (...args: any[]) => mockResolveProcessor(...args),
+}));
+
+jest.mock('../../src/services/dual-pricing.service', () => ({
+  dualPricingService: {
+    quoteOffer: (...args: any[]) => mockQuoteOffer(...args),
+  },
 }));
 
 jest.mock('../../src/services/recurring-payment.service', () => ({
@@ -39,6 +48,7 @@ jest.mock('../../src/services/processor-config.service', () => ({
 import {
   handleNmiWebhookEvent,
   processNmiOfficialWebhookRequest,
+  setupNmiAchRecurringAfterSettlement,
 } from '../../src/controllers/nmi-webhook-events.controller';
 
 const SECRET = 'webhook_secret';
@@ -73,6 +83,7 @@ function queryBuilder(data: any, opts: { maybeData?: any; thenData?: any } = {})
     insert: jest.fn(() => builder),
     update: jest.fn(() => builder),
     eq: jest.fn(() => builder),
+    is: jest.fn(() => builder),
     in: jest.fn(() => builder),
     order: jest.fn(() => builder),
     limit: jest.fn(() => builder),
@@ -125,6 +136,8 @@ describe('NMI official webhook events', () => {
     mockCreateProcessorClient.mockReturnValue({
       verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'settled' }),
     });
+    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockQuoteOffer.mockResolvedValue({ selectedAmountCents: 5000 });
     mockHandleRecurringPaymentSuccess.mockResolvedValue({ paymentEventId: 'pe_1', isFinal: false, newPaymentsMade: 2 });
     mockHandleRecurringPaymentFailure.mockResolvedValue({ paymentEventId: 'pe_fail' });
 
@@ -302,6 +315,92 @@ describe('NMI official webhook events', () => {
       errorMessage: 'Declined',
       source: 'nmi_webhook_event',
     }));
+  });
+
+  it('claims ACH recurring setup once across concurrent settlement handlers', async () => {
+    const recurringEnrollment: any = {
+      ...enrollment,
+      processor_subscription_id: null,
+      billing_setup_status: 'pending',
+      next_billing_date: '2026-08-12',
+    };
+    const offer = {
+      id: 'offer_1',
+      location_id: 'loc_1',
+      offer_name: 'Recurring Offer',
+      installment_frequency: 'monthly',
+      nmi_processor_id: null,
+    };
+    const createSubscription = jest.fn().mockResolvedValue({
+      success: true,
+      subscriptionId: 'sub_claimed_once',
+      status: 'active',
+    });
+    mockCreateProcessorClient.mockReturnValue({ createSubscription });
+
+    const supabase: any = {
+      from: jest.fn((table: string) => {
+        let operation: 'select' | 'update' = 'select';
+        let updatePayload: any = null;
+        const execute = async () => {
+          if (table === 'offers_mirror') return { data: offer, error: null };
+          if (table === 'payment_methods') {
+            return {
+              data: [{
+                payment_method_kind: 'ach',
+                bank_last_four: '6789',
+                nmi_customer_vault_id: 'vault_1',
+              }],
+              error: null,
+            };
+          }
+          if (table !== 'enrollments') return { data: null, error: null };
+          if (operation === 'update') {
+            const isClaim = updatePayload.billing_setup_error === 'Recurring billing setup is in progress or requires reconciliation.';
+            if (isClaim) {
+              if (recurringEnrollment.billing_setup_status !== 'pending' || recurringEnrollment.processor_subscription_id) {
+                return { data: null, error: null };
+              }
+              recurringEnrollment.billing_setup_status = 'needs_reconciliation';
+              recurringEnrollment.billing_setup_error = updatePayload.billing_setup_error;
+              return { data: { id: recurringEnrollment.id }, error: null };
+            }
+            Object.assign(recurringEnrollment, updatePayload);
+            return { data: null, error: null };
+          }
+          return { data: { ...recurringEnrollment }, error: null };
+        };
+        const builder: any = {
+          select: jest.fn(() => builder),
+          update: jest.fn((payload: any) => {
+            operation = 'update';
+            updatePayload = payload;
+            return builder;
+          }),
+          eq: jest.fn(() => builder),
+          in: jest.fn(() => builder),
+          is: jest.fn(() => builder),
+          order: jest.fn(() => builder),
+          maybeSingle: jest.fn(() => execute()),
+          single: jest.fn(() => execute()),
+          then: (resolve: any, reject: any) => execute().then(resolve, reject),
+        };
+        return builder;
+      }),
+    };
+
+    const states = await Promise.all([
+      setupNmiAchRecurringAfterSettlement(supabase, processorConfig as any, recurringEnrollment.id, 'txn_settle_1'),
+      setupNmiAchRecurringAfterSettlement(supabase, processorConfig as any, recurringEnrollment.id, 'txn_settle_1'),
+    ]);
+
+    expect(createSubscription).toHaveBeenCalledTimes(1);
+    expect(createSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: `nmi-ach-recurring-${recurringEnrollment.id}-txn_settle_1`,
+    }));
+    expect(recurringEnrollment.processor_subscription_id).toBe('sub_claimed_once');
+    expect(recurringEnrollment.billing_setup_status).toBe('ok');
+    expect(states).toEqual(expect.arrayContaining(['ready']));
   });
 
   it('does not process successful sale events without a transaction id', async () => {

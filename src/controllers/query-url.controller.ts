@@ -6,6 +6,7 @@ import { collapseVisiblePaymentMethods } from '../services/payment-methods.servi
 import { ProcessorType } from '../types/processor.types';
 import { getCardBrandImageUrl, getCardBrandTitle } from '../utils/card-brands';
 import { logger } from '../utils/logger';
+import { moneyOperationService } from '../services/money-operation.service';
 
 interface MerchantRef {
   merchantId: string;
@@ -34,6 +35,15 @@ function isSafeProcessorReference(value: unknown): value is string {
 
 const REFUND_PAYMENT_EVENT_TYPES = ['payment_success', 'payment_received', 'sale'];
 const REFUND_EVENT_TYPES = ['refund', 'refund_processed'];
+const QUERY_URL_REFUND_CLAIMED_BY = 'query_url';
+
+interface QueryUrlRefundClaim {
+  id: string;
+  amount_cents: number;
+  status: string;
+  processor_refund_id?: string | null;
+  refund_payment_event_id?: string | null;
+}
 
 /** Cents → dollars (for GHL response snapshots) */
 function centsToDollars(cents: number): number {
@@ -42,6 +52,92 @@ function centsToDollars(cents: number): number {
 
 function nowUnix(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+function handleExistingOperation(
+  operation: Awaited<ReturnType<typeof moneyOperationService.begin>>,
+  res: Response,
+): boolean {
+  if (operation.action === 'replay') {
+    res.json(operation.response);
+    return true;
+  }
+  if (operation.action === 'blocked') {
+    res.status(409).json({
+      success: false,
+      failed: true,
+      message: 'This payment operation is already processing or requires reconciliation.',
+    });
+    return true;
+  }
+  return false;
+}
+
+function queryUrlRefundResponse(claim: QueryUrlRefundClaim, message = 'Refund successful') {
+  return {
+    success: true,
+    message,
+    id: claim.processor_refund_id || undefined,
+    amount: centsToDollars(Number(claim.amount_cents || 0)),
+    currency: 'USD',
+  };
+}
+
+function handleExistingRefundClaim(claim: QueryUrlRefundClaim, res: Response): void {
+  if (claim.status === 'recorded' || claim.status === 'succeeded') {
+    res.json(queryUrlRefundResponse(claim));
+    return;
+  }
+  if (claim.status === 'provider_accepted') {
+    res.json(queryUrlRefundResponse(claim, 'Refund accepted and awaiting local reconciliation'));
+    return;
+  }
+  res.status(409).json({
+    success: false,
+    message: 'This refund is already processing or requires reconciliation.',
+  });
+}
+
+async function findQueryUrlRefundClaim(
+  supabase: ReturnType<typeof getSupabase>,
+  locationId: string,
+  requestFingerprint: string,
+): Promise<QueryUrlRefundClaim | null> {
+  const { data, error } = await supabase
+    .from('payment_refund_claims')
+    .select('id, amount_cents, status, processor_refund_id, refund_payment_event_id')
+    .eq('location_id', locationId)
+    .eq('claimed_by', QUERY_URL_REFUND_CLAIMED_BY)
+    .eq('request_fingerprint', requestFingerprint)
+    .maybeSingle();
+  if (error) throw error;
+  return data as QueryUrlRefundClaim | null;
+}
+
+async function updateQueryUrlRefundClaim(
+  supabase: ReturnType<typeof getSupabase>,
+  locationId: string,
+  claimId: string,
+  updates: Record<string, unknown>,
+  providerStartBoundary = false,
+): Promise<void> {
+  let query: any = supabase
+    .from('payment_refund_claims')
+    .update(updates)
+    .eq('id', claimId)
+    .eq('location_id', locationId);
+  if (providerStartBoundary) {
+    query = query
+      .eq('status', 'processing')
+      .eq('provider_called', false)
+      .select('id')
+      .maybeSingle();
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  if (providerStartBoundary && !data) {
+    throw new Error('Refund claim is no longer available for processor execution');
+  }
 }
 
 // ─── Main handler ────────────────────────────────────────────
@@ -200,8 +296,15 @@ async function handleListPaymentMethods(req: Request, res: Response, merchant: M
 
 async function handleChargePayment(req: Request, res: Response, merchant: MerchantRef): Promise<void> {
   const { paymentMethodId, contactId, transactionId, chargeDescription, amount, currency } = req.body;
-
   const amountCents = dollarsToCents(amount);
+  if (!paymentMethodId || !contactId || !isSafeProcessorReference(transactionId)) {
+    res.status(400).json({ success: false, failed: true, message: 'paymentMethodId, contactId, and transactionId are required' });
+    return;
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0 || amountCents > 99999999) {
+    res.status(400).json({ success: false, failed: true, message: 'Invalid amount' });
+    return;
+  }
 
   // Look up the payment method to get processor details
   const supabase = getSupabase();
@@ -210,6 +313,7 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
     .select('*')
     .eq('id', paymentMethodId)
     .eq('location_id', merchant.locationId)
+    .eq('contact_id', contactId)
     .single();
 
   if (!pm) {
@@ -228,15 +332,87 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
   });
   const processor = createProcessorClient(config);
 
-  const result = await processor.chargeStoredCard(customerId, storedToken, {
-    amount: amountCents,
-    currency: (currency || 'USD').toLowerCase(),
-    paymentToken: storedToken,
-    description: chargeDescription,
+  const operation = await moneyOperationService.begin({
+    locationId: merchant.locationId,
+    merchantId: merchant.merchantId,
+    operationType: 'query_url_charge',
+    operationKey: transactionId,
+    request: {
+      paymentMethodId,
+      contactId,
+      transactionId,
+      amountCents,
+      currency: String(currency || 'USD').toLowerCase(),
+      processorType: config.processor_type,
+    },
+  });
+  if (handleExistingOperation(operation, res)) return;
+
+  let result;
+  try {
+    await moneyOperationService.markProviderStarted({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      processorType: config.processor_type,
+    });
+    result = await processor.chargeStoredCard(customerId, storedToken, {
+      amount: amountCents,
+      currency: (currency || 'USD').toLowerCase(),
+      paymentToken: storedToken,
+      description: chargeDescription,
+      idempotencyKey: `ghl-charge-${transactionId}`,
+    });
+  } catch (err: any) {
+    await moneyOperationService.markUnknown({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      processorType: config.processor_type,
+      error: err.message || 'Processor result is unknown',
+    });
+    throw err;
+  }
+
+  const response = result.success ? {
+    success: true,
+    failed: false,
+    chargeId: result.chargeId || result.transactionId,
+    message: 'Payment successful',
+    chargeSnapshot: {
+      id: result.chargeId || result.transactionId,
+      status: 'succeeded',
+      amount: centsToDollars(amountCents),
+      chargeId: result.chargeId || result.transactionId,
+      chargedAt: nowUnix(),
+    },
+  } : {
+    success: false,
+    failed: true,
+    message: result.errorMessage || 'Payment failed',
+  };
+
+  if (!result.success) {
+    await moneyOperationService.markRecorded({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      response,
+      processorType: config.processor_type,
+      processorReference: result.transactionId || null,
+      providerCalled: true,
+    });
+    res.json(response);
+    return;
+  }
+
+  await moneyOperationService.markProviderAccepted({
+    id: operation.operation.id,
+    locationId: merchant.locationId,
+    processorType: config.processor_type,
+    processorReference: result.chargeId || result.transactionId,
+    response,
   });
 
   // Create transaction mapping
-  await supabase.from('transaction_mappings').insert({
+  const { error: mappingError } = await supabase.from('transaction_mappings').insert({
     merchant_id: merchant.merchantId,
     location_id: merchant.locationId,
     ghl_transaction_id: transactionId,
@@ -245,28 +421,17 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
     processor_type: config.processor_type,
     contact_id: contactId,
   });
+  if (mappingError) throw mappingError;
 
-  if (result.success) {
-    res.json({
-      success: true,
-      failed: false,
-      chargeId: result.chargeId || result.transactionId,
-      message: 'Payment successful',
-      chargeSnapshot: {
-        id: result.chargeId || result.transactionId,
-        status: 'succeeded',
-        amount: centsToDollars(amountCents),
-        chargeId: result.chargeId || result.transactionId,
-        chargedAt: nowUnix(),
-      },
-    });
-  } else {
-    res.json({
-      success: false,
-      failed: true,
-      message: result.errorMessage || 'Payment failed',
-    });
-  }
+  await moneyOperationService.markRecorded({
+    id: operation.operation.id,
+    locationId: merchant.locationId,
+    response,
+    processorType: config.processor_type,
+    processorReference: result.chargeId || result.transactionId,
+    providerCalled: true,
+  });
+  res.json(response);
 }
 
 // ─── create_subscription ─────────────────────────────────────
@@ -293,6 +458,17 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
 
   const recurringCents = dollarsToCents(parseFloat(recurringAmount) || amount);
   const firstChargeCents = dollarsToCents(amount);
+  const operationKey = isSafeProcessorReference(ghlSubId)
+    ? ghlSubId
+    : isSafeProcessorReference(ghlTxId) ? ghlTxId : '';
+  if (!paymentMethodId || !contactId || !operationKey) {
+    res.status(400).json({ success: false, failed: true, message: 'paymentMethodId, contactId, and subscriptionId or transactionId are required' });
+    return;
+  }
+  if (!Number.isInteger(recurringCents) || recurringCents <= 0 || recurringCents > 99999999) {
+    res.status(400).json({ success: false, failed: true, message: 'Invalid recurring amount' });
+    return;
+  }
 
   // Look up payment method
   const supabase = getSupabase();
@@ -301,6 +477,7 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
     .select('*')
     .eq('id', paymentMethodId)
     .eq('location_id', merchant.locationId)
+    .eq('contact_id', contactId)
     .single();
 
   if (!pm) {
@@ -317,34 +494,69 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
   });
   const processor = createProcessorClient(config);
 
-  const subResult = await processor.createSubscription({
-    paymentMethodId: storedToken,
-    customerId,
-    planAmount: recurringCents,
-    interval,
-    totalPayments: totalCycles,
-    startDate,
-    description: productDetails?.[0]?.name,
+  const operation = await moneyOperationService.begin({
+    locationId: merchant.locationId,
+    merchantId: merchant.merchantId,
+    operationType: 'query_url_subscription',
+    operationKey,
+    request: {
+      paymentMethodId,
+      contactId,
+      ghlSubId: ghlSubId || null,
+      ghlTxId: ghlTxId || null,
+      recurringCents,
+      firstChargeCents,
+      interval,
+      totalCycles,
+      startDate: startDate || null,
+      processorType: config.processor_type,
+    },
   });
+  if (handleExistingOperation(operation, res)) return;
+
+  let subResult;
+  try {
+    await moneyOperationService.markProviderStarted({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      processorType: config.processor_type,
+    });
+    subResult = await processor.createSubscription({
+      paymentMethodId: storedToken,
+      customerId,
+      planAmount: recurringCents,
+      interval,
+      totalPayments: totalCycles,
+      startDate,
+      description: productDetails?.[0]?.name,
+      idempotencyKey: `ghl-subscription-${operationKey}`,
+    });
+  } catch (err: any) {
+    await moneyOperationService.markUnknown({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      processorType: config.processor_type,
+      error: err.message || 'Processor result is unknown',
+    });
+    throw err;
+  }
 
   if (!subResult.success) {
-    res.json({ success: false, failed: true, message: subResult.errorMessage || 'Subscription creation failed' });
+    const failureResponse = { success: false, failed: true, message: subResult.errorMessage || 'Subscription creation failed' };
+    await moneyOperationService.markRecorded({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      response: failureResponse,
+      processorType: config.processor_type,
+      processorReference: subResult.subscriptionId || null,
+      providerCalled: true,
+    });
+    res.json(failureResponse);
     return;
   }
 
-  // Create transaction mapping
-  await supabase.from('transaction_mappings').insert({
-    merchant_id: merchant.merchantId,
-    location_id: merchant.locationId,
-    ghl_transaction_id: ghlTxId,
-    ghl_subscription_id: ghlSubId,
-    processor_subscription_id: subResult.subscriptionId,
-    processor_type: config.processor_type,
-    contact_id: contactId,
-  });
-
   const now = nowUnix();
-  res.json({
+  const response = {
     success: true,
     failed: false,
     message: 'Subscription created',
@@ -372,7 +584,36 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
           : undefined,
       },
     },
+  };
+  await moneyOperationService.markProviderAccepted({
+    id: operation.operation.id,
+    locationId: merchant.locationId,
+    processorType: config.processor_type,
+    processorReference: subResult.subscriptionId,
+    response,
   });
+
+  // Create transaction mapping
+  const { error: mappingError } = await supabase.from('transaction_mappings').insert({
+    merchant_id: merchant.merchantId,
+    location_id: merchant.locationId,
+    ghl_transaction_id: ghlTxId,
+    ghl_subscription_id: ghlSubId,
+    processor_subscription_id: subResult.subscriptionId,
+    processor_type: config.processor_type,
+    contact_id: contactId,
+  });
+  if (mappingError) throw mappingError;
+
+  await moneyOperationService.markRecorded({
+    id: operation.operation.id,
+    locationId: merchant.locationId,
+    response,
+    processorType: config.processor_type,
+    processorReference: subResult.subscriptionId,
+    providerCalled: true,
+  });
+  res.json(response);
 }
 
 // ─── cancel_subscription ─────────────────────────────────────
@@ -405,34 +646,37 @@ async function handleCancelSubscription(req: Request, res: Response, merchant: M
 // ─── refund ──────────────────────────────────────────────────
 
 async function handleRefund(req: Request, res: Response, merchant: MerchantRef): Promise<void> {
-  const { amount, chargeId } = req.body;
+  const { amount } = req.body;
+  const refundReference = req.body.transactionId || req.body.chargeId;
 
-  if (!isSafeProcessorReference(chargeId)) {
+  if (!isSafeProcessorReference(refundReference)) {
     res.status(400).json({ success: false, message: 'Invalid transaction reference' });
     return;
   }
 
-  const amountCents = amount ? dollarsToCents(amount) : undefined;
-  if (amountCents !== undefined && amountCents <= 0) {
+  const amountWasProvided = amount !== undefined && amount !== null && amount !== '';
+  const amountCents = amountWasProvided ? dollarsToCents(Number(amount)) : undefined;
+  if (amountCents !== undefined && (!Number.isInteger(amountCents) || amountCents <= 0)) {
     res.status(400).json({ success: false, message: 'Invalid refund amount' });
     return;
   }
 
   // Look up processor transaction
   const supabase = getSupabase();
-  const { data: mapping } = await supabase
+  const { data: mapping, error: mappingError } = await supabase
     .from('transaction_mappings')
     .select('processor_transaction_id, processor_type, contact_id')
-    .or(`processor_charge_id.eq.${chargeId},processor_transaction_id.eq.${chargeId}`)
+    .or(`processor_charge_id.eq.${refundReference},processor_transaction_id.eq.${refundReference},ghl_transaction_id.eq.${refundReference}`)
     .eq('merchant_id', merchant.merchantId)
     .single();
+  if (mappingError) throw mappingError;
 
-  if (!mapping) {
+  if (!mapping?.processor_transaction_id) {
     res.json({ success: false, message: 'Transaction not found for refund' });
     return;
   }
 
-  const { data: originalPayment } = await supabase
+  const { data: originalPayment, error: originalPaymentError } = await supabase
     .from('payment_events')
     .select('id, amount')
     .eq('location_id', merchant.locationId)
@@ -441,89 +685,211 @@ async function handleRefund(req: Request, res: Response, merchant: MerchantRef):
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
-
-  let priorRefundTotal = 0;
-  if (originalPayment) {
-    const { data: priorRefunds } = await supabase
-      .from('payment_events')
-      .select('amount')
-      .eq('location_id', merchant.locationId)
-      .in('event_type', REFUND_EVENT_TYPES)
-      .eq('raw_webhook_payload->>original_processor_transaction_id', mapping.processor_transaction_id);
-
-    priorRefundTotal = (priorRefunds || [])
-      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-
-    const originalAmount = Number(originalPayment.amount || 0);
-    const requestedAmount = amountCents === undefined
-      ? Math.max(0, originalAmount - priorRefundTotal)
-      : amountCents / 100;
-
-    if (requestedAmount <= 0 || requestedAmount + priorRefundTotal > originalAmount + 0.0001) {
-      res.status(400).json({
-        success: false,
-        message: 'Refund amount exceeds remaining refundable balance',
-      });
-      return;
-    }
+  if (originalPaymentError) throw originalPaymentError;
+  if (!originalPayment) {
+    res.status(409).json({
+      success: false,
+      message: 'The original payment ledger entry is missing; refund requires reconciliation before it can be submitted.',
+    });
+    return;
   }
 
-  const { config } = await resolveMappedProcessor(merchant, mapping.processor_type);
-  const processor = createProcessorClient(config);
+  const requestFingerprint = moneyOperationService.fingerprint({
+    source: QUERY_URL_REFUND_CLAIMED_BY,
+    locationId: merchant.locationId,
+    originalPaymentEventId: originalPayment.id,
+    processorTransactionId: mapping.processor_transaction_id,
+    refundReference,
+    amountCents: amountCents === undefined ? 'remaining' : amountCents,
+  });
+  const existingClaim = await findQueryUrlRefundClaim(supabase, merchant.locationId, requestFingerprint);
+  if (existingClaim) {
+    handleExistingRefundClaim(existingClaim, res);
+    return;
+  }
 
-  const result = await processor.refund({
-    transactionId: mapping.processor_transaction_id,
-    amount: amountCents,
+  const { data: priorRefunds, error: priorRefundsError } = await supabase
+    .from('payment_events')
+    .select('amount')
+    .eq('location_id', merchant.locationId)
+    .in('event_type', REFUND_EVENT_TYPES)
+    .eq('raw_webhook_payload->>original_processor_transaction_id', mapping.processor_transaction_id);
+  if (priorRefundsError) throw priorRefundsError;
+
+  const priorRefundCents = (priorRefunds || [])
+    .reduce((sum: number, row: any) => sum + dollarsToCents(Math.abs(Number(row.amount || 0))), 0);
+  const originalAmountCents = dollarsToCents(Number(originalPayment.amount || 0));
+  const requestedAmountCents = amountCents === undefined
+    ? originalAmountCents - priorRefundCents
+    : amountCents;
+  if (
+    !Number.isInteger(requestedAmountCents)
+    || requestedAmountCents <= 0
+    || requestedAmountCents + priorRefundCents > originalAmountCents
+  ) {
+    res.status(400).json({
+      success: false,
+      message: 'Refund amount exceeds remaining refundable balance',
+    });
+    return;
+  }
+
+  const { data: insertedClaim, error: claimError } = await supabase
+    .from('payment_refund_claims')
+    .insert({
+      location_id: merchant.locationId,
+      original_payment_event_id: originalPayment.id,
+      amount_cents: requestedAmountCents,
+      status: 'processing',
+      processor: mapping.processor_type || null,
+      claimed_by: QUERY_URL_REFUND_CLAIMED_BY,
+      request_fingerprint: requestFingerprint,
+    })
+    .select('id, amount_cents, status, processor_refund_id, refund_payment_event_id')
+    .single();
+  if (claimError) {
+    if (claimError.code === '23505') {
+      const concurrentClaim = await findQueryUrlRefundClaim(supabase, merchant.locationId, requestFingerprint);
+      if (concurrentClaim) {
+        handleExistingRefundClaim(concurrentClaim, res);
+      } else {
+        res.status(409).json({ success: false, message: 'Another refund for this payment is already processing.' });
+      }
+      return;
+    }
+    throw claimError;
+  }
+  if (!insertedClaim?.id) throw new Error('Refund claim could not be created');
+  const claim = insertedClaim as QueryUrlRefundClaim;
+
+  let config: Awaited<ReturnType<typeof resolveMappedProcessor>>['config'];
+  let result: any;
+  let providerStarted = false;
+  try {
+    ({ config } = await resolveMappedProcessor(merchant, mapping.processor_type));
+    const processor = createProcessorClient(config);
+    await updateQueryUrlRefundClaim(supabase, merchant.locationId, claim.id, {
+      status: 'unknown',
+      provider_called: true,
+      provider_started_at: new Date().toISOString(),
+      error_message: 'Processor refund request started; awaiting confirmed result.',
+    }, true);
+    providerStarted = true;
+    result = await processor.refund({
+      transactionId: mapping.processor_transaction_id,
+      amount: requestedAmountCents,
+      idempotencyKey: `refund:${merchant.locationId}:${claim.id}`,
+    });
+  } catch (err: any) {
+    await updateQueryUrlRefundClaim(supabase, merchant.locationId, claim.id, providerStarted
+      ? {
+          status: 'unknown',
+          error_message: err.message || 'Processor refund result is unknown',
+        }
+      : {
+          status: 'failed',
+          request_fingerprint: null,
+          error_message: err.message || 'Refund failed before the processor request started',
+        });
+    throw err;
+  }
+
+  if (!result.success && result.status !== 'pending') {
+    await updateQueryUrlRefundClaim(supabase, merchant.locationId, claim.id, {
+      status: 'failed',
+      request_fingerprint: null,
+      error_message: result.errorMessage || 'Refund failed',
+    });
+    logger.warn({
+      event: 'refund_failed',
+      merchantId: merchant.merchantId,
+      refundReference,
+      error: result.errorMessage,
+    }, 'Refund failed');
+    res.json({
+      success: false,
+      message: result.errorMessage || 'Refund failed',
+    });
+    return;
+  }
+
+  const refundId = result.refundId || `${mapping.processor_transaction_id}:refund:${claim.id}`;
+  const refundAmount = centsToDollars(requestedAmountCents);
+  const response = {
+    success: true,
+    message: result.status === 'pending' ? 'Refund accepted and processing' : 'Refund successful',
+    id: refundId,
+    amount: refundAmount,
+    currency: 'USD',
+  };
+  await updateQueryUrlRefundClaim(supabase, merchant.locationId, claim.id, {
+    status: 'provider_accepted',
+    provider_called: true,
+    processor: config.processor_type,
+    processor_refund_id: refundId,
+    provider_accepted_at: new Date().toISOString(),
+    error_message: null,
   });
 
-  if (result.success) {
-    const refundAmount = amount ?? (result.amount ? centsToDollars(result.amount) : Number(originalPayment?.amount || 0) - priorRefundTotal);
-    await supabase.from('payment_events').insert({
+  const { data: refundEvent, error: refundEventError } = await supabase
+    .from('payment_events')
+    .insert({
       merchant_id: merchant.merchantId,
       location_id: merchant.locationId,
       contact_id: mapping.contact_id || '',
       event_type: 'refund',
       processor: config.processor_type,
-      processor_transaction_id: result.refundId || null,
+      processor_transaction_id: refundId,
       amount: refundAmount,
       currency: 'usd',
       source: 'query_url_refund',
       raw_webhook_payload: {
+        original_payment_event_id: originalPayment.id,
         original_processor_transaction_id: mapping.processor_transaction_id,
-        charge_id: chargeId,
-        requested_amount: amount ?? null,
+        refund_claim_id: claim.id,
+        transaction_id: req.body.transactionId || null,
+        charge_id: req.body.chargeId || null,
+        requested_amount: amountWasProvided ? Number(amount) : null,
+        processor_refund_response: result.raw || null,
       },
       is_recurring: false,
-    });
+    })
+    .select('id')
+    .single();
 
-    logger.info({
-      event: 'refund_processed',
-      merchantId: merchant.merchantId,
+  let recordingIssue: string | undefined;
+  if (refundEventError || !refundEvent?.id) {
+    recordingIssue = 'Refund was accepted by the processor and is awaiting local reconciliation.';
+    logger.error({
+      err: refundEventError?.message || 'Refund event ID was not returned',
+      claimId: claim.id,
+      refundId,
       locationId: merchant.locationId,
-      refundId: result.refundId,
-      amount: refundAmount,
-      chargeId,
-      timestamp: new Date().toISOString(),
-    }, 'Refund processed successfully');
-
-    res.json({
-      success: true,
-      message: 'Refund successful',
-      id: result.refundId,
-      amount: refundAmount,
-      currency: 'USD',
-    });
+    }, 'Query URL refund accepted but ledger insert failed');
   } else {
-    logger.warn({
-      event: 'refund_failed',
-      merchantId: merchant.merchantId,
-      chargeId,
-      error: result.errorMessage,
-    }, 'Refund failed');
-
-    res.json({
-      success: false,
-      message: result.errorMessage || 'Refund failed',
-    });
+    try {
+      await updateQueryUrlRefundClaim(supabase, merchant.locationId, claim.id, {
+        status: 'recorded',
+        refund_payment_event_id: refundEvent.id,
+        recorded_at: new Date().toISOString(),
+        error_message: null,
+      });
+    } catch (err: any) {
+      recordingIssue = 'Refund was recorded and its reconciliation claim is still pending.';
+      logger.error({ err: err.message, claimId: claim.id, refundId }, 'Query URL refund claim finalization failed');
+    }
   }
+
+  logger.info({
+    event: 'refund_processed',
+    merchantId: merchant.merchantId,
+    locationId: merchant.locationId,
+    refundId,
+    amount: refundAmount,
+    refundReference,
+    recordingIssue,
+    timestamp: new Date().toISOString(),
+  }, 'Refund processed successfully');
+
+  res.json({ ...response, recordingIssue });
 }

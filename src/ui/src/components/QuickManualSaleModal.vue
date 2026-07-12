@@ -214,6 +214,8 @@ const whopSession = ref<any>(null);
 const whopEmbedLoading = ref(false);
 const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; processorDeductionPercent: number } | null>(null);
 const completedSuccessfully = ref(false);
+const paymentAttemptId = ref('');
+let paymentAttemptScope = '';
 
 const nonce = Math.random().toString(36).slice(2);
 const nmiIds = {
@@ -591,6 +593,32 @@ async function tokenizeCard(): Promise<string> {
   throw new Error('Payment fields are not ready.');
 }
 
+function ensurePaymentAttemptId(): string {
+  const scope = [
+    client.contactId || client.email.trim().toLowerCase(),
+    selectedOfferId.value,
+    Number(amount.value || 0).toFixed(2),
+    paymentChoice.value,
+    paymentMethod.value,
+  ].join('|');
+  if (paymentAttemptId.value && paymentAttemptScope === scope) return paymentAttemptId.value;
+  paymentAttemptScope = scope;
+  paymentAttemptId.value = window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `attempt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  return paymentAttemptId.value;
+}
+
+function clearPaymentAttempt(): void {
+  paymentAttemptId.value = '';
+  paymentAttemptScope = '';
+}
+
+function isExplicitCardDecline(message: unknown): boolean {
+  return /\b(declined|card(?: was)? declined|declined card|do not honor|insufficient funds|lost card|stolen card|expired card)\b/i
+    .test(String(message || ''));
+}
+
 async function submit() {
   if (submitting.value) return;
   submitting.value = true;
@@ -625,6 +653,7 @@ async function submit() {
       if (!stripe || !stripe.collectBankAccountForPayment) throw new Error('Stripe bank transfer is not ready.');
       resultMessage.value = 'Opening secure Stripe bank account collection...';
       const intent = await api.post<any>('/api/dashboard/manual-sale/stripe-ach/intent', {
+        paymentAttemptId: ensurePaymentAttemptId(),
         contactId: client.contactId || undefined,
         firstName: client.firstName,
         lastName: client.lastName,
@@ -687,6 +716,7 @@ async function submit() {
 
     const paymentToken = await tokenizeCard();
     const result = await api.post<any>('/api/dashboard/manual-sale/charge', {
+      paymentAttemptId: ensurePaymentAttemptId(),
       contactId: client.contactId || undefined,
       firstName: client.firstName,
       lastName: client.lastName,
@@ -703,6 +733,10 @@ async function submit() {
       sendEnrollment: selectedOfferId.value ? sendEnrollment.value : false,
       sendVia: ['email'],
     });
+    if (result.success === false) {
+      if (result.paymentAttemptStatus === 'declined') clearPaymentAttempt();
+      throw new Error(result.error || 'Payment failed.');
+    }
     if (result.billingIssue?.message) {
       resultMessage.value = `Payment received, but subscription setup failed: ${result.billingIssue.message}`;
     } else if (result.enrollmentLinkIssue?.message) {
@@ -717,6 +751,9 @@ async function submit() {
     completedSuccessfully.value = true;
     emit('completed', result);
   } catch (err: any) {
+    if (paymentMethod.value === 'card' && isExplicitCardDecline(err?.message)) {
+      clearPaymentAttempt();
+    }
     submitError.value = err.message || 'Payment failed.';
   } finally {
     submitting.value = false;
@@ -731,6 +768,7 @@ function resetTransient() {
   whopEmbedLoading.value = false;
   completedSuccessfully.value = false;
   submitting.value = false;
+  clearPaymentAttempt();
 }
 
 watch(() => props.open, async (open) => {

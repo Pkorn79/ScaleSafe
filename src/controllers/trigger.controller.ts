@@ -202,7 +202,6 @@ export const triggerController = {
         }, 'Rejected unsupported trigger subscription URL');
         throw new ValidationError('Unsupported trigger subscription URL');
       }
-
       if (type === 'subscribe' || type === 'created' || type === 'updated') {
         await triggerRepository.upsertSubscription(locationId, triggerKey, subscriptionUrl);
         logger.info({ locationId, triggerKey, rawTriggerKey, subscriptionUrl, type }, 'Trigger subscribed');

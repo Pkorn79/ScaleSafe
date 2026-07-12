@@ -179,7 +179,7 @@ function refundId(payload: any): string {
     b?.refund_id,
     b?.refundId,
     b?.refund?.id,
-    String(b?.id || '').startsWith('ref_') ? b.id : '',
+    /^r(?:e)?f_/.test(String(b?.id || '')) ? b.id : '',
   );
 }
 
@@ -568,12 +568,15 @@ async function handlePaymentFailed(payload: any, locationId: string, merchantId:
   logger.warn({ enrollmentId: enrollment.id, offerId: offer?.id }, 'Whop payment failure recorded');
 }
 
-async function handleRefund(payload: any, locationId: string, merchantId: string): Promise<void> {
-  const originalTxnId = originalPaymentId(payload) || paymentId(payload);
-  const txnId = refundId(payload) || originalTxnId || paymentId(payload);
+async function handleRefund(payload: any, locationId: string, merchantId: string, webhookEventId: string): Promise<void> {
+  const originalTxnId = originalPaymentId(payload);
+  const txnId = refundId(payload) || webhookEventId;
+  if (!txnId) {
+    throw new Error('Whop refund webhook is missing a unique refund or event ID');
+  }
   const enrollment = await findEnrollment(payload, locationId);
   const amount = amountCents(payload) / 100;
-  const existingByRefundId = txnId ? await getSupabase()
+  const { data: existingRefund, error: existingRefundError } = await getSupabase()
     .from('payment_events')
     .select('id')
     .eq('location_id', locationId)
@@ -581,26 +584,14 @@ async function handleRefund(payload: any, locationId: string, merchantId: string
     .eq('event_type', 'refund')
     .eq('processor_transaction_id', txnId)
     .limit(1)
-    .maybeSingle() : { data: null };
-  const existingByOriginalPayment = originalTxnId ? await getSupabase()
-    .from('payment_events')
-    .select('id, raw_webhook_payload')
-    .eq('location_id', locationId)
-    .eq('processor', 'whop')
-    .eq('event_type', 'refund')
-    .limit(100) : { data: [] };
-  const duplicateOriginal = Array.isArray(existingByOriginalPayment.data)
-    ? existingByOriginalPayment.data.some((row: any) => {
-      const raw = row.raw_webhook_payload || {};
-      return raw.original_processor_transaction_id === originalTxnId;
-    })
-    : false;
-  if (existingByRefundId.data?.id || duplicateOriginal) {
+    .maybeSingle();
+  if (existingRefundError) throw existingRefundError;
+  if (existingRefund?.id) {
     logger.info({ locationId, txnId, originalTxnId }, 'Whop refund webhook duplicate ignored');
     return;
   }
 
-  await getSupabase().from('payment_events').insert({
+  const { error: refundInsertError } = await getSupabase().from('payment_events').insert({
     merchant_id: merchantId,
     location_id: locationId,
     contact_id: enrollment?.contact_id || firstString(metadata(payload).contact_id),
@@ -617,6 +608,11 @@ async function handleRefund(payload: any, locationId: string, merchantId: string
       original_processor_transaction_id: originalTxnId || null,
     },
   } as any);
+  if (refundInsertError?.code === '23505') {
+    logger.info({ locationId, txnId, originalTxnId }, 'Concurrent Whop refund webhook duplicate ignored');
+    return;
+  }
+  if (refundInsertError) throw refundInsertError;
 
   if (enrollment?.contact_id) {
     await paymentLifecycleService.notifyRefundProcessed(locationId, enrollment.contact_id, {
@@ -693,7 +689,7 @@ export async function handleWhopWebhook(req: Request, res: Response): Promise<vo
     } else if (whopEventType === 'payment.failed') {
       await handlePaymentFailed(payload, cfg.location_id, merchant.id);
     } else if (whopEventType === 'refund.created') {
-      await handleRefund(payload, cfg.location_id, merchant.id);
+      await handleRefund(payload, cfg.location_id, merchant.id, whopEventId);
     } else if (whopEventType === 'membership.paused') {
       await handleMembership(payload, cfg.location_id, false, 'pause');
     } else if (whopEventType === 'membership.resumed') {

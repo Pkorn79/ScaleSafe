@@ -75,13 +75,14 @@ async function loadEnrollment(
   }
 }
 
-async function resolveOfferName(offerId: string | null): Promise<string | null> {
+async function resolveOfferName(locationId: string, offerId: string | null): Promise<string | null> {
   if (!offerId) return null;
   try {
     const { data } = await getSupabase()
       .from('offers_mirror')
       .select('offer_name')
       .eq('id', offerId)
+      .eq('location_id', locationId)
       .maybeSingle();
     return data?.offer_name || null;
   } catch {
@@ -98,13 +99,14 @@ function windowFromEnrollment(enrollment: any): { start: string | null; end: str
 }
 
 async function buildExactScope(
+  locationId: string,
   enrollment: any,
   confidence: ScopeConfidence,
   base: Partial<DisputeScope>,
   gaps: string[],
 ): Promise<DisputeScope> {
   const offerId = enrollment?.offer_id || null;
-  const offerName = await resolveOfferName(offerId);
+  const offerName = await resolveOfferName(locationId, offerId);
   const win = windowFromEnrollment(enrollment);
   if (!offerId) gaps.push('Enrollment has no linked offer/program on file.');
   return emptyScope({
@@ -128,18 +130,16 @@ export const disputeScopeService = {
     if (input.enrollmentId) {
       const enrollment = await loadEnrollment(locationId, contactId, input.enrollmentId);
       if (enrollment) {
-        return buildExactScope(enrollment, 'exact', {
+        return buildExactScope(locationId, enrollment, 'exact', {
           paymentEventId: input.paymentEventId || null,
           offerId: input.offerId || null,
         }, gaps);
       }
       // Supplied id we couldn't confirm — trust the caller's selection but flag it.
-      gaps.push('Supplied enrollment could not be verified against this contact/location.');
+      gaps.push('Supplied enrollment could not be verified against this contact/location; evidence is contact-wide and needs review.');
       return emptyScope({
         paymentEventId: input.paymentEventId || null,
-        enrollmentId: input.enrollmentId,
-        offerId: input.offerId || null,
-        scopeConfidence: 'exact',
+        scopeConfidence: 'contact_only',
         gaps,
       });
     }
@@ -173,17 +173,17 @@ export const disputeScopeService = {
         if (pe.enrollment_id) {
           const enrollment = await loadEnrollment(locationId, contactId, pe.enrollment_id);
           if (enrollment) {
-            return buildExactScope(enrollment, 'exact', base, gaps);
+            return buildExactScope(locationId, enrollment, 'exact', base, gaps);
           }
           gaps.push('Transaction references an enrollment that could not be loaded.');
-          return emptyScope({ ...base, enrollmentId: pe.enrollment_id, scopeConfidence: 'exact', gaps });
+          return emptyScope({ ...base, scopeConfidence: 'contact_only', gaps });
         }
 
         // 2b. No direct link — infer carefully from subscription id, then offer id.
         const inferred = await inferEnrollment(locationId, contactId, pe);
         if (inferred) {
           gaps.push('Program inferred from the transaction — confirm it matches the disputed charge.');
-          return buildExactScope(inferred, 'inferred', base, gaps);
+          return buildExactScope(locationId, inferred, 'inferred', base, gaps);
         }
 
         gaps.push('Disputed transaction is not linked to any program; evidence is contact-wide and needs review.');

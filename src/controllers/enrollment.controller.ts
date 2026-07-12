@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { enrollmentService } from '../services/enrollment.service';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { resolveLocationId } from '../middleware/tenantContext';
 
 export const enrollmentController = {
   // ─── Funnel Widget Endpoints (public, no auth) ─────────────────
@@ -87,7 +88,7 @@ export const enrollmentController = {
         userAgent, deviceFingerprint, screenResolution,
         timezone, browserLanguage, tcVersionHash,
         digitalSignature, clausesAccepted, scrollDepth, paidEnrollmentToken, evidenceContextToken,
-        selectedAddonIds,
+        selectedAddonIds, paymentChoice,
       } = req.body;
 
       if (!offerId || (!email && !paidEnrollmentToken && !evidenceContextToken) || !digitalSignature) {
@@ -112,6 +113,7 @@ export const enrollmentController = {
         clausesAccepted: clausesAccepted || [],
         scrollDepth: typeof scrollDepth === 'number' ? scrollDepth : 0,
         selectedAddonIds: Array.isArray(selectedAddonIds) ? selectedAddonIds : [],
+        paymentChoice: typeof paymentChoice === 'string' ? paymentChoice : undefined,
       });
 
       res.json(result);
@@ -134,7 +136,8 @@ export const enrollmentController = {
   /** Page 1: Create/update contact */
   async prep(req: Request, res: Response, next: NextFunction) {
     try {
-      const { locationId, offerId, firstName, lastName, email, phone } = req.body;
+      const locationId = resolveLocationId(req);
+      const { offerId, firstName, lastName, email, phone } = req.body;
       if (!locationId || !offerId || !firstName || !lastName || !email) {
         throw new ValidationError('locationId, offerId, firstName, lastName, email required');
       }
@@ -160,7 +163,8 @@ export const enrollmentController = {
   /** Page 3: Capture consent (legacy — SSO-gated) */
   async captureConsent(req: Request, res: Response, next: NextFunction) {
     try {
-      const { locationId, contactId, offerId, tcHtml, deviceFingerprint, browser } = req.body;
+      const locationId = resolveLocationId(req);
+      const { contactId, offerId, tcHtml, deviceFingerprint, browser } = req.body;
       if (!locationId || !contactId || !offerId || !tcHtml) {
         throw new ValidationError('locationId, contactId, offerId, tcHtml required');
       }
@@ -197,7 +201,7 @@ export const enrollmentController = {
       const supabase = getSupabase();
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('email, contact_id, first_name, last_name, digital_signature, selected_checkout_items')
+        .select('email, contact_id, first_name, last_name, digital_signature, selected_checkout_items, payment_type')
         .eq('consent_token', consentToken)
         .maybeSingle();
 
@@ -212,6 +216,7 @@ export const enrollmentController = {
         lastName: enrollment.last_name || '',
         contactId: enrollment.contact_id || '',
         digitalSignature: enrollment.digital_signature || '',
+        paymentType: enrollment.payment_type || '',
         selectedCheckoutItems: Array.isArray(enrollment.selected_checkout_items) ? enrollment.selected_checkout_items : [],
       });
     } catch (err) { next(err); }

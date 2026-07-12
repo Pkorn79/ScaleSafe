@@ -7,6 +7,7 @@ import { STORAGE_BUCKETS } from '../services/storage.service';
 import { debugLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
+import { schemaReadinessService } from '../services/schema-readiness.service';
 
 const router = Router();
 
@@ -52,6 +53,9 @@ router.get('/health', async (_req: Request, res: Response) => {
   } catch {
     checks.supabase = 'unreachable';
   }
+
+  const schema = await schemaReadinessService.check();
+  checks.schema = schema.ready ? `ok` : `error: ${schema.error || 'migration 098 required'}`;
 
   const healthy = Object.values(checks).every((v) => v === 'ok');
   res.status(healthy ? 200 : 503).json({ status: healthy ? 'healthy' : 'degraded', checks });

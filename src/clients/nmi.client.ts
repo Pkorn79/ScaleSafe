@@ -70,6 +70,7 @@ export class NmiClient implements ProcessorInterface {
     params.set('amount', centsToDollars(request.amount));
     params.set('currency', (request.currency || 'USD').toUpperCase());
     params.set('payment_token', request.paymentToken);
+    if (request.idempotencyKey) params.set('orderid', request.idempotencyKey.substring(0, 128));
     if (paymentMethodType === 'ach') {
       params.set('payment', 'check');
       params.set('sec_code', request.achSecCode || 'WEB');
@@ -276,6 +277,7 @@ export class NmiClient implements ProcessorInterface {
     params.set('amount', centsToDollars(request.amount));
     params.set('currency', (request.currency || 'USD').toUpperCase());
     params.set('customer_vault_id', customerId);
+    if (request.idempotencyKey) params.set('orderid', request.idempotencyKey.substring(0, 128));
 
     this.addProcessorId(params);
     this.addMetadata(params, request);
@@ -295,6 +297,7 @@ export class NmiClient implements ProcessorInterface {
     }
     params.set('plan_amount', centsToDollars(request.planAmount));
     params.set('customer_vault_id', request.paymentMethodId);
+    if (request.idempotencyKey) params.set('orderid', request.idempotencyKey.substring(0, 128));
 
     // Interval mapping
     switch (request.interval) {
@@ -420,6 +423,7 @@ export class NmiClient implements ProcessorInterface {
       totalPayments: request.remainingPayments,
       startDate: request.startDate,
       description: request.description,
+      idempotencyKey: request.idempotencyKey,
     });
   }
 

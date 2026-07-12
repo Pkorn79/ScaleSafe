@@ -25,6 +25,35 @@ jest.mock('../../src/services/payment-methods.service', () => ({
   saveOrReusePaymentMethod: (...args: any[]) => mockSaveOrReusePaymentMethod(...args),
 }));
 
+const mockCheckoutCartQuote = jest.fn();
+jest.mock('../../src/services/checkout-cart.service', () => ({
+  checkoutCartService: {
+    normalizeAddonIds: jest.fn((ids: any) => Array.isArray(ids) ? ids : []),
+    selectedAddonIdsForConsent: jest.fn().mockResolvedValue([]),
+    quoteOffer: (...args: any[]) => mockCheckoutCartQuote(...args),
+  },
+}));
+
+const mockFireTrigger = jest.fn();
+jest.mock('../../src/services/trigger.service', () => ({
+  triggerService: { fireTrigger: (...args: any[]) => mockFireTrigger(...args) },
+}));
+
+const mockMoneyBegin = jest.fn();
+const mockMoneyMarkProviderStarted = jest.fn();
+const mockMoneyMarkProviderAccepted = jest.fn();
+const mockMoneyMarkRecorded = jest.fn();
+const mockMoneyMarkUnknown = jest.fn();
+jest.mock('../../src/services/money-operation.service', () => ({
+  moneyOperationService: {
+    begin: (...args: any[]) => mockMoneyBegin(...args),
+    markProviderStarted: (...args: any[]) => mockMoneyMarkProviderStarted(...args),
+    markProviderAccepted: (...args: any[]) => mockMoneyMarkProviderAccepted(...args),
+    markRecorded: (...args: any[]) => mockMoneyMarkRecorded(...args),
+    markUnknown: (...args: any[]) => mockMoneyMarkUnknown(...args),
+  },
+}));
+
 const mockFrom = jest.fn();
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -49,7 +78,7 @@ import { Request, Response } from 'express';
 
 function mockReq(body: any = {}, query: any = {}): Request {
   return {
-    body,
+    body: { paymentAttemptId: 'attempt_test_1234567890', ...body },
     query,
     headers: { 'x-forwarded-for': '1.2.3.4' },
     socket: { remoteAddress: '127.0.0.1' },
@@ -100,6 +129,17 @@ beforeEach(() => {
   });
   mockCreateProcessorClient.mockReturnValue(mockProcessor);
   mockSaveOrReusePaymentMethod.mockResolvedValue({ id: 'card_1' });
+  mockMoneyBegin.mockResolvedValue({ action: 'execute', operation: { id: 'money-op-1' } });
+  mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
+  mockMoneyMarkRecorded.mockResolvedValue(undefined);
+  mockMoneyMarkUnknown.mockResolvedValue(undefined);
+  mockCheckoutCartQuote.mockResolvedValue({
+    selectedAmountCents: 5000,
+    selectedAmount: 50,
+    futureRecurringSelectedAmountCents: 5000,
+    lineItems: [],
+  });
+  mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
   // Default: no consent token lookup, insert succeeds
   mockFrom.mockReturnValue({
     insert: jest.fn().mockResolvedValue({ error: null }),
@@ -229,6 +269,12 @@ describe('Checkout Controller', () => {
 
       // Verify charge was called with correct amount (cents)
       expect(mockProcessor.charge.mock.calls[0][0].amount).toBe(5000);
+      expect(mockProcessor.charge.mock.calls[0][0].idempotencyKey).toMatch(/^checkout-/);
+      expect(mockMoneyBegin).toHaveBeenCalledWith(expect.objectContaining({
+        operationType: 'checkout_charge',
+        request: expect.objectContaining({ paymentAttemptId: 'attempt_test_1234567890' }),
+      }));
+      expect(mockMoneyBegin.mock.calls[0][0].request).not.toHaveProperty('paymentTokenFingerprint');
 
       // Verify CE 3.0 metadata
       const meta = mockProcessor.charge.mock.calls[0][0].metadata;
@@ -336,6 +382,93 @@ describe('Checkout Controller', () => {
       expect(mockProcessor.charge).not.toHaveBeenCalled();
     });
 
+    it('rejects a consent token bound to a different offer before charging', async () => {
+      const offer = {
+        id: 'offer-b',
+        location_id: 'loc-1',
+        offer_name: 'Cheaper Offer',
+        price: 10,
+        payment_type: 'pif',
+        processor_override: null,
+        nmi_processor_id: null,
+        active: true,
+      };
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'offers_mirror') return supabaseSingle(offer);
+        if (table === 'enrollments') {
+          return supabaseSingle({
+            id: 'enrollment-a',
+            status: 'consent_captured',
+            offer_id: 'offer-a',
+            payment_type: 'pif',
+          });
+        }
+        return supabaseSingle(null);
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        offerId: 'offer-b',
+        consentToken: 'consent-a',
+        paymentToken: 'tok_card',
+        amount: 1000,
+        currency: 'USD',
+        paymentChoice: 'pif',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Consent does not match the selected offer or payment option.',
+      });
+      expect(mockProcessor.charge).not.toHaveBeenCalled();
+    });
+
+    it('rejects a payment choice that differs from the consent record', async () => {
+      const offer = {
+        id: 'offer-1',
+        location_id: 'loc-1',
+        offer_name: 'Dual Offer',
+        price: 100,
+        payment_type: 'installments',
+        installment_amount: 25,
+        pif_price: 90,
+        pif_discount_enabled: true,
+        processor_override: null,
+        nmi_processor_id: null,
+        active: true,
+      };
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'offers_mirror') return supabaseSingle(offer);
+        if (table === 'enrollments') {
+          return supabaseSingle({
+            id: 'enrollment-1',
+            status: 'consent_captured',
+            offer_id: 'offer-1',
+            payment_type: 'installment',
+          });
+        }
+        return supabaseSingle(null);
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        offerId: 'offer-1',
+        consentToken: 'consent-1',
+        paymentToken: 'tok_card',
+        amount: 9000,
+        currency: 'USD',
+        paymentChoice: 'pif',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockProcessor.charge).not.toHaveBeenCalled();
+    });
+
     it('saves card when requested and payment succeeds', async () => {
       mockProcessor.charge.mockResolvedValue({
         success: true,
@@ -408,6 +541,178 @@ describe('Checkout Controller', () => {
       const result = (res.json as jest.Mock).mock.calls[0][0];
       expect(result.success).toBe(false);
       expect(result.error).toBe('Card declined');
+      expect(result.paymentAttemptStatus).toBe('declined');
+    });
+
+    it('does not mark a processor-approved charge recorded when the payment ledger insert fails', async () => {
+      mockProcessor.charge.mockResolvedValue({
+        success: true,
+        transactionId: 'txn_ledger_failure',
+        chargeId: 'txn_ledger_failure',
+        status: 'approved',
+      });
+      mockFrom.mockImplementation((table: string) => ({
+        insert: jest.fn().mockResolvedValue({
+          error: table === 'payment_events' ? { message: 'ledger unavailable' } : null,
+        }),
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({ single: jest.fn().mockResolvedValue({ data: null, error: null }) }),
+        }),
+      }));
+
+      const req = mockReq({
+        publishableKey: 'pk_test', paymentToken: 'tok_card', amount: 5000,
+        currency: 'USD', contactId: 'c1', contactEmail: 'test@test.com', contactName: 'Jane Smith',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(mockMoneyMarkProviderAccepted).toHaveBeenCalledTimes(1);
+      expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('keeps checkout provider-accepted when a created subscription id cannot be saved', async () => {
+      const offer = {
+        id: 'offer-recurring',
+        location_id: 'loc-1',
+        offer_name: 'Recurring Checkout',
+        active: true,
+        price: 100,
+        installment_amount: 100,
+        installment_frequency: 'monthly',
+        payment_type: 'installments',
+        num_payments: 3,
+        processor_override: 'stripe',
+        nmi_processor_id: null,
+      };
+      mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
+      mockCheckoutCartQuote.mockResolvedValue({
+        selectedAmountCents: 10000,
+        selectedAmount: 100,
+        futureRecurringSelectedAmountCents: 10000,
+        lineItems: [],
+      });
+      mockProcessor.charge.mockResolvedValue({
+        success: true,
+        transactionId: 'pi_checkout_subscription_save_failure',
+        chargeId: 'ch_checkout_subscription_save_failure',
+        status: 'approved',
+        vaultedCustomerId: 'cus_1',
+        vaultedCardLastFour: '4242',
+        vaultedCardBrand: 'visa',
+      });
+      mockProcessor.createSubscription.mockResolvedValue({
+        success: true,
+        subscriptionId: 'sub_checkout_not_saved',
+        status: 'active',
+      });
+
+      let enrollmentInserted = false;
+      mockFrom.mockImplementation((table: string) => {
+        let operation: 'select' | 'insert' | 'update' = 'select';
+        let payload: any = null;
+        const execute = async () => {
+          if (operation === 'update') {
+            if (table === 'enrollments' && payload?.processor_subscription_id) {
+              return { data: null, error: { message: 'subscription mapping unavailable' } };
+            }
+            return { data: null, error: null };
+          }
+          if (operation === 'insert') {
+            if (table === 'enrollments') {
+              enrollmentInserted = true;
+              return { data: { id: 'enr_checkout_recurring' }, error: null };
+            }
+            return { data: null, error: null };
+          }
+          if (table === 'offers_mirror') return { data: offer, error: null };
+          if (table === 'enrollments') {
+            return {
+              data: enrollmentInserted ? {
+                id: 'enr_checkout_recurring',
+                offer_id: offer.id,
+                payment_type: 'installment',
+                payments_total: 3,
+                next_billing_date: '2026-08-12',
+              } : null,
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        };
+        const builder: any = {
+          select: jest.fn(() => builder),
+          insert: jest.fn((value: any) => {
+            operation = 'insert';
+            payload = value;
+            return builder;
+          }),
+          update: jest.fn((value: any) => {
+            operation = 'update';
+            payload = value;
+            return builder;
+          }),
+          eq: jest.fn(() => builder),
+          in: jest.fn(() => builder),
+          or: jest.fn(() => builder),
+          order: jest.fn(() => builder),
+          limit: jest.fn(() => builder),
+          single: jest.fn(() => execute()),
+          maybeSingle: jest.fn(() => execute()),
+          then: (resolve: any, reject: any) => execute().then(resolve, reject),
+        };
+        return builder;
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        offerId: offer.id,
+        paymentToken: 'pm_card',
+        amount: 10000,
+        currency: 'USD',
+        contactId: 'contact_1',
+        contactEmail: 'client@example.com',
+        contactName: 'Client One',
+        paymentChoice: 'installments',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        subscriptionId: 'sub_checkout_not_saved',
+        billingIssue: expect.objectContaining({ code: 'processor_subscription_save_failed' }),
+      }));
+      expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+      expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
+        processorReference: 'pi_checkout_subscription_save_failure',
+        reconciliationPayload: expect.objectContaining({
+          processorSubscriptionId: 'sub_checkout_not_saved',
+        }),
+      }));
+    });
+
+    it('replays a completed checkout without calling the processor again', async () => {
+      mockMoneyBegin.mockResolvedValue({
+        action: 'replay',
+        operation: { id: 'money-op-recorded', status: 'recorded' },
+        response: { success: true, chargeId: 'txn_replayed', paymentStatus: 'succeeded', paymentMethod: 'card' },
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        paymentToken: 'tok_card',
+        amount: 5000,
+        currency: 'USD',
+        contactId: 'c1',
+        contactEmail: 'test@test.com',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ chargeId: 'txn_replayed' }));
+      expect(mockProcessor.charge).not.toHaveBeenCalled();
     });
   });
 

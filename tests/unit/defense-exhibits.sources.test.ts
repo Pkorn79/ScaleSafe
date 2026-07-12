@@ -128,6 +128,20 @@ describe('milestone summary composition', () => {
 });
 
 describe('noise filtering', () => {
+  test('contact-only scope never selects the newest signed packet from another enrollment', async () => {
+    mockTableResults['enrollments'] = {
+      data: { id: 'enr_newest', packet_pdf_path: 'packets/wrong-program.pdf', enrolled_at: '2026-07-01T00:00:00Z', offer_id: 'offer_other' },
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', {
+      scopeConfidence: 'contact_only',
+    });
+
+    expect(list.enrollmentPacketPath).toBeNull();
+    expect(list.exhibits.some((e) => e.source === 'enrollment_packet_pdf')).toBe(false);
+  });
+
   test('communications with unrendered merge fields are excluded from exhibits', async () => {
     mockTableResults['evidence_communication'] = {
       data: [

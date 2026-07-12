@@ -100,4 +100,23 @@ describe('terms routes', () => {
     expect(response.status).toBe(302);
     expect(response.headers.location).toBe('http://localhost:4000/terms');
   });
+
+  it('sanitizes merchant HTML and serves it under a restrictive CSP', async () => {
+    mockGetFullConfig.mockResolvedValue({
+      tcHasOwn: false,
+      tcCustomHtml: '<h2 onclick="steal()">Terms</h2><script>alert(1)</script><a href="javascript:alert(2)">Bad</a><a href="https://merchant.example/policy">Policy</a>',
+      businessName: 'Test Merchant',
+    });
+
+    const response = await request(app).get('/terms/loc_1');
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('<h2>Terms</h2>');
+    expect(response.text).not.toContain('<script');
+    expect(response.text).not.toContain('onclick=');
+    expect(response.text).not.toContain('javascript:');
+    expect(response.text).toContain('href="https://merchant.example/policy"');
+    expect(response.text).toContain('rel="noopener noreferrer"');
+    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
+  });
 });

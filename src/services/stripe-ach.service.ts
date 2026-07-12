@@ -18,6 +18,7 @@ type MerchantLike = {
 };
 
 type AchAccessPolicy = 'after_settlement' | 'after_submission';
+type RecurringSetupState = 'ready' | 'pending' | 'failed';
 
 function centsToDollars(cents: number): number {
   return Number((Number(cents || 0) / 100).toFixed(2));
@@ -118,16 +119,34 @@ async function saveStripeAchMethod(params: {
   });
 }
 
-async function setupRecurringAfterSettlement(params: {
+async function claimRecurringSetup(params: {
+  enrollmentId: string;
+  locationId: string;
+}): Promise<boolean> {
+  const { data, error } = await getSupabase().from('enrollments').update({
+    billing_setup_status: 'needs_reconciliation',
+    billing_setup_error: 'Recurring billing setup is in progress or requires reconciliation.',
+  })
+    .eq('id', params.enrollmentId)
+    .eq('location_id', params.locationId)
+    .in('billing_setup_status', ['pending', 'ok'])
+    .is('processor_subscription_id', null)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+
+export async function setupRecurringAfterSettlement(params: {
   merchant: MerchantLike;
   enrollment: any;
   offerId: string | null;
   paymentType: string;
   paymentIntent: any;
-}): Promise<boolean> {
+}): Promise<RecurringSetupState> {
   const paymentType = normalizePaymentType(params.paymentType || params.enrollment.payment_type);
-  if (!['installment', 'subscription'].includes(paymentType)) return true;
-  if (params.enrollment.processor_subscription_id) return true;
+  if (!['installment', 'subscription'].includes(paymentType)) return 'ready';
+  if (params.enrollment.processor_subscription_id) return 'ready';
 
   const pmId = paymentMethodId(params.paymentIntent);
   const cusId = customerId(params.paymentIntent);
@@ -138,7 +157,7 @@ async function setupRecurringAfterSettlement(params: {
       billing_setup_error: 'Stripe ACH payment succeeded, but the saved bank payment method was not available for recurring setup.',
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return false;
+    return 'failed';
   }
 
   const offer = params.offerId
@@ -151,7 +170,7 @@ async function setupRecurringAfterSettlement(params: {
       billing_setup_error: 'Stripe ACH payment succeeded, but the offer was not found for recurring setup.',
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return false;
+    return 'failed';
   }
 
   const remainingPayments = paymentType === 'subscription'
@@ -163,7 +182,7 @@ async function setupRecurringAfterSettlement(params: {
       billing_completed_at: new Date().toISOString(),
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return true;
+    return 'ready';
   }
 
   const quote = await dualPricingService.quoteOffer(offer, paymentType, 'ach');
@@ -175,7 +194,7 @@ async function setupRecurringAfterSettlement(params: {
       billing_setup_error: 'Stripe ACH recurring setup failed because the recurring amount was not valid.',
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return false;
+    return 'failed';
   }
 
   const nextBillingDate = params.enrollment.next_billing_date
@@ -185,23 +204,49 @@ async function setupRecurringAfterSettlement(params: {
     nmi_processor_id: null,
   });
   const processor = createProcessorClient(config);
-  const subResult = await processor.createSubscription({
-    paymentMethodId: pmId,
-    customerId: cusId,
-    planAmount: recurringAmountCents,
-    interval: processorInterval(offer.installment_frequency),
-    totalPayments: remainingPayments,
-    startDate: nextBillingDate,
-    description: offer.offer_name || 'ScaleSafe ACH Recurring Plan',
-    metadata: {
-      enrollment_id: params.enrollment.id,
-      offer_id: params.offerId || '',
-      contact_id: params.enrollment.contact_id || '',
-      location_id: params.merchant.location_id,
-      payment_type: paymentType,
-      payment_method_type: 'ach',
-    },
+  const claimed = await claimRecurringSetup({
+    enrollmentId: params.enrollment.id,
+    locationId: params.merchant.location_id,
   });
+  if (!claimed) {
+    const { data: current, error } = await getSupabase().from('enrollments')
+      .select('processor_subscription_id, billing_setup_status')
+      .eq('id', params.enrollment.id)
+      .eq('location_id', params.merchant.location_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (current?.processor_subscription_id) return 'ready';
+    return current?.billing_setup_status === 'failed' ? 'failed' : 'pending';
+  }
+
+  let subResult;
+  try {
+    subResult = await processor.createSubscription({
+      paymentMethodId: pmId,
+      customerId: cusId,
+      planAmount: recurringAmountCents,
+      interval: processorInterval(offer.installment_frequency),
+      totalPayments: remainingPayments,
+      startDate: nextBillingDate,
+      description: offer.offer_name || 'ScaleSafe ACH Recurring Plan',
+      metadata: {
+        enrollment_id: params.enrollment.id,
+        offer_id: params.offerId || '',
+        contact_id: params.enrollment.contact_id || '',
+        location_id: params.merchant.location_id,
+        payment_type: paymentType,
+        payment_method_type: 'ach',
+      },
+      idempotencyKey: `stripe-ach-recurring-${params.enrollment.id}-${params.paymentIntent.id}`,
+    });
+  } catch (err: any) {
+    await getSupabase().from('enrollments').update({
+      billing_setup_status: 'needs_reconciliation',
+      billing_setup_error: `Stripe ACH recurring setup result is unknown: ${err?.message || 'Stripe request failed'}`,
+      next_billing_date: null,
+    }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
+    return 'pending';
+  }
 
   if (!subResult.success || !subResult.subscriptionId) {
     await getSupabase().from('enrollments').update({
@@ -210,7 +255,7 @@ async function setupRecurringAfterSettlement(params: {
       billing_setup_error: subResult.errorMessage || 'Stripe ACH recurring subscription creation failed.',
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return false;
+    return 'failed';
   }
 
   const { error: subSaveError } = await getSupabase().from('enrollments').update({
@@ -228,9 +273,9 @@ async function setupRecurringAfterSettlement(params: {
       billing_setup_error: `Stripe ACH subscription ${subResult.subscriptionId} was created but could not be saved: ${subSaveError.message}`,
       next_billing_date: null,
     }).eq('id', params.enrollment.id).eq('location_id', params.merchant.location_id);
-    return false;
+    return 'pending';
   }
-  return true;
+  return 'ready';
 }
 
 async function fireStripeAchReceipt(params: {
@@ -495,7 +540,6 @@ export const stripeAchService = {
             payment_type: paymentType,
             payment_transaction_id: transactionId,
             processor_type: 'stripe',
-            billing_setup_status: recurringEnrollment ? 'pending' : 'ok',
             ...(recurringEnrollment ? { next_billing_date: null } : {}),
           } : {}),
           ...(paymentStatus === 'failed' ? { status: 'payment_returned' } : {}),
@@ -523,7 +567,6 @@ export const stripeAchService = {
             status: 'paid_pending_enrollment',
             initial_payment_status: paymentStatus,
             initial_payment_settled_at: paymentStatus === 'settled' ? now : null,
-            billing_setup_status: recurringEnrollment ? 'pending' : 'ok',
           } as any).eq('id', enrollmentId).eq('location_id', locationId);
 
           if (offer && enrollment.contact_id && metadata.send_enrollment !== 'false') {
@@ -624,14 +667,14 @@ export const stripeAchService = {
         }
 
         if (paymentStatus === 'settled' && recurringEnrollment && !enrollment.processor_subscription_id) {
-          const recurringReady = await setupRecurringAfterSettlement({
+          const recurringState = await setupRecurringAfterSettlement({
             merchant,
             enrollment,
             offerId: enrollment.offer_id || offerId,
             paymentType: paymentTypeForEnrollment,
             paymentIntent,
           });
-          if (!recurringReady) {
+          if (recurringState !== 'ready') {
             if (achAccessPolicy === 'after_settlement' && ['payment_processing', 'consent_captured'].includes(enrollmentStatus)) {
               const name = await offerName(locationId, enrollment.offer_id || offerId);
               await fireStripeAchReceipt({

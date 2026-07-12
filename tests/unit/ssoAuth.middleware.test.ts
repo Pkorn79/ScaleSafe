@@ -41,6 +41,18 @@ function app() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFindByLocationId.mockResolvedValue({
+    location_id: 'loc_1',
+    company_id: 'comp_1',
+    status: 'active',
+    ghl_access_token_encrypted: 'access',
+    ghl_refresh_token_encrypted: 'refresh',
+    config: {
+      ghl_token_scope: 'location',
+      ghl_token_location_id: 'loc_1',
+      ghl_token_company_id: 'comp_1',
+    },
+  });
 });
 
 // SECURITY CONTRACT: a merchant session is bound to the sub-account inside the
@@ -62,7 +74,7 @@ describe('ssoAuth location binding', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.locationId).toBe('loc_1');
-    expect(mockFindByLocationId).not.toHaveBeenCalled();
+    expect(mockFindByLocationId).toHaveBeenCalledWith('loc_1');
   });
 
   it('fails closed for agency-context payloads even with a same-agency x-location-id', async () => {
@@ -97,5 +109,47 @@ describe('ssoAuth location binding', () => {
 
     expect(res.status).toBe(401);
     expect(res.body.message).toMatch(/sub-account/i);
+  });
+
+  it('rejects a signed SSO payload when the app was uninstalled', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc_1', companyId: 'comp_1', userId: 'user_1',
+    });
+    mockFindByLocationId.mockResolvedValue({
+      location_id: 'loc_1',
+      company_id: 'comp_1',
+      status: 'uninstalled',
+      ghl_access_token_encrypted: 'access',
+      ghl_refresh_token_encrypted: 'refresh',
+      config: {},
+    });
+
+    const res = await request(app()).get('/protected').set('x-sso-payload', 'encrypted');
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/not actively installed/i);
+  });
+
+  it('rejects a signed SSO payload whose company does not own the installed location', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc_1', companyId: 'comp_other', userId: 'user_1',
+    });
+
+    const res = await request(app()).get('/protected').set('x-sso-payload', 'encrypted');
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/agency/i);
+  });
+
+  it('surfaces a merchant-store outage instead of mislabeling it as invalid SSO', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc_1', companyId: 'comp_1', userId: 'user_1',
+    });
+    mockFindByLocationId.mockRejectedValue(new Error('database unavailable'));
+
+    const res = await request(app()).get('/protected').set('x-sso-payload', 'encrypted');
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('database unavailable');
   });
 });

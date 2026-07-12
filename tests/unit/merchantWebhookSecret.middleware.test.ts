@@ -1,4 +1,4 @@
-import { requireMerchantWebhookSecret } from '../../src/middleware/merchantWebhookSecret';
+import { requireMerchantWebhookSecret, requireMerchantWebhookSecretStrict } from '../../src/middleware/merchantWebhookSecret';
 import { merchantRepository } from '../../src/repositories/merchant.repository';
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
@@ -83,6 +83,17 @@ describe('requireMerchantWebhookSecret', () => {
 
     expect(next).toHaveBeenCalled();
     expect(response.status).not.toHaveBeenCalled();
+  });
+
+  it('always rejects missing secrets on strict evidence endpoints', async () => {
+    const response = res();
+    const next = jest.fn();
+
+    await requireMerchantWebhookSecretStrict(req({}, { locationId: 'loc_1' }), response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+    expect(response.json).toHaveBeenCalledWith({ error: 'WEBHOOK_SECRET_REQUIRED' });
   });
 
   it('rejects missing secrets when enforcement is on', async () => {

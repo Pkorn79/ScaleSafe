@@ -14,6 +14,7 @@ import type { StoredCard } from '../types/processor.types';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { whopService } from './whop.service';
+import { moneyOperationService } from './money-operation.service';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -211,6 +212,7 @@ export const paymentLifecycleService = {
    */
   async retryPayment(merchantId: string, locationId: string, contactId: string, paymentEventId: string): Promise<{ success: boolean; error?: string }> {
     const supabase = getSupabase();
+    let preserveRetryClaim = false;
 
     // Get the original failed payment event
     const { data: originalEvent } = await supabase
@@ -264,14 +266,67 @@ export const paymentLifecycleService = {
       const token = method.nmi_customer_vault_id || method.stripe_payment_method_id || '';
       const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
 
-      const result = await processor.chargeStoredCard(customerId, token, {
+      const amountCents = Math.round(Number(originalEvent.amount) * 100);
+      const retryAttempt = Number(originalEvent.dunning_retry_count || 0) + 1;
+      const operation = await moneyOperationService.begin({
+        locationId,
+        merchantId,
+        operationType: 'dunning_retry',
+        operationKey: `${paymentEventId}:${retryAttempt}`,
+        request: {
+          paymentEventId,
+          contactId,
+          enrollmentId: originalEvent.enrollment_id || null,
+          paymentMethodId: method.id,
+          amountCents,
+          currency: originalEvent.currency || 'usd',
+          processorType: procConfig.processor_type,
+          retryAttempt,
+        },
+      });
+      if (operation.action === 'replay') {
+        return operation.response as { success: boolean; error?: string };
+      }
+      if (operation.action === 'blocked') {
+        preserveRetryClaim = true;
+        return { success: false, error: 'Retry is awaiting processor reconciliation' };
+      }
+
+      let result;
+      try {
+        await moneyOperationService.markProviderStarted({
+          id: operation.operation.id,
+          locationId,
+          processorType: procConfig.processor_type,
+        });
+        result = await processor.chargeStoredCard(customerId, token, {
         amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
         currency: originalEvent.currency || 'usd',
         paymentToken: token,
         description: 'Dunning retry payment',
-      });
+        idempotencyKey: `dunning-${paymentEventId}-${retryAttempt}`,
+        });
+      } catch (chargeErr: any) {
+        preserveRetryClaim = true;
+        await moneyOperationService.markUnknown({
+          id: operation.operation.id,
+          locationId,
+          processorType: procConfig.processor_type,
+          error: chargeErr.message || 'Processor result is unknown',
+        });
+        throw chargeErr;
+      }
 
       if (result.success) {
+        preserveRetryClaim = true;
+        await moneyOperationService.markProviderAccepted({
+          id: operation.operation.id,
+          locationId,
+          processorType: procConfig.processor_type,
+          processorReference: result.transactionId,
+          response: { success: true, transactionId: result.transactionId },
+          reconciliationPayload: { transactionId: result.transactionId },
+        });
         // #5: record the recovered installment atomically — insert the ledger row, increment
         // payments_made, and advance next_billing_date — so the recurring schedule reflects the
         // recovery and the enrollment is not re-billed by the cron or shown as overdue.
@@ -300,10 +355,11 @@ export const paymentLifecycleService = {
           });
           if (recordErr) {
             logger.error({ err: recordErr.message, enrollmentId: originalEvent.enrollment_id, paymentEventId }, 'Dunning retry: record_recurring_payment failed');
+            throw new Error(`Dunning recovery ledger write failed: ${recordErr.message}`);
           }
         } else {
           // No enrollment link — record the standalone recovered sale (legacy behaviour).
-          await supabase.from('payment_events').insert({
+          const { error: insertError } = await supabase.from('payment_events').insert({
             merchant_id: merchantId,
             location_id: locationId,
             contact_id: contactId,
@@ -315,18 +371,30 @@ export const paymentLifecycleService = {
             source: 'dunning_retry',
             is_recurring: true,
           });
+          if (insertError) throw new Error(`Dunning recovery ledger write failed: ${insertError.message}`);
         }
 
         // Resolve dunning
-        await supabase.from('payment_events').update({
+        const { error: resolveError } = await supabase.from('payment_events').update({
           dunning_status: 'resolved',
           dunning_resolved_at: new Date().toISOString(),
         }).eq('id', paymentEventId);
+        if (resolveError) throw new Error(`Dunning recovery status write failed: ${resolveError.message}`);
+
+        await moneyOperationService.markRecorded({
+          id: operation.operation.id,
+          locationId,
+          response: { success: true },
+          processorType: procConfig.processor_type,
+          processorReference: result.transactionId,
+          providerCalled: true,
+        });
 
         // Log evidence
-        await evidenceService.logEvidence(
-          EVIDENCE_TYPES.PAYMENT_CONFIRMATION, locationId, contactId, 'dunning_retry',
-          {
+        try {
+          await evidenceService.logEvidence(
+            EVIDENCE_TYPES.PAYMENT_CONFIRMATION, locationId, contactId, 'dunning_retry',
+            {
             amount: originalEvent.amount,
             payment_date: new Date().toISOString(),
             ghl_transaction_id: result.transactionId,
@@ -350,8 +418,11 @@ export const paymentLifecycleService = {
                 source: { system: 'dunning_retry', rawEventType: 'dunning_resolved' },
               },
             }),
-          },
-        );
+            },
+          );
+        } catch (evidenceErr: any) {
+          logger.warn({ err: evidenceErr.message, paymentEventId }, 'Dunning recovery evidence write failed after payment was recorded');
+        }
 
         // Fire success trigger
         try {
@@ -411,16 +482,27 @@ export const paymentLifecycleService = {
         dunning_next_retry: nextRetry,
       }).eq('id', paymentEventId);
 
+      await moneyOperationService.markRecorded({
+        id: operation.operation.id,
+        locationId,
+        response: { success: false, error: result.errorMessage || 'Charge declined' },
+        processorType: procConfig.processor_type,
+        processorReference: result.transactionId || null,
+        providerCalled: true,
+      });
+
       if (!nextRetry) {
         await this.escalateDunning(locationId, contactId, paymentEventId);
       }
 
       return { success: false, error: result.errorMessage || 'Charge declined' };
     } catch (err: any) {
-      // Release the claim so the event is not stuck in 'retrying'.
-      try {
-        await supabase.from('payment_events').update({ dunning_status: 'active' }).eq('id', paymentEventId);
-      } catch { /* best effort */ }
+      // Never reopen eligibility after the processor may have accepted the charge.
+      if (!preserveRetryClaim) {
+        try {
+          await supabase.from('payment_events').update({ dunning_status: 'active' }).eq('id', paymentEventId);
+        } catch { /* best effort */ }
+      }
       logger.error({ err: err.message, contactId, paymentEventId }, 'Dunning retry charge failed');
       return { success: false, error: err.message };
     }
@@ -684,7 +766,7 @@ export const paymentLifecycleService = {
 
         // Fetch enrollment + offer for remaining payments and frequency
         let enrollmentQuery = supabase.from('enrollments')
-          .select('id, offer_id, payments_made, payments_total')
+          .select('id, offer_id, payments_made, payments_total, status')
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId)
           .eq('processor_subscription_id', params.processorSubscriptionId);
@@ -692,6 +774,12 @@ export const paymentLifecycleService = {
           enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
         }
         const { data: enr } = await enrollmentQuery.maybeSingle();
+        if (!enr) {
+          throw new ValidationError('Unable to resume subscription: enrollment was not found');
+        }
+        if (enr.status !== 'paused') {
+          throw new ValidationError('Only a paused subscription can be resumed');
+        }
 
         let interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' = 'monthly';
         let planAmount = 0;
@@ -724,10 +812,6 @@ export const paymentLifecycleService = {
         const paymentMethodId = pm?.stripe_payment_method_id || pm?.nmi_customer_vault_id || '';
 
         if (procConfig.processor_type === 'stripe') {
-          if (!enr) {
-            throw new ValidationError('Unable to resume subscription: enrollment was not found');
-          }
-
           const result = await processor.resumeSubscription({
             subscriptionId: params.processorSubscriptionId,
             paymentMethodId,
@@ -767,20 +851,79 @@ export const paymentLifecycleService = {
           else nextDate.setMonth(nextDate.getMonth() + 1);
 
           if (remaining > 0 && planAmount > 0 && customerId) {
-            const result = await processor.resumeSubscription({
-              subscriptionId: params.processorSubscriptionId,
-              paymentMethodId,
-              customerId,
-              planAmount,
-              interval,
-              remainingPayments: remaining,
-              startDate: nextDate.toISOString().split('T')[0],
-              description,
+            const operation = await moneyOperationService.begin({
+              locationId: params.locationId,
+              merchantId: params.merchantId,
+              operationType: 'subscription_resume',
+              operationKey: `${enr.id}:${params.processorSubscriptionId}`,
+              request: {
+                enrollmentId: enr.id,
+                contactId: params.contactId,
+                priorSubscriptionId: params.processorSubscriptionId,
+                paymentMethodId,
+                customerId,
+                planAmount,
+                interval,
+                remainingPayments: remaining,
+                startDate: nextDate.toISOString().split('T')[0],
+              },
             });
-            assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'resume');
 
-            if (!enr) {
-              throw new ValidationError('Unable to resume subscription: enrollment was not found');
+            let result: any = null;
+            if (operation.action === 'execute') {
+              try {
+                await moneyOperationService.markProviderStarted({
+                  id: operation.operation.id,
+                  locationId: params.locationId,
+                  processorType: procConfig.processor_type,
+                });
+                result = await processor.resumeSubscription({
+                  subscriptionId: params.processorSubscriptionId,
+                  paymentMethodId,
+                  customerId,
+                  planAmount,
+                  interval,
+                  remainingPayments: remaining,
+                  startDate: nextDate.toISOString().split('T')[0],
+                  description,
+                  idempotencyKey: `resume-${enr.id}-${params.processorSubscriptionId}`,
+                });
+              } catch (resumeErr: any) {
+                await moneyOperationService.markUnknown({
+                  id: operation.operation.id,
+                  locationId: params.locationId,
+                  processorType: procConfig.processor_type,
+                  error: resumeErr.message || 'Processor result is unknown',
+                });
+                throw resumeErr;
+              }
+              assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'resume');
+              await moneyOperationService.markProviderAccepted({
+                id: operation.operation.id,
+                locationId: params.locationId,
+                processorType: procConfig.processor_type,
+                processorReference: result.subscriptionId,
+                response: {
+                  subscriptionId: result.subscriptionId,
+                  nextPaymentDate: result.nextPaymentDate || nextDate.toISOString(),
+                },
+              });
+            } else {
+              const storedResponse = operation.action === 'replay'
+                ? operation.response
+                : operation.operation.status === 'provider_accepted'
+                  ? operation.operation.response_payload
+                  : null;
+              if (!storedResponse?.subscriptionId) {
+                throw new ValidationError('Subscription resume is awaiting processor reconciliation');
+              }
+              result = {
+                success: true,
+                subscriptionId: String(storedResponse.subscriptionId),
+                nextPaymentDate: storedResponse.nextPaymentDate
+                  ? String(storedResponse.nextPaymentDate)
+                  : nextDate.toISOString(),
+              };
             }
 
             const resumeUpdates: Record<string, unknown> = {
@@ -798,6 +941,20 @@ export const paymentLifecycleService = {
               updates: resumeUpdates,
               action: 'resume',
             });
+            if (operation.action !== 'replay') {
+              await moneyOperationService.markRecorded({
+                id: operation.operation.id,
+                locationId: params.locationId,
+                response: {
+                  success: true,
+                  subscriptionId: result.subscriptionId,
+                  nextPaymentDate: result.nextPaymentDate || nextDate.toISOString(),
+                },
+                processorType: procConfig.processor_type,
+                processorReference: result.subscriptionId,
+                providerCalled: true,
+              });
+            }
           } else {
             throw new ValidationError('Unable to resume subscription: recurring amount, saved payment method, or remaining payments are missing');
           }

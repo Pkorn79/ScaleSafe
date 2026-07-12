@@ -1,5 +1,16 @@
 import { getSupabase } from '../clients/supabase.client';
 
+function isMissingTriggerSubscriptionsTable(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42P01' || error.code === 'PGRST205') return true;
+
+  const message = String(error.message || '').toLowerCase();
+  return (
+    /relation\s+["']?(?:public\.)?trigger_subscriptions["']?\s+does not exist/.test(message)
+    || /could not find the table\s+["']?(?:public\.)?trigger_subscriptions["']?\s+in the schema cache/.test(message)
+  );
+}
+
 export interface TriggerSubscriptionRecord {
   id: string;
   location_id: string;
@@ -60,9 +71,9 @@ export const triggerRepository = {
       .eq('trigger_key', triggerKey)
       .eq('is_active', true);
 
-    // Table may not exist — triggers fire directly to GHL Marketplace without it
+    // Older installs may not have the table. All other errors must stay visible.
     if (error) {
-      if (error.code === '42P01' || String(error.message || '').includes('trigger_subscriptions')) return [];
+      if (isMissingTriggerSubscriptionsTable(error)) return [];
       throw error;
     }
     return data || [];

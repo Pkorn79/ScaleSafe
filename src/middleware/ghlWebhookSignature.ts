@@ -44,6 +44,14 @@ function isTriggerSubscriptionLifecycle(req: Request): boolean {
   );
 }
 
+function timingSafeEqual(value: string, expected: string): boolean {
+  if (!value || !expected) return false;
+  const valueBuffer = Buffer.from(value);
+  const expectedBuffer = Buffer.from(expected);
+  return valueBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(valueBuffer, expectedBuffer);
+}
+
 export function verifyGhlWebhookRequest(req: Request): { ok: boolean; reason?: string; algorithm?: string } {
   const payload = getPayload(req);
   const ghlSignature = req.headers['x-ghl-signature']?.toString();
@@ -73,7 +81,8 @@ export function verifyGhlWebhookRequest(req: Request): { ok: boolean; reason?: s
 }
 
 export function requireGhlWebhookSignature(req: Request, res: Response, next: NextFunction): void {
-  const allowUnsigned = process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS === 'true';
+  const allowUnsigned = process.env.NODE_ENV !== 'production'
+    && process.env.ALLOW_UNSIGNED_GHL_WEBHOOKS === 'true';
   const result = verifyGhlWebhookRequest(req);
 
   if (!result.ok && allowUnsigned && result.reason === 'Missing GHL webhook signature') {
@@ -83,9 +92,16 @@ export function requireGhlWebhookSignature(req: Request, res: Response, next: Ne
   }
 
   if (!result.ok && result.reason === 'Missing GHL webhook signature' && isTriggerSubscriptionLifecycle(req)) {
-    logger.warn({ path: req.path }, 'Allowing unsigned GHL trigger subscription lifecycle callback');
-    next();
-    return;
+    const suppliedSecret = String(req.headers['x-scalesafe-trigger-secret'] || '');
+    const expectedSecret = String(process.env.GHL_TRIGGER_SUBSCRIPTION_SECRET || '');
+    if (timingSafeEqual(suppliedSecret, expectedSecret)) {
+      next();
+      return;
+    }
+    logger.warn(
+      { path: req.path, configured: Boolean(expectedSecret) },
+      'Rejected unsigned GHL trigger subscription lifecycle callback',
+    );
   }
 
   if (!result.ok) {

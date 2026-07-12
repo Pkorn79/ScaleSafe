@@ -21,7 +21,7 @@ export const offerController = {
       const { offerName } = req.body;
       if (!offerName) throw new ValidationError('offerName required');
 
-      const offer = await offerService.create({ locationId, ...req.body });
+      const offer = await offerService.create({ ...req.body, locationId });
       res.status(201).json(offer);
     } catch (err) { next(err); }
   },

@@ -7,6 +7,7 @@ import { zoomIntegrationRepository } from '../repositories/zoom-integration.repo
 import { ConnectorAuthContext, EvidenceConnectionRecord } from '../types/evidence-connector.types';
 import { decrypt, encrypt } from '../utils/field-encryption';
 import { ValidationError } from '../utils/errors';
+import { logger } from '../utils/logger';
 import { evidenceConnectionService } from './evidence-connection.service';
 import { evidenceConnectorService } from './evidence-connector.service';
 import { zoomAdapter } from '../integrations/zoom.adapter';
@@ -304,7 +305,7 @@ export const zoomIntegrationService = {
     const leftAt = String(participant.leave_time || new Date(Number(payload.event_ts || Date.now())).toISOString());
     let attendance = await zoomIntegrationRepository.findOpenAttendance(connection.id, meetingUuid, participantId);
     if (!attendance) {
-      attendance = await zoomIntegrationRepository.createAttendance({
+      await zoomIntegrationRepository.createAttendance({
         connection_id: connection.id,
         location_id: connection.location_id,
         meeting_id: meetingId,
@@ -317,10 +318,18 @@ export const zoomIntegrationService = {
         participant_name: String(participant.user_name || '').trim() || null,
         joined_at: leftAt,
         join_source_event_id: `${sourceId}:missing_join`,
-        status: 'joined',
+        leave_source_event_id: sourceId,
+        left_at: leftAt,
+        duration_seconds: null,
+        status: 'quarantined',
       });
+      logger.warn({
+        connectionId: connection.id,
+        meetingUuid,
+        participantId,
+      }, 'Zoom leave event had no matching join; attendance evidence not published');
+      return { accepted: true, recorded: 'leave_without_join', evidencePublished: false };
     }
-    if (!attendance) return { accepted: true, duplicate: true };
     const joinedAtMs = new Date(attendance.joined_at).getTime();
     const leftAtMs = new Date(leftAt).getTime();
     const durationSeconds = Number.isFinite(joinedAtMs) && Number.isFinite(leftAtMs)

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { defenseService } from '../services/defense.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
+import { defenseInputValidationService } from '../services/defense-input-validation.service';
 
 export const defenseController = {
   /** GET /api/defense/transactions/:contactId — list payment events for the transaction selector */
@@ -29,12 +30,14 @@ export const defenseController = {
         const { data: enrollments } = await supabase
           .from('enrollments')
           .select('id, offer_id')
+          .eq('location_id', locationId)
           .in('id', enrollmentIds);
         const offerIds = [...new Set((enrollments || []).map(e => e.offer_id).filter(Boolean))];
         if (offerIds.length > 0) {
           const { data: offers } = await supabase
             .from('offers_mirror')
             .select('id, offer_name')
+            .eq('location_id', locationId)
             .in('id', offerIds);
           const offerNameMap = new Map((offers || []).map(o => [o.id, o.offer_name]));
           for (const enr of (enrollments || [])) {
@@ -72,10 +75,23 @@ export const defenseController = {
         throw new ValidationError('contactId, reasonCode, disputeAmount, disputeDate, deadline required');
       }
 
+      const validated = await defenseInputValidationService.validate({
+        locationId,
+        contactId,
+        offerId,
+        disputeEventId,
+        paymentEventId,
+        enrollmentId,
+      });
+
       const defenseId = await defenseService.compileDefense({
-        locationId, contactId, offerId,
+        locationId, contactId, offerId: validated.offerId,
         reasonCode, disputeAmount, disputeDate, deadline, caseNumber,
-        addressee, disputeEventId, processor, paymentEventId, enrollmentId,
+        addressee,
+        disputeEventId: validated.disputeEventId,
+        processor,
+        paymentEventId: validated.paymentEventId,
+        enrollmentId: validated.enrollmentId,
       });
 
       res.status(202).json({ defenseId, status: 'pending' });

@@ -37,6 +37,9 @@ export interface TriggerHealthRow {
   requiredPayloadFields: string[];
   activeSubscriptionCount: number;
   activeSubscriptionUrls: string[];
+  lastDeliveryAcceptedAt: string | null;
+  deliveryStatusMeaning: string;
+  /** Compatibility alias. A 2xx trigger response does not prove an outbound message was sent. */
   lastSentAt: string | null;
   lastFailedAt: string | null;
   lastNoSubscriptionAt: string | null;
@@ -46,6 +49,9 @@ export interface TriggerHealthRow {
   appEventUses?: Array<{
     eventType: string;
     label: string;
+    lastAppEventDeliveredAt: string | null;
+    deliveryStatusMeaning: string;
+    /** Compatibility alias for existing clients. */
     lastSentAt: string | null;
     lastFailedAt: string | null;
     lastNoSubscriptionAt: string | null;
@@ -116,6 +122,8 @@ function buildRow(
     requiredPayloadFields: contract.requiredPayloadFields,
     activeSubscriptionCount: active.length,
     activeSubscriptionUrls: active.map((sub) => sub.subscription_url),
+    lastDeliveryAcceptedAt: lastSent?.created_at || null,
+    deliveryStatusMeaning: 'The subscribed GHL trigger endpoint returned 2xx; downstream workflow actions and outbound messages require separate proof.',
     lastSentAt: lastSent?.created_at || null,
     lastFailedAt: lastFailed?.created_at || null,
     lastNoSubscriptionAt: lastNoSubscription?.created_at || null,
@@ -128,10 +136,13 @@ function buildRow(
 
 function buildAppEventUse(logs: TriggerDeliveryLogRow[], eventType: string, label: string) {
   const eventLogs = logs.filter((log) => log.trigger_key === 'ss_app_event' && appEventTypeMatches(log.payload, eventType));
+  const lastAppEventDeliveredAt = eventLogs.find((log) => log.status === 'sent')?.created_at || null;
   return {
     eventType,
     label,
-    lastSentAt: eventLogs.find((log) => log.status === 'sent')?.created_at || null,
+    lastAppEventDeliveredAt,
+    deliveryStatusMeaning: 'GHL accepted the ScaleSafe app event; this does not prove that an email or SMS was sent.',
+    lastSentAt: lastAppEventDeliveredAt,
     lastFailedAt: eventLogs.find((log) => log.status === 'failed')?.created_at || null,
     lastNoSubscriptionAt: eventLogs.find((log) => log.status === 'no_subscription')?.created_at || null,
   };

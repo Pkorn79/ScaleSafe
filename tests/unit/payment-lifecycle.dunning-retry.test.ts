@@ -20,6 +20,12 @@ const mockRpc = jest.fn();
 const mockSupabase = { from: (t: string) => builder(t), rpc: (...a: any[]) => mockRpc(...a) };
 const mockChargeStoredCard = jest.fn();
 const mockGhlPut = jest.fn().mockResolvedValue({});
+const mockLogEvidence = jest.fn();
+const mockMoneyBegin = jest.fn();
+const mockMoneyMarkProviderStarted = jest.fn();
+const mockMoneyMarkProviderAccepted = jest.fn();
+const mockMoneyMarkRecorded = jest.fn();
+const mockMoneyMarkUnknown = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({ getSupabase: () => mockSupabase }));
 jest.mock('../../src/clients/ghl.client', () => ({ ghlApi: jest.fn().mockResolvedValue({ put: (...a: any[]) => mockGhlPut(...a) }) }));
@@ -28,7 +34,16 @@ jest.mock('../../src/services/processor.factory', () => ({
   createProcessorClient: jest.fn(() => ({ chargeStoredCard: (...a: any[]) => mockChargeStoredCard(...a) })),
 }));
 jest.mock('../../src/services/trigger.service', () => ({ triggerService: { fireTrigger: jest.fn().mockResolvedValue({}) } }));
-jest.mock('../../src/services/evidence.service', () => ({ evidenceService: { logEvidence: jest.fn().mockResolvedValue({}) } }));
+jest.mock('../../src/services/evidence.service', () => ({ evidenceService: { logEvidence: (...args: any[]) => mockLogEvidence(...args) } }));
+jest.mock('../../src/services/money-operation.service', () => ({
+  moneyOperationService: {
+    begin: (...args: any[]) => mockMoneyBegin(...args),
+    markProviderStarted: (...args: any[]) => mockMoneyMarkProviderStarted(...args),
+    markProviderAccepted: (...args: any[]) => mockMoneyMarkProviderAccepted(...args),
+    markRecorded: (...args: any[]) => mockMoneyMarkRecorded(...args),
+    markUnknown: (...args: any[]) => mockMoneyMarkUnknown(...args),
+  },
+}));
 jest.mock('../../src/services/payment-methods.service', () => ({ collapseVisiblePaymentMethods: jest.fn(), archivePaymentMethod: jest.fn() }));
 jest.mock('../../src/repositories/merchant.repository', () => ({ merchantRepository: { getByLocationId: jest.fn() } }));
 jest.mock('../../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
@@ -42,6 +57,11 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     maybeSingleQueue.length = 0;
     thenQueue.length = 0;
     fromCalls.length = 0;
+    mockLogEvidence.mockResolvedValue({});
+    mockMoneyBegin.mockResolvedValue({ action: 'execute', operation: { id: 'money-op-1' } });
+    mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
+    mockMoneyMarkRecorded.mockResolvedValue(undefined);
+    mockMoneyMarkUnknown.mockResolvedValue(undefined);
   });
 
   // success path: originalEvent + enrollment(offer_id) + offer(frequency) singles;
@@ -91,5 +111,35 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
 
     expect(mockChargeStoredCard).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
+  });
+
+  it('does not reopen the retry after the processor accepts but the recurring ledger write fails', async () => {
+    primeSuccess(50);
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'ledger unavailable' } });
+
+    const result = await paymentLifecycleService.retryPayment('m1', 'loc_1', 'contact_1', 'pe1');
+
+    expect(result).toEqual({ success: false, error: 'Dunning recovery ledger write failed: ledger unavailable' });
+    expect(mockChargeStoredCard).toHaveBeenCalledTimes(1);
+    expect(mockMoneyMarkProviderAccepted).toHaveBeenCalledTimes(1);
+    expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+    const statusWrites = fromCalls
+      .filter((call) => call.table === 'payment_events')
+      .flatMap((call) => call.chain)
+      .filter(([method]: any[]) => method === 'update')
+      .map(([, args]: any[]) => args[0]);
+    expect(statusWrites).not.toContainEqual(expect.objectContaining({ dunning_status: 'active' }));
+  });
+
+  it('keeps a recorded recovery successful when supplemental evidence logging fails', async () => {
+    primeSuccess(50);
+    mockLogEvidence.mockRejectedValue(new Error('evidence unavailable'));
+
+    const result = await paymentLifecycleService.retryPayment('m1', 'loc_1', 'contact_1', 'pe1');
+
+    expect(result).toEqual({ success: true });
+    expect(mockChargeStoredCard).toHaveBeenCalledTimes(1);
+    expect(mockMoneyMarkProviderAccepted).toHaveBeenCalledTimes(1);
+    expect(mockMoneyMarkRecorded).toHaveBeenCalledTimes(1);
   });
 });

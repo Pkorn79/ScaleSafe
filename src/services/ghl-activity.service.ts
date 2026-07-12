@@ -573,6 +573,8 @@ export const ghlActivityService = {
         const offer = match.offerId ? await offerRepository.findById(match.offerId, activity.locationId).catch(() => null) : null;
         const status = normalizeAppointmentStatus(activity.eventType, activity.status);
         const summary = appointmentSummary(activity, offer?.offer_name);
+        const appointmentDelivered = status === 'completed';
+        const appointmentNoShow = status === 'no_show';
 
         await evidenceService.logEvidence(EVIDENCE_TYPES.APPOINTMENT, activity.locationId, activity.contactId, 'ghl_calendar', {
           enrollment_id: match.enrollment?.id || null,
@@ -592,8 +594,16 @@ export const ghlActivityService = {
           ...buildDefenseEvidenceFields({
             summary,
             title: `GHL Appointment: ${activity.title || status}`,
-            proofRole: status === 'completed' ? 'service_delivery' : 'client_engagement',
-            relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: status === 'completed' ? 'high' : 'medium', confidence: 'moderate' },
+            proofRole: appointmentDelivered ? 'service_delivery' : 'client_engagement',
+            relevance: {
+              tags: appointmentDelivered
+                ? ['services_not_provided', 'not_as_described']
+                : appointmentNoShow
+                  ? ['services_not_provided']
+                  : ['general'],
+              priority: appointmentDelivered ? 'high' : appointmentNoShow ? 'medium' : 'low',
+              confidence: 'moderate',
+            },
             enrollmentId: match.enrollment?.id || null,
             sourceRecordId: activity.sourceRecordId || null,
             metadata: {

@@ -211,9 +211,44 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     turnstileSiteKey: '',
     turnstileToken: '',
     turnstileWidgetId: null,
+    paymentAttemptId: '',
+    paymentAttemptScope: '',
   };
 
   var API_BASE = '';
+
+  function ssAttemptHash(value) {
+    var hash = 2166136261;
+    for (var i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function ssPaymentAttemptId(scope) {
+    var key = 'ss_payment_attempt_' + ssAttemptHash(scope);
+    try {
+      var stored = sessionStorage.getItem(key);
+      if (stored) return stored;
+      var created = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'attempt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+      sessionStorage.setItem(key, created);
+      return created;
+    } catch (e) {
+      return 'attempt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+    }
+  }
+
+  function ssClearPaymentAttempt(scope) {
+    try {
+      sessionStorage.removeItem('ss_payment_attempt_' + ssAttemptHash(scope));
+    } catch (e) {}
+    state.paymentAttemptId = '';
+    state.paymentAttemptScope = '';
+    state.nmiToken = null;
+  }
 
   function ssParentOrigins() {
     var origins = ['https://app.gohighlevel.com', 'https://app.leadconnectorhq.com'];
@@ -540,6 +575,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     setLoading(true);
 
     var evidence = captureEvidence();
+    var ghlProductId = state.productDetails && state.productDetails[0]
+      ? (state.productDetails[0]._id || state.productDetails[0].id || '')
+      : '';
+    state.paymentAttemptScope = [
+      state.locationId,
+      state.orderId || state.transactionId || '',
+      ghlProductId,
+      state.contactId || state.contactEmail || '',
+      state.amount,
+      state.selectedPricing,
+    ].join('|');
+    state.paymentAttemptId = ssPaymentAttemptId(state.paymentAttemptScope);
 
     if (state.mode === 'setup') {
       // Card-on-file flow
@@ -582,6 +629,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         publishableKey: state.publishableKey,
+        paymentAttemptId: state.paymentAttemptId,
         paymentToken: token,
         amount: state.amount,
         currency: state.currency,
@@ -617,6 +665,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       } else if (data.threeDSecureUrl) {
         window.location.href = data.threeDSecureUrl;
       } else {
+        if (data.paymentAttemptStatus === 'declined') {
+          ssClearPaymentAttempt(state.paymentAttemptScope);
+        }
         showError(data.error || 'Payment failed. Please try a different card.');
       }
     })
@@ -899,6 +950,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   var turnstileToken = '';
   var turnstileWidgetId = null;
 
+  function checkoutAttemptHash(value) {
+    var hash = 2166136261;
+    for (var i = 0; i < value.length; i++) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function checkoutPaymentAttemptId(scope) {
+    var key = 'ss_checkout_attempt_' + checkoutAttemptHash(scope);
+    try {
+      var stored = sessionStorage.getItem(key);
+      if (stored) return stored;
+      var created = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'attempt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+      sessionStorage.setItem(key, created);
+      return created;
+    } catch (e) {
+      return 'attempt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+    }
+  }
+
+  function clearCheckoutPaymentAttempt(scope) {
+    try {
+      sessionStorage.removeItem('ss_checkout_attempt_' + checkoutAttemptHash(scope));
+    } catch (e) {}
+  }
+
   // CONSENT MODE = full enrollment funnel path. Customer info + T&C were already
   // collected on Page 1 / Page 3 of the funnel; we hide those fields here and
   // populate them from /api/enrollment/consent-lookup so the submit handler stays unchanged.
@@ -1123,6 +1204,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             if (el('cust-name') && fullName) el('cust-name').value = fullName;
             if (el('cust-email') && consentData.email) el('cust-email').value = consentData.email;
             if (consentData.contactId) prefillContactId = consentData.contactId;
+            if (consentData.paymentType) paymentChoice = consentData.paymentType;
             if (Array.isArray(consentData.selectedCheckoutItems)) {
               selectedAddonIds = consentData.selectedCheckoutItems
                 .map(function(item) { return item && item.addonId ? String(item.addonId) : ''; })
@@ -1165,16 +1247,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     // Show pricing toggle if offer supports both PIF and installments
     var hasBothOptions = offerData.paymentType === 'installments' && offerData.pifDiscountEnabled && offerData.pifPrice && offerData.installmentAmount;
-    if (hasBothOptions) {
+    if (hasBothOptions && !consentMode) {
       el('pricing-toggle').style.display = 'block';
       el('pricing-toggle').classList.remove('hidden');
       el('toggle-pif-price').textContent = formatCurrency(offerData.pifPrice);
       el('toggle-inst-price').textContent = formatCurrency(offerData.installmentAmount) + '/mo';
       if (!paymentChoice) paymentChoice = 'pif'; // Default to PIF when toggle shown
-    } else if (offerData.paymentType === 'installments' && offerData.installmentAmount) {
+    } else if (!consentMode && offerData.paymentType === 'installments' && offerData.installmentAmount) {
       // Installment-only (no PIF discount) — force installments
       paymentChoice = 'installments';
-    } else if (offerData.paymentType === 'subscription') {
+    } else if (!consentMode && offerData.paymentType === 'subscription') {
       if (offerData.installmentAmount == null) {
         offerData.installmentAmount = offerData.price;
       }
@@ -1680,6 +1762,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       var amount = Number(quote.selectedAmountCents);
+      var paymentAttemptScope = [
+        offerId,
+        consentToken ? 'consent' : 'quick',
+        paymentChoice || 'pif',
+        selectedPaymentMethod,
+        selectedAddonIds.slice().sort().join(','),
+        amount,
+        custEmail || enrollmentEmail,
+      ].join('|');
+      var paymentAttemptId = checkoutPaymentAttemptId(paymentAttemptScope);
 
       var data;
 
@@ -1693,6 +1785,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
             publishableKey: publishableKey,
+            paymentAttemptId: paymentAttemptId,
             offerId: offerId,
             amount: amount,
             currency: 'usd',
@@ -1763,6 +1856,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           publishableKey: publishableKey,
+          paymentAttemptId: paymentAttemptId,
           paymentToken: token,
           amount: amount,
           currency: 'usd',
@@ -1786,7 +1880,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       });
 
       data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Payment failed');
+      if (!data.success) {
+        if (data.paymentAttemptStatus === 'declined') {
+          clearCheckoutPaymentAttempt(paymentAttemptScope);
+          if (processorType === 'nmi') paymentToken = null;
+        }
+        throw new Error(data.error || 'Payment failed');
+      }
       }
 
       // Success

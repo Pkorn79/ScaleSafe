@@ -158,7 +158,7 @@ export const merchantController = {
       }
 
       // Reset status for retry
-      await merchantRepository.updateSnapshotStatus(locationId, 'pending');
+      await merchantRepository.resetProvisioning(locationId);
 
       merchantService.provisionMerchant(locationId).catch(() => {});
       res.json({ status: 'provisioning_started', locationId });

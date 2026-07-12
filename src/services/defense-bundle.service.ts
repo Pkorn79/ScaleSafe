@@ -37,6 +37,17 @@ export const defenseBundleService = {
     const supabase = getSupabase();
     const packet = await defenseRepository.getById(defenseId, locationId);
     const merchant = await merchantRepository.getByLocationId(locationId);
+    const { data: letterVersion, error: letterVersionError } = await supabase
+      .from('defense_letter_versions')
+      .select('version_number, letter_text')
+      .eq('defense_packet_id', defenseId)
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (letterVersionError) throw letterVersionError;
+    if (!letterVersion || typeof letterVersion.letter_text !== 'string' || !letterVersion.letter_text.trim()) {
+      throw new Error('Defense bundle requires a saved letter version');
+    }
 
     // 1. Build the exhibit list (same list that was used for the letter prompt).
     // The scope options must match the ones the letter used, or the PDF's exhibits
@@ -60,8 +71,8 @@ export const defenseBundleService = {
       evidencePriorities,
     });
 
-    // 2. Get the latest letter text
-    const letterText = packet.defense_letter_text || '';
+    // 2. Render the immutable version row, never the mutable packet mirror.
+    const letterText = letterVersion.letter_text;
 
     // Resolve client name from GHL (best-effort)
     let clientName = '';
@@ -116,16 +127,27 @@ export const defenseBundleService = {
     // 6. Merge all parts via pdf-lib
     const merged = await PDFDocument.create();
 
-    for (const buf of [letterPdfBuffer, exhibitsPdfBuffer, ...externalAttachmentBuffers, enrollmentPdfBuffer]) {
-      if (!buf) continue;
+    const appendPdf = async (buf: Buffer | null, label: string, required: boolean) => {
+      if (!buf) {
+        if (required) throw new Error(`Required defense PDF section is missing: ${label}`);
+        return;
+      }
       try {
         const src = await PDFDocument.load(buf);
         const pages = await merged.copyPages(src, src.getPageIndices());
         for (const p of pages) merged.addPage(p);
       } catch (err: any) {
-        logger.warn({ err: err.message }, 'pdf-lib: failed to merge a PDF section — skipping');
+        if (required) throw new Error(`Required defense PDF section could not be merged (${label}): ${err.message}`);
+        logger.warn({ err: err.message, label }, 'pdf-lib: optional PDF section could not be merged');
       }
+    };
+
+    await appendPdf(letterPdfBuffer, 'defense letter', true);
+    await appendPdf(exhibitsPdfBuffer, 'exhibit summary', exhibitList.exhibits.length > 0);
+    for (let index = 0; index < externalAttachmentBuffers.length; index += 1) {
+      await appendPdf(externalAttachmentBuffers[index], `external attachment ${index + 1}`, false);
     }
+    await appendPdf(enrollmentPdfBuffer, 'signed enrollment packet', Boolean(exhibitList.enrollmentPacketPath));
 
     if (merged.getPageCount() === 0) {
       throw new Error('Defense bundle PDF generation produced no pages');
@@ -133,24 +155,20 @@ export const defenseBundleService = {
 
     const mergedBuffer = Buffer.from(await merged.save());
 
-    // 7. Get the latest version number for the storage key
-    const { data: maxRow } = await supabase
-      .from('defense_letter_versions')
-      .select('version_number')
-      .eq('defense_packet_id', defenseId)
-      .order('version_number', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const versionSuffix = maxRow?.version_number || 1;
-
-    // 8. Upload to Supabase storage with a versioned key
-    const storagePath = `defense-packets/${locationId}/${defenseId}-v${versionSuffix}.pdf`;
+    // 7. Upload with the same immutable version number that supplied the text.
+    const storagePath = `defense-packets/${locationId}/${defenseId}-v${letterVersion.version_number}.pdf`;
     const signedUrl = await storageService.uploadPrivateFile(storagePath, mergedBuffer, 'application/pdf');
 
     // 10. Persist paths on the defense_packets row
-    await supabase.from('defense_packets')
+    const { data: updatedPacket, error: packetUpdateError } = await supabase.from('defense_packets')
       .update({ pdf_storage_path: storagePath, pdf_url: signedUrl })
-      .eq('id', defenseId);
+      .eq('id', defenseId)
+      .eq('location_id', locationId)
+      .eq('contact_id', contactId)
+      .select('id')
+      .maybeSingle();
+    if (packetUpdateError) throw packetUpdateError;
+    if (!updatedPacket) throw new Error('Defense packet PDF path was not persisted');
 
     logger.info({
       defenseId,

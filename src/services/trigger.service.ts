@@ -15,6 +15,100 @@ interface TriggerDeliveryResult {
   status?: 'sent' | 'failed' | 'no_subscription';
 }
 
+const DELIVERY_KEY_FIELDS = new Set([
+  'trigger_delivery_key',
+  'triggerDeliveryKey',
+]);
+
+function stableSerialize(value: unknown, seen = new WeakSet<object>()): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
+  if (typeof value === 'bigint') return JSON.stringify(value.toString());
+  if (typeof value !== 'object') return JSON.stringify(String(value));
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (seen.has(value)) return JSON.stringify('[Circular]');
+
+  seen.add(value);
+  let serialized: string;
+  if (Array.isArray(value)) {
+    serialized = `[${value.map((item) => stableSerialize(item, seen)).join(',')}]`;
+  } else {
+    const record = value as Record<string, unknown>;
+    serialized = `{${Object.keys(record)
+      .filter((key) => !DELIVERY_KEY_FIELDS.has(key))
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key], seen)}`)
+      .join(',')}}`;
+  }
+  seen.delete(value);
+  return serialized;
+}
+
+function buildDeliveryIdentity(
+  normalized: Record<string, unknown>,
+  eventIdentity: string,
+): Record<string, unknown> {
+  const isManualTest = normalized.manual_test === true
+    || String(normalized.manualTest || '').toLowerCase() === 'true';
+  const occurrence = firstNonBlank(
+    normalized.event_id,
+    normalized.eventId,
+    normalized.source_event_id,
+    normalized.sourceEventId,
+    normalized.request_id,
+    normalized.requestId,
+    normalized.idempotency_key,
+    normalized.idempotencyKey,
+    isManualTest ? normalized.sent_at : undefined,
+    isManualTest ? normalized.sentAt : undefined,
+    normalized.payment_event_id,
+    normalized.paymentEventId,
+    normalized.transaction_id,
+    normalized.transactionId,
+    normalized.refund_id,
+    normalized.refundId,
+    normalized.dispute_id,
+    normalized.disputeId,
+    normalized.defense_id,
+    normalized.defenseId,
+    normalized.milestone_completion_id,
+    normalized.milestoneCompletionId,
+    normalized.milestone_id,
+    normalized.milestoneId,
+    normalized.signoff_id,
+    normalized.signoffId,
+    normalized.pulse_due_at,
+    normalized.pulseDueAt,
+    normalized.next_billing_date,
+    normalized.nextBillingDate,
+    normalized.next_payment_date,
+    normalized.nextPaymentDate,
+    normalized.scheduled_at,
+    normalized.scheduledAt,
+    normalized.occurred_at,
+    normalized.occurredAt,
+    normalized.completed_at,
+    normalized.completedAt,
+  );
+  const identity: Record<string, unknown> = {
+    eventIdentity,
+    contactId: normalized.contact_id || '',
+    enrollmentId: normalized.enrollment_id || '',
+    offerId: normalized.offer_id || '',
+    occurrence,
+    reminderWindow: normalized.reminder_window || normalized.reminderWindow || '',
+    paymentNumber: normalized.payment_number || normalized.paymentNumber || '',
+    attemptCount: normalized.attempt_count || normalized.attemptCount || '',
+  };
+
+  // Older trigger call sites do not all provide an immutable event ID. Their
+  // normalized payload remains the deterministic fallback until they do.
+  if (!occurrence) identity.payloadFingerprint = stableSerialize(normalized);
+  return identity;
+}
+
 function normalizeTriggerPayload(
   locationId: string,
   triggerKey: string,
@@ -34,48 +128,35 @@ function normalizeTriggerPayload(
     payload.event_type,
     fallbackEventType,
   );
-  const deliveryKey = crypto
-    .createHash('sha256')
-    .update([
-      locationId,
-      triggerKey,
-      eventIdentity,
-      payload.contact_id || payload.contactId || '',
-      payload.enrollment_id || payload.enrollmentId || '',
-      payload.offer_id || payload.offerId || '',
-      payload.payment_event_id || payload.paymentEventId || '',
-      payload.transaction_id || payload.transactionId || '',
-      payload.defense_id || payload.defenseId || '',
-    ].map((part) => String(part ?? '').trim()).join('|'))
-    .digest('hex');
   const normalized: Record<string, unknown> = {
     ...payload,
     event_type: eventType,
     eventType: eventTypeAlias,
     location_id: locationId,
     locationId,
-    trigger_delivery_key: deliveryKey,
-    triggerDeliveryKey: deliveryKey,
   };
 
-  if (normalized.contact_id && !normalized.contactId) {
-    normalized.contactId = normalized.contact_id;
+  for (const [snakeCase, camelCase] of [
+    ['contact_id', 'contactId'],
+    ['enrollment_id', 'enrollmentId'],
+    ['offer_id', 'offerId'],
+    ['payment_event_id', 'paymentEventId'],
+    ['transaction_id', 'transactionId'],
+    ['defense_id', 'defenseId'],
+  ] as const) {
+    const canonicalValue = firstNonBlank(normalized[snakeCase], normalized[camelCase]);
+    if (canonicalValue) {
+      normalized[snakeCase] = canonicalValue;
+      normalized[camelCase] = canonicalValue;
+    }
   }
-  if (normalized.contactId && !normalized.contact_id) {
-    normalized.contact_id = normalized.contactId;
-  }
-  if (normalized.enrollment_id && !normalized.enrollmentId) {
-    normalized.enrollmentId = normalized.enrollment_id;
-  }
-  if (normalized.enrollmentId && !normalized.enrollment_id) {
-    normalized.enrollment_id = normalized.enrollmentId;
-  }
-  if (normalized.offer_id && !normalized.offerId) {
-    normalized.offerId = normalized.offer_id;
-  }
-  if (normalized.offerId && !normalized.offer_id) {
-    normalized.offer_id = normalized.offerId;
-  }
+
+  const deliveryKey = crypto
+    .createHash('sha256')
+    .update(`${locationId}|${triggerKey}|${stableSerialize(buildDeliveryIdentity(normalized, eventIdentity))}`)
+    .digest('hex');
+  normalized.trigger_delivery_key = deliveryKey;
+  normalized.triggerDeliveryKey = deliveryKey;
 
   return normalized;
 }
@@ -114,13 +195,18 @@ async function postTriggerUrl(
   return axios.post(url, payload, options);
 }
 
-function isAmbiguousTimeout(err: any): boolean {
+function isAmbiguousNetworkFailure(err: any): boolean {
   const message = err instanceof Error ? err.message : String(err || '');
-  return !err?.response?.status && (
-    err?.code === 'ECONNABORTED'
-    || err?.code === 'ETIMEDOUT'
-    || /timeout|timed out|socket hang up/i.test(message)
-  );
+  if (err?.response?.status) return false;
+
+  const code = String(err?.code || '').toUpperCase();
+  return [
+    'ECONNABORTED',
+    'ECONNRESET',
+    'EPIPE',
+    'ETIMEDOUT',
+    'ERR_NETWORK',
+  ].includes(code) || /timeout|timed out|socket hang up|connection reset|broken pipe/i.test(message);
 }
 
 async function postWithRetry(
@@ -144,12 +230,12 @@ async function postWithRetry(
       const message = err instanceof Error ? err.message : String(err);
       lastError = message;
       logger.warn({ url, attempt, status: lastStatus, error: message }, 'Trigger POST failed');
-      if (isAmbiguousTimeout(err)) {
+      if (isAmbiguousNetworkFailure(err)) {
         return {
           success: false,
           httpStatus: lastStatus,
           attemptCount: attempt + 1,
-          errorMessage: `Ambiguous trigger delivery timeout; not retried automatically. ${message}`,
+          errorMessage: `Ambiguous trigger delivery failure; not retried automatically. ${message}`,
         };
       }
       if (isInactiveGhlTriggerError(message)) {
@@ -181,9 +267,12 @@ async function recordTriggerDelivery(params: {
   result: TriggerDeliveryResult;
   payload: Record<string, unknown>;
 }): Promise<void> {
+  const deliveryKey = String(
+    params.payload.trigger_delivery_key || params.payload.triggerDeliveryKey || '',
+  );
   try {
     const supabase = getSupabase();
-    await supabase
+    const { error } = await supabase
       .from('trigger_delivery_logs')
       .insert({
         location_id: params.locationId,
@@ -195,9 +284,18 @@ async function recordTriggerDelivery(params: {
         error_message: params.result.errorMessage ?? null,
         payload: params.payload,
       });
+    if (error) {
+      logger.warn(
+        { err: error.message || String(error), triggerKey: params.triggerKey, deliveryKey },
+        'Trigger delivery log insert failed',
+      );
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.debug({ err: message, triggerKey: params.triggerKey }, 'Trigger delivery log insert skipped');
+    logger.warn(
+      { err: message, triggerKey: params.triggerKey, deliveryKey },
+      'Trigger delivery log insert failed',
+    );
   }
 }
 
@@ -214,6 +312,7 @@ export const triggerService = {
   ): Promise<{ sent: number; failed: number }> {
     const subscriptions = await triggerRepository.getActiveSubscriptions(locationId, triggerKey);
     const normalizedPayload = normalizeTriggerPayload(locationId, triggerKey, payload);
+    const deliveryKey = String(normalizedPayload.trigger_delivery_key || '');
 
     if (subscriptions.length === 0) {
       await recordTriggerDelivery({
@@ -228,7 +327,7 @@ export const triggerService = {
         },
         payload: normalizedPayload,
       });
-      logger.warn({ locationId, triggerKey }, 'No active subscriptions for trigger');
+      logger.warn({ locationId, triggerKey, deliveryKey }, 'No active subscriptions for trigger');
       return { sent: 0, failed: 0 };
     }
 
@@ -253,7 +352,7 @@ export const triggerService = {
             payload: normalizedPayload,
           });
           logger.error(
-            { locationId, triggerKey, subscriptionUrl: sub.subscription_url },
+            { locationId, triggerKey, subscriptionUrl: sub.subscription_url, deliveryKey },
             'Skipped unsupported trigger subscription URL',
           );
           return;
@@ -276,7 +375,7 @@ export const triggerService = {
             try {
               await triggerRepository.deactivateSubscription(locationId, triggerKey, sub.subscription_url);
               logger.warn(
-                { locationId, triggerKey, subscriptionUrl: sub.subscription_url },
+                { locationId, triggerKey, subscriptionUrl: sub.subscription_url, deliveryKey },
                 'Deactivated stale inactive GHL trigger subscription',
               );
             } catch (err: any) {
@@ -285,6 +384,7 @@ export const triggerService = {
                   locationId,
                   triggerKey,
                   subscriptionUrl: sub.subscription_url,
+                  deliveryKey,
                   err: err?.message || String(err),
                 },
                 'Failed to deactivate stale inactive GHL trigger subscription',
@@ -296,6 +396,7 @@ export const triggerService = {
               locationId,
               triggerKey,
               subscriptionUrl: sub.subscription_url,
+              deliveryKey,
               httpStatus: result.httpStatus,
               error: result.errorMessage,
             },
@@ -306,7 +407,7 @@ export const triggerService = {
     );
 
     logger.info(
-      { locationId, triggerKey, total: subscriptions.length, sent, failed },
+      { locationId, triggerKey, deliveryKey, total: subscriptions.length, sent, failed },
       'Trigger fired',
     );
 

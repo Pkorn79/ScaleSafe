@@ -1,3 +1,5 @@
+import vm from 'vm';
+
 jest.mock('../../src/config', () => ({
   config: { hqAdminToken: 'test-token', logLevel: 'silent', appUrl: 'http://localhost:3000' },
 }));
@@ -11,6 +13,6 @@ describe('ScaleSafe HQ operator console', () => {
     expect(script).toContain('openSetup');
     expect(script).toContain('sessionStorage');
     expect(script).not.toContain('localStorage');
-    expect(() => new Function(script)).not.toThrow();
+    new vm.Script(script, { filename: 'hq-inline.js' });
   });
 });

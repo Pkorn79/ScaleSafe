@@ -12,6 +12,7 @@ import { dualPricingService } from '../../src/services/dual-pricing.service';
 import { merchantService } from '../../src/services/merchant.service';
 import { checkoutCartService } from '../../src/services/checkout-cart.service';
 import { whopService } from '../../src/services/whop.service';
+import { moneyOperationService } from '../../src/services/money-operation.service';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: jest.fn(),
@@ -69,6 +70,16 @@ jest.mock('../../src/services/whop.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/money-operation.service', () => ({
+  moneyOperationService: {
+    begin: jest.fn(),
+    markProviderStarted: jest.fn(),
+    markProviderAccepted: jest.fn(),
+    markRecorded: jest.fn(),
+    markUnknown: jest.fn(),
+  },
+}));
+
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn(),
 }));
@@ -99,6 +110,10 @@ const mockFindSavedCard = findSavedCardForProcessor as jest.Mock;
 const mockSaveOrReusePaymentMethod = saveOrReusePaymentMethod as jest.Mock;
 const mockQuoteOffer = dualPricingService.quoteOffer as jest.Mock;
 const mockGetFullConfig = merchantService.getFullConfig as jest.Mock;
+const mockMoneyBegin = moneyOperationService.begin as jest.Mock;
+const mockMoneyMarkProviderAccepted = moneyOperationService.markProviderAccepted as jest.Mock;
+const mockMoneyMarkRecorded = moneyOperationService.markRecorded as jest.Mock;
+const mockMoneyMarkUnknown = moneyOperationService.markUnknown as jest.Mock;
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -425,6 +440,10 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       achAmountCents: 10000,
       dualPricingEnabled: false,
     });
+    mockMoneyBegin.mockResolvedValue({ action: 'execute', operation: { id: 'money-op-1' } });
+    mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
+    mockMoneyMarkRecorded.mockResolvedValue(undefined);
+    mockMoneyMarkUnknown.mockResolvedValue(undefined);
   });
 
   it('fires the paid enrollment link trigger after a successful card manual sale', async () => {
@@ -449,6 +468,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       email: 'client@example.com',
       amount: 100,
       paymentToken: 'tok_card',
+      paymentAttemptId: 'attempt_test_manual_1',
       paymentType: 'pif',
       paymentMethod: 'card',
       sendEnrollment: true,
@@ -457,6 +477,10 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     expect(result.success).toBe(true);
     expect(result.enrollmentId).toBe('enr_1');
     expect(result.enrollmentLinkIssue).toBeUndefined();
+    expect(mockMoneyBegin).toHaveBeenCalledWith(expect.objectContaining({
+      operationType: 'manual_sale_charge',
+      request: expect.objectContaining({ paymentAttemptId: 'attempt_test_manual_1' }),
+    }));
     expect(mockFireTrigger).toHaveBeenCalledWith(
       'loc_1',
       'ss_send_enrollment_link',
@@ -478,6 +502,31 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
         transaction_id: 'pi_manual_1',
       }),
     );
+  });
+
+  it('records an explicit decline so the browser can rotate only that attempt id', async () => {
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn().mockResolvedValue({
+        success: false,
+        status: 'declined',
+        transactionId: '',
+        errorMessage: 'Card was declined',
+      }),
+    });
+
+    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1', offerId: 'offer_1', firstName: 'Client', lastName: 'One',
+      email: 'client@example.com', amount: 100, paymentToken: 'tok_declined',
+      paymentAttemptId: 'attempt_declined_manual_1', paymentType: 'pif', paymentMethod: 'card',
+    } as any)).rejects.toThrow('Card was declined');
+
+    expect(mockMoneyMarkRecorded).toHaveBeenCalledWith(expect.objectContaining({
+      response: {
+        success: false,
+        error: 'Card was declined',
+        paymentAttemptStatus: 'declined',
+      },
+    }));
   });
 
   it('returns a visible issue when the paid enrollment link trigger has no active subscription', async () => {
@@ -507,6 +556,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       email: 'client@example.com',
       amount: 100,
       paymentToken: 'tok_card',
+      paymentAttemptId: 'attempt_test_manual_2',
       paymentType: 'pif',
       paymentMethod: 'card',
       sendEnrollment: true,
@@ -520,6 +570,175 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     expect(result.recordingIssues).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'enrollment_link_trigger_missing' }),
     ]));
+  });
+
+  it('keeps a processor-approved manual sale in reconciliation when ledger recording fails', async () => {
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn().mockResolvedValue({
+        success: true,
+        status: 'succeeded',
+        transactionId: 'pi_needs_reconciliation',
+        vaultedCustomerId: 'cus_1',
+        vaultedCardLastFour: '4242',
+        vaultedCardBrand: 'visa',
+      }),
+    });
+    mockPaymentEventCreateOrReuse.mockRejectedValueOnce(new Error('ledger unavailable'));
+
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1', offerId: 'offer_1', firstName: 'Client', lastName: 'One',
+      email: 'client@example.com', amount: 100, paymentToken: 'tok_card',
+      paymentAttemptId: 'attempt_test_reconcile_1', paymentType: 'pif', paymentMethod: 'card',
+    } as any);
+
+    expect(result.recordingIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'payment_event_recording_failed' }),
+    ]));
+    expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+    expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
+      processorReference: 'pi_needs_reconciliation',
+      response: expect.objectContaining({ success: true }),
+    }));
+  });
+
+  it('does not record the parent charge when a created subscription id cannot be saved', async () => {
+    mockFindOffer.mockResolvedValue({
+      id: 'offer_1',
+      active: true,
+      offer_name: 'Recurring Offer',
+      payment_type: 'installment',
+      price: 100,
+      installment_amount: 100,
+      installment_frequency: 'monthly',
+      num_payments: 3,
+      processor_override: 'stripe',
+    });
+    const createSubscription = jest.fn().mockResolvedValue({
+      success: true,
+      subscriptionId: 'sub_created_not_saved',
+      status: 'active',
+    });
+    mockCreateProcessorClient.mockReturnValue({
+      charge: jest.fn().mockResolvedValue({
+        success: true,
+        status: 'succeeded',
+        transactionId: 'pi_subscription_save_failure',
+        vaultedCustomerId: 'cus_1',
+        vaultedCardLastFour: '4242',
+        vaultedCardBrand: 'visa',
+      }),
+      createSubscription,
+    });
+
+    const enrollmentUpdates: any[] = [];
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn((table: string) => {
+        if (table !== 'enrollments') return queryResult({ data: null, error: null });
+        let result = { data: null as any, error: null as any };
+        const builder: any = {
+          insert: jest.fn(() => {
+            result = { data: { id: 'enr_recurring_1' }, error: null };
+            return builder;
+          }),
+          update: jest.fn((payload: any) => {
+            enrollmentUpdates.push(payload);
+            result = payload.processor_subscription_id
+              ? { data: null, error: { message: 'subscription mapping unavailable' } }
+              : { data: null, error: null };
+            return builder;
+          }),
+          select: jest.fn(() => builder),
+          eq: jest.fn(() => builder),
+          single: jest.fn(async () => result),
+          maybeSingle: jest.fn(async () => result),
+          then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
+        };
+        return builder;
+      }),
+    });
+
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1', offerId: 'offer_1', firstName: 'Client', lastName: 'One',
+      email: 'client@example.com', amount: 100, paymentToken: 'tok_card',
+      paymentAttemptId: 'attempt_subscription_save_1', paymentType: 'installment', paymentMethod: 'card',
+    } as any);
+
+    expect(result.billingIssue).toEqual(expect.objectContaining({
+      code: 'processor_subscription_save_failed',
+    }));
+    expect(enrollmentUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ billing_setup_status: 'needs_reconciliation' }),
+    ]));
+    expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+    expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
+      processorReference: 'pi_subscription_save_failure',
+      reconciliationPayload: expect.objectContaining({
+        processorSubscriptionId: 'sub_created_not_saved',
+      }),
+    }));
+  });
+
+  it('replays a completed manual sale without charging the processor again', async () => {
+    const charge = jest.fn();
+    mockCreateProcessorClient.mockReturnValue({ charge });
+    mockMoneyBegin.mockResolvedValue({
+      action: 'replay',
+      operation: { id: 'money-op-recorded', status: 'recorded' },
+      response: {
+        success: true,
+        contactId: 'contact_1',
+        enrollmentId: 'enr_1',
+        transactionId: 'pi_manual_replayed',
+        processorType: 'stripe',
+      },
+    });
+
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({
+      locationId: 'loc_1',
+      offerId: 'offer_1',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentToken: 'tok_card',
+      paymentAttemptId: 'attempt_test_manual_3',
+      paymentType: 'pif',
+      paymentMethod: 'card',
+    } as any);
+
+    expect(result.transactionId).toBe('pi_manual_replayed');
+    expect(charge).not.toHaveBeenCalled();
+  });
+
+  it('replays a completed Stripe ACH intent without creating another intent or enrollment', async () => {
+    const createAchPaymentIntent = jest.fn();
+    mockCreateProcessorClient.mockReturnValue({ createAchPaymentIntent });
+    mockMoneyBegin.mockResolvedValue({
+      action: 'replay',
+      operation: { id: 'money-op-ach', status: 'recorded' },
+      response: {
+        success: true,
+        contactId: 'contact_1',
+        enrollmentId: 'enr_1',
+        paymentIntentId: 'pi_ach_existing',
+        clientSecret: 'secret_existing',
+      },
+    });
+
+    const result = await payFirstEnrollmentService.createStripeAchManualSaleIntent({
+      locationId: 'loc_1',
+      offerId: 'offer_1',
+      firstName: 'Client',
+      lastName: 'One',
+      email: 'client@example.com',
+      amount: 100,
+      paymentAttemptId: 'attempt_test_ach_12345',
+      paymentType: 'pif',
+      paymentMethod: 'ach',
+    });
+
+    expect(result.paymentIntentId).toBe('pi_ach_existing');
+    expect(createAchPaymentIntent).not.toHaveBeenCalled();
   });
 
   it('resends an existing paid pending enrollment link without creating another payment', async () => {
@@ -571,6 +790,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       email: 'client@example.com',
       amount: 100,
       paymentToken: 'tok_bank',
+      paymentAttemptId: 'attempt_test_manual_4',
       paymentType: 'pif',
       paymentMethod: 'ach',
     } as any)).rejects.toThrow('Stripe bank transfer uses the secure bank-account manual-sale flow.');

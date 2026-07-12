@@ -144,6 +144,27 @@ describe('trigger health service', () => {
     const appEvent = report.rows.find((row) => row.key === 'ss_app_event');
     const pulseUse = appEvent?.appEventUses?.find((item) => item.eventType === 'pulse_check_due');
 
+    expect(appEvent?.lastDeliveryAcceptedAt).toBe('2026-06-04T15:00:00.000Z');
+    expect(appEvent?.deliveryStatusMeaning).toContain('outbound messages require separate proof');
+    expect(pulseUse?.lastAppEventDeliveredAt).toBe('2026-06-04T15:00:00.000Z');
+    expect(pulseUse?.deliveryStatusMeaning).toBe(
+      'GHL accepted the ScaleSafe app event; this does not prove that an email or SMS was sent.',
+    );
     expect(pulseUse?.lastSentAt).toBe('2026-06-04T15:00:00.000Z');
+  });
+
+  it('throws trigger log query failures instead of reporting healthy empty diagnostics', async () => {
+    const error = { code: '57014', message: 'query timed out' };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'trigger_subscriptions') {
+        return thenableQuery({ data: [], error: null });
+      }
+      if (table === 'trigger_delivery_logs') {
+        return thenableQuery({ data: null, error });
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    await expect(triggerHealthService.getHealth('loc_1')).rejects.toBe(error);
   });
 });

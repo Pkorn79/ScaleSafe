@@ -87,6 +87,7 @@ export class StripeClient implements ProcessorInterface {
         vaultCustomer = await this.findOrCreateCustomer(
           request.customerEmail,
           request.customerName,
+          request.idempotencyKey ? `${request.idempotencyKey}-customer` : undefined,
         );
         params.customer = vaultCustomer.id;
         params.setup_future_usage = 'off_session';
@@ -101,7 +102,12 @@ export class StripeClient implements ProcessorInterface {
       // Expand latest_charge so we get card details (last4, brand, exp) without a separate API call
       params.expand = ['latest_charge'];
 
-      const pi = await this.stripe.paymentIntents.create(params, this.acct);
+      const pi = await this.stripe.paymentIntents.create(
+        params,
+        request.idempotencyKey
+          ? { ...this.acct, idempotencyKey: request.idempotencyKey }
+          : this.acct,
+      );
       const result = this.toChargeResult(pi);
 
       // Populate vault metadata from the PaymentIntent's charge object
@@ -267,7 +273,9 @@ export class StripeClient implements ProcessorInterface {
           metadata: this.buildMetadata(request),
           statement_descriptor_suffix: request.statementDescriptorSuffix?.substring(0, 22),
         },
-        this.acct,
+        request.idempotencyKey
+          ? { ...this.acct, idempotencyKey: request.idempotencyKey }
+          : this.acct,
       );
 
       return this.toChargeResult(pi);
@@ -279,6 +287,7 @@ export class StripeClient implements ProcessorInterface {
   // ─── createSubscription ────────────────────────────────────
 
   async createSubscription(request: CreateSubscriptionRequest): Promise<SubscriptionResult> {
+    let subscriptionCallStarted = false;
     try {
       const price = await this.stripe.prices.create(
         {
@@ -290,7 +299,9 @@ export class StripeClient implements ProcessorInterface {
           },
           product_data: { name: request.description || 'ScaleSafe Subscription' },
         },
-        this.acct,
+        request.idempotencyKey
+          ? { ...this.acct, idempotencyKey: `${request.idempotencyKey}-price` }
+          : this.acct,
       );
 
       const subParams: Record<string, any> = {
@@ -326,7 +337,13 @@ export class StripeClient implements ProcessorInterface {
         subParams.cancel_at = cancelAt;
       }
 
-      const subscription = await this.stripe.subscriptions.create(subParams, this.acct);
+      subscriptionCallStarted = true;
+      const subscription = await this.stripe.subscriptions.create(
+        subParams,
+        request.idempotencyKey
+          ? { ...this.acct, idempotencyKey: `${request.idempotencyKey}-subscription` }
+          : this.acct,
+      );
 
       return {
         success: true,
@@ -337,6 +354,16 @@ export class StripeClient implements ProcessorInterface {
           : undefined,
       };
     } catch (err) {
+      if (subscriptionCallStarted && !this.isDefinitiveSubscriptionError(err)) {
+        const procErr = this.toProcessorError(err);
+        throw new ProcessorError(
+          procErr.message,
+          'stripe',
+          'STRIPE_SUBSCRIPTION_RESULT_UNKNOWN',
+          true,
+          err,
+        );
+      }
       const procErr = this.toProcessorError(err);
       return {
         success: false,
@@ -438,6 +465,7 @@ export class StripeClient implements ProcessorInterface {
     description?: string;
     metadata?: Record<string, string>;
     setupFutureUsage?: boolean;
+    idempotencyKey?: string;
   }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
@@ -449,6 +477,7 @@ export class StripeClient implements ProcessorInterface {
       const customer = await this.findOrCreateCustomer(
         request.customerEmail,
         request.customerName,
+        request.idempotencyKey ? `${request.idempotencyKey}-customer` : undefined,
       );
 
       const params: Record<string, any> = {
@@ -471,7 +500,12 @@ export class StripeClient implements ProcessorInterface {
         params.setup_future_usage = 'off_session';
       }
 
-      const pi = await this.stripe.paymentIntents.create(params, this.acct);
+      const pi = await this.stripe.paymentIntents.create(
+        params,
+        request.idempotencyKey
+          ? { ...this.acct, idempotencyKey: request.idempotencyKey }
+          : this.acct,
+      );
       return {
         paymentIntentId: pi.id,
         clientSecret: pi.client_secret,
@@ -531,7 +565,7 @@ export class StripeClient implements ProcessorInterface {
     return meta;
   }
 
-  private async findOrCreateCustomer(email: string, name?: string): Promise<any> {
+  private async findOrCreateCustomer(email: string, name?: string, idempotencyKey?: string): Promise<any> {
     const customers = await this.stripe.customers.list(
       { email, limit: 1 },
       this.acct,
@@ -541,7 +575,10 @@ export class StripeClient implements ProcessorInterface {
       return customers.data[0];
     }
 
-    return this.stripe.customers.create({ email, name }, this.acct);
+    return this.stripe.customers.create(
+      { email, name },
+      idempotencyKey ? { ...this.acct, idempotencyKey } : this.acct,
+    );
   }
 
   private toChargeResult(pi: any): ChargeResult {
@@ -610,6 +647,17 @@ export class StripeClient implements ProcessorInterface {
       };
     }
     throw this.toProcessorError(err);
+  }
+
+  private isDefinitiveSubscriptionError(err: unknown): boolean {
+    const type = err instanceof Error ? String((err as any).type || '') : '';
+    return [
+      'StripeCardError',
+      'StripeInvalidRequestError',
+      'StripeAuthenticationError',
+      'StripePermissionError',
+      'StripeIdempotencyError',
+    ].includes(type);
   }
 
   private toProcessorError(err: unknown): ProcessorError {

@@ -393,17 +393,13 @@ export const defenseExhibitsService = {
 
     // ── 1. Signed enrollment packet PDF (Exhibit A — always first if it exists) ──
     let enrollmentPacketPath: string | null = null;
-    try {
+    if (opts?.enrollmentId) try {
       let enrollmentQuery = supabase
         .from('enrollments')
         .select('id, packet_pdf_path, enrolled_at, offer_id')
         .eq('location_id', locationId)
         .eq('contact_id', contactId);
-      if (opts?.enrollmentId) {
-        enrollmentQuery = enrollmentQuery.eq('id', opts.enrollmentId);
-      } else {
-        enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
-      }
+      enrollmentQuery = enrollmentQuery.eq('id', opts.enrollmentId);
       const { data: enrollment, error: enrollmentErr } = await enrollmentQuery.maybeSingle();
       if (enrollmentErr) recordSourceError('enrollments', enrollmentErr);
 
@@ -415,6 +411,7 @@ export const defenseExhibitsService = {
             .from('offers_mirror')
             .select('offer_name')
             .eq('id', enrollment.offer_id)
+            .eq('location_id', locationId)
             .maybeSingle();
           offerName = o?.offer_name || '';
         }

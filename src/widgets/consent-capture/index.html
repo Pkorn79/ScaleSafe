@@ -489,12 +489,15 @@
       try {
         var email = emailParam || (paidContext && paidContext.email) || (emailInput ? emailInput.value.trim() : '');
         var selectedAddonIds = [];
+        var paymentChoice = 'pif';
         try {
           var storedAddons = sessionStorage.getItem('ss_selected_addons_' + offerId) || sessionStorage.getItem('ss_selected_addons') || '[]';
           var parsedAddons = JSON.parse(storedAddons);
           if (Array.isArray(parsedAddons)) selectedAddonIds = parsedAddons.filter(Boolean);
+          paymentChoice = sessionStorage.getItem('ss_payment_choice_' + offerId) || sessionStorage.getItem('ss_payment_choice') || 'pif';
         } catch (e) {
           selectedAddonIds = [];
+          paymentChoice = 'pif';
         }
 
         // Compute T&C version hash
@@ -527,6 +530,7 @@
           digitalSignature: sigInput.value.trim(),
           clausesAccepted: clausesAccepted,
           selectedAddonIds: selectedAddonIds,
+          paymentChoice: paymentChoice,
           scrollDepth: maxScrollDepth
         };
 

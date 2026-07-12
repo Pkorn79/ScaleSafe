@@ -16,6 +16,7 @@ const mockFindAllByCompanyId = jest.fn();
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
+const mockUpsertOAuthInstall = jest.fn();
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -24,6 +25,7 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
     findAllByCompanyId: mockFindAllByCompanyId,
     create: mockCreate,
     update: mockUpdate,
+    upsertOAuthInstall: mockUpsertOAuthInstall,
     updateSnapshotStatus: mockUpdateSnapshotStatus,
   },
 }));
@@ -77,6 +79,8 @@ const BASE_TOKEN_RESPONSE = {
   companyId: 'comp-xyz',
   userId: 'user-1',
   scopes: ['contacts.readonly', 'locations.readonly'],
+  tokenScope: 'location',
+  approvedLocations: [],
 };
 
 const MERCHANT_RECORD = {
@@ -84,11 +88,19 @@ const MERCHANT_RECORD = {
   company_id: 'comp-xyz',
   snapshot_status: 'installed',
   status: 'active',
+  ghl_access_token_encrypted: 'encrypted-access',
+  ghl_refresh_token_encrypted: 'encrypted-refresh',
+  config: {
+    ghl_token_scope: 'location',
+    ghl_token_location_id: 'loc-abc',
+    ghl_token_company_id: 'comp-xyz',
+  },
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
   (testConfig as any).isProd = false;
+  mockUpsertOAuthInstall.mockResolvedValue({ snapshot_status: 'pending' });
 });
 
 describe('GET /auth/callback', () => {
@@ -126,30 +138,32 @@ describe('GET /auth/callback', () => {
   it('provisions a new merchant on fresh install', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
     mockFindByLocationId.mockResolvedValue(null);
-    mockCreate.mockResolvedValue({});
 
     const res = await request(app).get('/auth/callback?code=test-code');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.locationId).toBe('loc-abc');
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ location_id: 'loc-abc' }),
-    );
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc-abc',
+      config: expect.objectContaining({
+        ghl_token_scope: 'location',
+        ghl_token_location_id: 'loc-abc',
+      }),
+    }));
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('accepts valid signed state when GHL returns it', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
     mockFindByLocationId.mockResolvedValue(null);
-    mockCreate.mockResolvedValue({});
 
     const state = createGhlOAuthState();
     const res = await request(app).get(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(
       expect.objectContaining({ location_id: 'loc-abc' }),
     );
   });
@@ -165,17 +179,19 @@ describe('GET /auth/callback', () => {
 
   it('updates tokens on reinstall (existing merchant)', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
-    mockFindByLocationId.mockResolvedValue({ location_id: 'loc-abc', status: 'inactive' });
-    mockUpdate.mockResolvedValue({});
+    mockFindByLocationId.mockResolvedValue({
+      location_id: 'loc-abc', status: 'uninstalled', config: {}, snapshot_status: 'installed',
+    });
+    mockUpsertOAuthInstall.mockResolvedValue({ snapshot_status: 'installed' });
 
     const res = await request(app).get('/auth/callback?code=reinstall-code');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(mockUpdate).toHaveBeenCalledWith(
-      'loc-abc',
-      expect.objectContaining({ status: 'active' }),
-    );
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc-abc',
+      ghl_access_token: 'at-123',
+    }));
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
@@ -183,6 +199,7 @@ describe('GET /auth/callback', () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
+      tokenScope: 'company',
       _debug: { tokenResponseKeys: ['access_token'], hadLocationId: false, hadCompanyId: true },
     });
 
@@ -199,6 +216,7 @@ describe('GET /auth/callback', () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
+      tokenScope: 'company',
       installedLocations: [
         { locationId: 'loc-new', name: 'New Test Account' },
         { locationId: 'loc-existing', name: 'Existing Account' },
@@ -207,58 +225,60 @@ describe('GET /auth/callback', () => {
     mockFindByLocationId
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ location_id: 'loc-existing', company_id: 'comp-xyz', snapshot_status: 'installed', status: 'active' });
-    mockCreate.mockResolvedValue({});
-    mockUpdate.mockResolvedValue({});
+    mockUpsertOAuthInstall
+      .mockResolvedValueOnce({ snapshot_status: 'pending' })
+      .mockResolvedValueOnce({ snapshot_status: 'installed' });
 
     const res = await request(app).get('/auth/callback?code=agency-code');
 
     expect(res.status).toBe(200);
     expect(res.body.locations).toEqual(['loc-new', 'loc-existing']);
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(
       expect.objectContaining({
         location_id: 'loc-new',
         business_name: 'New Test Account',
+        config: expect.objectContaining({ ghl_token_scope: 'company' }),
       }),
     );
-    expect(mockUpdate).toHaveBeenCalledWith(
-      'loc-existing',
-      expect.objectContaining({
-        status: 'active',
-        business_name: 'Existing Account',
-      }),
-    );
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc-existing',
+      business_name: 'Existing Account',
+    }));
   });
 
   it('one failing sub-account does not abort the install for the others', async () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
+      tokenScope: 'company',
       installedLocations: [
         { locationId: 'loc-bad', name: 'Broken Account' },
         { locationId: 'loc-good', name: 'Good Account' },
       ],
     });
     mockFindByLocationId.mockResolvedValue(null);
-    mockCreate
+    mockUpsertOAuthInstall
       .mockRejectedValueOnce(Object.assign(new Error('null value in column "ghl_access_token" violates not-null constraint'), { code: '23502' }))
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce({ snapshot_status: 'pending' });
 
     const res = await request(app).get('/auth/callback?code=agency-code');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(207);
+    expect(res.body.success).toBe(false);
     expect(res.body.locations).toEqual(['loc-good']);
     expect(res.body.failed).toEqual(['loc-bad']);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledTimes(2);
   });
 
   it('returns 500 when every sub-account fails to install', async () => {
     mockExchangeCodeForTokens.mockResolvedValue({
       ...BASE_TOKEN_RESPONSE,
       locationId: '',
+      tokenScope: 'company',
       installedLocations: [{ locationId: 'loc-bad', name: 'Broken Account' }],
     });
     mockFindByLocationId.mockResolvedValue(null);
-    mockCreate.mockRejectedValue(new Error('database exploded'));
+    mockUpsertOAuthInstall.mockRejectedValue(new Error('database exploded'));
 
     const res = await request(app).get('/auth/callback?code=agency-code');
 
@@ -345,12 +365,40 @@ describe('POST /auth/sso', () => {
       location_id: 'loc-snake',
       userId: 'user-1',
     });
-    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, location_id: 'loc-snake' });
+    mockFindByLocationId.mockResolvedValue({
+      ...MERCHANT_RECORD,
+      location_id: 'loc-snake',
+      config: { ...MERCHANT_RECORD.config, ghl_token_location_id: 'loc-snake' },
+    });
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
     expect(res.status).toBe(200);
     expect(res.body.locationId).toBe('loc-snake');
+  });
+
+  it('rejects initial SSO after the app has been uninstalled', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc', companyId: 'comp-xyz', userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, status: 'uninstalled' });
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/not actively installed/i);
+  });
+
+  it('rejects initial SSO when GHL company and installed merchant disagree', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc', companyId: 'comp-other', userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue(MERCHANT_RECORD);
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/agency/i);
   });
 
   // SECURITY CONTRACT: agency-context launches (no locationId in the SSO

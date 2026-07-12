@@ -26,13 +26,24 @@ const mockGetByLocationId = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
 const mockRepairProvider = jest.fn();
+const mockEnsureWebhookSecret = jest.fn();
+const mockClaimProvisioning = jest.fn();
+const mockListProvisioningCandidates = jest.fn();
+const mockAdoptCompanyAuthorization = jest.fn();
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantHasOAuthCredentials: (merchant: any) => Boolean(
+    merchant?.ghl_access_token_encrypted || merchant?.ghl_access_token,
+  ),
   merchantRepository: {
     findByLocationId: mockFindByLocationId,
     getByLocationId: mockGetByLocationId,
     update: mockUpdate,
     updateSnapshotStatus: mockUpdateSnapshotStatus,
+    ensureWebhookSecret: mockEnsureWebhookSecret,
+    claimProvisioning: mockClaimProvisioning,
+    listProvisioningCandidates: mockListProvisioningCandidates,
+    adoptCompanyAuthorization: mockAdoptCompanyAuthorization,
   },
 }));
 
@@ -59,6 +70,11 @@ beforeEach(() => {
     snapshot_attempts: 0,
     trigger_ids: {},
     custom_value_ids: {},
+    snapshot_status: 'pending',
+    status: 'active',
+    ghl_access_token_encrypted: 'encrypted-access',
+    ghl_refresh_token_encrypted: 'encrypted-refresh',
+    updated_at: '2026-07-12T00:00:00.000Z',
   };
   mockGetByLocationId.mockImplementation(async () => merchantState);
   mockUpdate.mockImplementation(async (_locationId: string, updates: any) => {
@@ -67,6 +83,10 @@ beforeEach(() => {
   });
   mockUpdateSnapshotStatus.mockResolvedValue(undefined);
   mockRepairProvider.mockResolvedValue(undefined);
+  mockEnsureWebhookSecret.mockResolvedValue('webhook-secret');
+  mockClaimProvisioning.mockImplementation(async () => ({ ...merchantState, snapshot_status: 'installing' }));
+  mockListProvisioningCandidates.mockResolvedValue([]);
+  mockAdoptCompanyAuthorization.mockResolvedValue(null);
 });
 
 describe('Pipeline Lookup', () => {
@@ -180,10 +200,11 @@ describe('Full Provisioning', () => {
     // All POST calls succeed
     mockPost.mockResolvedValue({ data: { id: 'new_id' } });
 
-    await merchantService.provisionMerchant('loc_1');
+    const result = await merchantService.provisionMerchant('loc_1');
 
-    expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installing');
+    expect(mockClaimProvisioning).toHaveBeenCalledWith('loc_1', expect.any(Date), 5);
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installed');
+    expect(result.status).toBe('installed');
 
     // Client Milestones pipeline is beta-deferred; provisioning stores custom value IDs only.
     expect(mockUpdate).toHaveBeenCalledWith('loc_1', expect.objectContaining({
@@ -191,21 +212,71 @@ describe('Full Provisioning', () => {
     }));
   });
 
-  test('provisionMerchant marks failed on error and schedules retry', async () => {
-    jest.useFakeTimers();
-
+  test('provisionMerchant marks failed for durable recovery instead of scheduling an in-memory timer', async () => {
     // All GETs fail
     mockGet.mockRejectedValue(new Error('GHL API down'));
     // All POSTs fail
     mockPost.mockRejectedValue(new Error('GHL API down'));
 
-    await merchantService.provisionMerchant('loc_1');
+    const result = await merchantService.provisionMerchant('loc_1');
 
-    expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'installing');
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'failed', expect.any(String));
+    expect(result.status).toBe('failed');
+  });
 
-    jest.clearAllTimers();
-    jest.useRealTimers();
+  test('tokenless INSTALL stub waits for OAuth without consuming a provisioning attempt', async () => {
+    merchantState.ghl_access_token_encrypted = null;
+    merchantState.ghl_refresh_token_encrypted = null;
+
+    const result = await merchantService.provisionMerchant('loc_1');
+
+    expect(result.status).toBe('waiting_for_oauth');
+    expect(mockClaimProvisioning).not.toHaveBeenCalled();
+  });
+
+  test('recovery sweep retries durable candidates and reports tokenless stubs', async () => {
+    const tokenless = {
+      ...merchantState,
+      location_id: 'loc_waiting',
+      ghl_access_token_encrypted: null,
+      ghl_refresh_token_encrypted: null,
+    };
+    mockListProvisioningCandidates.mockResolvedValue([tokenless]);
+    mockGetByLocationId.mockResolvedValue(tokenless);
+
+    const result = await merchantService.recoverPendingProvisioning();
+
+    expect(result).toMatchObject({ inspected: 1, waitingForOauth: 1, failed: 0 });
+    expect(mockClaimProvisioning).not.toHaveBeenCalled();
+  });
+
+  test('tokenless bulk-install stub adopts an existing company authorization', async () => {
+    const tokenless = {
+      ...merchantState,
+      ghl_access_token_encrypted: null,
+      ghl_refresh_token_encrypted: null,
+      company_id: 'company_1',
+    };
+    const adopted = {
+      ...tokenless,
+      ghl_access_token_encrypted: 'encrypted-company-access',
+      ghl_refresh_token_encrypted: 'encrypted-company-refresh',
+      config: { ghl_token_scope: 'company' },
+    };
+    merchantState = tokenless;
+    mockGetByLocationId.mockResolvedValueOnce(tokenless);
+    mockAdoptCompanyAuthorization.mockImplementation(async () => {
+      merchantState = adopted;
+      return adopted;
+    });
+    mockClaimProvisioning.mockResolvedValue({ ...adopted, snapshot_status: 'installing' });
+    mockGet.mockResolvedValue({ data: { customFields: [], customValues: [] } });
+    mockPost.mockResolvedValue({ data: { id: 'new_id' } });
+
+    const result = await merchantService.provisionMerchant('loc_1');
+
+    expect(mockAdoptCompanyAuthorization).toHaveBeenCalledWith('loc_1', 'company_1');
+    expect(result.status).toBe('installed');
   });
 });
 

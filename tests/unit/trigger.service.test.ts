@@ -3,6 +3,17 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+const mockLoggerWarn = jest.fn();
+
+jest.mock('../../src/utils/logger', () => ({
+  logger: {
+    debug: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+    warn: mockLoggerWarn,
+  },
+}));
+
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn(),
 }));
@@ -301,6 +312,188 @@ describe('Trigger Service - fireTrigger', () => {
       'loc_1',
       'enrollment_complete',
       'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/stale',
+    );
+  });
+
+  test('keeps the trusted location and overwrites caller-supplied tenant and delivery keys', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'ss_app_event',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/app',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      location_id: 'loc_attacker',
+      locationId: 'loc_attacker_2',
+      trigger_delivery_key: 'attacker-key',
+      triggerDeliveryKey: 'attacker-key-2',
+      event_type: 'pulse_check_due',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      pulse_due_at: '2026-07-12T12:00:00.000Z',
+    });
+
+    const postedPayload = mockedAxios.post.mock.calls[0][1] as Record<string, unknown>;
+    const deliveryKey = String(postedPayload.trigger_delivery_key);
+    expect(postedPayload).toEqual(expect.objectContaining({
+      location_id: 'loc_1',
+      locationId: 'loc_1',
+      triggerDeliveryKey: deliveryKey,
+    }));
+    expect(deliveryKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(deliveryKey).not.toBe('attacker-key');
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1',
+      payload: expect.objectContaining({
+        location_id: 'loc_1',
+        locationId: 'loc_1',
+        trigger_delivery_key: deliveryKey,
+        triggerDeliveryKey: deliveryKey,
+      }),
+    }));
+  });
+
+  test('uses a stable key for the same event and a different key for the next pulse occurrence', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'ss_app_event',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/app',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      event_type: 'pulse_check_due',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      pulse_due_at: '2026-07-12T12:00:00.000Z',
+      sent_at: '2026-07-12T12:01:00.000Z',
+      form_url: 'https://dashboard.scalesafe.app/pulse-check?token=first',
+      pulse: { interval_label: 'daily', frequency_days: 1 },
+    });
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      pulse: { frequency_days: 1, interval_label: 'daily' },
+      form_url: 'https://dashboard.scalesafe.app/pulse-check?token=rotated',
+      sent_at: '2026-07-12T12:02:00.000Z',
+      pulse_due_at: '2026-07-12T12:00:00.000Z',
+      enrollment_id: 'enr_1',
+      contact_id: 'contact_1',
+      event_type: 'pulse_check_due',
+    });
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      event_type: 'pulse_check_due',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      pulse_due_at: '2026-07-13T12:00:00.000Z',
+      pulse: { interval_label: 'daily', frequency_days: 1 },
+    });
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      event_type: 'pulse_check_due',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      pulse_due_at: '2026-07-13T12:00:00.000Z',
+      sent_at: '2026-07-12T12:03:00.000Z',
+      manual_test: true,
+    });
+    await triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      event_type: 'pulse_check_due',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      pulse_due_at: '2026-07-13T12:00:00.000Z',
+      sent_at: '2026-07-12T12:04:00.000Z',
+      manual_test: true,
+    });
+
+    const keys = mockedAxios.post.mock.calls.map((call) => (
+      call[1] as Record<string, unknown>
+    ).trigger_delivery_key);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(keys[3]).not.toBe(keys[4]);
+  });
+
+  test('does not retry an ambiguous connection reset that may have reached GHL', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'enrollment_complete',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    const error: any = new Error('socket closed after request write');
+    error.code = 'ECONNRESET';
+    mockedAxios.post.mockRejectedValue(error);
+
+    const result = await triggerService.fireTrigger('loc_1', 'enrollment_complete', {
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+    });
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      attempt_count: 1,
+      error_message: expect.stringContaining('Ambiguous trigger delivery failure; not retried automatically.'),
+    }));
+  });
+
+  test('surfaces transient subscription lookup failures instead of recording no subscription', async () => {
+    const error = new Error('Supabase timeout');
+    mockGetActive.mockRejectedValue(error);
+
+    await expect(triggerService.fireTrigger('loc_1', 'ss_app_event', {
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      event_type: 'pulse_check_due',
+    })).rejects.toBe(error);
+
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  test('warns when the delivery audit log cannot be persisted', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'enrollment_complete',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/wf1',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockResolvedValue({ status: 200, data: {} });
+    mockInsert.mockResolvedValueOnce({ error: { message: 'audit table unavailable' } });
+
+    await expect(triggerService.fireTrigger('loc_1', 'enrollment_complete', {
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+    })).resolves.toEqual({ sent: 1, failed: 0 });
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: 'audit table unavailable',
+        triggerKey: 'enrollment_complete',
+        deliveryKey: expect.any(String),
+      }),
+      'Trigger delivery log insert failed',
     );
   });
 });

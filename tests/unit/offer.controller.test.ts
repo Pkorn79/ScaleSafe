@@ -108,6 +108,23 @@ describe('offerController.create', () => {
     expect(res.json).toHaveBeenCalledWith(created);
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('does not let a body location override the authenticated tenant', async () => {
+    const created = { id: 'offer-1', offer_name: 'Coaching', location_id: 'loc-1' };
+    mockCreate.mockResolvedValueOnce(created);
+    const res = mockRes();
+
+    await offerController.create(
+      mockReq({ offerName: 'Coaching', locationId: 'loc-victim' }),
+      res,
+      next,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+      offerName: 'Coaching',
+      locationId: 'loc-1',
+    }));
+  });
 });
 
 describe('offerController.update', () => {

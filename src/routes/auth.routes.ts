@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { exchangeCodeForTokens, InstalledLocation } from '../clients/ghl.client';
+import { exchangeCodeForTokens, InstalledLocation, TokenResponse } from '../clients/ghl.client';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { decryptSsoPayload } from '../utils/crypto';
@@ -7,7 +7,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError } from '../utils/errors';
 import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
-import { extractGhlSsoContext } from '../utils/ghl-sso-context';
+import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
 
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
@@ -35,6 +35,33 @@ function installTargets(locationId: string, installedLocations: InstalledLocatio
     targets.push({ locationId: id, ...(location.name ? { name: location.name } : {}) });
   }
   return targets;
+}
+
+async function persistOAuthTarget(target: InstalledLocation, token: TokenResponse) {
+  const existing = await merchantRepository.findByLocationId(target.locationId);
+  const companyId = token.companyId || existing?.company_id || undefined;
+
+  return merchantRepository.upsertOAuthInstall({
+    location_id: target.locationId,
+    company_id: companyId,
+    ghl_access_token: token.accessToken,
+    ghl_refresh_token: token.refreshToken,
+    ghl_token_expires_at: token.expiresAt.toISOString(),
+    ghl_scopes: token.scopes.join(' '),
+    business_name: existing?.business_name || target.name || undefined,
+    config: {
+      ...(existing?.config || {}),
+      ghl_token_scope: token.tokenScope,
+      ghl_token_company_id: companyId || null,
+      ghl_token_location_id: token.tokenScope === 'location' ? target.locationId : null,
+      ghl_oauth_connected_at: new Date().toISOString(),
+      location_access_token: null,
+      location_refresh_token: null,
+      location_access_token_encrypted: null,
+      location_refresh_token_encrypted: null,
+      location_token_expires_at: null,
+    },
+  });
 }
 
 router.get('/install', (_req: Request, res: Response) => {
@@ -68,7 +95,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     logger.info('OAuth callback received, exchanging code for tokens');
 
     const tokenResponse = await exchangeCodeForTokens(code);
-    const { locationId, companyId, accessToken, refreshToken, expiresAt, scopes, installedLocations, _debug } = tokenResponse;
+    const { locationId, companyId, installedLocations, _debug } = tokenResponse;
     const targets = installTargets(locationId, installedLocations);
 
     if (targets.length === 0) {
@@ -84,7 +111,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    if (!locationId || targets.length > 1) {
+    {
       const provisionTargets: string[] = [];
       const installedTargets: string[] = [];
       const failedTargets: Array<{ locationId: string; error: string }> = [];
@@ -95,35 +122,12 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       for (const target of targets) {
         const targetLocationId = target.locationId;
         try {
-          const existing = await merchantRepository.findByLocationId(targetLocationId);
-
-          if (existing) {
-            await merchantRepository.update(targetLocationId, {
-              company_id: companyId || existing.company_id,
-              ghl_access_token: accessToken,
-              ghl_refresh_token: refreshToken,
-              ghl_token_expires_at: expiresAt.toISOString(),
-              ghl_scopes: scopes.join(' '),
-              business_name: existing.business_name || target.name || undefined,
-              status: 'active',
-            } as any);
-            logger.info({ locationId: targetLocationId }, 'Existing merchant re-authenticated');
-            if (existing.snapshot_status !== 'installed') {
-              provisionTargets.push(targetLocationId);
-            }
-          } else {
-            await merchantRepository.create({
-              location_id: targetLocationId,
-              company_id: companyId,
-              ghl_access_token: accessToken,
-              ghl_refresh_token: refreshToken,
-              ghl_token_expires_at: expiresAt.toISOString(),
-              ghl_scopes: scopes.join(' '),
-              business_name: target.name,
-            });
-            logger.info({ locationId: targetLocationId }, 'New merchant provisioned');
-            provisionTargets.push(targetLocationId);
-          }
+          const merchant = await persistOAuthTarget(target, tokenResponse);
+          if (merchant.snapshot_status !== 'installed') provisionTargets.push(targetLocationId);
+          logger.info(
+            { locationId: targetLocationId, tokenScope: tokenResponse.tokenScope },
+            'Merchant OAuth install reconciled',
+          );
           installedTargets.push(targetLocationId);
         } catch (targetErr: any) {
           failedTargets.push({ locationId: targetLocationId, error: targetErr?.message || String(targetErr) });
@@ -145,51 +149,20 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         });
       }
 
-      res.json({
-        success: true,
+      const partial = failedTargets.length > 0;
+      res.status(partial ? 207 : 200).json({
+        success: !partial,
         message: failedTargets.length
           ? 'ScaleSafe installed for some sub-accounts; others failed — see failed list'
           : 'ScaleSafe installed successfully for connected sub-accounts',
         locationId: installedTargets[0],
         locations: installedTargets,
-        ...(failedTargets.length ? { failed: failedTargets.map((f) => f.locationId) } : {}),
+        provisioning: provisionTargets.length ? 'started' : 'already_installed',
+        ...(partial ? { failed: failedTargets.map((failure) => failure.locationId) } : {}),
       });
       return;
     }
 
-    // Check if merchant already exists (re-install scenario)
-    const existing = await merchantRepository.findByLocationId(locationId);
-
-    if (existing) {
-      // Re-install: update tokens, reactivate if uninstalled
-      await merchantRepository.update(locationId, {
-        ghl_access_token: accessToken,
-        ghl_refresh_token: refreshToken,
-        ghl_token_expires_at: expiresAt.toISOString(),
-        ghl_scopes: scopes.join(' '),
-        status: 'active',
-      } as any);
-      logger.info('Existing merchant re-authenticated');
-    } else {
-      // New install: create merchant record
-      await merchantRepository.create({
-        location_id: locationId,
-        company_id: companyId,
-        ghl_access_token: accessToken,
-        ghl_refresh_token: refreshToken,
-        ghl_token_expires_at: expiresAt.toISOString(),
-        ghl_scopes: scopes.join(' '),
-      });
-      logger.info('New merchant provisioned');
-    }
-
-    // Run provisioning async — don't block the OAuth response
-    // GHL expects a fast callback response; provisioning runs in background
-    merchantService.provisionMerchant(locationId).catch((err) => {
-      logger.error({ err }, 'Background provisioning failed');
-    });
-
-    res.json({ success: true, message: 'ScaleSafe installed successfully', locationId });
   } catch (err) {
     next(err);
   }
@@ -245,8 +218,14 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
         'Merchant not found for this ScaleSafe install.'
       );
     }
+    assertActiveGhlMerchantBinding(merchant as any, ssoContext);
+
+    if (!merchant.company_id && companyId) {
+      await merchantRepository.update(locationId, { company_id: companyId } as any);
+    }
 
     const resolvedLocationId = merchant.location_id;
+    let responseSnapshotStatus = merchant.snapshot_status;
 
     // Auto-provision if snapshot never completed
     logger.info({ snapshotStatus: merchant.snapshot_status }, 'Merchant snapshot status check');
@@ -254,6 +233,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       logger.info({ snapshotStatus: merchant.snapshot_status }, 'Snapshot not installed - triggering provisioning');
       if (merchant.snapshot_status === 'failed') {
         await merchantRepository.updateSnapshotStatus(resolvedLocationId, 'pending');
+        responseSnapshotStatus = 'pending';
       }
       merchantService.provisionMerchant(resolvedLocationId).catch((err) => {
         logger.error({ err }, 'Background provisioning from SSO failed');
@@ -269,7 +249,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       email: ssoContext.email,
       role: ssoContext.role,
       userName: ssoContext.userName,
-      snapshotStatus: merchant.snapshot_status,
+      snapshotStatus: responseSnapshotStatus,
     });
   } catch (err) {
     next(err);

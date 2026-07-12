@@ -113,6 +113,32 @@ describe('Zoom evidence integration', () => {
     expect(linkEvidenceEvent).toHaveBeenCalledWith('attendance-1', 'intake-1');
   });
 
+  it('quarantines a leave without a matching join instead of claiming attendance', async () => {
+    findOpenAttendance.mockResolvedValue(null);
+    createAttendance.mockResolvedValue({ id: 'attendance-orphan' });
+    const payload = {
+      event: 'meeting.participant_left', event_ts: Date.now(),
+      payload: { account_id: 'zoom-account', object: {
+        id: 12345, uuid: 'meeting-instance', topic: 'Implementation Call',
+        participant: { participant_uuid: 'participant-instance', email: 'client@example.com', leave_time: '2026-07-11T15:00:00Z' },
+      } },
+    };
+    const raw = Buffer.from(JSON.stringify(payload));
+
+    await expect(zoomIntegrationService.handleWebhook(payload, raw)).resolves.toEqual({
+      accepted: true,
+      recorded: 'leave_without_join',
+      evidencePublished: false,
+    });
+    expect(createAttendance).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'quarantined',
+      left_at: '2026-07-11T15:00:00Z',
+      duration_seconds: null,
+    }));
+    expect(completeAttendance).not.toHaveBeenCalled();
+    expect(ingestCanonical).not.toHaveBeenCalled();
+  });
+
   it('ignores events for a Zoom account that is not bound to an active tenant connection', async () => {
     getAuthorizationByAccount.mockResolvedValue(null);
     const payload = { event: 'meeting.participant_left', payload: { account_id: 'unknown' } };

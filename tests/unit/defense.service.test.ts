@@ -10,6 +10,7 @@ import type { ExhibitList } from '../../src/services/defense-exhibits.service';
 // internal_debug is written to defense_packets.
 const mockInsertedRows: Record<string, any[]> = {};
 const mockUpdatedRows: Record<string, any[]> = {};
+const mockInsertErrors: Record<string, any> = {};
 // Per-table single-row results for select().maybeSingle()/single(). Tests that
 // need a specific table to return a row set mockSelectResults[table] = row.
 const mockSelectResults: Record<string, any> = {};
@@ -18,7 +19,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
     from: (table: string) => ({
       insert: (row: any) => {
         (mockInsertedRows[table] = mockInsertedRows[table] || []).push(row);
-        const p: any = Promise.resolve({ data: null, error: null });
+        const p: any = Promise.resolve({ data: null, error: mockInsertErrors[table] || null });
         p.select = () => ({ single: () => Promise.resolve({ data: { id: 'row_1' }, error: null }) });
         return p;
       },
@@ -172,6 +173,29 @@ jest.mock('../../src/services/payment.service', () => ({
   },
 }));
 
+const mockDefenseSubmissionBegin = jest.fn().mockResolvedValue({
+  action: 'execute',
+  claim: { id: 'claim_1', status: 'processing', provider_called: false },
+});
+const mockDefenseProviderStarted = jest.fn().mockResolvedValue(undefined);
+const mockDefenseProviderAccepted = jest.fn().mockResolvedValue(undefined);
+const mockDefenseSubmissionUnknown = jest.fn().mockResolvedValue(undefined);
+const mockDefenseSubmissionFailed = jest.fn().mockResolvedValue(undefined);
+const mockDefenseSubmissionFinalize = jest.fn().mockImplementation(async () => {
+  (mockUpdatedRows['defense_packets'] = mockUpdatedRows['defense_packets'] || [])
+    .push({ lifecycle_status: 'submitted' });
+});
+jest.mock('../../src/services/defense-submission.service', () => ({
+  defenseSubmissionService: {
+    begin: (...args: any[]) => mockDefenseSubmissionBegin(...args),
+    markProviderStarted: (...args: any[]) => mockDefenseProviderStarted(...args),
+    markProviderAccepted: (...args: any[]) => mockDefenseProviderAccepted(...args),
+    markUnknown: (...args: any[]) => mockDefenseSubmissionUnknown(...args),
+    markFailedBeforeProvider: (...args: any[]) => mockDefenseSubmissionFailed(...args),
+    finalizeAccepted: (...args: any[]) => mockDefenseSubmissionFinalize(...args),
+  },
+}));
+
 const mockResolveDisputeScope = jest.fn();
 jest.mock('../../src/services/dispute-scope.service', () => ({
   disputeScopeService: {
@@ -277,6 +301,19 @@ function offerCtx(overrides: Partial<OfferContext> = {}): OfferContext {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDefenseSubmissionBegin.mockResolvedValue({
+    action: 'execute',
+    claim: { id: 'claim_1', status: 'processing', provider_called: false },
+  });
+  mockDefenseProviderStarted.mockResolvedValue(undefined);
+  mockDefenseProviderAccepted.mockResolvedValue(undefined);
+  mockDefenseSubmissionUnknown.mockResolvedValue(undefined);
+  mockDefenseSubmissionFailed.mockResolvedValue(undefined);
+  mockDefenseSubmissionFinalize.mockImplementation(async () => {
+    (mockUpdatedRows['defense_packets'] = mockUpdatedRows['defense_packets'] || [])
+      .push({ lifecycle_status: 'submitted' });
+  });
+  mockBundleDefensePdf.mockResolvedValue('https://files.test/defense.pdf');
   mockResolveDisputeScope.mockResolvedValue(exactScope());
   (offerRepository.findById as jest.Mock).mockResolvedValue(offerRow);
   mockUploadDefensePacketFile.mockResolvedValue('file_123');
@@ -285,6 +322,7 @@ beforeEach(() => {
   mockDownloadPrivateFile.mockResolvedValue({ buffer: Buffer.from('%PDF-1.4 test'), bucket: 'private' });
   for (const k of Object.keys(mockInsertedRows)) delete mockInsertedRows[k];
   for (const k of Object.keys(mockUpdatedRows)) delete mockUpdatedRows[k];
+  for (const k of Object.keys(mockInsertErrors)) delete mockInsertErrors[k];
   for (const k of Object.keys(mockSelectResults)) delete mockSelectResults[k];
 });
 
@@ -671,6 +709,21 @@ describe('Defense Service - Regeneration review state', () => {
     );
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
   });
+
+  test('regeneration invalidates the stale PDF and remains needs_review when rebundling fails', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce(regenPacket({
+      pdf_storage_path: 'defense-packets/loc_1/def_1-v1.pdf',
+      pdf_url: 'https://old.example/packet.pdf',
+    }));
+    mockBundleDefensePdf.mockRejectedValueOnce(new Error('signed packet unavailable'));
+
+    await expect(defenseService.regenerateLetter('def_1')).rejects.toThrow(/could not be rebuilt/i);
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1',
+      'needs_review',
+      expect.objectContaining({ pdf_storage_path: null, pdf_url: null }),
+    );
+  });
 });
 
 describe('Defense Service - Compilation Flow', () => {
@@ -941,6 +994,65 @@ describe('Defense Service - Scope resolution & needs_review gating', () => {
     expect(versions[0]).toMatchObject({ generated_by: 'ai', model_used: 'claude-sonnet-5' });
   });
 
+  test('a version-1 insert conflict reuses the locked stored letter for every downstream write', async () => {
+    (callClaude as jest.Mock).mockResolvedValueOnce({
+      text: 'A different letter generated by the retry',
+      inputTokens: 900,
+      outputTokens: 800,
+      model: 'claude-sonnet-5',
+    });
+    mockInsertErrors['defense_letter_versions'] = { code: '23505', message: 'duplicate key value violates unique constraint' };
+    mockSelectResults['defense_letter_versions'] = {
+      version_number: 1,
+      letter_text: 'The original locked version one letter',
+      generated_by: 'ai',
+      model_used: 'claude-sonnet-4',
+      prompt_tokens_used: 111,
+      response_tokens_used: 222,
+    };
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1',
+      'processing',
+      expect.objectContaining({
+        defense_letter_text: 'The original locked version one letter',
+        prompt_tokens_used: 111,
+        response_tokens_used: 222,
+      }),
+    );
+    expect(defenseRepository.updateStatus).not.toHaveBeenCalledWith(
+      'def_1',
+      expect.any(String),
+      expect.objectContaining({ defense_letter_text: 'A different letter generated by the retry' }),
+    );
+    expect(mockBundleDefensePdf).toHaveBeenCalledTimes(1);
+  });
+
+  test('a version-1 insert failure stops safely when the locked row cannot be recovered', async () => {
+    mockInsertErrors['defense_letter_versions'] = { code: '23505', message: 'duplicate key value violates unique constraint' };
+
+    await defenseService.runCompilation('def_1', {
+      locationId: 'loc_1', contactId: 'c_1',
+      reasonCode: '13.1', disputeAmount: 5000,
+      disputeDate: '2026-03-20', deadline: '2026-04-10',
+      enrollmentId: 'enr_1',
+    }, 'services_not_provided');
+
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1',
+      'failed',
+      expect.objectContaining({ error_message: expect.stringContaining('could not be locked') }),
+    );
+    expect(mockBundleDefensePdf).not.toHaveBeenCalled();
+  });
+
   test('an exhibit source query failure forces needs_review and suppresses ss_defense_ready', async () => {
     (defenseExhibitsService.buildExhibitList as jest.Mock).mockResolvedValueOnce({
       ...mockExhibitList,
@@ -1001,7 +1113,7 @@ describe('Defense Service - markSubmitted Stripe push', () => {
       enrollment_id: 'enr_1',
       offer_id: 'offer_1',
       defense_letter_text: 'We got this chargeback and here is why we are disputing it.',
-      pdf_storage_path: 'defense/def_1.pdf',
+      pdf_storage_path: 'defense-packets/loc_1/def_1-v1.pdf',
       ...overrides,
     };
   }
@@ -1017,7 +1129,7 @@ describe('Defense Service - markSubmitted Stripe push', () => {
     });
     (defenseRepository.getById as jest.Mock).mockResolvedValue(stripePacket());
     mockSelectResults['dispute_events'] = { id: 'de_1', stripe_dispute_id: 'dp_1', evidence_submitted: false };
-    mockSelectResults['defense_letter_versions'] = { generated_by: 'ai' };
+    mockSelectResults['defense_letter_versions'] = { id: 'ver_1', version_number: 1, generated_by: 'ai' };
     mockSelectResults['enrollments'] = { consent_captured_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T09:00:00Z', offer_id: 'offer_1' };
   });
 
@@ -1067,7 +1179,7 @@ describe('Defense Service - markSubmitted Stripe push', () => {
   });
 
   test('refuses to submit the automatic fallback letter', async () => {
-    mockSelectResults['defense_letter_versions'] = { generated_by: 'system' };
+    mockSelectResults['defense_letter_versions'] = { id: 'ver_1', version_number: 1, generated_by: 'system' };
 
     await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/fallback draft/i);
     expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
@@ -1081,11 +1193,39 @@ describe('Defense Service - markSubmitted Stripe push', () => {
     expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
   });
 
+  test('refuses a stale PDF whose version does not match the latest letter', async () => {
+    mockSelectResults['defense_letter_versions'] = { id: 'ver_2', version_number: 2, generated_by: 'ai' };
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/PDF is not current/i);
+    expect(mockDefenseSubmissionBegin).not.toHaveBeenCalled();
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+  });
+
+  test('a concurrent or ambiguous durable claim blocks a second Stripe submission', async () => {
+    mockDefenseSubmissionBegin.mockResolvedValue({
+      action: 'blocked',
+      claim: { id: 'claim_1', status: 'unknown', provider_called: true },
+    });
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow(/unknown provider result/i);
+    expect(mockStripeSubmitEvidence).not.toHaveBeenCalled();
+  });
+
   test('a Stripe submission failure aborts markSubmitted — the packet stays pending', async () => {
     mockStripeSubmitEvidence.mockRejectedValue(new Error('Stripe API down'));
 
     await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow('Stripe API down');
     expect(mockUpdatedRows['defense_packets']).toBeUndefined();
+  });
+
+  test('provider success plus local finalization failure stays provider_accepted for reconciliation', async () => {
+    mockDefenseSubmissionFinalize.mockRejectedValue(new Error('database unavailable'));
+
+    await expect(defenseService.markSubmitted('def_1', 'loc_1')).rejects.toThrow('database unavailable');
+    expect(mockStripeSubmitEvidence).toHaveBeenCalledTimes(1);
+    expect(mockDefenseProviderAccepted).toHaveBeenCalledTimes(1);
+    expect(mockDefenseSubmissionUnknown).not.toHaveBeenCalled();
+    expect(mockDefenseSubmissionFailed).not.toHaveBeenCalled();
   });
 
   test('vault assembly failure is non-fatal — packet-scoped evidence still submits', async () => {

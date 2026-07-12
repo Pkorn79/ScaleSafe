@@ -52,6 +52,7 @@ describe('exchangeCodeForTokens', () => {
     const result = await exchangeCodeForTokens('code-123');
     expect(result.locationId).toBe('loc-camel');
     expect(result.companyId).toBe('comp-1');
+    expect(result.tokenScope).toBe('location');
     expect(result.scopes).toEqual(['contacts.readonly', 'locations.readonly']);
     // Should NOT call installedLocations when locationId is present
     expect(mockedAxios.get).not.toHaveBeenCalled();
@@ -122,6 +123,7 @@ describe('exchangeCodeForTokens', () => {
     const result = await exchangeCodeForTokens('code-agency');
     expect(result.locationId).toBe('loc-resolved');
     expect(result.companyId).toBe('comp-agency');
+    expect(result.tokenScope).toBe('company');
     expect(result._debug?.installedLocationsResponse).toBeDefined();
     expect(mockedAxios.get).toHaveBeenCalledWith(
       'https://services.leadconnectorhq.com/oauth/installed-locations',
@@ -129,6 +131,64 @@ describe('exchangeCodeForTokens', () => {
         params: expect.objectContaining({ companyId: 'comp-agency', appId: 'app-123' }),
       }),
     );
+  });
+
+  it('prefers the exact approvedLocations from a company token over every prior install', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-bulk',
+        refresh_token: 'rt-bulk',
+        expires_in: 86400,
+        userType: 'Company',
+        companyId: 'comp-agency',
+        approvedLocations: ['loc-new-a', 'loc-new-b'],
+        scope: 'contacts.readonly',
+      },
+    });
+
+    const result = await exchangeCodeForTokens('code-approved-locations');
+
+    expect(result.locationId).toBe('');
+    expect(result.installedLocations).toEqual([
+      { locationId: 'loc-new-a' },
+      { locationId: 'loc-new-b' },
+    ]);
+    expect(result._debug?.locationResolutionSource).toBe('approvedLocations');
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
+  it('fails closed instead of querying unfiltered installs when Marketplace appId is unavailable', async () => {
+    (testConfig.ghl as any).clientId = 'opaque-client-id';
+    (testConfig.ghl as any).appId = '';
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-agency',
+        refresh_token: 'rt-agency',
+        expires_in: 86400,
+        userType: 'Company',
+        companyId: 'comp-agency',
+      },
+    });
+
+    const result = await exchangeCodeForTokens('code-no-app-id');
+
+    expect(result.locationId).toBe('');
+    expect(result.installedLocations).toEqual([]);
+    expect(result._debug?.installedLocationsResponse).toMatchObject({ missingAppId: true });
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects token responses that cannot survive the first access-token expiry', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: {
+        access_token: 'at-only',
+        expires_in: 86400,
+        userType: 'Location',
+        locationId: 'loc-no-refresh',
+      },
+    });
+
+    await expect(exchangeCodeForTokens('code-no-refresh')).rejects.toThrow(/durable access and refresh/i);
   });
 
   it('derives Marketplace appId from GHL clientId when explicit appId env is missing', async () => {

@@ -2,7 +2,6 @@ import { callClaude } from '../clients/anthropic.client';
 import { ghlApi } from '../clients/ghl.client';
 import { getSupabase } from '../clients/supabase.client';
 import { defenseRepository } from '../repositories/defense.repository';
-import { evidenceRepository } from '../repositories/evidence.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { paymentService } from './payment.service';
 import { triggerService } from './trigger.service';
@@ -10,6 +9,7 @@ import { storageService } from './storage.service';
 import { defenseExhibitsService, normalizeEvidencePriorities, buildTimelineRows, type ExhibitList, type ExhibitEntry } from './defense-exhibits.service';
 import { disputeScopeService, type DisputeScope } from './dispute-scope.service';
 import { defenseReadinessService, evaluateReviewState } from './defense-readiness.service';
+import { defenseSubmissionService } from './defense-submission.service';
 import { offerRepository } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { AppError, ValidationError, ConflictError, ExternalServiceError } from '../utils/errors';
@@ -39,7 +39,7 @@ export interface OfferContext {
   milestones: Array<{ name: string; delivers: string; clientDoes: string }>;
 }
 
-interface CompileDefenseInput {
+export interface CompileDefenseInput {
   locationId: string;
   contactId: string;
   offerId?: string;
@@ -98,6 +98,27 @@ async function shapePacketResponseWithFreshUrl(packet: any): Promise<any> {
   return shaped;
 }
 
+async function requireCurrentDefenseBundle(packet: any): Promise<any> {
+  if (!packet.defense_letter_text) {
+    throw new ValidationError('This defense packet does not have a letter to submit.');
+  }
+  const { data: latestVersion, error } = await getSupabase()
+    .from('defense_letter_versions')
+    .select('id, version_number, generated_by, letter_text')
+    .eq('defense_packet_id', packet.id)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!latestVersion) throw new ValidationError('This defense packet has no saved letter version.');
+
+  const expectedPath = `defense-packets/${packet.location_id}/${packet.id}-v${latestVersion.version_number}.pdf`;
+  if (packet.pdf_storage_path !== expectedPath) {
+    throw new ValidationError('The defense PDF is not current with the latest letter. Rebuild or regenerate the packet before submitting.');
+  }
+  return latestVersion;
+}
+
 export const defenseService = {
   /**
    * Trigger defense compilation. Returns defenseId immediately.
@@ -137,7 +158,8 @@ export const defenseService = {
         disputeEventId = created?.id || null;
         logger.info({ disputeEventId, locationId: input.locationId }, 'NMI dispute_event row created server-side');
       } catch (err: any) {
-        logger.warn({ err: err.message, locationId: input.locationId }, 'Failed to create NMI dispute_event row — defense will still compile but ratio loop is broken for this packet');
+        logger.error({ err: err.message, locationId: input.locationId }, 'Failed to create required NMI dispute_event row');
+        throw new Error(`Could not create the NMI dispute record: ${err.message}`);
       }
     }
 
@@ -145,7 +167,15 @@ export const defenseService = {
     const addressee = input.addressee
       || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
 
-    // Create pending defense packet (column names match migration 002 + 043 + 044)
+    const compilationInput: CompileDefenseInput = {
+      ...input,
+      disputeEventId: disputeEventId || undefined,
+      processor,
+      addressee,
+    };
+
+    // Create the durable queue row. Migration 098 stores the complete,
+    // validated compilation input so a database-leased worker can resume it.
     const packet = await defenseRepository.create({
       location_id: input.locationId,
       contact_id: input.contactId,
@@ -161,6 +191,8 @@ export const defenseService = {
       addressee,
       payment_event_id: input.paymentEventId || null,
       enrollment_id: input.enrollmentId || null,
+      compilation_input: compilationInput,
+      compilation_category: category,
     } as any);
 
     // Update GHL contact before firing the workflow trigger so templates can
@@ -199,15 +231,7 @@ export const defenseService = {
       logger.warn({ err: trigErr.message, defenseId: packet.id }, 'Chargeback detected trigger fire failed (non-fatal)');
     });
 
-    // Run compilation async
-    this.runCompilation(packet.id, input, category).catch((err) => {
-      logger.error({ err, defenseId: packet.id }, 'Defense compilation failed');
-      defenseRepository.updateStatus(packet.id, 'failed', {
-        defense_letter_text: `Compilation failed: ${err.message}`,
-      });
-    });
-
-    logger.info({ defenseId: packet.id, reasonCode: input.reasonCode, category }, 'Defense compilation triggered');
+    logger.info({ defenseId: packet.id, reasonCode: input.reasonCode, category }, 'Defense compilation queued');
     return packet.id;
   },
 
@@ -271,8 +295,14 @@ export const defenseService = {
       date: input.disputeDate,
     });
 
-    // 3. Also gather raw evidence snapshot for the packet row (legacy column, still useful for debug)
-    const evidence = await evidenceRepository.getFullSnapshot(input.locationId, input.contactId);
+    // 3. Freeze the exact scoped exhibit set used by the letter and PDF. Never
+    // store a contact-wide timeline as the packet snapshot for a scoped dispute.
+    const evidence = {
+      scope,
+      exhibits: exhibitList.exhibits,
+      sourceErrors: exhibitList.sourceErrors || [],
+      capturedAt: new Date().toISOString(),
+    };
     await defenseRepository.updateStatus(defenseId, 'processing', {
       evidence_snapshot: evidence,
       evidence_count: exhibitList.exhibits.length,
@@ -282,6 +312,11 @@ export const defenseService = {
     // this enrollment when known so sibling-program payments don't pollute the main story.
     const undisputedPayments = await paymentService.getUndisputedPayments(
       input.locationId, input.contactId, scope.enrollmentId || undefined,
+      {
+        paymentEventId: scope.paymentEventId,
+        processorTransactionId: scope.processorTransactionId,
+        onOrAfter: scope.transactionDate,
+      },
     );
 
     // 5. Get contact details from GHL
@@ -343,8 +378,9 @@ export const defenseService = {
     }
 
     // 9. Write the letter to defense_letter_versions as version 1 and mirror to the
-    // fast-read column. Supabase inserts return { error } rather than throwing — an
-    // ignored error here is exactly how fallback letters silently went unversioned.
+    // fast-read column. A retry can collide with an already-committed version 1;
+    // that stored row is authoritative for every downstream artifact.
+    let versionWriteError: any = null;
     try {
       const { error: versionErr } = await supabase.from('defense_letter_versions').insert({
         defense_packet_id: defenseId,
@@ -356,11 +392,55 @@ export const defenseService = {
         response_tokens_used: result.outputTokens,
         notes: usedFallback ? 'Structured fallback letter — AI provider unavailable' : null,
       });
-      if (versionErr) {
-        logger.error({ err: versionErr.message, defenseId, generatedBy: modelUsed === 'fallback' ? 'system' : 'ai' }, 'Letter version insert FAILED — version history is missing this letter');
-      }
+      versionWriteError = versionErr;
     } catch (vErr: any) {
-      logger.error({ err: vErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
+      versionWriteError = vErr;
+    }
+
+    if (versionWriteError) {
+      let storedVersion: any = null;
+      let storedVersionError: any = null;
+      try {
+        const stored = await supabase
+          .from('defense_letter_versions')
+          .select('version_number, letter_text, generated_by, model_used, prompt_tokens_used, response_tokens_used')
+          .eq('defense_packet_id', defenseId)
+          .eq('version_number', 1)
+          .maybeSingle();
+        storedVersion = stored.data;
+        storedVersionError = stored.error;
+      } catch (readErr: any) {
+        storedVersionError = readErr;
+      }
+
+      if (storedVersionError || typeof storedVersion?.letter_text !== 'string' || !storedVersion.letter_text.trim()) {
+        logger.error({
+          err: versionWriteError?.message || String(versionWriteError),
+          readErr: storedVersionError?.message,
+          defenseId,
+        }, 'Letter version 1 could not be locked or recovered; compilation stopped');
+        await defenseRepository.updateStatus(defenseId, 'failed', {
+          error_message: 'Defense letter version could not be locked. Compilation stopped before PDF generation.',
+        } as any);
+        return;
+      }
+
+      const storedInputTokens = Number(storedVersion.prompt_tokens_used);
+      const storedOutputTokens = Number(storedVersion.response_tokens_used);
+      result = {
+        text: storedVersion.letter_text,
+        inputTokens: Number.isFinite(storedInputTokens) ? storedInputTokens : 0,
+        outputTokens: Number.isFinite(storedOutputTokens) ? storedOutputTokens : 0,
+      };
+      modelUsed = storedVersion.model_used || (storedVersion.generated_by === 'system' ? 'fallback' : 'stored');
+      usedFallback = storedVersion.generated_by === 'system';
+      aiFailure = null;
+      modelAttempts = null;
+      logger.warn({
+        defenseId,
+        versionNumber: storedVersion.version_number,
+        insertErr: versionWriteError?.message || String(versionWriteError),
+      }, 'Letter version 1 already exists; reusing the stored letter for compilation retry');
     }
 
     await defenseRepository.updateStatus(defenseId, 'processing', {
@@ -428,7 +508,8 @@ export const defenseService = {
         const { error: dbgErr } = await supabase
           .from('defense_packets')
           .update({ internal_debug: internalDebug })
-          .eq('id', defenseId);
+          .eq('id', defenseId)
+          .eq('location_id', input.locationId);
         if (dbgErr) logger.warn({ err: dbgErr.message, defenseId }, 'Failed to persist internal_debug (is migration 086 applied?)');
       } catch (dbgErr: any) {
         logger.warn({ err: dbgErr.message, defenseId }, 'Failed to persist internal_debug (is migration 086 applied?)');
@@ -926,6 +1007,7 @@ LETTER STRUCTURE:
         .from('dispute_events')
         .select('stripe_dispute_id, raw_dispute_object')
         .eq('id', (packet as any).dispute_event_id)
+        .eq('location_id', packet.location_id)
         .maybeSingle();
       shaped.isStripeDispute = !!de?.stripe_dispute_id;
       if (de?.stripe_dispute_id) {
@@ -959,7 +1041,8 @@ LETTER STRUCTURE:
       .update({
         lifecycle_status: outcome,
       })
-      .eq('id', defenseId);
+      .eq('id', defenseId)
+      .eq('location_id', packet.location_id);
 
     // 3. Propagate to linked dispute_events (if FK populated)
     const disputeEventId = (packet as any).dispute_event_id;
@@ -977,7 +1060,8 @@ LETTER STRUCTURE:
             status: statusMap[outcome] || outcome,
             net_financial_impact: outcome === 'won' ? amountRecovered : -(packet.chargeback_amount || 0),
           })
-          .eq('id', disputeEventId);
+          .eq('id', disputeEventId)
+          .eq('location_id', packet.location_id);
       } catch (err: any) {
         logger.warn({ err: err.message, defenseId, disputeEventId }, 'Failed to propagate outcome to dispute_events');
       }
@@ -1024,6 +1108,7 @@ LETTER STRUCTURE:
       .from('defense_packets')
       .select('id')
       .eq('dispute_event_id', disputeEvent.id)
+      .eq('location_id', merchant.location_id)
       .limit(1)
       .maybeSingle();
     if (existingPacket?.id) {
@@ -1070,6 +1155,8 @@ LETTER STRUCTURE:
         .from('enrollments')
         .select('offer_id')
         .eq('id', paymentEvent.enrollment_id)
+        .eq('location_id', merchant.location_id)
+        .eq('contact_id', paymentEvent.contact_id)
         .maybeSingle();
       offerId = enr?.offer_id || undefined;
     }
@@ -1116,7 +1203,11 @@ LETTER STRUCTURE:
    *    submit contact-wide evidence to Stripe)
    *  - letter: refuses when the current letter is the automatic fallback draft
    */
-  async submitPacketEvidenceToStripe(packet: any, disputeEvent: any): Promise<void> {
+  async submitPacketEvidenceToStripe(
+    packet: any,
+    disputeEvent: any,
+    operation?: { idempotencyKey?: string; onBeforeProviderCall?: () => Promise<void> },
+  ): Promise<void> {
     const supabase = getSupabase();
     const { stripeDisputeService } = require('./stripe-dispute.service');
 
@@ -1180,6 +1271,8 @@ LETTER STRUCTURE:
         .from('enrollments')
         .select('consent_captured_at, created_at')
         .eq('id', packet.enrollment_id)
+        .eq('location_id', packet.location_id)
+        .eq('contact_id', packet.contact_id)
         .maybeSingle();
       const serviceDate = enr?.consent_captured_at || enr?.created_at;
       if (serviceDate) evidence.service_date = String(serviceDate).slice(0, 10);
@@ -1237,7 +1330,8 @@ LETTER STRUCTURE:
       const { error: debugError } = await supabase
         .from('defense_packets')
         .update({ internal_debug: { ...((packet as any).internal_debug || {}), pdf_attach_error: pdfAttachError } })
-        .eq('id', packet.id);
+        .eq('id', packet.id)
+        .eq('location_id', packet.location_id);
       if (debugError) {
         logger.warn({ err: debugError.message, defenseId: packet.id }, 'Failed to record PDF attach error (non-fatal)');
       }
@@ -1279,7 +1373,8 @@ LETTER STRUCTURE:
           const { error: debugError } = await supabase
             .from('defense_packets')
             .update({ internal_debug: { ...((packet as any).internal_debug || {}), ce3_skipped_reasons: ce3.reasons } })
-            .eq('id', packet.id);
+            .eq('id', packet.id)
+            .eq('location_id', packet.location_id);
           if (debugError) {
             logger.warn({ err: debugError.message, defenseId: packet.id }, 'Failed to record CE 3.0 skip reasons (non-fatal)');
           }
@@ -1290,12 +1385,14 @@ LETTER STRUCTURE:
     }
 
     try {
+      if (operation?.onBeforeProviderCall) await operation.onBeforeProviderCall();
       await stripeDisputeService.submitEvidence({
         stripeDisputeId: disputeEvent.stripe_dispute_id,
         merchantId: (merchant as any).id,
         evidence,
         autoSubmit: true,
         submissionMode: 'manual',
+        idempotencyKey: operation?.idempotencyKey,
       });
     } catch (err: any) {
       // Only our own typed errors pass through — raw Stripe errors also carry
@@ -1326,45 +1423,101 @@ LETTER STRUCTURE:
       throw new Error(`Cannot submit a packet with status '${(packet as any).lifecycle_status}'`);
     }
 
-    // Stripe-rail: submit evidence through the Disputes API before marking local state.
+    const latestVersion = await requireCurrentDefenseBundle(packet);
+
+    let disputeEvent: any = null;
     if ((packet as any).dispute_event_id) {
-      const { data: disputeEvent } = await supabase
+      const { data, error } = await supabase
         .from('dispute_events')
         .select('*')
         .eq('id', (packet as any).dispute_event_id)
+        .eq('location_id', packet.location_id)
         .maybeSingle();
-      if (disputeEvent?.stripe_dispute_id) {
-        await this.submitPacketEvidenceToStripe(packet, disputeEvent);
-      }
+      if (error) throw error;
+      if (!data) throw new ValidationError('The dispute linked to this defense packet could not be verified.');
+      disputeEvent = data;
     }
 
-    // Lock the current letter version
+    const claimResult = await defenseSubmissionService.begin({
+      locationId: packet.location_id,
+      defensePacketId: defenseId,
+      disputeEventId: disputeEvent?.id || null,
+      request: {
+        defensePacketId: defenseId,
+        disputeEventId: disputeEvent?.id || null,
+        letterVersion: latestVersion.version_number,
+        pdfStoragePath: packet.pdf_storage_path,
+      },
+    });
+    if (claimResult.action === 'replay') return;
+    if (claimResult.action === 'blocked') {
+      throw new ConflictError(
+        claimResult.claim.status === 'provider_accepted'
+          ? 'The processor accepted this submission and ScaleSafe is reconciling the local record. Do not submit it again.'
+          : 'This defense submission is already processing or has an unknown provider result. Review its status before trying again.',
+      );
+    }
+
+    const claim = claimResult.claim;
+    let providerStarted = false;
+    let providerAccepted = false;
     try {
-      await supabase.from('defense_letter_versions')
-        .update({ is_submitted_version: true })
-        .eq('defense_packet_id', defenseId)
-        .order('version_number', { ascending: false })
-        .limit(1);
-    } catch {}
+      if (disputeEvent?.stripe_dispute_id) {
+        await this.submitPacketEvidenceToStripe(packet, disputeEvent, {
+          idempotencyKey: `scalesafe-defense-${claim.id}`,
+          onBeforeProviderCall: async () => {
+            await defenseSubmissionService.markProviderStarted({
+              claimId: claim.id,
+              locationId: packet.location_id,
+              providerReference: disputeEvent.stripe_dispute_id,
+            });
+            providerStarted = true;
+          },
+        });
+        await defenseSubmissionService.markProviderAccepted({
+          claimId: claim.id,
+          locationId: packet.location_id,
+          providerReference: disputeEvent.stripe_dispute_id,
+          providerCalled: true,
+        });
+        providerAccepted = true;
+      } else {
+        await defenseSubmissionService.markProviderAccepted({
+          claimId: claim.id,
+          locationId: packet.location_id,
+          providerReference: null,
+          providerCalled: false,
+        });
+        providerAccepted = true;
+      }
 
-    await supabase.from('defense_packets')
-      .update({
-        lifecycle_status: 'submitted',
-        submitted_at: new Date().toISOString(),
-      })
-      .eq('id', defenseId);
-
-    // Update linked dispute_events status
-    const disputeEventId = (packet as any).dispute_event_id;
-    if (disputeEventId) {
+      await defenseSubmissionService.finalizeAccepted(claim.id, packet.location_id);
+    } catch (err: any) {
       try {
-        await supabase.from('dispute_events')
-          .update({ status: 'under_review', evidence_submitted: true, evidence_submitted_at: new Date().toISOString() })
-          .eq('id', disputeEventId);
-      } catch {}
+        if (providerAccepted) {
+          // Leave the durable claim at provider_accepted. The reconciliation
+          // worker can safely retry only the local writes without re-submitting.
+          logger.error({ err: err?.message, defenseId, claimId: claim.id }, 'Defense provider accepted submission but local finalization failed');
+        } else if (providerStarted) {
+          await defenseSubmissionService.markUnknown({
+            claimId: claim.id,
+            locationId: packet.location_id,
+            error: err?.message || String(err),
+          });
+        } else {
+          await defenseSubmissionService.markFailedBeforeProvider({
+            claimId: claim.id,
+            locationId: packet.location_id,
+            error: err?.message || String(err),
+          });
+        }
+      } catch (claimErr: any) {
+        logger.error({ err: claimErr.message, defenseId, claimId: claim.id }, 'Failed to persist defense submission failure state');
+      }
+      throw err;
     }
 
-    logger.info({ defenseId }, 'Defense packet marked as submitted');
+    logger.info({ defenseId, claimId: claim.id }, 'Defense packet marked as submitted');
   },
 
   /**
@@ -1380,13 +1533,14 @@ LETTER STRUCTURE:
     }
 
     // Get max version number
-    const { data: maxRow } = await supabase
+    const { data: maxRow, error: maxRowError } = await supabase
       .from('defense_letter_versions')
       .select('version_number')
       .eq('defense_packet_id', defenseId)
       .order('version_number', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (maxRowError) throw maxRowError;
     const nextVersion = (maxRow?.version_number || 0) + 1;
 
     // Re-run compilation input from the packet
@@ -1425,6 +1579,11 @@ LETTER STRUCTURE:
     const exhibitList = await defenseExhibitsService.buildExhibitList(input.locationId, input.contactId, exhibitScope);
     const undisputedPayments = await paymentService.getUndisputedPayments(
       input.locationId, input.contactId, scope.enrollmentId || undefined,
+      {
+        paymentEventId: scope.paymentEventId,
+        processorTransactionId: scope.processorTransactionId,
+        onOrAfter: scope.transactionDate,
+      },
     );
     let contactDetails: Record<string, unknown> = {};
     try {
@@ -1452,6 +1611,7 @@ LETTER STRUCTURE:
     });
     if (regenVersionErr) {
       logger.error({ err: regenVersionErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
+      throw regenVersionErr;
     }
 
     // A successful regeneration must re-evaluate the review state: a stale
@@ -1479,13 +1639,23 @@ LETTER STRUCTURE:
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
       error_message: needsReview ? reviewReasons.join(' ') : null,
+      pdf_storage_path: null,
+      pdf_url: null,
     } as any);
 
-    // Rebundle PDF
+    // Rebundle PDF. The old path was cleared above, so a failure cannot leave
+    // the new letter paired with a stale downloadable PDF.
     try {
       const { defenseBundleService } = require('./defense-bundle.service');
       await defenseBundleService.bundleDefensePdf(defenseId, input.locationId, input.contactId, exhibitScope);
-    } catch {}
+    } catch (err: any) {
+      await defenseRepository.updateStatus(defenseId, 'needs_review', {
+        pdf_storage_path: null,
+        pdf_url: null,
+        error_message: `The letter was regenerated, but the defense PDF could not be rebuilt: ${err.message}`,
+      } as any);
+      throw new Error(`Letter regenerated, but the defense PDF could not be rebuilt: ${err.message}`);
+    }
 
     logger.info({ defenseId, version: nextVersion, status: newStatus }, 'Defense letter regenerated');
     return { letterText: result.text, versionNumber: nextVersion };
@@ -1508,7 +1678,8 @@ LETTER STRUCTURE:
     const { error } = await supabase
       .from('defense_packets')
       .update({ response_deadline: deadline })
-      .eq('id', defenseId);
+      .eq('id', defenseId)
+      .eq('location_id', packet.location_id);
     if (error) throw error;
     logger.info({ defenseId, deadline }, 'Defense packet response deadline updated by merchant');
   },
@@ -1525,26 +1696,30 @@ LETTER STRUCTURE:
       throw new Error('Cannot edit a letter after submission');
     }
 
-    const { data: maxRow } = await supabase
+    const { data: maxRow, error: maxRowError } = await supabase
       .from('defense_letter_versions')
       .select('version_number')
       .eq('defense_packet_id', defenseId)
       .order('version_number', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (maxRowError) throw maxRowError;
     const nextVersion = (maxRow?.version_number || 0) + 1;
 
-    await supabase.from('defense_letter_versions').insert({
+    const { error: versionInsertError } = await supabase.from('defense_letter_versions').insert({
       defense_packet_id: defenseId,
       version_number: nextVersion,
       letter_text: letterText,
       generated_by: 'manual_edit',
     });
+    if (versionInsertError) throw versionInsertError;
 
-    // Mirror to fast-read column
-    await supabase.from('defense_packets')
-      .update({ defense_letter_text: letterText })
-      .eq('id', defenseId);
+    // Mirror to the fast-read column and invalidate the old bundle atomically.
+    await defenseRepository.updateStatus(defenseId, packet.status || 'needs_review', {
+      defense_letter_text: letterText,
+      pdf_storage_path: null,
+      pdf_url: null,
+    } as any);
 
     // Rebundle PDF using the same resolved scope as compilation so the exhibit list
     // in the PDF stays consistent with the edited letter (contact_only packets must
@@ -1565,7 +1740,14 @@ LETTER STRUCTURE:
         enrollmentStart: scope.enrollmentStart,
         enrollmentEnd: scope.enrollmentEnd,
       });
-    } catch {}
+    } catch (err: any) {
+      await defenseRepository.updateStatus(defenseId, 'needs_review', {
+        pdf_storage_path: null,
+        pdf_url: null,
+        error_message: `The letter was saved, but the defense PDF could not be rebuilt: ${err.message}`,
+      } as any);
+      throw new Error(`Letter saved, but the defense PDF could not be rebuilt: ${err.message}`);
+    }
 
     logger.info({ defenseId, version: nextVersion }, 'Defense letter edited (manual)');
     return { versionNumber: nextVersion };

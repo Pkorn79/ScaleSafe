@@ -495,6 +495,8 @@ export const stripeDisputeService = {
     /** Who initiated the submission — recorded in dispute_events. Defaults to
      *  the legacy autoSubmit-derived value for existing callers. */
     submissionMode?: 'auto' | 'manual';
+    /** Stable per ScaleSafe submission claim. Protects an ambiguous network retry. */
+    idempotencyKey?: string;
   }): Promise<{ success: boolean; staged: boolean }> {
     const supabase = getSupabase();
 
@@ -516,7 +518,10 @@ export const stripeDisputeService = {
         evidence: params.evidence,
         submit: params.autoSubmit,
       },
-      { stripeAccount: merchant.stripe_user_id },
+      {
+        stripeAccount: merchant.stripe_user_id,
+        ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
+      },
     );
 
     // Record submission in database. Stripe already accepted the evidence, so a

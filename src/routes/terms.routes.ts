@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { logger } from '../utils/logger';
+import sanitizeHtml from 'sanitize-html';
 
 const router = Router();
 
@@ -20,7 +21,44 @@ function normalizeTermsRedirectUrl(value: string): string | null {
   }
 }
 
+function setTermsSecurityHeaders(res: Response): void {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+}
+
+function sanitizeCustomTermsHtml(value: string): string {
+  return sanitizeHtml(String(value || ''), {
+    allowedTags: [
+      'h1', 'h2', 'h3', 'h4', 'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's',
+      'ol', 'ul', 'li', 'blockquote', 'a', 'hr', 'table', 'thead', 'tbody',
+      'tr', 'th', 'td',
+    ],
+    allowedAttributes: {
+      a: ['href', 'target', 'rel'],
+      th: ['colspan', 'rowspan'],
+      td: ['colspan', 'rowspan'],
+    },
+    allowedSchemes: ['https', 'mailto', 'tel'],
+    allowProtocolRelative: false,
+    transformTags: {
+      a: (_tagName, attribs) => ({
+        tagName: 'a',
+        attribs: {
+          ...attribs,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+      }),
+    },
+  });
+}
+
 router.get('/:locationId', async (req: Request, res: Response) => {
+  setTermsSecurityHeaders(res);
   try {
     const locationId = req.params.locationId;
     const merchant = await merchantRepository.findByLocationId(locationId);
@@ -48,7 +86,7 @@ router.get('/:locationId', async (req: Request, res: Response) => {
     if ((config as any).tcCustomHtml) {
       res.send(termsPageHtml(
         'Terms & Conditions',
-        (config as any).tcCustomHtml,
+        sanitizeCustomTermsHtml((config as any).tcCustomHtml),
         config.businessName || merchant.business_name || '',
       ));
       return;

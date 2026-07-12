@@ -29,7 +29,7 @@ describe('triggerController.handleSubscription', () => {
         triggerData: {
           key: 'enrollment_complete',
           eventType: 'CREATED',
-          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
         },
         meta: { key: 'enrollment_complete', version: '1.0' },
         extras: { locationId: 'loc_123', workflowId: 'wf_123', companyId: 'company_123' },
@@ -44,7 +44,7 @@ describe('triggerController.handleSubscription', () => {
     expect(mockUpsertSubscription).toHaveBeenCalledWith(
       'loc_123',
       'enrollment_complete',
-      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
@@ -55,7 +55,7 @@ describe('triggerController.handleSubscription', () => {
         triggerData: {
           key: 'ss_payment_received',
           eventType: 'DELETED',
-          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
         },
         extras: { locationId: 'loc_123' },
       },
@@ -69,7 +69,7 @@ describe('triggerController.handleSubscription', () => {
     expect(mockDeactivateSubscription).toHaveBeenCalledWith(
       'loc_123',
       'ss_payment_received',
-      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
@@ -80,7 +80,7 @@ describe('triggerController.handleSubscription', () => {
         triggerData: {
           name: 'ScaleSafe App Event',
           eventType: 'CREATED',
-          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+          targetUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
         },
         extras: { locationId: 'loc_123' },
       },
@@ -94,7 +94,7 @@ describe('triggerController.handleSubscription', () => {
     expect(mockUpsertSubscription).toHaveBeenCalledWith(
       'loc_123',
       'ss_app_event',
-      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
@@ -106,7 +106,7 @@ describe('triggerController.handleSubscription', () => {
         location: { id: 'loc_123' },
         triggerData: {
           key: 'Upcoming Payment Reminder',
-          subscriptionUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+          subscriptionUrl: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
         },
       },
     } as any;
@@ -119,7 +119,7 @@ describe('triggerController.handleSubscription', () => {
     expect(mockUpsertSubscription).toHaveBeenCalledWith(
       'loc_123',
       'ss_app_event',
-      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
@@ -132,7 +132,7 @@ describe('triggerController.handleSubscription', () => {
         triggerData: {
           key: 'ChargebackDetected',
         },
-        url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+        url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
       },
     } as any;
     const res = createRes();
@@ -144,7 +144,7 @@ describe('triggerController.handleSubscription', () => {
     expect(mockUpsertSubscription).toHaveBeenCalledWith(
       'loc_123',
       'ss_chargeback_detected',
-      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/app/workflow',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_123/workflow',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
@@ -170,4 +170,5 @@ describe('triggerController.handleSubscription', () => {
       message: 'Unsupported trigger subscription URL',
     }));
   });
+
 });

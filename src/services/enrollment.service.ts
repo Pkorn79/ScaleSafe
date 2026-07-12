@@ -81,6 +81,30 @@ interface FunnelConsentInput {
   clausesAccepted: string[];
   scrollDepth: number;
   selectedAddonIds?: string[];
+  paymentChoice?: string;
+}
+
+function consentPaymentChoice(value: unknown, offer: any): 'pif' | 'installment' | 'subscription' {
+  const raw = String(value || offer?.payment_type || 'pif').trim().toLowerCase();
+  if (raw === 'subscription') return 'subscription';
+  if (raw === 'installment' || raw === 'installments') return 'installment';
+  return 'pif';
+}
+
+function assertPaymentChoiceAvailable(choice: string, offer: any): void {
+  const offerType = consentPaymentChoice(offer?.payment_type, offer);
+  if (offerType === 'subscription' && choice !== 'subscription') {
+    throw new ValidationError('Selected payment option is not available for this offer');
+  }
+  if (offerType === 'installment' && choice === 'pif') {
+    const hasPayInFullOption = Boolean(offer?.pif_discount_enabled && offer?.pif_price != null);
+    if (!hasPayInFullOption) {
+      throw new ValidationError('Selected payment option is not available for this offer');
+    }
+  }
+  if (offerType === 'pif' && choice !== 'pif') {
+    throw new ValidationError('Selected payment option is not available for this offer');
+  }
 }
 
 interface PaidEnrollmentContextInput {
@@ -356,11 +380,12 @@ export const enrollmentService = {
 
     let paidEnrollmentId = '';
     let paidEnrollmentEmail = '';
+    let paidEnrollmentPaymentType = '';
     if (input.paidEnrollmentToken) {
       const token = verifyPublicActionToken(input.paidEnrollmentToken, 'paid_enrollment');
       const { data: paidEnrollment, error: paidError } = await supabase
         .from('enrollments')
-        .select('id, offer_id, location_id, status, email')
+        .select('id, offer_id, location_id, status, email, payment_type')
         .eq('id', token.enrollmentId || '')
         .eq('location_id', token.locationId)
         .eq('offer_id', input.offerId)
@@ -370,6 +395,7 @@ export const enrollmentService = {
       if (!paidEnrollment) throw new ValidationError('Paid enrollment link is invalid or expired');
       paidEnrollmentId = paidEnrollment.id;
       paidEnrollmentEmail = paidEnrollment.email || '';
+      paidEnrollmentPaymentType = paidEnrollment.payment_type || '';
     }
     const effectiveEmail = input.email || paidEnrollmentEmail;
 
@@ -391,29 +417,32 @@ export const enrollmentService = {
     const { data: existingRows } = exactEnrollmentId
       ? await supabase
         .from('enrollments')
-        .select('id, status')
+        .select('id, status, payment_type')
         .eq('id', exactEnrollmentId)
         .limit(1)
       : await supabase
         .from('enrollments')
-        .select('id, status')
+        .select('id, status, payment_type')
         .eq('email', effectiveEmail)
         .eq('offer_id', input.offerId)
-        .in('status', ['device_captured', 'pending', 'paid_pending_enrollment'])
+        .in('status', ['device_captured', 'pending'])
         .order('created_at', { ascending: false })
         .limit(5);
-    const existing = (existingRows || []).find((row: any) => row.status === 'paid_pending_enrollment')
-      || (existingRows || [])[0]
-      || null;
+    const existing = (existingRows || [])[0] || null;
 
     // Parse first/last name from digital signature (e.g., "Susan Katz" → "Susan", "Katz")
     const sigParts = (input.digitalSignature || '').trim().split(/\s+/);
     const firstName = sigParts[0] || '';
     const lastName = sigParts.slice(1).join(' ') || '';
+    const selectedPaymentChoice = consentPaymentChoice(
+      paidEnrollmentPaymentType || (existing as any)?.payment_type || input.paymentChoice,
+      offer,
+    );
+    if (!paidEnrollmentId) assertPaymentChoiceAvailable(selectedPaymentChoice, offer);
     const cartQuote = await checkoutCartService.quoteOffer(
       offer,
       input.selectedAddonIds || [],
-      'pif',
+      selectedPaymentChoice,
       'card',
     );
     const selectedCheckoutItems = checkoutCartService.lineItemsToSelectedCheckoutItems(cartQuote.lineItems);
@@ -454,6 +483,7 @@ export const enrollmentService = {
           scroll_depth: input.scrollDepth,
           first_name: firstName,
           last_name: lastName,
+          payment_type: selectedPaymentChoice,
           selected_checkout_items: selectedCheckoutItems,
         })
         .eq('id', existing.id);
@@ -504,6 +534,7 @@ export const enrollmentService = {
         scroll_depth: input.scrollDepth,
         first_name: firstName,
         last_name: lastName,
+        payment_type: selectedPaymentChoice,
         selected_checkout_items: selectedCheckoutItems,
       })
       .select('id')
@@ -543,6 +574,10 @@ export const enrollmentService = {
    * Page 1: Create or update GHL contact, capture device info.
    */
   async prepEnrollment(input: PrepEnrollmentInput) {
+    const offer = await offerRepository.findById(input.offerId, input.locationId);
+    if (!offer || !offer.active) {
+      throw new ValidationError('Offer not found or inactive');
+    }
     const api = await ghlApi(input.locationId);
 
     // Search for existing contact by email
@@ -622,6 +657,10 @@ export const enrollmentService = {
    * Page 3: Capture T&C consent with full forensics.
    */
   async captureConsent(input: CaptureConsentInput) {
+    const offer = await offerRepository.findById(input.offerId, input.locationId);
+    if (!offer || !offer.active) {
+      throw new ValidationError('Offer not found or inactive');
+    }
     const tcHash = sha256(input.tcHtml);
 
     // Resolve enrollment + contact info for enriched evidence row

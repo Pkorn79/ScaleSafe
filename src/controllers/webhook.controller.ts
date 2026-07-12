@@ -12,7 +12,8 @@ import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { ghlActivityService } from '../services/ghl-activity.service';
 import { triggerController } from './trigger.controller';
-import { merchantRepository } from '../repositories/merchant.repository';
+import { merchantHasOAuthCredentials, merchantRepository } from '../repositories/merchant.repository';
+import { merchantService } from '../services/merchant.service';
 import { evidenceConnectionService } from '../services/evidence-connection.service';
 import { evidenceConnectorService } from '../services/evidence-connector.service';
 
@@ -139,11 +140,33 @@ export const webhookController = {
           res.json({ received: true });
           return;
         }
-        const existing = await merchantRepository.findByLocationId(locationId);
+        let existing = await merchantRepository.findByLocationId(locationId);
         if (existing) {
-          await merchantRepository.update(locationId, {
+          const reinstalling = existing.status === 'uninstalled';
+          existing = await merchantRepository.update(locationId, {
             company_id: companyId || existing.company_id,
             status: 'active',
+            ...(reinstalling ? {
+              // Never reactivate credentials retained from a prior install.
+              // OAuth (or a current same-company bulk authorization) must bind
+              // this new installation before merchant SSO is accepted.
+              ghl_access_token: '',
+              ghl_refresh_token: '',
+              ghl_access_token_encrypted: null,
+              ghl_refresh_token_encrypted: null,
+              ghl_token_expires_at: null,
+              config: {
+                ...(existing.config || {}),
+                ghl_token_scope: null,
+                ghl_token_company_id: null,
+                ghl_token_location_id: null,
+                location_access_token: null,
+                location_refresh_token: null,
+                location_access_token_encrypted: null,
+                location_refresh_token_encrypted: null,
+                location_token_expires_at: null,
+              },
+            } : {}),
           } as any);
           logger.info({ locationId, companyId }, 'GHL app INSTALL: existing merchant reactivated');
         } else {
@@ -157,10 +180,38 @@ export const webhookController = {
           });
           logger.info({ locationId, companyId }, 'GHL app INSTALL: merchant stub created (tokens pending OAuth)');
         }
+
+        const authorizedMerchant = companyId && (!existing || !merchantHasOAuthCredentials(existing))
+          ? await merchantRepository.adoptCompanyAuthorization(locationId, companyId)
+          : existing;
+        if (authorizedMerchant && merchantHasOAuthCredentials(authorizedMerchant)
+          && authorizedMerchant.snapshot_status !== 'installed') {
+          merchantService.provisionMerchant(locationId).catch((err) => {
+            logger.error({ err, locationId }, 'Provisioning after GHL INSTALL failed');
+          });
+        }
       } else if (type === 'UNINSTALL' && locationId) {
         const existing = await merchantRepository.findByLocationId(locationId);
         if (existing) {
-          await merchantRepository.update(locationId, { status: 'uninstalled' } as any);
+          await merchantRepository.update(locationId, {
+            status: 'uninstalled',
+            ghl_access_token: '',
+            ghl_refresh_token: '',
+            ghl_access_token_encrypted: null,
+            ghl_refresh_token_encrypted: null,
+            ghl_token_expires_at: null,
+            config: {
+              ...(existing.config || {}),
+              ghl_token_scope: null,
+              ghl_token_company_id: null,
+              ghl_token_location_id: null,
+              location_access_token: null,
+              location_refresh_token: null,
+              location_access_token_encrypted: null,
+              location_refresh_token_encrypted: null,
+              location_token_expires_at: null,
+            },
+          } as any);
           logger.info({ locationId }, 'GHL app UNINSTALL: merchant marked uninstalled');
         } else {
           logger.info({ locationId }, 'GHL app UNINSTALL for unknown location — ignored');
@@ -168,13 +219,13 @@ export const webhookController = {
       }
       res.json({ received: true });
     } catch (err: any) {
-      // Log loudly but always 200 — GHL retrying a failing lifecycle webhook
-      // can't fix a DB problem, and the OAuth callback reconciles state anyway.
+      // Return a retryable failure. Losing an INSTALL event can leave a future
+      // bulk-installed location without credentials or provisioning state.
       logger.error(
         { err: err?.message || String(err), code: err?.code, type, locationId, companyId },
         'GHL app lifecycle webhook handling failed',
       );
-      res.json({ received: true });
+      res.status(503).json({ received: false, retry: true });
     }
   },
 
@@ -288,7 +339,12 @@ export const webhookController = {
    */
   async ghlForms(req: Request, res: Response, next: NextFunction) {
     try {
-      const { formId, locationId, contactId, data, enrollment_id, enrollmentId } = req.body;
+      const { formId, contactId, data, enrollment_id, enrollmentId } = req.body;
+      const locationId = req.tenantContext?.locationId || '';
+      const payloadLocationId = String(req.body?.locationId || req.body?.location_id || '').trim();
+      if (!locationId || (payloadLocationId && payloadLocationId !== locationId)) {
+        throw new ValidationError('Webhook tenant does not match payload location');
+      }
       if (!formId || !locationId || !contactId) {
         throw new ValidationError('formId, locationId, contactId required');
       }
@@ -354,7 +410,11 @@ export const webhookController = {
   async ghlCourseActivity(req: Request, res: Response, next: NextFunction) {
     try {
       const body = req.body || {};
-      const locationId = body.locationId || body.location_id;
+      const locationId = req.tenantContext?.locationId || '';
+      const payloadLocationId = String(body.locationId || body.location_id || '').trim();
+      if (!locationId || (payloadLocationId && payloadLocationId !== locationId)) {
+        throw new ValidationError('Webhook tenant does not match payload location');
+      }
       const contactId = body.contactId || body.contact_id || '';
       const contactEmail = body.contactEmail || body.contact_email || body.email || '';
       const rawEventType = String(body.eventType || body.event_type || body.type || '').trim();

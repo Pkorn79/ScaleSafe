@@ -3,6 +3,7 @@ import { stripeConnectService } from '../services/stripe-connect.service';
 import { stripeRiskAuditService } from '../services/stripe-risk-audit.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { ssoAuth } from '../middleware/ssoAuth';
+import { requireTenant } from '../middleware/tenantContext';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 
@@ -199,10 +200,13 @@ function sendPopupResult(res: Response, success: boolean, error?: string): void 
  * POST /api/stripe/disconnect
  * Disconnects merchant's Stripe account. SSO required.
  */
-router.post('/disconnect', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/disconnect', ssoAuth, requireTenant, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = req.body.locationId || req.tenantContext?.locationId;
+    const locationId = req.tenantContext?.locationId;
     if (!locationId) throw new ValidationError('Missing locationId');
+    if (req.body?.locationId && req.body.locationId !== locationId) {
+      throw new ValidationError('Location does not match authenticated account');
+    }
 
     const merchant = await merchantRepository.findByLocationId(locationId);
     if (!merchant) {

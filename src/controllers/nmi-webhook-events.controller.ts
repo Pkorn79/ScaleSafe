@@ -52,6 +52,7 @@ function formatMoney(amount: number): string {
 }
 
 type SupabaseClient = ReturnType<typeof getSupabase>;
+type RecurringSetupState = 'ready' | 'pending' | 'failed';
 
 function normalizePaymentType(value: unknown): string {
   const raw = String(value || 'pif').toLowerCase();
@@ -653,20 +654,40 @@ async function sendNmiAchPaidEnrollmentLink(params: {
   });
 }
 
-async function setupNmiAchRecurringAfterSettlement(
+async function claimNmiAchRecurringSetup(
+  supabase: SupabaseClient,
+  locationId: string,
+  enrollmentId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.from('enrollments').update({
+    billing_setup_status: 'needs_reconciliation',
+    billing_setup_error: 'Recurring billing setup is in progress or requires reconciliation.',
+  })
+    .eq('id', enrollmentId)
+    .eq('location_id', locationId)
+    .in('billing_setup_status', ['pending', 'ok'])
+    .is('processor_subscription_id', null)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+
+export async function setupNmiAchRecurringAfterSettlement(
   supabase: SupabaseClient,
   config: ProcessorConfig,
   enrollmentId: string,
-): Promise<boolean> {
+  transactionId: string,
+): Promise<RecurringSetupState> {
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, payment_type, payments_made, payments_total, processor_subscription_id, next_billing_date')
+    .select('id, merchant_id, location_id, contact_id, offer_id, payment_type, payments_made, payments_total, processor_subscription_id, next_billing_date, billing_setup_status')
     .eq('id', enrollmentId)
     .eq('location_id', config.location_id)
     .maybeSingle();
 
-  if (!enrollment || !isRecurringPaymentType(enrollment.payment_type)) return true;
-  if (enrollment.processor_subscription_id) return true;
+  if (!enrollment || !isRecurringPaymentType(enrollment.payment_type)) return 'ready';
+  if (enrollment.processor_subscription_id) return 'ready';
 
   const paymentType = normalizePaymentType(enrollment.payment_type);
   const remainingPayments = paymentType === 'subscription'
@@ -679,7 +700,7 @@ async function setupNmiAchRecurringAfterSettlement(
       billing_completed_at: new Date().toISOString(),
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return true;
+    return 'ready';
   }
 
   const { data: offer } = await supabase
@@ -695,7 +716,7 @@ async function setupNmiAchRecurringAfterSettlement(
       billing_setup_error: 'NMI ACH payment settled, but the offer was not found for recurring setup.',
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return false;
+    return 'failed';
   }
 
   const { data: nmiMethods } = await supabase
@@ -718,7 +739,7 @@ async function setupNmiAchRecurringAfterSettlement(
       billing_setup_error: 'NMI ACH payment settled, but no saved NMI bank vault was available for recurring setup.',
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return false;
+    return 'failed';
   }
 
   const quote = await dualPricingService.quoteOffer(offer as any, paymentType, 'ach');
@@ -728,7 +749,7 @@ async function setupNmiAchRecurringAfterSettlement(
       billing_setup_error: 'NMI ACH recurring setup failed because the recurring amount was not valid.',
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return false;
+    return 'failed';
   }
 
   const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, config.location_id, {
@@ -737,31 +758,55 @@ async function setupNmiAchRecurringAfterSettlement(
   });
   const processor = createProcessorClient(procConfig);
   const startDate = enrollment.next_billing_date || computeNextBillingDate(offer.installment_frequency);
-  const subResult = await processor.createSubscription({
-    paymentMethodId: vaultId,
-    customerId: vaultId,
-    planAmount: quote.selectedAmountCents,
-    interval: processorInterval(offer.installment_frequency),
-    totalPayments: remainingPayments,
-    startDate,
-    description: offer.offer_name || 'ScaleSafe ACH Recurring Plan',
-    metadata: {
-      enrollment_id: enrollment.id,
-      offer_id: enrollment.offer_id || '',
-      contact_id: enrollment.contact_id || '',
-      location_id: config.location_id,
-      payment_type: paymentType,
-      payment_method_type: 'ach',
-    },
-  });
+  const claimed = await claimNmiAchRecurringSetup(supabase, config.location_id, enrollment.id);
+  if (!claimed) {
+    const { data: current, error } = await supabase.from('enrollments')
+      .select('processor_subscription_id, billing_setup_status')
+      .eq('id', enrollment.id)
+      .eq('location_id', config.location_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (current?.processor_subscription_id) return 'ready';
+    return current?.billing_setup_status === 'failed' ? 'failed' : 'pending';
+  }
+
+  let subResult;
+  try {
+    subResult = await processor.createSubscription({
+      paymentMethodId: vaultId,
+      customerId: vaultId,
+      planAmount: quote.selectedAmountCents,
+      interval: processorInterval(offer.installment_frequency),
+      totalPayments: remainingPayments,
+      startDate,
+      description: offer.offer_name || 'ScaleSafe ACH Recurring Plan',
+      metadata: {
+        enrollment_id: enrollment.id,
+        offer_id: enrollment.offer_id || '',
+        contact_id: enrollment.contact_id || '',
+        location_id: config.location_id,
+        payment_type: paymentType,
+        payment_method_type: 'ach',
+      },
+      idempotencyKey: `nmi-ach-recurring-${enrollment.id}-${transactionId}`,
+    });
+  } catch (err: any) {
+    await supabase.from('enrollments').update({
+      billing_setup_status: 'needs_reconciliation',
+      billing_setup_error: `NMI ACH recurring setup result is unknown: ${err?.message || 'NMI request failed'}`,
+      next_billing_date: null,
+    }).eq('id', enrollment.id).eq('location_id', config.location_id);
+    return 'pending';
+  }
 
   if (!subResult.success || !subResult.subscriptionId) {
+    const resultUnknown = /approved recurring setup.*did not return a subscription id/i.test(subResult.errorMessage || '');
     await supabase.from('enrollments').update({
-      billing_setup_status: 'failed',
+      billing_setup_status: resultUnknown ? 'needs_reconciliation' : 'failed',
       billing_setup_error: subResult.errorMessage || 'NMI ACH recurring subscription creation failed.',
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return false;
+    return resultUnknown ? 'pending' : 'failed';
   }
 
   const { error: saveError } = await supabase.from('enrollments').update({
@@ -779,10 +824,10 @@ async function setupNmiAchRecurringAfterSettlement(
       billing_setup_error: `NMI ACH subscription ${subResult.subscriptionId} was created but could not be saved: ${saveError.message}`,
       next_billing_date: null,
     }).eq('id', enrollment.id).eq('location_id', config.location_id);
-    return false;
+    return 'pending';
   }
 
-  return true;
+  return 'ready';
 }
 
 async function processMatchedReversalEvent(
@@ -987,12 +1032,19 @@ async function processAchStatusEvent(
   if (isSettle) {
     if (enrollment && payment.source === 'quick_manual_sale' && String(enrollment.status || '') === 'payment_processing') {
       const { offerName } = await offerDetails(supabase, enrollment.offer_id || payment.offer_id || null);
-      const recurringReady = await setupNmiAchRecurringAfterSettlement(supabase, config, enrollment.id);
+      const recurringState = await setupNmiAchRecurringAfterSettlement(
+        supabase,
+        config,
+        enrollment.id,
+        transactionId,
+      );
       await supabase.from('enrollments').update({
         status: 'paid_pending_enrollment',
         initial_payment_status: paymentStatus,
         initial_payment_settled_at: now,
-        billing_setup_status: isRecurringPaymentType(enrollment.payment_type) && !recurringReady ? 'failed' : 'ok',
+        ...(!isRecurringPaymentType(enrollment.payment_type) || recurringState === 'ready'
+          ? { billing_setup_status: 'ok' }
+          : {}),
       } as any).eq('id', enrollment.id).eq('location_id', config.location_id);
 
       const raw = payment.raw_webhook_payload || {};
@@ -1025,8 +1077,13 @@ async function processAchStatusEvent(
       });
     } else if (enrollment && ['payment_processing', 'consent_captured'].includes(String(enrollment.status || ''))) {
       if (isRecurringPaymentType(enrollment.payment_type)) {
-        const recurringReady = await setupNmiAchRecurringAfterSettlement(supabase, config, enrollment.id);
-        if (!recurringReady) {
+        const recurringState = await setupNmiAchRecurringAfterSettlement(
+          supabase,
+          config,
+          enrollment.id,
+          transactionId,
+        );
+        if (recurringState !== 'ready') {
           const { offerName } = await offerDetails(supabase, enrollment.offer_id || payment.offer_id || null);
           await fireNmiAchReceipt({
             locationId: config.location_id,
