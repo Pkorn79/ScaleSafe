@@ -204,6 +204,7 @@ test('repairs a provider-accepted refund without calling the processor again', a
     amount_cents: 2500, status: 'provider_accepted', processor: 'stripe',
     processor_refund_id: 're_1', reconciliation_attempts: 1,
   }]);
+  const refundLookup = chain({ data: null, error: null });
   tableQueues.payment_events = [
     queuedSelect({
       id: 'pe_original', merchant_id: 'merch_1', location_id: 'loc_1',
@@ -211,7 +212,7 @@ test('repairs a provider-accepted refund without calling the processor again', a
       processor: 'stripe', processor_transaction_id: 'pi_1', amount: 100,
       currency: 'usd', processor_subscription_id: null,
     }),
-    queuedSelect(null),
+    { select: jest.fn(() => refundLookup) },
     queuedInsert({ id: 'pe_refund' }),
   ];
 
@@ -226,5 +227,70 @@ test('repairs a provider-accepted refund without calling the processor again', a
     'contact_1',
     expect.objectContaining({ amount: 25, transactionId: 're_1', processor: 'stripe' }),
   );
+  expect(refundLookup.eq).toHaveBeenCalledWith('event_type', 'refund');
+  expect(mockScheduleRefundRetry).not.toHaveBeenCalled();
+});
+
+test('waits for a signed Whop refund event instead of synthesizing one from the payment id', async () => {
+  mockClaim.mockResolvedValue([]);
+  mockClaimRefunds.mockResolvedValue([{
+    id: 'claim_whop', location_id: 'loc_1', original_payment_event_id: 'pe_original',
+    amount_cents: 150, status: 'provider_accepted', processor: 'whop',
+    processor_refund_id: null, reconciliation_attempts: 1,
+  }]);
+  const signedRefundLookup = chain({ data: [], error: null });
+  tableQueues.payment_events = [
+    queuedSelect({
+      id: 'pe_original', merchant_id: 'merch_1', location_id: 'loc_1',
+      contact_id: 'contact_1', enrollment_id: 'enr_1', offer_id: 'offer_1',
+      processor: 'whop', processor_transaction_id: 'pay_original', amount: 1.5,
+      currency: 'usd', processor_subscription_id: 'mem_1',
+    }),
+    { select: jest.fn(() => signedRefundLookup) },
+  ];
+
+  await moneyReconciliationWorker.runOnce();
+
+  expect(signedRefundLookup.eq).toHaveBeenCalledWith('event_type', 'refund');
+  expect(mockMarkRefundRecorded).not.toHaveBeenCalled();
+  expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
+  expect(mockScheduleRefundRetry).toHaveBeenCalledWith(expect.objectContaining({
+    claimId: 'claim_whop',
+    error: 'Awaiting signed Whop refund confirmation',
+  }));
+  expect(mockFrom).toHaveBeenCalledTimes(2);
+});
+
+test('links a signed Whop refund event without sending the refund workflow twice', async () => {
+  mockClaim.mockResolvedValue([]);
+  mockClaimRefunds.mockResolvedValue([{
+    id: 'claim_whop', location_id: 'loc_1', original_payment_event_id: 'pe_original',
+    amount_cents: 150, status: 'provider_accepted', processor: 'whop',
+    processor_refund_id: null, reconciliation_attempts: 1,
+  }]);
+  tableQueues.payment_events = [
+    queuedSelect({
+      id: 'pe_original', merchant_id: 'merch_1', location_id: 'loc_1',
+      contact_id: 'contact_1', enrollment_id: 'enr_1', offer_id: 'offer_1',
+      processor: 'whop', processor_transaction_id: 'pay_original', amount: 1.5,
+      currency: 'usd', processor_subscription_id: 'mem_1',
+    }),
+    queuedSelect([{
+      id: 'pe_refund',
+      processor_transaction_id: 'rf_1',
+      raw_webhook_payload: {
+        original_payment_event_id: 'pe_original',
+        original_processor_transaction_id: 'pay_original',
+      },
+    }]),
+  ];
+
+  await moneyReconciliationWorker.runOnce();
+
+  expect(mockMarkRefundRecorded).toHaveBeenCalledWith(expect.objectContaining({
+    claimId: 'claim_whop',
+    refundPaymentEventId: 'pe_refund',
+  }));
+  expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
   expect(mockScheduleRefundRetry).not.toHaveBeenCalled();
 });

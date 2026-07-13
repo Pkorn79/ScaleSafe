@@ -473,17 +473,17 @@ describe('whopService lifecycle methods', () => {
   });
 
   it('refunds a full Whop payment without partial_amount', async () => {
-    const post = jest.fn().mockResolvedValue({ data: { id: 'ref_123', status: 'succeeded' } });
+    const post = jest.fn().mockResolvedValue({ data: { id: 'pay_123', substatus: 'refunded' } });
     mockAxiosCreate.mockReturnValue({ post });
 
     const result = await whopService.refundPayment('loc-1', { paymentId: 'pay_123' });
 
     expect(post).toHaveBeenCalledWith('/payments/pay_123/refund', {});
-    expect(result).toEqual(expect.objectContaining({ success: true, refundId: 'ref_123' }));
+    expect(result).toEqual(expect.objectContaining({ success: true, refundId: undefined }));
   });
 
   it('refunds a partial Whop payment with partial_amount', async () => {
-    const post = jest.fn().mockResolvedValue({ data: { id: 'ref_123', status: 'succeeded' } });
+    const post = jest.fn().mockResolvedValue({ data: { id: 'pay_123', substatus: 'partially_refunded' } });
     mockAxiosCreate.mockReturnValue({ post });
 
     await whopService.refundPayment('loc-1', { paymentId: 'pay_123', partialAmount: 3.2 });

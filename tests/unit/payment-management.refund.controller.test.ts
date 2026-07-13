@@ -51,7 +51,9 @@ function query(result: { data: any; error?: any }) {
   const res = { data: result.data, error: result.error ?? null };
   c.select = jest.fn(() => c);
   c.eq = jest.fn(() => c);
+  c.is = jest.fn(() => c);
   c.in = jest.fn(() => c);
+  c.limit = jest.fn(() => c);
   c.insert = jest.fn(() => c);
   c.update = jest.fn(() => c);
   c.single = jest.fn(() => Promise.resolve(res));
@@ -93,7 +95,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
   mockNotifyRefundProcessed.mockResolvedValue(undefined);
-  mockWhopRefundPayment.mockResolvedValue({ success: true, refundId: 'ref_whop_1', status: 'refunded', raw: { id: 'ref_whop_1' } });
+  mockWhopRefundPayment.mockResolvedValue({ success: true, status: 'refunded', raw: { id: 'pay_123', substatus: 'refunded' } });
 });
 
 describe('issueRefund', () => {
@@ -125,7 +127,7 @@ describe('issueRefund', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  it('processes a Whop refund through the Whop refund API without using the generic processor factory', async () => {
+  it('reserves a Whop refund and waits for the signed refund webhook', async () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
       .mockReturnValueOnce(query({ data: [] }))
@@ -133,8 +135,7 @@ describe('issueRefund', () => {
       .mockReturnValueOnce(query({ data: { id: 'claim-whop' } }))
       .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(okUpdate())
-      .mockReturnValueOnce(query({ data: { id: 'refund-event-whop' } }))
-      .mockReturnValueOnce(okUpdate());
+      .mockReturnValueOnce(query({ data: [] }));
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
 
@@ -143,18 +144,17 @@ describe('issueRefund', () => {
       partialAmount: 10,
     });
     expect(mockResolveProcessor).not.toHaveBeenCalled();
-    expect(mockNotifyRefundProcessed).toHaveBeenCalledWith('loc-1', 'contact-1', expect.objectContaining({
-      amount: 10,
-      processor: 'whop',
-      transactionId: 'ref_whop_1',
-    }));
+    expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
       success: true,
-      refundId: 'ref_whop_1',
+      status: 'processing',
+      refundId: null,
+      paymentEventId: null,
+      confirmationPending: true,
     }));
   });
 
-  it('returns success with a recording issue when Whop accepts a refund but ScaleSafe cannot insert the refund event', async () => {
+  it('returns the canonical Whop refund when its signed webhook wins the race', async () => {
     mockFrom
       .mockReturnValueOnce(query({ data: { ...successfulSale, processor: 'whop', processor_transaction_id: 'pay_123' } }))
       .mockReturnValueOnce(query({ data: [] }))
@@ -162,7 +162,15 @@ describe('issueRefund', () => {
       .mockReturnValueOnce(query({ data: { id: 'claim-whop' } }))
       .mockReturnValueOnce(okUpdate())
       .mockReturnValueOnce(okUpdate())
-      .mockReturnValueOnce(query({ data: null, error: { message: 'insert failed' } }));
+      .mockReturnValueOnce(query({ data: [{
+        id: 'refund-event-whop',
+        processor_transaction_id: 'rf_whop_1',
+        raw_webhook_payload: {
+          original_payment_event_id: 'pe-1',
+          original_processor_transaction_id: 'pay_123',
+        },
+      }] }))
+      .mockReturnValueOnce(okUpdate());
     const res = mockRes();
     await issueRefund(mockReq({ paymentEventId: 'pe-1', amount: 10 }), res, next);
 
@@ -170,9 +178,10 @@ describe('issueRefund', () => {
     expect(mockNotifyRefundProcessed).not.toHaveBeenCalled();
     expect((res.json as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
       success: true,
-      refundId: 'ref_whop_1',
-      paymentEventId: null,
-      recordingIssue: expect.stringContaining('could not record the refund event'),
+      status: 'refunded',
+      refundId: 'rf_whop_1',
+      paymentEventId: 'refund-event-whop',
+      confirmationPending: false,
     }));
   });
 

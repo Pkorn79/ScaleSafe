@@ -726,25 +726,61 @@ describe('handleWhopWebhook', () => {
     };
     const insertedRefunds: any[] = [];
     const persistedRefundIds = new Set<string>();
+    const claimUpdates: any[] = [];
 
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table === 'payment_refund_claims') {
+        const builder = queryBuilder(null);
+        let amountCents = 0;
+        builder.eq = jest.fn((column: string, value: any) => {
+          if (column === 'amount_cents') amountCents = Number(value);
+          return builder;
+        });
+        builder.maybeSingle = jest.fn(async () => ({
+          data: amountCents > 0 ? { id: `claim_${amountCents}` } : null,
+          error: null,
+        }));
+        builder.update = jest.fn((row: any) => {
+          claimUpdates.push(row);
+          return builder;
+        });
+        return builder;
+      }
       if (table !== 'payment_events') return queryBuilder(null);
 
       const builder = queryBuilder(null);
       let transactionId = '';
+      let eventType = '';
       builder.eq = jest.fn((column: string, value: string) => {
         if (column === 'processor_transaction_id') transactionId = value;
+        if (column === 'event_type') eventType = value;
         return builder;
       });
-      builder.maybeSingle = jest.fn(async () => ({
-        data: persistedRefundIds.has(transactionId) ? { id: `pe_${transactionId}` } : null,
-        error: null,
-      }));
-      builder.insert = jest.fn(async (row: any) => {
+      builder.maybeSingle = jest.fn(async () => {
+        if (transactionId === 'pay_original_1' && eventType !== 'refund') {
+          return {
+            data: {
+              id: 'pe_original_1',
+              merchant_id: 'merchant_1',
+              contact_id: 'contact_1',
+              enrollment_id: 'enr_1',
+              offer_id: 'offer_1',
+              processor_transaction_id: 'pay_original_1',
+              processor_subscription_id: 'mem_123',
+            },
+            error: null,
+          };
+        }
+        return {
+          data: persistedRefundIds.has(transactionId) ? { id: `pe_${transactionId}` } : null,
+          error: null,
+        };
+      });
+      builder.insert = jest.fn((row: any) => {
         insertedRefunds.push(row);
         persistedRefundIds.add(row.processor_transaction_id);
-        return { data: null, error: null };
+        return queryBuilder({ id: `pe_${row.processor_transaction_id}` });
       });
       return builder;
     });
@@ -791,6 +827,26 @@ describe('handleWhopWebhook', () => {
       'pay_original_1',
       'pay_original_1',
     ]);
+    expect(insertedRefunds.map((row) => row.raw_webhook_payload.original_payment_event_id)).toEqual([
+      'pe_original_1',
+      'pe_original_1',
+    ]);
+    expect(insertedRefunds.map((row) => row.raw_webhook_payload.refund_claim_id)).toEqual([
+      'claim_250',
+      'claim_125',
+    ]);
+    expect(claimUpdates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        status: 'recorded',
+        processor_refund_id: 'rf_partial_1',
+        refund_payment_event_id: 'pe_rf_partial_1',
+      }),
+      expect.objectContaining({
+        status: 'recorded',
+        processor_refund_id: 'rf_partial_2',
+        refund_payment_event_id: 'pe_rf_partial_2',
+      }),
+    ]));
     expect(mockNotifyRefundProcessed).toHaveBeenCalledTimes(2);
     expect(mockNotifyRefundProcessed).toHaveBeenNthCalledWith(
       1,

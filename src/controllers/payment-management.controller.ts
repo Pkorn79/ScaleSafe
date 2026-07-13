@@ -143,8 +143,7 @@ function isSafePaymentAttemptId(value: unknown): value is string {
 function isRefundLinkedToPayment(refund: any, originalEvent: any, paymentEventId: string): boolean {
   const raw = refund?.raw_webhook_payload || {};
   return raw.original_payment_event_id === paymentEventId
-    || raw.original_processor_transaction_id === originalEvent.processor_transaction_id
-    || refund.processor_transaction_id === originalEvent.processor_transaction_id;
+    || raw.original_processor_transaction_id === originalEvent.processor_transaction_id;
 }
 
 function isUniqueViolation(error: any): boolean {
@@ -165,6 +164,39 @@ async function updateRefundClaim(
     logger.error({ err: error.message, claimId }, 'Refund claim status update failed');
     throw error;
   }
+}
+
+async function markRefundClaimProviderAcceptedIfUnrecorded(
+  supabase: ReturnType<typeof getSupabase>,
+  claimId: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('payment_refund_claims')
+    .update(updates)
+    .eq('id', claimId)
+    .is('refund_payment_event_id', null);
+  if (error) {
+    logger.error({ err: error.message, claimId }, 'Refund claim provider-accepted update failed');
+    throw error;
+  }
+}
+
+async function findWhopRefundEventForPayment(
+  supabase: ReturnType<typeof getSupabase>,
+  locationId: string,
+  originalEvent: any,
+): Promise<any | null> {
+  let query: any = supabase
+    .from('payment_events')
+    .select('id, processor_transaction_id, raw_webhook_payload')
+    .eq('location_id', locationId)
+    .eq('processor', 'whop')
+    .eq('event_type', 'refund');
+  if (originalEvent.contact_id) query = query.eq('contact_id', originalEvent.contact_id);
+  const { data, error } = await query.limit(200);
+  if (error) throw error;
+  return (data || []).find((refund: any) => isRefundLinkedToPayment(refund, originalEvent, originalEvent.id)) || null;
 }
 
 async function resolveMerchantId(locationId: string): Promise<string> {
@@ -1169,6 +1201,54 @@ export async function issueRefund(req: Request, res: Response, next: NextFunctio
       return;
     }
     const refundPending = result.status === 'pending';
+
+    if (processorType === 'whop') {
+      const canonicalRefundId = typeof result.refundId === 'string' && /^rf_[A-Za-z0-9]+$/.test(result.refundId)
+        ? result.refundId
+        : null;
+
+      await markRefundClaimProviderAcceptedIfUnrecorded(supabase, refundClaim.id, {
+        status: 'provider_accepted',
+        provider_called: true,
+        processor_refund_id: canonicalRefundId,
+        provider_accepted_at: new Date().toISOString(),
+        error_message: null,
+      });
+
+      // Whop's refund endpoint returns the updated pay_... object. The signed
+      // refund.created webhook supplies the canonical rf_... refund record.
+      const confirmedRefund = await findWhopRefundEventForPayment(supabase, locationId, originalEvent);
+      if (confirmedRefund?.id) {
+        await updateRefundClaim(supabase, refundClaim.id, {
+          status: 'recorded',
+          processor_refund_id: confirmedRefund.processor_transaction_id || canonicalRefundId,
+          refund_payment_event_id: confirmedRefund.id,
+          recorded_at: new Date().toISOString(),
+          error_message: null,
+        });
+      }
+
+      const confirmationPending = !confirmedRefund?.id;
+      logger.info({
+        paymentEventId,
+        amount,
+        reason,
+        confirmationPending,
+        refundEventId: confirmedRefund?.id || null,
+      }, 'Whop refund accepted');
+      refundClaim = null;
+      res.json({
+        success: true,
+        status: confirmationPending ? 'processing' : 'refunded',
+        refundId: confirmedRefund?.processor_transaction_id || canonicalRefundId,
+        paymentEventId: confirmedRefund?.id || null,
+        confirmationPending,
+        message: confirmationPending
+          ? 'Refund accepted by Whop and awaiting signed confirmation.'
+          : undefined,
+      });
+      return;
+    }
 
     const refundTransactionId = result.refundId || `${originalEvent.processor_transaction_id}:refund:${refundClaim.id}`;
     await updateRefundClaim(supabase, refundClaim.id, {

@@ -64,6 +64,17 @@ function extractId(data: any, ...keys: string[]): string {
   return data?.id || data?._id || '';
 }
 
+function extractRefundId(data: any): string | undefined {
+  const candidates = [
+    data?.refund_id,
+    data?.refundId,
+    data?.refund?.id,
+    data?.id,
+  ];
+  const refundId = candidates.find(value => typeof value === 'string' && /^rf_[A-Za-z0-9]+$/.test(value));
+  return typeof refundId === 'string' ? refundId : undefined;
+}
+
 function centsToDollars(cents: number): number {
   return Math.round(Number(cents || 0)) / 100;
 }
@@ -464,7 +475,9 @@ export const whopService = {
       const res = await client(row).post(`/payments/${encodeURIComponent(input.paymentId)}/refund`, payload);
       return {
         success: true,
-        refundId: extractId(res.data, 'refund') || input.paymentId,
+        // Whop returns the updated Payment (`pay_...`) here. The canonical
+        // refund identifier (`rf_...`) arrives on refund.created.
+        refundId: extractRefundId(res.data),
         status: res.data?.status || res.data?.refund?.status || 'refunded',
         raw: res.data,
       };

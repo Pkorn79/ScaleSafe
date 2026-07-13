@@ -328,6 +328,16 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: calculate remaining refundable cents from linked refund/void events and active refund claims, expose that amount to the UI, hide the action at zero, and cap partial refunds at the remaining balance.
 - Required regression: a full refund removes the original row's Refund button; a partial refund shows and caps the remaining amount; an accepted-but-not-yet-recorded processor claim also removes or reduces availability without a second processor call.
 
+### FIND-033 - Whop refund response is mistaken for a canonical refund record
+
+- Area: Whop refunds, webhook reconciliation, and refund claims.
+- Live proof: Whop accepted the full $1.50 refund and its signed webhook created one canonical refund row, but the initiating request displayed `Refund was accepted by the processor, but ScaleSafe could not record the refund event`. Railway then logged a duplicate transaction-ID insert and incorrectly reconciled the claim to original sale event `4f70e33f-90a6-449a-ad61-e2930736e1bf`.
+- Code proof: Whop's refund endpoint returns the updated Payment object with its original `pay_...` ID; ScaleSafe treated that ID as a refund ID and attempted a second ledger insert. The repair worker queried by transaction ID without requiring `event_type = refund`, allowing the original sale to satisfy the claim.
+- Impact: merchants receive a false recording-failure warning after a successful refund, claims can point to the sale instead of the refund, and synthetic/manual rows can race the signed Whop webhook.
+- Severity recommendation: P1 money-ledger integrity defect. The processor refund succeeded, but local reconciliation could report and link the result incorrectly.
+- Local repair: reserve the refund amount when Whop accepts the request, make signed `refund.created` the sole canonical Whop refund-row writer, correlate that `rf_...` event to the exact original payment and claim, and require refund event type in reconciliation queries. The worker must wait rather than synthesize a Whop refund from `pay_...`.
+- Required regression: the refund request returns processing or confirmed success without a false recording error; one signed `rf_...` row is written; the claim points to that row; the refund workflow fires once; duplicate webhooks and the worker create no second row or notification.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.

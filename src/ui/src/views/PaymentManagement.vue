@@ -10,6 +10,7 @@
 
     <div v-if="error" class="error-msg">{{ error }}</div>
     <div v-if="actionError" class="error-msg">{{ actionError }}</div>
+    <div v-if="actionResult" class="success-msg">{{ actionResult }}</div>
 
     <!-- Dunning Alert Banner -->
     <div v-if="dunningEvent" class="card" :style="{ borderLeft: '4px solid ' + (dunningEvent.dunning_status === 'escalated' ? '#ef4444' : '#f59e0b') }">
@@ -314,6 +315,7 @@ const totalRefunded = ref(0);
 const clientLabel = ref('Payment Management');
 const clientEmail = ref('');
 const actionError = ref('');
+const actionResult = ref('');
 const defaultMethodLabel = computed(() => {
   const method = methods.value.find((m: any) => m.isDefault) || methods.value[0];
   return method ? cardOptionLabel(method) : '';
@@ -704,6 +706,7 @@ async function submitCharge() {
 async function submitRefund() {
   refundLoading.value = true;
   actionError.value = '';
+  actionResult.value = '';
   try {
     const result = await api.post<any>('/api/payments/manage/refund', {
       paymentEventId: refundForm.value.paymentEventId,
@@ -711,7 +714,10 @@ async function submitRefund() {
       reason: refundForm.value.reason,
     });
     showRefundModal.value = false;
-    if (result?.message) actionError.value = result.message;
+    actionResult.value = result?.confirmationPending
+      ? 'Refund accepted by Whop. ScaleSafe is waiting for signed confirmation.'
+      : 'Refund recorded successfully.';
+    setTimeout(() => { actionResult.value = ''; }, 6000);
     await loadHistory();
   } catch (e: any) { actionError.value = e.message || 'Refund failed'; }
   refundLoading.value = false;
@@ -725,6 +731,16 @@ async function submitRefund() {
   gap: 8px;
   font-size: 14px;
   cursor: pointer;
+}
+
+.success-msg {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  font-size: 14px;
 }
 
 .checkbox-label input {

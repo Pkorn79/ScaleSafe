@@ -221,7 +221,8 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 ### WHOP-REFUND-001 Trace
 
 - From the full Payment page, issued a full $1.50 refund against the newest refundable Whop payment.
-- ScaleSafe completed without an unexpected error, closed the confirmation dialog, added a distinct Refunded ledger row, and changed Total Refunded to $1.50.
+- Whop accepted the refund and its signed webhook added one distinct Refunded ledger row. Total Refunded changed to $1.50 and `ss_refund_processed` fired once.
+- The initiating request also displayed a false post-processor warning. Railway showed that the Whop API returned the original `pay_...` payment ID, ScaleSafe attempted to insert it as a second transaction, and the reconciliation worker then linked the claim to the original sale instead of requiring the signed `rf_...` refund event. FIND-033 tracks this ledger/reconciliation defect.
 - The original fully refunded sale retained an active Refund button. No second refund was attempted. FIND-032 tracks the refund-availability defect while the existing server-side remaining-balance and refund-claim protections remain in place.
 
 ### NMI-QMS-001 Trace
@@ -303,7 +304,8 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-029 | P1 | Evidence-chain matching defect | Whop QMS PIF consent | Payment predates consent token, so verifier reports only payment strength despite exact enrollment link | Fix `86a6ef4` deployed | Pass: exact consent + payment links, strength 50, missing payment IP visible |
 | FIND-030 | P1 | QMS completion-feedback defect | Whop QMS live payment | Webhook records payment, but embedded modal never leaves disabled Whop checkout or shows ScaleSafe success | Fixes `062b244` and `f7a412a` deployed | Pass on WHOP-QMS-003: server-confirmed success remains visible with one `Done` action |
 | FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fix `9ecece0` deployed | New QMS sale must update table, total, and last-payment timestamp together |
-| FIND-032 | P1 | Refund availability defect | Whop full-refund live test | Fully refunded original payment retains an active Refund action | Fixed locally; deployment pending | Full refund hides action; partial refund exposes only remaining balance |
+| FIND-032 | P1 | Refund availability defect | Whop full-refund live test | Fully refunded original payment retains an active Refund action | Fix `e8ab1a2` deployed | Full refund hides action; partial refund exposes only remaining balance |
+| FIND-033 | P1 | Whop refund reconciliation defect | Whop full-refund live test and Railway trace | Whop's returned `pay_...` ID is treated as a refund ID; claim is mislinked to original sale | Fixed locally; deployment pending | Signed `rf_...` webhook owns one row and one workflow; claim links to it |
 
 ## Screenshot Rules
 

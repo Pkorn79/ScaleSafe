@@ -349,15 +349,35 @@ async function findRefundEvent(claim: RefundReconciliationClaim, processor: stri
     .select('id')
     .eq('location_id', claim.location_id)
     .eq('processor', processor)
+    .eq('event_type', 'refund')
     .eq('processor_transaction_id', claim.processor_refund_id)
     .maybeSingle();
   if (error) throw error;
   return data || null;
 }
 
+async function findSignedWhopRefundEvent(claim: RefundReconciliationClaim, original: any): Promise<any | null> {
+  let query: any = getSupabase()
+    .from('payment_events')
+    .select('id, processor_transaction_id, raw_webhook_payload')
+    .eq('location_id', claim.location_id)
+    .eq('processor', 'whop')
+    .eq('event_type', 'refund');
+  if (original.contact_id) query = query.eq('contact_id', original.contact_id);
+  const { data, error } = await query
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data || []).find((refund: any) => {
+    const raw = refund?.raw_webhook_payload || {};
+    return raw.refund_claim_id === claim.id
+      || raw.original_payment_event_id === original.id
+      || raw.original_processor_transaction_id === original.processor_transaction_id;
+  }) || null;
+}
+
 async function processRefundClaim(claim: RefundReconciliationClaim): Promise<void> {
   try {
-    if (!claim.processor_refund_id) throw new Error('Processor refund reference is missing');
     const { data: original, error: originalError } = await getSupabase()
       .from('payment_events')
       .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, amount, currency, processor_subscription_id')
@@ -369,9 +389,18 @@ async function processRefundClaim(claim: RefundReconciliationClaim): Promise<voi
 
     const refundProcessor = claim.processor || original.processor;
     if (!refundProcessor) throw new Error('Refund processor is missing');
-    let refundEvent = await findRefundEvent(claim, refundProcessor);
     let inserted = false;
-    if (!refundEvent) {
+    let refundEvent: any | null;
+    if (refundProcessor === 'whop') {
+      refundEvent = await findSignedWhopRefundEvent(claim, original);
+      if (!refundEvent) {
+        throw new Error('Awaiting signed Whop refund confirmation');
+      }
+    } else {
+      if (!claim.processor_refund_id) throw new Error('Processor refund reference is missing');
+      refundEvent = await findRefundEvent(claim, refundProcessor);
+    }
+    if (!refundEvent && refundProcessor !== 'whop') {
       const { data, error } = await getSupabase()
         .from('payment_events')
         .insert({
@@ -431,7 +460,7 @@ async function processRefundClaim(claim: RefundReconciliationClaim): Promise<voi
           amount: Number(claim.amount_cents) / 100,
           refundType: Number(claim.amount_cents) < Math.round(Number(original.amount || 0) * 100) ? 'partial' : 'full',
           reason: 'Refund processed',
-          transactionId: claim.processor_refund_id,
+          transactionId: claim.processor_refund_id || undefined,
           enrollmentId: original.enrollment_id || null,
           offerId: original.offer_id || null,
           programName,
