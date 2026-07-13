@@ -234,6 +234,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Live proof: Railway reported a unique-key violation for `(merchant_id, processor, snapshot_date)` and counted one merchant as failed during the July 13 health run because that day's Stripe snapshot already existed.
 - Impact: a restart or second scheduled execution produces false health failures and can skip remaining per-merchant work even though a valid snapshot already exists.
 - Severity recommendation: P2 reliability/operations.
+- Local repair: save Stripe and NMI daily snapshots through the existing `(merchant_id, processor, snapshot_date)` uniqueness boundary so a same-day rerun updates the one snapshot instead of failing.
 - Required regression: two health runs on the same merchant, processor, and date update or reuse one snapshot without an error or failed-merchant count.
 
 ## Operations Access

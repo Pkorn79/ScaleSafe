@@ -5,7 +5,7 @@
  * risk level determination, and upgrade suggestion logic.
  */
 
-const mockSupabaseInsert = jest.fn().mockResolvedValue({ error: null });
+const mockSupabaseUpsert = jest.fn().mockResolvedValue({ error: null });
 
 // Mock Stripe
 jest.mock('stripe', () => jest.fn(() => ({
@@ -46,7 +46,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
           }),
         }),
       }),
-      insert: mockSupabaseInsert,
+      upsert: mockSupabaseUpsert,
     }),
   }),
 }));
@@ -67,7 +67,7 @@ describe('StripeHealthService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSupabaseInsert.mockResolvedValue({ error: null });
+    mockSupabaseUpsert.mockResolvedValue({ error: null });
     service = new StripeHealthService();
   });
 
@@ -179,13 +179,31 @@ describe('StripeHealthService', () => {
     it('persists stripe as the processor discriminator', async () => {
       await service.computeHealthSnapshot('merchant_1', 'loc_1');
 
-      expect(mockSupabaseInsert).toHaveBeenCalledWith(
+      expect(mockSupabaseUpsert).toHaveBeenCalledWith(
         expect.objectContaining({
           merchant_id: 'merchant_1',
           location_id: 'loc_1',
           processor: 'stripe',
           snapshot_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
+        {
+          onConflict: 'merchant_id,processor,snapshot_date',
+        },
+      );
+    });
+
+    it('uses the same upsert boundary on repeated same-day computations', async () => {
+      await service.computeHealthSnapshot('merchant_1', 'loc_1');
+      await service.computeHealthSnapshot('merchant_1', 'loc_1');
+
+      expect(mockSupabaseUpsert).toHaveBeenCalledTimes(2);
+      expect(mockSupabaseUpsert).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          merchant_id: 'merchant_1',
+          processor: 'stripe',
+        }),
+        { onConflict: 'merchant_id,processor,snapshot_date' },
       );
     });
   });

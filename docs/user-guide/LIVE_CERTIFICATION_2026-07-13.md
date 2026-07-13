@@ -9,7 +9,7 @@ This is the authoritative action ledger for the July 13 deep certification of th
 - **Location:** `274dtgl30b7x2HG8hn69`
 - **Environment:** Railway production application connected to processor test configurations where available.
 - **Current baseline before active testing:** `666151b` (`fix: preserve defense exhibit snapshots`)
-- **Latest certified deployed baseline:** `f394c7a` (`fix: load Whop embedded checkout`)
+- **Latest deployed baseline:** `e298068` (`fix: mark first Whop PIF billing complete`)
 - **Stripe:** test cards are authorized.
 - **Whop:** test cards are authorized.
 - **NMI:** charge only a clearly identified test offer priced at **$3.00 or less**, use only the saved card ending in **5321**, and add the transaction to the refund ledger below.
@@ -52,6 +52,8 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | STRIPE-PIF-002 | Stripe full enrollment retest | Repeat $1.00 PIF after ledger/vault/log repairs | One canonical sale, correctly keyed vault, private packet, receipt/welcome, daily pulse, no signed URL leak | Pass | Pass | Pass | Pass | Partial | Pass | Pass with follow-up | FIND-013, FIND-017 |
 | STRIPE-PIF-003 | Stripe repeat checkout and evidence-chain retest | Buy the same $1.00 offer again in the same browser with a new enrollment context | One new charge, exact offer metadata, complete tenant-scoped evidence chain, and no reuse rejection | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
 | WHOP-PIF-001 | Whop full enrollment | Select $1.50 PIF plus $1.00 order bump and complete embedded checkout | One $2.50 sale, PIF enrollment with no next billing, exact line items, receipt/welcome, packet, and scoped evidence | Pass | Partial | Fail | Pass | Partial | Pass | Fail; repair in progress | FIND-013, FIND-021 |
+| WHOP-PIF-002 | Whop full enrollment retest | Repeat the exact $2.50 PIF-plus-add-on cart after billing-choice repair | Preserve PIF, one sale, exact line items, no recurring state, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with timestamp follow-up | FIND-013, FIND-022 |
+| WHOP-PIF-003 | Whop billing-completion retest | Run a fresh $1.50 PIF checkout after first-webhook timestamp repair | First successful webhook sets `billing_completed_at` without recurring state | Hosted form loaded; payment not submitted | Pass through session creation | No payment row | No charge | N/A | N/A | Pending manual secure-frame completion | FIND-022 |
 
 ## Isolated Offer Fixtures
 
@@ -170,6 +172,13 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - `ss_payment_received` and the active `enrollment_complete` subscription returned HTTP 201. The known deleted sibling subscription failed after retries; FIND-013 remains open.
 - The primary FIND-021 billing-choice defect is closed by this retest. `billing_completed_at` remained null on the first webhook, opening FIND-022; its local repair now reconciles completion state on both first-time and duplicate checkout events.
 
+### WHOP-PIF-003 Trace
+
+- Deployed baseline `e298068` loaded a new $1.50 PIF Whop session with no add-on and no future recurring amount.
+- Railway returned `200` for each session request and logged the exact one-time plan shape. No checkout, webhook, enrollment, or payment event completed.
+- The third-party secure Whop card fields did not accept automated input in the certification browser. Database verification for the exact test email returned zero payment rows, confirming no accidental charge.
+- This is an automation limitation, not a ScaleSafe failure. The live `billing_completed_at` proof remains pending one manually completed sandbox checkout.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -232,8 +241,8 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Fix `b7b2b27` deployed | Pass: complete, strength 90, no gaps |
 | FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Fix `f394c7a` deployed | Pass: embedded form loaded and charged the correct $2.50 cart |
 | FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Fix `699cfa5` deployed | Pass on WHOP-PIF-002: PIF, one $2.50 sale, no recurring state |
-| FIND-022 | P2 | Whop lifecycle data defect | Whop PIF clean retest | First successful PIF webhook leaves `billing_completed_at` empty | Local fix; not deployed | New PIF must stamp billing complete on its first webhook |
-| FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Open | Two same-day runs must complete with one snapshot and zero failures |
+| FIND-022 | P2 | Whop lifecycle data defect | Whop PIF clean retest | First successful PIF webhook leaves `billing_completed_at` empty | Fix `e298068` deployed | New PIF must stamp billing complete on its first webhook |
+| FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Fixed locally; deployment pending | Two same-day runs must complete with one snapshot and zero failures |
 
 ## Screenshot Rules
 

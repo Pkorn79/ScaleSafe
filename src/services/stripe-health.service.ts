@@ -147,10 +147,12 @@ export class StripeHealthService {
 
     const { error: insertErr } = await supabase
       .from('account_health_snapshots')
-      .insert(snapshot);
+      .upsert(snapshot, {
+        onConflict: 'merchant_id,processor,snapshot_date',
+      });
 
     if (insertErr) {
-      logger.error({ err: insertErr, merchantId }, 'Failed to insert health snapshot');
+      logger.error({ err: insertErr, merchantId }, 'Failed to save health snapshot');
       throw insertErr;
     }
 
