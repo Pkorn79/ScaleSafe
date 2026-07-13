@@ -323,9 +323,17 @@ describe('handleWhopWebhook', () => {
         { type: 'order_bump', label: 'Bump', amount: 1 },
       ],
     };
+    const enrollmentUpdates: any[] = [];
 
     mockSupabaseFrom.mockImplementation((table: string) => {
-      if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table === 'enrollments') {
+        const builder = queryBuilder(enrollment);
+        builder.update = jest.fn((updates: any) => {
+          enrollmentUpdates.push(updates);
+          return builder;
+        });
+        return builder;
+      }
       if (table === 'payment_events') return queryBuilder(null);
       return queryBuilder(null);
     });
@@ -373,6 +381,13 @@ describe('handleWhopWebhook', () => {
       payments_total: null,
       payments_remaining: undefined,
       line_items: enrollment.selected_checkout_items,
+    }));
+    expect(enrollmentUpdates).toContainEqual(expect.objectContaining({
+      payment_type: 'pif',
+      payments_total: null,
+      next_billing_date: null,
+      billing_setup_status: 'ok',
+      billing_completed_at: expect.any(String),
     }));
     expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ received: true });

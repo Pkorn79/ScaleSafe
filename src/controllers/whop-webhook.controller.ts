@@ -530,14 +530,6 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
   );
 
   if (isCheckoutPayment) {
-    if (existingPaidEvent?.id) {
-      await reconcileCheckoutBillingSelection({
-        enrollment: currentEnrollment,
-        locationId,
-        paymentType: selectedPaymentType,
-        paymentsTotal: selectedPaymentsTotal,
-      });
-    }
     if (!existingPaidEvent?.id && currentEnrollment.status !== 'enrolled') {
       await phase2EnrollmentService.completeEnrollment({
         enrollmentId: enrollment.id,
@@ -553,6 +545,12 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
         skipPaymentEvent: true,
       });
     }
+    await reconcileCheckoutBillingSelection({
+      enrollment: currentEnrollment,
+      locationId,
+      paymentType: selectedPaymentType,
+      paymentsTotal: selectedPaymentsTotal,
+    });
     const { data: refreshed } = await getSupabase()
       .from('enrollments')
       .select('*')

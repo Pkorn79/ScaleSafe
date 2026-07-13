@@ -216,6 +216,25 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 billing-state integrity.
 - Local repair: carry normalized `payment_choice` in signed Whop metadata; resolve checkout type from that metadata, legacy future-recurring metadata, or the exact enrollment before falling back to the offer; keep one-time Whop access memberships separate from processor subscriptions; and allow duplicate successful-payment delivery to reconcile state without repeating side effects.
 - Required regression: PIF on an installment-capable Whop offer remains PIF with no next billing; installment selection retains the correct payment count and next billing; membership activation cannot make a PIF enrollment recurring; duplicate replay creates no second payment or workflow event.
+- Live retest: deploy `699cfa5` preserved the selected PIF state on enrollment `fabbebc5-f4e8-41d2-a4dc-b9e841ae347a`: one $2.50 Whop sale, exact $1.50 base/$1.00 add-on line items, `payment_type = pif`, no payment count, no next billing date, no processor subscription ID, and the Whop membership retained only as the access identity. FIND-022 records the separate completion-timestamp gap found in this retest.
+
+### FIND-022 - First Whop PIF webhook does not stamp billing completion
+
+- Area: Whop PIF enrollment state.
+- Live proof: `WHOP-PIF-002` correctly remained PIF with no recurring state, but `billing_completed_at` was null after the first successful webhook.
+- Code proof: the Whop reconciliation helper stamped billing completion only when an existing payment event made the webhook a duplicate. The first webhook called the shared completion service with the intentional PIF representation `payments_total = null`, which did not satisfy that service's finite-plan completion condition.
+- Impact: the paid-in-full state is functionally non-recurring, but downstream reporting and future billing-completion consumers receive an incomplete lifecycle record.
+- Severity recommendation: P2 data-state correctness.
+- Local repair: run Whop checkout billing reconciliation after both first-time completion and duplicate recovery.
+- Required regression: the first PIF webhook sets `billing_completed_at`; installment checkout does not set it until the plan is actually paid off; duplicate delivery remains side-effect-free.
+
+### FIND-023 - Re-running the daily health job collides with its own snapshot uniqueness constraint
+
+- Area: scheduled account-health operations.
+- Live proof: Railway reported a unique-key violation for `(merchant_id, processor, snapshot_date)` and counted one merchant as failed during the July 13 health run because that day's Stripe snapshot already existed.
+- Impact: a restart or second scheduled execution produces false health failures and can skip remaining per-merchant work even though a valid snapshot already exists.
+- Severity recommendation: P2 reliability/operations.
+- Required regression: two health runs on the same merchant, processor, and date update or reuse one snapshot without an error or failed-merchant count.
 
 ## Operations Access
 

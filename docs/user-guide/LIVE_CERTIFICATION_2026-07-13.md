@@ -160,6 +160,16 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - Whop and the payment ledger correctly identify a one-time $2.50 transaction, but the webhook completed the enrollment using the offer's default installment type instead of the client's PIF selection. The enrollment incorrectly shows two payments and a July 20 next-billing date. FIND-021 records this state-integrity defect.
 - The local repair now stores `payment_choice` in Whop checkout metadata, honors the consent/checkout choice in webhook processing, keeps one-time access memberships separate from recurring billing, and reconciles duplicate successful-payment delivery without duplicating enrollment or payment side effects. Deployment and a clean live retest remain pending.
 
+### WHOP-PIF-002 Trace
+
+- Completed at approximately `2026-07-13T20:10:41Z` after deploy `699cfa5` for the same $2.50 PIF-plus-add-on cart.
+- Whop rejected plus-addressing in its hosted email field, so the hosted checkout used a syntactically standard test address while the signed ScaleSafe checkout metadata preserved the original quick-checkout identity. The webhook still matched the exact tenant, offer, enrollment, and contact.
+- Enrollment `fabbebc5-f4e8-41d2-a4dc-b9e841ae347a` is `enrolled` and `pif`, with one payment, no payment total, no next billing date, no processor subscription ID, and Whop membership `mem_mCjZfOsJH33rVv` retained as the hosted access identity.
+- Payment event `c6e7e1f6-a5b0-4076-8ef6-ba4161c5c82e` is the only canonical sale: $2.50, processor `whop`, succeeded, exact $1.50 base offer and $1.00 order bump, and Whop payment/membership references.
+- Exact-enrollment `consent` and `enrollment_payment` evidence rows exist, and the private enrollment packet was generated successfully.
+- `ss_payment_received` and the active `enrollment_complete` subscription returned HTTP 201. The known deleted sibling subscription failed after retries; FIND-013 remains open.
+- The primary FIND-021 billing-choice defect is closed by this retest. `billing_completed_at` remained null on the first webhook, opening FIND-022; its local repair now reconciles completion state on both first-time and duplicate checkout events.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -221,7 +231,9 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-018 | P1 | Checkout idempotency defect | Repeat Stripe PIF retest | A completed checkout's browser attempt key blocks a legitimate later purchase with a new consent/enrollment | Fix `34a90aa` deployed | Pass on STRIPE-PIF-003 |
 | FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Fix `b7b2b27` deployed | Pass: complete, strength 90, no gaps |
 | FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Fix `f394c7a` deployed | Pass: embedded form loaded and charged the correct $2.50 cart |
-| FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Local fix; not deployed | New PIF must remain PIF with no next billing; installment selection must remain recurring |
+| FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Fix `699cfa5` deployed | Pass on WHOP-PIF-002: PIF, one $2.50 sale, no recurring state |
+| FIND-022 | P2 | Whop lifecycle data defect | Whop PIF clean retest | First successful PIF webhook leaves `billing_completed_at` empty | Local fix; not deployed | New PIF must stamp billing complete on its first webhook |
+| FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Open | Two same-day runs must complete with one snapshot and zero failures |
 
 ## Screenshot Rules
 
