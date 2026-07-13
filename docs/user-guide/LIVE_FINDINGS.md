@@ -1,0 +1,157 @@
+# ScaleSafe Live Walkthrough Findings
+
+Status: Open working list from the 2026-07-12 read-only product walkthrough.
+
+No setting, workflow, processor, payment, enrollment, or external system was changed while verifying these findings.
+
+## Triage Summary
+
+| ID | Area | Recommended Priority | Verification | Likely Effort |
+| --- | --- | --- | --- | --- |
+| FIND-001 | Defense exhibits | P1 | Fixed; legacy live packet passed, regeneration retest pending | Small/medium |
+| FIND-002 | Settings dirty state | P2 | Fixed and passed live | Small |
+| FIND-003 | Pulse diagnostics | P1 | Fixed and passed live | Small/medium |
+| FIND-004 | Stripe health defaults | P1 | Fixed and passed live | Small |
+| FIND-005 | QMS loading state | P2 | Fixed and passed live | Small |
+| FIND-006 | GHL enrollment matching | P1 investigation | Live data confirmed | Medium/large |
+| FIND-007 | NMI signed webhook | P1 configuration/certification | Live database confirmed | Setup plus live test |
+| FIND-008 | Product status copy | P3 | Live confirmed | Small |
+| FIND-009 | Concatenated headings | P3 | Live confirmed | Small |
+| FIND-010 | Whop offer processor label | P2 | Live and code confirmed | Small |
+| FIND-011 | Stripe evidence-vault keying | P1 | Fixed locally; live retest pending | Small/medium |
+| FIND-012 | Successful payment-event enum mismatch | P1 | Fixed locally; live retest pending | Small |
+| FIND-013 | Stale GHL trigger subscription | P1 configuration | Live confirmed | GHL cleanup plus retest |
+| FIND-014 | Pre-enrollment communications remain unlinked | P1 investigation | Live confirmed | Medium |
+
+## Confirmed Code-Backed Findings
+
+### FIND-001 - Defense Exhibits tab is never populated
+
+- Area: Defense
+- Impact: The generated letter and PDF can contain exhibits while the on-screen Exhibits tab says `0` and `No evidence exhibits available`.
+- Live proof: Existing Mastercard 4855 packet references Exhibits A-D and has a five-page PDF; its Exhibits tab shows zero.
+- Code proof: `DefenseDetailView.vue` declares `exhibits` and passes it to `ExhibitsTab`, but `refresh()` only assigns the packet response and never assigns exhibit data.
+- Severity recommendation: P1 for beta trust/operability.
+- Required regression: Open a compiled packet and verify the UI exhibit list matches the PDF exhibit index and packet evidence count.
+- Root cause confirmed: legacy packets stored a contact-wide raw array while regeneration rebuilt the scoped letter/PDF without replacing that old snapshot. Commit `666151b` now freezes the regenerated exhibit set and gives submitted legacy packets an honest PDF-count notice instead of relabeling raw timeline rows.
+- Live retest: submitted packet `a2d357fa-a9ee-439d-8a61-1c198fbc5302` now reports `Evidence Exhibits (8)` and directs the merchant to its frozen PDF. A pre-submission regeneration still needs a live certification run.
+
+### FIND-002 - Settings always claims there are unsaved changes
+
+- Area: Merchant Settings
+- Impact: A merchant who only opens Settings is told changes are unsaved, which makes it unclear whether navigation is safe.
+- Live proof: `Unsaved changes` appeared immediately after a read-only page load.
+- Code proof: `SettingsView.vue` passes `:dirty="true"` to `StickySaveBar` unconditionally.
+- Severity recommendation: P2.
+- Required regression: Fresh page load shows `All changes saved`; changing one field shows `Unsaved changes`; successful save resets the state.
+
+### FIND-003 - Pulse diagnostics request fields the backend never returns
+
+- Area: Provisioning Health / Pulse
+- Impact: Health reports `Last outbound observed: never` and `Last client submission: never` even when the client timeline contains pulse emails and a submitted pulse response.
+- Live proof: Phil Kay has pulse communications and a Jul 7 pulse submission; Settings reports both as never.
+- Code proof: `SettingsView.vue` renders `recentPulseOutboundObservedAt` and `recentPulseSubmittedAt`, but `merchant.service.ts#getPulseReadiness` does not return either field.
+- Severity recommendation: P1 because the diagnostic can falsely report a broken live workflow.
+- Required regression: Deliver pulse app event, observe outbound communication, submit response, and verify all three timestamps independently.
+
+### FIND-004 - Missing Stripe health states default to Safe
+
+- Area: Stripe Risk Health
+- Impact: The page can display a large dispute rate with `Account Risk Level: UNKNOWN` while Visa and Mastercard each display `Safe`.
+- Live proof: Test account displayed 41.18%, UNKNOWN, Visa Safe, and Mastercard Safe simultaneously.
+- Code proof: `StripeRiskHealth.vue` uses `healthSnapshot.vamp_status || 'safe'` and `mc_status || 'safe'` while separately defaulting a missing risk level to unknown.
+- Severity recommendation: P1 because this is misleading account-health guidance.
+- Required regression: A partial or legacy snapshot with missing derived statuses displays `Unknown / refresh required`, never Safe.
+
+### FIND-005 - QMS shows a false processor error while loading
+
+- Area: Quick Manual Sale
+- Impact: A merchant can see `No processor is configured` for several seconds even though Stripe and NMI are connected. This matches the intermittent behavior previously reported during demos.
+- Live proof: Modal first showed the error; approximately two seconds later it populated offers and card fields without a refresh.
+- Severity recommendation: P2.
+- Required regression: While configuration is pending, show `Loading payment methods...`; show the configuration error only after a completed empty response.
+- Live retest passed: the Richard Schneider QMS modal first showed `Loading payment fields...`, then populated all active offers and card fields without displaying the false processor error.
+
+## Operational or Data Findings
+
+### FIND-006 - GHL Fulfillment has a large unresolved-event backlog
+
+- Live state: 29 matched, 121 unresolved, 0 failed.
+- Meaning: Events are being captured, but many cannot be defensibly assigned to one program.
+- Classification: Requires matching-quality review and a clean-fixture certification before classifying as a code defect. Merchants must not be expected to repair events one by one.
+
+### FIND-007 - NMI official webhook setup is still marked manual/setup-required
+
+- Live database proof: the active/default NMI configuration has a webhook key, callback URL, and 15 configured event types, but status is `manual_setup_required`, `lastVerifiedAt` is null, and there is no stored webhook error.
+- Event proof: the most recent 100 NMI diagnostic rows include 25 `nmi_event` rows. None has `signature_verified = true`. Older sale events were transaction-verified; subscription/refund events include the message that no Signature header was present and fallback verification/matching was used.
+- Conclusion: this is not merely stale UI copy. The signed official webhook path has never been certified for this location.
+- Classification: Configuration and live-certification requirement. Review current NMI webhook configuration, then prove one signed callback before calling the channel complete.
+
+### FIND-008 - Roadmap and payment-setting labels contain stale capability states
+
+- Examples: Stripe Defense Layer is shown as Coming Soon while Defense is live; ACH appears inside a coming-options block even though ACH is a beta payment capability.
+- Classification: Documentation/product-status drift.
+
+### FIND-009 - Section headings concatenate words
+
+- Examples: `Yourclients.`, `Merchantsetup.`, `Stripehealth.`, and `Chargebackcases.`
+- Classification: Visual/text rendering defect.
+- Severity recommendation: P3.
+- Required regression: SectionHeader renders multi-part titles with visible spacing at desktop and mobile widths.
+
+### FIND-010 - Whop offers are labeled `Default` in the Processor column
+
+- Area: Offers list.
+- Impact: A merchant cannot tell from the offer inventory that an offer is routed to Whop; the table presents the channel as `Default`, which can lead to incorrect checkout expectations during setup or support.
+- Live proof: `CERT 2026-07-13 Whop Choice` synchronized successfully to Whop with stored product and plan IDs, but its Processor cell displays `Default`.
+- Code proof: `OffersView.vue` derives the badge only from `processor_override` and has no branch for `checkout_type === 'whop'`.
+- Severity recommendation: P2 operational correctness.
+- Required regression: Direct default, direct NMI, direct Stripe, Whop, and FanBasis-ready offers each display their actual checkout channel or processor truthfully.
+
+### FIND-011 - Stripe `charge.succeeded` keys the evidence vault by Charge ID instead of PaymentIntent ID
+
+- Area: Stripe payment evidence and dispute lookup.
+- Live proof: The isolated Stripe PIF payment produced a vault row whose `stripe_payment_intent_id` contained a `ch_...` value. Looking up the row by the actual `pi_...` returned nothing.
+- Code proof: `handlePaymentSuccess()` passed a raw Charge object to `createVaultEntryFromWebhook()` because its Charge branch condition could not be true for a normal Charge carrying a PaymentIntent.
+- Impact: Later dispute and CE 3.0 evidence lookup by PaymentIntent can miss the transaction's Stripe evidence row.
+- Severity recommendation: P1 for chargeback-defense integrity.
+- Local repair: Normalize `charge.succeeded` into a PaymentIntent-keyed record, retain the Charge object as `latest_charge`, enrich the payment ledger, and return `500` when evidence persistence fails so Stripe retries.
+- Required regression: Process one new Stripe card payment and confirm the vault row has `pi_...` in `stripe_payment_intent_id`, `ch_...` in `stripe_charge_id`, and the matching payment event receives the Charge ID and masked card metadata.
+
+### FIND-012 - Paid enrollment completion writes an event type rejected by the live database
+
+- Area: Payment ledger and GHL payment webhook handling.
+- Live proof: The Stripe PIF checkout succeeded and created its canonical `sale` row, but Railway logged `Payment event insert failed` with `payment_events_event_type_check` during `completeEnrollment()`.
+- Code proof: `phase2Enrollment.service.ts` and legacy GHL payment handlers wrote `payment_success`, while the migration-backed constraint permits canonical ledger event types such as `sale`, `refund`, and `subscription_payment`.
+- Impact: Duplicate enrollment-completion writes create error noise; GHL-only payment paths can silently lose their only payment event.
+- Severity recommendation: P1 because an affected core path can lose ledger state.
+- Local repair: Use canonical `sale`, skip the redundant completion write when checkout or settlement already created the ledger row, and skip payment events for genuinely free enrollments.
+- Required regression: New Stripe enrollment has exactly one `sale` row and no constraint error; a GHL payment webhook creates a valid `sale` row.
+
+### FIND-014 - Enrollment-link communications are not linked after the enrollment is created
+
+- Area: Communication evidence and defense scoping.
+- Live proof: The isolated client received an enrollment link before checkout. Both the ScaleSafe send record and the observed GHL outbound email were created with `enrollment_id = null`; both remained null after the exact offer enrollment completed.
+- Impact: Enrollment-scoped defense generation may omit the pre-enrollment delivery/consent communication unless another defensible matching layer associates it.
+- Classification: P1 investigation until defense exhibit behavior is tested against this exact enrollment.
+- Required regression: Compile a packet for the isolated enrollment and verify whether the two link communications are included only for that enrollment. If omitted, implement exact offer/context linkage rather than newest-enrollment guessing.
+
+### FIND-013 - One deleted GHL trigger subscription still receives enrollment-complete deliveries
+
+- Live proof: The isolated Stripe PIF enrollment sent `enrollment_complete` successfully to one subscription, then retried a second subscription four times before GHL reported that its trigger ID had been deleted.
+- Impact: Every enrollment completion incurs avoidable retries, log noise, and approximately one minute of background work; diagnostics can report a workflow failure even though the active workflow succeeded.
+- Classification: P1 configuration/operations gap, not a processor defect.
+- Required action: Identify and remove only the stale subscription after owner approval, then prove one successful `enrollment_complete` delivery with no failed sibling delivery.
+
+## Operations Access
+
+- Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.
+- The baseline deployment for commit `c03bcc5dfbe1c90cfeb361c5e71e118ccbf49920` was successful. Its preceding 24-hour log window contained no error-level entries, warning-level entries, or HTTP responses at or above 400.
+- Log review must use narrow timestamps, request/correlation IDs, location ID, route, and safe processor identifiers. Do not paste broad logs containing PII or secrets into documentation.
+
+## Historical Test-Data Noise
+
+- Old `[object Object]` workflow emails remain visible in communications/evidence history.
+- Reconciliation reports old missing processor/subscription IDs and unassigned payments.
+- The test Stripe account has deliberately unrealistic dispute metrics.
+- These records should remain available for troubleshooting but must not be used in public media or treated as representative merchant data.

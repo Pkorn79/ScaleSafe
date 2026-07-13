@@ -267,6 +267,17 @@ describe('Checkout Controller', () => {
       expect(result.success).toBe(true);
       expect(result.chargeId).toBe('txn_123');
 
+      const paymentEventInsert = insertFn.mock.calls
+        .map((call: any[]) => call[0])
+        .find((record: any) => record?.event_type === 'sale');
+      expect(paymentEventInsert).toEqual(expect.objectContaining({
+        processor_transaction_id: 'txn_123',
+        processor_charge_id: 'txn_123',
+        payment_status: 'succeeded',
+        consent_linked: false,
+      }));
+      expect(paymentEventInsert.settled_at).toEqual(expect.any(String));
+
       // Verify charge was called with correct amount (cents)
       expect(mockProcessor.charge.mock.calls[0][0].amount).toBe(5000);
       expect(mockProcessor.charge.mock.calls[0][0].idempotencyKey).toMatch(/^checkout-/);

@@ -125,18 +125,23 @@ export const stripeEvidenceVaultService = {
       // second may carry identity fields the first one lacked — fill gaps.
       const { data: existing } = await supabase
         .from('stripe_evidence_vault')
-        .select('id, card_fingerprint, customer_device_fingerprint')
+        .select('id, stripe_charge_id, card_fingerprint, customer_device_fingerprint')
         .eq('stripe_payment_intent_id', paymentIntent.id)
         .single();
 
       if (existing) {
         const gapFill: Record<string, string> = {};
+        const chargeId = typeof paymentIntent.latest_charge === 'string'
+          ? paymentIntent.latest_charge
+          : paymentIntent.latest_charge?.id || null;
+        if (!existing.stripe_charge_id && chargeId) gapFill.stripe_charge_id = chargeId;
         if (!existing.card_fingerprint && cardFingerprint) gapFill.card_fingerprint = cardFingerprint;
         if (!existing.customer_device_fingerprint && paymentIntent.metadata?.customer_device_fingerprint) {
           gapFill.customer_device_fingerprint = paymentIntent.metadata.customer_device_fingerprint;
         }
         if (Object.keys(gapFill).length > 0) {
-          await supabase.from('stripe_evidence_vault').update(gapFill).eq('id', existing.id);
+          const { error: updateError } = await supabase.from('stripe_evidence_vault').update(gapFill).eq('id', existing.id);
+          if (updateError) throw updateError;
         }
         return;
       }
@@ -184,9 +189,11 @@ export const stripeEvidenceVaultService = {
 
       if (error) {
         logger.error({ err: error, piId: paymentIntent.id, merchantId: merchant.id }, 'Failed to create vault entry from webhook');
+        throw error;
       }
     } catch (err: any) {
       logger.error({ err: err.message, piId: paymentIntent.id, merchantId: merchant.id }, 'Unexpected error creating vault entry from webhook');
+      throw err;
     }
   },
 

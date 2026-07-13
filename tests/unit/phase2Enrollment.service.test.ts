@@ -186,7 +186,7 @@ describe('Phase 2 Enrollment Service - completeEnrollment', () => {
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         merchant_id: 'merchant_1',
-        event_type: 'payment_success',
+        event_type: 'sale',
         processor: 'ghl',
         processor_transaction_id: 'txn_123',
         amount: 2997,
@@ -227,7 +227,7 @@ describe('Phase 2 Enrollment Service - handleRecurringPayment', () => {
 
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        event_type: 'payment_success',
+        event_type: 'sale',
         amount: 500,
         payment_number: 2,
         payments_remaining: 4,

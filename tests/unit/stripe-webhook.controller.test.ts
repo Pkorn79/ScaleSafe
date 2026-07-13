@@ -1,6 +1,7 @@
 const mockConstructEvent = jest.fn();
 const mockDisputesRetrieve = jest.fn();
 const mockFrom = jest.fn();
+const mockPaymentEventUpdate = jest.fn();
 const mockDecrypt = jest.fn((value: string) => value.replace('enc:', ''));
 
 jest.mock('stripe', () => {
@@ -122,7 +123,12 @@ function tableMock(table: string) {
     const chain: any = {
       select: jest.fn(() => chain),
       eq: jest.fn(() => chain),
+      update: jest.fn((payload: any) => {
+        mockPaymentEventUpdate(payload);
+        return chain;
+      }),
       maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+      then: (resolve: any) => resolve({ data: [], error: null }),
     };
     return chain;
   }
@@ -181,6 +187,68 @@ describe('handleStripeWebhook', () => {
     expect(mockConstructEvent).toHaveBeenCalledWith(req.rawBody, 'sig_1', 'whsec_loc');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('normalizes charge.succeeded under the PaymentIntent id and enriches the ledger', async () => {
+    const { stripeEvidenceVaultService } = require('../../src/services/stripe-evidence-vault.service');
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_charge',
+      type: 'charge.succeeded',
+      account: 'acct_1',
+      data: {
+        object: {
+          id: 'ch_1',
+          payment_intent: 'pi_1',
+          created: 1780000000,
+          payment_method_details: { card: { last4: '4242', fingerprint: 'fp_1' } },
+        },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(stripeEvidenceVaultService.createVaultEntryFromWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'pi_1',
+        latest_charge: expect.objectContaining({ id: 'ch_1' }),
+      }),
+      expect.objectContaining({ id: 'merch_1' }),
+    );
+    expect(mockPaymentEventUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      processor_charge_id: 'ch_1',
+      payment_method_last4: '4242',
+      payment_status: 'succeeded',
+    }));
+  });
+
+  it('returns 500 so Stripe retries when payment evidence persistence fails', async () => {
+    const { stripeEvidenceVaultService } = require('../../src/services/stripe-evidence-vault.service');
+    (stripeEvidenceVaultService.createVaultEntryFromWebhook as jest.Mock)
+      .mockRejectedValueOnce(new Error('vault unavailable'));
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_pi',
+      type: 'payment_intent.succeeded',
+      account: 'acct_1',
+      data: { object: { id: 'pi_2', latest_charge: 'ch_2', created: 1780000000, metadata: {} } },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ received: false, error: 'handler_failed' });
   });
 
   it('rejects a merchant-specific webhook when the Stripe account does not match', async () => {

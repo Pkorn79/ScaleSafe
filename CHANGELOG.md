@@ -3,6 +3,19 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
+
+### Fixed
+- Stripe `charge.succeeded` events now preserve the PaymentIntent as the evidence-vault key and the Charge as the charge reference, so later dispute lookups do not lose transaction evidence.
+- Successful Stripe webhooks enrich the canonical payment row with settlement, Charge, and masked card metadata and update the linked enrollment's initial-payment state.
+- Stripe evidence-vault persistence failures now return a retryable webhook failure instead of silently acknowledging lost evidence.
+- Paid enrollment and GHL payment paths use the database-supported `sale` event type; checkout and settled ACH paths no longer attempt a redundant second ledger insert, and free enrollments no longer create payment rows.
+- Checkout payment rows now retain processor Charge IDs, settlement timestamps, and whether consent was linked.
+
+### Verified
+- Full test suite: 145 suites / 1,228 tests.
+- TypeScript typecheck, production build, and production dependency audit pass.
+
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)
 
 ### Fixed

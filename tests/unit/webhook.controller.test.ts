@@ -241,7 +241,7 @@ describe('Webhook Controller - ghlPayment', () => {
     expect(mockCompleteEnrollment).not.toHaveBeenCalled();
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        event_type: 'payment_success',
+        event_type: 'sale',
         processor: 'ghl',
       }),
     );
@@ -311,7 +311,7 @@ describe('Webhook Controller - ghlPayment', () => {
     expect(mockCompleteEnrollment).not.toHaveBeenCalled();
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
       contact_id: 'contact_1',
-      event_type: 'payment_success',
+      event_type: 'sale',
       processor: 'ghl',
       processor_transaction_id: 'ord_product_ambiguous',
     }));

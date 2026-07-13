@@ -683,7 +683,7 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
     await paymentEventRepository.create({
       location_id: locationId,
       contact_id: '',
-      event_type: 'payment_success',
+      event_type: 'sale',
       processor: 'ghl',
       processor_transaction_id: transactionId,
       amount,
@@ -712,7 +712,7 @@ async function handleOrderCompleted(body: Record<string, unknown>): Promise<void
     await paymentEventRepository.create({
       location_id: locationId,
       contact_id: contactId,
-      event_type: 'payment_success',
+      event_type: 'sale',
       processor: 'ghl',
       processor_transaction_id: transactionId,
       amount,
@@ -763,7 +763,7 @@ async function handleSubscriptionPayment(body: Record<string, unknown>): Promise
     await paymentEventRepository.create({
       location_id: locationId,
       contact_id: contactId,
-      event_type: 'payment_success',
+      event_type: 'sale',
       processor: 'ghl',
       processor_transaction_id: transactionId,
       amount,

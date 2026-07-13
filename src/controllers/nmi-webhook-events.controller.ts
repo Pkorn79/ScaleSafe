@@ -1112,6 +1112,7 @@ async function processAchStatusEvent(
         paymentsTotal: enrollment.payments_total || null,
         processorType: 'nmi',
         paymentSource: 'nmi_ach_settlement',
+        skipPaymentEvent: true,
       });
     } else if (!payment.enrollment_id && payment.contact_id) {
       const { offerName } = await offerDetails(supabase, payment.offer_id || null);

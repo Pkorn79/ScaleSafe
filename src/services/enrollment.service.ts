@@ -506,6 +506,7 @@ export const enrollmentService = {
             paymentType: 'free',
             transactionId: 'free_enrollment',
             paymentsTotal: null,
+            skipPaymentEvent: true,
           });
           logger.info({ enrollmentId: existing.id }, 'Free offer: enrollment completed (no checkout)');
         } catch (freeErr: any) {
@@ -558,6 +559,7 @@ export const enrollmentService = {
           paymentType: 'free',
           transactionId: 'free_enrollment',
           paymentsTotal: null,
+          skipPaymentEvent: true,
         });
         logger.info({ enrollmentId: created.id }, 'Free offer: enrollment completed (no checkout)');
       } catch (freeErr: any) {

@@ -215,6 +215,58 @@ async function routeWebhookEvent(event: any, merchant: any): Promise<void> {
 
 // ─── Payment success → Evidence vault ────────────────────
 
+function stripeObjectTimestamp(value: unknown): string {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0
+    ? new Date(seconds * 1000).toISOString()
+    : new Date().toISOString();
+}
+
+async function enrichStripePaymentLedger(params: {
+  merchant: any;
+  paymentIntentId: string;
+  charge: any | null;
+  occurredAt: unknown;
+}): Promise<void> {
+  const { merchant, paymentIntentId, charge } = params;
+  const chargeId = typeof charge === 'string' ? charge : charge?.id || null;
+  const card = typeof charge === 'object' ? charge?.payment_method_details?.card : null;
+  const updates: Record<string, unknown> = {
+    payment_status: 'succeeded',
+    settled_at: stripeObjectTimestamp(charge?.created || params.occurredAt),
+  };
+  if (chargeId) updates.processor_charge_id = chargeId;
+  if (card?.last4) {
+    updates.payment_method_last4 = card.last4;
+    updates.payment_method_type = 'card';
+    updates.selected_payment_method = 'card';
+  }
+
+  const { data: paymentRows, error: paymentError } = await getSupabase()
+    .from('payment_events')
+    .update(updates)
+    .eq('location_id', merchant.location_id)
+    .eq('processor', 'stripe')
+    .eq('processor_transaction_id', paymentIntentId)
+    .select('id, enrollment_id');
+  if (paymentError) throw paymentError;
+
+  const payment = Array.isArray(paymentRows) ? paymentRows[0] : null;
+  if (!payment?.enrollment_id) return;
+
+  const enrollmentUpdates: Record<string, unknown> = {
+    initial_payment_status: 'succeeded',
+    initial_payment_settled_at: updates.settled_at,
+  };
+  if (card?.last4) enrollmentUpdates.initial_payment_method = 'card';
+  const { error: enrollmentError } = await getSupabase()
+    .from('enrollments')
+    .update(enrollmentUpdates)
+    .eq('id', payment.enrollment_id)
+    .eq('location_id', merchant.location_id);
+  if (enrollmentError) throw enrollmentError;
+}
+
 async function handlePaymentSuccess(event: any, merchant: any): Promise<void> {
   const obj = event.data.object;
   if (event.type === 'payment_intent.succeeded' && obj.metadata?.scalesafe_ach === 'true') {
@@ -227,21 +279,29 @@ async function handlePaymentSuccess(event: any, merchant: any): Promise<void> {
   }
 
   // For charge.succeeded, the object is a Charge; for payment_intent.succeeded, it's a PaymentIntent
-  const paymentIntentId = obj.payment_intent || obj.id;
+  const paymentIntentId = event.type === 'charge.succeeded'
+    ? (typeof obj.payment_intent === 'string' ? obj.payment_intent : obj.payment_intent?.id || '')
+    : obj.id;
 
-  if (!paymentIntentId || paymentIntentId === obj.id && event.type === 'charge.succeeded') {
+  if (!paymentIntentId) return;
+
+  if (event.type === 'charge.succeeded') {
     // charge.succeeded — get the PI ID from the charge
-    const piId = obj.payment_intent;
-    if (piId) {
-      await stripeEvidenceVaultService.createVaultEntryFromWebhook(
-        { ...obj, id: piId, latest_charge: obj.id },
-        merchant,
-      );
-    }
+    await stripeEvidenceVaultService.createVaultEntryFromWebhook(
+      { ...obj, id: paymentIntentId, latest_charge: obj },
+      merchant,
+    );
+    await enrichStripePaymentLedger({ merchant, paymentIntentId, charge: obj, occurredAt: obj.created });
     return;
   }
 
   await stripeEvidenceVaultService.createVaultEntryFromWebhook(obj, merchant);
+  await enrichStripePaymentLedger({
+    merchant,
+    paymentIntentId,
+    charge: obj.latest_charge || null,
+    occurredAt: obj.created,
+  });
 }
 
 async function handlePaymentProcessing(event: any, merchant: any): Promise<void> {

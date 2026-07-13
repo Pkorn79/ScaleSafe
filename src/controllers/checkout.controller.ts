@@ -1107,13 +1107,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       event_type: result.success ? 'sale' : 'payment_failed',
       processor: procConfig.processor_type,
       processor_transaction_id: result.transactionId,
+      processor_charge_id: result.chargeId || null,
       amount: amount / 100, // store in dollars in DB
       currency: (currency || 'usd').toLowerCase(),
       payment_method_type: paymentMethod,
       selected_payment_method: paymentMethod,
       payment_status: paymentProcessing ? 'processing' : (result.success ? 'succeeded' : 'failed'),
+      settled_at: paymentSettled ? new Date().toISOString() : null,
       customer_email: contactEmail || null,
       consent_token: consentToken || null,
+      consent_linked: Boolean(consentToken),
       failure_reason: result.errorMessage || null,
       ip_address: clientIp,
       device_info: deviceFingerprint || null,
@@ -1203,6 +1206,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             transactionId: result.transactionId || result.chargeId || '',
             paymentsTotal,
             processorType: procConfig.processor_type,
+            skipPaymentEvent: true,
           });
 
           // Re-query enrollment to get the contactId that completeEnrollment resolved.

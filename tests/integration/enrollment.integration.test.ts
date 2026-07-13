@@ -347,7 +347,7 @@ describe('Enrollment Integration — full lifecycle', () => {
 
     // Verify payment_event created
     expect(paymentEventStore.length).toBeGreaterThan(0);
-    expect(paymentEventStore[0].event_type).toBe('payment_success');
+    expect(paymentEventStore[0].event_type).toBe('sale');
     expect(paymentEventStore[0].processor).toBe('ghl');
 
     // Verify trigger was fired
