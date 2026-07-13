@@ -256,6 +256,8 @@ describe('handleWhopWebhook', () => {
           location_id: 'loc_1',
           offer_id: 'offer_1',
           checkout_mode: 'quick_checkout',
+          payment_choice: 'pif',
+          future_recurring_amount: 0,
           contact_email: 'client@example.com',
           contact_name: 'Client Example',
           line_items: JSON.stringify(insertedEnrollment.selected_checkout_items),
@@ -284,12 +286,16 @@ describe('handleWhopWebhook', () => {
       email: 'client@example.com',
       checkout_type: 'whop',
       processor_type: 'whop',
+      payment_type: 'pif',
+      payments_total: null,
     }));
     expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
       enrollmentId: 'enr_quick_1',
       contactId: 'contact_from_ghl',
       contactEmail: 'client@example.com',
       processorType: 'whop',
+      paymentType: 'pif',
+      paymentsTotal: null,
     }));
     expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
       contact_id: 'contact_from_ghl',
@@ -298,6 +304,333 @@ describe('handleWhopWebhook', () => {
       line_items: insertedEnrollment.selected_checkout_items,
     }));
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('keeps a full-enrollment PIF choice one-time when the offer also supports installments', async () => {
+    const enrollment = {
+      id: 'enr_pif_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      status: 'consent_captured',
+      payment_type: 'pif',
+      payments_made: 0,
+      payments_total: null,
+      selected_checkout_items: [
+        { type: 'base_offer', label: 'Whop Installments', amount: 1.5 },
+        { type: 'order_bump', label: 'Bump', amount: 1 },
+      ],
+    };
+
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table === 'payment_events') return queryBuilder(null);
+      return queryBuilder(null);
+    });
+
+    const payload = {
+      id: 'evt_pif_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_pif_1',
+        amount: 2.5,
+        membership_id: 'mem_pif_1',
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_pif_1',
+          offer_id: 'offer_1',
+          checkout_mode: 'full_enrollment',
+          payment_choice: 'pif',
+          future_recurring_amount: 0,
+          line_items: JSON.stringify(enrollment.selected_checkout_items),
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_pif_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_pif_1',
+      paymentType: 'pif',
+      paymentsTotal: null,
+      paymentAmount: 2.5,
+    }));
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_pif_1',
+      processor_transaction_id: 'pay_pif_1',
+      processor_subscription_id: 'mem_pif_1',
+      payments_total: null,
+      payments_remaining: undefined,
+      line_items: enrollment.selected_checkout_items,
+    }));
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('does not mistake a Whop payment id for a missing membership id', async () => {
+    const enrollment = {
+      id: 'enr_pif_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      status: 'consent_captured',
+      payment_type: 'pif',
+      payments_made: 0,
+      payments_total: null,
+    };
+    const enrollmentUpdates: any[] = [];
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      const builder = queryBuilder(table === 'enrollments' ? enrollment : null);
+      if (table === 'enrollments') {
+        builder.update = jest.fn((updates: any) => {
+          enrollmentUpdates.push(updates);
+          return builder;
+        });
+      }
+      return builder;
+    });
+
+    const payload = {
+      id: 'evt_pif_no_membership',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_without_membership',
+        amount: 1.5,
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_pif_1',
+          checkout_mode: 'full_enrollment',
+          payment_choice: 'pif',
+          future_recurring_amount: 0,
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_pif_no_membership' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(enrollmentUpdates[0]).toEqual(expect.objectContaining({
+      whop_payment_id: 'pay_without_membership',
+      whop_membership_id: null,
+      processor_subscription_id: null,
+    }));
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      processor_transaction_id: 'pay_without_membership',
+      processor_subscription_id: null,
+    }));
+  });
+
+  it('records an initial installment checkout with the selected payment count', async () => {
+    const enrollment = {
+      id: 'enr_inst_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      status: 'consent_captured',
+      payment_type: 'installment',
+      payments_made: 0,
+      payments_total: 5,
+    };
+    mockSupabaseFrom.mockImplementation((table: string) => (
+      queryBuilder(table === 'enrollments' ? enrollment : null)
+    ));
+
+    const payload = {
+      id: 'evt_inst_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_inst_1',
+        amount: 2.2,
+        membership_id: 'mem_inst_1',
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_inst_1',
+          offer_id: 'offer_1',
+          checkout_mode: 'full_enrollment',
+          payment_choice: 'installment',
+          future_recurring_amount: 2.2,
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_inst_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(mockCompleteEnrollment).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_inst_1',
+      paymentType: 'installment',
+      paymentsTotal: 5,
+      paymentAmount: 2.2,
+    }));
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_inst_1',
+      payments_total: 5,
+      payments_remaining: 4,
+    }));
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a one-time Whop access membership into recurring billing', async () => {
+    const enrollment = {
+      id: 'enr_pif_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      payment_type: 'pif',
+      next_billing_date: null,
+      whop_membership_id: 'mem_pif_1',
+    };
+    const enrollmentUpdates: any[] = [];
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      const builder = queryBuilder(table === 'enrollments' ? enrollment : null);
+      if (table === 'enrollments') {
+        builder.update = jest.fn((updates: any) => {
+          enrollmentUpdates.push(updates);
+          return builder;
+        });
+      }
+      return builder;
+    });
+
+    const payload = {
+      id: 'evt_member_active_1',
+      type: 'membership.activated',
+      data: {
+        id: 'mem_pif_1',
+        membership_id: 'mem_pif_1',
+        renewal_period_end: '2026-08-13T00:00:00.000Z',
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_pif_1',
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_member_active_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(enrollmentUpdates).toHaveLength(1);
+    expect(enrollmentUpdates[0]).toEqual(expect.objectContaining({
+      whop_membership_id: 'mem_pif_1',
+      processor_subscription_id: null,
+      whop_reconciliation_status: 'membership_active',
+    }));
+    expect(enrollmentUpdates[0]).not.toHaveProperty('next_billing_date');
+    expect(enrollmentUpdates[0]).not.toHaveProperty('status');
+  });
+
+  it('reconciles a duplicate PIF checkout without repeating enrollment or payment side effects', async () => {
+    const enrollment = {
+      id: 'enr_pif_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      enrolled_at: '2026-07-13T12:00:00.000Z',
+      payment_type: 'installment',
+      payments_made: 1,
+      payments_total: 5,
+      next_billing_date: '2026-07-20',
+      processor_subscription_id: 'mem_pif_1',
+      whop_membership_id: 'mem_pif_1',
+    };
+    const existingSale = { id: 'pe_pif_1', event_type: 'sale', processor_transaction_id: 'pay_pif_1' };
+    const enrollmentUpdates: any[] = [];
+
+    mockIdempotencyExists.mockResolvedValue(true);
+    mockPaymentEventFindByTransactionId.mockResolvedValue(existingSale);
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      const builder = queryBuilder(table === 'enrollments' ? enrollment : existingSale);
+      if (table === 'enrollments') {
+        builder.update = jest.fn((updates: any) => {
+          enrollmentUpdates.push(updates);
+          return builder;
+        });
+      }
+      return builder;
+    });
+
+    const payload = {
+      id: 'evt_pif_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_pif_1',
+        amount: 2.5,
+        membership_id: 'mem_pif_1',
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_pif_1',
+          offer_id: 'offer_1',
+          checkout_mode: 'full_enrollment',
+          payment_choice: 'pif',
+          future_recurring_amount: 0,
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_pif_1' },
+    };
+    const res: any = {
+      status: jest.fn(() => res),
+      json: jest.fn(),
+    };
+
+    await handleWhopWebhook(req, res);
+
+    expect(enrollmentUpdates).toContainEqual(expect.objectContaining({
+      payment_type: 'pif',
+      payments_total: null,
+      next_billing_date: null,
+      billing_setup_status: 'ok',
+    }));
+    expect(mockCompleteEnrollment).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockPaymentEventCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true, duplicate: true });
   });
 
   it('records distinct partial refunds on one payment once each using the Whop refund id', async () => {

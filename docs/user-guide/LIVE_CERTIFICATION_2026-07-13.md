@@ -9,7 +9,7 @@ This is the authoritative action ledger for the July 13 deep certification of th
 - **Location:** `274dtgl30b7x2HG8hn69`
 - **Environment:** Railway production application connected to processor test configurations where available.
 - **Current baseline before active testing:** `666151b` (`fix: preserve defense exhibit snapshots`)
-- **Latest certified deployed baseline:** `b7b2b27` (`fix: tenant-scope Stripe evidence chains`)
+- **Latest certified deployed baseline:** `f394c7a` (`fix: load Whop embedded checkout`)
 - **Stripe:** test cards are authorized.
 - **Whop:** test cards are authorized.
 - **NMI:** charge only a clearly identified test offer priced at **$3.00 or less**, use only the saved card ending in **5321**, and add the transaction to the refund ledger below.
@@ -51,6 +51,7 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | STRIPE-PLAN-001 | Stripe installments | Pay first daily installment with $1.00 order bump | One $2.00 settled payment, correct subscription, line items, next billing, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
 | STRIPE-PIF-002 | Stripe full enrollment retest | Repeat $1.00 PIF after ledger/vault/log repairs | One canonical sale, correctly keyed vault, private packet, receipt/welcome, daily pulse, no signed URL leak | Pass | Pass | Pass | Pass | Partial | Pass | Pass with follow-up | FIND-013, FIND-017 |
 | STRIPE-PIF-003 | Stripe repeat checkout and evidence-chain retest | Buy the same $1.00 offer again in the same browser with a new enrollment context | One new charge, exact offer metadata, complete tenant-scoped evidence chain, and no reuse rejection | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
+| WHOP-PIF-001 | Whop full enrollment | Select $1.50 PIF plus $1.00 order bump and complete embedded checkout | One $2.50 sale, PIF enrollment with no next billing, exact line items, receipt/welcome, packet, and scoped evidence | Pass | Partial | Fail | Pass | Partial | Pass | Fail; repair in progress | FIND-013, FIND-021 |
 
 ## Isolated Offer Fixtures
 
@@ -149,6 +150,16 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - After deploy `b7b2b27`, a read-only live verification of the same payment returned `complete: true`, strength 90, no gaps, and verified consent, IP, payment, and merchant-owned evidence-vault links. This closes FIND-019.
 - The active receipt and enrollment-complete deliveries succeeded. The known deleted GHL trigger still failed after retries, so FIND-013 remains an external configuration follow-up.
 
+### WHOP-PIF-001 Trace
+
+- Completed at approximately `2026-07-13T19:08:08Z` through Whop's embedded hosted checkout for $2.50: $1.50 paid in full plus the selected $1.00 Whop Certification Add-on.
+- The browser calculated and displayed the correct cart, loaded the Whop form after deploy `f394c7a`, completed the hosted payment, and reached Payment Confirmed.
+- Enrollment `30157c7f-b97d-4cf5-a4df-4de18190e513` is linked to the exact certification client and offer. Its private packet was generated at the expected tenant/enrollment storage path.
+- Payment event `5e7305be-e0e0-4e31-80d0-6b52ec4f582e` is the only ledger row: canonical `sale`, $2.50, Whop payment and membership references, `is_recurring = false`, and the exact base-offer/order-bump names, descriptions, IDs, and amounts.
+- Exact-enrollment `consent` and `enrollment_payment` evidence rows were created. `ss_payment_received` and one active `enrollment_complete` delivery returned HTTP 201. The known deleted enrollment trigger failed separately after retries.
+- Whop and the payment ledger correctly identify a one-time $2.50 transaction, but the webhook completed the enrollment using the offer's default installment type instead of the client's PIF selection. The enrollment incorrectly shows two payments and a July 20 next-billing date. FIND-021 records this state-integrity defect.
+- The local repair now stores `payment_choice` in Whop checkout metadata, honors the consent/checkout choice in webhook processing, keeps one-time access memberships separate from recurring billing, and reconciles duplicate successful-payment delivery without duplicating enrollment or payment side effects. Deployment and a clean live retest remain pending.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -209,7 +220,8 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-017 | P1 | Evidence-vault description defect | Stripe PIF retest | Direct checkout stores generic `ScaleSafe Payment` instead of the resolved offer name/description | Fix `7861474` deployed | Pass on STRIPE-PIF-003 |
 | FIND-018 | P1 | Checkout idempotency defect | Repeat Stripe PIF retest | A completed checkout's browser attempt key blocks a legitimate later purchase with a new consent/enrollment | Fix `34a90aa` deployed | Pass on STRIPE-PIF-003 |
 | FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Fix `b7b2b27` deployed | Pass: complete, strength 90, no gaps |
-| FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Local fix; not deployed | Whop PIF plus add-on must load and charge $2.50 |
+| FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Fix `f394c7a` deployed | Pass: embedded form loaded and charged the correct $2.50 cart |
+| FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Local fix; not deployed | New PIF must remain PIF with no next billing; installment selection must remain recurring |
 
 ## Screenshot Rules
 

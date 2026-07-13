@@ -164,13 +164,15 @@ function paymentId(payload: any): string {
 
 function membershipId(payload: any): string {
   const b = body(payload);
-  return firstString(
+  const explicitMembershipId = firstString(
     b?.membership_id,
     b?.membershipId,
     b?.membership?.id,
     b?.member?.id,
-    b?.id,
   );
+  if (explicitMembershipId) return explicitMembershipId;
+  const resourceId = firstString(b?.id);
+  return resourceId.startsWith('mem_') ? resourceId : '';
 }
 
 function refundId(payload: any): string {
@@ -225,9 +227,84 @@ function paymentTypeForOffer(offer: any): string {
   return 'pif';
 }
 
-function paymentsTotalForOffer(offer: any): number | null {
-  if (offer?.payment_type === 'installments') return Number(offer.num_payments || 1);
+function normalizePaymentType(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['pif', 'paid_in_full', 'paid-in-full', 'one_time', 'one-time'].includes(normalized)) return 'pif';
+  if (['installment', 'installments'].includes(normalized)) return 'installment';
+  if (['subscription', 'recurring'].includes(normalized)) return 'subscription';
+  return '';
+}
+
+function hasCheckoutMetadata(payload: any): boolean {
+  const meta = metadata(payload);
+  return Boolean(
+    meta.checkout_mode
+    || meta.checkoutMode
+    || meta.checkout_session_id
+    || meta.checkoutSessionId
+    || meta.payment_choice
+    || meta.paymentChoice
+    || meta.due_today_amount !== undefined
+    || meta.selected_amount !== undefined
+    || meta.future_recurring_amount !== undefined
+    || lineItems(payload).length > 0
+  );
+}
+
+function paymentTypeForCheckout(payload: any, enrollment: any, offer: any): string {
+  const meta = metadata(payload);
+  const explicitChoice = normalizePaymentType(
+    meta.payment_choice
+    || meta.paymentChoice
+    || meta.payment_type
+    || meta.paymentType,
+  );
+  if (explicitChoice) return explicitChoice;
+
+  // Older ScaleSafe Whop sessions did not send payment_choice. Their checkout
+  // metadata did include the future recurring amount, which unambiguously
+  // distinguishes a one-time selection from a recurring selection.
+  if (hasCheckoutMetadata(payload) && meta.future_recurring_amount !== undefined) {
+    const futureRecurringAmount = Number(meta.future_recurring_amount);
+    if (Number.isFinite(futureRecurringAmount) && futureRecurringAmount <= 0) return 'pif';
+  }
+
+  return normalizePaymentType(enrollment?.payment_type) || paymentTypeForOffer(offer);
+}
+
+function paymentsTotalForCheckout(paymentType: string, offer: any, enrollment?: any): number | null {
+  if (paymentType === 'installment') {
+    const enrollmentTotal = Number(enrollment?.payments_total);
+    if (Number.isFinite(enrollmentTotal) && enrollmentTotal > 0) return enrollmentTotal;
+    return Number(offer?.num_payments || 1);
+  }
   return null;
+}
+
+async function reconcileCheckoutBillingSelection(input: {
+  enrollment: any;
+  locationId: string;
+  paymentType: string;
+  paymentsTotal: number | null;
+}): Promise<void> {
+  const updates: Record<string, unknown> = {
+    payment_type: input.paymentType,
+    payments_total: input.paymentsTotal,
+  };
+  if (input.paymentType === 'pif') {
+    updates.next_billing_date = null;
+    updates.next_billing_date_source = null;
+    updates.billing_setup_status = 'ok';
+    updates.billing_completed_at = input.enrollment.billing_completed_at
+      || input.enrollment.enrolled_at
+      || new Date().toISOString();
+  }
+  const { error } = await getSupabase()
+    .from('enrollments')
+    .update(updates as any)
+    .eq('id', input.enrollment.id)
+    .eq('location_id', input.locationId);
+  if (error) throw error;
 }
 
 async function findEnrollment(payload: any, locationId: string): Promise<any | null> {
@@ -311,6 +388,7 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
   }
   const amount = amountCents(payload) / 100;
   const selectedItems = lineItems(payload);
+  const selectedPaymentType = paymentTypeForCheckout(payload, null, offer);
   const { data, error } = await getSupabase()
     .from('enrollments')
     .insert({
@@ -325,8 +403,8 @@ async function createQuickCheckoutEnrollment(payload: any, locationId: string, m
       whop_payment_id: paymentId(payload) || null,
       whop_membership_id: membershipId(payload) || null,
       payment_amount: amount,
-      payment_type: paymentTypeForOffer(offer),
-      payments_total: paymentsTotalForOffer(offer),
+      payment_type: selectedPaymentType,
+      payments_total: paymentsTotalForCheckout(selectedPaymentType, offer),
       selected_checkout_items: selectedItems,
     } as any)
     .select('*')
@@ -356,12 +434,12 @@ async function recordInitialWhopSale(input: {
   locationId: string;
   merchantId: string;
   enrollment: any;
-  offer: any;
   txnId: string;
   amount: number;
   lineItems: unknown[];
+  paymentsTotal: number | null;
 }): Promise<void> {
-  const paymentsTotal = paymentsTotalForOffer(input.offer);
+  const paymentsTotal = input.paymentsTotal;
   const paymentsRemaining = paymentsTotal == null ? undefined : Math.max(0, paymentsTotal - 1);
   const record = {
     merchant_id: input.enrollment.merchant_id || input.merchantId,
@@ -402,20 +480,6 @@ async function recordInitialWhopSale(input: {
 
 async function handlePaymentSucceeded(payload: any, locationId: string, merchantId: string): Promise<void> {
   const txnId = paymentId(payload);
-  const duplicatePayment = txnId
-    ? await getSupabase()
-      .from('payment_events')
-      .select('id, event_type')
-      .eq('location_id', locationId)
-      .eq('processor', 'whop')
-      .eq('processor_transaction_id', txnId)
-      .maybeSingle()
-    : null;
-  if (duplicatePayment?.data?.id && String(duplicatePayment.data.event_type || '').toLowerCase() === 'sale') {
-    logger.info({ locationId, txnId }, 'Whop payment webhook duplicate ignored by transaction ID');
-    return;
-  }
-
   let enrollment = await findEnrollment(payload, locationId);
   if (!enrollment) enrollment = await createQuickCheckoutEnrollment(payload, locationId, merchantId);
   if (!enrollment) {
@@ -426,22 +490,27 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
   const offer = enrollment.offer_id
     ? await offerRepository.findById(enrollment.offer_id, locationId)
     : null;
+  const selectedPaymentType = paymentTypeForCheckout(payload, enrollment, offer);
+  const selectedPaymentsTotal = paymentsTotalForCheckout(selectedPaymentType, offer, enrollment);
   const amount = amountCents(payload);
   const selectedLineItems = mergedLineItems(payload, enrollment);
   const b = body(payload);
-  await getSupabase()
+  const { error: enrollmentUpdateError } = await getSupabase()
     .from('enrollments')
     .update({
       checkout_type: 'whop',
       processor_type: 'whop',
       whop_payment_id: txnId || null,
       whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
-      processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
+      processor_subscription_id: ['installment', 'subscription'].includes(selectedPaymentType)
+        ? membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null
+        : null,
       whop_setup_intent_id: firstString(b?.setup_intent_id, b?.setupIntentId) || enrollment.whop_setup_intent_id || null,
       ...(selectedLineItems.length > 0 ? { selected_checkout_items: selectedLineItems } : {}),
     } as any)
     .eq('id', enrollment.id)
     .eq('location_id', locationId);
+  if (enrollmentUpdateError) throw enrollmentUpdateError;
 
   const existingPaidEvent = await findPaidPaymentEvent(locationId, enrollment.id, txnId);
   const { data: latestEnrollment } = await getSupabase()
@@ -452,24 +521,23 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
     .maybeSingle();
   const currentEnrollment = latestEnrollment || enrollment;
   const currentLineItems = mergedLineItems(payload, currentEnrollment, enrollment);
-  const meta = metadata(payload);
   const alreadyStartedRecurring = currentEnrollment.status === 'enrolled'
     && Number(currentEnrollment.payments_made || 0) > 0
-    && ['installment', 'installments', 'subscription'].includes(String(currentEnrollment.payment_type || paymentTypeForOffer(offer)));
+    && ['installment', 'subscription'].includes(normalizePaymentType(currentEnrollment.payment_type) || selectedPaymentType);
   const isCheckoutPayment = Boolean(
-    !alreadyStartedRecurring
-    && (
-      meta.checkout_mode
-      || meta.checkoutMode
-      || meta.checkout_session_id
-      || meta.checkoutSessionId
-      || meta.due_today_amount
-      || meta.selected_amount
-      || lineItems(payload).length > 0
-    ),
+    existingPaidEvent?.event_type === 'sale'
+    || (!alreadyStartedRecurring && hasCheckoutMetadata(payload)),
   );
 
   if (isCheckoutPayment) {
+    if (existingPaidEvent?.id) {
+      await reconcileCheckoutBillingSelection({
+        enrollment: currentEnrollment,
+        locationId,
+        paymentType: selectedPaymentType,
+        paymentsTotal: selectedPaymentsTotal,
+      });
+    }
     if (!existingPaidEvent?.id && currentEnrollment.status !== 'enrolled') {
       await phase2EnrollmentService.completeEnrollment({
         enrollmentId: enrollment.id,
@@ -477,9 +545,9 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
         contactId: currentEnrollment.contact_id || enrollment.contact_id || firstString(metadata(payload).contact_id),
         contactEmail: currentEnrollment.email || enrollment.email || firstString(b?.customer?.email, b?.email),
         paymentAmount: amount / 100,
-        paymentType: paymentTypeForOffer(offer),
+        paymentType: selectedPaymentType,
         transactionId: txnId || `whop_${Date.now()}`,
-        paymentsTotal: paymentsTotalForOffer(offer),
+        paymentsTotal: selectedPaymentsTotal,
         processorType: 'whop',
         paymentSource: 'whop_webhook',
         skipPaymentEvent: true,
@@ -496,10 +564,10 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       locationId,
       merchantId,
       enrollment: refreshed || enrollment,
-      offer,
       txnId: txnId || `whop_${Date.now()}`,
       amount: amount / 100,
       lineItems: mergedLineItems(payload, refreshed, currentEnrollment, enrollment),
+      paymentsTotal: selectedPaymentsTotal,
     });
     return;
   }
@@ -516,9 +584,9 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       contactId: enrollment.contact_id || firstString(metadata(payload).contact_id),
       contactEmail: enrollment.email || firstString(b?.customer?.email, b?.email),
       paymentAmount: amount / 100,
-      paymentType: paymentTypeForOffer(offer),
+      paymentType: selectedPaymentType,
       transactionId: txnId || `whop_${Date.now()}`,
-      paymentsTotal: paymentsTotalForOffer(offer),
+      paymentsTotal: selectedPaymentsTotal,
       processorType: 'whop',
       paymentSource: 'whop_webhook',
     });
@@ -534,7 +602,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       offer_id: enrollment.offer_id,
       payments_made: Number(enrollment.payments_made || 0),
       payments_total: enrollment.payments_total,
-      payment_type: enrollment.payment_type || paymentTypeForOffer(offer),
+      payment_type: normalizePaymentType(enrollment.payment_type) || selectedPaymentType,
       processor_subscription_id: enrollment.processor_subscription_id || enrollment.whop_membership_id || membershipId(payload) || null,
     },
     processorType: 'whop',
@@ -632,18 +700,25 @@ async function handleMembership(payload: any, locationId: string, active: boolea
   const enrollment = await findEnrollment(payload, locationId);
   if (!enrollment) return;
   const b = body(payload);
+  const recurringEnrollment = ['installment', 'subscription'].includes(
+    normalizePaymentType(enrollment.payment_type),
+  );
   const updates: Record<string, unknown> = {
     whop_membership_id: membershipId(payload) || enrollment.whop_membership_id || null,
-    processor_subscription_id: membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null,
+    processor_subscription_id: recurringEnrollment
+      ? membershipId(payload) || enrollment.processor_subscription_id || enrollment.whop_membership_id || null
+      : null,
     whop_reconciliation_status: active ? 'membership_active' : 'membership_deactivated',
-    ...(active && b?.renewal_period_end ? { next_billing_date: String(b.renewal_period_end).slice(0, 10) } : {}),
+    ...(active && recurringEnrollment && b?.renewal_period_end
+      ? { next_billing_date: String(b.renewal_period_end).slice(0, 10) }
+      : {}),
   };
-  if (action === 'pause') {
+  if (action === 'pause' && recurringEnrollment) {
     updates.status = 'paused';
     updates.next_billing_date = null;
-  } else if (action === 'resume') {
+  } else if (action === 'resume' && recurringEnrollment) {
     updates.status = 'enrolled';
-  } else if (action === 'cancel' || !active) {
+  } else if ((action === 'cancel' || !active) && recurringEnrollment) {
     updates.status = 'cancelled';
     updates.cancelled_at = new Date().toISOString();
     updates.next_billing_date = null;
@@ -677,7 +752,10 @@ export async function handleWhopWebhook(req: Request, res: Response): Promise<vo
 
   const whopEventType = eventType(payload);
   const whopEventId = eventId(req, payload);
-  if (whopEventId && await idempotencyRepository.exists(whopEventId, 'whop_webhook', cfg.location_id)) {
+  const duplicateDelivery = Boolean(
+    whopEventId && await idempotencyRepository.exists(whopEventId, 'whop_webhook', cfg.location_id),
+  );
+  if (duplicateDelivery && whopEventType !== 'payment.succeeded') {
     res.json({ received: true, duplicate: true });
     return;
   }
@@ -737,7 +815,7 @@ export async function handleWhopWebhook(req: Request, res: Response): Promise<vo
     if (whopEventId) {
       await idempotencyRepository.record(whopEventId, 'whop_webhook', cfg.location_id, { eventType: whopEventType });
     }
-    res.json({ received: true });
+    res.json({ received: true, ...(duplicateDelivery ? { duplicate: true } : {}) });
   } catch (err: any) {
     logger.error({ err: err.message, eventType: whopEventType, eventId: whopEventId }, 'Whop webhook processing failed');
     res.status(500).json({ error: 'Whop webhook processing failed' });

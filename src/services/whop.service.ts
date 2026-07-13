@@ -248,6 +248,7 @@ export const whopService = {
           ? 'installment'
           : 'pif'
     );
+    metadata.payment_choice = quoteChoice;
     const recurring = quoteChoice === 'installment' || quoteChoice === 'subscription'
       ? billingPeriodDaysForOffer(input.offer)
       : null;

@@ -205,6 +205,17 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: every Whop embedded checkout can fail before the hosted payment form loads.
 - Local repair: pass the collected phone value explicitly through both automatic and button-driven Whop session paths.
 - Required regression: both full-enrollment and quick-checkout Whop paths load the hosted form; PIF plus add-on charges $2.50 and records the correct client, enrollment, line items, `pay_` ID, and evidence.
+- Live retest: deploy `f394c7a` loaded the embedded Whop form and completed the exact $2.50 PIF-plus-add-on cart. FIND-021 records the separate post-payment billing-state defect discovered by that test.
+
+### FIND-021 - Whop webhook replaces the selected PIF choice with the offer default
+
+- Area: Whop checkout completion and enrollment billing state.
+- Live proof: Whop charged the selected one-time $2.50 cart and the canonical payment event is marked non-recurring, but enrollment `30157c7f-b97d-4cf5-a4df-4de18190e513` was saved as installment with two payments and a July 20 next-billing date.
+- Code proof: the checkout service created a one-time Whop plan with `future_recurring_amount = 0`, while `whop-webhook.controller.ts` completed the enrollment using `paymentTypeForOffer(offer)` and `paymentsTotalForOffer(offer)`. Those helpers read the offer's default installment shape rather than the customer choice bound at consent/checkout.
+- Impact: a paid-in-full customer can appear in recurring-plan management, receive incorrect reminder/billing expectations, and leave misleading payment-progress evidence even though Whop will not renew that one-time plan.
+- Severity recommendation: P1 billing-state integrity.
+- Local repair: carry normalized `payment_choice` in signed Whop metadata; resolve checkout type from that metadata, legacy future-recurring metadata, or the exact enrollment before falling back to the offer; keep one-time Whop access memberships separate from processor subscriptions; and allow duplicate successful-payment delivery to reconcile state without repeating side effects.
+- Required regression: PIF on an installment-capable Whop offer remains PIF with no next billing; installment selection retains the correct payment count and next billing; membership activation cannot make a PIF enrollment recurring; duplicate replay creates no second payment or workflow event.
 
 ## Operations Access
 

@@ -295,6 +295,7 @@ describe('whopService.createCheckoutSession', () => {
       plan_id: 'plan_dynamic_123',
       metadata: expect.objectContaining({
         due_today_amount: 3.2,
+        payment_choice: 'installment',
         one_time_addon_amount: 1,
         future_recurring_amount: 2.2,
         line_items: JSON.stringify([
@@ -434,6 +435,9 @@ describe('whopService.createCheckoutSession', () => {
       product_id: 'prod_123',
       plan_type: 'one_time',
       initial_price: 12,
+      metadata: expect.objectContaining({
+        payment_choice: 'pif',
+      }),
     }));
     expect(post).toHaveBeenNthCalledWith(1, '/plans', expect.not.objectContaining({
       renewal_price: expect.anything(),
@@ -443,6 +447,10 @@ describe('whopService.createCheckoutSession', () => {
     }));
     expect(post).toHaveBeenNthCalledWith(2, '/checkout_configurations', expect.objectContaining({
       plan_id: 'plan_pif_123',
+      metadata: expect.objectContaining({
+        payment_choice: 'pif',
+        future_recurring_amount: 0,
+      }),
     }));
     expect(session).toEqual(expect.objectContaining({
       sessionId: 'ch_pif_123',
