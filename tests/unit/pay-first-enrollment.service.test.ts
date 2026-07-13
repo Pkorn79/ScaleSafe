@@ -27,6 +27,7 @@ jest.mock('../../src/repositories/offer.repository', () => ({
 jest.mock('../../src/repositories/phase2Evidence.repository', () => ({
   phase2EvidenceRepository: {
     create: jest.fn(),
+    findByType: jest.fn(),
   },
 }));
 
@@ -100,6 +101,7 @@ const mockGetSupabase = getSupabase as jest.Mock;
 const mockFindOffer = offerRepository.findById as jest.Mock;
 const mockPaymentEventCreateOrReuse = paymentEventRepository.createOrReuseByTransaction as jest.Mock;
 const mockEvidenceCreate = phase2EvidenceRepository.create as jest.Mock;
+const mockEvidenceFindByType = phase2EvidenceRepository.findByType as jest.Mock;
 const mockFireTrigger = triggerService.fireTrigger as jest.Mock;
 const mockCreateProcessorClient = createProcessorClient as jest.Mock;
 const mockResolveProcessor = resolveProcessor as jest.Mock;
@@ -160,6 +162,7 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
       post: jest.fn().mockResolvedValue({ data: {} }),
     });
     mockEvidenceCreate.mockResolvedValue({});
+    mockEvidenceFindByType.mockResolvedValue([]);
     mockFireTrigger.mockResolvedValue({});
   });
 
@@ -851,8 +854,90 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       contactId: 'contact_1',
       contactEmail: 'client@example.com',
       contactName: 'Client One',
-      checkoutMode: 'quick_checkout',
+      enrollmentId: 'enr_1',
+      checkoutMode: 'quick_manual_sale',
+      sendEnrollment: true,
     }));
     expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+  });
+
+  it('finalizes a Whop Quick Manual Sale as paid pending consent without enrollment completion', async () => {
+    const enrollment = {
+      id: 'enr_whop_qms',
+      location_id: 'loc_1',
+      merchant_id: 'merch_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      first_name: 'Client',
+      last_name: 'One',
+      status: 'payment_processing',
+      initial_payment_status: 'processing',
+    };
+    const updates: any[] = [];
+    const enrollmentQuery: any = queryResult({ data: enrollment, error: null });
+    enrollmentQuery.update = jest.fn((payload: any) => {
+      updates.push(payload);
+      return enrollmentQuery;
+    });
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn((table: string) => (
+        table === 'enrollments'
+          ? enrollmentQuery
+          : queryResult({ data: null, error: null })
+      )),
+    });
+    mockFindOffer.mockResolvedValue({ id: 'offer_1', offer_name: 'ScaleSafe Beta' });
+    mockEvidenceFindByType.mockResolvedValue([]);
+
+    const result = await payFirstEnrollmentService.finalizeWhopManualSale({
+      locationId: 'loc_1',
+      enrollmentId: 'enr_whop_qms',
+      transactionId: 'pay_whop_qms',
+      amount: 1.5,
+      paymentType: 'pif',
+      sendEnrollment: true,
+    } as any);
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      enrollmentId: 'enr_whop_qms',
+      status: 'paid_pending_enrollment',
+      enrollmentUrl: expect.stringContaining('paidEnrollmentToken='),
+    }));
+    expect(updates).toContainEqual(expect.objectContaining({
+      status: 'paid_pending_enrollment',
+      initial_payment_status: 'succeeded',
+      payments_made: 1,
+      enrolled_at: null,
+    }));
+    expect(updates.some((payload) => payload.initial_payment_method === 'whop')).toBe(false);
+    expect(mockEvidenceCreate).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_whop_qms',
+      evidence_type: 'enrollment_payment',
+      data: expect.objectContaining({ transaction_id: 'pay_whop_qms', processor: 'whop' }),
+    }));
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_send_enrollment_link',
+      expect.objectContaining({
+        enrollment_id: 'enr_whop_qms',
+        send_welcome: false,
+      }),
+    );
+    expect(mockFireTrigger).toHaveBeenCalledWith(
+      'loc_1',
+      'ss_payment_received',
+      expect.objectContaining({
+        enrollment_id: 'enr_whop_qms',
+        transaction_id: 'pay_whop_qms',
+        send_welcome: false,
+      }),
+    );
+    expect(mockFireTrigger).not.toHaveBeenCalledWith(
+      'loc_1',
+      'enrollment_complete',
+      expect.anything(),
+    );
   });
 });

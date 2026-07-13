@@ -77,7 +77,18 @@ interface WhopManualSaleSessionInput {
   phone?: string;
   amount: number;
   paymentType?: string;
+  sendEnrollment?: boolean;
+  sendVia?: string[];
   recordedBy?: string;
+}
+
+interface FinalizeWhopManualSaleInput {
+  locationId: string;
+  enrollmentId: string;
+  transactionId: string;
+  amount: number;
+  paymentType: string;
+  sendEnrollment: boolean;
 }
 
 interface ManualSaleIssue {
@@ -313,26 +324,80 @@ export const payFirstEnrollmentService = {
     const name = splitName(input.firstName, input.lastName, input.email);
     const contactName = [name.firstName, name.lastName].filter(Boolean).join(' ');
     const paymentType = normalizePaymentType(input.paymentType, offer);
+    const paymentsTotal = paymentsTotalFor(paymentType, offer);
     const quote = await checkoutCartService.quoteOffer(offer, [], paymentType, 'card');
     if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== dollarsToCents(input.amount)) {
       throw new ValidationError('Payment amount does not match selected Whop offer');
     }
 
-    const session = await whopService.createCheckoutSession({
-      locationId: input.locationId,
-      offer,
-      contactId,
-      contactEmail: input.email,
-      contactName,
-      contactPhone: input.phone || '',
-      checkoutMode: 'quick_checkout',
-      quote,
-    });
+    const { data: pendingEnrollment, error: enrollmentError } = await getSupabase()
+      .from('enrollments')
+      .insert({
+        location_id: input.locationId,
+        merchant_id: merchant.id,
+        contact_id: contactId,
+        offer_id: offer.id,
+        email: input.email,
+        first_name: name.firstName || null,
+        last_name: name.lastName || null,
+        status: 'payment_processing',
+        payment_amount: quote.selectedAmount,
+        payment_type: paymentType,
+        checkout_type: 'whop',
+        processor_type: 'whop',
+        initial_payment_status: 'processing',
+        payments_made: 0,
+        payments_total: paymentsTotal,
+        billing_setup_status: isRecurringPaymentType(paymentType) ? 'pending' : 'ok',
+        selected_checkout_items: quote.lineItems || [],
+        enrolled_at: null,
+      } as any)
+      .select('id')
+      .single();
+    if (enrollmentError) throw enrollmentError;
+
+    let session: Awaited<ReturnType<typeof whopService.createCheckoutSession>>;
+    try {
+      session = await whopService.createCheckoutSession({
+        locationId: input.locationId,
+        offer,
+        enrollmentId: pendingEnrollment.id,
+        contactId,
+        contactEmail: input.email,
+        contactName,
+        contactPhone: input.phone || '',
+        checkoutMode: 'quick_manual_sale',
+        sendEnrollment: input.sendEnrollment !== false,
+        quote,
+      });
+    } catch (err: any) {
+      await getSupabase()
+        .from('enrollments')
+        .update({
+          initial_payment_status: 'failed',
+          billing_setup_status: 'failed',
+          billing_setup_error: err?.message || 'Whop checkout session creation failed',
+        })
+        .eq('id', pendingEnrollment.id)
+        .eq('location_id', input.locationId);
+      throw err;
+    }
+
+    const { error: sessionSaveError } = await getSupabase()
+      .from('enrollments')
+      .update({
+        whop_checkout_session_id: session.sessionId,
+        whop_checkout_url: session.checkoutUrl || null,
+      })
+      .eq('id', pendingEnrollment.id)
+      .eq('location_id', input.locationId);
+    if (sessionSaveError) throw sessionSaveError;
 
     logger.info({
       locationId: input.locationId,
       offerId: input.offerId,
       contactId,
+      enrollmentId: pendingEnrollment.id,
       sessionId: session.sessionId,
       recordedBy: input.recordedBy || 'merchant',
     }, 'Quick Manual Sale Whop checkout session created');
@@ -342,6 +407,7 @@ export const payFirstEnrollmentService = {
       processorType: 'whop',
       hostedCheckout: true,
       contactId,
+      enrollmentId: pendingEnrollment.id,
       offerId: offer.id,
       amount: quote.selectedAmount,
       paymentType,
@@ -349,6 +415,130 @@ export const payFirstEnrollmentService = {
       message: session.checkoutUrl
         ? 'Whop checkout link created. Complete payment in the Whop checkout window.'
         : 'Whop checkout session created.',
+    };
+  },
+
+  async finalizeWhopManualSale(input: FinalizeWhopManualSaleInput) {
+    const { data: enrollment, error: enrollmentError } = await getSupabase()
+      .from('enrollments')
+      .select('*')
+      .eq('id', input.enrollmentId)
+      .eq('location_id', input.locationId)
+      .maybeSingle();
+    if (enrollmentError) throw enrollmentError;
+    if (!enrollment) throw new ValidationError('Whop manual-sale enrollment not found');
+
+    const offer = enrollment.offer_id
+      ? await offerRepository.findById(enrollment.offer_id, input.locationId)
+      : null;
+    if (!offer) throw new ValidationError('Whop manual-sale offer not found');
+
+    if (enrollment.status === 'paid_pending_enrollment' && enrollment.initial_payment_status === 'succeeded') {
+      return { success: true, alreadyFinalized: true, enrollmentId: enrollment.id };
+    }
+
+    const recordedAt = new Date().toISOString();
+    const existingEvidence = await phase2EvidenceRepository.findByType(enrollment.id, 'enrollment_payment');
+    const hasTransactionEvidence = existingEvidence.some((record: any) => (
+      String(record?.data?.transaction_id || '') === input.transactionId
+    ));
+    if (!hasTransactionEvidence) {
+      await phase2EvidenceRepository.create({
+        location_id: input.locationId,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        merchant_id: enrollment.merchant_id,
+        evidence_type: 'enrollment_payment',
+        data: {
+          amount: input.amount,
+          payment_type: input.paymentType,
+          transaction_id: input.transactionId,
+          source: 'quick_manual_sale',
+          processor: 'whop',
+          timestamp: recordedAt,
+        },
+      });
+    }
+
+    const { error: statusError } = await getSupabase()
+      .from('enrollments')
+      .update({
+        status: 'paid_pending_enrollment',
+        payment_amount: input.amount,
+        payment_type: input.paymentType,
+        payment_transaction_id: input.transactionId,
+        initial_payment_status: 'succeeded',
+        payments_made: 1,
+        billing_setup_status: 'ok',
+        billing_setup_error: null,
+        enrolled_at: null,
+      })
+      .eq('id', enrollment.id)
+      .eq('location_id', input.locationId);
+    if (statusError) throw statusError;
+
+    let enrollmentUrl = '';
+    let enrollmentLinkDelivery: EnrollmentLinkDeliveryResult | undefined;
+    if (input.sendEnrollment) {
+      const paidToken = createPublicActionToken({
+        action: 'paid_enrollment',
+        locationId: input.locationId,
+        contactId: enrollment.contact_id,
+        enrollmentId: enrollment.id,
+        ttlSeconds: 30 * 24 * 60 * 60,
+      });
+      enrollmentUrl = await buildEnrollmentUrl(input.locationId, enrollment.offer_id, paidToken, {
+        firstName: enrollment.first_name || '',
+        lastName: enrollment.last_name || '',
+        email: enrollment.email || '',
+        paymentType: input.paymentType,
+      });
+      enrollmentLinkDelivery = await deliverEnrollmentLink({
+        locationId: input.locationId,
+        contactId: enrollment.contact_id,
+        enrollmentId: enrollment.id,
+        offerId: enrollment.offer_id,
+        offerName: offer.offer_name,
+        enrollmentUrl,
+        paymentStatus: 'paid_pending_enrollment',
+        paymentSource: 'quick_manual_sale',
+        paymentTiming: 'before_enrollment',
+        enrollmentStatus: 'paid_pending_enrollment',
+        sendWelcome: false,
+        amount: input.amount,
+        sendVia: ['email'],
+        firstName: enrollment.first_name || '',
+        lastName: enrollment.last_name || '',
+        email: enrollment.email || '',
+        sendDirectMessage: true,
+      });
+    }
+
+    await fireManualSaleTrigger(input.locationId, 'ss_payment_received', {
+      event_type: 'payment_received',
+      contact_id: enrollment.contact_id,
+      enrollment_id: enrollment.id,
+      offer_id: enrollment.offer_id,
+      offer_name: offer.offer_name,
+      program_name: offer.offer_name,
+      amount: input.amount,
+      amount_display: `$${Number(input.amount).toFixed(2)}`,
+      transaction_id: input.transactionId,
+      payment_kind: input.paymentType,
+      payment_source: 'quick_manual_sale',
+      payment_timing: 'before_enrollment',
+      enrollment_status: 'paid_pending_enrollment',
+      receipt_only: true,
+      send_receipt: true,
+      send_welcome: false,
+    });
+
+    return {
+      success: true,
+      enrollmentId: enrollment.id,
+      enrollmentUrl,
+      enrollmentLinkDelivery,
+      status: 'paid_pending_enrollment',
     };
   },
 

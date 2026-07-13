@@ -14,6 +14,7 @@ const mockPaymentEventCreate = jest.fn();
 const mockTriggerFire = jest.fn();
 const mockGhlPost = jest.fn();
 const mockNotifyRefundProcessed = jest.fn();
+const mockFinalizeWhopManualSale = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -90,6 +91,12 @@ jest.mock('../../src/services/payment-lifecycle.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/pay-first-enrollment.service', () => ({
+  payFirstEnrollmentService: {
+    finalizeWhopManualSale: (...args: any[]) => mockFinalizeWhopManualSale(...args),
+  },
+}));
+
 import { handleWhopWebhook } from '../../src/controllers/whop-webhook.controller';
 
 function queryBuilder(result: any = null) {
@@ -133,6 +140,7 @@ describe('handleWhopWebhook', () => {
     mockPaymentEventCreate.mockResolvedValue({ id: 'pe_1' });
     mockGhlPost.mockResolvedValue({ data: { contact: { id: 'contact_from_ghl' } } });
     mockNotifyRefundProcessed.mockResolvedValue(undefined);
+    mockFinalizeWhopManualSale.mockResolvedValue({ success: true, status: 'paid_pending_enrollment' });
   });
 
   it('processes a Whop renewal payment by membership id as recurring, not as a new initial sale', async () => {
@@ -303,6 +311,65 @@ describe('handleWhopWebhook', () => {
       processor_subscription_id: 'mem_quick_1',
       line_items: insertedEnrollment.selected_checkout_items,
     }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('keeps a Whop Quick Manual Sale paid pending until consent instead of completing enrollment', async () => {
+    const enrollment = {
+      id: 'enr_qms_1',
+      merchant_id: 'merchant_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      email: 'client@example.com',
+      status: 'payment_processing',
+      payment_type: 'pif',
+      payments_made: 0,
+      payments_total: 1,
+    };
+    mockSupabaseFrom.mockImplementation((table: string) => (
+      queryBuilder(table === 'enrollments' ? enrollment : null)
+    ));
+
+    const payload = {
+      id: 'evt_qms_1',
+      type: 'payment.succeeded',
+      data: {
+        id: 'pay_qms_1',
+        amount: 1.5,
+        membership_id: 'mem_qms_1',
+        metadata: {
+          location_id: 'loc_1',
+          enrollment_id: 'enr_qms_1',
+          offer_id: 'offer_1',
+          checkout_mode: 'quick_manual_sale',
+          payment_choice: 'pif',
+          send_enrollment: 'true',
+        },
+      },
+    };
+    const req: any = {
+      rawBody: Buffer.from(JSON.stringify(payload)),
+      body: payload,
+      headers: { 'webhook-id': 'evt_qms_1' },
+    };
+    const res: any = { status: jest.fn(() => res), json: jest.fn() };
+
+    await handleWhopWebhook(req, res);
+
+    expect(mockPaymentEventCreate).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_qms_1',
+      processor_transaction_id: 'pay_qms_1',
+    }));
+    expect(mockFinalizeWhopManualSale).toHaveBeenCalledWith({
+      locationId: 'loc_1',
+      enrollmentId: 'enr_qms_1',
+      transactionId: 'pay_qms_1',
+      amount: 1.5,
+      paymentType: 'pif',
+      sendEnrollment: true,
+    });
+    expect(mockCompleteEnrollment).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ received: true });
   });
 

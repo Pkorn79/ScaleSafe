@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Client program payment totals now prefer exact enrollment IDs and unique processor subscription or Whop membership IDs; an ambiguous legacy same-offer payment is no longer copied across repeat enrollments.
+- Whop Quick Manual Sale now preserves the pay-first consent boundary: payment creates a `paid_pending_enrollment`, sends the paid-enrollment link, and does not generate the final packet or fire `enrollment_complete` until the client signs.
 - Stripe `charge.succeeded` events now preserve the PaymentIntent as the evidence-vault key and the Charge as the charge reference, so later dispute lookups do not lose transaction evidence.
 - Stripe evidence-vault rows now retain offer, customer, terms, IP, billing, and CE 3.0 readiness fields whether the Charge or PaymentIntent webhook arrives first.
 - Direct checkout now sends the resolved ScaleSafe offer name and program description to Stripe and replaces the old generic `ScaleSafe Payment` vault placeholder when richer metadata arrives.
@@ -23,7 +25,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - The post-fix Railway deployment emitted no signed storage URL or token during packet generation.
 
 ### Verified
-- Full test suite: 145 suites / 1,229 tests; focused Stripe webhook/vault suite: 19 tests.
+- Full test suite: 147 suites / 1,249 tests; focused payment/enrollment and Whop QMS suite: 36 tests.
 - TypeScript typecheck, production build, and production dependency audit pass.
 
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)

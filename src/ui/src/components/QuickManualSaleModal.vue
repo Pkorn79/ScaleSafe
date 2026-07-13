@@ -636,6 +636,8 @@ async function submit() {
         offerId: selectedOfferId.value,
         amount: amount.value,
         paymentType: paymentChoice.value,
+        sendEnrollment: selectedOfferId.value ? sendEnrollment.value : false,
+        sendVia: ['email'],
       });
       whopSession.value = result;
       whopCheckoutUrl.value = result.checkoutUrl || result.sessionId || '';

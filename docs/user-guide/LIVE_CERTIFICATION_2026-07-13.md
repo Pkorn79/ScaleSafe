@@ -9,7 +9,7 @@ This is the authoritative action ledger for the July 13 deep certification of th
 - **Location:** `274dtgl30b7x2HG8hn69`
 - **Environment:** Railway production application connected to processor test configurations where available.
 - **Current baseline before active testing:** `666151b` (`fix: preserve defense exhibit snapshots`)
-- **Latest deployed baseline:** `e298068` (`fix: mark first Whop PIF billing complete`)
+- **Latest deployed baseline:** `1a81220` (`fix: make daily health snapshots idempotent`)
 - **Stripe:** test cards are authorized.
 - **Whop:** test cards are authorized.
 - **NMI:** charge only a clearly identified test offer priced at **$3.00 or less**, use only the saved card ending in **5321**, and add the transaction to the refund ledger below.
@@ -54,6 +54,9 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | WHOP-PIF-001 | Whop full enrollment | Select $1.50 PIF plus $1.00 order bump and complete embedded checkout | One $2.50 sale, PIF enrollment with no next billing, exact line items, receipt/welcome, packet, and scoped evidence | Pass | Partial | Fail | Pass | Partial | Pass | Fail; repair in progress | FIND-013, FIND-021 |
 | WHOP-PIF-002 | Whop full enrollment retest | Repeat the exact $2.50 PIF-plus-add-on cart after billing-choice repair | Preserve PIF, one sale, exact line items, no recurring state, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with timestamp follow-up | FIND-013, FIND-022 |
 | WHOP-PIF-003 | Whop billing-completion retest | Run a fresh $1.50 PIF checkout after first-webhook timestamp repair | First successful webhook sets `billing_completed_at` without recurring state | Hosted form loaded; payment not submitted | Pass through session creation | No payment row | No charge | N/A | N/A | Pending manual secure-frame completion | FIND-022 |
+| WHOP-PIF-004 | Whop billing-completion retest | Complete a fresh $1.50 PIF checkout in Brave | First webhook records one sale and stamps billing completion without recurring state | Pass | Pass | Pass | Pass | Partial | Pass | Pass; exposed adjacent QMS defects | FIND-024, FIND-026 |
+| WHOP-QMS-001 | Whop Quick Manual Sale | Pay first, then require the signed paid-enrollment flow | Payment remains `paid_pending_enrollment`; no welcome, packet, or enrollment completion before consent | Fail | Pass | Fail | Pass | Fail | Fail | Repair in progress | FIND-026 |
+| NMI-QMS-001 | NMI saved-method QMS | Charge only the authorized saved card ending 5321 | The exact authorized card is identifiable before charge | Fail | N/A | Pass | Not attempted | N/A | N/A | Blocked safely; no charge | FIND-025 |
 
 ## Isolated Offer Fixtures
 
@@ -179,6 +182,22 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The third-party secure Whop card fields did not accept automated input in the certification browser. Database verification for the exact test email returned zero payment rows, confirming no accidental charge.
 - This is an automation limitation, not a ScaleSafe failure. The live `billing_completed_at` proof remains pending one manually completed sandbox checkout.
 
+### WHOP-PIF-004 Trace
+
+- Submitted through Whop's embedded sandbox checkout at `2026-07-13T22:01:36.067Z` for the $1.50 paid-in-full option.
+- Enrollment `9520c085-1ae7-41eb-b686-2962d2fd7389` is linked to the exact certification contact and offer, remains `pif`, has one payment, no next billing date, and no processor subscription ID.
+- Payment event `000b4501-5d3d-486a-82d4-c29da5e878db` is the single canonical $1.50 Whop sale with payment ID `pay_02eWnx8JuojsJQ`.
+- The first successful webhook stamped `billing_completed_at = 2026-07-13T22:01:52.577Z`, closing FIND-022.
+- Client Programs then exposed FIND-024: this enrollment and the earlier enrollment for the same offer each displayed the combined $4.00 from both exact-enrollment payment events.
+- This payment was initiated through Quick Manual Sale with **Send paid enrollment link after payment** enabled. The webhook nevertheless changed the enrollment directly to `enrolled`, created a packet, and fired `enrollment_complete` while `digital_signature`, `consent_token`, and consent evidence were absent. FIND-026 records this consent-gating defect.
+
+### NMI-QMS-001 Trace
+
+- The certification contact contains only a Stripe 4242 method, so the authorized NMI test moved to Phil Kay's payment-management record.
+- Payment Management lists two saved NMI methods with the identical label `NMI mc`; the charge modal provides no last four or other safe identifier.
+- Read-only database verification showed the historical NMI rows store `card_last_four = "****"`, so ScaleSafe cannot prove which choice is the authorized card ending 5321.
+- No NMI charge was attempted. The test remains blocked until the exact saved method can be identified safely.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -242,7 +261,10 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Fix `f394c7a` deployed | Pass: embedded form loaded and charged the correct $2.50 cart |
 | FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Fix `699cfa5` deployed | Pass on WHOP-PIF-002: PIF, one $2.50 sale, no recurring state |
 | FIND-022 | P2 | Whop lifecycle data defect | Whop PIF clean retest | First successful PIF webhook leaves `billing_completed_at` empty | Fix `e298068` deployed | New PIF must stamp billing complete on its first webhook |
-| FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Fixed locally; deployment pending | Two same-day runs must complete with one snapshot and zero failures |
+| FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Fix `1a81220` deployed | Focused/full tests pass; second live same-day run remains optional proof |
+| FIND-024 | P1 | Payment/enrollment matching defect | Repeat Whop purchase for one client and offer | Both program cards combine the payments from both enrollments | Fixed locally; deployment pending | Repeat-offer enrollments must each display only their exact payment rows |
+| FIND-025 | P1 | Money-safety/data-quality defect | NMI saved-method certification | Multiple NMI vaults display as identical `NMI mc`; stored last four is `****` | Open; charge blocked | Identify ending 5321 before any NMI charge |
+| FIND-026 | P1 | Consent/workflow state defect | Whop QMS live payment | Pay-first Whop webhook enrolls the client, generates packet, and fires welcome before consent | Fixed locally; deployment pending | Fresh Whop QMS must remain paid pending until signed completion |
 
 ## Screenshot Rules
 

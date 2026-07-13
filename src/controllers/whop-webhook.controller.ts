@@ -11,6 +11,7 @@ import { handleRecurringPaymentSuccess, handleRecurringPaymentFailure } from '..
 import { paymentLifecycleService } from '../services/payment-lifecycle.service';
 import { logger } from '../utils/logger';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
+import { payFirstEnrollmentService } from '../services/pay-first-enrollment.service';
 
 function firstString(...values: any[]): string {
   for (const value of values) {
@@ -480,6 +481,7 @@ async function recordInitialWhopSale(input: {
 
 async function handlePaymentSucceeded(payload: any, locationId: string, merchantId: string): Promise<void> {
   const txnId = paymentId(payload);
+  const checkoutMode = firstString(metadata(payload).checkout_mode, metadata(payload).checkoutMode);
   let enrollment = await findEnrollment(payload, locationId);
   if (!enrollment) enrollment = await createQuickCheckoutEnrollment(payload, locationId, merchantId);
   if (!enrollment) {
@@ -530,6 +532,42 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
   );
 
   if (isCheckoutPayment) {
+    if (checkoutMode === 'quick_manual_sale') {
+      await reconcileCheckoutBillingSelection({
+        enrollment: currentEnrollment,
+        locationId,
+        paymentType: selectedPaymentType,
+        paymentsTotal: selectedPaymentsTotal,
+      });
+      const { data: refreshedManualSaleEnrollment } = await getSupabase()
+        .from('enrollments')
+        .select('*')
+        .eq('id', enrollment.id)
+        .eq('location_id', locationId)
+        .maybeSingle();
+      if (!existingPaidEvent?.id) {
+        await recordInitialWhopSale({
+          payload,
+          locationId,
+          merchantId,
+          enrollment: refreshedManualSaleEnrollment || currentEnrollment,
+          txnId: txnId || `whop_${Date.now()}`,
+          amount: amount / 100,
+          lineItems: mergedLineItems(payload, refreshedManualSaleEnrollment, currentEnrollment, enrollment),
+          paymentsTotal: selectedPaymentsTotal,
+        });
+      }
+      await payFirstEnrollmentService.finalizeWhopManualSale({
+        locationId,
+        enrollmentId: enrollment.id,
+        transactionId: txnId || `whop_${Date.now()}`,
+        amount: amount / 100,
+        paymentType: selectedPaymentType,
+        sendEnrollment: firstString(metadata(payload).send_enrollment, metadata(payload).sendEnrollment) !== 'false',
+      });
+      return;
+    }
+
     if (!existingPaidEvent?.id && currentEnrollment.status !== 'enrolled') {
       await phase2EnrollmentService.completeEnrollment({
         enrollmentId: enrollment.id,

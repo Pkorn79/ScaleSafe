@@ -23,6 +23,7 @@ import { cleanCommunicationBody } from '../utils/communication-evidence';
 import { createProcessorClient, resolveProcessor } from '../services/processor.factory';
 import { stripeAchService } from '../services/stripe-ach.service';
 import { sendPulseForEnrollment } from '../jobs/pulse-cadence-check';
+import { groupPaymentEventsByEnrollment } from '../services/payment-enrollment-matching.service';
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -909,26 +910,14 @@ export const dashboardController = {
           : Promise.resolve({ data: [] }),
       ]);
 
-      const paymentsByEnrollment = new Map<string, any[]>();
       const allPaymentEvents = dedupePaymentEvents(
         ((paymentEventResults as any[]) || []).flatMap((result: any) => result?.data || []),
       );
-      for (const enrollment of (enrollments || [])) {
-        const keys = new Set(
-          [enrollment.processor_subscription_id, enrollment.whop_membership_id]
-            .map((value: any) => String(value || '').trim())
-            .filter(Boolean),
-        );
-        const matched = allPaymentEvents.filter((payment: any) => {
-          if (payment.enrollment_id && payment.enrollment_id === enrollment.id) return true;
-          const paymentSubscription = String(payment.processor_subscription_id || '').trim();
-          if (paymentSubscription && keys.has(paymentSubscription)) return true;
-          if (payment.contact_id !== contactId) return false;
-          if (payment.offer_id && enrollment.offer_id && payment.offer_id === enrollment.offer_id) return true;
-          return false;
-        });
-        paymentsByEnrollment.set(enrollment.id, matched);
-      }
+      const paymentsByEnrollment = groupPaymentEventsByEnrollment(
+        enrollments || [],
+        allPaymentEvents,
+        contactId,
+      );
 
       const nmiLogsBySubscription = new Map<string, any[]>();
       for (const log of ((nmiLogsResult as any).data || [])) {
@@ -2015,6 +2004,8 @@ export const dashboardController = {
         phone: req.body.phone,
         amount: Number(req.body.amount || 0),
         paymentType: req.body.paymentType,
+        sendEnrollment: req.body.sendEnrollment !== false,
+        sendVia: req.body.sendVia,
         recordedBy: String((req as any).tenantContext?.userId || 'merchant'),
       });
 

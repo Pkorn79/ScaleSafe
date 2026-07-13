@@ -220,7 +220,8 @@ export const whopService = {
     contactName?: string;
     contactPhone?: string;
     consentToken?: string;
-    checkoutMode: 'full_enrollment' | 'quick_checkout';
+    checkoutMode: 'full_enrollment' | 'quick_checkout' | 'quick_manual_sale';
+    sendEnrollment?: boolean;
     quote?: CheckoutCartQuote | null;
   }): Promise<{ sessionId: string; checkoutUrl?: string; planId: string; embedScriptUrl: string; environment: string }> {
     const row = await whopConfigService.getRequired(input.locationId);
@@ -239,6 +240,7 @@ export const whopService = {
       contact_phone: input.contactPhone || '',
       consent_token: input.consentToken || '',
       checkout_mode: input.checkoutMode,
+      send_enrollment: input.sendEnrollment === false ? 'false' : 'true',
     };
     const quote = input.quote || null;
     const quoteChoice = quote?.paymentChoice || (

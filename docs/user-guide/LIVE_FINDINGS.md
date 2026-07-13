@@ -237,6 +237,35 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: save Stripe and NMI daily snapshots through the existing `(merchant_id, processor, snapshot_date)` uniqueness boundary so a same-day rerun updates the one snapshot instead of failing.
 - Required regression: two health runs on the same merchant, processor, and date update or reuse one snapshot without an error or failed-merchant count.
 
+### FIND-024 - Repeat purchases combine exact-enrollment payment totals
+
+- Area: Client Programs and payment aggregation.
+- Live proof: the certification client purchased the same Whop offer twice. Each payment event has the correct distinct `enrollment_id`, but both program cards displayed the combined $4.00 paid total.
+- Code proof: the client aggregation accepted an exact enrollment match, then independently allowed same-contact/same-offer fallback matching for every sibling enrollment.
+- Impact: repeat buyers receive false program balances and progress; the same contamination can misstate enrollment-scoped evidence.
+- Severity recommendation: P1 payment and defense-record integrity.
+- Local repair: make exact enrollment and unique processor subscription/membership matches authoritative. Use contact-plus-offer only when exactly one enrollment qualifies; never choose among repeat enrollments.
+- Required regression: two enrollments for the same contact and offer each show only their own exact payment. An ambiguous legacy event remains unmatched.
+
+### FIND-025 - Saved NMI methods cannot be distinguished before charging
+
+- Area: Payment Management and Quick Manual Sale saved methods.
+- Live proof: Phil Kay has two saved NMI methods, and both the method list and charge modal label each only as `NMI mc`. Read-only database verification found `card_last_four = "****"` for the historical NMI methods.
+- Impact: an operator cannot prove which vault is the authorized card ending 5321 and could charge the wrong customer card.
+- Severity recommendation: P1 money safety. The live test was stopped before any charge.
+- Required remediation: recover safe card metadata through NMI Query API where available and make unknown metadata visibly distinct. A vault suffix may distinguish records operationally, but it must not be represented as card last four.
+- Required regression: the authorized ending 5321 method is uniquely identifiable before a sub-$3 test charge; the resulting transaction is then refunded and reconciled.
+
+### FIND-026 - Whop Quick Manual Sale bypasses post-payment consent
+
+- Area: Whop QMS, enrollment status, evidence, and welcome workflow gating.
+- Live proof: Whop payment `pay_02eWnx8JuojsJQ` was launched from QMS with the paid-enrollment-link option enabled. Enrollment `9520c085-1ae7-41eb-b686-2962d2fd7389` moved directly to `enrolled`, generated a packet, and fired `enrollment_complete`, although it had no digital signature, consent token, or consent evidence.
+- Code proof: the QMS Whop session was labeled `quick_checkout`, so the payment webhook followed ordinary checkout completion and called `completeEnrollment()`.
+- Impact: ScaleSafe can send access/welcome and present an enrollment as consented when the client has not accepted or signed the paid-enrollment packet.
+- Severity recommendation: P1 core consent/evidence integrity.
+- Local repair: pre-create the exact QMS enrollment, mark Whop metadata as `quick_manual_sale`, record the payment, leave the enrollment `paid_pending_enrollment`, send the signed paid-enrollment link, and fire only receipt/link triggers. The ordinary completion path remains blocked until the client signs.
+- Required regression: after a fresh Whop QMS payment, no packet, signature, consent evidence, or `enrollment_complete` exists. Completing the paid-enrollment link then creates those artifacts once and fires the correct welcome once.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.
