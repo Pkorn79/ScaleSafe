@@ -110,6 +110,36 @@ export const stripeEvidenceVaultService = {
     try {
       const supabase = getSupabase();
 
+      const metadata = paymentIntent.metadata || {};
+      const latestCharge = typeof paymentIntent.latest_charge === 'object'
+        ? paymentIntent.latest_charge
+        : null;
+      const chargeId = typeof paymentIntent.latest_charge === 'string'
+        ? paymentIntent.latest_charge
+        : latestCharge?.id || null;
+      const customerId = typeof paymentIntent.customer === 'string'
+        ? paymentIntent.customer
+        : paymentIntent.customer?.id || null;
+      const billingDetails = latestCharge?.billing_details || paymentIntent.billing_details || null;
+      const customerEmail = paymentIntent.receipt_email
+        || metadata.customer_email
+        || metadata.email
+        || billingDetails?.email
+        || null;
+      const customerName = billingDetails?.name
+        || [metadata.first_name, metadata.last_name].filter(Boolean).join(' ')
+        || null;
+      const rawOfferId = String(metadata.scalesafe_offer_id || metadata.offer_id || '').trim();
+      const offerId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawOfferId)
+        ? rawOfferId
+        : null;
+      const offerTitle = paymentIntent.description || latestCharge?.description || null;
+      const offerDescription = metadata.offer_description || offerTitle;
+      const customerIp = metadata.customer_ip || metadata.ip_address || null;
+      const termsAccepted = metadata.terms_accepted === 'true';
+      const termsAcceptedAt = metadata.terms_accepted_at || null;
+      const customerBillingAddress = billingDetails?.address || null;
+
       // Card fingerprint: present when the webhook object was a Charge
       // (charge.succeeded path spreads the charge fields through) or when
       // latest_charge arrived expanded. payment_intent.succeeded payloads
@@ -125,20 +155,37 @@ export const stripeEvidenceVaultService = {
       // second may carry identity fields the first one lacked — fill gaps.
       const { data: existing } = await supabase
         .from('stripe_evidence_vault')
-        .select('id, stripe_charge_id, card_fingerprint, customer_device_fingerprint')
+        .select('id, stripe_charge_id, stripe_customer_id, offer_id, customer_name, customer_email, customer_ip, customer_billing_address, offer_title, offer_description, terms_accepted, terms_accepted_at, card_fingerprint, customer_device_fingerprint, ce30_fields_complete, metadata_written, evidence_score')
         .eq('stripe_payment_intent_id', paymentIntent.id)
         .single();
 
       if (existing) {
-        const gapFill: Record<string, string> = {};
-        const chargeId = typeof paymentIntent.latest_charge === 'string'
-          ? paymentIntent.latest_charge
-          : paymentIntent.latest_charge?.id || null;
+        const gapFill: Record<string, unknown> = {};
         if (!existing.stripe_charge_id && chargeId) gapFill.stripe_charge_id = chargeId;
+        if (!existing.stripe_customer_id && customerId) gapFill.stripe_customer_id = customerId;
+        if (!existing.offer_id && offerId) gapFill.offer_id = offerId;
+        if (!existing.customer_name && customerName) gapFill.customer_name = customerName;
+        if (!existing.customer_email && customerEmail) gapFill.customer_email = customerEmail;
+        if (!existing.customer_ip && customerIp) gapFill.customer_ip = customerIp;
+        if (!existing.customer_billing_address && customerBillingAddress) {
+          gapFill.customer_billing_address = customerBillingAddress;
+        }
+        if (!existing.offer_title && offerTitle) gapFill.offer_title = offerTitle;
+        if (!existing.offer_description && offerDescription) gapFill.offer_description = offerDescription;
+        if (!existing.terms_accepted && termsAccepted) gapFill.terms_accepted = true;
+        if (!existing.terms_accepted_at && termsAcceptedAt) gapFill.terms_accepted_at = termsAcceptedAt;
         if (!existing.card_fingerprint && cardFingerprint) gapFill.card_fingerprint = cardFingerprint;
         if (!existing.customer_device_fingerprint && paymentIntent.metadata?.customer_device_fingerprint) {
           gapFill.customer_device_fingerprint = paymentIntent.metadata.customer_device_fingerprint;
         }
+        const ce30Complete = !!(
+          (existing.customer_ip || customerIp)
+          && (existing.customer_email || customerEmail)
+          && (existing.offer_description || offerDescription)
+        );
+        if (!existing.ce30_fields_complete && ce30Complete) gapFill.ce30_fields_complete = true;
+        if (!existing.metadata_written && Object.keys(metadata).length > 0) gapFill.metadata_written = true;
+        if (ce30Complete && Number(existing.evidence_score || 0) < 15) gapFill.evidence_score = 15;
         if (Object.keys(gapFill).length > 0) {
           const { error: updateError } = await supabase.from('stripe_evidence_vault').update(gapFill).eq('id', existing.id);
           if (updateError) throw updateError;
@@ -146,17 +193,9 @@ export const stripeEvidenceVaultService = {
         return;
       }
 
-      const metadata = paymentIntent.metadata || {};
-      const chargeId = typeof paymentIntent.latest_charge === 'string'
-        ? paymentIntent.latest_charge
-        : paymentIntent.latest_charge?.id || null;
-      const customerId = typeof paymentIntent.customer === 'string'
-        ? paymentIntent.customer
-        : paymentIntent.customer?.id || null;
-
-      const hasIp = !!metadata.customer_ip;
-      const hasEmail = !!paymentIntent.receipt_email;
-      const hasDescription = !!paymentIntent.description;
+      const hasIp = !!customerIp;
+      const hasEmail = !!customerEmail;
+      const hasDescription = !!offerDescription;
       const ce30Complete = hasIp && hasEmail && hasDescription;
 
       const evidenceScore = this.computeEvidenceScore({
@@ -165,7 +204,7 @@ export const stripeEvidenceVaultService = {
         hasSessionLogs: false,
         hasCommunicationFile: false,
         metadataComplete: ce30Complete,
-        hasBillingAddress: false,
+        hasBillingAddress: !!customerBillingAddress,
       });
 
       const { error } = await supabase.from('stripe_evidence_vault').insert({
@@ -173,17 +212,20 @@ export const stripeEvidenceVaultService = {
         stripe_payment_intent_id: paymentIntent.id,
         stripe_charge_id: chargeId,
         stripe_customer_id: customerId,
-        customer_email: paymentIntent.receipt_email || null,
-        offer_title: paymentIntent.description || null,
-        offer_description: metadata.offer_description || paymentIntent.description || null,
-        customer_ip: metadata.customer_ip || null,
+        offer_id: offerId,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_billing_address: customerBillingAddress,
+        offer_title: offerTitle,
+        offer_description: offerDescription,
+        customer_ip: customerIp,
         customer_device_fingerprint: metadata.customer_device_fingerprint || null,
         card_fingerprint: cardFingerprint,
-        terms_accepted: metadata.terms_accepted === 'true',
-        terms_accepted_at: metadata.terms_accepted_at || null,
+        terms_accepted: termsAccepted,
+        terms_accepted_at: termsAcceptedAt,
         ce30_eligible: false,
         ce30_fields_complete: ce30Complete,
-        metadata_written: false,
+        metadata_written: Object.keys(metadata).length > 0,
         evidence_score: evidenceScore,
       });
 

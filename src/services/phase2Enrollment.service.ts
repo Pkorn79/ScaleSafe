@@ -577,7 +577,7 @@ export const phase2EnrollmentService = {
       try {
         const { enrollmentPacketService } = require('./enrollment-packet.service');
         const pdfUrl = await enrollmentPacketService.generateAndStore(bgEnrollmentId, bgLocationId);
-        logger.info({ enrollmentId: bgEnrollmentId, pdfUrl }, 'BG: PACKET auto-generation succeeded');
+        logger.info({ enrollmentId: bgEnrollmentId, packetStored: Boolean(pdfUrl) }, 'BG: PACKET auto-generation succeeded');
       } catch (pdfErr: any) {
         logger.error({ err: pdfErr.message, enrollmentId: bgEnrollmentId }, 'BG: PACKET auto-generation FAILED');
       }

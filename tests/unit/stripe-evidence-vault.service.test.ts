@@ -57,6 +57,124 @@ describe('stripeEvidenceVaultService.createVaultEntryFromWebhook', () => {
     }));
   });
 
+  it('fills defense metadata when payment_intent.succeeded follows a sparse Charge-created row', async () => {
+    const update = jest.fn();
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      single: jest.fn().mockResolvedValue({
+        data: {
+          id: 'vault_2',
+          stripe_charge_id: 'ch_2',
+          stripe_customer_id: null,
+          offer_id: null,
+          customer_name: null,
+          customer_email: null,
+          customer_ip: null,
+          customer_billing_address: null,
+          offer_title: null,
+          offer_description: null,
+          terms_accepted: false,
+          terms_accepted_at: null,
+          card_fingerprint: null,
+          customer_device_fingerprint: null,
+          ce30_fields_complete: false,
+          metadata_written: false,
+          evidence_score: 0,
+        },
+        error: null,
+      }),
+      update: jest.fn((payload: any) => {
+        update(payload);
+        return chain;
+      }),
+      then: (resolve: any) => resolve({ error: null }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    await stripeEvidenceVaultService.createVaultEntryFromWebhook({
+      id: 'pi_2',
+      latest_charge: 'ch_2',
+      customer: 'cus_2',
+      receipt_email: 'client@example.com',
+      description: 'Certification Offer',
+      metadata: {
+        scalesafe_offer_id: '924251a4-5ddc-4b91-88ab-bae37e473c67',
+        customer_ip: '203.0.113.10',
+        customer_device_fingerprint: 'device_2',
+        first_name: 'ScaleSafe',
+        last_name: 'Certification',
+        terms_accepted: 'true',
+        terms_accepted_at: '2026-07-13T17:00:00.000Z',
+      },
+    }, { id: 'merchant_1' });
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_customer_id: 'cus_2',
+      offer_id: '924251a4-5ddc-4b91-88ab-bae37e473c67',
+      customer_name: 'ScaleSafe Certification',
+      customer_email: 'client@example.com',
+      customer_ip: '203.0.113.10',
+      offer_title: 'Certification Offer',
+      offer_description: 'Certification Offer',
+      terms_accepted: true,
+      terms_accepted_at: '2026-07-13T17:00:00.000Z',
+      customer_device_fingerprint: 'device_2',
+      ce30_fields_complete: true,
+      metadata_written: true,
+      evidence_score: 15,
+    }));
+  });
+
+  it('creates a Charge-first vault row with the offer and defense metadata intact', async () => {
+    const insert = jest.fn().mockResolvedValue({ data: null, error: null });
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+      insert,
+    };
+    mockFrom.mockReturnValue(chain);
+
+    await stripeEvidenceVaultService.createVaultEntryFromWebhook({
+      id: 'pi_3',
+      latest_charge: {
+        id: 'ch_3',
+        description: 'Certification Offer',
+        billing_details: {
+          name: 'ScaleSafe Certification',
+          email: 'client@example.com',
+          address: { country: 'US', postal_code: '38568' },
+        },
+        payment_method_details: { card: { fingerprint: 'fp_3' } },
+      },
+      customer: 'cus_3',
+      metadata: {
+        scalesafe_offer_id: '924251a4-5ddc-4b91-88ab-bae37e473c67',
+        customer_ip: '203.0.113.10',
+        terms_accepted: 'true',
+      },
+    }, { id: 'merchant_1' });
+
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_payment_intent_id: 'pi_3',
+      stripe_charge_id: 'ch_3',
+      stripe_customer_id: 'cus_3',
+      offer_id: '924251a4-5ddc-4b91-88ab-bae37e473c67',
+      customer_name: 'ScaleSafe Certification',
+      customer_email: 'client@example.com',
+      customer_billing_address: { country: 'US', postal_code: '38568' },
+      offer_title: 'Certification Offer',
+      offer_description: 'Certification Offer',
+      customer_ip: '203.0.113.10',
+      card_fingerprint: 'fp_3',
+      terms_accepted: true,
+      ce30_fields_complete: true,
+      metadata_written: true,
+      evidence_score: 25,
+    }));
+  });
+
   it('throws when a new vault row cannot be persisted so Stripe can retry', async () => {
     const chain: any = {
       select: jest.fn(() => chain),

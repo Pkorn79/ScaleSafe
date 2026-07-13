@@ -143,6 +143,25 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Classification: P1 configuration/operations gap, not a processor defect.
 - Required action: Identify and remove only the stale subscription after owner approval, then prove one successful `enrollment_complete` delivery with no failed sibling delivery.
 
+### FIND-015 - Sparse first Stripe webhook leaves defense-vault metadata incomplete
+
+- Area: Stripe evidence vault and dispute readiness.
+- Live proof: The repaired Stripe installment test correctly keyed the vault row by PaymentIntent and retained the Charge ID, but the row still had no `offer_id`. The endpoint observed only the Charge event during the certification window, so the later PaymentIntent gap-fill could not be relied upon.
+- Code proof: New webhook rows did not write `offer_id`, customer name, or billing address, and the existing-row gap-fill updated only Charge/fingerprint fields.
+- Impact: Offer-scoped evidence refresh and dispute preparation can miss a valid Stripe transaction even though the payment ledger is correct.
+- Severity recommendation: P1 for defense integrity.
+- Local repair: Derive all safe defense fields from the canonical metadata and fill missing fields regardless of webhook arrival order.
+- Required regression: A new Stripe transaction must produce a vault row with matching `pi_...`, `ch_...`, offer ID, customer identity, consent/IP metadata, and no cross-tenant lookup.
+
+### FIND-016 - Background enrollment logging exposes signed private packet URLs
+
+- Area: Production logs and private evidence files.
+- Live proof: Railway logged the complete signed Supabase enrollment-packet URL, including its temporary bearer token, after packet generation.
+- Impact: Anyone with production-log access during the URL lifetime could open a private enrollment packet without ScaleSafe authorization.
+- Severity recommendation: P1 security hardening.
+- Local repair: Log only the enrollment ID and a boolean that confirms storage succeeded.
+- Required regression: Packet generation succeeds and no deploy log line contains `/object/sign/`, `token=`, or a signed packet URL.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.

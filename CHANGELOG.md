@@ -7,13 +7,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Fixed
 - Stripe `charge.succeeded` events now preserve the PaymentIntent as the evidence-vault key and the Charge as the charge reference, so later dispute lookups do not lose transaction evidence.
+- Stripe evidence-vault rows now retain offer, customer, terms, IP, billing, and CE 3.0 readiness fields whether the Charge or PaymentIntent webhook arrives first.
 - Successful Stripe webhooks enrich the canonical payment row with settlement, Charge, and masked card metadata and update the linked enrollment's initial-payment state.
 - Stripe evidence-vault persistence failures now return a retryable webhook failure instead of silently acknowledging lost evidence.
 - Paid enrollment and GHL payment paths use the database-supported `sale` event type; checkout and settled ACH paths no longer attempt a redundant second ledger insert, and free enrollments no longer create payment rows.
 - Checkout payment rows now retain processor Charge IDs, settlement timestamps, and whether consent was linked.
+- Background packet generation logs no longer include signed private-file URLs.
 
 ### Verified
-- Full test suite: 145 suites / 1,228 tests.
+- Full test suite: 145 suites / 1,229 tests; focused Stripe webhook/vault suite: 19 tests.
 - TypeScript typecheck, production build, and production dependency audit pass.
 
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)

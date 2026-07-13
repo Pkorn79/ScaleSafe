@@ -112,6 +112,17 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The two pre-enrollment enrollment-link communication rows still have no enrollment ID after completion. Their defense inclusion must be tested before certification.
 - This vertical slice is not a pass until the deployed repair produces exactly one clean ledger row, a correctly keyed Stripe evidence-vault row, complete settlement metadata, and no constraint error.
 
+### STRIPE-PLAN-001 Trace
+
+- Completed at approximately `2026-07-13T17:19:56Z` for $2.00 using Stripe's standard test card: $1.00 first installment plus the selected $1.00 Certification Add-on.
+- Browser proof: checkout displayed the correct $2.00 due today, preserved the selected add-on, and reached Payment Confirmed.
+- Enrollment `122e1aad-b21c-446b-9828-9ab0c15b3c15` became enrolled, linked to contact `IprGRQLOEybLiV1fopQb`, created one daily Stripe subscription, and set the next billing date to July 14, 2026.
+- Payment event `e0612e07-aedc-46ab-adb4-ed5b8d810903` is the only ledger row: canonical `sale`, $2.00, matching PaymentIntent and Charge IDs, card ending 4242, settled timestamp, consent linkage, and two line items.
+- The enrollment retained the order-bump title, description, ID, and amount. Generic consent and enrollment-payment evidence rows are scoped to the exact enrollment.
+- Railway showed no payment-event constraint error. `ss_payment_received` sent once; one active `enrollment_complete` subscription sent and the known deleted subscription failed after retries.
+- The vault keying repair passed, but the row exposed FIND-015: offer metadata remained incomplete when only the Charge webhook arrived during the observed window.
+- Packet generation succeeded in private storage. FIND-016 was opened because the background success log printed the complete signed packet URL.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -163,10 +174,12 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-006 | P1 investigation | Data/matching quality | GHL Fulfillment diagnostics | 121 unresolved historical events | Open | Clean-fixture test pending |
 | FIND-007 | P1 certification gap | Configuration/operations | NMI diagnostics | Signed official NMI callback not proved | Open | Signed callback required |
 | FIND-010 | P2 | UI status defect | Whop offer creation | Whop checkout offers display `Default` in the Processor column | Open | Fix and retest offer list |
-| FIND-011 | P1 | Evidence linkage defect | Stripe PIF certification | Stripe Charge stored as the evidence-vault PaymentIntent key | Local fix; not deployed | New Stripe payment required |
-| FIND-012 | P1 | Ledger/schema contract defect | Stripe PIF certification | `payment_success` rejected by payment-events constraint | Local fix; not deployed | New Stripe and GHL payment paths required |
+| FIND-011 | P1 | Evidence linkage defect | Stripe PIF certification | Stripe Charge stored as the evidence-vault PaymentIntent key | Fix `7eb2704` deployed | Pass on STRIPE-PLAN-001 |
+| FIND-012 | P1 | Ledger/schema contract defect | Stripe PIF certification | `payment_success` rejected by payment-events constraint | Fix `7eb2704` deployed | Pass on STRIPE-PLAN-001; GHL-only path remains targeted-test coverage |
 | FIND-013 | P1 configuration | Stale workflow subscription | Stripe PIF certification | Deleted GHL trigger retried on every enrollment complete | Open; no GHL change made | Owner-approved cleanup required |
 | FIND-014 | P1 investigation | Evidence scoping | Enrollment-link then Stripe PIF | Link communications remain client-level after enrollment | Open | Exact enrollment defense test required |
+| FIND-015 | P1 | Evidence-vault metadata defect | Stripe installment certification | Charge-first vault row lacks offer/defense metadata | Local fix; not deployed | New Stripe payment required |
+| FIND-016 | P1 | Security/logging defect | Stripe installment certification | Signed private packet URL emitted to Railway logs | Local fix; not deployed | Log scan after packet generation |
 
 ## Screenshot Rules
 
