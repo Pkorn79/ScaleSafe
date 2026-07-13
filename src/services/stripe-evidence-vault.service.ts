@@ -133,7 +133,10 @@ export const stripeEvidenceVaultService = {
       const offerId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawOfferId)
         ? rawOfferId
         : null;
-      const offerTitle = paymentIntent.description || latestCharge?.description || null;
+      const offerTitle = metadata.offer_name
+        || paymentIntent.description
+        || latestCharge?.description
+        || null;
       const offerDescription = metadata.offer_description || offerTitle;
       const customerIp = metadata.customer_ip || metadata.ip_address || null;
       const termsAccepted = metadata.terms_accepted === 'true';
@@ -170,8 +173,20 @@ export const stripeEvidenceVaultService = {
         if (!existing.customer_billing_address && customerBillingAddress) {
           gapFill.customer_billing_address = customerBillingAddress;
         }
-        if (!existing.offer_title && offerTitle) gapFill.offer_title = offerTitle;
-        if (!existing.offer_description && offerDescription) gapFill.offer_description = offerDescription;
+        if (
+          (!existing.offer_title || existing.offer_title === 'ScaleSafe Payment')
+          && offerTitle
+          && offerTitle !== 'ScaleSafe Payment'
+        ) {
+          gapFill.offer_title = offerTitle;
+        }
+        if (
+          (!existing.offer_description || existing.offer_description === 'ScaleSafe Payment')
+          && offerDescription
+          && offerDescription !== 'ScaleSafe Payment'
+        ) {
+          gapFill.offer_description = offerDescription;
+        }
         if (!existing.terms_accepted && termsAccepted) gapFill.terms_accepted = true;
         if (!existing.terms_accepted_at && termsAcceptedAt) gapFill.terms_accepted_at = termsAcceptedAt;
         if (!existing.card_fingerprint && cardFingerprint) gapFill.card_fingerprint = cardFingerprint;

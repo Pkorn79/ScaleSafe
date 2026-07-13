@@ -923,6 +923,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
     const shouldVaultDuringCharge = !!contactEmail
       && (saveCard === true || isRecurringPaymentType);
+    const checkoutOfferName = resolvedOffer?.offer_name
+      || productDetails?.[0]?.name
+      || 'ScaleSafe Payment';
+    const checkoutOfferDescription = resolvedOffer?.program_description
+      || checkoutOfferName;
 
     const checkoutAttemptKey = paymentAttemptKey([
       merchant.locationId,
@@ -994,9 +999,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         : 'WEB',
       achAccountHolderType: req.body.achAccountHolderType === 'business' ? 'business' : 'personal',
       achAccountType: req.body.achAccountType === 'savings' ? 'savings' : 'checking',
-      description: productDetails?.[0]?.name || 'ScaleSafe Payment',
+      description: checkoutOfferName,
       metadata: {
         scalesafe_offer_id: offerId || '',
+        offer_name: checkoutOfferName,
+        offer_description: checkoutOfferDescription,
         selected_addon_ids: (cartQuote?.lineItems || []).filter((item) => item.addonId).map((item) => item.addonId).join(','),
         line_items: cartQuote ? JSON.stringify(cartQuote.lineItems) : '',
         consent_token: consentToken || '',

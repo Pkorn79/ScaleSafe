@@ -126,6 +126,57 @@ describe('stripeEvidenceVaultService.createVaultEntryFromWebhook', () => {
     }));
   });
 
+  it('replaces the generic checkout label with offer metadata from the richer webhook', async () => {
+    const update = jest.fn();
+    const chain: any = {
+      select: jest.fn(() => chain),
+      eq: jest.fn(() => chain),
+      single: jest.fn().mockResolvedValue({
+        data: {
+          id: 'vault_generic',
+          stripe_charge_id: 'ch_generic',
+          stripe_customer_id: null,
+          offer_id: '924251a4-5ddc-4b91-88ab-bae37e473c67',
+          customer_name: null,
+          customer_email: null,
+          customer_ip: null,
+          customer_billing_address: null,
+          offer_title: 'ScaleSafe Payment',
+          offer_description: 'ScaleSafe Payment',
+          terms_accepted: false,
+          terms_accepted_at: null,
+          card_fingerprint: null,
+          customer_device_fingerprint: null,
+          ce30_fields_complete: false,
+          metadata_written: true,
+          evidence_score: 0,
+        },
+        error: null,
+      }),
+      update: jest.fn((payload: any) => {
+        update(payload);
+        return chain;
+      }),
+      then: (resolve: any) => resolve({ error: null }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    await stripeEvidenceVaultService.createVaultEntryFromWebhook({
+      id: 'pi_generic',
+      latest_charge: 'ch_generic',
+      description: 'ScaleSafe Payment',
+      metadata: {
+        offer_name: 'CERT 2026-07-13 Stripe PIF',
+        offer_description: 'Live certification offer',
+      },
+    }, { id: 'merchant_1' });
+
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      offer_title: 'CERT 2026-07-13 Stripe PIF',
+      offer_description: 'Live certification offer',
+    }));
+  });
+
   it('creates a Charge-first vault row with the offer and defense metadata intact', async () => {
     const insert = jest.fn().mockResolvedValue({ data: null, error: null });
     const chain: any = {

@@ -9,6 +9,7 @@ This is the authoritative action ledger for the July 13 deep certification of th
 - **Location:** `274dtgl30b7x2HG8hn69`
 - **Environment:** Railway production application connected to processor test configurations where available.
 - **Current baseline before active testing:** `666151b` (`fix: preserve defense exhibit snapshots`)
+- **Latest certified deployed baseline:** `728eff6` (`fix: complete Stripe defense vault metadata`)
 - **Stripe:** test cards are authorized.
 - **Whop:** test cards are authorized.
 - **NMI:** charge only a clearly identified test offer priced at **$3.00 or less**, use only the saved card ending in **5321**, and add the transaction to the refund ledger below.
@@ -47,6 +48,8 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | CLIENT-001 | Clients | Create isolated certification client | One GHL contact and one tenant-scoped manual client row are created | Pass | Pass | Pass | N/A | GHL contact created | N/A | Pass | - |
 | LINK-001 | Enrollment link | Send Stripe PIF offer from client profile by email | Trigger accepted, outbound message observed, and evidence recorded | Pass | Pass | Pass | N/A | Trigger pass; one GHL outbound observed | Two pre-enrollment communication rows | Pass with follow-up | - |
 | STRIPE-PIF-001 | Stripe full enrollment | Complete consent and pay $1.00 by Stripe test card | One settled payment, enrolled program, receipt/welcome, signed packet, and enrollment-scoped evidence | Pass | Fail | Partial | Pass | Partial | Pass | Fail; repair in progress | FIND-011, FIND-012, FIND-013, FIND-014 |
+| STRIPE-PLAN-001 | Stripe installments | Pay first daily installment with $1.00 order bump | One $2.00 settled payment, correct subscription, line items, next billing, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
+| STRIPE-PIF-002 | Stripe full enrollment retest | Repeat $1.00 PIF after ledger/vault/log repairs | One canonical sale, correctly keyed vault, private packet, receipt/welcome, daily pulse, no signed URL leak | Pass | Pass | Pass | Pass | Partial | Pass | Pass with follow-up | FIND-013, FIND-017 |
 
 ## Isolated Offer Fixtures
 
@@ -123,6 +126,18 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The vault keying repair passed, but the row exposed FIND-015: offer metadata remained incomplete when only the Charge webhook arrived during the observed window.
 - Packet generation succeeded in private storage. FIND-016 was opened because the background success log printed the complete signed packet URL.
 
+### STRIPE-PIF-002 Trace
+
+- Completed at approximately `2026-07-13T17:38:24Z` for $1.00 using Stripe's standard test card on deployed commit `728eff6`.
+- Enrollment `56ec52fc-627f-4e33-b0fc-b01ba6bc8ceb` became enrolled and linked to the isolated certification contact and exact PIF offer.
+- Payment event `10d33140-a200-4d29-b498-2fbbf75318ed` is the only ledger row: canonical `sale`, $1.00, correct PaymentIntent and Charge references, card ending 4242, succeeded/settled state, consent linkage, and one base-offer line item.
+- The Stripe evidence-vault row is keyed by the PaymentIntent, retains the Charge ID, exact offer ID, client name/email/IP, card and device fingerprints, accepted-terms timestamp, and completed CE identity fields. This closes FIND-015's webhook-ordering defect.
+- Exact-enrollment `consent` and `enrollment_payment` evidence rows were present. The enrollment packet was generated at its private storage path and the evidence chain reported strength 70.
+- The offer's daily pulse cadence was enabled with the next check due July 14, 2026.
+- `ss_payment_received` and one active `enrollment_complete` subscription returned HTTP 201. The known deleted `enrollment_complete` subscription still failed separately after four attempts; FIND-013 remains open.
+- The new deployment emitted zero messages containing `/object/sign/` or `token=` during the test. Packet logs contain only the private storage path plus `packetStored: true`, closing FIND-016.
+- The vault still labeled the purchase `ScaleSafe Payment` rather than the resolved offer name. FIND-017 records the separate metadata-quality defect.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -178,8 +193,9 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-012 | P1 | Ledger/schema contract defect | Stripe PIF certification | `payment_success` rejected by payment-events constraint | Fix `7eb2704` deployed | Pass on STRIPE-PLAN-001; GHL-only path remains targeted-test coverage |
 | FIND-013 | P1 configuration | Stale workflow subscription | Stripe PIF certification | Deleted GHL trigger retried on every enrollment complete | Open; no GHL change made | Owner-approved cleanup required |
 | FIND-014 | P1 investigation | Evidence scoping | Enrollment-link then Stripe PIF | Link communications remain client-level after enrollment | Open | Exact enrollment defense test required |
-| FIND-015 | P1 | Evidence-vault metadata defect | Stripe installment certification | Charge-first vault row lacks offer/defense metadata | Local fix; not deployed | New Stripe payment required |
-| FIND-016 | P1 | Security/logging defect | Stripe installment certification | Signed private packet URL emitted to Railway logs | Local fix; not deployed | Log scan after packet generation |
+| FIND-015 | P1 | Evidence-vault metadata defect | Stripe installment certification | Charge-first vault row lacks offer/defense metadata | Fix `728eff6` deployed | Pass on STRIPE-PIF-002 |
+| FIND-016 | P1 | Security/logging defect | Stripe installment certification | Signed private packet URL emitted to Railway logs | Fix `728eff6` deployed | Pass on STRIPE-PIF-002 |
+| FIND-017 | P1 | Evidence-vault description defect | Stripe PIF retest | Direct checkout stores generic `ScaleSafe Payment` instead of the resolved offer name/description | Local fix; not deployed | New Stripe payment required |
 
 ## Screenshot Rules
 

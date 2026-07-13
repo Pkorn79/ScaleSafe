@@ -22,6 +22,9 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-012 | Successful payment-event enum mismatch | P1 | Fixed locally; live retest pending | Small |
 | FIND-013 | Stale GHL trigger subscription | P1 configuration | Live confirmed | GHL cleanup plus retest |
 | FIND-014 | Pre-enrollment communications remain unlinked | P1 investigation | Live confirmed | Medium |
+| FIND-015 | Stripe defense-vault webhook ordering | P1 | Fixed and passed live | Small/medium |
+| FIND-016 | Signed packet URL in logs | P1 | Fixed and passed live | Small |
+| FIND-017 | Generic Stripe offer description | P1 | Fixed locally; live retest pending | Small |
 
 ## Confirmed Code-Backed Findings
 
@@ -161,6 +164,16 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 security hardening.
 - Local repair: Log only the enrollment ID and a boolean that confirms storage succeeded.
 - Required regression: Packet generation succeeds and no deploy log line contains `/object/sign/`, `token=`, or a signed packet URL.
+- Live retest: STRIPE-PIF-002 generated the packet successfully on `728eff6`; the deployment contained zero `/object/sign/` or `token=` messages and logged only the private storage path plus `packetStored: true`.
+
+### FIND-017 - Direct Stripe checkout stores a generic offer description
+
+- Area: Stripe evidence vault and dispute evidence descriptions.
+- Live proof: STRIPE-PIF-002 linked the correct offer ID, but both `offer_title` and `offer_description` were stored as `ScaleSafe Payment` instead of `CERT 2026-07-13 Stripe PIF` and its program description.
+- Code proof: direct widget checkout often has no GHL `productDetails`, so `checkout.controller.ts` passed the fallback label to the processor even though `resolvedOffer` already contained the tenant-scoped offer.
+- Impact: Stripe dispute evidence and unrecognized-transaction explanations can describe the purchase generically instead of identifying the program the customer actually bought.
+- Local repair: send the resolved offer name and program description in Stripe metadata and allow the webhook normalizer to replace the historical generic placeholder with richer metadata.
+- Required regression: one new direct Stripe checkout stores the exact offer title/description in its PaymentIntent metadata and evidence-vault row.
 
 ## Operations Access
 
