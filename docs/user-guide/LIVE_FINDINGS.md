@@ -26,6 +26,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-016 | Signed packet URL in logs | P1 | Fixed and passed live | Small |
 | FIND-017 | Generic Stripe offer description | P1 | Fixed locally; live retest pending | Small |
 | FIND-018 | Repeat checkout idempotency | P1 | Fixed locally; live retest pending | Small |
+| FIND-019 | Stripe evidence-chain vault lookup | P1 | Fixed locally; live retest pending | Small |
 
 ## Confirmed Code-Backed Findings
 
@@ -184,6 +185,15 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: a legitimate repeat buyer using the same browser, offer, amount, and email can be unable to complete a second enrollment.
 - Local repair: add the consent/evidence context to the browser attempt scope and clear the stored attempt only after the server confirms success. Declines remain explicitly resettable, while ambiguous failures keep the original key for reconciliation safety.
 - Required regression: complete the same offer twice in one browser with two distinct enrollments; both charge once, while duplicate submission and ambiguous-result protection remain intact.
+
+### FIND-019 - Stripe evidence-chain verification queries a nonexistent tenant column
+
+- Area: Enrollment/payment evidence-chain verification.
+- Live proof: the repaired repeat Stripe checkout produced a correct payment and matching vault row, but background verification reported strength 70 and `complete: false`.
+- Code/data proof: `evidence-chain.service.ts` added `.eq('location_id', ...)` to `stripe_evidence_vault`; the live table has no `location_id` column and is tenant-owned through `merchant_id`.
+- Impact: Stripe chains omit a valid vault link and are reported incomplete even when the transaction evidence exists.
+- Local repair: derive the trusted merchant from the payment event or its location, then match PaymentIntent plus `merchant_id`. Never fall back to an unscoped vault lookup.
+- Required regression: the exact live payment links its vault row, reaches strength 90 without a GHL order, and a vault row owned by another merchant is rejected.
 
 ## Operations Access
 

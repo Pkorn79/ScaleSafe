@@ -99,25 +99,52 @@ export const evidenceChainService = {
 
     // Link 3: Evidence vault (Stripe only)
     if (payment.processor === 'stripe' && payment.processor_transaction_id) {
-      let vaultQuery = supabase
-        .from('stripe_evidence_vault')
-        .select('*')
-        .eq('stripe_payment_intent_id', payment.processor_transaction_id);
-      if (scopedLocationId) {
-        vaultQuery = vaultQuery.eq('location_id', scopedLocationId);
+      let vaultMerchantId = String(payment.merchant_id || '').trim();
+      if (!vaultMerchantId && scopedLocationId) {
+        const { data: merchant, error: merchantError } = await supabase
+          .from('merchants')
+          .select('id')
+          .eq('location_id', scopedLocationId)
+          .maybeSingle();
+        if (merchantError) {
+          logger.warn({
+            err: merchantError.message,
+            paymentEventId,
+            locationId: scopedLocationId,
+          }, 'Evidence chain merchant lookup failed');
+        }
+        vaultMerchantId = String(merchant?.id || '').trim();
       }
-      const { data: vault } = await vaultQuery.single();
 
-      if (vault) {
-        links.push({
-          type: 'evidence_vault',
-          id: vault.id,
-          timestamp: vault.created_at,
-          verified: true,
-          detail: `Evidence score: ${vault.evidence_score}/100`,
-        });
+      if (!vaultMerchantId) {
+        gaps.push('Stripe evidence vault could not be tenant-scoped');
       } else {
-        gaps.push('Stripe evidence vault entry not found');
+        const { data: vault, error: vaultError } = await supabase
+          .from('stripe_evidence_vault')
+          .select('*')
+          .eq('stripe_payment_intent_id', payment.processor_transaction_id)
+          .eq('merchant_id', vaultMerchantId)
+          .single();
+
+        if (vaultError && vaultError.code !== 'PGRST116') {
+          logger.warn({
+            err: vaultError.message,
+            paymentEventId,
+            merchantId: vaultMerchantId,
+          }, 'Evidence chain Stripe vault lookup failed');
+        }
+
+        if (vault) {
+          links.push({
+            type: 'evidence_vault',
+            id: vault.id,
+            timestamp: vault.created_at,
+            verified: true,
+            detail: `Evidence score: ${vault.evidence_score}/100`,
+          });
+        } else {
+          gaps.push('Stripe evidence vault entry not found');
+        }
       }
     }
 

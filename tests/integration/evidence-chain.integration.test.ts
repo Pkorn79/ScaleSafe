@@ -42,6 +42,10 @@ function createChainQuery(rows: any[]) {
       data: filtered[0] || null,
       error: filtered.length === 0 ? { message: 'not found' } : null,
     }),
+    maybeSingle: () => ({
+      data: filtered[0] || null,
+      error: null,
+    }),
   };
   return chain;
 }
@@ -66,6 +70,7 @@ describe('Evidence Chain Integration', () => {
       {
         id: paymentId,
         location_id: 'loc_1',
+        merchant_id: 'merchant_1',
         consent_token: consentToken,
         ip_address: sharedIp,
         processor: 'stripe',
@@ -90,7 +95,7 @@ describe('Evidence Chain Integration', () => {
     chainMockData['stripe_evidence_vault'] = [
       {
         id: 'vault_1',
-        location_id: 'loc_1',
+        merchant_id: 'merchant_1',
         stripe_payment_intent_id: 'pi_test_1',
         evidence_score: 85,
         created_at: '2026-04-01T00:00:00Z',
@@ -227,6 +232,30 @@ describe('Evidence Chain Integration', () => {
 
     expect(result.complete).toBe(false);
     expect(result.gaps.some(g => g.includes('vault'))).toBe(true);
+  });
+
+  it('does not link a Stripe vault row owned by another merchant', async () => {
+    chainMockData['payment_events'] = [{
+      id: 'pay_cross_merchant',
+      location_id: 'loc_1',
+      merchant_id: 'merchant_1',
+      consent_token: null,
+      processor: 'stripe',
+      processor_transaction_id: 'pi_shared',
+      amount: 10,
+      created_at: '2026-04-01T00:00:00Z',
+    }];
+    chainMockData['stripe_evidence_vault'] = [{
+      id: 'vault_other',
+      merchant_id: 'merchant_2',
+      stripe_payment_intent_id: 'pi_shared',
+      created_at: '2026-04-01T00:00:00Z',
+    }];
+
+    const result = await evidenceChainService.verifyChain('pay_cross_merchant', 'loc_1');
+
+    expect(result.links.some(link => link.type === 'evidence_vault')).toBe(false);
+    expect(result.gaps).toContain('Stripe evidence vault entry not found');
   });
 
   it('should return zero strength when payment event not found', async () => {
