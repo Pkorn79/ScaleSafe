@@ -24,9 +24,9 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-014 | Pre-enrollment communications remain unlinked | P1 investigation | Live confirmed | Medium |
 | FIND-015 | Stripe defense-vault webhook ordering | P1 | Fixed and passed live | Small/medium |
 | FIND-016 | Signed packet URL in logs | P1 | Fixed and passed live | Small |
-| FIND-017 | Generic Stripe offer description | P1 | Fixed locally; live retest pending | Small |
-| FIND-018 | Repeat checkout idempotency | P1 | Fixed locally; live retest pending | Small |
-| FIND-019 | Stripe evidence-chain vault lookup | P1 | Fixed locally; live retest pending | Small |
+| FIND-017 | Generic Stripe offer description | P1 | Fixed and passed live | Small |
+| FIND-018 | Repeat checkout idempotency | P1 | Fixed and passed live | Small |
+| FIND-019 | Stripe evidence-chain vault lookup | P1 | Fixed and passed live | Small |
 
 ## Confirmed Code-Backed Findings
 
@@ -194,6 +194,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: Stripe chains omit a valid vault link and are reported incomplete even when the transaction evidence exists.
 - Local repair: derive the trusted merchant from the payment event or its location, then match PaymentIntent plus `merchant_id`. Never fall back to an unscoped vault lookup.
 - Required regression: the exact live payment links its vault row, reaches strength 90 without a GHL order, and a vault row owned by another merchant is rejected.
+- Live retest: deploy `b7b2b27` returned `complete: true`, strength 90, no gaps, and verified consent, IP, payment, and merchant-owned vault links for payment event `95ab89f8-5a18-431e-87a8-830e18a62e02`.
 
 ## Operations Access
 

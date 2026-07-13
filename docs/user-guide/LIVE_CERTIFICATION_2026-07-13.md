@@ -9,7 +9,7 @@ This is the authoritative action ledger for the July 13 deep certification of th
 - **Location:** `274dtgl30b7x2HG8hn69`
 - **Environment:** Railway production application connected to processor test configurations where available.
 - **Current baseline before active testing:** `666151b` (`fix: preserve defense exhibit snapshots`)
-- **Latest certified deployed baseline:** `728eff6` (`fix: complete Stripe defense vault metadata`)
+- **Latest certified deployed baseline:** `b7b2b27` (`fix: tenant-scope Stripe evidence chains`)
 - **Stripe:** test cards are authorized.
 - **Whop:** test cards are authorized.
 - **NMI:** charge only a clearly identified test offer priced at **$3.00 or less**, use only the saved card ending in **5321**, and add the transaction to the refund ledger below.
@@ -50,6 +50,7 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | STRIPE-PIF-001 | Stripe full enrollment | Complete consent and pay $1.00 by Stripe test card | One settled payment, enrolled program, receipt/welcome, signed packet, and enrollment-scoped evidence | Pass | Fail | Partial | Pass | Partial | Pass | Fail; repair in progress | FIND-011, FIND-012, FIND-013, FIND-014 |
 | STRIPE-PLAN-001 | Stripe installments | Pay first daily installment with $1.00 order bump | One $2.00 settled payment, correct subscription, line items, next billing, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
 | STRIPE-PIF-002 | Stripe full enrollment retest | Repeat $1.00 PIF after ledger/vault/log repairs | One canonical sale, correctly keyed vault, private packet, receipt/welcome, daily pulse, no signed URL leak | Pass | Pass | Pass | Pass | Partial | Pass | Pass with follow-up | FIND-013, FIND-017 |
+| STRIPE-PIF-003 | Stripe repeat checkout and evidence-chain retest | Buy the same $1.00 offer again in the same browser with a new enrollment context | One new charge, exact offer metadata, complete tenant-scoped evidence chain, and no reuse rejection | Pass | Pass | Pass | Pass | Partial | Pass | Pass with configuration follow-up | FIND-013 |
 
 ## Isolated Offer Fixtures
 
@@ -138,6 +139,16 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The new deployment emitted zero messages containing `/object/sign/` or `token=` during the test. Packet logs contain only the private storage path plus `packetStored: true`, closing FIND-016.
 - The vault still labeled the purchase `ScaleSafe Payment` rather than the resolved offer name. FIND-017 records the separate metadata-quality defect.
 
+### STRIPE-PIF-003 Trace
+
+- Completed after deploy `34a90aa` for $1.00 by repeating the same offer in the same browser with a distinct consent and enrollment context.
+- Enrollment `e5e75664-f600-42fc-bab8-98e30af220bc` completed successfully. Payment event `95ab89f8-5a18-431e-87a8-830e18a62e02` is the only canonical sale for this attempt and retains the matching PaymentIntent and Charge references.
+- The Stripe vault contains the exact offer title `CERT 2026-07-13 Stripe PIF`, full program description, offer ID, customer identity, IP, accepted terms, and processor references. This closes FIND-017.
+- The completed browser attempt no longer blocks a legitimate later purchase, while the existing server idempotency claim still protects duplicate submissions. This closes FIND-018.
+- The initial background verifier exposed FIND-019: it queried `stripe_evidence_vault` by a nonexistent `location_id` column and incorrectly reported strength 70.
+- After deploy `b7b2b27`, a read-only live verification of the same payment returned `complete: true`, strength 90, no gaps, and verified consent, IP, payment, and merchant-owned evidence-vault links. This closes FIND-019.
+- The active receipt and enrollment-complete deliveries succeeded. The known deleted GHL trigger still failed after retries, so FIND-013 remains an external configuration follow-up.
+
 ## Detailed Test Record
 
 Copy this block before every state-changing test.
@@ -195,9 +206,9 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-014 | P1 investigation | Evidence scoping | Enrollment-link then Stripe PIF | Link communications remain client-level after enrollment | Open | Exact enrollment defense test required |
 | FIND-015 | P1 | Evidence-vault metadata defect | Stripe installment certification | Charge-first vault row lacks offer/defense metadata | Fix `728eff6` deployed | Pass on STRIPE-PIF-002 |
 | FIND-016 | P1 | Security/logging defect | Stripe installment certification | Signed private packet URL emitted to Railway logs | Fix `728eff6` deployed | Pass on STRIPE-PIF-002 |
-| FIND-017 | P1 | Evidence-vault description defect | Stripe PIF retest | Direct checkout stores generic `ScaleSafe Payment` instead of the resolved offer name/description | Fix `7861474` deployed | Retest interrupted by FIND-018 |
-| FIND-018 | P1 | Checkout idempotency defect | Repeat Stripe PIF retest | A completed checkout's browser attempt key blocks a legitimate later purchase with a new consent/enrollment | Local fix; not deployed | Repeat purchase in same browser required |
-| FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Local fix; not deployed | Verify the exact payment chain reaches 90 strength |
+| FIND-017 | P1 | Evidence-vault description defect | Stripe PIF retest | Direct checkout stores generic `ScaleSafe Payment` instead of the resolved offer name/description | Fix `7861474` deployed | Pass on STRIPE-PIF-003 |
+| FIND-018 | P1 | Checkout idempotency defect | Repeat Stripe PIF retest | A completed checkout's browser attempt key blocks a legitimate later purchase with a new consent/enrollment | Fix `34a90aa` deployed | Pass on STRIPE-PIF-003 |
+| FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Fix `b7b2b27` deployed | Pass: complete, strength 90, no gaps |
 
 ## Screenshot Rules
 
