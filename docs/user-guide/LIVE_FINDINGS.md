@@ -27,6 +27,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-017 | Generic Stripe offer description | P1 | Fixed and passed live | Small |
 | FIND-018 | Repeat checkout idempotency | P1 | Fixed and passed live | Small |
 | FIND-019 | Stripe evidence-chain vault lookup | P1 | Fixed and passed live | Small |
+| FIND-020 | Whop checkout phone scope | P1 | Fixed locally; live retest pending | Small |
 
 ## Confirmed Code-Backed Findings
 
@@ -195,6 +196,15 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: derive the trusted merchant from the payment event or its location, then match PaymentIntent plus `merchant_id`. Never fall back to an unscoped vault lookup.
 - Required regression: the exact live payment links its vault row, reaches strength 90 without a GHL order, and a vault row owned by another merchant is rejected.
 - Live retest: deploy `b7b2b27` returned `complete: true`, strength 90, no gaps, and verified consent, IP, payment, and merchant-owned vault links for payment event `95ab89f8-5a18-431e-87a8-830e18a62e02`.
+
+### FIND-020 - Whop embedded checkout references an out-of-scope phone variable
+
+- Area: Public Whop checkout session creation.
+- Live proof: the isolated paid-in-full Whop cart calculated the correct $2.50 total, but clicking Continue displayed `custPhone is not defined` and no Whop session or payment was created.
+- Code proof: `renderWhopCheckout()` serialized `contactPhone: custPhone` without accepting or defining `custPhone` in its scope.
+- Impact: every Whop embedded checkout can fail before the hosted payment form loads.
+- Local repair: pass the collected phone value explicitly through both automatic and button-driven Whop session paths.
+- Required regression: both full-enrollment and quick-checkout Whop paths load the hosted form; PIF plus add-on charges $2.50 and records the correct client, enrollment, line items, `pay_` ID, and evidence.
 
 ## Operations Access
 

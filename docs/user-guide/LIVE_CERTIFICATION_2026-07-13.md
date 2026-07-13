@@ -209,6 +209,7 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-017 | P1 | Evidence-vault description defect | Stripe PIF retest | Direct checkout stores generic `ScaleSafe Payment` instead of the resolved offer name/description | Fix `7861474` deployed | Pass on STRIPE-PIF-003 |
 | FIND-018 | P1 | Checkout idempotency defect | Repeat Stripe PIF retest | A completed checkout's browser attempt key blocks a legitimate later purchase with a new consent/enrollment | Fix `34a90aa` deployed | Pass on STRIPE-PIF-003 |
 | FIND-019 | P1 | Evidence-chain tenant lookup defect | Repeat Stripe PIF retest | Stripe vault verification filters a table by nonexistent `location_id`, leaving correct chains incomplete | Fix `b7b2b27` deployed | Pass: complete, strength 90, no gaps |
+| FIND-020 | P1 | Whop checkout defect | Whop PIF plus add-on certification | Embedded checkout references an out-of-scope `custPhone` variable before session creation | Local fix; not deployed | Whop PIF plus add-on must load and charge $2.50 |
 
 ## Screenshot Rules
 

@@ -67,4 +67,12 @@ describe('public widget CSP', () => {
     expect(response.text.lastIndexOf('clearCheckoutPaymentAttempt(paymentAttemptScope);'))
       .toBeGreaterThan(response.text.indexOf('// Success'));
   });
+
+  it('passes the customer phone into Whop session creation', async () => {
+    const response = await request(app()).get('/quick-checkout').expect(200);
+
+    expect(response.text).toContain('async function renderWhopCheckout(custName, custEmail, custPhone)');
+    expect(response.text).toContain('renderWhopCheckout(custName, custEmail, custPhone)');
+    expect(response.text).toContain('contactPhone: custPhone');
+  });
 });

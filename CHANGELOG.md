@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Direct checkout now sends the resolved ScaleSafe offer name and program description to Stripe and replaces the old generic `ScaleSafe Payment` vault placeholder when richer metadata arrives.
 - Standalone checkout idempotency now binds an attempt to the exact consent/enrollment context and clears it only after confirmed success, allowing legitimate repeat purchases in the same browser without weakening ambiguous-result protection.
 - Stripe evidence-chain verification now tenant-scopes the vault through its real `merchant_id` key instead of querying a nonexistent `location_id` column.
+- Whop embedded checkout now passes the collected phone value into session creation instead of failing in the browser with `custPhone is not defined`.
 - Successful Stripe webhooks enrich the canonical payment row with settlement, Charge, and masked card metadata and update the linked enrollment's initial-payment state.
 - Stripe evidence-vault persistence failures now return a retryable webhook failure instead of silently acknowledging lost evidence.
 - Paid enrollment and GHL payment paths use the database-supported `sale` event type; checkout and settled ACH paths no longer attempt a redundant second ledger insert, and free enrollments no longer create payment rows.

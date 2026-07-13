@@ -1576,11 +1576,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     if (!currentQuote || (turnstileRequired && !turnstileToken)) return;
     var custName = el('cust-name').value.trim();
     var custEmail = el('cust-email').value.trim() || enrollmentEmail;
+    var custPhone = el('cust-phone').value.trim();
     if (!custName || !custEmail) return;
     paymentInFlight = true;
     el('pay-btn').classList.add('hidden');
     el('spinner').style.display = 'block';
-    renderWhopCheckout(custName, custEmail)
+    renderWhopCheckout(custName, custEmail, custPhone)
       .catch(function(err) {
         el('error-msg').textContent = err.message || 'Could not load Whop checkout.';
         el('error-msg').style.display = 'block';
@@ -1595,7 +1596,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       });
   }
 
-  async function renderWhopCheckout(custName, custEmail) {
+  async function renderWhopCheckout(custName, custEmail, custPhone) {
     if (whopCheckoutMounted) return;
     await refreshCheckoutQuote();
     whopCheckoutMounted = true;
@@ -1754,7 +1755,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       if (!enrollmentEmail) enrollmentEmail = custEmail;
 
       if (processorType === 'whop') {
-        await renderWhopCheckout(custName, custEmail);
+        await renderWhopCheckout(custName, custEmail, custPhone);
         paymentInFlight = false;
         el('spinner').style.display = 'none';
         el('pay-btn').classList.add('hidden');
