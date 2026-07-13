@@ -43,6 +43,7 @@ export interface PaymentLedgerRow {
   description: string;
   lineItems: unknown[];
   refundable: boolean;
+  refundableAmount: number;
   dunningStatus?: string | null;
   dunningRetryCount?: number;
   dunningNextRetry?: string | null;
@@ -118,6 +119,23 @@ const PAYMENT_EVENT_FALLBACK_DEFAULTS = {
   dunning_next_retry: null,
   line_items: [],
 };
+
+const REFUNDABLE_EVENT_TYPES = new Set(['sale', 'payment_success', 'subscription_payment', 'capture']);
+const RESERVED_REFUND_CLAIM_STATUSES = ['processing', 'provider_accepted', 'unknown', 'recorded', 'succeeded'];
+
+function dollarsToCents(value: unknown): number {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function refundMatchesOriginal(refund: any, original: any): boolean {
+  const raw = refund?.raw_webhook_payload || {};
+  return raw.original_payment_event_id === original.id
+    || raw.original_processor_transaction_id === original.processor_transaction_id
+    || (
+      Boolean(original.processor_transaction_id)
+      && refund.processor_transaction_id === original.processor_transaction_id
+    );
+}
 
 const MINIMAL_PAYMENT_EVENT_COLUMNS = [
   'id',
@@ -597,7 +615,75 @@ async function fetchOfferMap(locationId: string, events: any[], enrollments: Map
   return new Map((response.data || []).map((offer: any) => [offer.id, { tracking_id: null, ...offer }]));
 }
 
-function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, offer: any): PaymentLedgerRow {
+async function fetchRefundableCents(locationId: string, events: any[]): Promise<Map<string, number>> {
+  const originals = events.filter((event: any) => (
+    REFUNDABLE_EVENT_TYPES.has(String(event.event_type || '').toLowerCase())
+      && !event.failure_reason
+      && Boolean(event.processor_transaction_id)
+  ));
+  const remainingByEvent = new Map<string, number>();
+  for (const original of originals) remainingByEvent.set(original.id, dollarsToCents(original.amount));
+  if (originals.length === 0) return remainingByEvent;
+
+  const contactIds = [...new Set(originals.map((event: any) => event.contact_id).filter(Boolean))];
+  const refundRows: any[] = [];
+  if (contactIds.length > 0) {
+    const { data, error } = await getSupabase()
+      .from('payment_events')
+      .select('id, contact_id, event_type, amount, processor_transaction_id, raw_webhook_payload')
+      .eq('location_id', locationId)
+      .in('contact_id', contactIds)
+      .in('event_type', ['refund', 'void']);
+    if (error) throw error;
+    refundRows.push(...(data || []));
+  }
+
+  const originalIds = originals.map((event: any) => event.id);
+  const { data: claims, error: claimsError } = await getSupabase()
+    .from('payment_refund_claims')
+    .select('id, original_payment_event_id, amount_cents, status, refund_payment_event_id')
+    .eq('location_id', locationId)
+    .in('original_payment_event_id', originalIds)
+    .in('status', RESERVED_REFUND_CLAIM_STATUSES);
+  if (claimsError) throw claimsError;
+
+  const claimsByOriginal = new Map<string, any[]>();
+  for (const claim of claims || []) {
+    const rows = claimsByOriginal.get(claim.original_payment_event_id) || [];
+    rows.push(claim);
+    claimsByOriginal.set(claim.original_payment_event_id, rows);
+  }
+
+  for (const original of originals) {
+    const linkedRefunds = refundRows.filter((refund: any) => refundMatchesOriginal(refund, original));
+    const refundedCents = linkedRefunds.reduce(
+      (sum: number, refund: any) => sum + dollarsToCents(Math.abs(Number(refund.amount || 0))),
+      0,
+    );
+    const recordedClaimIds = new Set(
+      linkedRefunds
+        .map((refund: any) => String(refund?.raw_webhook_payload?.refund_claim_id || ''))
+        .filter(Boolean),
+    );
+    const reservedCents = (claimsByOriginal.get(original.id) || [])
+      .filter((claim: any) => !claim.refund_payment_event_id && !recordedClaimIds.has(String(claim.id)))
+      .reduce((sum: number, claim: any) => sum + Number(claim.amount_cents || 0), 0);
+    remainingByEvent.set(
+      original.id,
+      Math.max(0, dollarsToCents(original.amount) - refundedCents - reservedCents),
+    );
+  }
+
+  return remainingByEvent;
+}
+
+function buildRow(
+  event: any,
+  linkedEnrollment: any,
+  contactEnrollment: any,
+  offer: any,
+  refundableCents = 0,
+): PaymentLedgerRow {
   const amount = Number(event.amount || 0);
   const status = eventStatus(event);
   const paymentType = normalizePaymentType(
@@ -649,9 +735,9 @@ function buildRow(event: any, linkedEnrollment: any, contactEnrollment: any, off
     processorSubscriptionId: event.processor_subscription_id || linkedEnrollment?.processor_subscription_id || null,
     description: `${programName} - ${typeLabel}${progress}`,
     lineItems: normalizeLineItems(event.line_items),
-    refundable: ['sale', 'payment_success', 'subscription_payment'].includes(String(event.event_type || '').toLowerCase())
-      && !event.failure_reason
+    refundable: refundableCents > 0
       && (processor !== 'whop' || String(event.processor_transaction_id || '').startsWith('pay_')),
+    refundableAmount: refundableCents / 100,
     dunningStatus: event.dunning_status || null,
     dunningRetryCount: event.dunning_retry_count || 0,
     dunningNextRetry: event.dunning_next_retry || null,
@@ -681,6 +767,7 @@ export const paymentLedgerService = {
       ...[...enrollmentMaps.byContact.values()].map((row: any) => [row.id, row] as [string, any]),
     ]);
     const offerMap = await fetchOfferMap(locationId, rows, allEnrollmentRows);
+    const refundableCents = await fetchRefundableCents(locationId, rows);
 
     const payments = rows.map((event: any) => {
       const linkedEnrollment = event.enrollment_id
@@ -689,7 +776,7 @@ export const paymentLedgerService = {
       const contactEnrollment = linkedEnrollment || enrollmentMaps.byContact.get(event.contact_id);
       const offerId = event.offer_id || linkedEnrollment?.offer_id;
       const offer = offerId ? offerMap.get(offerId) : null;
-      return buildRow(event, linkedEnrollment, contactEnrollment, offer);
+      return buildRow(event, linkedEnrollment, contactEnrollment, offer, refundableCents.get(event.id) || 0);
     });
 
     const summary = payments.reduce(

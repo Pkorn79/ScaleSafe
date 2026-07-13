@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Payment Management now derives each charge's remaining refundable balance from linked refund/void rows and active processor refund claims. Fully refunded charges no longer offer another refund, and partial refunds are capped to the amount still available.
 - Whop Quick Manual Sale now reconciles its embedded checkout against an authenticated, tenant-scoped ScaleSafe status endpoint, so webhook-confirmed payments replace the hosted form with a clear success state even when Whop does not invoke its browser callback.
 - The Whop browser completion callback is now only a progress hint; it cannot mark a payment successful before the server confirms the exact enrollment.
 - Quick Manual Sale refreshes client/payment data behind the modal after success but leaves the confirmation visible with one `Done` action instead of closing before the merchant can see the result.
@@ -28,6 +29,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Background packet generation logs no longer include signed private-file URLs.
 
 ### Live certification
+- A full $1.50 Whop refund completed through ScaleSafe and produced one separate refund row; live review identified and repaired the original row's stale Refund action before any duplicate attempt was made.
 - A fresh $1.50 Whop QMS payment stayed pending until consent, generated its private packet after signature, omitted installment terms for PIF, and produced a verified exact-enrollment consent/payment chain with the expected merchant-entered-payment IP gap.
 - A new $1.00 Stripe paid-in-full enrollment produced one settled `sale` row, a correctly keyed PaymentIntent/Charge vault row, enrollment-scoped consent and payment evidence, a private enrollment packet, daily pulse scheduling, and successful receipt and welcome deliveries.
 - The post-fix Railway deployment emitted no signed storage URL or token during packet generation.

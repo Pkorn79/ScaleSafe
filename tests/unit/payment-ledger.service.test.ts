@@ -1,5 +1,6 @@
 const mockTables: Record<string, any[]> = {
   payment_events: [],
+  payment_refund_claims: [],
   enrollments: [],
   offers_mirror: [],
 };
@@ -151,6 +152,7 @@ describe('paymentLedgerService', () => {
         created_at: '2026-05-08T01:00:00.000Z',
       },
     ];
+    mockTables.payment_refund_claims = [];
     mockTables.enrollments = [
       {
         id: 'enr_1',
@@ -202,12 +204,83 @@ describe('paymentLedgerService', () => {
       paymentNumber: 2,
       paymentsRemaining: 0,
       status: 'paid',
+      refundable: true,
+      refundableAmount: 0.5,
       lineItems: [
         { kind: 'base_offer', title: 'Maui Trip', amount: 0.5 },
         { kind: 'order_bump', title: 'VIP onboarding', amount: 1 },
       ],
     }));
     expect(result.summary.totalCharged).toBe(0.5);
+  });
+
+  it('hides refund controls when the full payment amount has already been refunded', async () => {
+    mockTables.payment_events.push({
+      id: 'refund_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      offer_id: 'offer_1',
+      event_type: 'refund',
+      processor: 'stripe',
+      processor_transaction_id: 're_1',
+      amount: 0.5,
+      currency: 'usd',
+      raw_webhook_payload: { original_payment_event_id: 'pay_1' },
+      created_at: '2026-05-08T02:00:00.000Z',
+    });
+
+    const result = await paymentLedgerService.list('loc_1');
+    const original = result.payments.find(payment => payment.id === 'pay_1');
+
+    expect(original).toEqual(expect.objectContaining({
+      refundable: false,
+      refundableAmount: 0,
+    }));
+  });
+
+  it('reports only the remaining amount after a partial refund', async () => {
+    mockTables.payment_events.push({
+      id: 'refund_partial',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      enrollment_id: 'enr_1',
+      offer_id: 'offer_1',
+      event_type: 'refund',
+      processor: 'stripe',
+      processor_transaction_id: 're_partial',
+      amount: 0.2,
+      currency: 'usd',
+      raw_webhook_payload: { original_payment_event_id: 'pay_1' },
+      created_at: '2026-05-08T02:00:00.000Z',
+    });
+
+    const result = await paymentLedgerService.list('loc_1');
+    const original = result.payments.find(payment => payment.id === 'pay_1');
+
+    expect(original).toEqual(expect.objectContaining({
+      refundable: true,
+      refundableAmount: 0.3,
+    }));
+  });
+
+  it('reserves processor-accepted refunds that do not have a ledger row yet', async () => {
+    mockTables.payment_refund_claims = [{
+      id: 'claim_1',
+      location_id: 'loc_1',
+      original_payment_event_id: 'pay_1',
+      amount_cents: 50,
+      status: 'provider_accepted',
+      refund_payment_event_id: null,
+    }];
+
+    const result = await paymentLedgerService.list('loc_1');
+    const original = result.payments.find(payment => payment.id === 'pay_1');
+
+    expect(original).toEqual(expect.objectContaining({
+      refundable: false,
+      refundableAmount: 0,
+    }));
   });
 
   it('uses enrollment prefiltering for payment type searches', async () => {

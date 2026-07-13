@@ -318,6 +318,16 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: reload both exact client enrollment/payment data and client summary data after QMS completion while leaving the confirmation modal visible.
 - Required regression: after a new QMS payment, Recent Payments, Total Charged, and Last Payment all reflect the same transaction without a page refresh.
 
+### FIND-032 - Fully refunded payments remain actionable in Payment Management
+
+- Area: Refund availability and duplicate-refund prevention.
+- Live proof: ScaleSafe successfully issued and recorded a full $1.50 Whop refund, displayed a separate Refunded ledger row, and increased Total Refunded to $1.50. The original fully refunded sale still displayed an active Refund button.
+- Code proof: the payment ledger exposed refund controls from only the original event type, failure state, and processor transaction ID. It did not subtract linked refund/void events or reserve in-flight refund claims.
+- Impact: the backend remaining-balance check should reject a duplicate request before another processor call, but the merchant UI incorrectly invites an impossible money action and obscures partial-refund limits.
+- Severity recommendation: P1 money-operation UI defect. The server is protected, but the operator surface does not reflect processor/ledger truth.
+- Local repair: calculate remaining refundable cents from linked refund/void events and active refund claims, expose that amount to the UI, hide the action at zero, and cap partial refunds at the remaining balance.
+- Required regression: a full refund removes the original row's Refund button; a partial refund shows and caps the remaining amount; an accepted-but-not-yet-recorded processor claim also removes or reduces availability without a second processor call.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.

@@ -223,15 +223,18 @@
     <!-- Refund Modal -->
     <Modal v-model:open="showRefundModal" title="Issue Refund">
       <p class="text-sm text-muted mb-4" style="margin-top:-4px">Original charge: ${{ refundForm.originalAmount.toFixed(2) }}</p>
+      <p v-if="refundForm.refundableAmount < refundForm.originalAmount" class="text-sm text-muted mb-4">
+        Remaining refundable: ${{ refundForm.refundableAmount.toFixed(2) }}
+      </p>
       <div class="form-group">
         <label class="form-label">Refund Amount ($)</label>
         <input class="form-input" type="number" step="0.01" min="0.01"
-          :max="refundForm.originalAmount" v-model.number="refundForm.amount" />
+          :max="refundForm.refundableAmount" v-model.number="refundForm.amount" />
       </div>
       <div class="form-group">
         <label class="checkbox-label">
-          <input type="checkbox" @change="refundForm.amount = refundForm.originalAmount" />
-          Full refund (${{ refundForm.originalAmount.toFixed(2) }})
+          <input type="checkbox" @change="refundForm.amount = refundForm.refundableAmount" />
+          Refund remaining amount (${{ refundForm.refundableAmount.toFixed(2) }})
         </label>
       </div>
       <div class="form-group">
@@ -344,7 +347,7 @@ const chargeForm = ref({ methodId: '', amount: 0, description: '' });
 // Refund modal
 const showRefundModal = ref(false);
 const refundLoading = ref(false);
-const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, reason: '' });
+const refundForm = ref({ paymentEventId: '', amount: 0, originalAmount: 0, refundableAmount: 0, reason: '' });
 
 function cardLabel(method: any) {
   if (method?.displayLabel) return method.displayLabel;
@@ -667,10 +670,12 @@ async function retryDunning() {
 // --- Charge & Refund ------------------------------------
 
 function openRefund(payment: any) {
+  const refundableAmount = Number(payment.refundableAmount ?? payment.amount);
   refundForm.value = {
     paymentEventId: payment.id,
-    amount: payment.amount,
+    amount: refundableAmount,
     originalAmount: payment.amount,
+    refundableAmount,
     reason: '',
   };
   showRefundModal.value = true;

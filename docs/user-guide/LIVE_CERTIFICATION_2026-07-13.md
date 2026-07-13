@@ -218,6 +218,12 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The embedded checkout was replaced by `Whop payment confirmed`, the modal remained visible, and the only action was `Done`. Client/payment data refreshed behind the modal. This closes FIND-030.
 - Recent Payments refreshed to the new sale, but the client summary still showed the preceding total and payment timestamp. FIND-031 tracks this separate client-info refresh defect.
 
+### WHOP-REFUND-001 Trace
+
+- From the full Payment page, issued a full $1.50 refund against the newest refundable Whop payment.
+- ScaleSafe completed without an unexpected error, closed the confirmation dialog, added a distinct Refunded ledger row, and changed Total Refunded to $1.50.
+- The original fully refunded sale retained an active Refund button. No second refund was attempted. FIND-032 tracks the refund-availability defect while the existing server-side remaining-balance and refund-claim protections remain in place.
+
 ### NMI-QMS-001 Trace
 
 - The certification contact contains only a Stripe 4242 method, so the authorized NMI test moved to Phil Kay's payment-management record.
@@ -296,7 +302,8 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-028 | P1 | Consent/clause identity defect | Whop QMS PIF consent | PIF requires installment billing; accepted standard clauses use generic positional IDs | Fix `c6cc23f` deployed | Pass on WHOP-QMS-002: no installment clause; semantic clauses retained |
 | FIND-029 | P1 | Evidence-chain matching defect | Whop QMS PIF consent | Payment predates consent token, so verifier reports only payment strength despite exact enrollment link | Fix `86a6ef4` deployed | Pass: exact consent + payment links, strength 50, missing payment IP visible |
 | FIND-030 | P1 | QMS completion-feedback defect | Whop QMS live payment | Webhook records payment, but embedded modal never leaves disabled Whop checkout or shows ScaleSafe success | Fixes `062b244` and `f7a412a` deployed | Pass on WHOP-QMS-003: server-confirmed success remains visible with one `Done` action |
-| FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fixed locally; deployment pending | New QMS sale must update table, total, and last-payment timestamp together |
+| FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fix `9ecece0` deployed | New QMS sale must update table, total, and last-payment timestamp together |
+| FIND-032 | P1 | Refund availability defect | Whop full-refund live test | Fully refunded original payment retains an active Refund action | Fixed locally; deployment pending | Full refund hides action; partial refund exposes only remaining balance |
 
 ## Screenshot Rules
 
