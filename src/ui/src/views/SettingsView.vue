@@ -499,7 +499,7 @@
 
     <StickySaveBar
       v-if="config"
-      :dirty="true"
+      :dirty="settingsDirty"
       :loading="saving"
       save-label="Save Settings"
       @save="saveSettings"
@@ -508,18 +508,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import FeatureStatusPill from '../components/FeatureStatusPill.vue';
 import FeatureSettingStub from '../components/FeatureSettingStub.vue';
 import { publicFeatureCatalog } from '../lib/featureCatalog';
+import { buildMerchantSettingsPayload, cloneViewState } from '../utils/viewState';
 
 const api = useApi();
 const { loading, error } = api;
 
 const config = ref<any>(null);
+const savedSettingsState = ref<any>(null);
 const thresholds = ref({
   missedSessionsToFlag: 2,
   inactiveDaysModules: 14,
@@ -580,6 +582,16 @@ const moduleLabels: Record<string, string> = {
   course: 'Course/Module Tracking',
 };
 
+const settingsPayload = computed(() => buildMerchantSettingsPayload(config.value, thresholds.value));
+const settingsDirty = computed(() => {
+  if (!config.value || !savedSettingsState.value) return false;
+  return JSON.stringify(settingsPayload.value) !== JSON.stringify(savedSettingsState.value);
+});
+
+function captureSavedSettingsState() {
+  savedSettingsState.value = cloneViewState(settingsPayload.value);
+}
+
 onMounted(async () => {
   try {
     config.value = await api.get<any>('/api/merchants/config');
@@ -599,6 +611,7 @@ onMounted(async () => {
       nmiConnected.value = true;
     }
     defaultProcessor.value = config.value.defaultProcessor || '';
+    captureSavedSettingsState();
 
     // Auto-retry provisioning if failed or pending
     if (config.value && (config.value.snapshotStatus === 'failed' || config.value.snapshotStatus === 'pending' || config.value.snapshotStatus === 'partial')) {
@@ -754,6 +767,7 @@ async function handleLogoUpload(event: Event) {
     if (!resp.ok) throw new Error('Upload failed');
     const data = await resp.json();
     if (config.value) config.value.logoUrl = data.logoUrl;
+    if (savedSettingsState.value) savedSettingsState.value.logoUrl = data.logoUrl;
   } catch (err) {
     error.value = 'Logo upload failed. Please try again.';
   }
@@ -786,26 +800,9 @@ async function saveSettings() {
   saved.value = false;
   error.value = null;
   try {
-    const result = await api.put<any>('/api/merchants/config', {
-      businessName: config.value.businessName,
-      dbaName: config.value.dbaName,
-      supportEmail: config.value.supportEmail,
-      descriptor: config.value.descriptor,
-      businessWebsite: config.value.businessWebsite,
-      businessCity: config.value.businessCity,
-      businessState: config.value.businessState,
-      industryNiche: config.value.industryNiche,
-      primaryServiceType: config.value.primaryServiceType,
-      logoUrl: config.value.logoUrl,
-      shortDescription: config.value.shortDescription,
-      enrollmentFunnelUrl: config.value.enrollmentFunnelUrl,
-      modules: config.value.modules,
-      dunningEnabled: config.value.dunningEnabled,
-      dunningMaxRetries: config.value.dunningMaxRetries,
-      engagementEnabled: config.value.engagementEnabled,
-      config: { disengagement_thresholds: thresholds.value },
-    });
+    const result = await api.put<any>('/api/merchants/config', settingsPayload.value);
     config.value = result;
+    captureSavedSettingsState();
     saved.value = true;
     setTimeout(() => { saved.value = false; }, 3000);
   } catch (err: any) {

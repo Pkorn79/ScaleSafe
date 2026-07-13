@@ -326,7 +326,6 @@ export async function getPulseCadenceDiagnostics(locationId: string): Promise<Pu
   const supabase = getSupabase();
   const now = new Date();
   const merchant = await merchantRepository.getByLocationId(locationId);
-  await repairPulseSubscriptionAliases(locationId);
 
   const [dueRes, pulseSubscriptionRes, appEventSubscriptionRes, logsRes, activityRes, submissionRes] = await Promise.all([
     supabase

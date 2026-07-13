@@ -151,6 +151,7 @@ import ExhibitsTab from './defense/ExhibitsTab.vue';
 import HistoryTab from './defense/HistoryTab.vue';
 import OutcomeTab from './defense/OutcomeTab.vue';
 import { humanizeEventType, humanizeReasonCode, formatCalendarDate, parseDateValue, pluralize } from '../utils/humanize';
+import { getDefensePacketExhibits } from '../utils/viewState';
 
 const route = useRoute();
 const api = useApi();
@@ -239,7 +240,9 @@ function formatDate(d: string): string {
 
 async function refresh() {
   try {
-    packet.value = await api.get<any>(`/api/defense/${route.params.id}`);
+    const nextPacket = await api.get<any>(`/api/defense/${route.params.id}`);
+    packet.value = nextPacket;
+    exhibits.value = getDefensePacketExhibits(nextPacket);
   } catch (e: any) {
     error.value = e.message || 'Failed to refresh defense packet.';
   }

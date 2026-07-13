@@ -19,9 +19,13 @@
     <!-- Dashboard content -->
     <div v-else>
       <!-- Risk Level Banner -->
-      <div class="risk-banner mb-4" :class="'risk-banner-' + (healthSnapshot.risk_level || 'safe')">
+      <div class="risk-banner mb-4" :class="'risk-banner-' + riskLevel">
         <span class="text-sm">Account Risk Level:</span>
-        <strong style="margin-left:8px;font-size:16px">{{ (healthSnapshot.risk_level || 'unknown').toUpperCase() }}</strong>
+        <strong style="margin-left:8px;font-size:16px">{{ riskLevel.toUpperCase() }}</strong>
+      </div>
+
+      <div v-if="healthStatusIncomplete" class="health-status-warning mb-4">
+        Stripe health classifications are unavailable for this snapshot. Refresh data before relying on the risk labels.
       </div>
 
       <!-- Key Metrics Grid -->
@@ -73,14 +77,14 @@
         <div class="grid grid-2">
           <div>
             <span class="text-sm"><strong>Visa VAMP:</strong></span>
-            <span class="text-sm" :class="'vamp-status-' + (healthSnapshot.vamp_status || 'safe')" style="margin-left:8px">
-              {{ formatVampStatus(healthSnapshot.vamp_status) }}
+            <span class="text-sm" :class="'vamp-status-' + vampStatus" style="margin-left:8px">
+              {{ formatVampStatus(vampStatus) }}
             </span>
           </div>
           <div>
             <span class="text-sm"><strong>Mastercard:</strong></span>
-            <span class="text-sm" :class="'mc-status-' + (healthSnapshot.mc_status || 'safe')" style="margin-left:8px">
-              {{ formatMcStatus(healthSnapshot.mc_status) }}
+            <span class="text-sm" :class="'mc-status-' + mcStatus" style="margin-left:8px">
+              {{ formatMcStatus(mcStatus) }}
             </span>
           </div>
         </div>
@@ -188,6 +192,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
+import { normalizeStripeHealthStatus } from '../utils/viewState';
 
 const api = useApi();
 
@@ -201,13 +206,29 @@ const efws = ref<any[]>([]);
 const respondingEfwId = ref<string | null>(null);
 
 const unansweredEfwCount = computed(() => efws.value.filter((e) => !e.responded).length);
+const riskLevel = computed(() => normalizeStripeHealthStatus(
+  healthSnapshot.value.risk_level,
+  ['safe', 'moderate', 'elevated', 'high', 'critical'],
+));
+const vampStatus = computed(() => normalizeStripeHealthStatus(
+  healthSnapshot.value.vamp_status,
+  ['safe', 'approaching', 'early_warning', 'standard_program'],
+));
+const mcStatus = computed(() => normalizeStripeHealthStatus(
+  healthSnapshot.value.mc_status,
+  ['safe', 'warning', 'ecm_program'],
+));
+const healthStatusIncomplete = computed(() => (
+  riskLevel.value === 'unknown' || vampStatus.value === 'unknown' || mcStatus.value === 'unknown'
+));
 
 const hasReasonCodes = computed(() => {
   return healthSnapshot.value.reason_code_breakdown && Object.keys(healthSnapshot.value.reason_code_breakdown).length > 0;
 });
 
 const disputeRateClass = computed(() => {
-  const rate = healthSnapshot.value.dispute_rate || 0;
+  if (healthSnapshot.value.dispute_rate == null) return 'rate-unknown';
+  const rate = healthSnapshot.value.dispute_rate;
   if (rate >= 0.009) return 'rate-critical';
   if (rate >= 0.0065) return 'rate-high';
   if (rate >= 0.005) return 'rate-elevated';
@@ -359,21 +380,33 @@ function priorityBadge(priority: string): string {
 .risk-banner-elevated { background: #ffedd5; color: #9a3412; }
 .risk-banner-high { background: #fee2e2; color: #991b1b; }
 .risk-banner-critical { background: #fecaca; color: #7f1d1d; }
+.risk-banner-unknown { background: #f1f5f9; color: #475569; }
+
+.health-status-warning {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 13px;
+  padding: 10px 12px;
+}
 
 .rate-safe { color: #059669; }
 .rate-moderate { color: #d97706; }
 .rate-elevated { color: #ea580c; }
 .rate-high { color: #dc2626; }
 .rate-critical { color: #991b1b; }
+.rate-unknown { color: #64748b; }
 
 .vamp-status-safe { color: #059669; }
 .vamp-status-approaching { color: #d97706; }
 .vamp-status-early_warning { color: #ea580c; }
 .vamp-status-standard_program { color: #dc2626; }
+.vamp-status-unknown { color: #64748b; }
 
 .mc-status-safe { color: #059669; }
 .mc-status-warning { color: #d97706; }
 .mc-status-ecm_program { color: #dc2626; }
+.mc-status-unknown { color: #64748b; }
 
 .recommendation-item {
   padding: 8px 0;

@@ -3,6 +3,17 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Live walkthrough reliability fixes (2026-07-12)
+
+### Fixed
+- Defense packet detail now renders the exhibits frozen in the packet evidence snapshot instead of always showing zero exhibits.
+- Merchant Settings tracks the fields that can actually be saved and no longer reports unsaved changes immediately after loading.
+- Provisioning Health uses the full pulse diagnostic report, separating the app event delivered to GHL, observed outbound communication, and client submission timestamps.
+- Missing or legacy Stripe health classifications display as Unknown instead of defaulting Visa and Mastercard status to Safe.
+- Quick Manual Sale enters its loading state before offer and processor configuration requests begin, preventing a false no-processor message during startup.
+
+---
+
 ## Unreleased — Packet PDF upload: bypass stripe-node multipart (2026-07-12)
 
 ### Fixed

@@ -774,9 +774,13 @@ function resetTransient() {
 watch(() => props.open, async (open) => {
   if (!open) {
     processorLoadSeq++;
+    configLoading.value = false;
     cleanupPaymentFields();
     return;
   }
+  configLoading.value = true;
+  processorError.value = '';
+  processorType.value = '';
   applyInitialClient();
   selectedOfferId.value = '';
   paymentChoice.value = 'pif';
@@ -786,8 +790,13 @@ watch(() => props.open, async (open) => {
   amount.value = null;
   sendEnrollment.value = true;
   resetTransient();
-  await loadOffers();
-  await loadProcessorConfig();
+  try {
+    await loadOffers();
+    await loadProcessorConfig();
+  } catch (err: any) {
+    processorError.value = err.message || 'Payment fields could not load.';
+    configLoading.value = false;
+  }
 });
 
 watch(selectedOfferId, async () => {
