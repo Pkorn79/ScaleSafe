@@ -147,7 +147,12 @@
       <button class="btn btn-secondary" @click="openProxy = false" :disabled="submitting">
         {{ completedSuccessfully ? 'Done' : 'Close' }}
       </button>
-      <button v-if="!whopCheckoutUrl" class="btn btn-primary" @click="submit" :disabled="submitting || !canSubmit">
+      <button
+        v-if="!whopCheckoutUrl && !completedSuccessfully"
+        class="btn btn-primary"
+        @click="submit"
+        :disabled="submitting || !canSubmit"
+      >
         {{ submitButtonText }}
       </button>
     </template>

@@ -283,7 +283,6 @@ async function submitAddClient() {
 }
 
 function onQuickSaleCompleted() {
-  showQuickSaleModal.value = false;
   newClient.value = { firstName: '', lastName: '', email: '', phone: '' };
   takePaymentNow.value = false;
   loadClients();

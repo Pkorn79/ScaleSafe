@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Fixed
 - Whop Quick Manual Sale now reconciles its embedded checkout against an authenticated, tenant-scoped ScaleSafe status endpoint, so webhook-confirmed payments replace the hosted form with a clear success state even when Whop does not invoke its browser callback.
 - The Whop browser completion callback is now only a progress hint; it cannot mark a payment successful before the server confirms the exact enrollment.
+- Quick Manual Sale refreshes client/payment data behind the modal after success but leaves the confirmation visible with one `Done` action instead of closing before the merchant can see the result.
 - Pay-first payment evidence now resolves later consent through the exact tenant-scoped enrollment ID when the payment predates the consent token; missing payment IP remains an explicit evidence gap.
 - Paid-enrollment consent completion now starts private packet generation and evidence-chain verification independently of GHL workflow delivery, so a stale trigger retry cannot strand the enrollment's core evidence.
 - Public enrollment clauses now preserve semantic standard-clause IDs. Paid-in-full enrollments omit the installment-billing acknowledgment, and accepted standard clauses can map to their intended GHL click-wrap fields.

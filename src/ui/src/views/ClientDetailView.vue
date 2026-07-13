@@ -632,7 +632,6 @@ async function reloadEnrollments() {
 }
 
 async function onQuickSaleCompleted() {
-  showQuickSaleModal.value = false;
   await reloadEnrollments();
 }
 
