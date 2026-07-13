@@ -16,6 +16,7 @@ describe('view state helpers', () => {
     expect(normalizeStripeHealthStatus(null, ['safe', 'high'])).toBe('unknown');
     expect(normalizeStripeHealthStatus('HIGH', ['safe', 'high'])).toBe('high');
     expect(normalizeStripeHealthStatus('unsupported', ['safe', 'high'])).toBe('unknown');
+    expect(normalizeStripeHealthStatus('safe', ['safe', 'high'], false)).toBe('unknown');
   });
 
   test('settings payload changes only when a saved setting changes', () => {

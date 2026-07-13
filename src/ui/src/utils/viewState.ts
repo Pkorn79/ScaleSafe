@@ -6,7 +6,9 @@ export function getDefensePacketExhibits(packet: any): any[] {
 export function normalizeStripeHealthStatus(
   value: unknown,
   allowed: readonly string[],
+  trusted = true,
 ): string {
+  if (!trusted) return 'unknown';
   const normalized = String(value || '').trim().toLowerCase();
   return allowed.includes(normalized) ? normalized : 'unknown';
 }

@@ -9,7 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Defense packet detail now renders the exhibits frozen in the packet evidence snapshot instead of always showing zero exhibits.
 - Merchant Settings tracks the fields that can actually be saved and no longer reports unsaved changes immediately after loading.
 - Provisioning Health uses the full pulse diagnostic report, separating the app event delivered to GHL, observed outbound communication, and client submission timestamps.
-- Missing or legacy Stripe health classifications display as Unknown instead of defaulting Visa and Mastercard status to Safe.
+- Missing, incomplete, or legacy Stripe health classifications display as Unknown instead of presenting untrusted Visa and Mastercard status as Safe.
 - Quick Manual Sale enters its loading state before offer and processor configuration requests begin, preventing a false no-processor message during startup.
 
 ---

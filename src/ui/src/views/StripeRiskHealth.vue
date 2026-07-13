@@ -213,10 +213,12 @@ const riskLevel = computed(() => normalizeStripeHealthStatus(
 const vampStatus = computed(() => normalizeStripeHealthStatus(
   healthSnapshot.value.vamp_status,
   ['safe', 'approaching', 'early_warning', 'standard_program'],
+  riskLevel.value !== 'unknown',
 ));
 const mcStatus = computed(() => normalizeStripeHealthStatus(
   healthSnapshot.value.mc_status,
   ['safe', 'warning', 'ecm_program'],
+  riskLevel.value !== 'unknown',
 ));
 const healthStatusIncomplete = computed(() => (
   riskLevel.value === 'unknown' || vampStatus.value === 'unknown' || mcStatus.value === 'unknown'
