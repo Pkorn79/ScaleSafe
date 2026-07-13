@@ -286,6 +286,16 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: identify unchanged standard clauses by their canonical title/text and return their semantic keys; retain positional IDs only for custom clauses.
 - Required regression: PIF hides `installment_billing`; installment enrollment shows it; submitted `clauses_accepted` contains semantic standard keys; matching GHL click-wrap fields update.
 
+### FIND-029 - Pay-first payment chain cannot resolve consent captured after payment
+
+- Area: Evidence-chain verification for QMS paid enrollment.
+- Live proof: enrollment `d46fdead-8ce8-46f1-83f2-2bbe8cfd14b5` generated and stored its signed packet after consent, but chain verification returned strength 20 because the Whop payment event was created before a consent token existed.
+- Code proof: `verifyChain()` only queried consent through `payment_events.consent_token`; it ignored the payment event's exact, tenant-scoped `enrollment_id`.
+- Impact: valid pay-first payment and consent evidence exist under one enrollment, but diagnostics report only the payment link and understate the chain.
+- Severity recommendation: P1 evidence integrity.
+- Local repair: when a payment has no consent token, resolve consent only through its exact `enrollment_id + location_id`. Preserve a missing payment IP as an explicit gap; do not manufacture an IP match for merchant-entered QMS payments.
+- Required regression: a pay-first payment resolves its later consent under the exact enrollment and cannot use a same-ID enrollment from another location.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.

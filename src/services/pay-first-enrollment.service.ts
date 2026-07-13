@@ -1816,12 +1816,13 @@ export const payFirstEnrollmentService = {
         }
 
         const { evidenceChainService } = require('./evidence-chain.service');
-        const chain = await evidenceChainService.verifyChain(paymentEvent.id);
+        const chain = await evidenceChainService.verifyChain(paymentEvent.id, params.locationId);
         logger.info(
           {
             enrollmentId: params.enrollmentId,
             chainStrength: chain.chainStrength,
             complete: chain.complete,
+            gapCount: chain.gaps?.length || 0,
           },
           'Paid pending enrollment evidence chain verified',
         );

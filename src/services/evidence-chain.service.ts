@@ -38,17 +38,21 @@ export const evidenceChainService = {
     const links: EvidenceLink[] = [];
     const gaps: string[] = [];
 
-    // Link 1: Consent record
+    // Link 1: Consent record. Pay-first payments are created before the client
+    // signs, so their payment row may not have a consent token yet. The exact,
+    // tenant-scoped enrollment ID is a defensible fallback; never infer a newer
+    // enrollment from contact or offer data.
+    let consent: any = null;
+    let consentMatchMethod: 'consent_token' | 'enrollment_id' | null = null;
     if (payment.consent_token) {
       let consentQuery = supabase
         .from('enrollments')
-        .select('id, consent_captured_at, consent_ip, created_at')
-        .eq('consent_token', payment.consent_token)
+        .select('id, consent_token, consent_captured_at, consent_ip, created_at')
+        .eq('consent_token', payment.consent_token);
       if (scopedLocationId) {
         consentQuery = consentQuery.eq('location_id', scopedLocationId);
       }
-      const { data: consent, error: consentError } = await consentQuery.single();
-
+      const { data, error: consentError } = await consentQuery.single();
       if (consentError) {
         logger.warn({
           err: consentError.message,
@@ -57,35 +61,65 @@ export const evidenceChainService = {
           consentTokenPresent: true,
         }, 'Evidence chain consent lookup failed');
         gaps.push('Consent token present but enrollment consent record could not be verified');
-      } else if (consent) {
-        links.push({
-          type: 'consent',
-          id: consent.id,
-          timestamp: consent.consent_captured_at || consent.created_at,
-          verified: true,
-        });
-
-        // IP match
-        const consentIp = String(consent.consent_ip || '').trim();
-        const paymentIp = String(payment.ip_address || '').trim();
-        if (consentIp && paymentIp && consentIp === paymentIp) {
-          links.push({
-            type: 'ip_match',
-            id: null,
-            timestamp: payment.created_at,
-            verified: true,
-            detail: `Consent IP ${consentIp} matches payment IP`,
-          });
-        } else if (consentIp && paymentIp) {
-          gaps.push(`IP mismatch: consent=${consentIp}, payment=${paymentIp}`);
-        } else {
-          gaps.push(`IP match unavailable: consent=${consentIp || 'missing'}, payment=${paymentIp || 'missing'}`);
-        }
+      } else if (data) {
+        consent = data;
+        consentMatchMethod = 'consent_token';
       } else {
         gaps.push('Consent token present but enrollment consent record not found');
       }
+    } else if (payment.enrollment_id) {
+      let enrollmentQuery = supabase
+        .from('enrollments')
+        .select('id, consent_token, consent_captured_at, consent_ip, created_at')
+        .eq('id', payment.enrollment_id);
+      if (scopedLocationId) {
+        enrollmentQuery = enrollmentQuery.eq('location_id', scopedLocationId);
+      }
+      const { data, error: enrollmentError } = await enrollmentQuery.single();
+      if (enrollmentError) {
+        logger.warn({
+          err: enrollmentError.message,
+          paymentEventId,
+          enrollmentId: payment.enrollment_id,
+          locationId: scopedLocationId || null,
+        }, 'Evidence chain enrollment consent lookup failed');
+        gaps.push('Payment enrollment link exists but the consent record could not be verified');
+      } else if (data?.consent_captured_at && data?.consent_token) {
+        consent = data;
+        consentMatchMethod = 'enrollment_id';
+      } else {
+        gaps.push('Payment enrollment is linked but consent has not been captured');
+      }
     } else {
-      gaps.push('No consent token linked to payment');
+      gaps.push('No consent token or enrollment linked to payment');
+    }
+
+    if (consent) {
+      links.push({
+        type: 'consent',
+        id: consent.id,
+        timestamp: consent.consent_captured_at || consent.created_at,
+        verified: true,
+        detail: consentMatchMethod === 'enrollment_id'
+          ? 'Consent matched through the payment event exact enrollment ID'
+          : 'Consent matched through the payment event consent token',
+      });
+
+      const consentIp = String(consent.consent_ip || '').trim();
+      const paymentIp = String(payment.ip_address || '').trim();
+      if (consentIp && paymentIp && consentIp === paymentIp) {
+        links.push({
+          type: 'ip_match',
+          id: null,
+          timestamp: payment.created_at,
+          verified: true,
+          detail: `Consent IP ${consentIp} matches payment IP`,
+        });
+      } else if (consentIp && paymentIp) {
+        gaps.push(`IP mismatch: consent=${consentIp}, payment=${paymentIp}`);
+      } else {
+        gaps.push(`IP match unavailable: consent=${consentIp || 'missing'}, payment=${paymentIp || 'missing'}`);
+      }
     }
 
     // Link 2: Payment record

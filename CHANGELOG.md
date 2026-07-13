@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Pay-first payment evidence now resolves later consent through the exact tenant-scoped enrollment ID when the payment predates the consent token; missing payment IP remains an explicit evidence gap.
 - Paid-enrollment consent completion now starts private packet generation and evidence-chain verification independently of GHL workflow delivery, so a stale trigger retry cannot strand the enrollment's core evidence.
 - Public enrollment clauses now preserve semantic standard-clause IDs. Paid-in-full enrollments omit the installment-billing acknowledgment, and accepted standard clauses can map to their intended GHL click-wrap fields.
 - Client program payment totals now prefer exact enrollment IDs and unique processor subscription or Whop membership IDs; an ambiguous legacy same-offer payment is no longer copied across repeat enrollments.

@@ -183,7 +183,7 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     mockEvidenceFindByType.mockResolvedValue([]);
     mockFireTrigger.mockResolvedValue({});
     mockGenerateEnrollmentPacket.mockResolvedValue('signed-packet-url');
-    mockVerifyEvidenceChain.mockResolvedValue({ chainStrength: 'strong', complete: true });
+    mockVerifyEvidenceChain.mockResolvedValue({ chainStrength: 100, complete: true, gaps: [] });
   });
 
   it('does not create a second processor subscription when manual sale already saved one', async () => {
@@ -273,7 +273,7 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
       }),
     );
     expect(mockGenerateEnrollmentPacket).toHaveBeenCalledWith('enr_1', 'loc_1');
-    expect(mockVerifyEvidenceChain).toHaveBeenCalledWith('pe_1');
+    expect(mockVerifyEvidenceChain).toHaveBeenCalledWith('pe_1', 'loc_1');
   });
 
   it('marks recurring billing failed when paid pending recurring enrollment has no processor subscription', async () => {

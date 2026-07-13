@@ -277,6 +277,7 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-026 | P1 | Consent/workflow state defect | Whop QMS live payment | Pay-first Whop webhook enrolls the client, generates packet, and fires welcome before consent | Fix `9f3bbe3` deployed | Pass on WHOP-QMS-001 before consent |
 | FIND-027 | P1 | Evidence-generation defect | Whop QMS consent completion | Signed paid enrollment becomes enrolled without generating its private packet or verifying the chain | Fixed locally; deployment pending | Fresh paid enrollment must create packet and chain independently of trigger retries |
 | FIND-028 | P1 | Consent/clause identity defect | Whop QMS PIF consent | PIF requires installment billing; accepted standard clauses use generic positional IDs | Fixed locally; deployment pending | PIF must hide installment clause and retain semantic accepted-clause keys |
+| FIND-029 | P1 | Evidence-chain matching defect | Whop QMS PIF consent | Payment predates consent token, so verifier reports only payment strength despite exact enrollment link | Fixed locally; deployment pending | Exact tenant enrollment resolves later consent; missing payment IP remains a visible gap |
 
 ## Screenshot Rules
 

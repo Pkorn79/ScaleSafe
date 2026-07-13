@@ -187,6 +187,53 @@ describe('Evidence Chain Integration', () => {
     expect(result.gaps.some(g => g.includes('IP match unavailable'))).toBe(true);
   });
 
+  it('links pay-first consent through the exact tenant-scoped enrollment ID', async () => {
+    chainMockData['payment_events'] = [
+      {
+        id: 'pay_first_sale',
+        location_id: 'loc_1',
+        enrollment_id: 'enr_pay_first',
+        consent_token: null,
+        ip_address: null,
+        processor: 'whop',
+        processor_transaction_id: 'pay_whop_1',
+        amount: 1.5,
+        created_at: '2026-07-13T22:51:17Z',
+      },
+    ];
+    chainMockData['enrollments'] = [
+      {
+        id: 'enr_pay_first',
+        location_id: 'loc_1',
+        consent_token: 'consent_after_payment',
+        consent_ip: '1.2.3.4',
+        consent_captured_at: '2026-07-13T22:56:43Z',
+        created_at: '2026-07-13T22:49:07Z',
+      },
+      {
+        id: 'enr_pay_first',
+        location_id: 'loc_other',
+        consent_token: 'wrong_tenant_consent',
+        consent_ip: '9.9.9.9',
+        consent_captured_at: '2026-07-13T22:56:43Z',
+        created_at: '2026-07-13T22:49:07Z',
+      },
+    ];
+
+    const result = await evidenceChainService.verifyChain('pay_first_sale', 'loc_1');
+
+    expect(result.links).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'consent',
+        id: 'enr_pay_first',
+        detail: 'Consent matched through the payment event exact enrollment ID',
+      }),
+      expect.objectContaining({ type: 'payment', id: 'pay_first_sale' }),
+    ]));
+    expect(result.chainStrength).toBe(50);
+    expect(result.gaps).toContain('IP match unavailable: consent=1.2.3.4, payment=missing');
+  });
+
   it('should detect broken chain when no consent token linked', async () => {
     const paymentId = 'pay_no_consent';
 
@@ -206,7 +253,7 @@ describe('Evidence Chain Integration', () => {
     const result = await evidenceChainService.verifyChain(paymentId);
 
     expect(result.complete).toBe(false);
-    expect(result.gaps).toContain('No consent token linked to payment');
+    expect(result.gaps).toContain('No consent token or enrollment linked to payment');
     expect(result.chainStrength).toBeLessThan(100);
   });
 
