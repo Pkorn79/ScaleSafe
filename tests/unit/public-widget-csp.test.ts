@@ -52,10 +52,19 @@ describe('public widget CSP', () => {
     expect(response.text).not.toContain('onclick=');
   });
 
-  it.each(['/checkout', '/quick-checkout'])('%s rotates attempt ids only after a confirmed decline', async (path) => {
+  it.each(['/checkout', '/quick-checkout'])('%s rotates attempt ids after a confirmed decline', async (path) => {
     const response = await request(app()).get(path).expect(200);
 
     expect(response.text).toContain("paymentAttemptStatus === 'declined'");
     expect(response.text).toContain('removeItem(');
+  });
+
+  it('binds quick-checkout attempts to the enrollment context and clears them after confirmed success', async () => {
+    const response = await request(app()).get('/quick-checkout').expect(200);
+
+    expect(response.text).toContain("consentToken || evidenceContextToken || ''");
+    expect(response.text).toContain('clearCheckoutPaymentAttempt(paymentAttemptScope);');
+    expect(response.text.lastIndexOf('clearCheckoutPaymentAttempt(paymentAttemptScope);'))
+      .toBeGreaterThan(response.text.indexOf('// Success'));
   });
 });

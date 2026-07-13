@@ -1765,6 +1765,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       var paymentAttemptScope = [
         offerId,
         consentToken ? 'consent' : 'quick',
+        consentToken || evidenceContextToken || '',
         paymentChoice || 'pif',
         selectedPaymentMethod,
         selectedAddonIds.slice().sort().join(','),
@@ -1890,6 +1891,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       // Success
+      clearCheckoutPaymentAttempt(paymentAttemptScope);
       el('pay-btn').classList.add('hidden');
       el('success-msg').textContent = data.billingIssue
         ? 'Payment received. Recurring billing setup needs merchant attention.'

@@ -25,6 +25,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-015 | Stripe defense-vault webhook ordering | P1 | Fixed and passed live | Small/medium |
 | FIND-016 | Signed packet URL in logs | P1 | Fixed and passed live | Small |
 | FIND-017 | Generic Stripe offer description | P1 | Fixed locally; live retest pending | Small |
+| FIND-018 | Repeat checkout idempotency | P1 | Fixed locally; live retest pending | Small |
 
 ## Confirmed Code-Backed Findings
 
@@ -174,6 +175,15 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: Stripe dispute evidence and unrecognized-transaction explanations can describe the purchase generically instead of identifying the program the customer actually bought.
 - Local repair: send the resolved offer name and program description in Stripe metadata and allow the webhook normalizer to replace the historical generic placeholder with richer metadata.
 - Required regression: one new direct Stripe checkout stores the exact offer title/description in its PaymentIntent metadata and evidence-vault row.
+
+### FIND-018 - A completed standalone checkout blocks a later repeat purchase
+
+- Area: Quick checkout and full-enrollment payment idempotency.
+- Live proof: A second Stripe PIF enrollment for the same offer and email reached checkout with a new consent token, but ScaleSafe rejected it before Stripe with `The payment operation key was reused with different request details.` No duplicate processor charge occurred.
+- Code proof: the standalone checkout stored its attempt ID in `sessionStorage`, scoped it without the consent/evidence enrollment context, and never removed it after a confirmed success.
+- Impact: a legitimate repeat buyer using the same browser, offer, amount, and email can be unable to complete a second enrollment.
+- Local repair: add the consent/evidence context to the browser attempt scope and clear the stored attempt only after the server confirms success. Declines remain explicitly resettable, while ambiguous failures keep the original key for reconciliation safety.
+- Required regression: complete the same offer twice in one browser with two distinct enrollments; both charge once, while duplicate submission and ambiguous-result protection remain intact.
 
 ## Operations Access
 
