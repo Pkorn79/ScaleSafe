@@ -426,6 +426,79 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
   });
 });
 
+describe('payFirstEnrollmentService.getWhopManualSaleStatus', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('confirms only a tenant-scoped Whop enrollment finalized by the webhook', async () => {
+    const enrollmentQuery = queryResult({
+      data: {
+        id: 'enr_whop_qms',
+        contact_id: 'contact_1',
+        offer_id: 'offer_1',
+        status: 'paid_pending_enrollment',
+        initial_payment_status: 'succeeded',
+        billing_setup_status: 'ok',
+        billing_setup_error: null,
+        payment_transaction_id: 'pay_123',
+        whop_checkout_session_id: 'ch_123',
+      },
+      error: null,
+    });
+    mockGetSupabase.mockReturnValue({ from: jest.fn(() => enrollmentQuery) });
+
+    const result = await payFirstEnrollmentService.getWhopManualSaleStatus('loc_1', 'enr_whop_qms');
+
+    expect(enrollmentQuery.eq).toHaveBeenCalledWith('id', 'enr_whop_qms');
+    expect(enrollmentQuery.eq).toHaveBeenCalledWith('location_id', 'loc_1');
+    expect(enrollmentQuery.eq).toHaveBeenCalledWith('checkout_type', 'whop');
+    expect(result).toEqual(expect.objectContaining({
+      confirmed: true,
+      failed: false,
+      enrollmentId: 'enr_whop_qms',
+      transactionId: 'pay_123',
+    }));
+  });
+
+  it('reports a processor failure without presenting the checkout as confirmed', async () => {
+    const enrollmentQuery = queryResult({
+      data: {
+        id: 'enr_failed',
+        contact_id: 'contact_1',
+        offer_id: 'offer_1',
+        status: 'payment_processing',
+        initial_payment_status: 'failed',
+        billing_setup_status: 'failed',
+        billing_setup_error: 'Whop checkout failed',
+        payment_transaction_id: null,
+        whop_checkout_session_id: 'ch_failed',
+      },
+      error: null,
+    });
+    mockGetSupabase.mockReturnValue({ from: jest.fn(() => enrollmentQuery) });
+
+    const result = await payFirstEnrollmentService.getWhopManualSaleStatus('loc_1', 'enr_failed');
+
+    expect(result).toEqual(expect.objectContaining({
+      confirmed: false,
+      failed: true,
+      error: 'Whop checkout failed',
+      transactionId: null,
+    }));
+  });
+
+  it('fails closed when no Whop enrollment exists inside the trusted tenant', async () => {
+    const enrollmentQuery = queryResult({ data: null, error: null });
+    mockGetSupabase.mockReturnValue({ from: jest.fn(() => enrollmentQuery) });
+
+    await expect(
+      payFirstEnrollmentService.getWhopManualSaleStatus('loc_other', 'enr_whop_qms'),
+    ).rejects.toThrow('Whop manual-sale enrollment not found');
+    expect(enrollmentQuery.eq).toHaveBeenCalledWith('location_id', 'loc_other');
+  });
+});
+
 describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
   beforeEach(() => {
     jest.clearAllMocks();

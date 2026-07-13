@@ -15,9 +15,11 @@ import { Request, Response } from 'express';
 import { ExternalServiceError, ValidationError } from '../../src/utils/errors';
 
 const mockChargeManualSale = jest.fn();
+const mockGetWhopManualSaleStatus = jest.fn();
 jest.mock('../../src/services/pay-first-enrollment.service', () => ({
   payFirstEnrollmentService: {
     chargeCardAndCreatePaidEnrollment: (...args: any[]) => mockChargeManualSale(...args),
+    getWhopManualSaleStatus: (...args: any[]) => mockGetWhopManualSaleStatus(...args),
   },
 }));
 
@@ -55,6 +57,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockLocationId = 'loc-1';
   mockChargeManualSale.mockResolvedValue({ success: true });
+  mockGetWhopManualSaleStatus.mockResolvedValue({ success: true, confirmed: false });
 });
 
 describe('chargeManualSale', () => {
@@ -168,5 +171,32 @@ describe('chargeManualSale', () => {
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBe(boom);
+  });
+});
+
+describe('getManualSaleWhopStatus', () => {
+  it('uses the trusted tenant and route enrollment ID', async () => {
+    const res = mockRes();
+    const req = { params: { enrollmentId: 'enr_whop_1' } } as any;
+
+    await dashboardController.getManualSaleWhopStatus(req, res, next);
+
+    expect(mockGetWhopManualSaleStatus).toHaveBeenCalledWith('loc-1', 'enr_whop_1');
+    expect(res.json).toHaveBeenCalledWith({ success: true, confirmed: false });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('does not query an enrollment when the tenant cannot be resolved', async () => {
+    mockLocationId = undefined;
+    const res = mockRes();
+
+    await dashboardController.getManualSaleWhopStatus(
+      { params: { enrollmentId: 'enr_whop_1' } } as any,
+      res,
+      next,
+    );
+
+    expect(mockGetWhopManualSaleStatus).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ValidationError);
   });
 });

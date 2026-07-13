@@ -418,6 +418,54 @@ export const payFirstEnrollmentService = {
     };
   },
 
+  async getWhopManualSaleStatus(locationId: string, enrollmentId: string) {
+    if (!locationId || !enrollmentId) {
+      throw new ValidationError('locationId and enrollmentId required');
+    }
+
+    const { data: enrollment, error } = await getSupabase()
+      .from('enrollments')
+      .select([
+        'id',
+        'contact_id',
+        'offer_id',
+        'status',
+        'initial_payment_status',
+        'billing_setup_status',
+        'billing_setup_error',
+        'payment_transaction_id',
+        'whop_checkout_session_id',
+      ].join(','))
+      .eq('id', enrollmentId)
+      .eq('location_id', locationId)
+      .eq('checkout_type', 'whop')
+      .maybeSingle();
+    if (error) throw error;
+    if (!enrollment) throw new ValidationError('Whop manual-sale enrollment not found');
+
+    const row = enrollment as any;
+    const paymentStatus = String(row.initial_payment_status || 'processing');
+    const enrollmentStatus = String(row.status || 'payment_processing');
+    const confirmed = paymentStatus === 'succeeded'
+      && ['paid_pending_enrollment', 'enrolled'].includes(enrollmentStatus);
+    const failed = paymentStatus === 'failed';
+
+    return {
+      success: true,
+      confirmed,
+      failed,
+      enrollmentId: row.id,
+      contactId: row.contact_id,
+      offerId: row.offer_id,
+      enrollmentStatus,
+      paymentStatus,
+      billingSetupStatus: row.billing_setup_status || null,
+      error: failed ? (row.billing_setup_error || 'Whop payment was not completed.') : null,
+      transactionId: confirmed ? (row.payment_transaction_id || null) : null,
+      checkoutSessionId: row.whop_checkout_session_id || null,
+    };
+  },
+
   async finalizeWhopManualSale(input: FinalizeWhopManualSaleInput) {
     const { data: enrollment, error: enrollmentError } = await getSupabase()
       .from('enrollments')

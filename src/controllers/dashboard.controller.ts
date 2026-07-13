@@ -2013,6 +2013,20 @@ export const dashboardController = {
     } catch (err) { next(err); }
   },
 
+  /** GET /api/dashboard/manual-sale/whop-session/:enrollmentId/status */
+  async getManualSaleWhopStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const locationId = resolveLocationId(req);
+      if (!locationId) throw new ValidationError('locationId required');
+
+      const result = await payFirstEnrollmentService.getWhopManualSaleStatus(
+        locationId,
+        String(req.params.enrollmentId || ''),
+      );
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+
   /** POST /api/dashboard/enrollments/:enrollmentId/resend-paid-link */
   async resendPaidEnrollmentLink(req: Request, res: Response, next: NextFunction) {
     try {

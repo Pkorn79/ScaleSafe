@@ -295,6 +295,17 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 evidence integrity.
 - Local repair: when a payment has no consent token, resolve consent only through its exact `enrollment_id + location_id`. Preserve a missing payment IP as an explicit gap; do not manufacture an IP match for merchant-entered QMS payments.
 - Required regression: a pay-first payment resolves its later consent under the exact enrollment and cannot use a same-ID enrollment from another location.
+- Live retest: deploy `86a6ef4` resolved Whop payment event `e8ba68a7-80c2-45ec-b24d-07b5bd2dbe4a` to the later consent on exact enrollment `d46fdead-8ce8-46f1-83f2-2bbe8cfd14b5`. The chain contains verified payment and consent links with strength 50. The only gap is the expected missing payment IP for a merchant-entered QMS payment.
+
+### FIND-030 - Embedded Whop QMS does not confirm a completed payment to the merchant
+
+- Area: Quick Manual Sale completion feedback and duplicate-charge safety.
+- Live proof: the $1.50 Whop QMS payment completed, the webhook recorded the payment, and receipt/enrollment-link deliveries fired. The QMS modal remained expanded for more than one minute with Whop's disabled `Join` button and no ScaleSafe success state.
+- Code proof: the modal marked completion only through Whop's optional browser callback. The embedded checkout did not invoke that callback, while ScaleSafe's server had already confirmed the payment through the authenticated webhook.
+- Impact: a merchant can believe a successful payment is frozen or failed, close without clear confirmation, or attempt a duplicate sale.
+- Severity recommendation: P1 operational money-safety defect because processor success is not reliably reflected in the initiating workflow.
+- Local repair: expose a read-only, SSO-protected, tenant-scoped status endpoint for the exact QMS enrollment and poll it while the embedded checkout is open. Treat the browser callback only as a progress hint; show success only after ScaleSafe confirms webhook-finalized state.
+- Required regression: a fresh Whop QMS payment replaces the embedded form with a clear recorded-payment success state; a processor failure is shown without claiming success; a cross-location enrollment ID returns no status.
 
 ## Operations Access
 

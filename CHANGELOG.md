@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Whop Quick Manual Sale now reconciles its embedded checkout against an authenticated, tenant-scoped ScaleSafe status endpoint, so webhook-confirmed payments replace the hosted form with a clear success state even when Whop does not invoke its browser callback.
+- The Whop browser completion callback is now only a progress hint; it cannot mark a payment successful before the server confirms the exact enrollment.
 - Pay-first payment evidence now resolves later consent through the exact tenant-scoped enrollment ID when the payment predates the consent token; missing payment IP remains an explicit evidence gap.
 - Paid-enrollment consent completion now starts private packet generation and evidence-chain verification independently of GHL workflow delivery, so a stale trigger retry cannot strand the enrollment's core evidence.
 - Public enrollment clauses now preserve semantic standard-clause IDs. Paid-in-full enrollments omit the installment-billing acknowledgment, and accepted standard clauses can map to their intended GHL click-wrap fields.
@@ -24,11 +26,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Background packet generation logs no longer include signed private-file URLs.
 
 ### Live certification
+- A fresh $1.50 Whop QMS payment stayed pending until consent, generated its private packet after signature, omitted installment terms for PIF, and produced a verified exact-enrollment consent/payment chain with the expected merchant-entered-payment IP gap.
 - A new $1.00 Stripe paid-in-full enrollment produced one settled `sale` row, a correctly keyed PaymentIntent/Charge vault row, enrollment-scoped consent and payment evidence, a private enrollment packet, daily pulse scheduling, and successful receipt and welcome deliveries.
 - The post-fix Railway deployment emitted no signed storage URL or token during packet generation.
 
 ### Verified
-- Full test suite: 147 suites / 1,249 tests; focused payment/enrollment and Whop QMS suite: 36 tests.
+- Full test suite: 147 suites / 1,256 tests; focused Whop QMS status and manual-sale controller suite: 26 tests.
 - TypeScript typecheck, production build, and production dependency audit pass.
 
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)

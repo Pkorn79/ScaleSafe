@@ -124,6 +124,14 @@
         <div v-else-if="processorType === 'whop' && !whopCheckoutUrl" class="qms-ach-placeholder">
           Whop checkout will load here after you create the checkout.
         </div>
+        <div
+          v-else-if="processorType === 'whop' && whopCheckoutUrl && completedSuccessfully"
+          class="qms-whop-success"
+          role="status"
+        >
+          <strong>Whop payment confirmed</strong>
+          <span>The payment is recorded in ScaleSafe. You can close this window.</span>
+        </div>
         <div v-else-if="processorType === 'whop' && whopCheckoutUrl" class="qms-whop-frame-wrap">
           <div v-if="whopEmbedLoading" class="qms-whop-loading">Loading Whop checkout...</div>
           <div ref="whopEmbedRoot" class="qms-whop-embed-root"></div>
@@ -147,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import { useApi } from '../composables/useApi';
 
@@ -216,6 +224,10 @@ const dualPricingConfig = ref<{ enabled: boolean; cardUpliftPercent: number; pro
 const completedSuccessfully = ref(false);
 const paymentAttemptId = ref('');
 let paymentAttemptScope = '';
+let whopStatusTimer: number | null = null;
+let whopStatusPollGeneration = 0;
+let whopStatusAttempts = 0;
+let whopStatusRequestInFlight = false;
 
 const nonce = Math.random().toString(36).slice(2);
 const nmiIds = {
@@ -386,15 +398,9 @@ async function mountWhopEmbeddedCheckout() {
   whopEmbedLoading.value = true;
   root.textContent = '';
   window.ssQmsWhopCheckoutComplete = (planId?: string, receiptId?: string) => {
-    resultMessage.value = 'Whop payment submitted. ScaleSafe will update this client when Whop confirms payment.';
-    completedSuccessfully.value = true;
-    emit('completed', {
-      success: true,
-      processorType: 'whop',
-      offerId: selectedOfferId.value,
-      planId: planId || session.planId,
-      receiptId: receiptId || '',
-    });
+    resultMessage.value = 'Whop checkout submitted. Confirming the payment with ScaleSafe...';
+    void planId;
+    void receiptId;
   };
 
   const mount = document.createElement('div');
@@ -417,6 +423,81 @@ async function mountWhopEmbeddedCheckout() {
   window.setTimeout(() => {
     whopEmbedLoading.value = false;
   }, 300);
+  startWhopStatusPolling();
+}
+
+function stopWhopStatusPolling() {
+  whopStatusPollGeneration += 1;
+  if (whopStatusTimer !== null) {
+    window.clearTimeout(whopStatusTimer);
+    whopStatusTimer = null;
+  }
+}
+
+function completeWhopManualSale(status: any) {
+  if (completedSuccessfully.value) return;
+  stopWhopStatusPolling();
+  completedSuccessfully.value = true;
+  whopEmbedLoading.value = false;
+  if (whopEmbedRoot.value) whopEmbedRoot.value.textContent = '';
+  resultMessage.value = 'Payment received. The Whop payment is recorded in ScaleSafe.';
+  emit('completed', {
+    ...status,
+    success: true,
+    processorType: 'whop',
+    offerId: status?.offerId || selectedOfferId.value,
+  });
+}
+
+async function pollWhopStatus(generation: number) {
+  const enrollmentId = String(whopSession.value?.enrollmentId || '');
+  if (
+    generation !== whopStatusPollGeneration
+    || !props.open
+    || !enrollmentId
+    || completedSuccessfully.value
+    || whopStatusRequestInFlight
+  ) return;
+
+  if (whopStatusAttempts >= 60) {
+    resultMessage.value = 'Whop has not confirmed this checkout yet. Do not submit it again; close this window and check the client payment record.';
+    return;
+  }
+
+  whopStatusAttempts += 1;
+  whopStatusRequestInFlight = true;
+  try {
+    const status = await api.get<any>(
+      `/api/dashboard/manual-sale/whop-session/${encodeURIComponent(enrollmentId)}/status`,
+    );
+    if (generation !== whopStatusPollGeneration) return;
+    if (status?.confirmed) {
+      completeWhopManualSale(status);
+      return;
+    }
+    if (status?.failed) {
+      stopWhopStatusPolling();
+      resultMessage.value = '';
+      submitError.value = status.error || 'Whop payment was not completed.';
+      return;
+    }
+  } catch {
+    // A transient status-check failure must not imply that the processor charge failed.
+  } finally {
+    whopStatusRequestInFlight = false;
+  }
+
+  if (generation === whopStatusPollGeneration && props.open && !completedSuccessfully.value) {
+    whopStatusTimer = window.setTimeout(() => void pollWhopStatus(generation), 2000);
+  }
+}
+
+function startWhopStatusPolling() {
+  stopWhopStatusPolling();
+  whopStatusAttempts = 0;
+  whopStatusRequestInFlight = false;
+  const generation = whopStatusPollGeneration;
+  void pollWhopStatus(generation);
 }
 
 function animationFrame() {
@@ -763,6 +844,8 @@ async function submit() {
 }
 
 function resetTransient() {
+  stopWhopStatusPolling();
+  window.ssQmsWhopCheckoutComplete = undefined;
   submitError.value = '';
   resultMessage.value = '';
   whopCheckoutUrl.value = '';
@@ -823,6 +906,11 @@ watch(paymentMethod, async () => {
 
 watch(achAllowedForSelection, (allowed) => {
   if (!allowed && !processorLoading.value && paymentMethod.value === 'ach') paymentMethod.value = 'card';
+});
+
+onBeforeUnmount(() => {
+  stopWhopStatusPolling();
+  window.ssQmsWhopCheckoutComplete = undefined;
 });
 </script>
 
@@ -930,6 +1018,25 @@ watch(achAllowedForSelection, (allowed) => {
   justify-content: center;
   position: absolute;
   z-index: 1;
+}
+
+.qms-whop-success {
+  align-items: center;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  color: #065f46;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-height: 160px;
+  padding: 24px;
+  text-align: center;
+}
+
+.qms-whop-success span {
+  font-size: 14px;
 }
 
 .qms-retry {
