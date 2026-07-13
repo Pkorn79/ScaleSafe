@@ -55,7 +55,7 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | WHOP-PIF-002 | Whop full enrollment retest | Repeat the exact $2.50 PIF-plus-add-on cart after billing-choice repair | Preserve PIF, one sale, exact line items, no recurring state, receipt/welcome, packet, and scoped evidence | Pass | Pass | Pass | Pass | Partial | Pass | Pass with timestamp follow-up | FIND-013, FIND-022 |
 | WHOP-PIF-003 | Whop billing-completion retest | Run a fresh $1.50 PIF checkout after first-webhook timestamp repair | First successful webhook sets `billing_completed_at` without recurring state | Hosted form loaded; payment not submitted | Pass through session creation | No payment row | No charge | N/A | N/A | Pending manual secure-frame completion | FIND-022 |
 | WHOP-PIF-004 | Whop billing-completion retest | Complete a fresh $1.50 PIF checkout in Brave | First webhook records one sale and stamps billing completion without recurring state | Pass | Pass | Pass | Pass | Partial | Pass | Pass; exposed adjacent QMS defects | FIND-024, FIND-026 |
-| WHOP-QMS-001 | Whop Quick Manual Sale | Pay first, then require the signed paid-enrollment flow | Payment remains `paid_pending_enrollment`; no welcome, packet, or enrollment completion before consent | Fail | Pass | Fail | Pass | Fail | Fail | Repair in progress | FIND-026 |
+| WHOP-QMS-001 | Whop Quick Manual Sale | Pay first, then require the signed paid-enrollment flow | Payment remains `paid_pending_enrollment`; no welcome, packet, or enrollment completion before consent | Pass | Pass | Partial | Pass | Partial | Partial | Consent gate passes; post-consent packet and clause defects found | FIND-027, FIND-028 |
 | NMI-QMS-001 | NMI saved-method QMS | Charge only the authorized saved card ending 5321 | The exact authorized card is identifiable before charge | Fail | N/A | Pass | Not attempted | N/A | N/A | Blocked safely; no charge | FIND-025 |
 
 ## Isolated Offer Fixtures
@@ -191,6 +191,16 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - Client Programs then exposed FIND-024: this enrollment and the earlier enrollment for the same offer each displayed the combined $4.00 from both exact-enrollment payment events.
 - This payment was initiated through Quick Manual Sale with **Send paid enrollment link after payment** enabled. The webhook nevertheless changed the enrollment directly to `enrolled`, created a packet, and fired `enrollment_complete` while `digital_signature`, `consent_token`, and consent evidence were absent. FIND-026 records this consent-gating defect.
 
+### WHOP-QMS-001 Trace
+
+- Submitted the embedded Whop sandbox payment at `2026-07-13T22:29:22Z`; the valid checkout completed after the billing address was corrected and Whop delivered the successful webhook at approximately `22:29:49Z`.
+- Enrollment `1d38c33a-c316-4b1c-a114-0cd636a6810d` remained `paid_pending_enrollment`, with one exact $1.50 payment event, Whop payment `pay_NwqH3IQ4Qd6bf6`, membership `mem_XrulgvZTroX3hf`, no signature, no consent token, and no `enrollment_complete` before the link was opened.
+- `ss_send_enrollment_link` and `ss_payment_received` each fired once with `send_welcome=false`. The client Programs view showed `Resend Link` and the exact $1.50 payment after a fresh record load.
+- Page 1 prefilled the known first name, last name, and email; the missing phone remained required. Page 2 displayed only the paid $1.50 summary, with no PIF/installment choice or add-ons.
+- Consent submitted at `2026-07-13T22:35:56Z` and reached the success screen in the normal fast path. The enrollment changed to `enrolled`, retained the exact payment identity, stored the signature and consent forensics, created enrollment-scoped `enrollment_consent`, and fired one successful active `enrollment_complete` delivery.
+- The same trigger key also retried the known deleted GHL subscription for roughly 38 seconds, so FIND-013 remains open.
+- No private enrollment packet or chain verification was produced after consent, opening FIND-027. The PIF terms also required `Installment Billing`, opening FIND-028.
+
 ### NMI-QMS-001 Trace
 
 - The certification contact contains only a Stripe 4242 method, so the authorized NMI test moved to Phil Kay's payment-management record.
@@ -262,9 +272,11 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-021 | P1 | Whop billing-state defect | Whop PIF plus add-on certification | Webhook replaces the selected PIF type with the offer's default installment type | Fix `699cfa5` deployed | Pass on WHOP-PIF-002: PIF, one $2.50 sale, no recurring state |
 | FIND-022 | P2 | Whop lifecycle data defect | Whop PIF clean retest | First successful PIF webhook leaves `billing_completed_at` empty | Fix `e298068` deployed | New PIF must stamp billing complete on its first webhook |
 | FIND-023 | P2 | Scheduled-job idempotency defect | Railway log correlation | A second daily health snapshot for the same processor/date violates the unique constraint and fails the merchant run | Fix `1a81220` deployed | Focused/full tests pass; second live same-day run remains optional proof |
-| FIND-024 | P1 | Payment/enrollment matching defect | Repeat Whop purchase for one client and offer | Both program cards combine the payments from both enrollments | Fixed locally; deployment pending | Repeat-offer enrollments must each display only their exact payment rows |
+| FIND-024 | P1 | Payment/enrollment matching defect | Repeat Whop purchase for one client and offer | Both program cards combine the payments from both enrollments | Fix `9f3bbe3` deployed | Pass: repeat Whop shows $1.50/$2.50 and each repeat Stripe PIF shows $1.00 |
 | FIND-025 | P1 | Money-safety/data-quality defect | NMI saved-method certification | Multiple NMI vaults display as identical `NMI mc`; stored last four is `****` | Open; charge blocked | Identify ending 5321 before any NMI charge |
-| FIND-026 | P1 | Consent/workflow state defect | Whop QMS live payment | Pay-first Whop webhook enrolls the client, generates packet, and fires welcome before consent | Fixed locally; deployment pending | Fresh Whop QMS must remain paid pending until signed completion |
+| FIND-026 | P1 | Consent/workflow state defect | Whop QMS live payment | Pay-first Whop webhook enrolls the client, generates packet, and fires welcome before consent | Fix `9f3bbe3` deployed | Pass on WHOP-QMS-001 before consent |
+| FIND-027 | P1 | Evidence-generation defect | Whop QMS consent completion | Signed paid enrollment becomes enrolled without generating its private packet or verifying the chain | Fixed locally; deployment pending | Fresh paid enrollment must create packet and chain independently of trigger retries |
+| FIND-028 | P1 | Consent/clause identity defect | Whop QMS PIF consent | PIF requires installment billing; accepted standard clauses use generic positional IDs | Fixed locally; deployment pending | PIF must hide installment clause and retain semantic accepted-clause keys |
 
 ## Screenshot Rules
 

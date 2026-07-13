@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Paid-enrollment consent completion now starts private packet generation and evidence-chain verification independently of GHL workflow delivery, so a stale trigger retry cannot strand the enrollment's core evidence.
+- Public enrollment clauses now preserve semantic standard-clause IDs. Paid-in-full enrollments omit the installment-billing acknowledgment, and accepted standard clauses can map to their intended GHL click-wrap fields.
 - Client program payment totals now prefer exact enrollment IDs and unique processor subscription or Whop membership IDs; an ambiguous legacy same-offer payment is no longer copied across repeat enrollments.
 - Whop Quick Manual Sale now preserves the pay-first consent boundary: payment creates a `paid_pending_enrollment`, sends the paid-enrollment link, and does not generate the final packet or fire `enrollment_complete` until the client signs.
 - Stripe `charge.succeeded` events now preserve the PaymentIntent as the evidence-vault key and the Charge as the charge reference, so later dispute lookups do not lose transaction evidence.

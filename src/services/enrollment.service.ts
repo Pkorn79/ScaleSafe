@@ -18,11 +18,23 @@ import {
   WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
+import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 import crypto from 'crypto';
 import { evidenceEnrollmentContextService } from './evidence-enrollment-context.service';
 
 function formatDate(value: Date = new Date()): string {
   return value.toISOString().split('T')[0];
+}
+
+function publicClauseId(title: string, text: string, slot: number): string {
+  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedText = text.trim();
+  const standardClause = STANDARD_CLAUSES.find((clause) => {
+    const clauseTitle = clause.label.replace(/\s*\(recommended\)\s*$/i, '').trim().toLowerCase();
+    return clauseTitle === normalizedTitle || clause.text.trim() === normalizedText;
+  });
+
+  return standardClause?.key || `clause_${slot}`;
 }
 
 interface PrepEnrollmentInput {
@@ -303,10 +315,11 @@ export const enrollmentService = {
     for (let i = 1; i <= 11; i++) {
       const title = (offer as any)[`clause_slot_${i}_title`];
       if (title) {
+        const text = (offer as any)[`clause_slot_${i}_text`] || '';
         clauses.push({
-          id: `clause_${i}`,
+          id: publicClauseId(title, text, i),
           title,
-          text: (offer as any)[`clause_slot_${i}_text`] || '',
+          text,
         });
       }
     }

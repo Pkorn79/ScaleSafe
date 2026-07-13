@@ -13,6 +13,8 @@ import { merchantService } from '../../src/services/merchant.service';
 import { checkoutCartService } from '../../src/services/checkout-cart.service';
 import { whopService } from '../../src/services/whop.service';
 import { moneyOperationService } from '../../src/services/money-operation.service';
+import { enrollmentPacketService } from '../../src/services/enrollment-packet.service';
+import { evidenceChainService } from '../../src/services/evidence-chain.service';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: jest.fn(),
@@ -81,6 +83,18 @@ jest.mock('../../src/services/money-operation.service', () => ({
   },
 }));
 
+jest.mock('../../src/services/enrollment-packet.service', () => ({
+  enrollmentPacketService: {
+    generateAndStore: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/evidence-chain.service', () => ({
+  evidenceChainService: {
+    verifyChain: jest.fn(),
+  },
+}));
+
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn(),
 }));
@@ -116,6 +130,8 @@ const mockMoneyBegin = moneyOperationService.begin as jest.Mock;
 const mockMoneyMarkProviderAccepted = moneyOperationService.markProviderAccepted as jest.Mock;
 const mockMoneyMarkRecorded = moneyOperationService.markRecorded as jest.Mock;
 const mockMoneyMarkUnknown = moneyOperationService.markUnknown as jest.Mock;
+const mockGenerateEnrollmentPacket = enrollmentPacketService.generateAndStore as jest.Mock;
+const mockVerifyEvidenceChain = evidenceChainService.verifyChain as jest.Mock;
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
   merchantRepository: {
@@ -127,6 +143,8 @@ function queryResult(result: any) {
   const chain: any = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
+    order: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
     maybeSingle: jest.fn(async () => result),
     update: jest.fn(() => chain),
     insert: jest.fn(() => chain),
@@ -164,6 +182,8 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     mockEvidenceCreate.mockResolvedValue({});
     mockEvidenceFindByType.mockResolvedValue([]);
     mockFireTrigger.mockResolvedValue({});
+    mockGenerateEnrollmentPacket.mockResolvedValue('signed-packet-url');
+    mockVerifyEvidenceChain.mockResolvedValue({ chainStrength: 'strong', complete: true });
   });
 
   it('does not create a second processor subscription when manual sale already saved one', async () => {
@@ -200,6 +220,7 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
     const supabase = {
       from: jest.fn((table: string) => {
         if (table === 'enrollments') return enrollments;
+        if (table === 'payment_events') return queryResult({ data: { id: 'pe_1' }, error: null });
         return queryResult({ data: null, error: null });
       }),
     };
@@ -251,6 +272,8 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
         business_name: 'ScaleSafe Merchant',
       }),
     );
+    expect(mockGenerateEnrollmentPacket).toHaveBeenCalledWith('enr_1', 'loc_1');
+    expect(mockVerifyEvidenceChain).toHaveBeenCalledWith('pe_1');
   });
 
   it('marks recurring billing failed when paid pending recurring enrollment has no processor subscription', async () => {

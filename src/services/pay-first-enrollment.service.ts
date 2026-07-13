@@ -1778,6 +1778,66 @@ export const payFirstEnrollmentService = {
       browser_info: params.userAgent,
     });
 
+    // Packet generation and chain verification must not wait on GHL workflow
+    // retries. A stale trigger subscription can otherwise delay or strand the
+    // core enrollment evidence that the paid-enrollment flow is meant to preserve.
+    void (async () => {
+      try {
+        const { enrollmentPacketService } = require('./enrollment-packet.service');
+        const pdfUrl = await enrollmentPacketService.generateAndStore(params.enrollmentId, params.locationId);
+        logger.info(
+          { enrollmentId: params.enrollmentId, packetStored: Boolean(pdfUrl) },
+          'Paid pending enrollment packet generated',
+        );
+      } catch (packetErr: any) {
+        logger.error(
+          { err: packetErr?.message || String(packetErr), enrollmentId: params.enrollmentId },
+          'Paid pending enrollment packet generation failed',
+        );
+      }
+
+      try {
+        const { data: paymentEvent, error: paymentEventError } = await supabase
+          .from('payment_events')
+          .select('id')
+          .eq('location_id', params.locationId)
+          .eq('enrollment_id', params.enrollmentId)
+          .eq('event_type', 'sale')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (paymentEventError) throw paymentEventError;
+        if (!paymentEvent?.id) {
+          logger.warn(
+            { enrollmentId: params.enrollmentId },
+            'Paid pending enrollment evidence chain skipped because no sale event was found',
+          );
+          return;
+        }
+
+        const { evidenceChainService } = require('./evidence-chain.service');
+        const chain = await evidenceChainService.verifyChain(paymentEvent.id);
+        logger.info(
+          {
+            enrollmentId: params.enrollmentId,
+            chainStrength: chain.chainStrength,
+            complete: chain.complete,
+          },
+          'Paid pending enrollment evidence chain verified',
+        );
+      } catch (chainErr: any) {
+        logger.warn(
+          { err: chainErr?.message || String(chainErr), enrollmentId: params.enrollmentId },
+          'Paid pending enrollment evidence chain verification failed',
+        );
+      }
+    })().catch((err: any) => {
+      logger.error(
+        { err: err?.message || String(err), enrollmentId: params.enrollmentId },
+        'Paid pending enrollment packet background task failed',
+      );
+    });
+
     void (async () => {
     let supportEmail = '';
     let businessName = '';

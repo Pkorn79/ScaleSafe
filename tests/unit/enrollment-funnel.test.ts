@@ -216,6 +216,29 @@ describe('Enrollment Funnel Service', () => {
       expect((result as any).location_id).toBeUndefined();
     });
 
+    it('returns semantic IDs for standard click-wrap clauses', async () => {
+      mockFindById.mockResolvedValue({
+        id: 'offer-clauses',
+        location_id: 'loc-1',
+        active: true,
+        offer_name: 'Payment Choice Program',
+        price: 100,
+        payment_type: 'installment',
+        clause_slot_1_title: 'Purchase Summary',
+        clause_slot_1_text: 'I confirm that I am purchasing the program described for the total amount and payment terms shown above.',
+        clause_slot_2_title: 'Installment Billing',
+        clause_slot_2_text: 'I authorize the scheduled payments outlined above and understand that this payment plan represents the total program price divided into installments.',
+      });
+      mockFindByLocationId.mockResolvedValue({ business_name: 'Test Business' });
+
+      const result = await enrollmentService.getPublicOffer('offer-clauses');
+
+      expect(result?.clauses).toEqual([
+        expect.objectContaining({ id: 'purchase_summary', title: 'Purchase Summary' }),
+        expect.objectContaining({ id: 'installment_billing', title: 'Installment Billing' }),
+      ]);
+    });
+
     it('should return null for inactive offer', async () => {
       mockFindById.mockResolvedValue({ id: 'offer-456', active: false });
 

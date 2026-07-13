@@ -266,6 +266,26 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: pre-create the exact QMS enrollment, mark Whop metadata as `quick_manual_sale`, record the payment, leave the enrollment `paid_pending_enrollment`, send the signed paid-enrollment link, and fire only receipt/link triggers. The ordinary completion path remains blocked until the client signs.
 - Required regression: after a fresh Whop QMS payment, no packet, signature, consent evidence, or `enrollment_complete` exists. Completing the paid-enrollment link then creates those artifacts once and fires the correct welcome once.
 
+### FIND-027 - Paid enrollment completion omits the signed packet and chain verification
+
+- Area: QMS paid-enrollment consent completion for Stripe, NMI, and Whop.
+- Live proof: repaired Whop QMS enrollment `1d38c33a-c316-4b1c-a114-0cd636a6810d` correctly stayed `paid_pending_enrollment` after payment and moved to `enrolled` only after signature. It then had enrollment-scoped payment and consent evidence, but `packet_pdf_path` remained null and no new packet record or packet-generation log appeared.
+- Code proof: `finalizePaidPendingEnrollment()` synchronized GHL fields, initialized pulse cadence, and fired `enrollment_complete`, but never called `enrollmentPacketService.generateAndStore()` or `evidenceChainService.verifyChain()`.
+- Impact: QMS can report a signed, completed enrollment and send welcome/access while the central signed enrollment packet needed for defense is absent.
+- Severity recommendation: P1 evidence integrity.
+- Local repair: start packet generation and chain verification in an independent background task immediately after consent evidence is committed. Do not let GHL trigger retries delay that work.
+- Required regression: a fresh QMS payment has no packet before consent; after consent, the private packet path and chain verification appear once even when one GHL subscription is stale.
+
+### FIND-028 - Standard clauses lose their identity and PIF customers accept installment terms
+
+- Area: Public consent widget and GHL click-wrap evidence.
+- Live proof: the $1.50 PIF Whop QMS enrollment required all nine acknowledgments, including `Installment Billing`, despite displaying `Payment received` and the correct paid-in-full amount.
+- Code proof: the public offer endpoint renamed every stored clause to positional IDs such as `clause_8`. The widget's PIF filter looks for `installment_billing`, and post-enrollment GHL synchronization also looks up accepted standard clauses by semantic key.
+- Impact: a PIF customer signs contradictory billing language, and standard-clause acceptance cannot reliably populate the matching GHL click-wrap fields.
+- Severity recommendation: P1 consent/evidence correctness.
+- Local repair: identify unchanged standard clauses by their canonical title/text and return their semantic keys; retain positional IDs only for custom clauses.
+- Required regression: PIF hides `installment_billing`; installment enrollment shows it; submitted `clauses_accepted` contains semantic standard keys; matching GHL click-wrap fields update.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.
