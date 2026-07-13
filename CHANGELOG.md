@@ -6,7 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)
 
 ### Fixed
-- Defense packet detail now renders the exhibits frozen in the packet evidence snapshot instead of always showing zero exhibits.
+- Defense packet detail now renders the exhibits frozen in the packet evidence snapshot instead of always showing zero exhibits; legacy packets report their preserved PDF exhibit count without mislabeling old contact-wide timeline rows as exhibits.
+- Regenerating a defense letter now replaces the legacy evidence snapshot with the exact scoped exhibit set used by the new letter and rebuilt PDF.
 - Merchant Settings tracks the fields that can actually be saved and no longer reports unsaved changes immediately after loading.
 - Provisioning Health uses the full pulse diagnostic report, separating the app event delivered to GHL, observed outbound communication, and client submission timestamps.
 - Missing, incomplete, or legacy Stripe health classifications display as Unknown instead of presenting untrusted Visa and Mastercard status as Safe.

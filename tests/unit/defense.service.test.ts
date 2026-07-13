@@ -658,7 +658,12 @@ describe('Defense Service - Regeneration review state', () => {
 
     expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
       'def_1', 'complete',
-      expect.objectContaining({ error_message: null }),
+      expect.objectContaining({
+        error_message: null,
+        enrollment_id: 'enr_1',
+        evidence_snapshot: expect.objectContaining({ exhibits: mockExhibitList.exhibits }),
+        evidence_count: mockExhibitList.exhibits.length,
+      }),
     );
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
   });

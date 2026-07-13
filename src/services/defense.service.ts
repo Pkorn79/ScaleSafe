@@ -1639,6 +1639,15 @@ LETTER STRUCTURE:
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
       error_message: needsReview ? reviewReasons.join(' ') : null,
+      enrollment_id: scope.enrollmentId || null,
+      offer_id: scope.offerId || null,
+      evidence_snapshot: {
+        scope,
+        exhibits: exhibitList.exhibits,
+        sourceErrors: exhibitList.sourceErrors || [],
+        capturedAt: new Date().toISOString(),
+      },
+      evidence_count: exhibitList.exhibits.length,
       pdf_storage_path: null,
       pdf_url: null,
     } as any);

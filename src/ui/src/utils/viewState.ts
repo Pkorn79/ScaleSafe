@@ -3,6 +3,25 @@ export function getDefensePacketExhibits(packet: any): any[] {
   return Array.isArray(snapshot?.exhibits) ? snapshot.exhibits : [];
 }
 
+export function getDefensePacketExhibitState(packet: any): {
+  exhibits: any[];
+  reportedCount: number;
+  legacySnapshot: boolean;
+} {
+  const snapshot = packet?.evidence_snapshot || packet?.evidenceSnapshot;
+  const exhibits = getDefensePacketExhibits(packet);
+  const storedCount = Number(packet?.evidence_count ?? packet?.evidenceCount);
+  const reportedCount = Number.isFinite(storedCount) && storedCount >= 0
+    ? Math.max(storedCount, exhibits.length)
+    : exhibits.length;
+
+  return {
+    exhibits,
+    reportedCount,
+    legacySnapshot: Array.isArray(snapshot) && exhibits.length === 0 && reportedCount > 0,
+  };
+}
+
 export function normalizeStripeHealthStatus(
   value: unknown,
   allowed: readonly string[],

@@ -1,6 +1,7 @@
 import {
   buildMerchantSettingsPayload,
   cloneViewState,
+  getDefensePacketExhibitState,
   getDefensePacketExhibits,
   normalizeStripeHealthStatus,
 } from '../../src/ui/src/utils/viewState';
@@ -10,6 +11,23 @@ describe('view state helpers', () => {
     const exhibits = [{ id: 'exhibit-a' }];
     expect(getDefensePacketExhibits({ evidence_snapshot: { exhibits } })).toEqual(exhibits);
     expect(getDefensePacketExhibits({ evidence_snapshot: null })).toEqual([]);
+  });
+
+  test('reports a legacy packet exhibit count without presenting raw timeline rows as exhibits', () => {
+    const state = getDefensePacketExhibitState({
+      evidence_count: 8,
+      evidence_snapshot: [{ type: 'communication' }, { type: 'payment' }],
+    });
+
+    expect(state).toEqual({ exhibits: [], reportedCount: 8, legacySnapshot: true });
+  });
+
+  test('prefers the frozen exhibit list while preserving a larger stored count defensively', () => {
+    const exhibits = [{ letter: 'A' }, { letter: 'B' }];
+    expect(getDefensePacketExhibitState({
+      evidence_count: 2,
+      evidence_snapshot: { exhibits },
+    })).toEqual({ exhibits, reportedCount: 2, legacySnapshot: false });
   });
 
   test('does not present missing Stripe health classifications as safe', () => {

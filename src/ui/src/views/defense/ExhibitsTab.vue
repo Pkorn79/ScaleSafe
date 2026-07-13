@@ -1,8 +1,14 @@
 <template>
   <div>
-    <div class="card-title mb-4">Evidence Exhibits ({{ exhibits.length }})</div>
+    <div class="card-title mb-4">Evidence Exhibits ({{ reportedCount }})</div>
 
-    <div v-if="exhibits.length === 0" class="text-sm text-muted">
+    <div v-if="legacySnapshot" class="legacy-note">
+      This packet contains {{ reportedCount }} {{ reportedCount === 1 ? 'exhibit' : 'exhibits' }} in its PDF.
+      It was compiled before ScaleSafe began preserving the itemized exhibit list for this screen, so use
+      <strong>Download PDF</strong> above to review the frozen exhibits submitted with this packet.
+    </div>
+
+    <div v-else-if="exhibits.length === 0" class="text-sm text-muted">
       No evidence exhibits available for this client. Evidence is collected automatically as clients enroll, make payments, and engage with the program.
     </div>
 
@@ -23,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   exhibits: Array<{
     letter: string;
     name: string;
@@ -33,7 +39,12 @@ defineProps<{
     occurredAt: string | null;
     summary: string;
   }>;
-}>();
+  reportedCount?: number;
+  legacySnapshot?: boolean;
+}>(), {
+  reportedCount: 0,
+  legacySnapshot: false,
+});
 
 function formatDate(d: string | null): string {
   if (!d) return '';
@@ -100,6 +111,16 @@ function categoryBadge(cat: string): string {
 .exhibit-summary {
   font-size: 13px;
   color: #374151;
+  line-height: 1.5;
+}
+
+.legacy-note {
+  padding: 12px 14px;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
   line-height: 1.5;
 }
 </style>

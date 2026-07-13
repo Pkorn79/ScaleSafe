@@ -122,6 +122,8 @@
         <ExhibitsTab
           v-else-if="activeTab === 'exhibits'"
           :exhibits="exhibits"
+          :reported-count="exhibitCount"
+          :legacy-snapshot="hasLegacyExhibitSnapshot"
         />
         <HistoryTab
           v-else-if="activeTab === 'history'"
@@ -151,7 +153,7 @@ import ExhibitsTab from './defense/ExhibitsTab.vue';
 import HistoryTab from './defense/HistoryTab.vue';
 import OutcomeTab from './defense/OutcomeTab.vue';
 import { humanizeEventType, humanizeReasonCode, formatCalendarDate, parseDateValue, pluralize } from '../utils/humanize';
-import { getDefensePacketExhibits } from '../utils/viewState';
+import { getDefensePacketExhibitState } from '../utils/viewState';
 
 const route = useRoute();
 const api = useApi();
@@ -159,6 +161,8 @@ const { loading, error } = api;
 
 const packet = ref<any>(null);
 const exhibits = ref<any[]>([]);
+const exhibitCount = ref(0);
+const hasLegacyExhibitSnapshot = ref(false);
 const currentVersionNumber = ref(1);
 const activeTab = ref('letter');
 const submitting = ref(false);
@@ -242,7 +246,10 @@ async function refresh() {
   try {
     const nextPacket = await api.get<any>(`/api/defense/${route.params.id}`);
     packet.value = nextPacket;
-    exhibits.value = getDefensePacketExhibits(nextPacket);
+    const exhibitState = getDefensePacketExhibitState(nextPacket);
+    exhibits.value = exhibitState.exhibits;
+    exhibitCount.value = exhibitState.reportedCount;
+    hasLegacyExhibitSnapshot.value = exhibitState.legacySnapshot;
   } catch (e: any) {
     error.value = e.message || 'Failed to refresh defense packet.';
   }
