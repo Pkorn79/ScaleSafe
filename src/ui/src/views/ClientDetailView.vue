@@ -631,8 +631,16 @@ async function reloadEnrollments() {
   }
 }
 
+async function reloadClientInfo() {
+  const result = await api.get<any>(`/api/dashboard/client-info/${contactId.value}`);
+  if (!result) return;
+  enrollmentInfo.value = result;
+  clientEmail.value = result.email || '';
+  clientLabel.value = result.name || result.email || 'Client';
+}
+
 async function onQuickSaleCompleted() {
-  await reloadEnrollments();
+  await Promise.all([reloadEnrollments(), reloadClientInfo()]);
 }
 
 // Initial load

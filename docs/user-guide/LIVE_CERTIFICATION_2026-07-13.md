@@ -210,6 +210,14 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - Deploy `86a6ef4` verified payment event `e8ba68a7-80c2-45ec-b24d-07b5bd2dbe4a` against the later consent through the exact tenant enrollment. The chain strength is 50 with verified payment and consent; the truthful remaining gap is the missing customer payment IP for merchant-entered QMS.
 - The embedded Whop form did not transition to a ScaleSafe success state after payment even though the webhook and workflows completed. FIND-030 tracks this separate merchant-feedback defect.
 
+### WHOP-QMS-003 Trace
+
+- Completed after status-reconciliation deploy `062b244` and visible-confirmation deploy `f7a412a` for another $1.50 PIF Whop sandbox payment.
+- Enrollment `36d0becb-3c9f-4100-9a45-c7be3f51e8d7` is the exact `paid_pending_enrollment`; payment event `4f70e33f-90a6-449a-ad61-e2930736e1bf` is its single canonical $1.50 sale with Whop payment `pay_BN4yXNVJzdZSC0`.
+- The browser callback changed the progress copy to `Confirming the payment with ScaleSafe`, but did not declare success. The authenticated status check then observed the webhook-finalized exact enrollment.
+- The embedded checkout was replaced by `Whop payment confirmed`, the modal remained visible, and the only action was `Done`. Client/payment data refreshed behind the modal. This closes FIND-030.
+- Recent Payments refreshed to the new sale, but the client summary still showed the preceding total and payment timestamp. FIND-031 tracks this separate client-info refresh defect.
+
 ### NMI-QMS-001 Trace
 
 - The certification contact contains only a Stripe 4242 method, so the authorized NMI test moved to Phil Kay's payment-management record.
@@ -287,7 +295,8 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-027 | P1 | Evidence-generation defect | Whop QMS consent completion | Signed paid enrollment becomes enrolled without generating its private packet or verifying the chain | Fix `c6cc23f` deployed | Pass on WHOP-QMS-002: packet generated independently of trigger retry |
 | FIND-028 | P1 | Consent/clause identity defect | Whop QMS PIF consent | PIF requires installment billing; accepted standard clauses use generic positional IDs | Fix `c6cc23f` deployed | Pass on WHOP-QMS-002: no installment clause; semantic clauses retained |
 | FIND-029 | P1 | Evidence-chain matching defect | Whop QMS PIF consent | Payment predates consent token, so verifier reports only payment strength despite exact enrollment link | Fix `86a6ef4` deployed | Pass: exact consent + payment links, strength 50, missing payment IP visible |
-| FIND-030 | P1 | QMS completion-feedback defect | Whop QMS live payment | Webhook records payment, but embedded modal never leaves disabled Whop checkout or shows ScaleSafe success | Fixed locally; deployment pending | Fresh Whop QMS must show server-confirmed success without relying on browser callback |
+| FIND-030 | P1 | QMS completion-feedback defect | Whop QMS live payment | Webhook records payment, but embedded modal never leaves disabled Whop checkout or shows ScaleSafe success | Fixes `062b244` and `f7a412a` deployed | Pass on WHOP-QMS-003: server-confirmed success remains visible with one `Done` action |
+| FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fixed locally; deployment pending | New QMS sale must update table, total, and last-payment timestamp together |
 
 ## Screenshot Rules
 

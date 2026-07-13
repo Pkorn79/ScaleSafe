@@ -306,6 +306,17 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 operational money-safety defect because processor success is not reliably reflected in the initiating workflow.
 - Local repair: expose a read-only, SSO-protected, tenant-scoped status endpoint for the exact QMS enrollment and poll it while the embedded checkout is open. Treat the browser callback only as a progress hint; show success only after ScaleSafe confirms webhook-finalized state. Refresh the client record behind the modal without closing the confirmation before the merchant can see it.
 - Required regression: a fresh Whop QMS payment replaces the embedded form with a clear recorded-payment success state; a processor failure is shown without claiming success; a cross-location enrollment ID returns no status.
+- Live retest: deploys `062b244` and `f7a412a` confirmed enrollment `36d0becb-3c9f-4100-9a45-c7be3f51e8d7` only after its exact webhook-finalized state existed. The embedded form was replaced by `Whop payment confirmed`, the modal remained open, and the only remaining action was `Done`. Payment event `4f70e33f-90a6-449a-ad61-e2930736e1bf` is the single $1.50 sale for that enrollment.
+
+### FIND-031 - QMS completion refreshes payments but leaves client totals stale
+
+- Area: Client Payments state after Quick Manual Sale.
+- Live proof: after WHOP-QMS-003, Recent Payments showed the new 6:23 PM $1.50 sale while the same screen still showed Total Charged `$13.50` and Last Payment `6:18 PM`.
+- Code proof: `onQuickSaleCompleted()` reloaded `client-enrollments` but not `client-info`; the payment table and summary strip therefore came from different requests made at different times.
+- Impact: the merchant sees contradictory payment results immediately after a successful charge and may believe the sale was only partially recorded.
+- Severity recommendation: P2 UI state defect; the ledger is correct, but the initiating workflow presents stale totals.
+- Local repair: reload both exact client enrollment/payment data and client summary data after QMS completion while leaving the confirmation modal visible.
+- Required regression: after a new QMS payment, Recent Payments, Total Charged, and Last Payment all reflect the same transaction without a page refresh.
 
 ## Operations Access
 
