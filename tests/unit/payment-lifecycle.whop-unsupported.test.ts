@@ -175,6 +175,15 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       processor: 'whop',
       subscription_id: 'mem_123',
     }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact-1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.ss_enrollment_status': 'paused',
+        'contact.offer_name': 'Whop Program',
+        'contact.offer_program_name': 'Whop Program',
+        'contact.ss_payments_remaining': 4,
+        'contact.ss_next_payment_date': '',
+      }),
+    }));
   });
 
   it('resumes Whop membership through Whop without creating a generic processor client', async () => {
@@ -192,6 +201,25 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       status: 'enrolled',
       next_billing_date: '2026-07-21',
     }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact-1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.ss_enrollment_status': 'enrolled',
+        'contact.offer_name': 'Whop Program',
+        'contact.offer_program_name': 'Whop Program',
+        'contact.ss_payments_remaining': 4,
+        'contact.ss_next_payment_date': 'Jul 21, 2026',
+      }),
+    }));
+  });
+
+  it('suppresses the pause workflow when exact enrollment fields cannot be synced', async () => {
+    mockGhlPut.mockRejectedValueOnce(new Error('GHL unavailable'));
+
+    await paymentLifecycleService.pauseSubscription(whopParams);
+
+    expect(mockPauseWhop).toHaveBeenCalledWith('loc-1', 'mem_123');
+    expect(mockLogEvidence).toHaveBeenCalled();
+    expect(mockTriggerFire).not.toHaveBeenCalledWith('loc-1', 'ss_subscription_paused', expect.anything());
   });
 
   it('cancels Whop membership through Whop without creating a generic processor client', async () => {

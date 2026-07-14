@@ -8,7 +8,12 @@ import { collapseVisiblePaymentMethods, archivePaymentMethod } from './payment-m
 import { logger } from '../utils/logger';
 import { createPublicActionToken } from '../utils/public-action-token';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
-import { SS_CONTACT_FIELDS, WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
+import {
+  OFFER_CONTACT_FIELDS,
+  SS_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
 import type { StoredCard } from '../types/processor.types';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
@@ -23,6 +28,54 @@ function formatMoney(value: unknown): string {
 
 function today(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+function formatWorkflowDate(value: unknown): string {
+  if (!value) return '';
+  const dateOnly = String(value).slice(0, 10);
+  const parsed = new Date(`${dateOnly}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+async function syncLifecycleWorkflowContact(params: {
+  locationId: string;
+  contactId: string;
+  enrollmentStatus: 'paused' | 'enrolled';
+  offerName: string;
+  paymentsRemaining: number;
+  nextBillingDate?: string;
+  triggerKey: 'ss_subscription_paused' | 'ss_subscription_resumed';
+}): Promise<boolean> {
+  try {
+    const api = await ghlApi(params.locationId);
+    await api.put(`/contacts/${params.contactId}`, {
+      customField: {
+        [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: params.enrollmentStatus,
+        [OFFER_CONTACT_FIELDS.OFFER_NAME]: params.offerName,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: params.offerName,
+        [WORKFLOW_PAYMENT_CONTACT_FIELDS.NEXT_PAYMENT_DATE]: formatWorkflowDate(params.nextBillingDate),
+        [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: params.paymentsRemaining,
+      },
+    });
+    return true;
+  } catch (err: any) {
+    logger.warn(
+      {
+        err: err?.message || String(err),
+        locationId: params.locationId,
+        contactId: params.contactId,
+        triggerKey: params.triggerKey,
+      },
+      'Lifecycle workflow contact field sync failed; customer trigger suppressed',
+    );
+    return false;
+  }
 }
 
 function plainText(value: unknown, fallback = ''): string {
@@ -701,36 +754,43 @@ export const paymentLifecycleService = {
           paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
         }
       } catch {}
-      fireTriggerInBackground(params.locationId, 'ss_subscription_paused', {
-        event_type: 'subscription_paused',
-        location_id: params.locationId,
+      const workflowFieldsReady = await syncLifecycleWorkflowContact({
         locationId: params.locationId,
-        contact_id: params.contactId,
         contactId: params.contactId,
-        enrollment_id: enrollmentId,
-        enrollmentId,
-        offer_id: offerId,
-        offerId,
-        offer_name: offerName,
+        enrollmentStatus: 'paused',
         offerName,
-        program_name: offerName,
-        programName: offerName,
-        processor,
-        subscription_id: subscriptionId,
-        subscriptionId,
-        pause_reason: pauseReason,
-        pauseReason,
-        pause_resume_date: '',
-        payments_remaining: paymentsRemaining,
         paymentsRemaining,
+        triggerKey: 'ss_subscription_paused',
       });
+      if (workflowFieldsReady) {
+        fireTriggerInBackground(params.locationId, 'ss_subscription_paused', {
+          event_type: 'subscription_paused',
+          location_id: params.locationId,
+          locationId: params.locationId,
+          contact_id: params.contactId,
+          contactId: params.contactId,
+          enrollment_id: enrollmentId,
+          enrollmentId,
+          offer_id: offerId,
+          offerId,
+          offer_name: offerName,
+          offerName,
+          program_name: offerName,
+          programName: offerName,
+          processor,
+          subscription_id: subscriptionId,
+          subscriptionId,
+          pause_reason: pauseReason,
+          pauseReason,
+          pause_resume_date: '',
+          payments_remaining: paymentsRemaining,
+          paymentsRemaining,
+        });
+      }
     } catch { /* non-blocking */ }
 
     try {
       const api = await ghlApi(params.locationId);
-      await api.put(`/contacts/${params.contactId}`, {
-        customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'paused' },
-      });
       await api.post(`/contacts/${params.contactId}/notes`, {
         body: `Subscription paused: ${pauseReason}`,
       });
@@ -1048,38 +1108,41 @@ export const paymentLifecycleService = {
           daysPaused = Math.floor((Date.now() - new Date(enr.updated_at).getTime()) / (1000 * 60 * 60 * 24));
         }
       } catch {}
-      fireTriggerInBackground(params.locationId, 'ss_subscription_resumed', {
-        event_type: 'subscription_resumed',
-        location_id: params.locationId,
+      const workflowFieldsReady = await syncLifecycleWorkflowContact({
         locationId: params.locationId,
-        contact_id: params.contactId,
         contactId: params.contactId,
-        enrollment_id: enrollmentId,
-        enrollmentId,
-        offer_id: offerId,
-        offerId,
-        offer_name: offerName,
+        enrollmentStatus: 'enrolled',
         offerName,
-        program_name: offerName,
-        programName: offerName,
-        processor,
-        subscription_id: subscriptionId,
-        subscriptionId,
-        next_billing_date: nextBillingDate,
-        nextBillingDate,
-        payments_remaining: paymentsRemaining,
         paymentsRemaining,
-        days_paused: daysPaused,
-        daysPaused,
+        nextBillingDate,
+        triggerKey: 'ss_subscription_resumed',
       });
-    } catch { /* non-blocking */ }
-
-    // Update GHL contact
-    try {
-      const api = await ghlApi(params.locationId);
-      await api.put(`/contacts/${params.contactId}`, {
-        customField: { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled' },
-      });
+      if (workflowFieldsReady) {
+        fireTriggerInBackground(params.locationId, 'ss_subscription_resumed', {
+          event_type: 'subscription_resumed',
+          location_id: params.locationId,
+          locationId: params.locationId,
+          contact_id: params.contactId,
+          contactId: params.contactId,
+          enrollment_id: enrollmentId,
+          enrollmentId,
+          offer_id: offerId,
+          offerId,
+          offer_name: offerName,
+          offerName,
+          program_name: offerName,
+          programName: offerName,
+          processor,
+          subscription_id: subscriptionId,
+          subscriptionId,
+          next_billing_date: nextBillingDate,
+          nextBillingDate,
+          payments_remaining: paymentsRemaining,
+          paymentsRemaining,
+          days_paused: daysPaused,
+          daysPaused,
+        });
+      }
     } catch { /* non-blocking */ }
 
     logger.info({ contactId: params.contactId }, 'Subscription resumed');

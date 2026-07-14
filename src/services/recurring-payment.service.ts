@@ -4,7 +4,11 @@ import { paymentLifecycleService } from './payment-lifecycle.service';
 import { triggerService } from './trigger.service';
 import { evidenceService } from './evidence.service';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
-import { WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
+import {
+  OFFER_CONTACT_FIELDS,
+  WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
+  WORKFLOW_PAYMENT_CONTACT_FIELDS,
+} from '../constants/ghl-fields';
 import { logger } from '../utils/logger';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
@@ -228,6 +232,10 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
         const api = await ghlApi(enr.location_id);
         await api.put(`/contacts/${enr.contact_id}`, {
           customField: {
+            [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: merchantIdentity.businessName,
+            [OFFER_CONTACT_FIELDS.OFFER_NAME]: offerName,
+            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: offerName,
+            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: merchantIdentity.supportEmail,
             [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: isFinal ? 'Completed' : 'Current',
             [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amountDollars),
             [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: today(),

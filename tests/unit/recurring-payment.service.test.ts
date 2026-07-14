@@ -111,6 +111,15 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
       payments_remaining: 0,
       payment_kind: 'installment',
     }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact_1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.offer_business_name': 'Biz',
+        'contact.offer_name': 'Test Offer',
+        'contact.offer_program_name': 'Test Offer',
+        'contact.offer_support_email': 'help@biz.com',
+        'contact.ss_last_payment_amount': '$50.00',
+      }),
+    }));
   });
 
   it('skips increment, evidence, contact sync, and triggers on a duplicate webhook delivery', async () => {

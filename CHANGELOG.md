@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Recurring-payment and subscription lifecycle workflows now refresh the exact enrollment's program and payment fields before firing. If lifecycle fields cannot be synchronized, ScaleSafe suppresses the customer notification instead of sending a message for the wrong program.
 - Finite Stripe installment plans now cancel exactly on the full billing-cycle boundary. The previous one-hour early `cancel_at` prorated the final installment (a live `$1.00` daily installment settled for `$0.96`).
 - Whop subscription actions now validate the exact membership before mutation and confirm the resulting Whop state before ScaleSafe writes enrollment, evidence, or workflow state. Completed and non-recurring memberships are rejected instead of producing false local pause/resume/cancel records.
 - Resuming a Whop recurring membership now restores the verified `renewal_period_end` as the enrollment's next billing date; immediate cancellation uses Whop's confirmed cancellation timestamp when available.
