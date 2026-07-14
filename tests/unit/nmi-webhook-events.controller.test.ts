@@ -126,6 +126,27 @@ function makeReqResBase64Url(payload: any, secret = SECRET) {
   return { req, res };
 }
 
+function makeReqResMerchantPortal(payload: any, secret = SECRET, nonce = '1720718400') {
+  const raw = Buffer.from(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(Buffer.concat([Buffer.from(`${nonce}.`), raw]))
+    .digest('hex');
+  const req = {
+    params: { processorConfigId: 'config_1' },
+    body: payload,
+    rawBody: raw,
+    get: jest.fn((name: string) => (
+      name.toLowerCase() === 'webhook-signature' ? `t=${nonce},s=${signature}` : undefined
+    )),
+  } as any;
+  const res = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn(),
+  } as any;
+  return { req, res };
+}
+
 describe('NMI official webhook events', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -197,6 +218,55 @@ describe('NMI official webhook events', () => {
       source: 'nmi_webhook_event',
     }));
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('accepts NMI Merchant Portal Webhook-Signature headers', async () => {
+    const { req, res } = makeReqResMerchantPortal({
+      event_id: 'evt_merchant_portal',
+      event_type: 'transaction.sale.success',
+      event_body: {
+        transaction_id: '12089230194',
+        subscription_id: 'sub_1',
+        action: { source: 'recurring', amount: '0.33', response_code: '1' },
+      },
+    });
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: '12089230194',
+      source: 'nmi_webhook_event',
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('rejects malformed NMI Merchant Portal signatures', async () => {
+    const { req, res } = makeReqResMerchantPortal({
+      event_id: 'evt_malformed_merchant_portal',
+      event_type: 'transaction.sale.success',
+      event_body: { transaction_id: 'txn_bad_format' },
+    });
+    req.get = jest.fn((name: string) => (
+      name.toLowerCase() === 'webhook-signature' ? 'not-a-valid-signature' : undefined
+    ));
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('rejects NMI Merchant Portal signatures made with the wrong key', async () => {
+    const { req, res } = makeReqResMerchantPortal({
+      event_id: 'evt_bad_merchant_portal',
+      event_type: 'transaction.sale.success',
+      event_body: { transaction_id: 'txn_bad_key' },
+    }, 'wrong_secret');
+
+    await handleNmiWebhookEvent(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it('uses NMI transaction lookup metadata when a recurring sale webhook has no subscription id', async () => {

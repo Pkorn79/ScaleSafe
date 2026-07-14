@@ -308,8 +308,40 @@ function rawPayload(req: Request): Buffer {
   return Buffer.from(JSON.stringify(req.body || {}));
 }
 
-function verifySignature(raw: Buffer, signatureHeader: string, secret: string): boolean {
-  if (!signatureHeader || !secret) return false;
+type NmiSignatureHeader = {
+  format: 'merchant_portal' | 'legacy';
+  value: string;
+};
+
+function getSignatureHeader(req: Request): NmiSignatureHeader | null {
+  const merchantPortal = String(req.get('Webhook-Signature') || '').trim();
+  if (merchantPortal) return { format: 'merchant_portal', value: merchantPortal };
+
+  const legacy = String(req.get('Signature') || '').trim();
+  return legacy ? { format: 'legacy', value: legacy } : null;
+}
+
+function constantTimeTextMatch(sentValue: string, expectedValue: string): boolean {
+  const sent = Buffer.from(sentValue, 'utf8');
+  const expected = Buffer.from(expectedValue, 'utf8');
+  return sent.length === expected.length && crypto.timingSafeEqual(sent, expected);
+}
+
+function verifySignature(raw: Buffer, signatureHeader: NmiSignatureHeader, secret: string): boolean {
+  if (!signatureHeader?.value || !secret) return false;
+
+  if (signatureHeader.format === 'merchant_portal') {
+    const match = /^t=([^,]+),s=([^,]+)$/.exec(signatureHeader.value);
+    if (!match) return false;
+
+    const signedPayload = Buffer.concat([
+      Buffer.from(`${match[1]}.`, 'utf8'),
+      raw,
+    ]);
+    const expected = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+    return constantTimeTextMatch(match[2], expected);
+  }
+
   const expectedHex = crypto.createHmac('sha256', secret).update(raw).digest('hex');
   const expectedBase64 = crypto.createHmac('sha256', secret).update(raw).digest('base64');
   const expectedBase64Url = crypto.createHmac('sha256', secret).update(raw).digest('base64url');
@@ -321,10 +353,7 @@ function verifySignature(raw: Buffer, signatureHeader: string, secret: string): 
   ];
 
   return candidates.some((expected) => {
-    const sentValue = signatureHeader.trim();
-    const sent = Buffer.from(sentValue, 'utf8');
-    const want = Buffer.from(expected, 'utf8');
-    return sent.length === want.length && crypto.timingSafeEqual(sent, want);
+    return constantTimeTextMatch(signatureHeader.value, expected);
   });
 }
 
@@ -398,7 +427,7 @@ async function loadConfigFromPayload(supabase: SupabaseClient, payload: any): Pr
 async function findConfigBySignature(
   supabase: SupabaseClient,
   raw: Buffer,
-  signature: string,
+  signature: NmiSignatureHeader,
 ): Promise<ProcessorConfig | null> {
   const configs = await loadActiveNmiConfigs(supabase);
   for (const config of configs) {
@@ -1443,8 +1472,8 @@ async function resolveOfficialWebhookConfig(
   signatureVerified: boolean | null;
   invalidSignatureConfig: ProcessorConfig | null;
 }> {
-  const signature = String(req.get('Signature') || req.get('signature') || '');
-  const signaturePresent = !!signature.trim();
+  const signature = getSignatureHeader(req);
+  const signaturePresent = signature !== null;
 
   if (processorConfigId) {
     const config = await loadProcessorConfig(supabase, processorConfigId);
@@ -1455,7 +1484,7 @@ async function resolveOfficialWebhookConfig(
       return { config, signaturePresent, signatureVerified: false, invalidSignatureConfig: config };
     }
     const secret = processorConfigService.decryptNmiWebhookSecret(config);
-    const signatureVerified = verifySignature(rawPayload(req), signature, secret);
+    const signatureVerified = verifySignature(rawPayload(req), signature!, secret);
     return {
       config: signatureVerified ? config : null,
       signaturePresent,
@@ -1465,7 +1494,7 @@ async function resolveOfficialWebhookConfig(
   }
 
   if (signaturePresent) {
-    const config = await findConfigBySignature(supabase, rawPayload(req), signature);
+    const config = await findConfigBySignature(supabase, rawPayload(req), signature!);
     if (config) return { config, signaturePresent, signatureVerified: true, invalidSignatureConfig: config };
     const configFromPayload = await loadConfigFromPayload(supabase, payload);
     if (configFromPayload && !configFromPayload.nmi_webhook_secret_encrypted) {
@@ -1505,7 +1534,7 @@ export async function processNmiOfficialWebhookRequest(
           res,
           resolved.invalidSignatureConfig,
           payload,
-          'NMI Signature header did not match stored webhook key',
+          'NMI webhook signature did not match the stored signing key',
         );
         return;
       }
@@ -1530,7 +1559,7 @@ export async function processNmiOfficialWebhookRequest(
         res,
         config,
         payload,
-        'NMI Signature header was missing',
+        'NMI webhook signature header was missing',
       );
       return;
     }
@@ -1557,8 +1586,8 @@ export async function processNmiOfficialWebhookRequest(
       await updateDiagnosticLog(logId, {
         signature_verified: false,
         error_message: resolved.signaturePresent
-          ? 'Signature header received, but no NMI webhook key is saved yet; proceeding by transaction verification/matching'
-          : 'No Signature header on official NMI event; proceeding by transaction verification/matching',
+          ? 'Webhook signature received, but no NMI signing key is saved yet; proceeding by transaction verification/matching'
+          : 'No webhook signature on official NMI event; proceeding by transaction verification/matching',
       });
     }
 

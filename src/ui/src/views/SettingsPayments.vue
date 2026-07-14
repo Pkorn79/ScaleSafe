@@ -198,7 +198,7 @@
                   </button>
                 </div>
                 <p class="text-sm text-muted mt-2">
-                  Use the key shown in NMI Webhooks. ScaleSafe uses it to verify the Signature header on official events.
+                  Use the signing key shown in NMI Webhooks. ScaleSafe uses it to verify official event signatures.
                 </p>
               </div>
               <div class="setup-row">
@@ -207,7 +207,7 @@
                   <span v-for="event in nmiWebhook.events" :key="event" class="event-pill">{{ event }}</span>
                 </div>
               </div>
-              <p class="text-sm text-muted">Signature header: <span class="mono">Signature</span></p>
+              <p class="text-sm text-muted">Signature header: <span class="mono">Webhook-Signature</span></p>
               <p v-if="nmiWebhook.lastVerifiedAt" class="text-sm text-muted">Last verified: {{ formatDateTime(nmiWebhook.lastVerifiedAt) }}</p>
               <p v-if="nmiWebhook.lastError" class="text-sm" style="color:#dc2626">{{ nmiWebhook.lastError }}</p>
               <div class="flex gap-2 mt-2">
