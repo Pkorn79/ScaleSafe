@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Enrollment-scoped pulse responses now appear in defense exhibits as client-engagement evidence, including the client's score, feedback, and follow-up request. Pulse responses remain communication evidence and cannot alone satisfy a service-delivery readiness gate.
 - Defense compilation now preserves the selected payment's processor ID and transaction date when the UI also supplies its enrollment, and rejects conflicting transaction/enrollment/offer combinations instead of blending evidence.
 - Exact-enrollment defense packets no longer admit contact-wide, date-only, offer-only, or offer-name-only activity. Inferred legacy scope remains explicitly reviewable, while repeated enrollments in the same offer stay isolated.
 - The selected disputed payment is now a first-class exhibit with its processor references, amount, status, installment sequence, and order-bump/upsell line items.

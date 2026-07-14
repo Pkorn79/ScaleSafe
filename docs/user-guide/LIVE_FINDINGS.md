@@ -422,6 +422,15 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Repair: generic custom events are excluded unless explicitly approved with a delivery/access/deliverable/milestone proof role; the selected payment is included separately as payment evidence.
 - Required regression: a 13.1 packet with payment/consent but no delivery proof lands on `needs_review` and does not fire ready.
 
+### FIND-043 - Stored pulse responses are omitted from defense exhibits
+
+- Area: Pulse evidence and defense assembly.
+- Code proof: pulse submissions are stored in `evidence_pulse_checkins`, shown in the client evidence timeline, and referenced by the defense prompt, but the exhibit builder did not query that table. Its unified-timeline fallback also excluded the `pulse_checkin` type.
+- Impact: a client-authored satisfaction score, written feedback, concern, or explicit follow-up request could be missing from the bank-facing packet even when it was linked to the disputed enrollment.
+- Severity recommendation: P1 evidence completeness defect. Evidence was preserved in ScaleSafe but silently omitted from the compiled defense.
+- Repair: query pulse rows directly, scope them through the exact enrollment rules, surface query failures, and classify them as client-engagement communication rather than service delivery. New pulse submissions use the `client_engagement` proof role.
+- Required regression: the selected enrollment's pulse appears with score/feedback/follow-up details, a sibling enrollment's pulse is excluded, and pulse evidence alone cannot make a services-not-provided packet ready.
+
 ## Operations Access
 
 - Railway CLI 4.35.0 is authenticated as `p_korniotes@yahoo.com` and connected to `pure-renewal / production / ScaleSafe` as of 2026-07-12.

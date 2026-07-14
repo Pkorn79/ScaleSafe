@@ -238,6 +238,7 @@ const SOURCE_PRIORITY_KEYS: Record<string, string[]> = {
   evidence_resource_delivery: ['deliverables'],
   evidence_assignments: ['deliverables', 'modules'],
   evidence_custom_events: ['service_access', 'deliverables'],
+  evidence_pulse_checkins: ['communication', 'satisfaction'],
   evidence_communication: ['communication'],
   evidence_invoices: ['payment_history'],
   evidence_enrollment_payment: ['payment_history'],
@@ -713,6 +714,44 @@ export const defenseExhibitsService = {
     // Communications are the highest-volume, lowest-signal evidence type (GHL syncs
     // every outbound email). Cap them so a packet can never again become 29 emails:
     // enrollment/transaction-linked comms are always kept; unlinked ones are capped.
+    // Pulse responses are client-authored engagement evidence. They can corroborate
+    // satisfaction, concerns, continued participation, and a request for follow-up,
+    // but they do not by themselves prove that contracted services were delivered.
+    try {
+      const { data: pulseCheckins, error: pulseErr } = await supabase
+        .from('evidence_pulse_checkins')
+        .select(`id, enrollment_id, source, checkin_date, sentiment_score, feedback_text, follow_up_needed, follow_up_action, contact_name, raw_payload, ${DEFENSE_FIELD_SELECT}`)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .order('checkin_date', { ascending: true });
+      if (pulseErr) recordSourceError('evidence_pulse_checkins', pulseErr);
+      for (const pulse of scopedRows((pulseCheckins || []) as any[], opts?.enrollmentId, 'checkin_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        const score = Number(pulse.sentiment_score);
+        const scoreText = Number.isFinite(score) ? ` Satisfaction: ${score}/5.` : '';
+        const feedbackText = String(pulse.feedback_text || '').trim();
+        const followUpText = pulse.follow_up_needed
+          ? ` The client requested merchant follow-up${pulse.follow_up_action ? ` (${pulse.follow_up_action})` : ''}.`
+          : '';
+        exhibits.push({
+          letter: indexToLetter(nextIdx++),
+          name: exhibitName(pulse, 'Client Pulse Check-In'),
+          category: 'communication',
+          source: 'evidence_pulse_checkins',
+          ref: pulse.id,
+          occurredAt: pulse.checkin_date || null,
+          summary: exhibitSummary(
+            pulse,
+            `${pulse.contact_name || 'The client'} submitted a pulse check-in on ${fmtDate(pulse.checkin_date)}.${scoreText}${feedbackText ? ` Feedback: ${feedbackText.slice(0, 400)}.` : ''}${followUpText}`,
+          ),
+          meta: exhibitMeta(pulse, {
+            sentimentScore: Number.isFinite(score) ? score : null,
+            followUpNeeded: pulse.follow_up_needed === true,
+            source: pulse.source || null,
+          }),
+        });
+      }
+    } catch (err) { recordSourceError('evidence_pulse_checkins', err); }
+
     const MAX_UNLINKED_COMMS = 5;
     try {
       const { data: comms, error: commsErr } = await supabase

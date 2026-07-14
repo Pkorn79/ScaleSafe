@@ -821,7 +821,7 @@ export async function submitPulseCheckin(req: Request, res: Response, next: Next
       ...buildDefenseEvidenceFields({
         title: 'Client Pulse Check-In',
         summary: `${clientName || 'Client'} submitted a pulse check-in with satisfaction ${satisfaction}/5.${goingWell ? ` Going well: ${goingWell.slice(0, 160)}.` : ''}${concerns ? ` Concerns: ${concerns.slice(0, 160)}.` : ''}`,
-        proofRole: 'service_delivery',
+        proofRole: 'client_engagement',
         relevance: { tags: ['services_not_provided', 'not_as_described', 'fraud'], priority: followUpNeeded ? 'high' : 'medium', confidence: 'moderate' },
         enrollmentId: enrollment.id,
         metadata: {

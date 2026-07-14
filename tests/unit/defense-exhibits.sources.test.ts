@@ -192,6 +192,53 @@ describe('noise filtering', () => {
     expect(refs).toContain('ev_real');
   });
 
+  test('pulse check-ins are scoped to the exact enrollment and remain engagement evidence', async () => {
+    mockTableResults['evidence_pulse_checkins'] = {
+      data: [
+        {
+          id: 'pulse_target', enrollment_id: 'enr_1', checkin_date: '2026-06-10',
+          contact_name: 'Test Client', sentiment_score: 4,
+          feedback_text: 'Going well: implementation is moving forward',
+          follow_up_needed: true,
+          follow_up_action: 'Merchant follow-up requested from pulse check-in',
+          proof_role: 'service_delivery',
+        },
+        {
+          id: 'pulse_sibling', enrollment_id: 'enr_other', checkin_date: '2026-06-11',
+          sentiment_score: 5, feedback_text: 'Different program', follow_up_needed: false,
+        },
+      ],
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+    const pulses = list.exhibits.filter((e) => e.source === 'evidence_pulse_checkins');
+
+    expect(pulses).toHaveLength(1);
+    expect(pulses[0]).toEqual(expect.objectContaining({
+      ref: 'pulse_target',
+      category: 'communication',
+      occurredAt: '2026-06-10',
+    }));
+    expect(pulses[0].summary).toContain('implementation is moving forward');
+    expect(pulses[0].summary).toContain('requested merchant follow-up');
+    expect(list.totals.serviceDelivery).toBe(0);
+    expect(list.totals.communication).toBe(1);
+  });
+
+  test('a pulse source failure is surfaced instead of silently dropping check-ins', async () => {
+    mockTableResults['evidence_pulse_checkins'] = {
+      data: null,
+      error: { message: 'pulse table unavailable' },
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+
+    expect(list.sourceErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'evidence_pulse_checkins', message: 'pulse table unavailable' }),
+    ]));
+  });
+
   test('exact scope excludes sibling, date-only, and offer-name-only communications', async () => {
     mockTableResults['evidence_communication'] = {
       data: [

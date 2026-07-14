@@ -340,6 +340,7 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-040 | P1 | Evidence isolation defect | Live Visa 13.1 compilation | Same-day sibling-program communications entered exact packet | Local fix verified | Regenerate and confirm only selected enrollment evidence |
 | FIND-041 | P1 | Defense factual-accuracy defect | Live Visa 13.1 compilation | `installments` was described as paid in full | Local fix verified | Regenerate and inspect offer/payment language |
 | FIND-042 | P1 | Defense readiness defect | Live Visa 13.1 compilation | Generic cancellation note counted as delivery and permitted ready | Local fix verified | Regenerate; expect needs_review and no new ready trigger |
+| FIND-043 | P1 | Defense evidence completeness defect | Defense evidence-path audit | Stored pulse responses were never loaded into defense exhibits | Local fix verified | Compile an enrollment with a pulse and confirm engagement-only exhibit inclusion |
 
 ## Screenshot Rules
 
