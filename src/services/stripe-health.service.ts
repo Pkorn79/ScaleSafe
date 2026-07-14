@@ -169,6 +169,7 @@ export class StripeHealthService {
       .select('*')
       .eq('merchant_id', merchantId)
       .eq('location_id', locationId)
+      .eq('processor', 'stripe')
       .order('computed_at', { ascending: false })
       .limit(1)
       .single();
@@ -185,6 +186,7 @@ export class StripeHealthService {
       .select('*')
       .eq('merchant_id', merchantId)
       .eq('location_id', locationId)
+      .eq('processor', 'stripe')
       .order('computed_at', { ascending: false })
       .limit(limit);
 

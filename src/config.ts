@@ -14,6 +14,11 @@ function optional(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
+function optionalPositiveInteger(key: string, fallback: number, minimum = 1): number {
+  const parsed = Number.parseInt(process.env[key] || '', 10);
+  return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
+}
+
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
 const ghlClientId = required('GHL_APP_CLIENT_ID');
@@ -57,6 +62,7 @@ export const config = {
   supabase: {
     url: required('SUPABASE_URL'),
     serviceKey: required('SUPABASE_SERVICE_KEY'),
+    requestTimeoutMs: optionalPositiveInteger('SUPABASE_REQUEST_TIMEOUT_MS', 10_000, 1000),
   },
 
   // Stripe Connect (platform keys)

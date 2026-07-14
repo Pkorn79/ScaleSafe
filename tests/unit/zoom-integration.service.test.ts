@@ -87,6 +87,24 @@ describe('Zoom evidence integration', () => {
     expect(ingestCanonical).not.toHaveBeenCalled();
   });
 
+  it('never turns the Zoom host into client attendance evidence', async () => {
+    const payload = {
+      event: 'meeting.participant_joined', event_ts: Date.now(),
+      payload: { account_id: 'zoom-account', object: {
+        id: 12345, uuid: 'meeting-instance', topic: 'Implementation Call', host_id: 'host-user',
+        participant: {
+          participant_uuid: 'host-instance', participant_user_id: 'host-user',
+          email: 'merchant@example.com', join_time: '2026-07-11T14:00:00Z',
+        },
+      } },
+    };
+
+    await expect(zoomIntegrationService.handleWebhook(payload, Buffer.from(JSON.stringify(payload))))
+      .resolves.toEqual({ accepted: true, ignored: true, reason: 'host_participant' });
+    expect(createAttendance).not.toHaveBeenCalled();
+    expect(ingestCanonical).not.toHaveBeenCalled();
+  });
+
   it('turns a matching leave into one enrollment-resolvable attendance event', async () => {
     findOpenAttendance.mockResolvedValue({
       id: 'attendance-1', joined_at: '2026-07-11T14:00:00Z', participant_email: 'client@example.com', meeting_topic: 'Implementation Call',

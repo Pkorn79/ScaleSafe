@@ -17,12 +17,18 @@ export interface CheckoutAddonInput {
 }
 
 export interface CheckoutLineItem {
-  type: 'base_offer' | CheckoutAddonKind;
+  type: 'base_offer' | CheckoutAddonKind | 'dual_pricing_adjustment';
   addonId?: string;
   label: string;
   description?: string;
   amountCents: number;
   amount: number;
+  pricing?: {
+    selectedPaymentMethod: PaymentMethod;
+    achAmountCents: number;
+    cardAmountCents: number;
+    cardUpliftPercent: number;
+  };
 }
 
 export interface CheckoutCartQuote {
@@ -255,6 +261,22 @@ export const checkoutCartService = {
         };
       }),
     ];
+    const cardAdjustmentCents = quote.cardAmountCents - quote.achAmountCents;
+    if (quote.dualPricingEnabled && quote.paymentMethod === 'card' && cardAdjustmentCents > 0) {
+      lineItems.push({
+        type: 'dual_pricing_adjustment',
+        label: `Card price adjustment (${quote.cardUpliftPercent.toFixed(2)}%)`,
+        description: 'Difference between the displayed bank-transfer price and selected card price.',
+        amountCents: cardAdjustmentCents,
+        amount: centsToDollars(cardAdjustmentCents),
+        pricing: {
+          selectedPaymentMethod: quote.paymentMethod,
+          achAmountCents: quote.achAmountCents,
+          cardAmountCents: quote.cardAmountCents,
+          cardUpliftPercent: quote.cardUpliftPercent,
+        },
+      });
+    }
 
     return {
       dualPricingEnabled: quote.dualPricingEnabled,

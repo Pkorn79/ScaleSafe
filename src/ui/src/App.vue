@@ -1,11 +1,34 @@
 <script setup lang="ts">
-import { ssoSession } from './composables/useApi';
+import { computed } from 'vue';
+import { retrySso, ssoSession } from './composables/useApi';
 import ToastContainer from './components/ToastContainer.vue';
 import {
   LayoutDashboard, Package, Users, CreditCard,
   Shield, Activity, Settings, ChevronRight, Map,
   Plug,
 } from 'lucide-vue-next';
+
+const reinstallRequired = computed(() =>
+  ['installation_missing', 'installation_invalid'].includes(ssoSession.errorCode || ''),
+);
+
+const connectionTitle = computed(() => {
+  if (ssoSession.errorCode === 'service_unavailable' || ssoSession.errorCode === 'backend_timeout') return 'ScaleSafe Is Temporarily Unavailable';
+  if (ssoSession.errorCode === 'parent_context_timeout') return 'GoHighLevel Context Was Not Received';
+  if (reinstallRequired.value) return 'ScaleSafe Installation Needs Attention';
+  return 'Unable to Connect';
+});
+
+const connectionMessage = computed(() => {
+  if (ssoSession.errorCode === 'service_unavailable' || ssoSession.errorCode === 'backend_timeout') {
+    return 'Your installation may be fine. ScaleSafe could not reach account services; wait a moment and try again.';
+  }
+  if (ssoSession.errorCode === 'parent_context_timeout') {
+    return 'ScaleSafe opened, but GoHighLevel did not send the secure sub-account context needed to start a session.';
+  }
+  if (reinstallRequired.value) return 'ScaleSafe could not verify an active installation for this sub-account.';
+  return 'ScaleSafe could not verify secure GoHighLevel account context.';
+});
 </script>
 
 <template>
@@ -44,12 +67,9 @@ import {
   <div v-else-if="ssoSession.error || !ssoSession.locationId" class="flex items-center justify-center min-h-screen bg-slate-50 p-6">
     <div class="bg-white rounded-xl p-10 max-w-md w-full shadow-sm text-center">
       <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 text-2xl font-bold flex items-center justify-center mx-auto mb-4">!</div>
-      <h1 class="text-xl font-semibold text-slate-900 mb-2">Unable to Connect</h1>
-      <p class="text-slate-500 text-sm leading-relaxed mb-5">
-        ScaleSafe couldn't verify your account with GoHighLevel.
-        This usually means the app needs to be reinstalled.
-      </p>
-      <div class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
+      <h1 class="text-xl font-semibold text-slate-900 mb-2">{{ connectionTitle }}</h1>
+      <p class="text-slate-500 text-sm leading-relaxed mb-5">{{ connectionMessage }}</p>
+      <div v-if="reinstallRequired" class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
         <p class="mb-2"><strong>To fix this:</strong></p>
         <ol class="pl-5 space-y-1 list-decimal">
           <li>Go to <strong>Settings &gt; Integrations</strong> in your GHL account</li>
@@ -57,6 +77,14 @@ import {
           <li>Reinstall ScaleSafe from the Marketplace</li>
         </ol>
       </div>
+      <div v-else class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
+        <p class="mb-2"><strong>Try this:</strong></p>
+        <ol class="pl-5 space-y-1 list-decimal">
+          <li>Confirm you opened ScaleSafe from inside the intended GHL sub-account</li>
+          <li>Use Retry below; do not uninstall the app for a temporary service error</li>
+        </ol>
+      </div>
+      <button v-if="!reinstallRequired" type="button" class="btn btn-primary mb-5" @click="retrySso">Retry connection</button>
       <p class="text-xs text-slate-400 mb-4">
         Still having trouble? Contact support at
         <a href="mailto:support@scalesafe.app" class="text-ss-primary-500 no-underline">support@scalesafe.app</a>

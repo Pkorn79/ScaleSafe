@@ -10,7 +10,7 @@
 
     <template v-if="!pageLoading">
       <!-- Summary strip -->
-      <div class="grid grid-4 mb-4">
+      <div class="grid grid-3 mb-4">
         <div class="card">
           <div class="card-title">Open</div>
           <div class="card-value">{{ openCount }}</div>
@@ -20,12 +20,8 @@
           <div class="card-value">{{ submittedCount }}</div>
         </div>
         <div class="card">
-          <div class="card-title">Won</div>
-          <div class="card-value" style="color:#10b981">{{ wonCount }}</div>
-        </div>
-        <div class="card">
           <div class="card-title">Total Exposure</div>
-          <div class="card-value">${{ (totalExposure / 100).toFixed(2) }}</div>
+          <div class="card-value">${{ totalExposure.toFixed(2) }}</div>
         </div>
       </div>
 
@@ -87,7 +83,7 @@
               <td>
                 <div class="flex gap-2">
                   <router-link v-if="d.defense_packet_id" :to="`/defense/${d.defense_packet_id}`" class="btn btn-sm btn-primary">
-                    Review &amp; Submit
+                    {{ responseRequired(d.status) ? 'Review & Submit' : 'View Packet' }}
                   </router-link>
                   <button
                     v-else-if="d.status === 'needs_response' || d.status === 'warning_needs_response'"
@@ -143,14 +139,17 @@ const sortedDisputes = computed(() => {
   });
 });
 
-const openCount = computed(() => disputes.value.filter(d => !d.outcome || d.outcome === 'pending').length);
-const submittedCount = computed(() => disputes.value.filter(d => d.status === 'under_review').length);
-const wonCount = computed(() => disputes.value.filter(d => d.outcome === 'won').length);
+const openCount = computed(() => disputes.value.filter(d => responseRequired(d.status)).length);
+const submittedCount = computed(() => disputes.value.filter(d => ['under_review', 'warning_under_review'].includes(d.status)).length);
 const totalExposure = computed(() => {
   return disputes.value
     .filter(d => !d.outcome || d.outcome === 'pending')
     .reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0);
 });
+
+function responseRequired(status: string): boolean {
+  return status === 'needs_response' || status === 'warning_needs_response';
+}
 
 onMounted(async () => {
   await loadDisputes();
@@ -255,6 +254,7 @@ function statusBadge(status: string): string {
     needs_response: 'badge-yellow',
     warning_needs_response: 'badge-red',
     under_review: 'badge-blue',
+    warning_under_review: 'badge-blue',
     won: 'badge-green',
     lost: 'badge-red',
     charge_refunded: 'badge-gray',
@@ -267,6 +267,7 @@ function formatStatus(status: string): string {
     needs_response: 'Needs Response',
     warning_needs_response: 'Urgent',
     under_review: 'Under Review',
+    warning_under_review: 'Under Review',
     won: 'Won',
     lost: 'Lost',
     charge_refunded: 'Refunded',

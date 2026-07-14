@@ -7,9 +7,9 @@ import {
   refundReconciliationService,
   type RefundReconciliationClaim,
 } from './refund-reconciliation.service';
+import { AdaptivePoller } from '../utils/adaptive-poller';
 
 const workerId = `money_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
-let timer: NodeJS.Timeout | null = null;
 let running = false;
 
 function request(operation: MoneyOperationRecord): Record<string, any> {
@@ -484,8 +484,8 @@ async function processRefundClaim(claim: RefundReconciliationClaim): Promise<voi
   }
 }
 
-async function tick(): Promise<void> {
-  if (running) return;
+async function tick(): Promise<number> {
+  if (running) return 0;
   running = true;
   try {
     const [operations, refundClaims] = await Promise.all([
@@ -496,25 +496,28 @@ async function tick(): Promise<void> {
       ...operations.map(processOperation),
       ...refundClaims.map(processRefundClaim),
     ]);
+    return operations.length + refundClaims.length;
   } catch (err: any) {
     logger.error({ err: err.message }, 'Money reconciliation worker tick failed');
+    return 0;
   } finally {
     running = false;
   }
 }
 
+const poller = new AdaptivePoller({ task: tick });
+
 export const moneyReconciliationWorker = {
   start(): void {
-    if (timer) return;
-    timer = setInterval(() => void tick(), 5000);
-    timer.unref();
-    setTimeout(() => void tick(), 1000).unref();
+    poller.start();
   },
   async runOnce(): Promise<void> {
     await tick();
   },
+  wake(): void {
+    poller.wake();
+  },
   stop(): void {
-    if (timer) clearInterval(timer);
-    timer = null;
+    poller.stop();
   },
 };

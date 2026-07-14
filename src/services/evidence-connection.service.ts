@@ -114,6 +114,24 @@ export const evidenceConnectionService = {
         const offer = Array.isArray(event.offer) ? event.offer[0] : event.offer;
         if (event.offer_id) programs.set(event.offer_id, offer?.offer_name || 'Program');
       }
+      const active = connection.status === 'active' && connection.setup_status === 'active';
+      const webhookObserved = Boolean(connection.last_event_at);
+      const evidenceObserved = published.length > 0;
+      const effectiveHealth = active
+        && !['warning', 'error'].includes(connection.health_status)
+        && (!webhookObserved || !evidenceObserved)
+        ? 'ready'
+        : connection.health_status;
+      const inactiveMessage = connection.status !== 'active'
+        ? 'Connection is disabled.'
+        : connection.setup_status !== 'active'
+          ? 'Connection setup is not active.'
+          : null;
+      const proofMessage = active && !webhookObserved
+        ? 'Account connected. Waiting for a completed participant session to verify webhook and evidence delivery.'
+        : active && !evidenceObserved
+          ? 'Webhook activity observed. Waiting for an event that can be matched and published as evidence.'
+          : null;
       return {
         id: connection.id,
         name: connection.name,
@@ -122,15 +140,19 @@ export const evidenceConnectionService = {
         connectionType: connection.connection_type,
         status: connection.status,
         setupStatus: connection.setup_status,
-        healthStatus: connection.health_status,
-        lastEvidenceAt: published[0]?.published_at || connection.last_success_at || null,
+        healthStatus: effectiveHealth,
+        authorizationStatus: connection.external_account_id ? 'connected' : 'not_connected',
+        webhookStatus: webhookObserved ? 'observed' : 'awaiting_test',
+        evidenceStatus: evidenceObserved ? 'published' : 'awaiting_evidence',
+        lastEvidenceAt: published[0]?.published_at || null,
         lastEventAt: connection.last_event_at,
         publishedCount: published.length,
         affectedPrograms: Array.from(programs.entries()).map(([offerId, offerName]) => ({ offerId, offerName })),
-        needsAttention: connection.setup_status === 'needs_attention'
+        needsAttention: !active
+          || connection.setup_status === 'needs_attention'
           || connection.health_status === 'warning'
           || connection.health_status === 'error',
-        statusMessage: connection.last_error_message || null,
+        statusMessage: connection.last_error_message || inactiveMessage || proofMessage,
       };
     }));
   },

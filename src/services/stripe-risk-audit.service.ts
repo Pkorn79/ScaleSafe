@@ -1,12 +1,47 @@
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
-import { ModuleRecommendation } from '../types/stripe-defense.types';
+import type { ModuleRecommendation, RiskAuditResult } from '../types/stripe-defense.types';
 import { logger } from '../utils/logger';
 
 const Stripe = require('stripe');
 
+const RISK_LEVELS = new Set<RiskAuditResult['overallRiskLevel']>([
+  'low', 'moderate', 'elevated', 'high', 'critical', 'unknown',
+]);
+
+export function normalizeRiskAuditResult(row: Record<string, any>): RiskAuditResult {
+  const riskLevel = row.overall_risk_level ?? row.overallRiskLevel ?? 'unknown';
+  return {
+    id: String(row.id || ''),
+    merchantId: String(row.merchant_id ?? row.merchantId ?? ''),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
+    auditPeriodStart: String(row.audit_period_start ?? row.auditPeriodStart ?? ''),
+    auditPeriodEnd: String(row.audit_period_end ?? row.auditPeriodEnd ?? ''),
+    totalCharges: Number(row.total_charges ?? row.totalCharges ?? 0),
+    totalDisputes: Number(row.total_disputes ?? row.totalDisputes ?? 0),
+    totalEfws: Number(row.total_efws ?? row.totalEfws ?? 0),
+    totalDisputeAmountCents: Number(row.total_dispute_amount_cents ?? row.totalDisputeAmountCents ?? 0),
+    disputesWon: Number(row.disputes_won ?? row.disputesWon ?? 0),
+    disputesLost: Number(row.disputes_lost ?? row.disputesLost ?? 0),
+    disputesPending: Number(row.disputes_pending ?? row.disputesPending ?? 0),
+    reasonCodeBreakdown: row.reason_code_breakdown ?? row.reasonCodeBreakdown ?? {},
+    avgTransactionCents: Number(row.avg_transaction_cents ?? row.avgTransactionCents ?? 0),
+    repeatCustomerCount: Number(row.repeat_customer_count ?? row.repeatCustomerCount ?? 0),
+    uniqueCustomerCount: Number(row.unique_customer_count ?? row.uniqueCustomerCount ?? 0),
+    scoreDisputeRate: Number(row.score_dispute_rate ?? row.scoreDisputeRate ?? 0),
+    scoreEvidenceReadiness: Number(row.score_evidence_readiness ?? row.scoreEvidenceReadiness ?? 0),
+    scoreDescriptorQuality: Number(row.score_descriptor_quality ?? row.scoreDescriptorQuality ?? 0),
+    scoreRepeatClientRate: Number(row.score_repeat_client_rate ?? row.scoreRepeatClientRate ?? 0),
+    scoreRadarDataQuality: Number(row.score_radar_data_quality ?? row.scoreRadarDataQuality ?? 0),
+    overallRiskLevel: RISK_LEVELS.has(riskLevel) ? riskLevel : 'unknown',
+    moduleRecommendations: Array.isArray(row.module_recommendations ?? row.moduleRecommendations)
+      ? (row.module_recommendations ?? row.moduleRecommendations)
+      : [],
+  };
+}
+
 export const stripeRiskAuditService = {
-  async runAudit(merchantId: string): Promise<any> {
+  async runAudit(merchantId: string): Promise<RiskAuditResult> {
     const supabase = getSupabase();
 
     // Get merchant's stripe_user_id
@@ -130,10 +165,10 @@ export const stripeRiskAuditService = {
     }
 
     logger.info({ merchantId, overallRiskLevel, scoreDisputeRate }, 'Risk audit completed');
-    return data;
+    return normalizeRiskAuditResult(data);
   },
 
-  async getLatestAudit(merchantId: string): Promise<any | null> {
+  async getLatestAudit(merchantId: string): Promise<RiskAuditResult | null> {
     const { data } = await getSupabase()
       .from('risk_audit_results')
       .select('*')
@@ -141,7 +176,7 @@ export const stripeRiskAuditService = {
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
-    return data;
+    return data ? normalizeRiskAuditResult(data) : null;
   },
 
   // ─── Score computations ────────────────────────────────

@@ -131,7 +131,10 @@ beforeEach(() => {
 
 describe('GET /api/disputes/:merchantId — list disputes', () => {
   it('returns the disputes scoped to the resolved merchant, with defense packet links attached', async () => {
-    const disputes = [{ id: 'd1', stripe_dispute_id: 'dp_1' }, { id: 'd2', stripe_dispute_id: 'dp_2' }];
+    const disputes = [
+      { id: 'd1', stripe_dispute_id: 'dp_1', status: 'needs_response' },
+      { id: 'd2', stripe_dispute_id: 'dp_2', status: 'under_review' },
+    ];
     const q = query({ data: disputes });
     const packetQ = query({ data: [{ id: 'def_1', dispute_event_id: 'd1' }] });
     mockFrom.mockReturnValueOnce(q).mockReturnValueOnce(packetQ);
@@ -140,14 +143,17 @@ describe('GET /api/disputes/:merchantId — list disputes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.disputes).toEqual([
-      { id: 'd1', stripe_dispute_id: 'dp_1', defense_packet_id: 'def_1', ce3_eligible: false },
-      { id: 'd2', stripe_dispute_id: 'dp_2', defense_packet_id: null, ce3_eligible: false },
+      { id: 'd1', stripe_dispute_id: 'dp_1', status: 'needs_response', defense_packet_id: 'def_1', ce3_eligible: false },
+      { id: 'd2', stripe_dispute_id: 'dp_2', status: 'under_review', defense_packet_id: null, ce3_eligible: false },
     ]);
     expect(mockFrom).toHaveBeenCalledWith('dispute_events');
     expect(mockFrom).toHaveBeenCalledWith('defense_packets');
     expect(q.eq).toHaveBeenCalledWith('merchant_id', MERCHANT_ID);
     // Stripe queue only — NMI/manual dispute rows stay in the Defense tab
     expect(q.eq).toHaveBeenCalledWith('processor', 'stripe');
+    expect(q.in).toHaveBeenCalledWith('status', [
+      'needs_response', 'warning_needs_response', 'under_review', 'warning_under_review',
+    ]);
     expect(packetQ.in).toHaveBeenCalledWith('dispute_event_id', ['d1', 'd2']);
   });
 

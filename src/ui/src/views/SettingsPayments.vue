@@ -412,18 +412,6 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="flex-between mb-4">
-          <div>
-            <h3 class="section-title" style="margin-bottom:4px">Coming Payment Options</h3>
-            <p class="text-sm text-muted">These settings are placeholders for upcoming payment and platform integrations.</p>
-          </div>
-          <router-link to="/roadmap" class="btn btn-sm btn-secondary">View Roadmap</router-link>
-        </div>
-        <div class="settings-stub-grid">
-          <FeatureSettingStub v-for="feature in paymentFeatureSettings" :key="feature.id" :feature="feature" />
-        </div>
-      </div>
     </template>
   </div>
 </template>
@@ -432,8 +420,6 @@
 import { computed, ref, onMounted } from 'vue';
 import { useApi, ssoSession } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
-import FeatureSettingStub from '../components/FeatureSettingStub.vue';
-import { getFeaturesByArea, publicFeatureCatalog } from '../lib/featureCatalog';
 
 const api = useApi();
 
@@ -511,11 +497,6 @@ const dualPricingDeductionLabel = computed(() => {
   const deduction = uplift > 0 ? (uplift / (100 + uplift)) * 100 : 0;
   return `${deduction.toFixed(4)}%`;
 });
-const paymentFeatureSettings = [
-  ...getFeaturesByArea('payments').filter((feature) => feature.id !== 'whop' && feature.id !== 'fanbasis'),
-  ...publicFeatureCatalog.filter((feature) => ['digistore24'].includes(feature.id)),
-];
-
 const nmiForm = ref({
   label: '',
   securityKey: '',

@@ -9,6 +9,39 @@ export interface DefenseCompileReferences {
   enrollmentId?: string;
   offerId?: string;
   disputeEventId?: string;
+  processor?: DefenseProcessor;
+  disputeDate?: string;
+  disputeTimezone?: string;
+}
+
+export type DefenseProcessor = 'stripe' | 'nmi' | 'whop';
+
+const DEFENSE_PROCESSORS = new Set<DefenseProcessor>(['stripe', 'nmi', 'whop']);
+
+export function calendarDateInTimeZone(timestamp: string, timeZone: string): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) throw new ValidationError('Selected transaction has an invalid timestamp');
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    throw new ValidationError('Dispute timezone is invalid');
+  }
+}
+
+function normalizeProcessor(value: unknown, label: string): DefenseProcessor | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const normalized = String(value).toLowerCase() as DefenseProcessor;
+  if (!DEFENSE_PROCESSORS.has(normalized)) {
+    throw new ValidationError(`${label} processor is not supported for defense compilation`);
+  }
+  return normalized;
 }
 
 async function requireRow(query: any, label: string): Promise<any> {
@@ -24,13 +57,15 @@ export const defenseInputValidationService = {
     let paymentEventId = input.paymentEventId || '';
     let enrollmentId = input.enrollmentId || '';
     let offerId = input.offerId || '';
+    let processor = normalizeProcessor(input.processor, 'Selected');
+    let transactionDate = '';
     let contactVerified = false;
 
     if (input.disputeEventId) {
       const dispute = await requireRow(
         supabase
           .from('dispute_events')
-          .select('id, contact_id, payment_event_id')
+          .select('id, contact_id, payment_event_id, processor')
           .eq('id', input.disputeEventId)
           .eq('location_id', input.locationId),
         'Dispute',
@@ -42,6 +77,11 @@ export const defenseInputValidationService = {
         throw new ValidationError('Dispute does not match the selected transaction');
       }
       paymentEventId = paymentEventId || dispute.payment_event_id || '';
+      const disputeProcessor = normalizeProcessor(dispute.processor, 'Dispute');
+      if (processor && disputeProcessor && processor !== disputeProcessor) {
+        throw new ValidationError('Selected processor does not match the dispute');
+      }
+      processor = disputeProcessor || processor;
       contactVerified = dispute.contact_id === input.contactId;
     }
 
@@ -49,7 +89,7 @@ export const defenseInputValidationService = {
       const payment = await requireRow(
         supabase
           .from('payment_events')
-          .select('id, contact_id, enrollment_id, offer_id')
+          .select('id, contact_id, enrollment_id, offer_id, processor, created_at')
           .eq('id', paymentEventId)
           .eq('location_id', input.locationId)
           .eq('contact_id', input.contactId),
@@ -63,7 +103,28 @@ export const defenseInputValidationService = {
       }
       enrollmentId = payment.enrollment_id || enrollmentId;
       offerId = payment.offer_id || offerId;
+      const paymentProcessor = normalizeProcessor(payment.processor, 'Payment');
+      if (processor && paymentProcessor && processor !== paymentProcessor) {
+        throw new ValidationError('Selected processor does not match the disputed transaction');
+      }
+      processor = paymentProcessor || processor;
+      transactionDate = payment.created_at || '';
       contactVerified = true;
+    }
+
+    if (transactionDate && input.disputeDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.disputeDate)) {
+        throw new ValidationError('Dispute date must be a calendar date');
+      }
+      const transactionCalendarDate = calendarDateInTimeZone(
+        transactionDate,
+        input.disputeTimezone || 'UTC',
+      );
+      if (input.disputeDate < transactionCalendarDate) {
+        throw new ValidationError(
+          `Dispute date cannot be before the selected transaction date (${transactionCalendarDate})`,
+        );
+      }
     }
 
     if (enrollmentId) {
@@ -112,6 +173,7 @@ export const defenseInputValidationService = {
       paymentEventId: paymentEventId || undefined,
       enrollmentId: enrollmentId || undefined,
       offerId: offerId || undefined,
+      processor,
     };
   },
 };

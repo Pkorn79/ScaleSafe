@@ -205,22 +205,7 @@
         <div v-if="ghlActivitySaved" class="success-msg">{{ ghlActivitySaved }}</div>
 
         <div class="text-sm text-muted">
-          No setup mapping is required for beta. Messages, appointments, invoices, notes, tasks, and opportunities attach to the client first. When a record should support a specific program, link it from the client Evidence tab.
-        </div>
-
-        <div class="activity-status-grid mt-4">
-          <router-link
-            v-for="feature in ghlActivityFeatures"
-            :key="feature.id"
-            :to="`/roadmap/${feature.id}`"
-            class="activity-status-card"
-          >
-            <div>
-              <strong>{{ feature.title }}</strong>
-              <span>{{ feature.currentState || feature.summary }}</span>
-            </div>
-            <FeatureStatusPill :status="feature.status" />
-          </router-link>
+          Supported messages, appointments, invoices, notes, and tasks attach to the correct client automatically. ScaleSafe links an event to a program only when it can resolve one exact enrollment; ambiguous client-level activity stays out of defense packets.
         </div>
 
         <div v-if="ghlUnmatchedActivity.length" class="mt-4">
@@ -228,21 +213,6 @@
           <div v-for="event in ghlUnmatchedActivity.slice(0, 5)" :key="event.id" class="text-sm text-muted unmatched-row">
             {{ event.source_object }} - {{ event.event_type }} - {{ formatHealthTime(event.created_at) }}
           </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="flex-between mb-4">
-          <div>
-            <h3 class="section-title" style="margin-bottom:4px">Future App Settings</h3>
-            <p class="text-sm text-muted">
-              Planned setup areas appear here as disabled controls so merchants can see where they will live.
-            </p>
-          </div>
-          <router-link to="/roadmap" class="btn btn-sm btn-secondary">View Roadmap</router-link>
-        </div>
-        <div class="settings-stub-grid">
-          <FeatureSettingStub v-for="feature in futureSettingsFeatures" :key="feature.id" :feature="feature" />
         </div>
       </div>
 
@@ -512,9 +482,6 @@ import { computed, ref, onMounted } from 'vue';
 import { useApi } from '../composables/useApi';
 import StickySaveBar from '../components/StickySaveBar.vue';
 import SectionHeader from '../components/SectionHeader.vue';
-import FeatureStatusPill from '../components/FeatureStatusPill.vue';
-import FeatureSettingStub from '../components/FeatureSettingStub.vue';
-import { publicFeatureCatalog } from '../lib/featureCatalog';
 import { buildMerchantSettingsPayload, cloneViewState } from '../utils/viewState';
 
 const api = useApi();
@@ -560,19 +527,6 @@ const ghlActivityLoading = ref(false);
 const ghlActivityError = ref('');
 const ghlActivitySaved = ref('');
 const ghlUnmatchedActivity = ref<any[]>([]);
-
-const ghlActivityFeatures = publicFeatureCatalog.filter((feature) => [
-  'ghl-communications',
-  'activity-ledger',
-  'ghl-invoices',
-  'ghl-appointments',
-  'ghl-courses',
-].includes(feature.id));
-const futureSettingsFeatures = publicFeatureCatalog.filter((feature) => [
-  'ai-assistant',
-  'evidence-linking',
-  'quick-manual-sale',
-].includes(feature.id));
 
 const moduleLabels: Record<string, string> = {
   sessions: 'Session Delivery Tracking',

@@ -57,6 +57,7 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
       .select('*')
       .eq('merchant_id', merchantId)
       .eq('processor', 'stripe')
+      .in('status', ['needs_response', 'warning_needs_response', 'under_review', 'warning_under_review'])
       .order('created_at', { ascending: false })
       .limit(50);
 

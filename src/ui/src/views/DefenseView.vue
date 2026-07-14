@@ -243,10 +243,11 @@ const compileForm = ref({
   addressee: '',
   paymentEventId: '',
   enrollmentId: '',
+  disputeTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 });
 
 // Transaction selector state
-const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; offerName: string; enrollmentId: string; offerId: string }>>([]);
+const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; processor: string; offerName: string; enrollmentId: string; offerId: string }>>([]);
 const transactionsLoading = ref(false);
 const selectedTransactionId = ref('');
 

@@ -1,8 +1,8 @@
 # ScaleSafe Live Walkthrough Findings
 
-Status: Open working list from the 2026-07-12 read-only product walkthrough.
+Status: Open working list from the 2026-07-12 product walkthrough and the owner-authorized live certification that followed it.
 
-No setting, workflow, processor, payment, enrollment, or external system was changed while verifying these findings.
+The later certification created isolated test offers, payments, evidence, a client note, and a client email. Processor and workflow configuration was not changed without owner approval.
 
 ## Triage Summary
 
@@ -28,6 +28,21 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 | FIND-018 | Repeat checkout idempotency | P1 | Fixed and passed live | Small |
 | FIND-019 | Stripe evidence-chain vault lookup | P1 | Fixed and passed live | Small |
 | FIND-020 | Whop checkout phone scope | P1 | Fixed locally; live retest pending | Small |
+| FIND-061 | Stripe health processor isolation | P1 | Live, database, and code confirmed | Small |
+| FIND-062 | Stripe risk-audit API/UI contract | P1 | Live, database, and code confirmed | Small |
+| FIND-063 | Active-dispute queue filtering | P2 | Live and code confirmed | Small |
+| FIND-064 | Connector event-history schema query | P1 | Railway and code confirmed | Small |
+| FIND-065 | Client-action success refresh | P2 | Live confirmed | Small/medium |
+| FIND-066 | Manual communication enrollment binding | P1 | Live and code confirmed | Medium |
+| FIND-067 | Production database capacity collapse | P1 | Supabase, Railway, browser, and code confirmed | Immediate operations plus code hardening |
+| FIND-068 | Production database has no recoverable backup | P1 | Supabase project confirmed | Immediate operations |
+| FIND-069 | Database outage mislabeled as broken GHL install | P2 | Reviewer UI, Railway, and code confirmed | Small/medium |
+| FIND-070 | Railway and Supabase are deployed in distant regions | P2 | Railway deployment metadata and Supabase project confirmed | Operations change plus latency retest |
+| FIND-071 | Suggested local database-password file was not ignored | P2 | Current tree and Git ignore rules confirmed | Fixed locally |
+| FIND-072 | Unprotected main auto-deploys directly to production | P2 | GitHub branch API and Railway deployment metadata confirmed | Owner-approved release-control change |
+| FIND-073 | Reviewer Snapshot packages obsolete and duplicate GHL assets | P2 | Clean reviewer install and current Snapshot contract compared | Rebuild and certify clean V2 Snapshot |
+| FIND-074 | Installed GHL Custom Page SSO handshake timeout | P1 | Reviewer, PMG, preview, and client/backend boundary compared | Focused code repair plus installed-page retest |
+| FIND-075 | Marketplace scope configuration drift | P2 configuration | Draft selection compared with approved product direction | Exact export, runtime map, owner-approved reduction |
 
 ## Confirmed Code-Backed Findings
 
@@ -134,13 +149,14 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Local repair: Use canonical `sale`, skip the redundant completion write when checkout or settlement already created the ledger row, and skip payment events for genuinely free enrollments.
 - Required regression: New Stripe enrollment has exactly one `sale` row and no constraint error; a GHL payment webhook creates a valid `sale` row.
 
-### FIND-014 - Enrollment-link communications are not linked after the enrollment is created
+### FIND-014 - Client communications are not reliably linked to the active enrollment
 
 - Area: Communication evidence and defense scoping.
-- Live proof: The isolated client received an enrollment link before checkout. Both the ScaleSafe send record and the observed GHL outbound email were created with `enrollment_id = null`; both remained null after the exact offer enrollment completed.
-- Impact: Enrollment-scoped defense generation may omit the pre-enrollment delivery/consent communication unless another defensible matching layer associates it.
-- Classification: P1 investigation until defense exhibit behavior is tested against this exact enrollment.
-- Required regression: Compile a packet for the isolated enrollment and verify whether the two link communications are included only for that enrollment. If omitted, implement exact offer/context linkage rather than newest-enrollment guessing.
+- Live proof: The isolated client received an enrollment link before checkout. Both the ScaleSafe send record and the observed GHL outbound email were created with `enrollment_id = null`; both remained null after the exact offer enrollment completed. A later email sent from that same client's ScaleSafe profile was captured successfully by GHL and ScaleSafe, but the Evidence tab again showed `Link to Program` even though the client had exactly one active enrollment.
+- Code/UI proof: The Send Message form captures channel and body only. It does not carry an enrollment or offer context, so the GHL echo is stored as contact-level communication unless a separate matcher can prove a program.
+- Impact: Enrollment-scoped defense generation may omit the enrollment link and direct merchant communication, or include them only as lower-confidence contact context, even when the merchant sent them from the active client's record.
+- Classification: P1 evidence-linkage defect. Newest-enrollment guessing remains prohibited, but the one-active-enrollment case and explicit program selection can be handled deterministically.
+- Required regression: The merchant can select or inherit one exact active enrollment before sending. The outbound communication and GHL echo link to that enrollment once. Multiple eligible enrollments require an explicit choice; no communication is silently attached to the newest enrollment.
 
 ### FIND-013 - One deleted GHL trigger subscription still receives enrollment-complete deliveries
 
@@ -435,17 +451,19 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 evidence completeness defect. Evidence was preserved in ScaleSafe but silently omitted from the compiled defense.
 - Repair: query pulse rows directly, scope them through the exact enrollment rules, surface query failures, and classify them as client-engagement communication rather than service delivery. New pulse submissions use the `client_engagement` proof role.
 - Required regression: the selected enrollment's pulse appears with score/feedback/follow-up details, a sibling enrollment's pulse is excluded, and pulse evidence alone cannot make a services-not-provided packet ready.
+- Live retest: packet `00a794e8-c2ff-4ba7-a6a1-f5378caafe2f` included the selected enrollment's 3/5 pulse as a communication exhibit, excluded sibling-enrollment pulse data, landed on `needs_review`, and did not fire `ss_defense_ready`. The base exhibit-path repair passes. FIND-051 separately tracks the omitted follow-up-request detail.
 
 ### FIND-044 - Dashboard at-risk read performs mutations and takes up to 85 seconds
 
 - Area: Dashboard reliability, GHL side effects, and risk scoring.
-- Live proof: repeated `GET /api/dashboard/at-risk` calls took 16.7 to 85.1 seconds while only 19 evidence-bearing contacts existed in the location. Multiple browser tabs caused overlapping long-running requests.
+- Live proof: repeated `GET /api/dashboard/at-risk` calls took 16.7 to 85.1 seconds while only 19 evidence-bearing contacts existed in the location. Multiple browser tabs caused overlapping long-running requests. On deployed commit `1dce009`, one dashboard tab still launches `overview`, `at-risk`, `defense-history`, and `pulse-checkins` every 60 seconds; a cold refresh wave took 22.3 to 30.5 seconds across those four routes even though warm repeats later returned in about 0.2 to 6 seconds.
 - Code proof: the read route called `checkAllClients`, which scored contacts serially and, for every flagged contact, could update the GHL engagement field and create another `disengagement_flagged` evidence event merely because the dashboard loaded.
 - Impact: dashboard reads can exhaust request/database capacity, slow unrelated defense/detail requests, repeatedly mutate GHL, and add duplicate operational evidence without an explicit merchant action.
 - Severity recommendation: P1 launch reliability and evidence-integrity defect.
 - Repair: dashboard reads use a side-effect-free scorer; independent evidence queries run concurrently with bounded contact concurrency; only the explicit admin disengagement action may write GHL fields or evidence. Overlapping scans for one location are deduplicated, completed results are cached for five minutes, and only three contacts may fan out evidence reads concurrently.
 - Required regression: dashboard load returns risk data without GHL/evidence writes, completes within a normal interactive window for the certification location, and the explicit disengagement action retains its intended side effects.
-- Live retest: deploy `747797f` proved that dashboard reads created no new `disengagement_flagged` evidence. Warm requests returned in 1.4-1.6 seconds. A defense regeneration later exposed overlapping cold scans as high as 70.7 seconds and broad database contention, so the follow-up adds in-flight deduplication, a five-minute cache, and a lower database concurrency ceiling before final timing certification.
+- Live retest: deploy `747797f` proved that dashboard reads created no new `disengagement_flagged` evidence. Follow-up deploy `1dce009` also produced zero new disengagement evidence and made cached reads consistently fast (about 0.2-0.8 seconds). In-flight deduplication worked: a duplicate request shared the active scan instead of launching another full fan-out. The first cold scan after a fresh SSO session took 23.9 seconds; a later correlated refresh wave reached 30.5 seconds and slowed all four dashboard reads. The mutation defect is closed, but the periodic cold-scan capacity defect remains open.
+- Local remediation: the cold scorer now uses five bounded, tenant-scoped bulk reads instead of per-contact evidence queries, preserves the same risk factors in memory, and the dashboard refresh cadence now matches the five-minute server cache. Focused regression proves one scan performs five table reads. Live latency proof remains pending after deployment and the Supabase compute upgrade.
 
 ### FIND-045 - Milestone completion blocks on workflow delivery
 
@@ -456,6 +474,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P2 reliability defect. State and evidence were correct, but the operator request is unnecessarily coupled to an external workflow.
 - Required repair: preserve durable milestone state first and move trigger delivery to a separately observable background path without allowing duplicate workflow events.
 - Required regression: the merchant sees saved milestone state within five seconds while one eventual trigger delivery, one evidence row, and the correct enrollment fields remain provable.
+- Local remediation: migration 099 adds a leased, tenant-idempotent trigger-delivery queue. Milestone state and evidence save first; GHL field sync and `ss_milestone_reached` run under `milestone:<enrollment>:<number>`. Browser retries reuse the same job, and ambiguous external outcomes are held as `unknown` rather than replayed. Live timing and one-email proof remain pending.
 
 ### FIND-046 - Reopened defense packets display the wrong letter version
 
@@ -475,6 +494,292 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 defense factual-presentation defect.
 - Repair: normalize defense exhibit calendar dates to UTC, label them as UTC, and compose signoff summaries from source timestamp columns with an explicit UTC timezone instead of retaining environment-local legacy summaries.
 - Required regression: the same signoff renders one consistent date across the UI exhibit, generated letter, and PDF, with the timezone identified.
+- Live retest: deploy `1dce009` passed. A fresh packet open showed all eight exhibit dates as UTC. Regenerated Version 4 recomposed the source signoff as `July 14, 2026 at 2:48 AM UTC` in both the letter and PDF. The packet remained `complete` and no duplicate `ss_defense_ready` delivery was created.
+
+### FIND-048 - Defense regeneration blocks the UI for about 55 seconds
+
+- Area: Defense operator responsiveness and background work.
+- Live proof: Version 4 regenerated successfully, but `POST /api/defense/13971614-ca2d-4107-931e-41be587a5446/regenerate` held the request open for 54.8 seconds while AI generation and the seven-page PDF completed.
+- Impact: the merchant sees a disabled `Regenerating...` control for nearly a minute. A browser refresh or retry during that window can create uncertainty even though the packet eventually succeeds.
+- Severity recommendation: P2 reliability defect. The result was correct and idempotent, but expensive work remains coupled to an interactive request.
+- Required repair: claim a durable regeneration job, return an accepted state quickly, poll packet status, and preserve the existing one-version/one-PDF idempotency behavior.
+- Required regression: the UI acknowledges regeneration within five seconds, displays observable progress, and eventually refreshes to exactly one new version without firing `ss_defense_ready` again.
+- Local remediation: regeneration now atomically queues against the existing defense worker, returns HTTP 202, wakes the worker, and polls in place. The queue reserves one target version; worker retries reuse the stored letter and rebuild the PDF without another AI call or another letter version. Live timing and Version/PDF proof remain pending.
+
+### FIND-049 - Defense draft asserts service delivery when the readiness gate found none
+
+- Area: AI defense factual integrity and `needs_review` handling.
+- Live proof: Visa 13.1 packet `00a794e8-c2ff-4ba7-a6a1-f5378caafe2f` correctly landed on `needs_review` because the exact enrollment had no service-delivery evidence. The generated letter nevertheless says the records show that services were delivered and includes an `Evidence of Service Delivery` section. It does not disclose the missing delivery proof.
+- Impact: the status gate prevents automatic ready delivery, but the editable bank-facing draft still makes an unsupported factual assertion. A merchant can mark the packet submitted after reviewing an internally contradictory letter.
+- Severity recommendation: P1 defense factual-integrity defect.
+- Required repair: pass evidence-category counts and review reasons into a deterministic claim guard. When service-delivery evidence is zero, the prompt and post-generation validator must prohibit delivery assertions and require neutral wording that identifies the gap. A contradictory draft must not be presented as submission-ready text.
+- Required regression: a services-not-provided packet with zero delivery evidence may summarize consent, payment, and communication, but cannot say the service was delivered. A packet with a verified milestone/signoff may make a delivery claim tied to that exhibit.
+
+### FIND-050 - Moderate offer-name matching admits sibling-payment receipts as exact evidence
+
+- Area: GHL communication matching and defense enrollment isolation.
+- Live proof: eight GHL messages were linked to enrollment `5493f01b-7712-4ad4-bcf0-2eb590103fc2` using only `unique_offer_name_in_communication` at `moderate` confidence. Three receipt bodies used that offer name but reported `$2.20` or `$1.00` recurring payments from sibling enrollments. The exact-scope defense packet trusted the stored enrollment ID and included those receipts.
+- Code proof: `findEnrollmentFromUniqueOfferName()` can attach a communication from rendered body text alone. The evidence row does not preserve the match method/confidence in a field the defense selector uses, so moderate inferred linkage becomes indistinguishable from explicit enrollment ID or signed action-token linkage.
+- Impact: a packet can include payment history from the wrong program and present it as exact enrollment evidence. The risk is highest for contacts with multiple active enrollments because mutable GHL contact fields can render a current offer name into an unrelated workflow email.
+- Severity recommendation: P1 evidence-isolation defect.
+- Required repair: preserve match method and confidence on communication evidence. Treat explicit enrollment IDs, verified action tokens, and validated transaction-to-enrollment links as exact. Offer-name inference may remain client-level context but must not enter an exact packet without content validation against the selected enrollment/payment.
+- Required regression: sibling receipts containing an overwritten offer-name field are excluded; exact action-token pulse emails remain included; a genuinely exact receipt with matching transaction/payment data remains included.
+
+### FIND-051 - Pulse follow-up request is hidden by a stale stored summary
+
+- Area: Pulse evidence completeness and defense narrative.
+- Live proof: pulse row `8f9f7138-847b-4172-a95a-67434a3a663e` stores `follow_up_needed = true` and `follow_up_action = Merchant follow-up requested from pulse check-in`. The dashboard correctly shows the requested attention, but the defense exhibit and letter say only that the client reported no concerns and omit the follow-up request.
+- Code proof: the pulse exhibit builder creates a richer fallback summary containing follow-up state, but `exhibitSummary()` prefers the row's older `defense_summary`, which lacks that field.
+- Impact: the packet can suppress a material client request while emphasizing favorable pulse language. That weakens factual completeness and can make the merchant narrative misleading.
+- Severity recommendation: P1 defense evidence-completeness defect.
+- Required repair: compose pulse summaries from current source columns or append the current follow-up state regardless of a legacy stored summary. The AI prompt must receive the same complete pulse facts shown to the merchant.
+- Required regression: a follow-up-requested pulse visibly says so in the exhibit, letter context, and PDF; a pulse without a request does not invent one.
+
+### FIND-052 - Dual-pricing charge is not reconciled to the accepted base price
+
+- Area: Enrollment packet and defense transaction explanation.
+- Live proof: the frozen enrollment packet shows a `$2,000.00` program price on page 1 and a `$2,065.00` amount paid on page 2. The defense letter repeats both amounts but does not explain the `$65.00` difference or identify it as the selected card-price adjustment.
+- Data proof: the payment event stores the `$2,065.00` charge and selected method `card`, while its line items contain only the `$2,000.00` base offer and do not preserve a card uplift percentage or explicit pricing-breakdown row.
+- Impact: an issuer reviewer sees an unexplained difference between the disclosed price and disputed amount. ScaleSafe cannot prove from the current packet whether that exact adjustment was displayed and accepted.
+- Severity recommendation: P1 payment-consent and defense-completeness defect.
+- Required repair: persist the exact displayed bank price, card price, selected method, adjustment amount/rate, and consent snapshot at checkout. Render the selected total in the agreement summary and explain the arithmetic in a defense packet. If the disputed amount cannot be reconciled, require review rather than implying the amounts match.
+- Required regression: a dual-pricing card transaction produces a frozen packet and defense exhibit that reconcile base price plus adjustment to the exact processor amount; ACH/bank selection records no card adjustment.
+
+### FIND-053 - Completed appointment is expanded into proof of an unproved deliverable
+
+- Area: GHL Fulfillment evidence and defense factual integrity.
+- Live proof: packet `699b3327-1a14-4d1d-847d-ed02e4397abe` contains one completed GHL appointment for `CERT GHL Fulfillment Session`. The accepted milestone separately promises both a live kickoff session and a written implementation plan. The generated letter says the appointment "satisfies the Kickoff Session milestone, consisting of the live kickoff session and written implementation plan," even though no exhibit proves that a written plan was delivered.
+- Data proof: Exhibit B says only that the appointment was completed. No milestone-completion, deliverable, file, signoff, or written-plan exhibit exists in the frozen five-exhibit snapshot.
+- Impact: one valid attendance record is over-expanded into proof of every component of a compound milestone. A complete packet can therefore make a material fulfillment claim that its exhibits do not support.
+- Severity recommendation: P1 defense factual-integrity defect.
+- Required repair: represent milestone promises as atomic components and allow each delivery exhibit to satisfy only the component it actually proves. Prompt rules and a post-generation claim validator must reject language that extends an appointment beyond attendance/session completion.
+- Required regression: a completed kickoff appointment may prove the live session, but the letter must identify the written plan as unproved until a separate exact-enrollment deliverable or approved milestone record exists.
+
+### FIND-054 - Defense compilation accepts an impossible dispute-before-transaction chronology
+
+- Area: Defense input validation and bank-facing timeline dates.
+- Live proof: the UI labeled the selected Stripe transaction as July 13 in Central time, so the test dispute date was entered as July 13. The payment event is stored at `2026-07-14T03:51:30Z`. Packet `699b3327-1a14-4d1d-847d-ed02e4397abe` reached `complete` and states that the chargeback was filed on July 13 while the disputed charge occurred on July 14.
+- Impact: the packet's own timeline claims a dispute was filed before the transaction existed. That is facially unreliable evidence and should never receive an unquestioned complete/ready state.
+- Severity recommendation: P1 defense validation and factual-presentation defect.
+- Required repair: compare the dispute date and processor transaction timestamp using one explicit merchant/account timezone policy. Reject impossible chronology or force `needs_review` with a visible explanation before compilation.
+- Required regression: a local July 13 transaction that is July 14 UTC is accepted when both dates represent a valid sequence in the configured timezone; a genuinely earlier dispute date is blocked or held for review.
+
+### FIND-055 - Selected Stripe transaction compiles as an NMI dispute
+
+- Area: Defense processor derivation, dispute ledger, addressee, and workflow payload.
+- Live proof: the selected payment event `2815f716-797d-4940-870b-538cdd28a3db` is a Stripe sale with PaymentIntent `pi_3TsxNWQ4vjJOpWaV0PNwjVUE`. Compilation created NMI dispute row `61fc43dc-1680-42ac-83ca-140722e0a25a`, addressed the letter to `Sponsor Bank - Chargeback Department`, and sent the single `ss_defense_ready` delivery with `processor = nmi`.
+- Code proof: `GET /api/defense/transactions/:contactId` returns each payment's processor, but the frontend transaction type and `onTransactionSelected()` discard it. With no `processor` or Stripe dispute event in the compile request, `compileDefense()` defaults to NMI and creates a synthetic NMI dispute row.
+- Impact: the dispute ledger, chargeback-ratio data, workflow routing, packet addressee, and processor-specific submission path can all contradict the selected transaction. This is a core beta defense path.
+- Severity recommendation: P1 defense/ledger integrity defect.
+- Required repair: derive processor server-side from the tenant-scoped selected `payment_event_id`; do not trust or require the browser to supply it. Create a synthetic dispute row only for the resolved rail, and reject any supplied processor that conflicts with the payment event.
+- Required regression: selecting a Stripe, NMI, or Whop payment derives that exact rail, creates or links the correct dispute record, selects the correct addressee, and emits the same processor in `ss_defense_ready`.
+
+### FIND-056 - Zoom is labeled healthy while setup discovery is broken and no event has been proved
+
+- Area: Zoom connection health, setup discovery, and merchant diagnostics.
+- Live proof: the connected Zoom account displays `Connection healthy`, `No activity yet`, `Published 0`, and `Programs 0`. The OAuth token refresh and direct Zoom meeting discovery both succeed, but `zoomIntegrationService.setup()` fails against the live database with `column offers_mirror.status does not exist`.
+- Code proof: `zoom-integration.repository.ts:listOffers()` selects `id, offer_name, status`; the live `offers_mirror` contract exposes `active`, not `status`. The current merchant route and modal never call or expose the setup/mapping methods, so the failure is hidden behind a green connection state.
+- Impact: OAuth authorization is presented as end-to-end connector health even though resource/offer discovery cannot complete and no signed attendance event has reached ScaleSafe. A merchant cannot distinguish "authorized" from "collecting evidence."
+- Severity recommendation: P2 integration-readiness and observability defect. Signed webhook intake may still work through automatic matching, but the setup path and green health claim are not certified.
+- Required repair: align the offer query with the live schema, either expose a supported setup/status path or remove the dead setup contract, and report authorization, webhook observation, enrollment match, and published evidence as separate health states.
+- Required regression: a connected account can discover resources without a schema error; before the first event it displays `Authorized - awaiting attendance event`; after a signed join/leave pair it displays the exact matched program and published evidence timestamp.
+
+### FIND-057 - Zoom host attendance can be published as client attendance
+
+- Area: Zoom attendance identity and defense evidence integrity.
+- Code and provider-contract proof: Zoom's signed participant webhook includes both `object.host_id` and participant user identifiers. `handleWebhook()` stores every joined/left participant and always labels the normalized actor as `client`; it never rejects or reclassifies a participant whose Zoom user ID equals `host_id`. The resolver may then bind that event to one enrollment solely through an exact GHL appointment/meeting/time match before checking participant email.
+- Concrete scenario: the merchant hosts a Zoom meeting referenced by one client's GHL appointment. The host joins and leaves normally. Those host events can resolve through `zoom_exact_scheduled_appointment`, persist as `session.attended`, and enter the client's defense record as if the client attended.
+- Impact: ScaleSafe can create materially false client-engagement evidence from the merchant's own attendance. The error can reach an enrollment-scoped defense packet.
+- Severity recommendation: P1 evidence-identity defect.
+- Required repair: exclude the host deterministically before attendance materialization, preserve participant role/identity provenance, and do not call an attendee the client unless the identity or scheduling context proves that role. Staff/co-host events need an explicit non-client treatment.
+- Required regression: host-only join/leave creates no client-attendance evidence; one real external attendee creates exactly one attendance exhibit; host plus attendee cannot produce two client-attendance exhibits for one enrollment.
+
+### FIND-058 - Roadmap previews remain embedded in active Settings pages
+
+- Area: Merchant and payment settings product truth.
+- Live proof: Merchant Settings still renders `GHL Communications Evidence`, `Client Activity Ledger`, `GHL Invoice Evidence`, `GHL Appointment Evidence`, `GHL Course Activity`, and a `Future App Settings` section with `Beta`, `Needs Setup`, and `Coming Soon` labels. Payment Settings still renders `Coming Payment Options` with NMI Multi-MID, ACH, and financing preview cards.
+- Code proof: `SettingsPayments.vue` renders the `Coming Payment Options` card from `paymentFeatureSettings`; the merchant Settings view still renders roadmap feature stubs in the normal setup flow.
+- Impact: live functionality and future work are mixed into operational configuration, creating the impression that active features are unavailable or that merchants must configure placeholders. This also contradicts the prior product decision to keep roadmap material on the Roadmap page.
+- Severity recommendation: P3 launch-copy/UI cleanup. It does not block processor operation, but it makes onboarding and review less trustworthy.
+- Required repair: remove roadmap preview/stub sections and status pills from active Settings and Payment Settings surfaces. Keep only real controls and diagnostics; retain future items on the Roadmap page.
+- Required regression: both settings pages contain only actionable live/beta configuration, with no `Coming Soon`, preview, or roadmap-stub cards.
+- Local remediation: the Future App Settings and Coming Payment Options cards, roadmap links, and status pills were removed from operational Settings. GHL activity retains only the live endpoint, automatic-matching explanation, refresh action, errors, and recent unmatched diagnostics.
+
+### FIND-059 - Disabled and test-only connectors are presented as healthy evidence sources
+
+- Area: Evidence Connections status truth and merchant readiness.
+- Live proof: the Connected band reports four sources and includes `Custom Software`, even though the live row is `status = disabled`, `setup_status = draft`, and `health_status = disabled`. Opening it says `Connection healthy` and offers `Disable connection`. `Connector Test` is only in `setup_status = testing`, has one test-only event and zero published events, but its modal says `Connection healthy` and labels the test timestamp `Last evidence`.
+- Code proof: `connectedItems` includes every provider connection without filtering status. `needsAttention` ignores disabled, draft, and testing states. `lastEvidenceAt` falls back from published evidence to `connection.last_success_at`, which is advanced by a diagnostic test event.
+- Impact: a merchant can reasonably believe an inactive or unproved connector is collecting program evidence when it cannot accept production events or has never published evidence. This creates silent evidence gaps in the product's core promise.
+- Severity recommendation: P1 evidence-capture readiness defect.
+- Required repair: treat only `status = active` plus `setup_status = active` as connected; render draft/testing/disabled states explicitly; never label a test or generic success timestamp as evidence; and offer actions appropriate to the current state.
+- Required regression: a disabled draft is absent from Connected and displays Setup needed; a testing connection displays Test mode with zero evidence; only one real published event sets Last evidence and affected program count.
+
+### FIND-060 - Payment processor filter omits Whop
+
+- Area: Payment Management ledger operations.
+- Live proof: the ledger contains current Whop sales and refunds, but the Processor filter offers only All, Stripe, NMI, and GHL.
+- Code proof: `PaymentSearch.vue` hardcodes only `stripe`, `nmi`, and `ghl` processor options even though its ledger renderer and backend support `whop` rows.
+- Impact: merchants cannot isolate Whop activity for lifecycle review, refunds, or reconciliation and must scan or text-search a large mixed ledger.
+- Severity recommendation: P2 operational usability defect.
+- Required repair: derive the filter from supported live processor capabilities or add Whop explicitly; keep disabled providers out until they can create ledger rows.
+- Required regression: selecting Whop returns only Whop payments/refunds and resetting returns the complete tenant ledger.
+
+### FIND-061 - Stripe Risk Health displays the newest NMI snapshot
+
+- Area: Stripe account-health truth and processor isolation.
+- Live proof: the Stripe Risk Health page displayed a 47.06% dispute rate, 17 transactions, `UNKNOWN` risk, and unknown network classifications. The latest live rows show those exact values belong to the NMI snapshot. The latest Stripe snapshot instead contains 100 charges, one dispute, a 1% rate, `critical` risk, Visa `standard_program`, and Mastercard `warning`.
+- Code proof: `stripe-health.service.ts#getLatestSnapshot()` and `getSnapshotHistory()` filter by merchant and location but not `processor = stripe`; the NMI daily snapshot was computed milliseconds later and therefore won the descending timestamp query.
+- Why tests missed it: current Stripe-health tests exercise snapshot computation, upsert behavior, and pure threshold logic, but do not interleave snapshots from two processors and call the real current/history read methods.
+- Impact: the page labeled Stripe Health can present another processor's transaction volume and dispute ratio. A merchant could make account-health decisions from the wrong rail.
+- Severity recommendation: P1 product-truth/data-isolation defect. Tenant isolation remains intact, but processor isolation is broken.
+- Required repair: require `processor = stripe` in current/history reads. Make the processor explicit in the service contract and API response.
+- Required regression: interleave newer NMI and older Stripe snapshots for one merchant; Stripe endpoints and UI must return only Stripe rows, and an NMI dashboard must return only NMI rows.
+
+### FIND-062 - Stripe risk-audit fields render blank or zero
+
+- Area: Stripe risk audit and prevention checklist.
+- Live proof: Railway completed a fresh audit as `elevated` with dispute-rate score 60, evidence-readiness 40, descriptor quality 50, repeat-client score 100, and Radar quality 0. Payment Settings rendered a blank Risk Level and `/100`; Prevention Checklist rendered `UNKNOWN` and five `0/100` scores.
+- Code proof: `getLatestAudit()` returns the `risk_audit_results` row unchanged with snake_case fields such as `overall_risk_level` and `score_dispute_rate`. `SettingsPayments.vue` and `PreventionChecklist.vue` read camelCase properties such as `overallRiskLevel` and `scoreDisputeRate`.
+- Why tests missed it: risk-audit integration tests cover score calculations, not the route DTO consumed by both Vue views. No contract test renders nonzero persisted fields through the actual API response.
+- Impact: merchants are shown false zero/unknown risk data immediately after a successful refresh.
+- Severity recommendation: P1 operational guidance defect.
+- Required repair: normalize the API DTO once at the service/controller boundary and type it. Do not make each view guess database column names.
+- Required regression: seed nonzero audit values, call the real route, and assert that both merchant pages display the same normalized scores and risk level.
+
+### FIND-063 - Active Disputes includes settled cases with a submission action
+
+- Area: Stripe dispute operations.
+- Live proof: the page titled `Active Disputes` reported Open 0 but rendered a won $2,065 case and labeled its action `Review & Submit`.
+- Code proof: `dispute.routes.ts` comments that it lists active disputes but applies no status/outcome filter. `DisputeManagement.vue` renders `Review & Submit` for any row with a defense packet, regardless of won/lost/refunded state.
+- Impact: a merchant can mistake a settled case for open work and is invited to submit evidence on a dispute already won.
+- Severity recommendation: P2 workflow-truth defect. The current action opens a packet rather than immediately submitting, but its label and queue membership are misleading.
+- Required repair: either filter the queue to actionable statuses or rename/split it into Active and History. Settled rows may expose `View Packet`, never `Review & Submit`.
+- Required regression: won, lost, refunded, under-review, and needs-response fixtures appear only in the correct section with status-appropriate actions.
+
+### FIND-064 - Evidence connection event history returns HTTP 500
+
+- Area: Universal connector observability and test-result proof.
+- Live proof: opening the existing Connector Test and Custom Software connections produced two HTTP 500 responses on their `/events` endpoints. Railway reported PostgreSQL `42703: column enrollments_1.offer_name does not exist`.
+- Code proof: `evidence-connector.repository.ts#listEvents()` selects `enrollment:enrollments(..., offer_name)` even though enrollment names resolve through `offers_mirror`; the live enrollment table has no `offer_name` column.
+- Why tests missed it: connector security and worker suites cover authentication, matching, and publication behavior without executing the live PostgREST select used by `listEvents()` against the migrated schema.
+- Impact: merchants and operators cannot inspect connector event outcomes or prove which client/program a test targeted. This breaks the observability needed to certify the universal connector.
+- Severity recommendation: P1 connector beta blocker.
+- Required repair: remove the nonexistent enrollment field and use the already joined `offers_mirror.offer_name`. Keep the public DTO fallback on the joined offer rather than an enrollment-local name.
+- Required regression: list diagnostic, published, duplicate, quarantined, and rejected events for a connection and verify a 200 response with masked client and exact offer target.
+
+### FIND-065 - Successful client actions leave stale modal and summary state
+
+- Area: Client note/message operator feedback.
+- Live proof: Add Note saved in 627 ms and GHL echoed it successfully, but Overview continued to say `No notes yet` and showed the prior activity date until the client was reopened. Send Message returned 200 and later appeared in Communications, but the modal stayed open with an empty body and no visible success state.
+- Impact: merchants can resend a successful email or assume a note failed. This resembles the stale-state behavior previously reported during demos.
+- Severity recommendation: P2 state/feedback defect.
+- Required repair: close or convert the modal to an explicit success state, refresh the affected summary/communications queries, and update Last Activity without requiring navigation.
+- Required regression: one note and one email each show one success state, one persisted record, refreshed summary data, and no duplicate action after the first response.
+
+### FIND-066 - Manual client emails have no enrollment-binding control
+
+- Area: Communication evidence and defense scoping.
+- Live proof: a new email sent from Phil Kay's ScaleSafe profile was delivered and captured as a GHL communication, but the Evidence tab showed `Link to Program`. The client had one active and one completed enrollment; the form offered no program field.
+- Code/UI proof: the message request carries the contact, channel, and body, not an enrollment reference. The webhook therefore cannot distinguish an explicit program communication from general client correspondence.
+- Impact: important service communications can remain outside the exact enrollment packet unless someone manually links them, which the product cannot expect merchants to do.
+- Severity recommendation: P1 evidence-completeness defect.
+- Required repair: default deterministically when exactly one active enrollment exists, expose a required program choice when several are eligible, and carry a verified enrollment reference through the outbound message metadata and GHL echo matcher.
+- Required regression: single-active enrollment auto-links; two-active enrollment requires a choice; completed historical enrollments are never selected merely because they are newer/older.
+
+### FIND-067 - Production Supabase capacity collapse makes ScaleSafe unavailable
+
+- Area: Production availability, database capacity, workers, dashboard polling, and failure containment.
+- Live proof: the Supabase project dashboard reported `Unhealthy` and warned that multiple resources were exhausted on Nano compute. During the same window its rolling-hour success rate was about 85%, with thousands of API Gateway warnings and hundreds of errors. Query Performance failed with `Connection terminated due to connection timeout`; database connection, disk, and network charts could not load.
+- Resource proof: Database Observability reported about 411 MB used on a 0.5 GB instance and about 1.34 GB committed against a 1.5 GB commit limit. CPU was not continuously saturated, which points to memory/connection pressure and a cascading query backlog rather than one simple CPU spike.
+- Railway/browser proof: the static application root returned HTTP 200 in 0.26 seconds, while `/health` returned no bytes and timed out after 15 seconds. Dashboard reads and the HQ merchant read held open for 60 to 300 seconds before the client closed them with HTTP 499. The ScaleSafe reviewer sub-account reached the installed app but displayed `Unable to Connect` because merchant binding could not complete while Supabase was timing out. This isolates the outage to database-backed readiness and application requests rather than DNS, static hosting, the GHL iframe, or the Marketplace installation.
+- Supabase log proof: API Gateway returned 522/504 for merchant reads and worker RPCs including `claim_external_evidence_events` and `expire_evidence_enrollment_contexts`. Other claim and evidence-table requests returned 500 during the same degradation window.
+- Railway worker proof: the external-evidence, money-reconciliation, and defense-operations workers repeatedly logged `TypeError: fetch failed`. The money worker also received `canceling statement due to statement timeout`, while the external-evidence and defense workers received the Supabase host's Cloudflare `522: Connection timed out` response. These failures occurred across all three independent worker loops during the same project-health incident.
+- Code proof: three always-on workers poll every five seconds. Even when no work exists, the connector worker claims events and expires contexts, the money worker claims operations and refund claims, and the defense worker claims packets and reconciles accepted submissions. Those six baseline calls every five seconds produce approximately 4,320 database/API operations per hour before dashboard traffic or actual job processing. The main worker ticks prevent same-process overlap, but `cleanupExpiredContexts()` has no in-flight guard, so a stalled cleanup RPC can be launched again every five seconds while earlier calls remain unresolved. A visible dashboard also launches four reads every minute. The shared Supabase client and frontend API wrapper apply no explicit request deadline, so dependency stalls can occupy requests until Railway's five-minute edge timeout.
+- Impact: SSO, dashboards, HQ diagnostics, scheduled processing, evidence intake, and payment/defense operations can all become unavailable together. Retrying from several browser tabs increases pressure and makes the failure self-reinforcing.
+- Severity recommendation: P1 launch blocker spanning configuration and code. It is not a bad GHL install.
+- Immediate operations requirement: move production off Free/Nano before any reviewer walkthrough or beta merchant. [Supabase pricing](https://supabase.com/pricing) currently lists Pro from $25/month and includes enough compute credit for one Micro instance, which doubles memory to 1 GB.
+- Required code repair: add long idle backoff and jitter to empty worker polls, prevent overlapping context-cleanup calls, wake workers after durable job creation where practical, apply bounded Supabase/API request deadlines, return an observable 503 instead of hanging for five minutes, and alert on database degradation. Revisit the dashboard one-minute fan-out after the database is stable.
+- Required regression: with empty queues, prove a bounded low request rate; under injected Supabase latency, SSO and health fail quickly with actionable status, no worker or cleanup calls overlap, and recovery occurs without duplicate side effects.
+- Screenshots: `assets/OPS-SUPABASE-001_project-unhealthy_2026-07-14.png`, `assets/OPS-SUPABASE-002_database-health_2026-07-14.png`.
+
+### FIND-068 - Production Supabase has no recoverable backup
+
+- Area: Disaster recovery and evidence durability.
+- Live proof: the ScaleSafe Supabase project is on the Free plan and its overview reports `LAST BACKUP: No backups`.
+- Impact: payment, consent, enrollment, evidence, and defense records have no Supabase-managed recovery point. A database mistake or destructive incident could become permanent. Database backups also do not cover private Storage objects such as signed packets and defense files.
+- Severity recommendation: P1 operations/data-resilience launch blocker.
+- Required operations repair: enable a paid production plan with managed daily backups, document retention, create an encrypted off-platform database export and private Storage-object backup, and complete a scratch restore with hash/sample verification before the first real beta merchant. Supabase's [production checklist](https://supabase.com/docs/guides/deployment/going-into-prod) states that downloadable database backups are not available on Free projects.
+- Required ongoing proof: backup age, latest successful export, object manifest/hash status, and last restore-test result must be visible to the planned Guardian backup/security system.
+
+### FIND-069 - Dependency outages are mislabeled as a broken GHL installation
+
+- Area: GHL SSO failure handling and reviewer recovery guidance.
+- Live proof: the already-installed ScaleSafe reviewer sub-account at GHL location `BxiqLzUf4Rh5GXR6DUZ3` reached the ScaleSafe iframe during the Supabase outage, but merchant lookup could not complete. The UI displayed `Unable to Connect` and instructed the operator to uninstall and reinstall ScaleSafe.
+- Code proof: `useApi.ts` turns every non-agency `/auth/sso` failure into one generic error. `App.vue` renders the same fixed statement, `This usually means the app needs to be reinstalled`, for any SSO error or missing location, including dependency timeouts and server-side 5xx responses.
+- Impact: a temporary database incident is presented as an installation defect. A merchant or GHL reviewer can unnecessarily uninstall a valid app, interrupt provisioning, or conclude that Marketplace installation failed when the actual problem is service availability.
+- Severity recommendation: P2 operational recovery and product-truth defect. It does not create the outage, but it sends users toward the wrong repair and obscures the real health incident.
+- Required repair: return typed SSO failure categories and render distinct states for agency-context launch, missing/revoked installation, invalid authentication, temporary service unavailability, and timeout. Dependency failures need a bounded retry control plus support/status guidance; only confirmed missing or revoked bindings should recommend reinstalling.
+- Required regression: a missing merchant or revoked install shows reinstall guidance; a simulated Supabase timeout/503 shows temporary-service guidance and retry; agency-context launch continues to fail closed without a sub-account chooser.
+
+### FIND-070 - Railway and Supabase are deployed on opposite sides of the country
+
+- Area: Production topology and database latency.
+- Live proof: the active Railway deployment reports one replica in `us-west2`. The production Supabase project reports its primary database in East US (North Virginia), `us-east-1`.
+- Impact: every Supabase query, RPC, worker claim, SSO merchant lookup, and storage-control request crosses regions. This does not explain the proven Nano memory/resource exhaustion by itself, but it adds avoidable latency to every database round trip and amplifies the effect of N+1 routes and frequent polling.
+- Severity recommendation: P2 configuration/performance defect for controlled beta. It becomes more material as merchant and worker traffic grows.
+- Required operations repair: place the ScaleSafe Railway service in the closest supported region to the production database, or deliberately relocate the database, after confirming provider support and migration implications. Change one side only through a planned deployment window; do not combine it with payment-code changes.
+- Required regression: record representative SSO, dashboard cold/warm, payment read, worker claim, and defense read latency before and after regional alignment. Confirm processor webhooks and GHL callbacks remain healthy from the new app region.
+
+### FIND-071 - Sensitive local artifacts were not fully ignored
+
+- Area: Repository secret hygiene.
+- Code proof: `scripts/migrate.js` supports `scripts/.dbpass` and tells an operator to place the database password there. Before this review, `.gitignore` ignored `.env` and Supabase temporary files but not `scripts/.dbpass`, local `tmp/` review artifacts, or extracted `tmp_defense_packet_text*.txt` files.
+- Live repository proof: GitHub reports the ScaleSafe repository as public. No `scripts/.dbpass` file currently exists, and the redacted current-tree scan found no live Stripe, Supabase, GHL, or processor-encryption credential. Local temporary defense-packet text files were present but remain untracked.
+- Impact: following the migration script's documented local-password option could leave a plaintext database password as an ordinary untracked file. Likewise, local review exports may contain client or evidence data. Either class of artifact could be accidentally included in a public commit.
+- Severity recommendation: P2 preventative security defect; there is no newly discovered active credential exposure.
+- Repair: `.gitignore` now contains `scripts/.dbpass`, `tmp/`, and `tmp_defense_packet_text*.txt`.
+- Required regression: `git check-ignore -v scripts/.dbpass tmp/placeholder tmp_defense_packet_text.txt` resolves all three paths to repository ignore rules, and secret scanning remains part of the release/security process.
+
+### FIND-072 - Unprotected main auto-deploys directly to production
+
+- Area: Source control, agent safety, and production release governance.
+- Live proof: GitHub reports `main` at deployed SHA `1dce009` with `protected = false`. Railway is connected to `Pkorn79/ScaleSafe`, watches `main`, and automatically deployed that same commit to production.
+- Impact: any accidental agent push or compromised GitHub write credential can immediately become production code without a required review or successful status check. The risk is material because ScaleSafe handles payments, evidence, credentials, and tenant-bound workflows.
+- Severity recommendation: P2 operations-security gap for controlled beta. It is not proof that unauthorized access has occurred.
+- Required operations repair: define a release path with required CI status checks and protected production deployment. A practical shape is a protected `main`, short-lived review branches/PRs, and either Railway deploy-after-merge or a separate staging service before production promotion. Preserve an emergency owner bypass with auditability rather than routine direct pushes.
+- Required regression: a failing CI branch cannot reach production; an approved green change can; production deployment records the reviewed commit; rollback to the preceding known-good image is practiced without database rollback assumptions.
+
+### FIND-073 - Reviewer Snapshot packages obsolete and duplicate GHL assets
+
+- Area: GHL Marketplace Snapshot, clean-install quality, and reviewer readiness.
+- Live proof: the already-installed `ScaleSafe` reviewer sub-account contains 29 workflows, three funnels with 14 steps, 27 forms, 160 custom fields, and 22 custom values. Installed forms include `SYS2-01: Merchant Onboarding`, `SYS2-02: Evidence Export`, `SYS2-06: Milestone Sign-Off`, 16 merchant-onboarding forms superseded by app-native Merchant Setup and Offers, duplicate session/module/milestone surfaces, and an A2P lead form.
+- Contract proof: the current beta Snapshot plan excludes V1 Make.com/helper assets, old model-specific onboarding forms/workflows, and conflicting duplicates. The archived source inventory explicitly identifies SYS2-01, SYS2-02, and SYS2-06 as obsolete for the beta package.
+- Important clarification: the legacy-named `SS--Pulse-Check-Cadence` workflow is not obsolete in behavior. Live inspection confirmed `ScaleSafe App Event` with `Event Type = Pulse Check Due` and one email action. Preserve exactly one such workflow and do not create a duplicate just to correct its name.
+- Setup gaps, not packaging defects: three workflows are draft, no domain is connected, and merchant-specific values and business-profile fields are incomplete. Those require an owner decision or normal provisioning; they do not mean the app failed to install.
+- Impact: a reviewer or merchant can encounter unsupported forms and duplicate setup surfaces, use the wrong onboarding/evidence path, or conclude that broader GHL scopes are required for assets ScaleSafe no longer uses. The extra material also makes clean-install certification and future provisioning instructions unreliable.
+- Severity recommendation: P2 Marketplace packaging and operational-usability defect. The app is installed successfully; the defect is what the attached Snapshot packages.
+- Required repair: build a clean V2 source Snapshot that includes only the approved SYS2-07 through SYS2-11 evidence forms, current funnel/pages, and reviewed active workflows. Do not delete PMG's historical assets merely to create the clean package.
+- Required regression: install the rebuilt Snapshot into a separate scratch sub-account and compare it to an explicit allowlist. Confirm one pulse app-event workflow, no SYS2-01/SYS2-02/SYS2-06, no old model-specific onboarding forms, no Make.com or Accept.blue assets, and no duplicate payment/evidence paths.
+
+### FIND-074 - Installed GHL Custom Pages time out before backend SSO begins
+
+- Area: GHL Custom Page parent-frame messaging and SSO observability.
+- Live proof: the active ScaleSafe reviewer installation and PMG's installed Custom Page both displayed `SSO handshake timed out - GHL did not respond`. The timed-out attempts did not produce `/auth/sso`, so the failure precedes Supabase merchant lookup. The Marketplace Custom Page preview did return agency context, showing that the documented request/response contract works in that surface.
+- Code proof: `useApi.ts` posts `REQUEST_USER_DATA` to a fixed set of target origins and rejects after five seconds when no `REQUEST_USER_DATA_RESPONSE` arrives. The error is then rendered through the same generic reinstall-oriented screen used for backend SSO failures.
+- Impact: an installed merchant or reviewer cannot open ScaleSafe even when installation assets exist. The current message also obscures whether failure occurred in GHL parent messaging or ScaleSafe backend authentication.
+- Severity recommendation: P1 installed-app beta blocker.
+- Required repair: isolate the installed iframe topology and current GHL message behavior, retain strict response-origin validation, add explicit `parent_context_timeout` telemetry/UI, and test the exact installed Custom Page surface. Do not add a cross-sub-account chooser or trust a location supplied by the browser URL.
+- Required regression: reviewer and PMG installed pages each produce exactly one trusted location-bound `/auth/sso`; agency-context preview still fails closed; an absent parent response fails quickly with typed guidance and no tenant fallback.
+
+### FIND-075 - Marketplace draft retains stale scopes
+
+- Area: GHL Marketplace least privilege and reviewer documentation.
+- Live proof: the current draft reports 29 selected scopes. Read-only inspection confirmed Products and Opportunities remain selected even though both were previously identified as old product directions. Other sensitive or broad selections require an exact runtime-use map before submission. No checkbox or Save action was used during review.
+- Impact: unnecessary scopes expand access, increase Marketplace review friction, and make the scope-explanation video inaccurate.
+- Severity recommendation: P2 configuration and publication gate.
+- Required repair: export the exact selected list, map every scope to a current route/service or Snapshot requirement, remove scopes without a code-backed beta use, and write one plain-language reviewer explanation per retained scope.
+- Required regression: install with the reduced scope set in a scratch sub-account and certify SSO, contacts, conversations, custom fields/values, workflows, appointments, and payment-provider paths without re-adding stale capabilities.
 
 ## Operations Access
 

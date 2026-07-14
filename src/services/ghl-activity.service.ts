@@ -690,6 +690,12 @@ export const ghlActivityService = {
               actor: comm.actorLabel as 'client' | 'merchant',
               communication: { channel, sourceChannel, direction, nature: comm.nature, natureLabel: comm.natureLabel, excerpt: comm.preview },
               source: { system: 'ghl_webhook', recordId: activity.sourceRecordId || null, rawEventType: activity.eventType },
+              match: {
+                method: match.reason,
+                confidence: match.confidence,
+                enrollmentId: match.enrollment?.id || null,
+                offerId: match.offerId || null,
+              },
             },
           }),
         });

@@ -1119,6 +1119,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       currency: (currency || 'usd').toLowerCase(),
       payment_method_type: paymentMethod,
       selected_payment_method: paymentMethod,
+      card_uplift_percent: cartQuote?.cardUpliftPercent || 0,
+      processor_deduction_percent: cartQuote?.processorDeductionPercent || 0,
       payment_status: paymentProcessing ? 'processing' : (result.success ? 'succeeded' : 'failed'),
       settled_at: paymentSettled ? new Date().toISOString() : null,
       customer_email: contactEmail || null,
@@ -1131,6 +1133,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       source: 'checkout',
       is_recurring: false,
       line_items: cartQuote?.lineItems || [],
+      evidence_data: cartQuote ? {
+        checkout_pricing: {
+          dual_pricing_enabled: cartQuote.dualPricingEnabled,
+          selected_payment_method: cartQuote.paymentMethod,
+          bank_amount_cents: cartQuote.achAmountCents,
+          card_amount_cents: cartQuote.cardAmountCents,
+          selected_amount_cents: cartQuote.selectedAmountCents,
+          card_uplift_percent: cartQuote.cardUpliftPercent,
+        },
+      } : null,
     });
     if (paymentEventError) throw new Error(`Payment succeeded, but payment ledger recording failed: ${paymentEventError.message}`);
 

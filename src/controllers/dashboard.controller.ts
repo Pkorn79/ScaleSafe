@@ -24,6 +24,21 @@ import { createProcessorClient, resolveProcessor } from '../services/processor.f
 import { stripeAchService } from '../services/stripe-ach.service';
 import { sendPulseForEnrollment } from '../jobs/pulse-cadence-check';
 import { groupPaymentEventsByEnrollment } from '../services/payment-enrollment-matching.service';
+import { communicationService } from '../services/communication.service';
+import { triggerDeliveryJobService } from '../services/trigger-delivery-job.service';
+
+const MESSAGE_LINKABLE_ENROLLMENT_STATUSES = [
+  'enrolled', 'active', 'paused', 'consent_captured', 'paid_pending_enrollment',
+];
+
+function responseIdentifier(response: any, ...paths: string[]): string | null {
+  const payload = response?.data || response || {};
+  for (const path of paths) {
+    const value = path.split('.').reduce((current: any, key) => current?.[key], payload);
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
 
 /** Build milestone list from offer's m1-m8 fields */
 function buildMilestoneList(offer: any): Array<{ number: number; name: string; delivers: string; clientDoes: string }> {
@@ -1039,13 +1054,35 @@ export const dashboardController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
-      const { contactId, type, message, subject } = req.body;
+      const { contactId, type, message, subject, enrollmentId } = req.body;
       if (!contactId || !type || !message) throw new ValidationError('contactId, type, and message required');
+
+      const { data: linkableEnrollments, error: enrollmentError } = await getSupabase()
+        .from('enrollments')
+        .select('id, offer_id, status')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .in('status', MESSAGE_LINKABLE_ENROLLMENT_STATUSES);
+      if (enrollmentError) throw enrollmentError;
+
+      const candidates = linkableEnrollments || [];
+      let resolvedEnrollmentId: string | null = null;
+      if (enrollmentId) {
+        const selected = candidates.find((candidate: any) => candidate.id === enrollmentId);
+        if (!selected) throw new ValidationError('Selected program is not an active enrollment for this client');
+        resolvedEnrollmentId = selected.id;
+      } else if (candidates.length === 1) {
+        resolvedEnrollmentId = candidates[0].id;
+      } else if (candidates.length > 1) {
+        throw new ValidationError('Select the program this message relates to');
+      }
 
       const api = await ghlApi(locationId);
       const cleanMessage = String(message).trim();
+      const cleanSubject = String(subject || 'Message from ScaleSafe');
+      let sendResponse: any;
       if (type === 'sms') {
-        await api.post('/conversations/messages', {
+        sendResponse = await api.post('/conversations/messages', {
           type: 'SMS',
           contactId,
           message: cleanMessage,
@@ -1056,14 +1093,33 @@ export const dashboardController = {
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/\n/g, '<br>');
-        await api.post('/conversations/messages', {
+        sendResponse = await api.post('/conversations/messages', {
           type: 'Email',
           contactId,
-          subject: String(subject || 'Message from ScaleSafe'),
+          subject: cleanSubject,
           html: `<p>${escaped}</p>`,
         });
       }
-      res.json({ success: true });
+
+      const messageId = responseIdentifier(sendResponse, 'messageId', 'emailMessageId', 'message.id', 'id');
+      const conversationId = responseIdentifier(sendResponse, 'conversationId', 'conversation.id');
+      let evidenceLogged = true;
+      try {
+        await communicationService.logOutboundMessage(locationId, contactId, type, cleanMessage, {
+          enrollmentId: resolvedEnrollmentId,
+          subject: type === 'email' ? cleanSubject : null,
+          ghlMessageId: messageId,
+          ghlConversationId: conversationId,
+        });
+      } catch (evidenceError: any) {
+        evidenceLogged = false;
+        logger.error(
+          { err: evidenceError?.message || String(evidenceError), locationId, contactId, enrollmentId: resolvedEnrollmentId, messageId },
+          'Client message sent but evidence logging failed',
+        );
+      }
+
+      res.json({ success: true, enrollmentId: resolvedEnrollmentId, messageId, evidenceLogged });
     } catch (err) { next(err); }
   },
 
@@ -1100,8 +1156,10 @@ export const dashboardController = {
         logger.warn({ locationId, contactId, enrollmentId }, 'Milestone enrollment validation failed: enrollment not found');
         throw new ValidationError('Enrollment not found');
       }
-      const nextMilestoneNumber = (Number(enrollment.current_milestone) || 0) + 1;
-      if (requestedMilestoneNumber !== nextMilestoneNumber) {
+      const currentMilestoneNumber = Number(enrollment.current_milestone) || 0;
+      const nextMilestoneNumber = currentMilestoneNumber + 1;
+      const isIdempotentReplay = requestedMilestoneNumber === currentMilestoneNumber;
+      if (!isIdempotentReplay && requestedMilestoneNumber !== nextMilestoneNumber) {
         throw new ValidationError(`Must complete milestone ${nextMilestoneNumber} before ${requestedMilestoneNumber}`);
       }
 
@@ -1133,6 +1191,7 @@ export const dashboardController = {
       const milestoneSupportEmail = milestoneMerchant?.support_email || milestoneMerchant?.email || '';
 
       const completedAt = new Date().toISOString();
+      const milestoneCompletionId = `milestone:${enrollmentId}:${requestedMilestoneNumber}`;
       const signoffToken = createPublicActionToken({
         action: 'milestone_signoff',
         locationId,
@@ -1157,6 +1216,8 @@ export const dashboardController = {
         milestoneNumber: requestedMilestoneNumber,
         milestone_name: milestoneName,
         milestoneName,
+        milestone_completion_id: milestoneCompletionId,
+        milestoneCompletionId,
         offer_id: enrollment.offer_id || '',
         offerId: enrollment.offer_id || '',
         offer_name: offerName,
@@ -1177,19 +1238,22 @@ export const dashboardController = {
         workSummary,
       };
 
-      // Save first. Evidence and workflow steps cannot block the saved milestone.
-      const { error: updateError } = await supabase
-        .from('enrollments')
-        .update({ current_milestone: requestedMilestoneNumber })
-        .eq('id', enrollmentId)
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId);
-      if (updateError) {
-        logger.error(
-          { err: updateError.message, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
-          'Milestone enrollment update failed',
-        );
-        throw updateError;
+      // Save first. A retry after an interrupted response reuses the same
+      // durable workflow job and does not write duplicate milestone evidence.
+      if (!isIdempotentReplay) {
+        const { error: updateError } = await supabase
+          .from('enrollments')
+          .update({ current_milestone: requestedMilestoneNumber })
+          .eq('id', enrollmentId)
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId);
+        if (updateError) {
+          logger.error(
+            { err: updateError.message, locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber },
+            'Milestone enrollment update failed',
+          );
+          throw updateError;
+        }
       }
 
       // Log evidence — enriched with description + contact_email + raw_payload for downstream defense compilation
@@ -1210,7 +1274,7 @@ export const dashboardController = {
         );
       }
 
-      const evidenceResult = await insertMilestoneEvidence(supabase, {
+      const evidenceResult = isIdempotentReplay ? { status: 'already_saved' as const, error: null } : await insertMilestoneEvidence(supabase, {
         location_id: locationId,
         contact_id: contactId,
         enrollment_id: enrollmentId,
@@ -1250,53 +1314,49 @@ export const dashboardController = {
         );
       }
 
-      try {
-        const api = await ghlApi(locationId);
-        await api.put(`/contacts/${contactId}`, {
-          customField: {
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK]: signoffLink,
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(requestedMilestoneNumber),
-            [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,
-            [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: milestoneBusinessName,
-            [OFFER_CONTACT_FIELDS.OFFER_NAME]: offerName,
-            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: offerName,
-            [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: milestoneSupportEmail,
-          },
-        });
-      } catch (fieldErr: any) {
-        logger.warn(
-          { err: fieldErr?.message || String(fieldErr), locationId, contactId, milestoneNumber: requestedMilestoneNumber },
-          'Milestone contact field sync failed (non-fatal)',
-        );
-      }
+      const contactFieldUpdates = {
+        [WORKFLOW_MILESTONE_CONTACT_FIELDS.CURRENT_MILESTONE_NAME]: milestoneName,
+        [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_LINK]: signoffLink,
+        [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NAME]: milestoneName,
+        [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_MILESTONE_NUMBER]: String(requestedMilestoneNumber),
+        [WORKFLOW_MILESTONE_CONTACT_FIELDS.SIGNOFF_WORK_SUMMARY]: workSummary,
+        [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: milestoneBusinessName,
+        [OFFER_CONTACT_FIELDS.OFFER_NAME]: offerName,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: offerName,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: milestoneSupportEmail,
+      };
 
       // Fire trigger — fire-and-forget. Trigger delivery has its own retry/backoff
       // (postWithRetry) and a subscription-list fetch failure must NOT 500 the
       // merchant action since the evidence row + enrollment update have already succeeded.
-      let workflowResult: { status: string; sent: number; failed: number; error?: string } = {
-        status: 'not_attempted',
+      let workflowResult: { status: string; sent: number; failed: number; jobId?: string; error?: string } = {
+        status: 'queue_failed',
         sent: 0,
         failed: 0,
       };
       try {
-        const { triggerService: ts } = require('../services/trigger.service');
-        const result = await ts.fireTrigger(locationId, 'ss_milestone_reached', triggerPayload);
+        const { job, created } = await triggerDeliveryJobService.enqueue({
+          locationId,
+          triggerKey: 'ss_milestone_reached',
+          idempotencyKey: milestoneCompletionId,
+          contactId,
+          contactFieldUpdates,
+          payload: triggerPayload,
+        });
         workflowResult = {
-          status: result.sent > 0 ? 'sent' : result.failed > 0 ? 'failed' : 'not_sent',
-          sent: result.sent,
-          failed: result.failed,
+          status: job.status === 'succeeded'
+            ? 'sent'
+            : job.status === 'pending' || job.status === 'processing'
+              ? 'queued'
+              : job.status,
+          sent: job.status === 'succeeded' ? Number(job.trigger_result?.sent || 1) : 0,
+          failed: job.status === 'failed' ? Number(job.trigger_result?.failed || 1) : 0,
+          jobId: job.id,
         };
-        if (workflowResult.status !== 'sent') {
-          logger.warn(
-            { locationId, contactId, enrollmentId, milestoneNumber: requestedMilestoneNumber, workflowResult },
-            'Milestone trigger returned without delivery',
-          );
-        }
+        if (created) require('../services/trigger-delivery-worker').triggerDeliveryWorker.wake();
       } catch (triggerErr: any) {
         workflowResult = {
-          status: 'failed',
+          status: 'queue_failed',
           sent: 0,
           failed: 1,
           error: triggerErr?.message || String(triggerErr),
@@ -1315,6 +1375,7 @@ export const dashboardController = {
         evidenceStatus: evidenceResult.status,
         evidenceError: evidenceResult.error || null,
         workflowResult,
+        replayed: isIdempotentReplay,
       });
     } catch (err) { next(err); }
   },

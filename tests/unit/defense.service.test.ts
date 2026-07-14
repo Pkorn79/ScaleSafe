@@ -14,8 +14,10 @@ const mockInsertErrors: Record<string, any> = {};
 // Per-table single-row results for select().maybeSingle()/single(). Tests that
 // need a specific table to return a row set mockSelectResults[table] = row.
 const mockSelectResults: Record<string, any> = {};
+const mockRpc = jest.fn();
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
+    rpc: (...args: any[]) => mockRpc(...args),
     from: (table: string) => ({
       insert: (row: any) => {
         (mockInsertedRows[table] = mockInsertedRows[table] || []).push(row);
@@ -301,6 +303,7 @@ function offerCtx(overrides: Partial<OfferContext> = {}): OfferContext {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRpc.mockResolvedValue({ data: null, error: null });
   mockDefenseSubmissionBegin.mockResolvedValue({
     action: 'execute',
     claim: { id: 'claim_1', status: 'processing', provider_called: false },
@@ -728,6 +731,48 @@ describe('Defense Service - Regeneration review state', () => {
       expect.objectContaining({ error_message: expect.stringContaining('credit already issued') }),
     );
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_defense_ready', expect.anything());
+  });
+
+  test('queues one durable target version and returns promptly', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: [{ defense_id: 'def_1', target_version: 3, job_status: 'pending', created: true }],
+      error: null,
+    });
+
+    await expect(defenseService.queueRegeneration('def_1', 'loc_1')).resolves.toEqual({
+      defenseId: 'def_1',
+      targetVersion: 3,
+      status: 'pending',
+      created: true,
+    });
+    expect(mockRpc).toHaveBeenCalledWith('queue_defense_regeneration', {
+      p_defense_id: 'def_1',
+      p_location_id: 'loc_1',
+    });
+    expect(callClaude).not.toHaveBeenCalled();
+  });
+
+  test('a worker retry reuses the existing target version without another AI request or insert', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValueOnce(regenPacket());
+    mockSelectResults['defense_letter_versions'] = {
+      version_number: 4,
+      letter_text: 'Previously generated defense letter',
+      generated_by: 'ai',
+      model_used: 'claude-sonnet-5',
+      prompt_tokens_used: 100,
+      response_tokens_used: 200,
+      notes: null,
+    };
+
+    await defenseService.regenerateLetter('def_1', 'loc_1', 4);
+
+    expect(callClaude).not.toHaveBeenCalled();
+    expect(mockInsertedRows.defense_letter_versions || []).toHaveLength(0);
+    expect(defenseRepository.updateStatus).toHaveBeenCalledWith(
+      'def_1',
+      'complete',
+      expect.objectContaining({ defense_letter_text: 'Previously generated defense letter' }),
+    );
   });
 
   test('regeneration invalidates the stale PDF and remains needs_review when rebundling fails', async () => {

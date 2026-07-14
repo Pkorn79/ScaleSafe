@@ -29,6 +29,7 @@ describe('defenseInputValidationService', () => {
   it('derives enrollment and offer from the tenant-scoped disputed payment', async () => {
     tableData.payment_events = {
       id: 'payment-1', contact_id: 'contact-1', enrollment_id: 'enrollment-1', offer_id: 'offer-1',
+      processor: 'stripe', created_at: '2026-07-14T03:51:30Z',
     };
     tableData.enrollments = { id: 'enrollment-1', offer_id: 'offer-1' };
     tableData.offers_mirror = { id: 'offer-1' };
@@ -39,6 +40,7 @@ describe('defenseInputValidationService', () => {
       paymentEventId: 'payment-1',
       enrollmentId: 'enrollment-1',
       offerId: 'offer-1',
+      processor: 'stripe',
     }));
     expect(mockGhlGet).not.toHaveBeenCalled();
   });
@@ -61,6 +63,32 @@ describe('defenseInputValidationService', () => {
       paymentEventId: 'payment-1',
       enrollmentId: 'enrollment-2',
     })).rejects.toThrow('Selected enrollment does not match the disputed transaction');
+  });
+
+  it('derives the payment rail and rejects a conflicting caller-supplied processor', async () => {
+    tableData.payment_events = {
+      id: 'payment-1', contact_id: 'contact-1', processor: 'stripe', created_at: '2026-07-14T03:51:30Z',
+    };
+
+    await expect(defenseInputValidationService.validate({
+      locationId: 'loc-1', contactId: 'contact-1', paymentEventId: 'payment-1', processor: 'nmi',
+    })).rejects.toThrow('Selected processor does not match the disputed transaction');
+  });
+
+  it('compares transaction and dispute dates in the supplied IANA timezone', async () => {
+    tableData.payment_events = {
+      id: 'payment-1', contact_id: 'contact-1', processor: 'stripe', created_at: '2026-07-14T03:51:30Z',
+    };
+
+    await expect(defenseInputValidationService.validate({
+      locationId: 'loc-1', contactId: 'contact-1', paymentEventId: 'payment-1',
+      disputeDate: '2026-07-13', disputeTimezone: 'America/Chicago',
+    })).resolves.toEqual(expect.objectContaining({ processor: 'stripe' }));
+
+    await expect(defenseInputValidationService.validate({
+      locationId: 'loc-1', contactId: 'contact-1', paymentEventId: 'payment-1',
+      disputeDate: '2026-07-12', disputeTimezone: 'America/Chicago',
+    })).rejects.toThrow('Dispute date cannot be before the selected transaction date (2026-07-13)');
   });
 
   it('verifies a manual contact-only defense through the tenant-scoped GHL API', async () => {

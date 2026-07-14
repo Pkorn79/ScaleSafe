@@ -23,8 +23,9 @@ const DEFAULT_THRESHOLDS = {
 
 type DisengagementThresholds = typeof DEFAULT_THRESHOLDS & Record<string, number>;
 
-const SCORE_CONTACT_CONCURRENCY = 3;
 const AT_RISK_CACHE_TTL_MS = 5 * 60 * 1000;
+const RISK_LOOKBACK_DAYS = 180;
+const BULK_EVIDENCE_LIMIT = 20_000;
 const atRiskCache = new Map<string, { expiresAt: number; clients: RiskAssessment[] }>();
 const atRiskInflight = new Map<string, Promise<RiskAssessment[]>>();
 
@@ -39,6 +40,97 @@ function resolveThresholds(merchant: any): DisengagementThresholds {
   return {
     ...DEFAULT_THRESHOLDS,
     ...((merchant?.config?.disengagement_thresholds as Record<string, number> | undefined) || {}),
+  };
+}
+
+interface RiskEvidenceRow {
+  contact_id: string;
+  type: string;
+  created_at: string;
+  data?: Record<string, any> | null;
+}
+
+function scoreClientFromRows(
+  locationId: string,
+  contactId: string,
+  rows: RiskEvidenceRow[],
+  thresholds: DisengagementThresholds,
+  latestSupplementalDate: string | null,
+  now = Date.now(),
+): RiskAssessment {
+  const riskFactors: string[] = [];
+  let riskScore = 0;
+  const byType = (type: string) => rows.filter((row) => row.type === type);
+
+  const attendance = byType('attendance').slice(0, 5);
+  let consecutiveNoShows = 0;
+  for (const row of attendance) {
+    if (row.data?.status === 'no_show') consecutiveNoShows += 1;
+    else break;
+  }
+  if (consecutiveNoShows >= thresholds.missedSessionsToFlag) {
+    riskScore += 25;
+    riskFactors.push(`${consecutiveNoShows} consecutive no-shows`);
+  }
+
+  const lastModule = byType('module')[0];
+  if (lastModule) {
+    const daysSince = Math.floor((now - new Date(lastModule.created_at).getTime()) / 86400000);
+    if (daysSince > thresholds.inactiveDaysModules) {
+      riskScore += 20;
+      riskFactors.push(`No module progress for ${daysSince} days`);
+    }
+  }
+
+  const lastAccess = byType('service_access')[0];
+  if (lastAccess) {
+    const daysSince = Math.floor((now - new Date(lastAccess.created_at).getTime()) / 86400000);
+    if (daysSince > thresholds.inactiveDaysLogin) {
+      riskScore += 15;
+      riskFactors.push(`No platform access for ${daysSince} days`);
+    }
+  }
+
+  const lastPulse = byType('pulse_checkin')[0];
+  const pulseScore = Number(lastPulse?.data?.satisfaction_score);
+  if (lastPulse && Number.isFinite(pulseScore) && pulseScore <= thresholds.pulsScoreThreshold) {
+    riskScore += 15;
+    riskFactors.push(`Low satisfaction score: ${pulseScore}/5`);
+  }
+
+  const recentFailures = byType('failed_payment').filter(
+    (row) => now - new Date(row.created_at).getTime() < 30 * 86400000,
+  );
+  if (recentFailures.length >= thresholds.paymentFailuresToCompound) {
+    riskScore += 15;
+    riskFactors.push(`${recentFailures.length} payment failure(s) in last 30 days`);
+  }
+
+  const communications = byType('communication').slice(0, 10);
+  const hasInbound = communications.some((row) => row.data?.direction === 'inbound');
+  const lastOutbound = communications.find((row) => row.data?.direction === 'outbound');
+  if (lastOutbound && !hasInbound) {
+    const daysSince = Math.floor((now - new Date(lastOutbound.created_at).getTime()) / 86400000);
+    if (daysSince > thresholds.inactiveDaysComms) {
+      riskScore += 10;
+      riskFactors.push(`No communication response for ${daysSince} days`);
+    }
+  }
+
+  const latestDates = rows.map((row) => row.created_at).filter(Boolean);
+  if (latestSupplementalDate) latestDates.push(latestSupplementalDate);
+  const latest = latestDates.sort().pop() || null;
+  const daysInactive = latest
+    ? Math.max(0, Math.floor((now - new Date(latest).getTime()) / 86400000))
+    : RISK_LOOKBACK_DAYS + 1;
+
+  return {
+    contactId,
+    locationId,
+    riskScore: Math.min(100, riskScore),
+    riskFactors,
+    daysInactive,
+    flagged: riskScore >= 40,
   };
 }
 
@@ -196,32 +288,79 @@ export const disengagementService = {
   /** Score all evidence-bearing clients without changing GHL or evidence. */
   async scoreAllClients(locationId: string): Promise<RiskAssessment[]> {
     const supabase = getSupabase();
-    const [contactsResult, merchant] = await Promise.all([
+    const cutoff = new Date(Date.now() - RISK_LOOKBACK_DAYS * 86400000).toISOString();
+    const [clientsResult, timelineResult, genericResult, appointmentResult, invoiceResult, merchant] = await Promise.all([
+      supabase
+        .from('client_list_view')
+        .select('contact_id, status')
+        .eq('location_id', locationId)
+        .in('status', ['enrolled', 'active', 'consent_captured', 'device_captured', 'paid_pending_enrollment', 'paused', 'manual_add']),
       supabase
         .from('evidence_timeline')
-        .select('contact_id')
-        .eq('location_id', locationId),
+        .select('contact_id, type, created_at, data')
+        .eq('location_id', locationId)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(BULK_EVIDENCE_LIMIT),
+      supabase
+        .from('evidence')
+        .select('contact_id, created_at')
+        .eq('location_id', locationId)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(BULK_EVIDENCE_LIMIT),
+      supabase
+        .from('evidence_appointments')
+        .select('contact_id, created_at')
+        .eq('location_id', locationId)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(BULK_EVIDENCE_LIMIT),
+      supabase
+        .from('evidence_invoices')
+        .select('contact_id, created_at')
+        .eq('location_id', locationId)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(BULK_EVIDENCE_LIMIT),
       merchantRepository.getByLocationId(locationId),
     ]);
-    if (contactsResult.error) throw contactsResult.error;
-
-    const contactIds = [...new Set(
-      (contactsResult.data || []).map((row) => row.contact_id).filter(Boolean),
-    )];
-    const thresholds = resolveThresholds(merchant);
-    const assessments: RiskAssessment[] = [];
-
-    // Each contact opens seven independent evidence reads. Keep only three
-    // contacts in flight so a dashboard scan cannot starve checkout, defense,
-    // or webhook traffic on the same Railway instance.
-    for (let i = 0; i < contactIds.length; i += SCORE_CONTACT_CONCURRENCY) {
-      const batch = contactIds.slice(i, i + SCORE_CONTACT_CONCURRENCY);
-      assessments.push(...await Promise.all(
-        batch.map((contactId) => scoreClientWithThresholds(locationId, contactId, thresholds)),
-      ));
+    for (const result of [clientsResult, timelineResult, genericResult, appointmentResult, invoiceResult]) {
+      if (result.error) throw result.error;
     }
 
-    return assessments;
+    const contactIds = [...new Set(
+      (clientsResult.data || []).map((row) => row.contact_id).filter(Boolean),
+    )];
+    const thresholds = resolveThresholds(merchant);
+    const rowsByContact = new Map<string, RiskEvidenceRow[]>();
+    for (const row of (timelineResult.data || []) as RiskEvidenceRow[]) {
+      if (!row.contact_id) continue;
+      const rows = rowsByContact.get(row.contact_id) || [];
+      rows.push(row);
+      rowsByContact.set(row.contact_id, rows);
+    }
+    const supplementalLatest = new Map<string, string>();
+    for (const row of [
+      ...(genericResult.data || []),
+      ...(appointmentResult.data || []),
+      ...(invoiceResult.data || []),
+    ] as Array<{ contact_id?: string; created_at?: string }>) {
+      if (!row.contact_id || !row.created_at) continue;
+      const current = supplementalLatest.get(row.contact_id);
+      if (!current || row.created_at > current) supplementalLatest.set(row.contact_id, row.created_at);
+    }
+    if ((timelineResult.data || []).length === BULK_EVIDENCE_LIMIT) {
+      logger.warn({ locationId, limit: BULK_EVIDENCE_LIMIT }, 'At-risk bulk evidence window reached its safety limit');
+    }
+
+    return contactIds.map((contactId) => scoreClientFromRows(
+      locationId,
+      contactId,
+      rowsByContact.get(contactId) || [],
+      thresholds,
+      supplementalLatest.get(contactId) || null,
+    ));
   },
 
   async getAtRiskClients(locationId: string): Promise<RiskAssessment[]> {

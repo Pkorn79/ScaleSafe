@@ -3,8 +3,8 @@
     <div class="flex-between mb-4">
       <div class="card-title" style="margin-bottom:0">Defense Letter</div>
       <div class="flex gap-2" v-if="!isLocked">
-        <button class="btn btn-sm btn-secondary" @click="$emit('regenerate')" :disabled="regenerating">
-          {{ regenerating ? 'Regenerating...' : 'Regenerate' }}
+        <button class="btn btn-sm btn-secondary" @click="$emit('regenerate')" :disabled="regenerating || isCompiling">
+          {{ regenerating || isCompiling ? 'Regenerating...' : 'Regenerate' }}
         </button>
         <button class="btn btn-sm btn-primary" @click="save" :disabled="saving || !isDirty">
           {{ saving ? 'Saving...' : 'Save Edit' }}
@@ -61,6 +61,7 @@ const emit = defineEmits<{
 const editableText = ref(props.letterText || '');
 const isDirty = ref(false);
 const isLocked = computed(() => ['submitted', 'won', 'lost', 'withdrawn'].includes(props.lifecycleStatus));
+const isCompiling = computed(() => ['pending', 'processing'].includes(props.status));
 
 watch(() => props.letterText, (val) => {
   editableText.value = val || '';

@@ -22,8 +22,8 @@
           </div>
         </div>
         <div class="profile-header-actions">
-          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showNoteModal = true">Add Note</button>
-          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showMessageModal = true">Send Message</button>
+          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openNoteModal">Add Note</button>
+          <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openMessageModal">Send Message</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-primary" @click="openSendOffer">Send Offer</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="showQuickSaleModal = true">Quick Manual Sale</button>
           <button v-if="!pageLoading" class="btn btn-sm btn-secondary" @click="openAssignOffer">Assign Offer</button>
@@ -99,9 +99,10 @@
       />
       <CommunicationsTab
         v-else-if="activeTab === 'communications'"
+        :key="communicationsRefreshKey"
         :contact-id="contactId"
-        @add-note="showNoteModal = true"
-        @send-message="showMessageModal = true"
+        @add-note="openNoteModal"
+        @send-message="openMessageModal"
       />
       <FilesTab
         v-else-if="activeTab === 'files'"
@@ -272,12 +273,25 @@
         <label class="form-label">Message</label>
         <textarea class="form-textarea" v-model="messageBody" rows="4" placeholder="Type your message..."></textarea>
       </div>
+      <div v-if="messageEnrollmentCandidates.length > 1" class="form-group">
+        <label class="form-label">Program</label>
+        <select class="form-select" v-model="messageEnrollmentId">
+          <option value="">Select the program this message relates to...</option>
+          <option v-for="enrollment in messageEnrollmentCandidates" :key="enrollment.id" :value="enrollment.id">
+            {{ enrollment.offerName }} ({{ humanizeEventType(enrollment.status) }})
+          </option>
+        </select>
+      </div>
+      <p v-else-if="messageEnrollmentCandidates.length === 1" class="text-sm text-muted">
+        This message will be linked to {{ messageEnrollmentCandidates[0].offerName }}.
+      </p>
+      <p v-else class="text-sm text-muted">No active program is available; this will remain a client-level communication.</p>
       <div v-if="messageResult" class="text-sm" style="color:#10b981;margin-bottom:8px">{{ messageResult }}</div>
       <div v-if="messageError" class="text-sm" style="color:#ef4444;margin-bottom:8px">{{ messageError }}</div>
 
       <template #footer>
         <button class="btn btn-secondary" @click="showMessageModal = false">Close</button>
-        <button class="btn btn-primary" @click="submitMessage" :disabled="messageLoading || !messageBody.trim()">
+        <button class="btn btn-primary" @click="submitMessage" :disabled="messageLoading || !messageBody.trim() || (messageEnrollmentCandidates.length > 1 && !messageEnrollmentId)">
           {{ messageLoading ? 'Sending...' : 'Send' }}
         </button>
       </template>
@@ -296,6 +310,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import { toast } from '../composables/useToast';
 import Modal from '../components/Modal.vue';
 import ProfileTabs, { type TabDef } from '../components/ProfileTabs.vue';
 import QuickManualSaleModal from '../components/QuickManualSaleModal.vue';
@@ -398,6 +413,27 @@ const messageBody = ref('');
 const messageLoading = ref(false);
 const messageResult = ref('');
 const messageError = ref('');
+const messageEnrollmentId = ref('');
+const communicationsRefreshKey = ref(0);
+
+const messageEnrollmentCandidates = computed(() => enrollments.value.filter((enrollment) =>
+  ['enrolled', 'active', 'paused', 'consent_captured', 'paid_pending_enrollment'].includes(enrollment.status),
+));
+
+function openNoteModal() {
+  noteResult.value = '';
+  noteError.value = '';
+  showNoteModal.value = true;
+}
+
+function openMessageModal() {
+  messageResult.value = '';
+  messageError.value = '';
+  messageEnrollmentId.value = messageEnrollmentCandidates.value.length === 1
+    ? messageEnrollmentCandidates.value[0].id
+    : '';
+  showMessageModal.value = true;
+}
 
 function scoreColor(s: number): string {
   if (s >= 70) return '#10b981';
@@ -594,9 +630,11 @@ async function submitNote() {
       contactId: contactId.value,
       body: noteBody.value,
     });
-    noteResult.value = 'Note saved!';
     noteBody.value = '';
-    setTimeout(() => { noteResult.value = ''; }, 3000);
+    showNoteModal.value = false;
+    communicationsRefreshKey.value += 1;
+    await reloadClientActivity();
+    toast.success('Note saved');
   } catch (e: any) {
     noteError.value = e.message || 'Failed to save note';
   }
@@ -609,14 +647,20 @@ async function submitMessage() {
   messageError.value = '';
   messageResult.value = '';
   try {
-    await api.post('/api/dashboard/client-message', {
+    const result = await api.post<any>('/api/dashboard/client-message', {
       contactId: contactId.value,
       type: messageType.value,
       message: messageBody.value,
+      enrollmentId: messageEnrollmentId.value || null,
     });
-    messageResult.value = 'Message sent!';
     messageBody.value = '';
-    setTimeout(() => { messageResult.value = ''; }, 3000);
+    showMessageModal.value = false;
+    communicationsRefreshKey.value += 1;
+    if (result?.evidenceLogged === false) {
+      toast.warning('Message sent, but its evidence link needs attention');
+    } else {
+      toast.success('Message sent and added to evidence');
+    }
   } catch (e: any) {
     messageError.value = e.message || 'Failed to send message';
   }
@@ -637,6 +681,13 @@ async function reloadClientInfo() {
   enrollmentInfo.value = result;
   clientEmail.value = result.email || '';
   clientLabel.value = result.name || result.email || 'Client';
+}
+
+async function reloadClientActivity() {
+  const activity = await api.get<any>(`/api/dashboard/client-activity/${contactId.value}?limit=5`);
+  recentActivity.value = activity?.recentActivity || [];
+  recentNote.value = activity?.recentNote || null;
+  atRisk.value = activity?.atRisk || null;
 }
 
 async function onQuickSaleCompleted() {
@@ -675,10 +726,7 @@ onMounted(async () => {
   // Overview data - bundled endpoint (built in Sub-phase C)
   try {
     pageLoading.value = false;
-    const activity = await api.get<any>(`/api/dashboard/client-activity/${cid}?limit=5`);
-    recentActivity.value = activity?.recentActivity || [];
-    recentNote.value = activity?.recentNote || null;
-    atRisk.value = activity?.atRisk || null;
+    await reloadClientActivity();
   } catch {
     // Endpoint not available - leave as defaults; OverviewTab handles empty state.
   }

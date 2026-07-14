@@ -59,6 +59,26 @@ function externalParticipantId(participant: any): string | undefined {
   return user ? `zoom_user:${user}` : undefined;
 }
 
+function isHostParticipant(meeting: any, participant: any, connection: EvidenceConnectionRecord): boolean {
+  const hostIds = new Set([
+    meeting?.host_id,
+    (connection.provider_metadata as any)?.zoomUserId,
+  ].map((value) => String(value || '').trim()).filter(Boolean));
+  const participantIds = [
+    participant?.id,
+    participant?.user_id,
+    participant?.participant_user_id,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  if (participantIds.some((value) => hostIds.has(value))) return true;
+
+  const hostEmails = new Set([
+    meeting?.host_email,
+    (connection.provider_metadata as any)?.zoomEmail,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const participantEmail = String(participant?.email || '').trim().toLowerCase();
+  return Boolean(participantEmail && hostEmails.has(participantEmail));
+}
+
 export const zoomIntegrationService = {
   async begin(locationId: string, actorLabel: string, nameInput?: string) {
     if (!config.zoom.clientId || !config.zoom.clientSecret) {
@@ -135,7 +155,10 @@ export const zoomIntegrationService = {
         provider_metadata: { zoomUserId: profile.userId, zoomEmail: profile.email, chatCollection: false },
         setup_status: 'active',
         status: 'active',
-        health_status: 'healthy',
+        // OAuth is connected, but webhook delivery and evidence publication have
+        // not been proven yet. The worker promotes this to healthy after a real
+        // event is resolved and published.
+        health_status: 'ready',
         activated_at: new Date().toISOString(),
         last_error_message: null,
       });
@@ -224,7 +247,7 @@ export const zoomIntegrationService = {
     const updated = await evidenceConnectorRepository.updateConnection(locationId, connectionId, {
       status: 'active',
       setup_status: 'active',
-      health_status: 'healthy',
+      health_status: 'ready',
       activated_at: new Date().toISOString(),
       configured_by: actorLabel,
       last_error_message: null,
@@ -281,6 +304,26 @@ export const zoomIntegrationService = {
     const participantId = participantInstance(participant);
     if (!meetingId || !meetingUuid || !participantId) return { accepted: true, ignored: true };
     const sourceId = `zoom:${eventName}:${sha256(rawBody).slice(0, 40)}`;
+
+    if (isHostParticipant(meeting, participant, connection)) {
+      // A host proves that the merchant opened the meeting, not that the client
+      // attended. Quarantine an open legacy host session if one exists, and never
+      // publish it through the client-evidence pipeline.
+      if (eventName === 'meeting.participant_left') {
+        const openHostSession = await zoomIntegrationRepository.findOpenAttendance(
+          connection.id, meetingUuid, participantId,
+        );
+        if (openHostSession) {
+          await zoomIntegrationRepository.completeAttendance(openHostSession.id, {
+            left_at: String(participant.leave_time || new Date(Number(payload.event_ts || Date.now())).toISOString()),
+            leave_source_event_id: sourceId,
+            status: 'quarantined',
+          });
+        }
+      }
+      logger.info({ connectionId: connection.id, meetingUuid }, 'Zoom host participant ignored for client attendance evidence');
+      return { accepted: true, ignored: true, reason: 'host_participant' };
+    }
 
     if (eventName === 'meeting.participant_joined') {
       const joinedAt = String(participant.join_time || new Date(Number(payload.event_ts || Date.now())).toISOString());

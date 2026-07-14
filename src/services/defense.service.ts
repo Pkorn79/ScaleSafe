@@ -14,12 +14,20 @@ import { offerRepository } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { AppError, ValidationError, ConflictError, ExternalServiceError } from '../utils/errors';
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
+import type { DefenseProcessor } from './defense-input-validation.service';
+import { evaluateDefenseDraftClaims } from './defense-claim-guard.service';
 
 // Reason-code → network/category/deadline resolution lives in the registry.
 // An unknown code maps to the 'general' category (generic evidence presentation)
 // and forces needs_review — it must never be silently argued as a specific
 // dispute type it isn't.
 import { resolveReasonCode } from '../constants/reason-codes';
+
+function defaultDefenseAddressee(processor: DefenseProcessor): string {
+  if (processor === 'stripe') return 'Stripe Disputes Team';
+  if (processor === 'whop') return 'Whop Disputes Team';
+  return 'Sponsor Bank - Chargeback Department';
+}
 
 /**
  * What the client actually purchased — the offer as presented and accepted at
@@ -53,12 +61,20 @@ export interface CompileDefenseInput {
   /** Stripe-rail: link an existing dispute_events row. NMI-rail: omit and let compileDefense create one. */
   disputeEventId?: string;
   /** 'stripe' | 'nmi' — required when creating a new dispute_event server-side. */
-  processor?: 'stripe' | 'nmi';
+  processor?: DefenseProcessor;
+  disputeTimezone?: string;
   /** The specific payment_event being disputed (from the transaction selector). */
   paymentEventId?: string;
   /** The enrollment tied to the disputed transaction (resolved from payment_event). */
   enrollmentId?: string;
 }
+
+export interface DefenseRegenerationJobInput {
+  operation: 'regenerate';
+  targetVersion: number;
+}
+
+export type DefenseCompilationJobInput = CompileDefenseInput | DefenseRegenerationJobInput;
 
 /**
  * Map a raw defense_packets row (with the actual schema column names) into the
@@ -133,9 +149,9 @@ export const defenseService = {
     // create the dispute_events row server-side first so the FK is always
     // populated and the chargeback ratio job has a single source of truth.
     let disputeEventId = input.disputeEventId || null;
-    const processor: 'stripe' | 'nmi' = input.processor || (disputeEventId ? 'stripe' : 'nmi');
+    const processor: DefenseProcessor = input.processor || (disputeEventId ? 'stripe' : 'nmi');
 
-    if (!disputeEventId && processor === 'nmi') {
+    if (!disputeEventId) {
       try {
         const merchant = await merchantRepository.getByLocationId(input.locationId);
         const { data: created, error: createErr } = await supabase
@@ -145,7 +161,7 @@ export const defenseService = {
             location_id: input.locationId,
             contact_id: input.contactId,
             stripe_dispute_id: null, // NMI rows have no Stripe ID — column was relaxed in migration 044
-            processor: 'nmi',
+            processor,
             reason: input.reasonCode,
             status: 'needs_response',
             amount: input.disputeAmount,
@@ -156,16 +172,15 @@ export const defenseService = {
           .single();
         if (createErr) throw createErr;
         disputeEventId = created?.id || null;
-        logger.info({ disputeEventId, locationId: input.locationId }, 'NMI dispute_event row created server-side');
+        logger.info({ disputeEventId, locationId: input.locationId, processor }, 'Dispute event row created server-side');
       } catch (err: any) {
-        logger.error({ err: err.message, locationId: input.locationId }, 'Failed to create required NMI dispute_event row');
-        throw new Error(`Could not create the NMI dispute record: ${err.message}`);
+        logger.error({ err: err.message, locationId: input.locationId, processor }, 'Failed to create required dispute event row');
+        throw new Error(`Could not create the ${processor.toUpperCase()} dispute record: ${err.message}`);
       }
     }
 
     // Resolve addressee — default per processor if merchant didn't override
-    const addressee = input.addressee
-      || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
+    const addressee = input.addressee || defaultDefenseAddressee(processor);
 
     const compilationInput: CompileDefenseInput = {
       ...input,
@@ -241,9 +256,8 @@ export const defenseService = {
   async runCompilation(defenseId: string, input: CompileDefenseInput, category: string): Promise<void> {
     await defenseRepository.updateStatus(defenseId, 'processing');
     const supabase = getSupabase();
-    const processor: 'stripe' | 'nmi' = input.processor || (input.disputeEventId ? 'stripe' : 'nmi');
-    const addressee = input.addressee
-      || (processor === 'stripe' ? 'Stripe Disputes Team' : 'Sponsor Bank — Chargeback Department');
+    const processor: DefenseProcessor = input.processor || (input.disputeEventId ? 'stripe' : 'nmi');
+    const addressee = input.addressee || defaultDefenseAddressee(processor);
 
     // An unrecognized reason code means we cannot select the right defense
     // strategy — the packet gets generic evidence presentation and MUST be
@@ -339,7 +353,7 @@ export const defenseService = {
     const offerContext = await this.getOfferContext(input.locationId, scope.offerId);
 
     // 7. Build the AI prompt with the rewritten clinical-tone structure
-    const systemPrompt = this.buildSystemPrompt(category, strategy, template);
+    const systemPrompt = this.buildSystemPrompt(category, strategy, template, exhibitList, offerContext);
     const userMessage = this.buildUserMessage(
       input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope, offerContext,
     );
@@ -354,6 +368,8 @@ export const defenseService = {
     let usedFallback = false;
     let modelAttempts: unknown = null;
     let aiFailure: { message: string; status?: number } | null = null;
+    let fallbackReviewReason = '';
+    let claimGuardViolations: string[] = [];
     try {
       // 16000: adaptive-thinking models (claude-sonnet-5+) spend thinking tokens
       // out of the same max_tokens budget as the letter text.
@@ -364,6 +380,7 @@ export const defenseService = {
     } catch (err: any) {
       modelUsed = 'fallback';
       usedFallback = true;
+      fallbackReviewReason = 'AI draft was unavailable; a structured fallback letter was generated.';
       aiFailure = { message: err?.message || String(err), status: err?.response?.status };
       modelAttempts = err?.modelAttempts || null;
       logger.warn(
@@ -379,6 +396,27 @@ export const defenseService = {
       };
     }
 
+    if (!usedFallback) {
+      const claimGuard = evaluateDefenseDraftClaims(result.text, exhibitList, offerContext);
+      if (!claimGuard.safe) {
+        claimGuardViolations = claimGuard.violations;
+        fallbackReviewReason = `The generated draft contradicted the available evidence and was replaced with a structured fallback. ${claimGuard.violations.join(' ')}`;
+        logger.warn(
+          { defenseId, violations: claimGuard.violations, modelUsed },
+          'AI defense draft failed the deterministic claim guard; using structured fallback letter',
+        );
+        result = {
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          text: this.buildStructuredFallbackLetter(
+            input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee, offerContext,
+          ),
+        };
+        modelUsed = 'claim_guard_fallback';
+        usedFallback = true;
+      }
+    }
+
     // 9. Write the letter to defense_letter_versions as version 1 and mirror to the
     // fast-read column. A retry can collide with an already-committed version 1;
     // that stored row is authoritative for every downstream artifact.
@@ -388,11 +426,11 @@ export const defenseService = {
         defense_packet_id: defenseId,
         version_number: 1,
         letter_text: result.text,
-        generated_by: modelUsed === 'fallback' ? 'system' : 'ai',
+        generated_by: usedFallback ? 'system' : 'ai',
         model_used: modelUsed,
         prompt_tokens_used: result.inputTokens,
         response_tokens_used: result.outputTokens,
-        notes: usedFallback ? 'Structured fallback letter — AI provider unavailable' : null,
+        notes: usedFallback ? fallbackReviewReason : null,
       });
       versionWriteError = versionErr;
     } catch (vErr: any) {
@@ -405,7 +443,7 @@ export const defenseService = {
       try {
         const stored = await supabase
           .from('defense_letter_versions')
-          .select('version_number, letter_text, generated_by, model_used, prompt_tokens_used, response_tokens_used')
+          .select('version_number, letter_text, generated_by, model_used, prompt_tokens_used, response_tokens_used, notes')
           .eq('defense_packet_id', defenseId)
           .eq('version_number', 1)
           .maybeSingle();
@@ -436,6 +474,9 @@ export const defenseService = {
       };
       modelUsed = storedVersion.model_used || (storedVersion.generated_by === 'system' ? 'fallback' : 'stored');
       usedFallback = storedVersion.generated_by === 'system';
+      fallbackReviewReason = usedFallback
+        ? (storedVersion.notes || 'The stored letter is an automatic fallback draft and must be reviewed.')
+        : '';
       aiFailure = null;
       modelAttempts = null;
       logger.warn({
@@ -485,6 +526,7 @@ export const defenseService = {
       readiness,
       sourceErrors,
       reasonCode: input.reasonCode,
+      fallbackReviewReason,
     });
     const finalStatus = needsReview ? 'needs_review' : 'complete';
 
@@ -504,6 +546,7 @@ export const defenseService = {
     if (aiFailure) internalDebug.ai_failure = aiFailure;
     if (modelAttempts) internalDebug.model_attempts = modelAttempts;
     if (!usedFallback) internalDebug.final_model_used = modelUsed;
+    if (claimGuardViolations.length) internalDebug.claim_guard_violations = claimGuardViolations;
     if (sourceErrors.length) internalDebug.exhibit_source_errors = sourceErrors;
     if (Object.keys(internalDebug).length) {
       try {
@@ -579,7 +622,7 @@ export const defenseService = {
         evidenceCount: exhibitList.exhibits.length,
         readiness_score: readinessScore,
         readinessScore,
-        processor: input.processor || 'stripe',
+        processor,
       });
     } catch (trigErr: any) {
       logger.warn({ err: trigErr.message, defenseId }, 'Defense ready trigger fire failed (non-fatal)');
@@ -640,7 +683,13 @@ export const defenseService = {
     }
   },
 
-  buildSystemPrompt(category: string, strategy: any, template: any): string {
+  buildSystemPrompt(
+    category: string,
+    strategy: any,
+    template: any,
+    exhibitList?: ExhibitList,
+    offer?: OfferContext | null,
+  ): string {
     const categoryStrategies: Record<string, string> = {
       fraud: 'The cardholder claims they did not authorize this transaction. Link the enrollment consent record (IP, device fingerprint, digital signature) to the transaction. Show that the same person who enrolled also used the service. Reference the signed enrollment packet as the primary exhibit.',
       services_not_provided: 'The cardholder claims services were not provided. Itemize every delivered touchpoint with specific dates: session records, module completions, milestone sign-offs, platform access logs. Cite each as a numbered exhibit. Where a milestone has an associated client notification or sign-off request communication, connect them ("the milestone was completed on X and the client was notified the same day"). State sign-off status factually — "sign-off was requested on DATE" or "the client signed off on DATE" — never imply a confirmation that did not occur.',
@@ -657,7 +706,7 @@ export const defenseService = {
 
 VOICE — THIS LETTER IS WRITTEN BY THE MERCHANT:
 - Write in the first person as the merchant ("We received...", "Our records show...", "We provided..."). The letter must read as if written by a careful business owner who keeps thorough records — human, plain, and direct. It is a letter FROM a merchant, not a report ABOUT one.
-- Open with one plain sentence that says what this letter is: that we received this chargeback and are disputing it, with the one-line reason why. Shape: "We received chargeback case <number> for $<amount>, filed on <dispute date>, and we are disputing it because our records show the charge was authorized and the services were delivered."
+- Open with one plain sentence that says what this letter is: that we received this chargeback and are disputing it, followed only by the reason the supplied exhibits actually support. Never use a generic claim that services were delivered.
 - NEVER mention ScaleSafe, or any software, app, tool, platform, or "system" as the author, assembler, or source of this letter or its records. Refer to evidence as "our records", "our enrollment agreement", "our communication log". (The name of the program the client purchased may of course appear — that is what was sold.)
 
 TONE AND STYLE:
@@ -688,6 +737,7 @@ CRITICAL RULES FOR EVENT INTERPRETATION:
 - Subscription changes (pause/resume) are lifecycle events. Pauses mean service was temporarily suspended. Resumes mean it restarted. State dates and reasons only.
 - Session no-shows are NOT evidence of service delivery. They are evidence that the client was offered a session and did not attend.
 - Only sessions with attendance_status = "attended" should be cited as evidence of service delivery.
+- A completed appointment proves only that the scheduled live appointment occurred. It does not prove a written plan, file, report, separate deliverable, or every component of a compound milestone unless a separate exhibit proves that component.
 
 EXHIBIT REFERENCES:
 - The evidence below is organized by numbered exhibit (Exhibit A, Exhibit B, etc.).
@@ -707,6 +757,21 @@ LETTER STRUCTURE:
 9. Conclusion (factual summary, not argumentative)
 10. Exhibit index — one line per exhibit stating what it PROVES, not just what it is (e.g. "Exhibit A — Signed enrollment agreement: establishes authorization and the agreed terms")
 `;
+
+    if (exhibitList) {
+      prompt += `\nDETERMINISTIC EVIDENCE LIMITS:\n`;
+      prompt += `- Service-delivery exhibits available: ${exhibitList.byCategory.service_delivery.length}.\n`;
+      prompt += `- Consent exhibits available: ${exhibitList.byCategory.consent.length}.\n`;
+      prompt += `- Communication/client-engagement exhibits available: ${exhibitList.byCategory.communication.length}.\n`;
+      if (exhibitList.byCategory.service_delivery.length === 0) {
+        prompt += '- No service-delivery evidence is available. Do not state or imply that service was delivered, provided, completed, or fulfilled. State the evidence gap plainly.\n';
+      }
+      const onlyAppointments = exhibitList.byCategory.service_delivery.length > 0
+        && exhibitList.byCategory.service_delivery.every((exhibit) => exhibit.source === 'evidence_appointments');
+      if (onlyAppointments && offer?.milestones.some((milestone) => milestone.delivers)) {
+        prompt += '- Appointment evidence may establish only the live appointment itself. Do not claim that it satisfies an entire milestone or proves any listed non-session deliverable.\n';
+      }
+    }
 
     if (strategy?.evidence_priorities) {
       prompt += `\nEVIDENCE PRIORITIES FOR REASON CODE ${strategy.reason_code}:\n${JSON.stringify(strategy.evidence_priorities, null, 2)}\n`;
@@ -1543,7 +1608,39 @@ LETTER STRUCTURE:
    * Regenerate the AI letter for a packet. Inserts a new version, mirrors to fast-read column.
    * Only available before submission.
    */
-  async regenerateLetter(defenseId: string, locationId?: string): Promise<{ letterText: string; versionNumber: number }> {
+  async queueRegeneration(defenseId: string, locationId: string): Promise<{
+    defenseId: string;
+    targetVersion: number;
+    status: string;
+    created: boolean;
+  }> {
+    const { data, error } = await getSupabase().rpc('queue_defense_regeneration', {
+      p_defense_id: defenseId,
+      p_location_id: locationId,
+    });
+    if (error) {
+      if (error.code === '42883' || String(error.message || '').includes('queue_defense_regeneration')) {
+        throw new Error('Defense regeneration queue requires migration 099.');
+      }
+      throw error;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.defense_id || !Number.isInteger(Number(row.target_version))) {
+      throw new Error('Defense regeneration queue did not return a valid job');
+    }
+    return {
+      defenseId: String(row.defense_id),
+      targetVersion: Number(row.target_version),
+      status: String(row.job_status || 'pending'),
+      created: row.created === true,
+    };
+  },
+
+  async regenerateLetter(
+    defenseId: string,
+    locationId?: string,
+    targetVersion?: number,
+  ): Promise<{ letterText: string; versionNumber: number }> {
     const supabase = getSupabase();
     const packet = await defenseRepository.getById(defenseId, locationId);
 
@@ -1551,16 +1648,33 @@ LETTER STRUCTURE:
       throw new Error('Cannot regenerate a letter after submission');
     }
 
-    // Get max version number
-    const { data: maxRow, error: maxRowError } = await supabase
-      .from('defense_letter_versions')
-      .select('version_number')
-      .eq('defense_packet_id', defenseId)
-      .order('version_number', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (maxRowError) throw maxRowError;
-    const nextVersion = (maxRow?.version_number || 0) + 1;
+    if (targetVersion !== undefined && (!Number.isInteger(targetVersion) || targetVersion <= 0)) {
+      throw new Error('Defense regeneration target version must be a positive whole number');
+    }
+
+    let existingVersion: any = null;
+    let nextVersion: number;
+    if (targetVersion !== undefined) {
+      const { data, error } = await supabase
+        .from('defense_letter_versions')
+        .select('version_number, letter_text, generated_by, model_used, prompt_tokens_used, response_tokens_used, notes')
+        .eq('defense_packet_id', defenseId)
+        .eq('version_number', targetVersion)
+        .maybeSingle();
+      if (error) throw error;
+      existingVersion = data;
+      nextVersion = targetVersion;
+    } else {
+      const { data: maxRow, error: maxRowError } = await supabase
+        .from('defense_letter_versions')
+        .select('version_number')
+        .eq('defense_packet_id', defenseId)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (maxRowError) throw maxRowError;
+      nextVersion = (maxRow?.version_number || 0) + 1;
+    }
 
     // Re-run compilation input from the packet
     const category = packet.reason_code_category || 'services_not_provided';
@@ -1585,6 +1699,9 @@ LETTER STRUCTURE:
       enrollmentId: input.enrollmentId,
       offerId: (packet as any).offer_id || undefined,
     });
+    if (scope.processor === 'stripe' || scope.processor === 'nmi' || scope.processor === 'whop') {
+      input.processor = scope.processor;
+    }
     const strategy = await defenseRepository.getReasonCodeStrategy(input.reasonCode);
     const template = await defenseRepository.getDefenseTemplate(category);
     const exhibitScope = {
@@ -1615,24 +1732,84 @@ LETTER STRUCTURE:
     const merchant = await merchantRepository.getByLocationId(input.locationId);
     const offerContext = await this.getOfferContext(input.locationId, scope.offerId);
 
-    const systemPrompt = this.buildSystemPrompt(category, strategy, template);
+    const systemPrompt = this.buildSystemPrompt(category, strategy, template, exhibitList, offerContext);
     const userMessage = this.buildUserMessage(input, contactDetails, merchant, exhibitList, undisputedPayments, category, scope, offerContext);
-    // 16000: thinking tokens share this budget on adaptive-thinking models.
-    const result = await callClaude(systemPrompt, userMessage, 16000);
+    let result: { text: string; inputTokens: number; outputTokens: number; model?: string };
+    let modelUsed = existingVersion?.model_used || 'claude';
+    let usedFallback = Boolean(existingVersion && existingVersion.generated_by !== 'ai');
+    let fallbackReviewReason = existingVersion?.notes || '';
+    let claimGuardViolations: string[] = [];
+    const addressee = input.addressee || defaultDefenseAddressee(input.processor || 'nmi');
+    if (existingVersion) {
+      result = {
+        text: existingVersion.letter_text || '',
+        inputTokens: Number(existingVersion.prompt_tokens_used || 0),
+        outputTokens: Number(existingVersion.response_tokens_used || 0),
+        model: existingVersion.model_used || undefined,
+      };
+      logger.info({ defenseId, version: nextVersion }, 'Resuming defense regeneration from an existing letter version');
+    } else {
+      try {
+        // 16000: thinking tokens share this budget on adaptive-thinking models.
+        const ai = await callClaude(systemPrompt, userMessage, 16000);
+        result = ai;
+        modelUsed = ai.model || 'claude';
+      } catch (err: any) {
+        usedFallback = true;
+        modelUsed = 'fallback';
+        fallbackReviewReason = 'AI draft was unavailable; a structured fallback letter was generated.';
+        logger.warn(
+          { err: err?.message || String(err), defenseId },
+          'AI defense letter regeneration failed; using structured fallback letter',
+        );
+        result = {
+          inputTokens: 0,
+          outputTokens: 0,
+          text: this.buildStructuredFallbackLetter(
+            input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee, offerContext,
+          ),
+        };
+      }
+    }
 
-    // Insert new version
-    const { error: regenVersionErr } = await supabase.from('defense_letter_versions').insert({
-      defense_packet_id: defenseId,
-      version_number: nextVersion,
-      letter_text: result.text,
-      generated_by: 'ai',
-      model_used: result.model || 'claude',
-      prompt_tokens_used: result.inputTokens,
-      response_tokens_used: result.outputTokens,
-    });
-    if (regenVersionErr) {
-      logger.error({ err: regenVersionErr.message, defenseId }, 'Letter version insert FAILED — version history is missing this letter');
-      throw regenVersionErr;
+    if (!usedFallback) {
+      const claimGuard = evaluateDefenseDraftClaims(result.text, exhibitList, offerContext);
+      if (!claimGuard.safe) {
+        claimGuardViolations = claimGuard.violations;
+        fallbackReviewReason = `The generated draft contradicted the available evidence and was replaced with a structured fallback. ${claimGuard.violations.join(' ')}`;
+        logger.warn(
+          { defenseId, violations: claimGuard.violations, modelUsed },
+          'Regenerated defense draft failed the deterministic claim guard; using structured fallback letter',
+        );
+        result = {
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          text: this.buildStructuredFallbackLetter(
+            input, scope, exhibitList, undisputedPayments, merchant, contactDetails, addressee, offerContext,
+          ),
+        };
+        modelUsed = 'claim_guard_fallback';
+        usedFallback = true;
+      }
+    }
+
+    // A worker retry reuses the target version instead of producing another
+    // letter or another billable AI request.
+    if (!existingVersion) {
+      const { error: regenVersionErr } = await supabase.from('defense_letter_versions').insert({
+        defense_packet_id: defenseId,
+        version_number: nextVersion,
+        letter_text: result.text,
+        generated_by: usedFallback ? 'system' : 'ai',
+        model_used: modelUsed,
+        prompt_tokens_used: result.inputTokens,
+        response_tokens_used: result.outputTokens,
+        notes: usedFallback ? fallbackReviewReason : null,
+      });
+      if (regenVersionErr) {
+        logger.error({ err: regenVersionErr.message, defenseId }, 'Letter version insert failed; version history is missing this letter');
+        throw regenVersionErr;
+      }
     }
 
     // A successful regeneration must re-evaluate the review state: a stale
@@ -1645,30 +1822,37 @@ LETTER STRUCTURE:
       date: packet.chargeback_date,
     });
     const { needsReview, reviewReasons } = evaluateReviewState({
-      usedFallback: false,
+      usedFallback,
       scope,
       unknownReasonCode: !resolveReasonCode(input.reasonCode),
       readiness,
       sourceErrors: exhibitList.sourceErrors || [],
       reasonCode: input.reasonCode,
+      fallbackReviewReason,
     });
     const newStatus = needsReview ? 'needs_review' : 'complete';
 
-    // Mirror to fast-read column with the freshly evaluated status
-    await defenseRepository.updateStatus(defenseId, newStatus, {
+    const regeneratedPacketUpdates = {
       defense_letter_text: result.text,
       prompt_tokens_used: result.inputTokens,
       response_tokens_used: result.outputTokens,
-      error_message: needsReview ? reviewReasons.join(' ') : null,
       enrollment_id: scope.enrollmentId || null,
       offer_id: scope.offerId || null,
       evidence_snapshot: {
         scope,
         exhibits: exhibitList.exhibits,
         sourceErrors: exhibitList.sourceErrors || [],
+        claimGuardViolations,
         capturedAt: new Date().toISOString(),
       },
       evidence_count: exhibitList.exhibits.length,
+    };
+
+    // Keep the packet claimable while the PDF is being rebuilt. A worker that
+    // stops here can resume the same target version without another AI call.
+    await defenseRepository.updateStatus(defenseId, 'processing', {
+      ...regeneratedPacketUpdates,
+      error_message: null,
       pdf_storage_path: null,
       pdf_url: null,
     } as any);
@@ -1686,6 +1870,11 @@ LETTER STRUCTURE:
       } as any);
       throw new Error(`Letter regenerated, but the defense PDF could not be rebuilt: ${err.message}`);
     }
+
+    await defenseRepository.updateStatus(defenseId, newStatus, {
+      ...regeneratedPacketUpdates,
+      error_message: needsReview ? reviewReasons.join(' ') : null,
+    } as any);
 
     logger.info({ defenseId, version: nextVersion, status: newStatus }, 'Defense letter regenerated');
     return { letterText: result.text, versionNumber: nextVersion };

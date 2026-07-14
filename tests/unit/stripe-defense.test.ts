@@ -32,7 +32,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 import { stripeEvidenceVaultService } from '../../src/services/stripe-evidence-vault.service';
-import { stripeRiskAuditService } from '../../src/services/stripe-risk-audit.service';
+import { normalizeRiskAuditResult, stripeRiskAuditService } from '../../src/services/stripe-risk-audit.service';
 
 describe('Evidence Vault', () => {
   describe('computeEvidenceScore', () => {
@@ -74,6 +74,30 @@ describe('Evidence Vault', () => {
 });
 
 describe('Risk Audit Scores', () => {
+  it('normalizes stored snake_case audit rows for the frontend contract', () => {
+    expect(normalizeRiskAuditResult({
+      id: 'audit_1',
+      merchant_id: 'merchant_1',
+      created_at: '2026-07-14T10:00:00Z',
+      audit_period_start: '2026-04-15T10:00:00Z',
+      audit_period_end: '2026-07-14T10:00:00Z',
+      total_charges: 25,
+      total_disputes: 2,
+      total_efws: 1,
+      score_dispute_rate: 60,
+      overall_risk_level: 'elevated',
+      module_recommendations: [{ module: 'radar', priority: 'high', reason: 'Test', metric: '8%' }],
+    })).toEqual(expect.objectContaining({
+      merchantId: 'merchant_1',
+      totalCharges: 25,
+      totalDisputes: 2,
+      totalEfws: 1,
+      scoreDisputeRate: 60,
+      overallRiskLevel: 'elevated',
+      moduleRecommendations: [{ module: 'radar', priority: 'high', reason: 'Test', metric: '8%' }],
+    }));
+  });
+
   describe('computeDisputeRateScore', () => {
     it('returns 100 for 0 disputes', () => {
       expect(stripeRiskAuditService.computeDisputeRateScore(0, 100)).toBe(100);

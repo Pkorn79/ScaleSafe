@@ -172,6 +172,40 @@ function exhibitSummary(row: any, fallback: string): string {
   return getDefenseSummary(row) || fallback;
 }
 
+export function pulseExhibitSummary(pulse: any): string {
+  const score = Number(pulse.sentiment_score);
+  const scoreText = Number.isFinite(score) ? ` Satisfaction: ${score}/5.` : '';
+  const feedbackText = String(pulse.feedback_text || '').trim();
+  const fallback = `${pulse.contact_name || 'The client'} submitted a pulse check-in on ${fmtDate(pulse.checkin_date)}.${scoreText}${feedbackText ? ` Feedback: ${feedbackText.slice(0, 400)}.` : ''}`;
+  let summary = exhibitSummary(pulse, fallback).trim();
+  if (pulse.follow_up_needed === true && !/follow[ -]?up|requested merchant attention/i.test(summary)) {
+    summary += ` The client requested merchant follow-up${pulse.follow_up_action ? ` (${pulse.follow_up_action})` : ''}.`;
+  }
+  return summary;
+}
+
+export function reconcilePaymentLineItems(amount: unknown, lineItems: unknown): {
+  hasLineItems: boolean;
+  lineItemTotal: number;
+  difference: number;
+  reconciled: boolean;
+} {
+  const items = Array.isArray(lineItems) ? lineItems : [];
+  const lineItemTotalCents = items.reduce((sum, item: any) => {
+    const cents = Number.isFinite(Number(item?.amountCents))
+      ? Math.round(Number(item.amountCents))
+      : Math.round(Number(item?.amount || 0) * 100);
+    return sum + cents;
+  }, 0);
+  const amountCents = Math.round(Number(amount || 0) * 100);
+  return {
+    hasLineItems: items.length > 0,
+    lineItemTotal: lineItemTotalCents / 100,
+    difference: (amountCents - lineItemTotalCents) / 100,
+    reconciled: items.length > 0 && amountCents === lineItemTotalCents,
+  };
+}
+
 function exhibitMeta(row: any, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     ...extra,
@@ -756,11 +790,6 @@ export const defenseExhibitsService = {
       if (pulseErr) recordSourceError('evidence_pulse_checkins', pulseErr);
       for (const pulse of scopedRows((pulseCheckins || []) as any[], opts?.enrollmentId, 'checkin_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
         const score = Number(pulse.sentiment_score);
-        const scoreText = Number.isFinite(score) ? ` Satisfaction: ${score}/5.` : '';
-        const feedbackText = String(pulse.feedback_text || '').trim();
-        const followUpText = pulse.follow_up_needed
-          ? ` The client requested merchant follow-up${pulse.follow_up_action ? ` (${pulse.follow_up_action})` : ''}.`
-          : '';
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: exhibitName(pulse, 'Client Pulse Check-In'),
@@ -768,10 +797,7 @@ export const defenseExhibitsService = {
           source: 'evidence_pulse_checkins',
           ref: pulse.id,
           occurredAt: pulse.checkin_date || null,
-          summary: exhibitSummary(
-            pulse,
-            `${pulse.contact_name || 'The client'} submitted a pulse check-in on ${fmtDate(pulse.checkin_date)}.${scoreText}${feedbackText ? ` Feedback: ${feedbackText.slice(0, 400)}.` : ''}${followUpText}`,
-          ),
+          summary: pulseExhibitSummary(pulse),
           meta: exhibitMeta(pulse, {
             sentimentScore: Number.isFinite(score) ? score : null,
             followUpNeeded: pulse.follow_up_needed === true,
@@ -785,13 +811,36 @@ export const defenseExhibitsService = {
     try {
       const { data: comms, error: commsErr } = await supabase
         .from('evidence_communication')
-        .select(`id, enrollment_id, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, source, comm_type, direction, comm_date, summary, body_preview, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
       if (commsErr) recordSourceError('evidence_communication', commsErr);
+      const sourceRecordIds = ((comms || []) as any[]).map((row) => row.source_record_id).filter(Boolean);
+      const activityMatches = new Map<string, any>();
+      if (sourceRecordIds.length > 0) {
+        const { data: activityRows, error: activityErr } = await supabase
+          .from('ghl_activity_events')
+          .select('source_record_id, enrollment_id, offer_id, match_confidence, match_reason')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .in('source_record_id', sourceRecordIds);
+        if (activityErr) recordSourceError('ghl_activity_events', activityErr);
+        for (const activity of activityRows || []) {
+          if (activity.source_record_id) activityMatches.set(activity.source_record_id, activity);
+        }
+      }
+
       const targetOfferText = String(scopeOfferName || '').trim().toLowerCase();
       const commCandidates = ((comms || []) as any[]).map((row) => {
+        const metadataMatch = row.defense_metadata?.match || null;
+        const activityMatch = activityMatches.get(row.source_record_id) || null;
+        const matchConfidence = metadataMatch?.confidence || activityMatch?.match_confidence || null;
+        const matchMethod = metadataMatch?.method || activityMatch?.match_reason || null;
+        const inferredGhlLink = row.source === 'ghl_webhook' && row.enrollment_id && matchConfidence !== 'strong';
+        if (scopeConfidence === 'exact' && inferredGhlLink) {
+          return { ...row, _exclude_from_exact_packet: true, _match_confidence: matchConfidence, _match_method: matchMethod };
+        }
         if (scopeConfidence !== 'inferred' || !scopeOfferId || !targetOfferText || row.enrollment_id || row.offer_id) return row;
         const meta = row.defense_metadata || {};
         const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id;
@@ -801,7 +850,15 @@ export const defenseExhibitsService = {
           ? { ...row, offer_id: scopeOfferId, _scope_offer_name_match: true }
           : row;
       });
-      const scopedComms = scopedRows(commCandidates, opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence);
+      const scopedComms = scopedRows(
+        commCandidates.filter((row) => !row._exclude_from_exact_packet),
+        opts?.enrollmentId,
+        'comm_date',
+        scopeWindowStart,
+        scopeWindowEnd,
+        scopeOfferId,
+        scopeConfidence,
+      );
 
       const isDirectlyLinked = (row: any): boolean => {
         if (!opts?.enrollmentId) return false;
@@ -859,7 +916,7 @@ export const defenseExhibitsService = {
       try {
         const { data: payment, error: paymentErr } = await supabase
           .from('payment_events')
-          .select('id, contact_id, enrollment_id, offer_id, event_type, amount, currency, payment_status, processor, processor_transaction_id, processor_charge_id, payment_number, payments_total, installment_number, total_installments, line_items, settled_at, recorded_at, created_at, source')
+          .select('id, contact_id, enrollment_id, offer_id, event_type, amount, currency, payment_status, processor, processor_transaction_id, processor_charge_id, payment_number, payments_total, installment_number, total_installments, line_items, selected_payment_method, card_uplift_percent, processor_deduction_percent, evidence_data, settled_at, recorded_at, created_at, source')
           .eq('id', opts.paymentEventId)
           .eq('location_id', locationId)
           .maybeSingle();
@@ -875,6 +932,7 @@ export const defenseExhibitsService = {
           recordSourceError('payment_events', new Error('The selected payment event does not match the scoped client and enrollment.'));
         } else if (payment) {
           const lineItems = Array.isArray(payment.line_items) ? payment.line_items : [];
+          const pricing = reconcilePaymentLineItems(payment.amount, lineItems);
           const lineItemText = lineItems.map((item: any) => {
             const amount = Number.isFinite(Number(item?.amount))
               ? Number(item.amount)
@@ -889,6 +947,11 @@ export const defenseExhibitsService = {
           let summary = `${processor} recorded the disputed $${Number(payment.amount || 0).toFixed(2)} ${String(payment.event_type || 'payment').replace(/_/g, ' ')} on ${fmtDate(occurredAt)}. Transaction ID: ${transactionId}. Status: ${payment.payment_status || 'recorded'}.`;
           if (sequence) summary += ` Payment ${sequence}${total ? ` of ${total}` : ''}.`;
           if (lineItemText) summary += ` Charge components: ${lineItemText}.`;
+          if (pricing.hasLineItems && pricing.reconciled) {
+            summary += ` The stored components total $${pricing.lineItemTotal.toFixed(2)}, matching the processor charge.`;
+          } else if (pricing.hasLineItems) {
+            summary += ` WARNING: stored components total $${pricing.lineItemTotal.toFixed(2)} and do not reconcile to the $${Number(payment.amount || 0).toFixed(2)} processor charge.`;
+          }
           exhibits.push({
             letter: indexToLetter(nextIdx++),
             name: 'Disputed Transaction Record',
@@ -905,6 +968,11 @@ export const defenseExhibitsService = {
               currency: payment.currency || 'USD',
               status: payment.payment_status || null,
               lineItems,
+              pricingReconciled: pricing.reconciled,
+              pricingDifference: pricing.difference,
+              selectedPaymentMethod: payment.selected_payment_method || null,
+              cardUpliftPercent: payment.card_uplift_percent || null,
+              pricingSnapshot: payment.evidence_data?.checkout_pricing || null,
               source: payment.source || null,
             },
           });

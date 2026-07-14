@@ -55,7 +55,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   }
 
   const schema = await schemaReadinessService.check();
-  checks.schema = schema.ready ? `ok` : `error: ${schema.error || 'migration 098 required'}`;
+  checks.schema = schema.ready ? `ok` : `error: ${schema.error || 'migration 099 required'}`;
 
   const healthy = Object.values(checks).every((v) => v === 'ok');
   res.status(healthy ? 200 : 503).json({ status: healthy ? 'healthy' : 'degraded', checks });

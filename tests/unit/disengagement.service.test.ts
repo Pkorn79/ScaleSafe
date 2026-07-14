@@ -84,6 +84,44 @@ describe('Disengagement Service - Scoring', () => {
 });
 
 describe('Disengagement Service - dashboard scan control', () => {
+  test('scores a location with bounded bulk reads instead of per-contact queries', async () => {
+    const now = new Date().toISOString();
+    const dataByTable: Record<string, any[]> = {
+      client_list_view: [{ contact_id: 'contact_bulk', status: 'active' }],
+      evidence_timeline: [
+        { contact_id: 'contact_bulk', type: 'attendance', created_at: now, data: { status: 'no_show' } },
+        { contact_id: 'contact_bulk', type: 'attendance', created_at: now, data: { status: 'no_show' } },
+        { contact_id: 'contact_bulk', type: 'pulse_checkin', created_at: now, data: { satisfaction_score: 2 } },
+      ],
+      evidence: [],
+      evidence_appointments: [],
+      evidence_invoices: [],
+    };
+    const query = (data: any[]) => {
+      const result = Promise.resolve({ data, error: null });
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        in: () => chain,
+        gte: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        then: result.then.bind(result),
+      };
+      return chain;
+    };
+    mockFrom.mockImplementation((table: string) => query(dataByTable[table] || []));
+
+    const result = await disengagementService.scoreAllClients('loc_bulk');
+
+    expect(mockFrom).toHaveBeenCalledTimes(5);
+    expect(result).toEqual([expect.objectContaining({
+      contactId: 'contact_bulk',
+      riskScore: 40,
+      flagged: true,
+    })]);
+  });
+
   test('deduplicates concurrent scans and serves the cached result', async () => {
     let releaseScan!: (value: any[]) => void;
     const scanResult = new Promise<any[]>((resolve) => { releaseScan = resolve; });

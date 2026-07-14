@@ -280,7 +280,7 @@ router.get('/risk-audit', ssoAuth, async (req: Request, res: Response, next: Nex
  */
 router.post('/risk-audit', ssoAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const locationId = req.tenantContext?.locationId || req.body.locationId;
+    const locationId = req.tenantContext?.locationId;
     if (!locationId) throw new ValidationError('Missing locationId');
 
     const merchant = await merchantRepository.findByLocationId(locationId);

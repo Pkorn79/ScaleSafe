@@ -10,6 +10,7 @@ import { storageService } from './services/storage.service';
 import { evidenceConnectorWorker } from './services/evidence-connector-worker';
 import { defenseCompilationWorker } from './services/defense-compilation-worker';
 import { moneyReconciliationWorker } from './services/money-reconciliation-worker';
+import { triggerDeliveryWorker } from './services/trigger-delivery-worker';
 import { schemaReadinessService } from './services/schema-readiness.service';
 
 const app = createApp();
@@ -48,6 +49,7 @@ async function start(): Promise<void> {
     evidenceConnectorWorker.start();
     defenseCompilationWorker.start();
     moneyReconciliationWorker.start();
+    triggerDeliveryWorker.start();
 
     // Reclaim provisioning interrupted by deploys. The repository claim is a
     // database compare-and-set, so this remains safe across Railway instances.

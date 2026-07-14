@@ -56,8 +56,9 @@ export const zoomIntegrationRepository = {
   async listOffers(locationId: string): Promise<any[]> {
     const { data, error } = await getSupabase()
       .from('offers_mirror')
-      .select('id, offer_name, status')
+      .select('id, offer_name, active')
       .eq('location_id', locationId)
+      .eq('active', true)
       .order('offer_name');
     if (error) throw error;
     return data || [];

@@ -82,6 +82,9 @@ export const defenseController = {
         disputeEventId,
         paymentEventId,
         enrollmentId,
+        processor,
+        disputeDate,
+        disputeTimezone: req.body.disputeTimezone,
       });
 
       const defenseId = await defenseService.compileDefense({
@@ -89,10 +92,13 @@ export const defenseController = {
         reasonCode, disputeAmount, disputeDate, deadline, caseNumber,
         addressee,
         disputeEventId: validated.disputeEventId,
-        processor,
+        processor: validated.processor,
         paymentEventId: validated.paymentEventId,
         enrollmentId: validated.enrollmentId,
+        disputeTimezone: req.body.disputeTimezone,
       });
+
+      require('../services/defense-compilation-worker').defenseCompilationWorker.wake();
 
       res.status(202).json({ defenseId, status: 'pending' });
     } catch (err) { next(err); }
@@ -184,9 +190,9 @@ export const defenseController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const result = await defenseService.regenerateLetter(req.params.id, locationId);
-      const packet = await defenseService.getPacket(req.params.id, locationId);
-      res.json({ ...result, pdfUrl: (packet as any).pdf_url || '' });
+      const result = await defenseService.queueRegeneration(req.params.id, locationId);
+      if (result.created) require('../services/defense-compilation-worker').defenseCompilationWorker.wake();
+      res.status(202).json(result);
     } catch (err) { next(err); }
   },
 

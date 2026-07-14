@@ -474,8 +474,10 @@ async function executeMilestone() {
     enr.currentMilestone = result?.currentMilestone || milestone.number;
     const workflow = result?.workflowResult;
     milestoneResult.value = workflow?.status === 'sent'
-      ? 'Milestone saved and workflow fired.'
-      : 'Milestone saved. Check workflow logs if the request does not arrive.';
+      ? 'Milestone saved and workflow delivered.'
+      : workflow?.status === 'queued'
+        ? 'Milestone saved. The confirmation workflow is queued.'
+        : 'Milestone saved. The confirmation workflow needs attention.';
     if (result?.evidenceStatus === 'failed') {
       milestoneResult.value += ' Evidence log needs review.';
     }

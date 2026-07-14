@@ -10,9 +10,29 @@ interface SsoSession {
   userName: string;
   ready: boolean;
   error: string | null;
+  errorCode: SsoErrorCode | null;
   /** True when GHL launched ScaleSafe from agency context (no sub-account).
    *  The app fails closed — there is deliberately NO sub-account chooser. */
   agencyContext: boolean;
+}
+
+export type SsoErrorCode =
+  | 'not_embedded'
+  | 'parent_context_timeout'
+  | 'empty_parent_payload'
+  | 'agency_context'
+  | 'installation_missing'
+  | 'installation_invalid'
+  | 'authentication_invalid'
+  | 'service_unavailable'
+  | 'backend_timeout'
+  | 'unknown';
+
+class SsoHandshakeError extends Error {
+  constructor(public code: SsoErrorCode, message: string) {
+    super(message);
+    this.name = 'SsoHandshakeError';
+  }
 }
 
 const ssoSession = reactive<SsoSession>({
@@ -24,10 +44,12 @@ const ssoSession = reactive<SsoSession>({
   userName: '',
   ready: false,
   error: null,
+  errorCode: null,
   agencyContext: false,
 });
 
 let ssoInitPromise: Promise<void> | null = null;
+let ssoAttempt = 0;
 
 const DEFAULT_GHL_PARENT_ORIGINS = [
   'https://app.gohighlevel.com',
@@ -69,6 +91,7 @@ function applySsoData(data: any): void {
   ssoSession.role = data.role;
   ssoSession.userName = data.userName;
   ssoSession.error = null;
+  ssoSession.errorCode = null;
   ssoSession.agencyContext = false;
   ssoSession.ready = true;
 
@@ -77,26 +100,58 @@ function applySsoData(data: any): void {
   sessionStorage.setItem('ss_user_id', data.userId || '');
 }
 
-async function completeSsoHandshake(encryptedPayload: string): Promise<void> {
-  const res = await fetch('/auth/sso', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ payload: encryptedPayload }),
-  });
+function setSsoError(code: SsoErrorCode, message: string): void {
+  ssoSession.errorCode = code;
+  ssoSession.error = message;
+  ssoSession.ready = true;
+}
+
+function backendErrorCode(status: number, code: string): SsoErrorCode {
+  if (code === 'INSTALLATION_NOT_FOUND') return 'installation_missing';
+  if (code === 'INSTALLATION_INVALID') return 'installation_invalid';
+  if (code === 'INVALID_SSO_PAYLOAD') return 'authentication_invalid';
+  if (code === 'SERVICE_UNAVAILABLE' || status >= 500) return 'service_unavailable';
+  return 'unknown';
+}
+
+async function completeSsoHandshake(encryptedPayload: string, attempt: number): Promise<void> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  let res: Response;
+  try {
+    res = await fetch('/auth/sso', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: encryptedPayload }),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new SsoHandshakeError('backend_timeout', 'ScaleSafe account services did not respond in time.');
+    }
+    throw new SsoHandshakeError('service_unavailable', 'ScaleSafe account services are temporarily unavailable.');
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   const body = await res.json().catch(() => ({}));
+  if (attempt !== ssoAttempt) return;
 
   // Agency-context launch: fail closed. A merchant session is bound to one
   // sub-account — no chooser, by design.
   if (res.status === 403 && body.error === 'AGENCY_CONTEXT') {
     ssoSession.agencyContext = true;
     ssoSession.error = body.message || 'Open ScaleSafe from the sub-account you want to manage.';
+    ssoSession.errorCode = 'agency_context';
     ssoSession.ready = true;
     return;
   }
 
   if (!res.ok) {
-    throw new Error(body.message || `SSO validation failed (${res.status})`);
+    throw new SsoHandshakeError(
+      backendErrorCode(res.status, body.error),
+      body.message || `SSO validation failed (${res.status})`,
+    );
   }
 
   applySsoData(body);
@@ -110,6 +165,7 @@ function initSso(): Promise<void> {
   if (ssoInitPromise) return ssoInitPromise;
 
   ssoInitPromise = new Promise<void>((resolve) => {
+    const attempt = ++ssoAttempt;
     // If not in an iframe (dev mode), check for location_id in URL
     if (window.self === window.top) {
       const params = new URLSearchParams(window.location.search);
@@ -120,22 +176,23 @@ function initSso(): Promise<void> {
         resolve();
         return;
       }
-      ssoSession.error = 'Not running inside GHL iframe';
-      ssoSession.ready = true;
+      setSsoError('not_embedded', 'ScaleSafe was not opened inside GoHighLevel.');
       resolve();
       return;
     }
 
     // Listen for GHL's response
+    let parentTimeout: number | null = null;
     const handler = async (event: MessageEvent) => {
-      if (!isAllowedParentOrigin(event.origin)) return;
+      if (attempt !== ssoAttempt) return;
+      if (event.source !== window.parent || !isAllowedParentOrigin(event.origin)) return;
       if (event.data?.message !== 'REQUEST_USER_DATA_RESPONSE') return;
       window.removeEventListener('message', handler);
+      if (parentTimeout !== null) window.clearTimeout(parentTimeout);
 
       const encryptedPayload = event.data.payload;
       if (!encryptedPayload) {
-        ssoSession.error = 'GHL returned empty SSO payload';
-        ssoSession.ready = true;
+        setSsoError('empty_parent_payload', 'GoHighLevel returned empty account context.');
         resolve();
         return;
       }
@@ -145,10 +202,10 @@ function initSso(): Promise<void> {
 
       // Decrypt via our backend
       try {
-        await completeSsoHandshake(encryptedPayload);
+        await completeSsoHandshake(encryptedPayload, attempt);
       } catch (err: any) {
-        ssoSession.error = err.message;
-        ssoSession.ready = true;
+        if (attempt !== ssoAttempt) return;
+        setSsoError(err instanceof SsoHandshakeError ? err.code : 'unknown', err.message || 'Unable to connect');
       }
 
       resolve();
@@ -156,23 +213,35 @@ function initSso(): Promise<void> {
 
     window.addEventListener('message', handler);
 
-    // Timeout after 5 seconds
-    setTimeout(() => {
+    // Installed Custom Pages can take several seconds to initialize the parent bridge.
+    parentTimeout = window.setTimeout(() => {
+      if (attempt !== ssoAttempt) return;
       window.removeEventListener('message', handler);
       if (!ssoSession.ready) {
-        ssoSession.error = 'SSO handshake timed out - GHL did not respond';
-        ssoSession.ready = true;
+        setSsoError('parent_context_timeout', 'GoHighLevel did not provide secure sub-account context.');
         resolve();
       }
-    }, 5000);
+    }, 10_000);
 
-    // Request user data from GHL parent
-    allowedParentOrigins().forEach((origin) => {
-      window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, origin);
-    });
+    // HighLevel documents a wildcard target for this context request because
+    // installed and white-label parent origins vary. The request has no tenant
+    // data; the response remains source/origin checked and backend-decrypted.
+    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
   });
 
   return ssoInitPromise;
+}
+
+function retrySso(): Promise<void> {
+  sessionStorage.removeItem('ss_sso_payload');
+  sessionStorage.removeItem('ss_location_id');
+  ssoSession.locationId = '';
+  ssoSession.error = null;
+  ssoSession.errorCode = null;
+  ssoSession.agencyContext = false;
+  ssoSession.ready = false;
+  ssoInitPromise = null;
+  return initSso();
 }
 
 // Start SSO immediately on module load
@@ -304,4 +373,4 @@ export function useApi() {
   return { loading, error, get, post, put, patch, del, ssoSession };
 }
 
-export { ssoSession, initSso };
+export { ssoSession, initSso, retrySso };

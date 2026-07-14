@@ -6,11 +6,11 @@ import { materializeExternalEvidence } from './evidence-event-materializer';
 import { evidenceService } from './evidence.service';
 import { externalEvidenceAttachmentService } from './external-evidence-attachment.service';
 import { schedulingEventRepository } from '../repositories/scheduling-event.repository';
+import { AdaptivePoller } from '../utils/adaptive-poller';
 
 const workerId = `connector_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 const retryDelaysMs = [5 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
 let running = false;
-let timer: NodeJS.Timeout | null = null;
 
 interface Resolution {
   subject: any;
@@ -308,50 +308,54 @@ async function processEvent(event: ExternalEvidenceEventRecord): Promise<void> {
   }
 }
 
-async function tick(): Promise<void> {
-  if (running) return;
+async function tick(): Promise<number> {
+  if (running) return 0;
   running = true;
   try {
     const events = await evidenceConnectorRepository.claimEvents(workerId, 20);
     await Promise.all(events.map((event) => processEvent(event)));
+    const expiredContexts = await cleanupExpiredContexts();
+    return events.length + expiredContexts;
   } catch (err: any) {
     logger.error({ err: err.message }, 'External evidence worker tick failed');
+    return 0;
   } finally {
     running = false;
   }
 }
 
 let lastContextCleanupAt = 0;
+let contextCleanupRunning = false;
 
-async function cleanupExpiredContexts(): Promise<void> {
-  if (Date.now() - lastContextCleanupAt < 60 * 60 * 1000) return;
+async function cleanupExpiredContexts(): Promise<number> {
+  if (contextCleanupRunning || Date.now() - lastContextCleanupAt < 60 * 60 * 1000) return 0;
+  contextCleanupRunning = true;
   lastContextCleanupAt = Date.now();
   try {
     const expired = await evidenceConnectorRepository.expireEnrollmentContexts();
     if (expired > 0) logger.info({ expired }, 'Expired evidence enrollment contexts cleaned up');
+    return expired;
   } catch (err: any) {
     logger.warn({ err: err.message }, 'Evidence enrollment context cleanup failed');
+    return 0;
+  } finally {
+    contextCleanupRunning = false;
   }
 }
 
+const poller = new AdaptivePoller({ task: tick });
+
 export const evidenceConnectorWorker = {
   start(): void {
-    if (timer) return;
-    timer = setInterval(() => {
-      void tick();
-      void cleanupExpiredContexts();
-    }, 5000);
-    timer.unref();
-    setTimeout(() => {
-      void tick();
-      void cleanupExpiredContexts();
-    }, 1000).unref();
+    poller.start();
   },
   async runOnce(): Promise<void> {
     await tick();
   },
+  wake(): void {
+    poller.wake();
+  },
   stop(): void {
-    if (timer) clearInterval(timer);
-    timer = null;
+    poller.stop();
   },
 };

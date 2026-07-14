@@ -116,18 +116,30 @@ export const communicationService = {
     contactId: string,
     type: string,
     summary: string,
+    details: {
+      enrollmentId?: string | null;
+      subject?: string | null;
+      ghlMessageId?: string | null;
+      ghlConversationId?: string | null;
+    } = {},
   ): Promise<void> {
+    const commType = normalizeCommType(type);
+    const purpose = communicationPurpose(summary, 'outbound');
     await evidenceService.logEvidence(
       EVIDENCE_TYPES.COMMUNICATION,
       locationId, contactId, 'app_triggered',
       {
-        comm_type: normalizeCommType(type),
+        comm_type: commType,
         direction: 'outbound',
         comm_date: new Date().toISOString(),
+        subject: details.subject || null,
         summary,
         body_preview: summary.slice(0, 200),
+        ghl_message_id: details.ghlMessageId || null,
+        ghl_conversation_id: details.ghlConversationId || null,
+        enrollment_id: details.enrollmentId || null,
         ...buildDefenseEvidenceFields({
-          summary: `Merchant outbound ${normalizeCommType(type)} recorded. Purpose: ${communicationPurpose(summary, 'outbound').replace(/_/g, ' ')}.${summary ? ` Excerpt: ${summary.slice(0, 180)}` : ''}`,
+          summary: `Merchant outbound ${commType} recorded. Purpose: ${purpose.replace(/_/g, ' ')}.${summary ? ` Excerpt: ${summary.slice(0, 180)}` : ''}`,
           title: 'Outbound Communication',
           proofRole: 'communication',
           relevance: {
@@ -138,13 +150,17 @@ export const communicationService = {
           metadata: {
             actor: 'merchant',
             communication: {
-              channel: normalizeCommType(type),
+              channel: commType,
               direction: 'outbound',
-              purpose: communicationPurpose(summary, 'outbound'),
+              purpose,
               excerpt: summary.slice(0, 300),
+              ghlConversationId: details.ghlConversationId || null,
+              ghlMessageId: details.ghlMessageId || null,
             },
-            source: { system: 'app_triggered', rawEventType: 'outbound_message' },
+            source: { system: 'app_triggered', recordId: details.ghlMessageId || null, rawEventType: 'outbound_message' },
           },
+          enrollmentId: details.enrollmentId || null,
+          sourceRecordId: details.ghlMessageId || null,
         }),
       },
     );

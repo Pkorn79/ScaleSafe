@@ -1,17 +1,17 @@
 import crypto from 'crypto';
 import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
-import type { CompileDefenseInput } from './defense.service';
+import type { DefenseCompilationJobInput } from './defense.service';
 import { defenseSubmissionService } from './defense-submission.service';
+import { AdaptivePoller } from '../utils/adaptive-poller';
 
 const workerId = `defense_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
-let timer: NodeJS.Timeout | null = null;
 let running = false;
 
 interface ClaimedDefensePacket {
   id: string;
   location_id: string;
-  compilation_input: CompileDefenseInput;
+  compilation_input: DefenseCompilationJobInput;
   compilation_category: string | null;
   compilation_attempts: number;
 }
@@ -84,11 +84,19 @@ async function processPacket(packet: ClaimedDefensePacket): Promise<void> {
     // Dynamic import avoids a module cycle: compileDefense writes the durable
     // queue row, while this worker invokes the same tested compilation pipeline.
     const { defenseService } = require('./defense.service');
-    await defenseService.runCompilation(
-      packet.id,
-      packet.compilation_input,
-      packet.compilation_category || 'general',
-    );
+    if ('operation' in packet.compilation_input && packet.compilation_input.operation === 'regenerate') {
+      await defenseService.regenerateLetter(
+        packet.id,
+        packet.location_id,
+        packet.compilation_input.targetVersion,
+      );
+    } else {
+      await defenseService.runCompilation(
+        packet.id,
+        packet.compilation_input,
+        packet.compilation_category || 'general',
+      );
+    }
     await finishPacket(packet);
   } catch (err: any) {
     logger.error({ err: err.message, defenseId: packet.id, attempt: packet.compilation_attempts }, 'Defense compilation worker failed');
@@ -96,32 +104,35 @@ async function processPacket(packet: ClaimedDefensePacket): Promise<void> {
   }
 }
 
-async function tick(): Promise<void> {
-  if (running) return;
+async function tick(): Promise<number> {
+  if (running) return 0;
   running = true;
   try {
     const packets = await claimPackets(3);
     await Promise.all(packets.map(processPacket));
-    await defenseSubmissionService.reconcileAccepted(20);
+    const reconciled = await defenseSubmissionService.reconcileAccepted(20);
+    return packets.length + reconciled;
   } catch (err: any) {
     logger.error({ err: err.message }, 'Defense operations worker tick failed');
+    return 0;
   } finally {
     running = false;
   }
 }
 
+const poller = new AdaptivePoller({ task: tick });
+
 export const defenseCompilationWorker = {
   start(): void {
-    if (timer) return;
-    timer = setInterval(() => void tick(), 5000);
-    timer.unref();
-    setTimeout(() => void tick(), 1000).unref();
+    poller.start();
   },
   async runOnce(): Promise<void> {
     await tick();
   },
+  wake(): void {
+    poller.wake();
+  },
   stop(): void {
-    if (timer) clearInterval(timer);
-    timer = null;
+    poller.stop();
   },
 };

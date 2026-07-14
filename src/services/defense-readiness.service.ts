@@ -166,6 +166,14 @@ export const defenseReadinessService = {
       }
     }
 
+    const unreconciledPayment = by.payments.find((ex) => ex.meta?.pricingReconciled === false);
+    if (unreconciledPayment) {
+      strategyFlags.push(
+        `The stored checkout components do not reconcile to the disputed processor amount (${unreconciledPayment.summary}). `
+        + 'Verify the accepted card/bank price and adjustment before submitting.',
+      );
+    }
+
     return {
       missingEvidence,
       redFlags,
@@ -188,8 +196,9 @@ export function evaluateReviewState(opts: {
   readiness: ReadinessAssessment;
   sourceErrors: ExhibitSourceError[];
   reasonCode: string;
+  fallbackReviewReason?: string;
 }): { needsReview: boolean; reviewReasons: string[] } {
-  const { usedFallback, scope, unknownReasonCode, readiness, sourceErrors, reasonCode } = opts;
+  const { usedFallback, scope, unknownReasonCode, readiness, sourceErrors, reasonCode, fallbackReviewReason } = opts;
   const needsReview = usedFallback
     || scope.scopeConfidence === 'contact_only'
     || unknownReasonCode
@@ -203,7 +212,7 @@ export function evaluateReviewState(opts: {
   if (readiness.redFlags.length) reviewReasons.push(...readiness.redFlags);
   if (readiness.strategyFlags.length) reviewReasons.push(...readiness.strategyFlags);
   if (readiness.missingEvidence.length) reviewReasons.push(...readiness.missingEvidence);
-  if (usedFallback) reviewReasons.push('AI draft was unavailable; a structured fallback letter was generated.');
+  if (usedFallback) reviewReasons.push(fallbackReviewReason || 'AI draft was unavailable; a structured fallback letter was generated.');
   if (scope.scopeConfidence === 'contact_only') reviewReasons.push('The disputed transaction could not be tied to a specific program; evidence is contact-wide.');
   if (unknownReasonCode) reviewReasons.push(`Reason code "${reasonCode}" is not recognized; the letter uses a generic strategy and must be reviewed against the network's actual requirements for this code.`);
   if (sourceErrors.length) reviewReasons.push('Some evidence sources could not be read while assembling this packet, so the exhibit list may be incomplete.');

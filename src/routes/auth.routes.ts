@@ -5,7 +5,7 @@ import { merchantService } from '../services/merchant.service';
 import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { ValidationError, AuthenticationError } from '../utils/errors';
+import { ValidationError, AuthenticationError, ServiceUnavailableError } from '../utils/errors';
 import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
 import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
 
@@ -184,7 +184,17 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     const { payload } = req.body;
     if (!payload) throw new ValidationError('Missing SSO payload');
 
-    const userData = decryptSsoPayload(payload, config.ghl.ssoKey);
+    let userData: Record<string, string>;
+    try {
+      userData = decryptSsoPayload(payload, config.ghl.ssoKey);
+    } catch (decryptError: any) {
+      logger.warn({ err: decryptError?.message || String(decryptError) }, 'SSO payload validation failed');
+      res.status(401).json({
+        error: 'INVALID_SSO_PAYLOAD',
+        message: 'GoHighLevel returned account context that ScaleSafe could not validate. Reopen the app from the sub-account.',
+      });
+      return;
+    }
     const ssoContext = extractGhlSsoContext(userData);
 
     if (config.isDev) {
@@ -210,15 +220,35 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    const merchant = await merchantRepository.findByLocationId(locationId);
+    let merchant;
+    try {
+      merchant = await merchantRepository.findByLocationId(locationId);
+    } catch (databaseError: any) {
+      logger.error(
+        { err: databaseError?.message || String(databaseError), hasLocationId: true },
+        'SSO merchant lookup unavailable',
+      );
+      throw new ServiceUnavailableError('ScaleSafe account services are temporarily unavailable. Please retry in a moment.');
+    }
 
     if (!merchant) {
       logger.error({ hasLocationId: !!locationId, hasCompanyId: !!companyId }, 'SSO: no merchant found');
-      throw new AuthenticationError(
-        'Merchant not found for this ScaleSafe install.'
-      );
+      res.status(401).json({
+        error: 'INSTALLATION_NOT_FOUND',
+        message: 'ScaleSafe is not installed for this GoHighLevel sub-account.',
+      });
+      return;
     }
-    assertActiveGhlMerchantBinding(merchant as any, ssoContext);
+    try {
+      assertActiveGhlMerchantBinding(merchant as any, ssoContext);
+    } catch (bindingError: any) {
+      if (!(bindingError instanceof AuthenticationError)) throw bindingError;
+      res.status(401).json({
+        error: 'INSTALLATION_INVALID',
+        message: bindingError.message,
+      });
+      return;
+    }
 
     if (!merchant.company_id && companyId) {
       await merchantRepository.update(locationId, { company_id: companyId } as any);

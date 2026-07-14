@@ -1,73 +1,59 @@
 /**
- * Stripe Health Service tests — Phase S4
+ * Stripe Health Service tests - Phase S4
  *
  * Tests dispute rate computation, VAMP/MC threshold assessment,
- * risk level determination, and upgrade suggestion logic.
+ * risk level determination, upgrade suggestions, and processor-scoped reads.
  */
 
 const mockSupabaseUpsert = jest.fn().mockResolvedValue({ error: null });
+const mockFrom = jest.fn();
+const queryEqCalls: Record<string, Array<[string, any]>> = {};
 
-// Mock Stripe
 jest.mock('stripe', () => jest.fn(() => ({
-  disputes: {
-    list: jest.fn().mockResolvedValue({ data: [] }),
-  },
-  charges: {
-    list: jest.fn().mockResolvedValue({ data: [] }),
-  },
-  radar: {
-    earlyFraudWarnings: {
-      list: jest.fn().mockResolvedValue({ data: [] }),
-    },
-  },
-  balanceTransactions: {
-    list: jest.fn().mockResolvedValue({ data: [] }),
-  },
+  disputes: { list: jest.fn().mockResolvedValue({ data: [] }) },
+  charges: { list: jest.fn().mockResolvedValue({ data: [] }) },
+  radar: { earlyFraudWarnings: { list: jest.fn().mockResolvedValue({ data: [] }) } },
+  balanceTransactions: { list: jest.fn().mockResolvedValue({ data: [] }) },
 })));
 
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({
-    from: jest.fn().mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        eq: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: { id: 'merchant_1', stripe_user_id: 'acct_123', stripe_connected: true, location_id: 'loc_1' },
-              error: null,
-            }),
-            order: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({
-                single: jest.fn().mockResolvedValue({ data: null, error: null }),
-              }),
-            }),
-          }),
-          order: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue({ data: [], error: null }),
-          }),
-        }),
-      }),
-      upsert: mockSupabaseUpsert,
-    }),
-  }),
+  getSupabase: () => ({ from: mockFrom }),
 }));
 
 jest.mock('../../src/utils/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 import { StripeHealthService } from '../../src/services/stripe-health.service';
+
+function tableQuery(table: string) {
+  const singleData = table === 'merchants'
+    ? { id: 'merchant_1', stripe_user_id: 'acct_123', stripe_connected: true, location_id: 'loc_1' }
+    : null;
+  const listData: any[] = [];
+  const chain: any = {
+    select: jest.fn(() => chain),
+    eq: jest.fn((column: string, value: any) => {
+      queryEqCalls[table] = [...(queryEqCalls[table] || []), [column, value]];
+      return chain;
+    }),
+    order: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
+    single: jest.fn(async () => ({ data: singleData, error: null })),
+    upsert: mockSupabaseUpsert,
+    then: (resolve: any) => resolve({ data: listData, error: null }),
+  };
+  return chain;
+}
 
 describe('StripeHealthService', () => {
   let service: StripeHealthService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.keys(queryEqCalls).forEach((key) => delete queryEqCalls[key]);
     mockSupabaseUpsert.mockResolvedValue({ error: null });
+    mockFrom.mockImplementation((table: string) => tableQuery(table));
     service = new StripeHealthService();
   });
 
@@ -84,7 +70,7 @@ describe('StripeHealthService', () => {
       expect(service.assessRiskLevel(0.0065, 0)).toBe('high');
     });
 
-    it('returns high at 0.80% dispute rate (between 0.65 and 0.90)', () => {
+    it('returns high at 0.80% dispute rate', () => {
       expect(service.assessRiskLevel(0.008, 0)).toBe('high');
     });
 
@@ -154,7 +140,7 @@ describe('StripeHealthService', () => {
   });
 
   describe('shouldSuggestUpgrade', () => {
-    it('suggests upgrade when dispute rate > 0.65% AND evidence < 70%', () => {
+    it('suggests upgrade when dispute rate is high and evidence is low', () => {
       expect(service.shouldSuggestUpgrade(0.007, 50)).toBe(true);
     });
 
@@ -186,9 +172,7 @@ describe('StripeHealthService', () => {
           processor: 'stripe',
           snapshot_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         }),
-        {
-          onConflict: 'merchant_id,processor,snapshot_date',
-        },
+        { onConflict: 'merchant_id,processor,snapshot_date' },
       );
     });
 
@@ -199,12 +183,29 @@ describe('StripeHealthService', () => {
       expect(mockSupabaseUpsert).toHaveBeenCalledTimes(2);
       expect(mockSupabaseUpsert).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining({
-          merchant_id: 'merchant_1',
-          processor: 'stripe',
-        }),
+        expect.objectContaining({ merchant_id: 'merchant_1', processor: 'stripe' }),
         { onConflict: 'merchant_id,processor,snapshot_date' },
       );
+    });
+  });
+
+  describe('stored snapshot reads', () => {
+    it('scopes the latest snapshot to Stripe', async () => {
+      await service.getLatestSnapshot('merchant_1', 'loc_1');
+
+      expect(queryEqCalls.account_health_snapshots).toEqual(expect.arrayContaining([
+        ['merchant_id', 'merchant_1'],
+        ['location_id', 'loc_1'],
+        ['processor', 'stripe'],
+      ]));
+    });
+
+    it('scopes snapshot history to Stripe', async () => {
+      await service.getSnapshotHistory('merchant_1', 'loc_1');
+
+      expect(queryEqCalls.account_health_snapshots).toEqual(expect.arrayContaining([
+        ['processor', 'stripe'],
+      ]));
     });
   });
 });

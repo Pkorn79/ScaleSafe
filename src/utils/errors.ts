@@ -57,3 +57,10 @@ export class ExternalServiceError extends AppError {
     this.name = 'ExternalServiceError';
   }
 }
+
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string = 'Service temporarily unavailable') {
+    super(message, 503, 'SERVICE_UNAVAILABLE');
+    this.name = 'ServiceUnavailableError';
+  }
+}

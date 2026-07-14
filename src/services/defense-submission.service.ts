@@ -308,7 +308,7 @@ export const defenseSubmissionService = {
     );
   },
 
-  async reconcileAccepted(limit = 20): Promise<void> {
+  async reconcileAccepted(limit = 20): Promise<number> {
     const { data, error } = await getSupabase()
       .from('defense_submission_claims')
       .select('id, location_id')
@@ -316,12 +316,15 @@ export const defenseSubmissionService = {
       .order('updated_at', { ascending: true })
       .limit(limit);
     if (error) throw migrationError(error);
+    let reconciled = 0;
     for (const claim of data || []) {
       try {
         await this.finalizeAccepted(claim.id, claim.location_id);
+        reconciled += 1;
       } catch (err: any) {
         logger.error({ err: err.message, claimId: claim.id }, 'Defense submission local reconciliation failed');
       }
     }
+    return reconciled;
   },
 };

@@ -110,6 +110,15 @@ describe('checkoutCartService', () => {
     expect(quote.lineItems).toEqual([
       expect.objectContaining({ type: 'base_offer', amountCents: 100 }),
       expect.objectContaining({ type: 'order_bump', addonId: 'addon-bump', amountCents: 50 }),
+      expect.objectContaining({
+        type: 'dual_pricing_adjustment',
+        amountCents: 5,
+        pricing: expect.objectContaining({
+          achAmountCents: 150,
+          cardAmountCents: 155,
+          selectedPaymentMethod: 'card',
+        }),
+      }),
     ]);
   });
 

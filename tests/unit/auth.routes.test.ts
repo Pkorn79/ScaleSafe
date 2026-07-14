@@ -386,6 +386,7 @@ describe('POST /auth/sso', () => {
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
     expect(res.status).toBe(401);
+    expect(res.body.error).toBe('INSTALLATION_INVALID');
     expect(res.body.message).toMatch(/not actively installed/i);
   });
 
@@ -469,6 +470,29 @@ describe('POST /auth/sso', () => {
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toMatch(/Merchant not found/);
+    expect(res.body.error).toBe('INSTALLATION_NOT_FOUND');
+    expect(res.body.message).toMatch(/not installed/i);
+  });
+
+  it('returns a typed 503 when the merchant store is unavailable', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc', companyId: 'comp-xyz', userId: 'user-1',
+    });
+    mockFindByLocationId.mockRejectedValue(new Error('fetch failed'));
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('SERVICE_UNAVAILABLE');
+    expect(res.body.message).toMatch(/temporarily unavailable/i);
+  });
+
+  it('returns a typed authentication error for an invalid encrypted payload', async () => {
+    mockDecryptSsoPayload.mockImplementation(() => { throw new Error('bad cipher'); });
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('INVALID_SSO_PAYLOAD');
   });
 });

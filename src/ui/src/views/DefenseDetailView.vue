@@ -302,12 +302,13 @@ async function regenerateLetter() {
   regenerating.value = true;
   actionError.value = '';
   try {
-    const result = await api.post<any>(`/api/defense/${route.params.id}/regenerate`, {});
-    if (result?.versionNumber) currentVersionNumber.value = result.versionNumber;
+    await api.post<any>(`/api/defense/${route.params.id}/regenerate`, {});
     // Regeneration re-evaluates the packet's status and review reasons on the
     // server (stale "AI draft was unavailable" clears) — refetch the whole
     // packet instead of patching the letter locally, or the old callout persists.
     await refresh();
+    compilationPollStartedAt = Date.now();
+    scheduleCompilationPoll();
   } catch (e: any) {
     actionError.value = e.message || 'Failed to regenerate';
   }

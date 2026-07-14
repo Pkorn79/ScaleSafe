@@ -1,10 +1,14 @@
 const mockRunCompilation = jest.fn().mockResolvedValue(undefined);
+const mockRegenerateLetter = jest.fn().mockResolvedValue(undefined);
 const mockReconcileAccepted = jest.fn().mockResolvedValue(undefined);
 const mockRpc = jest.fn();
 const mockUpdate = jest.fn();
 
 jest.mock('../../src/services/defense.service', () => ({
-  defenseService: { runCompilation: (...args: any[]) => mockRunCompilation(...args) },
+  defenseService: {
+    runCompilation: (...args: any[]) => mockRunCompilation(...args),
+    regenerateLetter: (...args: any[]) => mockRegenerateLetter(...args),
+  },
 }));
 
 jest.mock('../../src/services/defense-submission.service', () => ({
@@ -35,6 +39,7 @@ import { defenseCompilationWorker } from '../../src/services/defense-compilation
 beforeEach(() => {
   jest.clearAllMocks();
   mockRunCompilation.mockResolvedValue(undefined);
+  mockRegenerateLetter.mockResolvedValue(undefined);
   mockReconcileAccepted.mockResolvedValue(undefined);
 });
 
@@ -82,5 +87,26 @@ test('a transient compilation failure releases the lease for a later retry', asy
     status: 'pending',
     compilation_lease_owner: null,
     compilation_next_attempt_at: expect.any(String),
+  }));
+});
+
+test('a regeneration job targets exactly one letter version', async () => {
+  mockRpc.mockResolvedValue({
+    data: [{
+      id: 'def_regen',
+      location_id: 'loc_1',
+      compilation_input: { operation: 'regenerate', targetVersion: 4 },
+      compilation_category: '__regenerate__',
+      compilation_attempts: 1,
+    }],
+    error: null,
+  });
+
+  await defenseCompilationWorker.runOnce();
+
+  expect(mockRegenerateLetter).toHaveBeenCalledWith('def_regen', 'loc_1', 4);
+  expect(mockRunCompilation).not.toHaveBeenCalled();
+  expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    compilation_completed_at: expect.any(String),
   }));
 });

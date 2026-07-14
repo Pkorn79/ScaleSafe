@@ -46,6 +46,7 @@
               <option value="">All</option>
               <option value="stripe">Stripe</option>
               <option value="nmi">NMI</option>
+              <option value="whop">Whop</option>
               <option value="ghl">GHL</option>
             </select>
           </div>

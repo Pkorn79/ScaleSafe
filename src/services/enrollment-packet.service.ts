@@ -173,6 +173,20 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   // Installment payment details for section 5
   const totalProgramCost = offer?.price || 0;
   const remainingBalance = isInstallment ? Math.max(0, totalProgramCost - (e.payment_amount || 0)) : 0;
+  const selectedCheckoutItems = Array.isArray(e.selected_checkout_items) ? e.selected_checkout_items : [];
+  const pricingAdjustment = selectedCheckoutItems.find((item: any) => item?.type === 'dual_pricing_adjustment');
+  const pricingSnapshot = pricingAdjustment?.pricing || null;
+  const selectedPaymentMethod = e.initial_payment_method || pricingSnapshot?.selectedPaymentMethod || '';
+  const selectedItemRows = selectedCheckoutItems.map((item: any) => {
+    const amount = Number.isFinite(Number(item?.amount))
+      ? Number(item.amount)
+      : Number(item?.amountCents || 0) / 100;
+    return `<tr><td>${esc(item?.label || item?.type || 'Checkout item')}</td><td>$${amount.toFixed(2)}</td></tr>`;
+  }).join('');
+  const dualPricingRows = pricingSnapshot ? `
+  <tr><td>Bank Transfer Price Shown</td><td>$${(Number(pricingSnapshot.achAmountCents || 0) / 100).toFixed(2)}</td></tr>
+  <tr><td>Card Price Shown</td><td>$${(Number(pricingSnapshot.cardAmountCents || 0) / 100).toFixed(2)}</td></tr>
+  <tr><td>Selected Payment Method</td><td>${esc(selectedPaymentMethod === 'ach' ? 'Bank Transfer' : 'Card')}</td></tr>` : '';
 
   const logoHtml = merchant.logoUrl
     ? `<img src="${esc(merchant.logoUrl)}" style="max-width:150px;max-height:60px;margin-bottom:8px" /><br>`
@@ -267,6 +281,8 @@ ${clauseItems.length > 0 ? `
 <h2>5. Payment Confirmation</h2>
 <table class="info-table">
   <tr><td>${isInstallment ? 'Amount Paid (this payment)' : 'Amount Paid'}</td><td>$${(e.payment_amount || 0).toFixed(2)}</td></tr>
+  ${dualPricingRows}
+  ${selectedItemRows}
   ${isInstallment ? `<tr><td>Total Program Cost</td><td>$${totalProgramCost.toFixed(2)}</td></tr>
   <tr><td>Payment Schedule</td><td>${offer?.num_payments || '?'} ${offer?.installment_frequency || 'monthly'} payments of $${(offer?.installment_amount || 0).toFixed(2)}</td></tr>
   <tr><td>Remaining Balance</td><td>$${remainingBalance.toFixed(2)}</td></tr>` : ''}

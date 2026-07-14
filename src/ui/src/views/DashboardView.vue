@@ -214,7 +214,10 @@ import Pill from '../components/Pill.vue';
 import Skeleton from '../components/Skeleton.vue';
 import { formatTimestamp, parseDateValue } from '../utils/humanize';
 
-const REFRESH_INTERVAL_MS = 60_000;
+// Dashboard data is cached server-side for five minutes. Matching that cadence
+// avoids four overlapping cold-read waves every minute while preserving the
+// explicit refresh button for operators who need immediate data.
+const REFRESH_INTERVAL_MS = 5 * 60_000;
 const STALE_THRESHOLD_MS = 2 * 60_000;
 const TICK_INTERVAL_MS = 30_000;
 

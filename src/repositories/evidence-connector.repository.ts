@@ -211,7 +211,7 @@ export const evidenceConnectorRepository = {
   async listEvents(locationId: string, connectionId: string, limit = 50): Promise<ExternalEvidenceEventRecord[]> {
     const { data, error } = await getSupabase()
       .from('external_evidence_events')
-      .select('*, enrollment:enrollments(id, contact_id, email, offer_id, offer_name), offer:offers_mirror(id, offer_name)')
+      .select('*, enrollment:enrollments(id, contact_id, email, offer_id), offer:offers_mirror(id, offer_name)')
       .eq('location_id', locationId)
       .eq('connection_id', connectionId)
       .order('received_at', { ascending: false })
