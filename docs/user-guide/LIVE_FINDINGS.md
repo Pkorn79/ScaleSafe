@@ -443,8 +443,38 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Code proof: the read route called `checkAllClients`, which scored contacts serially and, for every flagged contact, could update the GHL engagement field and create another `disengagement_flagged` evidence event merely because the dashboard loaded.
 - Impact: dashboard reads can exhaust request/database capacity, slow unrelated defense/detail requests, repeatedly mutate GHL, and add duplicate operational evidence without an explicit merchant action.
 - Severity recommendation: P1 launch reliability and evidence-integrity defect.
-- Repair: dashboard reads use a side-effect-free scorer; independent evidence queries run concurrently with bounded contact concurrency; only the explicit admin disengagement action may write GHL fields or evidence.
+- Repair: dashboard reads use a side-effect-free scorer; independent evidence queries run concurrently with bounded contact concurrency; only the explicit admin disengagement action may write GHL fields or evidence. Overlapping scans for one location are deduplicated, completed results are cached for five minutes, and only three contacts may fan out evidence reads concurrently.
 - Required regression: dashboard load returns risk data without GHL/evidence writes, completes within a normal interactive window for the certification location, and the explicit disengagement action retains its intended side effects.
+- Live retest: deploy `747797f` proved that dashboard reads created no new `disengagement_flagged` evidence. Warm requests returned in 1.4-1.6 seconds. A defense regeneration later exposed overlapping cold scans as high as 70.7 seconds and broad database contention, so the follow-up adds in-flight deduplication, a five-minute cache, and a lower database concurrency ceiling before final timing certification.
+
+### FIND-045 - Milestone completion blocks on workflow delivery
+
+- Area: Merchant milestone workflow responsiveness.
+- Live proof: the exact enrollment milestone, evidence row, GHL field refresh, and `ss_milestone_reached` delivery all succeeded, but `POST /api/dashboard/mark-milestone` did not return for 21.1 seconds.
+- Code behavior: the merchant request waits for the external GHL trigger delivery before acknowledging that the milestone was saved.
+- Impact: a successful merchant action appears frozen and is vulnerable to browser retries or abandonment when GHL is slow.
+- Severity recommendation: P2 reliability defect. State and evidence were correct, but the operator request is unnecessarily coupled to an external workflow.
+- Required repair: preserve durable milestone state first and move trigger delivery to a separately observable background path without allowing duplicate workflow events.
+- Required regression: the merchant sees saved milestone state within five seconds while one eventual trigger delivery, one evidence row, and the correct enrollment fields remain provable.
+
+### FIND-046 - Reopened defense packets display the wrong letter version
+
+- Area: Defense packet version history UI.
+- Live proof: reopening the packet after Version 2 existed displayed `Version 1`; regenerating in the same mounted page then displayed Version 3 correctly.
+- Code proof: `currentVersionNumber` initialized to 1 and changed only from edit/regenerate responses. The packet detail API did not return the latest saved version, and `refresh()` did not set it.
+- Impact: merchants can mistake an older draft for the current frozen packet or report the wrong version during review.
+- Severity recommendation: P2 UI truth defect; the saved letter and PDF were current, but the label was false.
+- Repair: return the latest `defense_letter_versions.version_number` from the tenant-validated packet endpoint and set the UI label on every refresh.
+- Required regression: opening, refreshing, editing, and regenerating a three-version packet always display the latest saved version.
+
+### FIND-047 - Defense fulfillment dates mix browser-local and unlabeled UTC
+
+- Area: Bank-facing milestone and signoff timestamps.
+- Live proof: the exhibit card displayed July 13 while the letter said the milestone/signoff occurred July 14 at 2:48 AM. Both represented the same moment, but the server-generated sentence used UTC without naming it while the browser card used Central time.
+- Impact: internally inconsistent dates can make otherwise strong service-delivery evidence look unreliable to a reviewer.
+- Severity recommendation: P1 defense factual-presentation defect.
+- Repair: normalize defense exhibit calendar dates to UTC, label them as UTC, and compose signoff summaries from source timestamp columns with an explicit UTC timezone instead of retaining environment-local legacy summaries.
+- Required regression: the same signoff renders one consistent date across the UI exhibit, generated letter, and PDF, with the timezone identified.
 
 ## Operations Access
 

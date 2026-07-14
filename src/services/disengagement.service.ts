@@ -23,6 +23,18 @@ const DEFAULT_THRESHOLDS = {
 
 type DisengagementThresholds = typeof DEFAULT_THRESHOLDS & Record<string, number>;
 
+const SCORE_CONTACT_CONCURRENCY = 3;
+const AT_RISK_CACHE_TTL_MS = 5 * 60 * 1000;
+const atRiskCache = new Map<string, { expiresAt: number; clients: RiskAssessment[] }>();
+const atRiskInflight = new Map<string, Promise<RiskAssessment[]>>();
+
+function cacheAtRiskClients(locationId: string, clients: RiskAssessment[]): void {
+  atRiskCache.set(locationId, {
+    expiresAt: Date.now() + AT_RISK_CACHE_TTL_MS,
+    clients,
+  });
+}
+
 function resolveThresholds(merchant: any): DisengagementThresholds {
   return {
     ...DEFAULT_THRESHOLDS,
@@ -199,9 +211,11 @@ export const disengagementService = {
     const thresholds = resolveThresholds(merchant);
     const assessments: RiskAssessment[] = [];
 
-    // Bound concurrency so larger locations cannot exhaust the database pool.
-    for (let i = 0; i < contactIds.length; i += 10) {
-      const batch = contactIds.slice(i, i + 10);
+    // Each contact opens seven independent evidence reads. Keep only three
+    // contacts in flight so a dashboard scan cannot starve checkout, defense,
+    // or webhook traffic on the same Railway instance.
+    for (let i = 0; i < contactIds.length; i += SCORE_CONTACT_CONCURRENCY) {
+      const batch = contactIds.slice(i, i + SCORE_CONTACT_CONCURRENCY);
       assessments.push(...await Promise.all(
         batch.map((contactId) => scoreClientWithThresholds(locationId, contactId, thresholds)),
       ));
@@ -211,8 +225,28 @@ export const disengagementService = {
   },
 
   async getAtRiskClients(locationId: string): Promise<RiskAssessment[]> {
-    const assessments = await this.scoreAllClients(locationId);
-    return assessments.filter((assessment) => assessment.flagged);
+    const cached = atRiskCache.get(locationId);
+    if (cached && cached.expiresAt > Date.now()) return cached.clients;
+
+    const existing = atRiskInflight.get(locationId);
+    if (existing) return existing;
+
+    const scan = this.scoreAllClients(locationId)
+      .then((assessments) => assessments.filter((assessment) => assessment.flagged))
+      .then((clients) => {
+        cacheAtRiskClients(locationId, clients);
+        return clients;
+      })
+      .finally(() => {
+        atRiskInflight.delete(locationId);
+      });
+    atRiskInflight.set(locationId, scan);
+    return scan;
+  },
+
+  /** Clear a location's read cache after an explicit operator action or test. */
+  invalidateAtRiskCache(locationId: string): void {
+    atRiskCache.delete(locationId);
   },
 
   /**
@@ -254,6 +288,8 @@ export const disengagementService = {
         }
       }
     }
+
+    cacheAtRiskClients(locationId, flaggedClients);
 
     logger.info(
       { locationId, totalChecked: assessments.length, flagged: flaggedClients.length },

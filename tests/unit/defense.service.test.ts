@@ -746,6 +746,26 @@ describe('Defense Service - Regeneration review state', () => {
   });
 });
 
+describe('Defense Service - packet version display', () => {
+  test('getPacket returns the latest saved letter version', async () => {
+    (defenseRepository.getById as jest.Mock).mockResolvedValue({
+      id: 'def_versioned',
+      location_id: 'loc_1',
+      contact_id: 'c_1',
+      status: 'complete',
+      lifecycle_status: 'pending_submission',
+      chargeback_reason_code: '13.1',
+      chargeback_amount: 2,
+      dispute_event_id: null,
+    });
+    mockSelectResults['defense_letter_versions'] = { version_number: 3 };
+
+    const packet = await defenseService.getPacket('def_versioned', 'loc_1');
+
+    expect(packet.versionNumber).toBe(3);
+  });
+});
+
 describe('Defense Service - Compilation Flow', () => {
   test('compileDefense returns defenseId immediately', async () => {
     const id = await defenseService.compileDefense({

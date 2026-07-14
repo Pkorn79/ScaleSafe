@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Defense packet detail now loads and displays the latest persisted letter version on every open or refresh instead of resetting the label to Version 1.
+- Defense milestone/signoff exhibits now use stable UTC dates, identify UTC on the operator surface, and rebuild signoff summaries from source timestamps rather than retaining environment-local legacy text.
+- Dashboard at-risk scans now deduplicate concurrent requests, cache completed location results for five minutes, and cap evidence-query fan-out at three contacts so background risk reads cannot starve payment, webhook, or defense traffic.
 - Dashboard at-risk reads no longer run the side-effecting disengagement action, update GHL fields, or create evidence simply because a merchant opened the page. Risk sources load concurrently with bounded contact concurrency; explicit administrative checks retain the write path.
 - Enrollment-scoped pulse responses now appear in defense exhibits as client-engagement evidence, including the client's score, feedback, and follow-up request. Pulse responses remain communication evidence and cannot alone satisfy a service-delivery readiness gate.
 - Defense compilation now preserves the selected payment's processor ID and transaction date when the UI also supplies its enrollment, and rejects conflicting transaction/enrollment/offer combinations instead of blending evidence.
@@ -43,6 +46,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Background packet generation logs no longer include signed private-file URLs.
 
 ### Live certification
+- The exact Stripe Plan milestone and public client signoff produced one linked milestone row, one linked signoff row, correct GHL communications, and one delivery of each milestone workflow event. The regenerated Version 3 packet reached `complete` with eight exact-enrollment exhibits and no duplicate `ss_defense_ready` delivery.
 - Regenerated defense packet `13971614-ca2d-4107-931e-41be587a5446` passed exact transaction metadata, installment language, sibling-enrollment isolation, four-exhibit parity, and `needs_review` gating without firing a second ready workflow.
 - A full $1.50 Whop refund completed through ScaleSafe and produced one separate refund row; live review identified and repaired the original row's stale Refund action before any duplicate attempt was made.
 - A fresh $1.50 Whop QMS payment stayed pending until consent, generated its private packet after signature, omitted installment terms for PIF, and produced a verified exact-enrollment consent/payment chain with the expected merchant-entered-payment IP gap.

@@ -37,6 +37,9 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | BASE-001 | Deployment | Verify `666151b` | CI green; production deploy healthy | Pass | Pass | N/A | N/A | N/A | N/A | Pass | - |
 | DEF-001 | Defense | Open legacy packet `a2d357fa-a9ee-439d-8a61-1c198fbc5302` | Report 8 preserved PDF exhibits without presenting raw contact rows as exhibits | Pass | Pass | Pass | N/A | N/A | Pass | Pass | FIND-001 |
 | DEF-002 | Defense | Regenerate an eligible pre-submission packet | Save exact scoped exhibit list used by letter and PDF | Pass | Pass | Pass | N/A | Pass | Pass | Pass | FIND-038 to FIND-042 closed live; performance FIND-044 |
+| MILESTONE-001 | Fulfillment | Mark the exact Stripe Plan milestone complete | One exact-enrollment milestone, one workflow execution, and one evidence row | Pass | Pass with 21.1s latency | Pass | N/A | Pass | Pass | Pass with performance follow-up | FIND-045 |
+| SIGNOFF-001 | Fulfillment | Complete the public client milestone signoff | Exact enrollment and milestone remain linked through confirmation | Pass | Pass | Pass | N/A | Pass | Pass | Pass | - |
+| DEF-003 | Defense | Regenerate after milestone completion and client signoff | Complete packet with exact enrollment fulfillment evidence and no duplicate ready trigger | Pass | Pass with 56.1s latency | Pass | N/A | N/A; no duplicate ready trigger | Pass | Pass with display follow-up | FIND-046, FIND-047 |
 | SET-001 | Settings | Open without editing | `All changes saved`; Save disabled | Pass | Pass | N/A | N/A | N/A | N/A | Pass | FIND-002 |
 | PULSE-001 | Diagnostics | Open Pulse readiness | Distinct app-event, outbound, and submission timestamps | Pass | Pass | Pass | N/A | Pass | Pass | Pass | FIND-003 |
 | STRIPE-HEALTH-001 | Stripe health | Open partial legacy health snapshot | Missing classifications show Unknown, never Safe | Pass | Pass | Pass | Stripe test account | N/A | N/A | Pass | FIND-004 |
@@ -250,6 +253,10 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The repair requires exact enrollment identifiers for exact-scope activity, preserves selected payment metadata, adds the selected payment as a first-class exhibit, excludes unapproved generic custom events, and automatically refreshes pending compilation status.
 - Post-deploy Version 2 passed the expected safety result: `needs_review`, exact PaymentIntent/date/amount, installment-plus-add-on language, four exact-enrollment exhibits, no sibling-program records, no false delivery claim, and no second `ss_defense_ready` delivery.
 - The open UI updated to Version 2 without navigation. Railway recorded a 93.4-second synchronous regeneration, a 16.7-second defense-detail read, and overlapping `at-risk` reads as high as 85.1 seconds. The at-risk route was confirmed to be the main capacity and unintended-side-effect defect (FIND-044); defense latency must be remeasured after that repair deploy.
+- The merchant marked `Implementation Review` complete on the exact enrollment. ScaleSafe wrote one milestone evidence row and delivered one `ss_milestone_reached` event with the correct offer, milestone, and enrollment. The endpoint took 21.1 seconds because it waited synchronously for GHL (FIND-045).
+- The public signoff page showed the correct work and responsibility. The client acknowledgment produced one exact-enrollment signoff row, one `ss_milestone_signedoff` delivery, and the correct signoff-request and confirmation communications.
+- Version 3 regenerated to `complete` with eight exact-enrollment exhibits: signed enrollment packet, milestone, client signoff, four exact-program communications, and the disputed transaction. The letter accurately connected the $2.00 installment/add-on charge to the delivered milestone and client confirmation. No second `ss_defense_ready` event fired.
+- Reopening a prior version falsely displayed Version 1, and the defense UI/letter represented the same signoff moment with different calendar dates because browser-local time and unlabeled UTC were mixed (FIND-046 and FIND-047).
 
 ### NMI-QMS-001 Trace
 
@@ -343,6 +350,9 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-042 | P1 | Defense readiness defect | Live Visa 13.1 compilation | Generic cancellation note counted as delivery and permitted ready | Fix `9aa59d9` deployed | Pass: needs_review; no second ready trigger |
 | FIND-043 | P1 | Defense evidence completeness defect | Defense evidence-path audit | Stored pulse responses were never loaded into defense exhibits | Fix `4e47d50` deployed | Compile an enrollment with a pulse and confirm engagement-only exhibit inclusion |
 | FIND-044 | P1 | Dashboard reliability/evidence side-effect defect | Railway/browser correlation | GET at-risk took up to 85.1s and ran GHL/evidence mutations | Local fix verified | Deploy, time dashboard request, and prove no write side effects |
+| FIND-045 | P2 | Milestone workflow latency defect | MILESTONE-001 | Successful milestone request blocked 21.1s on GHL delivery | Open | Decouple durable save from observable trigger delivery |
+| FIND-046 | P2 | Defense version-label defect | DEF-003 | Reopened Version 2 packet displayed Version 1 | Local fix verified | Open a three-version packet after deploy |
+| FIND-047 | P1 | Defense timestamp consistency defect | DEF-003 | UI and narrative showed different dates for one signoff moment | Local fix verified | Regenerate and verify UTC across UI, letter, and PDF |
 
 ## Screenshot Rules
 

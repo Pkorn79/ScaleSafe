@@ -591,7 +591,15 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     else if (userAgent.includes('Firefox')) browserDisplay = 'Firefox';
     else if (userAgent.includes('Safari')) browserDisplay = 'Safari';
 
-    const fmtSignedDate = new Date(signedAt).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+    const fmtSignedDate = new Date(signedAt).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'UTC',
+      timeZoneName: 'short',
+    });
 
     // Insert evidence signoff (enriched)
     const { error: signoffInsertError } = await supabase.from('evidence_signoffs').insert({

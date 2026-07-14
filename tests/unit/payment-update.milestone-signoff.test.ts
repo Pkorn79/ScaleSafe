@@ -139,6 +139,8 @@ describe('submitMilestoneSignoff', () => {
       milestone_number: 2,
       milestone_name: 'Delivery',
     }));
+    expect(signoffBuilder.payload.description).toContain('UTC');
+    expect(signoffBuilder.payload.defense_summary).toContain('UTC');
     expect(signoffBuilder.payload.raw_payload).toEqual(expect.objectContaining({
       enrollmentId: 'enr_exact',
     }));

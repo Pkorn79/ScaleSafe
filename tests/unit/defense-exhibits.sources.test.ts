@@ -128,6 +128,29 @@ describe('milestone summary composition', () => {
   });
 });
 
+describe('signoff timestamp composition', () => {
+  test('uses the source timestamp in explicit UTC instead of a legacy local summary', async () => {
+    mockTableResults['evidence_signoffs'] = {
+      data: [{
+        id: 'signoff_1', enrollment_id: 'enr_1', milestone_number: 1,
+        milestone_name: 'Implementation Review', signed_at: '2026-07-14T02:48:41.802Z',
+        ip_address: '192.0.2.10', contact_name: 'Test Client', browser: 'Chrome',
+        work_summary: 'Reviewed the implementation',
+        defense_summary: 'Legacy environment-local timestamp',
+      }],
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+    const signoff = list.exhibits.find((e) => e.ref === 'signoff_1');
+
+    expect(signoff?.summary).toContain('July 14, 2026');
+    expect(signoff?.summary).toContain('2:48 AM UTC');
+    expect(signoff?.summary).toContain('using Chrome');
+    expect(signoff?.summary).not.toContain('Legacy environment-local timestamp');
+  });
+});
+
 describe('noise filtering', () => {
   test('contact-only scope never selects the newest signed packet from another enrollment', async () => {
     mockTableResults['enrollments'] = {

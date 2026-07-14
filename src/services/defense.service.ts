@@ -1000,7 +1000,23 @@ LETTER STRUCTURE:
 
   async getPacket(defenseId: string, locationId?: string) {
     const packet = await defenseRepository.getById(defenseId, locationId);
-    const shaped = await shapePacketResponseWithFreshUrl(packet);
+    const [shaped, latestVersionResult] = await Promise.all([
+      shapePacketResponseWithFreshUrl(packet),
+      getSupabase()
+        .from('defense_letter_versions')
+        .select('version_number')
+        .eq('defense_packet_id', packet.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (latestVersionResult.error) {
+      logger.warn(
+        { err: latestVersionResult.error.message, defenseId: packet.id },
+        'Failed to load latest defense letter version',
+      );
+    }
+    shaped.versionNumber = latestVersionResult.data?.version_number || 1;
     // Rail flag: Stripe-linked packets are pushed to Stripe by Mark Submitted,
     // so the UI must present that action as "Submit to Stripe".
     shaped.isStripeDispute = false;

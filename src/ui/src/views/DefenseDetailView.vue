@@ -273,6 +273,7 @@ async function refresh() {
   try {
     const nextPacket = await api.get<any>(`/api/defense/${route.params.id}`);
     packet.value = nextPacket;
+    currentVersionNumber.value = Number(nextPacket.versionNumber || nextPacket.version_number || 1);
     const exhibitState = getDefensePacketExhibitState(nextPacket);
     exhibits.value = exhibitState.exhibits;
     exhibitCount.value = exhibitState.reportedCount;

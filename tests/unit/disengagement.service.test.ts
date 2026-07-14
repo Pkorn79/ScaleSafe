@@ -46,6 +46,7 @@ import { disengagementService } from '../../src/services/disengagement.service';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  disengagementService.invalidateAtRiskCache('loc_cache');
 });
 
 describe('Disengagement Service - Scoring', () => {
@@ -79,5 +80,29 @@ describe('Disengagement Service - Scoring', () => {
     } else {
       expect(result.flagged).toBe(false);
     }
+  });
+});
+
+describe('Disengagement Service - dashboard scan control', () => {
+  test('deduplicates concurrent scans and serves the cached result', async () => {
+    let releaseScan!: (value: any[]) => void;
+    const scanResult = new Promise<any[]>((resolve) => { releaseScan = resolve; });
+    const scoreSpy = jest.spyOn(disengagementService, 'scoreAllClients')
+      .mockImplementation(async () => scanResult);
+
+    const first = disengagementService.getAtRiskClients('loc_cache');
+    const second = disengagementService.getAtRiskClients('loc_cache');
+    releaseScan([
+      { contactId: 'safe', locationId: 'loc_cache', riskScore: 10, riskFactors: [], daysInactive: 1, flagged: false },
+      { contactId: 'risk', locationId: 'loc_cache', riskScore: 55, riskFactors: ['No response'], daysInactive: 30, flagged: true },
+    ]);
+
+    await expect(first).resolves.toEqual([expect.objectContaining({ contactId: 'risk' })]);
+    await expect(second).resolves.toEqual([expect.objectContaining({ contactId: 'risk' })]);
+    await expect(disengagementService.getAtRiskClients('loc_cache'))
+      .resolves.toEqual([expect.objectContaining({ contactId: 'risk' })]);
+    expect(scoreSpy).toHaveBeenCalledTimes(1);
+
+    scoreSpy.mockRestore();
   });
 });

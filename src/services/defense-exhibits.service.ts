@@ -125,7 +125,29 @@ function indexToLetter(n: number): string {
 function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return 'date unknown';
   try {
-    return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    return new Date(d).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  } catch {
+    return String(d);
+  }
+}
+
+function fmtUtcDateTime(d: string | Date | null | undefined): string {
+  if (!d) return 'date unknown';
+  try {
+    return new Date(d).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'UTC',
+      timeZoneName: 'short',
+    });
   } catch {
     return String(d);
   }
@@ -588,12 +610,14 @@ export const defenseExhibitsService = {
     try {
       const { data: signoffs, error: signoffsErr } = await supabase
         .from('evidence_signoffs')
-        .select(`id, enrollment_id, milestone_number, milestone_name, work_summary, signed_at, ip_address, ${DEFENSE_FIELD_SELECT}`)
+        .select(`id, enrollment_id, milestone_number, milestone_name, work_summary, signed_at, ip_address, contact_name, browser, ${DEFENSE_FIELD_SELECT}`)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('signed_at', { ascending: true });
       if (signoffsErr) recordSourceError('evidence_signoffs', signoffsErr);
       for (const so of scopedRows((signoffs || []) as any[], opts?.enrollmentId, 'signed_at', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence)) {
+        const composedSummary = `${so.contact_name || 'Client'} digitally signed off on milestone ${so.milestone_number ?? '?'} ("${so.milestone_name || 'Untitled'}") on ${fmtUtcDateTime(so.signed_at)} from IP ${so.ip_address || 'unknown'}${so.browser ? ` using ${so.browser}` : ''}.`
+          + `${so.work_summary ? ` Program record: ${so.work_summary}.` : ''}`;
         exhibits.push({
           letter: indexToLetter(nextIdx++),
           name: `Client Signoff: Milestone ${so.milestone_number ?? '?'}`,
@@ -601,9 +625,14 @@ export const defenseExhibitsService = {
           source: 'evidence_signoffs',
           ref: so.id,
           occurredAt: so.signed_at,
-          summary: `Client digitally signed off on milestone ${so.milestone_number ?? '?'} ("${so.milestone_name || 'Untitled'}") on ${fmtDate(so.signed_at)} from IP ${so.ip_address || 'unknown'}.${so.work_summary ? ` Work summary: ${so.work_summary}.` : ''}`,
+          summary: composedSummary,
         });
-        applyDefenseContract(exhibits[exhibits.length - 1], so);
+        const exhibit = exhibits[exhibits.length - 1];
+        applyDefenseContract(exhibit, so);
+        // Signoff timestamps must be stable across Railway, merchant browsers,
+        // and generated PDFs. Recompose from the source columns with explicit
+        // UTC instead of reusing an older environment-local defense summary.
+        exhibit.summary = composedSummary;
       }
     } catch (err) { recordSourceError('evidence_signoffs', err); }
 
