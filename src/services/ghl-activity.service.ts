@@ -362,8 +362,22 @@ async function findUniqueAppointmentEnrollment(activity: NormalizedGhlActivity):
 }
 
 async function findEnrollmentFromActionLink(activity: NormalizedGhlActivity): Promise<{ enrollment: any | null; offerId: string | null; reason: string; confidence: string; linkedEnrollmentIds: string[]; linkedOfferIds: string[] } | null> {
-  const tokenMatches = actionTokensFromText(activity.body);
-  if (tokenMatches.length === 0) return null;
+  const tokenMatches = new Set(actionTokensFromText(activity.body));
+  try {
+    // GHL email webhooks preserve button URLs in the original HTML payload, but
+    // cleanCommunicationBody intentionally removes HTML attributes. Inspect the
+    // authenticated raw webhook too so a signed action URL can bind the outbound
+    // communication to its exact enrollment.
+    for (const token of actionTokensFromText(JSON.stringify(activity.raw || {}))) {
+      tokenMatches.add(token);
+    }
+  } catch (err: any) {
+    logger.debug(
+      { err: err?.message || String(err), locationId: activity.locationId, contactId: activity.contactId },
+      'Could not inspect raw GHL communication payload for action tokens',
+    );
+  }
+  if (tokenMatches.size === 0) return null;
 
   const supabase = getSupabase();
   for (const rawToken of tokenMatches) {
@@ -403,7 +417,7 @@ async function findEnrollmentFromActionLink(activity: NormalizedGhlActivity): Pr
 
 function actionTokensFromText(text: string): string[] {
   const tokens: string[] = [];
-  const regex = /[?&]actionToken=([^\s"'<>]+)/g;
+  const regex = /[?&]actionToken=([^\s"'<>\\]+)/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(String(text || ''))) !== null) {
     if (match[1]) tokens.push(match[1].replace(/[),.;:!?]+$/g, ''));

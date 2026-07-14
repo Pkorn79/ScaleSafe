@@ -270,6 +270,50 @@ describe('ghlActivityService', () => {
     );
   });
 
+  test('links an HTML button action URL before display text strips the href', async () => {
+    mockVerifyPublicActionToken.mockReturnValueOnce({
+      action: 'milestone_signoff',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      enrollmentId: 'enr_exact',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    mockEnrollmentQuery([
+      { id: 'enr_exact', offer_id: 'offer_1', status: 'active' },
+      { id: 'enr_other', offer_id: 'offer_1', status: 'active' },
+    ]);
+
+    const result = await ghlActivityService.handleWebhook({
+      type: 'OutboundMessage',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      conversationId: 'conv_html_action',
+      messageId: 'msg_html_action',
+      direction: 'outbound',
+      messageType: 'Email',
+      body: '<p>Milestone complete.</p><a href="https://dashboard.scalesafe.app/milestone-signoff?actionToken=tok_html">Sign-Off</a>',
+      dateAdded: '2026-07-14T22:19:19.956Z',
+    });
+
+    expect(result.actionTaken).toBe('communication_evidence_created');
+    expect(mockCreateEventIfNew).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment_id: 'enr_exact',
+      offer_id: 'offer_1',
+      status: 'matched',
+      match_reason: 'public_action_link_milestone_signoff',
+      match_confidence: 'strong',
+      linked_enrollment_ids: ['enr_exact'],
+    }));
+    expect(mockVerifyPublicActionToken).toHaveBeenCalledWith('tok_html');
+    expect(mockLogEvidence).toHaveBeenCalledWith(
+      EVIDENCE_TYPES.COMMUNICATION,
+      'loc_1',
+      'contact_1',
+      'ghl_webhook',
+      expect.objectContaining({ enrollment_id: 'enr_exact' }),
+    );
+  });
+
   test('does not guess an enrollment when an offer name matches multiple active enrollments', async () => {
     mockEnrollmentQuery([
       { id: 'enr_a', offer_id: 'offer_1', status: 'active' },
