@@ -345,6 +345,8 @@ const selectedEnrollment = ref<any | null>(null);
 const showChargeModal = ref(false);
 const chargeLoading = ref(false);
 const chargeForm = ref({ methodId: '', amount: 0, description: '' });
+const chargeAttemptId = ref('');
+let chargeAttemptScope = '';
 
 // Refund modal
 const showRefundModal = ref(false);
@@ -671,6 +673,27 @@ async function retryDunning() {
 
 // --- Charge & Refund ------------------------------------
 
+function ensureChargeAttemptId(): string {
+  const scope = [
+    contactId,
+    chargeForm.value.methodId,
+    Number(chargeForm.value.amount || 0).toFixed(2),
+    chargeForm.value.description.trim(),
+  ].join('|');
+  if (chargeAttemptId.value && chargeAttemptScope === scope) return chargeAttemptId.value;
+
+  chargeAttemptScope = scope;
+  chargeAttemptId.value = window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `attempt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  return chargeAttemptId.value;
+}
+
+function clearChargeAttempt(): void {
+  chargeAttemptId.value = '';
+  chargeAttemptScope = '';
+}
+
 function openRefund(payment: any) {
   const refundableAmount = Number(payment.refundableAmount ?? payment.amount);
   refundForm.value = {
@@ -692,12 +715,15 @@ async function submitCharge() {
       paymentMethodId: chargeForm.value.methodId,
       amount: chargeForm.value.amount,
       description: chargeForm.value.description,
+      paymentAttemptId: ensureChargeAttemptId(),
     });
     if (result?.success === false) {
+      clearChargeAttempt();
       throw new Error(result.error || 'Charge failed');
     }
     showChargeModal.value = false;
     chargeForm.value = { methodId: methods.value[0]?.id || '', amount: 0, description: '' };
+    clearChargeAttempt();
     await loadHistory();
   } catch (e: any) { actionError.value = e.message || 'Charge failed'; }
   chargeLoading.value = false;
