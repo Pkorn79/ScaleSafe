@@ -225,6 +225,15 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The initiating request also displayed a false post-processor warning. Railway showed that the Whop API returned the original `pay_...` payment ID, ScaleSafe attempted to insert it as a second transaction, and the reconciliation worker then linked the claim to the original sale instead of requiring the signed `rf_...` refund event. FIND-033 tracks this ledger/reconciliation defect.
 - The original fully refunded sale retained an active Refund button. No second refund was attempted. FIND-032 tracks the refund-availability defect while the existing server-side remaining-balance and refund-claim protections remain in place.
 
+### WHOP-LIFECYCLE-001 Trace
+
+- Created a fresh current-code Whop QMS installment enrollment for `$1.00` per week, two total payments: enrollment `6a0edd5c-d9d0-435a-9229-a5edca7f54c5`, membership `mem_8d7yjd21BXcBPy`, initial payment `pay_yhT5spUmwVvf0F`.
+- The Whop checkout and direct readback both proved a renewal plan with a July 21, 2026 renewal boundary. The paid-enrollment funnel correctly stayed consent-only, hid payment choices, completed quickly, and moved the exact enrollment to `enrolled` after signature.
+- Pause succeeded in Whop (`payment_collection_paused = true`) and ScaleSafe, with one evidence row and one `ss_subscription_paused` delivery.
+- Resume succeeded in Whop (`payment_collection_paused = false`) but ScaleSafe left `next_billing_date` null instead of restoring July 21. FIND-034 tracks the code defect and the required cancel retest after deployment.
+- A pre-fix historical paid-in-full Whop membership has external status `completed` but previously accepted local pause/resume state and workflow writes. The same finding adds a preflight/readback guard so ended one-time memberships cannot generate false lifecycle evidence.
+- The corresponding GHL pause and resume emails rendered the program as `[object Object]`, while ScaleSafe trigger payloads and contact custom fields contained the correct string. FIND-035 tracks the GHL workflow-template defect; no workflow was changed.
+
 ### NMI-QMS-001 Trace
 
 - The certification contact contains only a Stripe 4242 method, so the authorized NMI test moved to Phil Kay's payment-management record.
@@ -305,7 +314,9 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-030 | P1 | QMS completion-feedback defect | Whop QMS live payment | Webhook records payment, but embedded modal never leaves disabled Whop checkout or shows ScaleSafe success | Fixes `062b244` and `f7a412a` deployed | Pass on WHOP-QMS-003: server-confirmed success remains visible with one `Done` action |
 | FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fix `9ecece0` deployed | New QMS sale must update table, total, and last-payment timestamp together |
 | FIND-032 | P1 | Refund availability defect | Whop full-refund live test | Fully refunded original payment retains an active Refund action | Fix `e8ab1a2` deployed | Full refund hides action; partial refund exposes only remaining balance |
-| FIND-033 | P1 | Whop refund reconciliation defect | Whop full-refund live test and Railway trace | Whop's returned `pay_...` ID is treated as a refund ID; claim is mislinked to original sale | Fixed locally; deployment pending | Signed `rf_...` webhook owns one row and one workflow; claim links to it |
+| FIND-033 | P1 | Whop refund reconciliation defect | Whop full-refund live test and Railway trace | Whop's returned `pay_...` ID is treated as a refund ID; claim is mislinked to original sale | Fix `2ddbf9a` deployed | Pass: one signed `rf_...` row, linked claim, evidence, workflow, and correct remaining balance |
+| FIND-034 | P1 | Whop processor-state integrity defect | Fresh recurring and historical completed membership lifecycle tests | Successful POST is trusted without state proof; resume discards renewal date | Fixed locally; deployment pending | Pause/resume/cancel current recurring membership; reject completed one-time membership |
+| FIND-035 | P1 | GHL workflow configuration defect | Whop pause/resume live emails | Correct app strings render as `[object Object]` in GHL email actions | Open; no GHL change made | Inspect templates, replace merge field, test multi-enrollment pause/resume |
 
 ## Screenshot Rules
 

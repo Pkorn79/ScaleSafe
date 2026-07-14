@@ -746,13 +746,19 @@ export const paymentLifecycleService = {
     // Resume via processor if we have a subscription ID
     if (isWhopProcessor(params.processorType)) {
       const membershipId = requireWhopMembershipId(params, 'resume');
-      await whopService.resumeMembership(params.locationId, membershipId);
+      const result = await whopService.resumeMembership(params.locationId, membershipId);
+      if (!result.nextPaymentDate) {
+        throw new ValidationError('Unable to resume Whop membership: Whop returned no renewal date');
+      }
       await updateEnrollmentForLifecycleAction({
         locationId: params.locationId,
         enrollmentId: params.enrollmentId,
         contactId: params.contactId,
         processorSubscriptionId: membershipId,
-        updates: { status: 'enrolled' },
+        updates: {
+          status: 'enrolled',
+          next_billing_date: result.nextPaymentDate.split('T')[0],
+        },
         action: 'resume',
       });
     } else if (params.processorSubscriptionId) {
@@ -1086,13 +1092,17 @@ export const paymentLifecycleService = {
     // Cancel via processor if we have a subscription ID
     if (isWhopProcessor(params.processorType)) {
       const membershipId = requireWhopMembershipId(params, 'cancel');
-      await whopService.cancelMembership(params.locationId, membershipId);
+      const result = await whopService.cancelMembership(params.locationId, membershipId);
       await updateEnrollmentForLifecycleAction({
         locationId: params.locationId,
         enrollmentId: params.enrollmentId,
         contactId: params.contactId,
         processorSubscriptionId: membershipId,
-        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null },
+        updates: {
+          status: 'cancelled',
+          cancelled_at: result.canceledAt || new Date().toISOString(),
+          next_billing_date: null,
+        },
         action: 'cancel',
       });
     } else if (params.processorSubscriptionId) {

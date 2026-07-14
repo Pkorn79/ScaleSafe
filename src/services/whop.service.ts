@@ -11,6 +11,19 @@ import type { CheckoutCartQuote } from './checkout-cart.service';
 
 type WhopMetadata = Record<string, string | number | boolean | null | undefined>;
 
+type WhopMembershipState = {
+  membershipId: string;
+  status: string;
+  paymentCollectionPaused: boolean | null;
+  nextPaymentDate?: string;
+  canceledAt?: string;
+  cancelAtPeriodEnd: boolean | null;
+};
+
+type WhopMembershipLifecycleResult = WhopMembershipState & {
+  success: true;
+};
+
 export function whopApiBaseUrl(environment: string): string {
   const explicitBase = environment === 'sandbox'
     ? process.env.WHOP_SANDBOX_API_BASE_URL || process.env.WHOP_API_BASE_URL
@@ -106,6 +119,66 @@ function whopErrorMessage(err: any, fallback: string): string {
   ].filter(Boolean);
   const message = candidates.find((value) => typeof value === 'string' && value.trim());
   return message || fallback;
+}
+
+function membershipPayload(data: any): any {
+  if (data?.data?.id) return data.data;
+  if (data?.membership?.id) return data.membership;
+  return data || {};
+}
+
+function normalizeMembershipState(data: any, membershipId: string): WhopMembershipState {
+  const membership = membershipPayload(data);
+  return {
+    membershipId: String(membership?.id || membershipId),
+    status: String(membership?.status || '').trim().toLowerCase(),
+    paymentCollectionPaused: typeof membership?.payment_collection_paused === 'boolean'
+      ? membership.payment_collection_paused
+      : null,
+    ...(membership?.renewal_period_end
+      ? { nextPaymentDate: String(membership.renewal_period_end) }
+      : {}),
+    ...(membership?.canceled_at ? { canceledAt: String(membership.canceled_at) } : {}),
+    cancelAtPeriodEnd: typeof membership?.cancel_at_period_end === 'boolean'
+      ? membership.cancel_at_period_end
+      : null,
+  };
+}
+
+function lifecycleResult(state: WhopMembershipState): WhopMembershipLifecycleResult {
+  return { success: true, ...state };
+}
+
+function isEndedMembership(status: string): boolean {
+  return ['completed', 'canceled', 'expired'].includes(status);
+}
+
+function assertRecurringMembership(state: WhopMembershipState, action: string): void {
+  if (!state.status) {
+    throw new ValidationError(`Unable to ${action} Whop membership: Whop returned no membership status`);
+  }
+  if (isEndedMembership(state.status)) {
+    throw new ValidationError(
+      `Unable to ${action} Whop membership: membership status is ${state.status}`,
+    );
+  }
+  if (!state.nextPaymentDate) {
+    throw new ValidationError(
+      `Unable to ${action} Whop membership: this membership has no recurring renewal schedule`,
+    );
+  }
+}
+
+async function retrieveMembershipState(
+  api: AxiosInstance,
+  membershipId: string,
+): Promise<WhopMembershipState> {
+  const res = await api.get(`/memberships/${encodeURIComponent(membershipId)}`);
+  const state = normalizeMembershipState(res.data, membershipId);
+  if (state.membershipId !== membershipId) {
+    throw new ValidationError('Whop membership lookup returned an unexpected membership ID');
+  }
+  return state;
 }
 
 async function updateWhopSync(locationId: string, offerId: string, updates: Record<string, unknown>): Promise<void> {
@@ -486,36 +559,79 @@ export const whopService = {
     }
   },
 
-  async pauseMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+  async pauseMembership(locationId: string, membershipId: string): Promise<WhopMembershipLifecycleResult> {
     const row = await whopConfigService.getRequired(locationId);
     assertWhopId('Whop membership ID', membershipId, 'mem_');
     try {
-      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/pause`);
-      return { success: true, raw: res.data };
+      const api = client(row);
+      const before = await retrieveMembershipState(api, membershipId);
+      assertRecurringMembership(before, 'pause');
+      if (before.paymentCollectionPaused === true) return lifecycleResult(before);
+
+      const res = await api.post(`/memberships/${encodeURIComponent(membershipId)}/pause`);
+      let after = normalizeMembershipState(res.data, membershipId);
+      if (after.membershipId !== membershipId || after.paymentCollectionPaused !== true || !after.status) {
+        after = await retrieveMembershipState(api, membershipId);
+      }
+      assertRecurringMembership(after, 'pause');
+      if (after.paymentCollectionPaused !== true) {
+        throw new ValidationError('Unable to pause Whop membership: Whop did not confirm paused billing');
+      }
+      return lifecycleResult(after);
     } catch (err: any) {
       throw new ValidationError(whopErrorMessage(err, 'Whop membership pause failed'));
     }
   },
 
-  async resumeMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+  async resumeMembership(locationId: string, membershipId: string): Promise<WhopMembershipLifecycleResult> {
     const row = await whopConfigService.getRequired(locationId);
     assertWhopId('Whop membership ID', membershipId, 'mem_');
     try {
-      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/resume`);
-      return { success: true, raw: res.data };
+      const api = client(row);
+      const before = await retrieveMembershipState(api, membershipId);
+      assertRecurringMembership(before, 'resume');
+      if (before.paymentCollectionPaused === false) return lifecycleResult(before);
+
+      const res = await api.post(`/memberships/${encodeURIComponent(membershipId)}/resume`);
+      let after = normalizeMembershipState(res.data, membershipId);
+      if (
+        after.membershipId !== membershipId
+        || after.paymentCollectionPaused !== false
+        || !after.status
+        || !after.nextPaymentDate
+      ) {
+        after = await retrieveMembershipState(api, membershipId);
+      }
+      assertRecurringMembership(after, 'resume');
+      if (after.paymentCollectionPaused !== false) {
+        throw new ValidationError('Unable to resume Whop membership: Whop did not confirm active billing');
+      }
+      return lifecycleResult(after);
     } catch (err: any) {
       throw new ValidationError(whopErrorMessage(err, 'Whop membership resume failed'));
     }
   },
 
-  async cancelMembership(locationId: string, membershipId: string): Promise<{ success: boolean; raw?: any }> {
+  async cancelMembership(locationId: string, membershipId: string): Promise<WhopMembershipLifecycleResult> {
     const row = await whopConfigService.getRequired(locationId);
     assertWhopId('Whop membership ID', membershipId, 'mem_');
     try {
-      const res = await client(row).post(`/memberships/${encodeURIComponent(membershipId)}/cancel`, {
+      const api = client(row);
+      const before = await retrieveMembershipState(api, membershipId);
+      if (['canceled', 'expired'].includes(before.status)) return lifecycleResult(before);
+      assertRecurringMembership(before, 'cancel');
+
+      const res = await api.post(`/memberships/${encodeURIComponent(membershipId)}/cancel`, {
         cancellation_mode: 'immediate',
       });
-      return { success: true, raw: res.data };
+      let after = normalizeMembershipState(res.data, membershipId);
+      if (after.membershipId !== membershipId || !['canceled', 'expired'].includes(after.status)) {
+        after = await retrieveMembershipState(api, membershipId);
+      }
+      if (!['canceled', 'expired'].includes(after.status)) {
+        throw new ValidationError('Unable to cancel Whop membership: Whop did not confirm immediate cancellation');
+      }
+      return lifecycleResult(after);
     } catch (err: any) {
       throw new ValidationError(whopErrorMessage(err, 'Whop membership cancel failed'));
     }

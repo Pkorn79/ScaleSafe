@@ -337,6 +337,27 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 money-ledger integrity defect. The processor refund succeeded, but local reconciliation could report and link the result incorrectly.
 - Local repair: reserve the refund amount when Whop accepts the request, make signed `refund.created` the sole canonical Whop refund-row writer, correlate that `rf_...` event to the exact original payment and claim, and require refund event type in reconciliation queries. The worker must wait rather than synthesize a Whop refund from `pay_...`.
 - Required regression: the refund request returns processing or confirmed success without a false recording error; one signed `rf_...` row is written; the claim points to that row; the refund workflow fires once; duplicate webhooks and the worker create no second row or notification.
+- Live retest: deploy `2ddbf9a` completed a partial Whop refund with one signed canonical `rf_...` payment row, one linked claim, one evidence record, one refund workflow delivery, and the correct remaining refundable balance.
+
+### FIND-034 - Whop lifecycle actions trust no-op responses and resume loses the renewal date
+
+- Area: Whop pause, resume, cancel, and recurring-plan display.
+- Live proof: fresh recurring membership `mem_8d7yjd21BXcBPy` paused and resumed correctly in Whop, but ScaleSafe resumed it with a blank `next_billing_date` even though Whop still reported July 21, 2026. A historical one-time membership with Whop status `completed` also accepted pause/resume requests without changing Whop, while ScaleSafe wrote local lifecycle state, evidence, and workflow events.
+- Code proof: the lifecycle service trusted any successful Whop POST and immediately changed the enrollment. It did not inspect `payment_collection_paused`, `status`, `renewal_period_end`, or `canceled_at`, and its Whop resume branch discarded the returned renewal date.
+- Impact: ScaleSafe can disagree with Whop about whether billing is paused, active, or ended; a resumed recurring plan can lose its next-payment date; and customer communications/evidence can assert a lifecycle change Whop did not apply.
+- Severity recommendation: P1 processor-state integrity.
+- Local repair: retrieve and validate the exact membership before action, reject ended or non-recurring memberships, confirm Whop's resulting state before updating ScaleSafe, and persist Whop's verified renewal/cancellation timestamp.
+- Required regression: a valid recurring membership pauses, resumes with its renewal date restored, and cancels only after Whop confirms each state. A completed one-time membership performs no action and creates no local state, evidence, or workflow side effect.
+
+### FIND-035 - GHL lifecycle emails render the program as `[object Object]`
+
+- Area: GHL subscription paused/resumed workflow templates.
+- Live proof: the certification client received pause and resume emails naming the subscription as `[object Object]`.
+- App-side proof: the exact trigger deliveries contain plain-string `offer_name`, `offerName`, `program_name`, and `programName` values, and the contact's ScaleSafe offer-name custom fields also contain the correct plain-string program name.
+- Impact: customer-facing lifecycle notices are confusing and cannot serve as clean communication evidence.
+- Classification: P1 GHL workflow configuration defect, pending read-only inspection of the exact merge field used by each email action. No workflow setting has been changed.
+- Required remediation: replace the object-valued merge field with the exact text custom field or supported trigger text field, then prove pause and resume emails name the correct enrollment when the contact has multiple programs.
+- Required regression: one pause and one resume produce the correct program name, no `[object Object]`, one workflow execution each, and enrollment-linked communication evidence.
 
 ## Operations Access
 

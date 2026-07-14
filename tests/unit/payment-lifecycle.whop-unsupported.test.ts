@@ -14,6 +14,8 @@ const mockMoneyMarkProviderAccepted = jest.fn();
 const mockMoneyMarkRecorded = jest.fn();
 const mockMoneyMarkUnknown = jest.fn();
 const mockProcessorResume = jest.fn();
+const mockEnrollmentUpdate = jest.fn();
+let enrollmentNextBillingDate: string | null = '2026-07-01';
 
 jest.mock('../../src/services/processor.factory', () => ({
   resolveProcessor: (...args: any[]) => mockResolveProcessor(...args),
@@ -82,7 +84,15 @@ const whopParams = {
 
 function builder(table: string) {
   const b: any = {};
-  b.update = jest.fn(() => b);
+  b.update = jest.fn((updates: Record<string, unknown>) => {
+    if (table === 'enrollments') {
+      mockEnrollmentUpdate(updates);
+      if (Object.prototype.hasOwnProperty.call(updates, 'next_billing_date')) {
+        enrollmentNextBillingDate = updates.next_billing_date as string | null;
+      }
+    }
+    return b;
+  });
   b.select = jest.fn(() => b);
   b.eq = jest.fn(() => b);
   b.neq = jest.fn(() => b);
@@ -100,7 +110,7 @@ function builder(table: string) {
           status: 'paused',
           processor_type: 'whop',
           processor_subscription_id: 'mem_123',
-          next_billing_date: '2026-07-01',
+          next_billing_date: enrollmentNextBillingDate,
           enrolled_at: '2026-06-01T00:00:00Z',
           first_name: 'Client',
           last_name: 'Example',
@@ -126,9 +136,18 @@ function builder(table: string) {
 describe('paymentLifecycleService Whop lifecycle support', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPauseWhop.mockResolvedValue({ success: true });
-    mockResumeWhop.mockResolvedValue({ success: true });
-    mockCancelWhop.mockResolvedValue({ success: true });
+    enrollmentNextBillingDate = '2026-07-01';
+    mockPauseWhop.mockResolvedValue({ success: true, paymentCollectionPaused: true });
+    mockResumeWhop.mockResolvedValue({
+      success: true,
+      paymentCollectionPaused: false,
+      nextPaymentDate: '2026-07-21T00:00:00Z',
+    });
+    mockCancelWhop.mockResolvedValue({
+      success: true,
+      status: 'canceled',
+      canceledAt: '2026-07-14T00:30:00Z',
+    });
     mockTriggerFire.mockResolvedValue(undefined);
     mockLogEvidence.mockResolvedValue(undefined);
     mockGhlPut.mockResolvedValue({});
@@ -167,6 +186,11 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
     expect(mockTriggerFire).toHaveBeenCalledWith('loc-1', 'ss_subscription_resumed', expect.objectContaining({
       processor: 'whop',
       subscription_id: 'mem_123',
+      next_billing_date: '2026-07-21',
+    }));
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'enrolled',
+      next_billing_date: '2026-07-21',
     }));
   });
 
@@ -179,6 +203,11 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
     expect(mockTriggerFire).toHaveBeenCalledWith('loc-1', 'ss_cancellation_requested', expect.objectContaining({
       processor: 'whop',
       subscription_id: 'mem_123',
+    }));
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'cancelled',
+      cancelled_at: '2026-07-14T00:30:00Z',
+      next_billing_date: null,
     }));
   });
 

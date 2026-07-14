@@ -491,22 +491,90 @@ describe('whopService lifecycle methods', () => {
     expect(post).toHaveBeenCalledWith('/payments/pay_123/refund', { partial_amount: 3.2 });
   });
 
-  it('pauses, resumes, and cancels Whop memberships with the membership endpoint', async () => {
-    const post = jest.fn().mockResolvedValue({ data: { id: 'mem_123' } });
-    mockAxiosCreate.mockReturnValue({ post });
+  it('pauses, resumes, and cancels only after Whop confirms each membership state', async () => {
+    const get = jest.fn()
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: false,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } })
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: true,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } })
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: false,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } });
+    const post = jest.fn()
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: true,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } })
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: false,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } })
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'canceled', payment_collection_paused: false,
+        canceled_at: '2026-07-14T00:30:00Z',
+      } });
+    mockAxiosCreate.mockReturnValue({ get, post });
 
-    await whopService.pauseMembership('loc-1', 'mem_123');
-    await whopService.resumeMembership('loc-1', 'mem_123');
-    await whopService.cancelMembership('loc-1', 'mem_123');
+    const paused = await whopService.pauseMembership('loc-1', 'mem_123');
+    const resumed = await whopService.resumeMembership('loc-1', 'mem_123');
+    const canceled = await whopService.cancelMembership('loc-1', 'mem_123');
 
     expect(post).toHaveBeenNthCalledWith(1, '/memberships/mem_123/pause');
     expect(post).toHaveBeenNthCalledWith(2, '/memberships/mem_123/resume');
     expect(post).toHaveBeenNthCalledWith(3, '/memberships/mem_123/cancel', { cancellation_mode: 'immediate' });
+    expect(paused.paymentCollectionPaused).toBe(true);
+    expect(resumed).toEqual(expect.objectContaining({
+      paymentCollectionPaused: false,
+      nextPaymentDate: '2026-07-21T00:00:00Z',
+    }));
+    expect(canceled).toEqual(expect.objectContaining({
+      status: 'canceled',
+      canceledAt: '2026-07-14T00:30:00Z',
+    }));
+  });
+
+  it('reads the membership back when a lifecycle response does not prove the new state', async () => {
+    const get = jest.fn()
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: false,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } })
+      .mockResolvedValueOnce({ data: {
+        id: 'mem_123', status: 'active', payment_collection_paused: true,
+        renewal_period_end: '2026-07-21T00:00:00Z',
+      } });
+    const post = jest.fn().mockResolvedValue({ data: { id: 'mem_123' } });
+    mockAxiosCreate.mockReturnValue({ get, post });
+
+    const result = await whopService.pauseMembership('loc-1', 'mem_123');
+
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(result.paymentCollectionPaused).toBe(true);
+  });
+
+  it('rejects lifecycle actions for completed one-time memberships before calling the action endpoint', async () => {
+    const get = jest.fn().mockResolvedValue({ data: {
+      id: 'mem_123', status: 'completed', payment_collection_paused: false,
+      renewal_period_end: null,
+    } });
+    const post = jest.fn();
+    mockAxiosCreate.mockReturnValue({ get, post });
+
+    await expect(whopService.pauseMembership('loc-1', 'mem_123'))
+      .rejects.toThrow(/status is completed/i);
+
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('rejects lifecycle calls without Whop-formatted IDs', async () => {
     const post = jest.fn();
-    mockAxiosCreate.mockReturnValue({ post });
+    const get = jest.fn();
+    mockAxiosCreate.mockReturnValue({ get, post });
 
     await expect(whopService.refundPayment('loc-1', { paymentId: 'txn_123' })).rejects.toThrow(/Whop payment ID/i);
     await expect(whopService.pauseMembership('loc-1', 'sub_123')).rejects.toThrow(/Whop membership ID/i);
