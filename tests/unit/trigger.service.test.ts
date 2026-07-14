@@ -315,6 +315,35 @@ describe('Trigger Service - fireTrigger', () => {
     );
   });
 
+  test('deactivates stale GHL marketplace trigger subscription when GHL reports it deleted', async () => {
+    mockGetActive.mockResolvedValue([
+      {
+        id: 'sub1',
+        location_id: 'loc_1',
+        trigger_key: 'enrollment_complete',
+        subscription_url: 'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/deleted',
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    mockedAxios.post.mockRejectedValue(
+      new Error('GHL API error: Trigger with id: deleted is deleted. Skipping execution'),
+    );
+
+    const result = await triggerService.fireTrigger('loc_1', 'enrollment_complete', {
+      contact_id: 'c1',
+    });
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    expect(mockDeactivate).toHaveBeenCalledWith(
+      'loc_1',
+      'enrollment_complete',
+      'https://services.leadconnectorhq.com/workflows-marketplace/triggers/execute/loc_1/deleted',
+    );
+  });
+
   test('keeps the trusted location and overwrites caller-supplied tenant and delivery keys', async () => {
     mockGetActive.mockResolvedValue([
       {

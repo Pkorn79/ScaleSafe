@@ -174,7 +174,7 @@ function isGhlTriggerExecuteUrl(url: string): boolean {
 }
 
 function isInactiveGhlTriggerError(message?: string): boolean {
-  return Boolean(message && /trigger with id: .*inactive/i.test(message));
+  return Boolean(message && /trigger with id: .*(?:inactive|deleted)/i.test(message));
 }
 
 async function postTriggerUrl(
