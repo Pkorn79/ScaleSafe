@@ -359,7 +359,9 @@ export const dashboardController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
-      const flagged = await disengagementService.checkAllClients(locationId);
+      // Dashboard reads must not update GHL fields or create evidence. The
+      // explicit admin disengagement run owns those side effects.
+      const flagged = await disengagementService.getAtRiskClients(locationId);
       res.json({
         count: flagged.length,
         clients: flagged.map(c => ({

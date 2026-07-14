@@ -8,7 +8,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 
 | ID | Area | Recommended Priority | Verification | Likely Effort |
 | --- | --- | --- | --- | --- |
-| FIND-001 | Defense exhibits | P1 | Fixed; legacy live packet passed, regeneration retest pending | Small/medium |
+| FIND-001 | Defense exhibits | P1 | Fixed and passed legacy plus regenerated live packets | Small/medium |
 | FIND-002 | Settings dirty state | P2 | Fixed and passed live | Small |
 | FIND-003 | Pulse diagnostics | P1 | Fixed and passed live | Small/medium |
 | FIND-004 | Stripe health defaults | P1 | Fixed and passed live | Small |
@@ -40,7 +40,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 for beta trust/operability.
 - Required regression: Open a compiled packet and verify the UI exhibit list matches the PDF exhibit index and packet evidence count.
 - Root cause confirmed: legacy packets stored a contact-wide raw array while regeneration rebuilt the scoped letter/PDF without replacing that old snapshot. Commit `666151b` now freezes the regenerated exhibit set and gives submitted legacy packets an honest PDF-count notice instead of relabeling raw timeline rows.
-- Live retest: submitted packet `a2d357fa-a9ee-439d-8a61-1c198fbc5302` now reports `Evidence Exhibits (8)` and directs the merchant to its frozen PDF. A pre-submission regeneration still needs a live certification run.
+- Live retest: submitted packet `a2d357fa-a9ee-439d-8a61-1c198fbc5302` reports `Evidence Exhibits (8)` and directs the merchant to its frozen PDF. Pre-submission packet `13971614-ca2d-4107-931e-41be587a5446` regenerated to Version 2 and displayed the same four exact exhibits used by its letter and PDF.
 
 ### FIND-002 - Settings always claims there are unsaved changes
 
@@ -389,6 +389,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: merchants can wait indefinitely or retry a compilation that already succeeded.
 - Repair: poll only while status is `pending` or `processing`, stop after completion/unmount, and show a bounded long-running message after five minutes.
 - Required regression: an asynchronously compiled packet updates in place without navigation or duplicate compilation.
+- Live retest: packet regeneration returned Version 2 in place and the open detail view updated to `Needs Review`, the new letter, four exhibits, and the Version 2 label without navigating away.
 
 ### FIND-039 - Supplying the enrollment drops selected transaction metadata
 
@@ -397,6 +398,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: the letter and timeline omit the exact disputed transaction identifiers even though the merchant selected the transaction.
 - Repair: resolve the payment first whenever a payment ID exists, verify its tenant/contact/enrollment/offer relationship, and preserve its processor metadata.
 - Required regression: matching payment plus enrollment retains transaction metadata; mismatched enrollment or offer fails closed.
+- Live retest: Version 2 names the exact Stripe PaymentIntent `pi_3TsnWKQ4vjJOpWaV2iZAxrla`, July 13 transaction date, `$2.00` amount, and exact enrollment.
 
 ### FIND-040 - Exact packet includes sibling-enrollment communications
 
@@ -405,6 +407,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: bank-facing evidence can describe purchases unrelated to the disputed transaction, including repeat purchases of the same offer.
 - Repair: exact scope requires an enrollment identifier; offer/date/name inference is permitted only in an explicitly inferred packet that requires review.
 - Required regression: two programs and two enrollments of the same offer on one contact produce exhibits only for the selected enrollment.
+- Live retest: Version 2 contains only the selected enrollment packet, its two linked communications, and the disputed transaction. No sibling Stripe PIF or Whop program appears.
 
 ### FIND-041 - Plural installment value is described as paid in full
 
@@ -413,6 +416,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: the defense letter materially misstates the agreement and transaction structure.
 - Repair: normalize both supported installment values before generating price/payment language.
 - Required regression: plural `installments` produces the configured count, cadence, and installment amount and never says paid in full.
+- Live retest: Version 2 states two daily `$1.00` installments and identifies the disputed `$2.00` as the first installment plus the `$1.00` add-on; it does not describe the purchase as paid in full.
 
 ### FIND-042 - Generic cancellation note passes the service-delivery gate
 
@@ -421,6 +425,7 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Impact: ScaleSafe can mark a services-not-provided defense ready without actual delivery evidence, and AI may turn an operational note into a false milestone claim.
 - Repair: generic custom events are excluded unless explicitly approved with a delivery/access/deliverable/milestone proof role; the selected payment is included separately as payment evidence.
 - Required regression: a 13.1 packet with payment/consent but no delivery proof lands on `needs_review` and does not fire ready.
+- Live retest: Version 2 excluded the generic cancellation/custom event, stated that no milestone completion or signoff exists, landed on `needs_review`, recommended considering acceptance, and did not fire a second `ss_defense_ready` event.
 
 ### FIND-043 - Stored pulse responses are omitted from defense exhibits
 
@@ -430,6 +435,16 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 evidence completeness defect. Evidence was preserved in ScaleSafe but silently omitted from the compiled defense.
 - Repair: query pulse rows directly, scope them through the exact enrollment rules, surface query failures, and classify them as client-engagement communication rather than service delivery. New pulse submissions use the `client_engagement` proof role.
 - Required regression: the selected enrollment's pulse appears with score/feedback/follow-up details, a sibling enrollment's pulse is excluded, and pulse evidence alone cannot make a services-not-provided packet ready.
+
+### FIND-044 - Dashboard at-risk read performs mutations and takes up to 85 seconds
+
+- Area: Dashboard reliability, GHL side effects, and risk scoring.
+- Live proof: repeated `GET /api/dashboard/at-risk` calls took 16.7 to 85.1 seconds while only 19 evidence-bearing contacts existed in the location. Multiple browser tabs caused overlapping long-running requests.
+- Code proof: the read route called `checkAllClients`, which scored contacts serially and, for every flagged contact, could update the GHL engagement field and create another `disengagement_flagged` evidence event merely because the dashboard loaded.
+- Impact: dashboard reads can exhaust request/database capacity, slow unrelated defense/detail requests, repeatedly mutate GHL, and add duplicate operational evidence without an explicit merchant action.
+- Severity recommendation: P1 launch reliability and evidence-integrity defect.
+- Repair: dashboard reads use a side-effect-free scorer; independent evidence queries run concurrently with bounded contact concurrency; only the explicit admin disengagement action may write GHL fields or evidence.
+- Required regression: dashboard load returns risk data without GHL/evidence writes, completes within a normal interactive window for the certification location, and the explicit disengagement action retains its intended side effects.
 
 ## Operations Access
 

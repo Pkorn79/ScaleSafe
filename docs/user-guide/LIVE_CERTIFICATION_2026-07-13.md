@@ -36,7 +36,7 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | BASE-001 | Deployment | Verify `666151b` | CI green; production deploy healthy | Pass | Pass | N/A | N/A | N/A | N/A | Pass | - |
 | DEF-001 | Defense | Open legacy packet `a2d357fa-a9ee-439d-8a61-1c198fbc5302` | Report 8 preserved PDF exhibits without presenting raw contact rows as exhibits | Pass | Pass | Pass | N/A | N/A | Pass | Pass | FIND-001 |
-| DEF-002 | Defense | Regenerate an eligible pre-submission packet | Save exact scoped exhibit list used by letter and PDF | Not run | Pending | Pending | N/A | Pending | Pending | Not run | - |
+| DEF-002 | Defense | Regenerate an eligible pre-submission packet | Save exact scoped exhibit list used by letter and PDF | Pass | Pass | Pass | N/A | Pass | Pass | Pass | FIND-038 to FIND-042 closed live; performance FIND-044 |
 | SET-001 | Settings | Open without editing | `All changes saved`; Save disabled | Pass | Pass | N/A | N/A | N/A | N/A | Pass | FIND-002 |
 | PULSE-001 | Diagnostics | Open Pulse readiness | Distinct app-event, outbound, and submission timestamps | Pass | Pass | Pass | N/A | Pass | Pass | Pass | FIND-003 |
 | STRIPE-HEALTH-001 | Stripe health | Open partial legacy health snapshot | Missing classifications show Unknown, never Safe | Pass | Pass | Pass | Stripe test account | N/A | N/A | Pass | FIND-004 |
@@ -248,7 +248,8 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - The frozen scope dropped the selected payment's processor ID/date when the enrollment was also supplied (FIND-039).
 - The packet mixed exact Stripe Plan emails with sibling Stripe PIF and Whop Choice emails (FIND-040), described the plural `installments` offer as paid in full (FIND-041), and treated an unlinked cancellation note as service delivery despite no milestone/signoff for this enrollment (FIND-042).
 - The repair requires exact enrollment identifiers for exact-scope activity, preserves selected payment metadata, adds the selected payment as a first-class exhibit, excludes unapproved generic custom events, and automatically refreshes pending compilation status.
-- Expected post-deploy result: the packet becomes `needs_review` because Visa 13.1 has no actual delivery proof; it includes the exact payment and only linked program evidence, and it does not fire another ready event during regeneration.
+- Post-deploy Version 2 passed the expected safety result: `needs_review`, exact PaymentIntent/date/amount, installment-plus-add-on language, four exact-enrollment exhibits, no sibling-program records, no false delivery claim, and no second `ss_defense_ready` delivery.
+- The open UI updated to Version 2 without navigation. Railway recorded a 93.4-second synchronous regeneration, a 16.7-second defense-detail read, and overlapping `at-risk` reads as high as 85.1 seconds. The at-risk route was confirmed to be the main capacity and unintended-side-effect defect (FIND-044); defense latency must be remeasured after that repair deploy.
 
 ### NMI-QMS-001 Trace
 
@@ -303,7 +304,7 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 
 | Issue ID | Severity | Classification | First observed | Scope | Current state | Retest |
 | --- | --- | --- | --- | --- | --- | --- |
-| FIND-001 | P1 | Code/data-shape defect | Defense packet live walkthrough | Defense exhibit UI and regeneration snapshots | Fix `666151b` deployed | Pass for legacy packet; regeneration test pending |
+| FIND-001 | P1 | Code/data-shape defect | Defense packet live walkthrough | Defense exhibit UI and regeneration snapshots | Fix `666151b` deployed | Pass for legacy and regenerated packets |
 | FIND-005 | P2 | UI state defect | QMS walkthrough | Initial configuration loading | Fix `8139dac` deployed | Pass |
 | FIND-006 | P1 investigation | Data/matching quality | GHL Fulfillment diagnostics | 121 unresolved historical events | Open | Clean-fixture test pending |
 | FIND-007 | P1 certification gap | Configuration/operations | NMI diagnostics | Signed official NMI callback not proved | Open | Signed callback required |
@@ -335,12 +336,13 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-035 | P1 | App/workflow field-contract defect | Whop pause/resume live emails | Bare trigger variables render as `[object Object]`; lifecycle fields were not refreshed before delivery | Code fix `f025190` pushed; GHL templates unchanged | Owner-approved template edit plus fresh pause/resume email proof |
 | FIND-036 | P1 | Stripe money integrity defect | First live finite-plan recurring charge | One-hour-early `cancel_at` prorated final `$1.00` installment to `$0.96` | Fix `a7623c7` deployed | Fresh two-payment daily plan must settle full final amount with no extra invoice |
 | FIND-037 | P1 | Multi-enrollment workflow integrity defect | Stripe recurring receipt | Receipt named newer Whop enrollment instead of exact Stripe program | Fix `f025190` pushed | Older-enrollment recurring receipt must name exact program |
-| FIND-038 | P2 | Defense UI state defect | Live Visa 13.1 compilation | Detail stayed Pending after backend completed | Local fix verified | Deploy and compile/reopen without navigation |
-| FIND-039 | P1 | Transaction-scope integrity defect | Live Visa 13.1 compilation | Enrollment-first branch dropped selected processor transaction/date | Local fix verified | Regenerate exact packet and inspect frozen scope |
-| FIND-040 | P1 | Evidence isolation defect | Live Visa 13.1 compilation | Same-day sibling-program communications entered exact packet | Local fix verified | Regenerate and confirm only selected enrollment evidence |
-| FIND-041 | P1 | Defense factual-accuracy defect | Live Visa 13.1 compilation | `installments` was described as paid in full | Local fix verified | Regenerate and inspect offer/payment language |
-| FIND-042 | P1 | Defense readiness defect | Live Visa 13.1 compilation | Generic cancellation note counted as delivery and permitted ready | Local fix verified | Regenerate; expect needs_review and no new ready trigger |
-| FIND-043 | P1 | Defense evidence completeness defect | Defense evidence-path audit | Stored pulse responses were never loaded into defense exhibits | Local fix verified | Compile an enrollment with a pulse and confirm engagement-only exhibit inclusion |
+| FIND-038 | P2 | Defense UI state defect | Live Visa 13.1 compilation | Detail stayed Pending after backend completed | Fix `9aa59d9` deployed | Pass: Version 2 refreshed in place |
+| FIND-039 | P1 | Transaction-scope integrity defect | Live Visa 13.1 compilation | Enrollment-first branch dropped selected processor transaction/date | Fix `9aa59d9` deployed | Pass: exact PI/date retained |
+| FIND-040 | P1 | Evidence isolation defect | Live Visa 13.1 compilation | Same-day sibling-program communications entered exact packet | Fix `9aa59d9` deployed | Pass: four exact-enrollment exhibits only |
+| FIND-041 | P1 | Defense factual-accuracy defect | Live Visa 13.1 compilation | `installments` was described as paid in full | Fix `9aa59d9` deployed | Pass: two-installment terms and add-on accurate |
+| FIND-042 | P1 | Defense readiness defect | Live Visa 13.1 compilation | Generic cancellation note counted as delivery and permitted ready | Fix `9aa59d9` deployed | Pass: needs_review; no second ready trigger |
+| FIND-043 | P1 | Defense evidence completeness defect | Defense evidence-path audit | Stored pulse responses were never loaded into defense exhibits | Fix `4e47d50` deployed | Compile an enrollment with a pulse and confirm engagement-only exhibit inclusion |
+| FIND-044 | P1 | Dashboard reliability/evidence side-effect defect | Railway/browser correlation | GET at-risk took up to 85.1s and ran GHL/evidence mutations | Local fix verified | Deploy, time dashboard request, and prove no write side effects |
 
 ## Screenshot Rules
 

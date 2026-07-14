@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Dashboard at-risk reads no longer run the side-effecting disengagement action, update GHL fields, or create evidence simply because a merchant opened the page. Risk sources load concurrently with bounded contact concurrency; explicit administrative checks retain the write path.
 - Enrollment-scoped pulse responses now appear in defense exhibits as client-engagement evidence, including the client's score, feedback, and follow-up request. Pulse responses remain communication evidence and cannot alone satisfy a service-delivery readiness gate.
 - Defense compilation now preserves the selected payment's processor ID and transaction date when the UI also supplies its enrollment, and rejects conflicting transaction/enrollment/offer combinations instead of blending evidence.
 - Exact-enrollment defense packets no longer admit contact-wide, date-only, offer-only, or offer-name-only activity. Inferred legacy scope remains explicitly reviewable, while repeated enrollments in the same offer stay isolated.
@@ -42,13 +43,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Background packet generation logs no longer include signed private-file URLs.
 
 ### Live certification
+- Regenerated defense packet `13971614-ca2d-4107-931e-41be587a5446` passed exact transaction metadata, installment language, sibling-enrollment isolation, four-exhibit parity, and `needs_review` gating without firing a second ready workflow.
 - A full $1.50 Whop refund completed through ScaleSafe and produced one separate refund row; live review identified and repaired the original row's stale Refund action before any duplicate attempt was made.
 - A fresh $1.50 Whop QMS payment stayed pending until consent, generated its private packet after signature, omitted installment terms for PIF, and produced a verified exact-enrollment consent/payment chain with the expected merchant-entered-payment IP gap.
 - A new $1.00 Stripe paid-in-full enrollment produced one settled `sale` row, a correctly keyed PaymentIntent/Charge vault row, enrollment-scoped consent and payment evidence, a private enrollment packet, daily pulse scheduling, and successful receipt and welcome deliveries.
 - The post-fix Railway deployment emitted no signed storage URL or token during packet generation.
 
 ### Verified
-- Full test suite: 147 suites / 1,279 tests; focused defense-scope suites: 96 tests; focused Whop lifecycle suites: 21 tests.
+- Full test suite: 149 suites / 1,283 tests; focused defense-scope suites: 96 tests; focused Whop lifecycle suites: 21 tests.
 - TypeScript typecheck, production build, and production dependency audit pass.
 
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)
