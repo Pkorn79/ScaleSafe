@@ -18,8 +18,9 @@ const Stripe = require('stripe');
 /**
  * Compute a subscription cancel_at (epoch seconds) that yields exactly `totalPayments`
  * calendar cycles. Uses calendar arithmetic (real month lengths / leap years) rather than a
- * fixed 30-day approximation, then backs off 1h so cancel_at lands between the Nth and (N+1)th
- * billing anchors (bug hunt #16). Returns undefined for open-ended subscriptions.
+ * fixed 30-day approximation. The cancellation must land exactly on the full-cycle boundary;
+ * an earlier timestamp makes Stripe prorate the final installment. Returns undefined for
+ * open-ended subscriptions.
  */
 export function stripeCancelAtSeconds(startMs: number, interval: string, totalPayments: number): number | undefined {
   if (!(totalPayments > 0)) return undefined;
@@ -33,7 +34,7 @@ export function stripeCancelAtSeconds(startMs: number, interval: string, totalPa
     case 'monthly':
     default: d.setUTCMonth(d.getUTCMonth() + totalPayments); break;
   }
-  return Math.floor(d.getTime() / 1000) - 3600;
+  return Math.floor(d.getTime() / 1000);
 }
 
 export class StripeClient implements ProcessorInterface {
