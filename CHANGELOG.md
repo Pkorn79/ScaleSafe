@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed
+- Defense compilation now preserves the selected payment's processor ID and transaction date when the UI also supplies its enrollment, and rejects conflicting transaction/enrollment/offer combinations instead of blending evidence.
+- Exact-enrollment defense packets no longer admit contact-wide, date-only, offer-only, or offer-name-only activity. Inferred legacy scope remains explicitly reviewable, while repeated enrollments in the same offer stay isolated.
+- The selected disputed payment is now a first-class exhibit with its processor references, amount, status, installment sequence, and order-bump/upsell line items.
+- Defense offer context recognizes the live `installments` value and no longer describes installment purchases as paid in full.
+- Generic lifecycle/custom-event notes no longer count as service-delivery evidence unless they carry an approved delivery, access, deliverable, or milestone proof role.
+- Pending defense detail pages poll compilation status and replace the stale `Pending` screen automatically when the asynchronous letter and bundle finish.
 - Recurring-payment and subscription lifecycle workflows now refresh the exact enrollment's program and payment fields before firing. If lifecycle fields cannot be synchronized, ScaleSafe suppresses the customer notification instead of sending a message for the wrong program.
 - Finite Stripe installment plans now cancel exactly on the full billing-cycle boundary. The previous one-hour early `cancel_at` prorated the final installment (a live `$1.00` daily installment settled for `$0.96`).
 - Whop subscription actions now validate the exact membership before mutation and confirm the resulting Whop state before ScaleSafe writes enrollment, evidence, or workflow state. Completed and non-recurring memberships are rejected instead of producing false local pause/resume/cancel records.
@@ -41,7 +47,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - The post-fix Railway deployment emitted no signed storage URL or token during packet generation.
 
 ### Verified
-- Full test suite: 147 suites / 1,263 tests; focused Whop lifecycle suites: 21 tests.
+- Full test suite: 147 suites / 1,279 tests; focused defense-scope suites: 96 tests; focused Whop lifecycle suites: 21 tests.
 - TypeScript typecheck, production build, and production dependency audit pass.
 
 ## Unreleased - Live walkthrough reliability fixes (2026-07-12)

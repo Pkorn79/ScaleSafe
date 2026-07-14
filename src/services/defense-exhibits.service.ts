@@ -24,6 +24,7 @@ import { cleanCommunicationBody, looksLikeUnrenderedTemplate } from '../utils/co
  */
 
 export type ExhibitSource =
+  | 'payment_event'
   | 'enrollment_packet_pdf' // loaded from private storage with legacy bucket fallback
   | 'evidence_consent'
   | 'evidence_sessions'
@@ -198,8 +199,18 @@ export function scopedRows<T extends Record<string, any>>(
     if (metaEnrollmentId) return false;
     const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id
       || raw.offerId || raw.offer_id;
-    if (offerId && (row.offer_id === offerId || metaOfferId === offerId)) return true;
+    if (offerId && (row.offer_id === offerId || metaOfferId === offerId)) {
+      // Offer-only identity is not exact when a client can enroll in the same
+      // offer more than once. It is usable only for a clearly labelled inferred
+      // scope; exact packets require an enrollment identifier.
+      return scopeConfidence === 'inferred';
+    }
     if (row.offer_id || metaOfferId) return false;
+    // Exact transaction scope must never promote a contact-wide row solely
+    // because its timestamp falls inside the program window. That is how sibling
+    // enrollments on the same day leaked into a bank-facing packet. Legacy rows
+    // remain usable when they carry enrollment/offer identifiers in metadata.
+    if (scopeConfidence === 'exact' || scopeConfidence === undefined) return false;
     if (!windowStart || !windowEnd) return true;
     const value = row[dateField] || row.created_at;
     if (!value) return false;
@@ -213,6 +224,7 @@ export function scopedRows<T extends Record<string, any>>(
 // its earliest-matching key; unmatched exhibits keep build order after all
 // matched ones. Sort is stable, so within a rank the original chronology holds.
 const SOURCE_PRIORITY_KEYS: Record<string, string[]> = {
+  payment_event: ['payment_history'],
   enrollment_packet_pdf: ['consent', 'enrollment_packet', 'offer_terms'],
   evidence_consent: ['consent', 'ip_device_match'],
   evidence_sessions: ['sessions'],
@@ -323,8 +335,10 @@ export const defenseExhibitsService = {
     contactId: string,
     opts?: {
       enrollmentId?: string;
+      paymentEventId?: string | null;
       scopeConfidence?: string;
       offerId?: string | null;
+      offerName?: string | null;
       enrollmentStart?: string | null;
       enrollmentEnd?: string | null;
       /** Ordered persuasiveness keys from reason_code_strategies.evidence_priorities
@@ -356,6 +370,7 @@ export const defenseExhibitsService = {
     // Resolve the target enrollment for scoping (when available). Prefer values the
     // caller already resolved (dispute-scope) to avoid a redundant lookup.
     let scopeOfferId: string | null = opts?.offerId ?? null;
+    let scopeOfferName: string | null = opts?.offerName?.trim() || null;
     let scopeWindowStart: Date | null = null;
     let scopeWindowEnd: Date | null = null;
     if (opts?.enrollmentId && (opts.enrollmentStart !== undefined || opts.enrollmentEnd !== undefined || opts.offerId !== undefined)) {
@@ -388,6 +403,18 @@ export const defenseExhibitsService = {
           const now = new Date();
           if (scopeWindowEnd.getTime() > now.getTime()) scopeWindowEnd = now;
         }
+      } catch {}
+    }
+
+    if (!scopeOfferName && scopeOfferId) {
+      try {
+        const { data: offer } = await supabase
+          .from('offers_mirror')
+          .select('offer_name')
+          .eq('id', scopeOfferId)
+          .eq('location_id', locationId)
+          .maybeSingle();
+        scopeOfferName = offer?.offer_name?.trim() || null;
       } catch {}
     }
 
@@ -695,14 +722,28 @@ export const defenseExhibitsService = {
         .eq('contact_id', contactId)
         .order('comm_date', { ascending: true });
       if (commsErr) recordSourceError('evidence_communication', commsErr);
-      const scopedComms = scopedRows((comms || []) as any[], opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence);
+      const targetOfferText = String(scopeOfferName || '').trim().toLowerCase();
+      const commCandidates = ((comms || []) as any[]).map((row) => {
+        if (scopeConfidence !== 'inferred' || !scopeOfferId || !targetOfferText || row.enrollment_id || row.offer_id) return row;
+        const meta = row.defense_metadata || {};
+        const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id;
+        if (metaOfferId) return row;
+        const searchable = `${row.summary || ''} ${row.body_preview || ''} ${row.defense_summary || ''}`.toLowerCase();
+        return searchable.includes(targetOfferText)
+          ? { ...row, offer_id: scopeOfferId, _scope_offer_name_match: true }
+          : row;
+      });
+      const scopedComms = scopedRows(commCandidates, opts?.enrollmentId, 'comm_date', scopeWindowStart, scopeWindowEnd, scopeOfferId, scopeConfidence);
 
       const isDirectlyLinked = (row: any): boolean => {
         if (!opts?.enrollmentId) return false;
         if (row.enrollment_id === opts.enrollmentId) return true;
         const meta = row.defense_metadata || {};
         const metaEnr = meta.enrollmentId || meta.enrollment_id || meta.service?.enrollmentId || meta.service?.enrollment_id;
-        return metaEnr === opts.enrollmentId;
+        if (metaEnr === opts.enrollmentId) return true;
+        if (row._scope_offer_name_match) return false;
+        const metaOfferId = meta.offerId || meta.offer_id || meta.service?.offerId || meta.service?.offer_id;
+        return Boolean(scopeOfferId && (row.offer_id === scopeOfferId || metaOfferId === scopeOfferId));
       };
 
       const linked = scopedComms.filter(isDirectlyLinked);
@@ -746,6 +787,63 @@ export const defenseExhibitsService = {
     } catch (err) { recordSourceError('evidence_communication', err); }
 
     // ── 5. Payments: enrollment + recurring confirmations (Prior Undisputed Transactions) ──
+    if (opts?.paymentEventId) {
+      try {
+        const { data: payment, error: paymentErr } = await supabase
+          .from('payment_events')
+          .select('id, contact_id, enrollment_id, offer_id, event_type, amount, currency, payment_status, processor, processor_transaction_id, processor_charge_id, payment_number, payments_total, installment_number, total_installments, line_items, settled_at, recorded_at, created_at, source')
+          .eq('id', opts.paymentEventId)
+          .eq('location_id', locationId)
+          .maybeSingle();
+        if (paymentErr) recordSourceError('payment_events', paymentErr);
+        if (!payment && !paymentErr) {
+          recordSourceError('payment_events', new Error('The selected payment event could not be loaded for this client and location.'));
+        }
+        const contactMatches = !payment?.contact_id || payment.contact_id === contactId;
+        const enrollmentMatches = !payment?.enrollment_id || payment.enrollment_id === opts.enrollmentId;
+        const hasVerifiedLink = payment?.contact_id === contactId
+          || Boolean(opts.enrollmentId && payment?.enrollment_id === opts.enrollmentId);
+        if (payment && (!contactMatches || !enrollmentMatches || !hasVerifiedLink)) {
+          recordSourceError('payment_events', new Error('The selected payment event does not match the scoped client and enrollment.'));
+        } else if (payment) {
+          const lineItems = Array.isArray(payment.line_items) ? payment.line_items : [];
+          const lineItemText = lineItems.map((item: any) => {
+            const amount = Number.isFinite(Number(item?.amount))
+              ? Number(item.amount)
+              : Number(item?.amountCents || 0) / 100;
+            return `${item?.label || item?.type || 'Line item'} ($${amount.toFixed(2)})`;
+          }).join('; ');
+          const sequence = payment.payment_number || payment.installment_number;
+          const total = payment.payments_total || payment.total_installments;
+          const processor = String(payment.processor || 'processor').toUpperCase();
+          const transactionId = payment.processor_transaction_id || payment.processor_charge_id || 'not recorded';
+          const occurredAt = payment.settled_at || payment.recorded_at || payment.created_at || null;
+          let summary = `${processor} recorded the disputed $${Number(payment.amount || 0).toFixed(2)} ${String(payment.event_type || 'payment').replace(/_/g, ' ')} on ${fmtDate(occurredAt)}. Transaction ID: ${transactionId}. Status: ${payment.payment_status || 'recorded'}.`;
+          if (sequence) summary += ` Payment ${sequence}${total ? ` of ${total}` : ''}.`;
+          if (lineItemText) summary += ` Charge components: ${lineItemText}.`;
+          exhibits.push({
+            letter: indexToLetter(nextIdx++),
+            name: 'Disputed Transaction Record',
+            category: 'payments',
+            source: 'payment_event',
+            ref: payment.id,
+            occurredAt,
+            summary,
+            meta: {
+              processor: payment.processor || null,
+              processorTransactionId: payment.processor_transaction_id || null,
+              processorChargeId: payment.processor_charge_id || null,
+              amount: payment.amount,
+              currency: payment.currency || 'USD',
+              status: payment.payment_status || null,
+              lineItems,
+              source: payment.source || null,
+            },
+          });
+        }
+      } catch (err) { recordSourceError('payment_events', err); }
+    }
+
     try {
       const { data: invoices, error: invoicesErr } = await supabase
         .from('evidence_invoices')
@@ -884,6 +982,13 @@ export const defenseExhibitsService = {
             || payload.readiness_score !== undefined
             || payload.milestone_threshold !== undefined)) {
           continue;
+        }
+        if (type === 'custom_event') {
+          const proofRole = String((e as any).proof_role || payload.proof_role || '').trim().toLowerCase();
+          const approved = payload.approved_for_defense === true
+            || payload.metadata?.approved_for_defense === true
+            || ['service_delivery', 'service_access', 'deliverable', 'milestone'].includes(proofRole);
+          if (!approved) continue;
         }
         const summary = getDefenseSummary(e) || JSON.stringify((e as any).data || {}).slice(0, 200);
         exhibits.push({

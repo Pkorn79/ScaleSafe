@@ -51,6 +51,7 @@ const scopeOpts = {
   enrollmentId: 'enr_1',
   scopeConfidence: 'exact',
   offerId: 'offer_1',
+  offerName: 'Program One',
   enrollmentStart: '2026-05-01T00:00:00Z',
   enrollmentEnd: null,
 };
@@ -177,6 +178,7 @@ describe('noise filtering', () => {
         {
           id: 'ev_real', evidence_type: 'custom_event', enrollment_id: 'enr_1',
           created_at: '2026-06-04T10:00:00Z',
+          proof_role: 'service_delivery',
           data: { event_type: 'portal_login', platform: 'client portal' },
         },
       ],
@@ -188,6 +190,71 @@ describe('noise filtering', () => {
     const refs = list.exhibits.map((e) => e.ref);
     expect(refs).not.toContain('ev_score');
     expect(refs).toContain('ev_real');
+  });
+
+  test('exact scope excludes sibling, date-only, and offer-name-only communications', async () => {
+    mockTableResults['evidence_communication'] = {
+      data: [
+        { id: 'comm_direct', enrollment_id: 'enr_1', comm_type: 'Email', direction: 'outbound', comm_date: '2026-05-02T00:00:00Z', body_preview: 'Welcome' },
+        { id: 'comm_named', enrollment_id: null, comm_type: 'Email', direction: 'outbound', comm_date: '2026-05-03T00:00:00Z', body_preview: 'Welcome to Program One' },
+        { id: 'comm_sibling', enrollment_id: 'enr_other', comm_type: 'Email', direction: 'outbound', comm_date: '2026-05-03T00:00:00Z', body_preview: 'Welcome to Other Program' },
+        { id: 'comm_unlinked_other', enrollment_id: null, comm_type: 'Email', direction: 'outbound', comm_date: '2026-05-04T00:00:00Z', body_preview: 'Welcome to Other Program' },
+      ],
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', scopeOpts);
+    const refs = list.exhibits.filter((e) => e.source === 'evidence_communication').map((e) => e.ref);
+
+    expect(refs).toEqual(['comm_direct']);
+  });
+
+  test('selected payment event becomes a payment exhibit with transaction id and line items', async () => {
+    mockTableResults['payment_events'] = {
+      data: {
+        id: 'pe_1', enrollment_id: 'enr_1', offer_id: 'offer_1', event_type: 'sale',
+        amount: 2, currency: 'USD', payment_status: 'succeeded', processor: 'stripe',
+        processor_transaction_id: 'pi_exact', processor_charge_id: 'ch_exact',
+        created_at: '2026-07-13T17:19:57Z', source: 'checkout',
+        line_items: [
+          { type: 'base_offer', label: 'First installment', amount: 1 },
+          { type: 'order_bump', label: 'Certification Add-on', amountCents: 100 },
+        ],
+      },
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', {
+      ...scopeOpts,
+      paymentEventId: 'pe_1',
+    });
+    const payment = list.exhibits.find((e) => e.source === 'payment_event');
+
+    expect(payment?.category).toBe('payments');
+    expect(payment?.summary).toContain('pi_exact');
+    expect(payment?.summary).toContain('First installment ($1.00)');
+    expect(payment?.summary).toContain('Certification Add-on ($1.00)');
+  });
+
+  test('selected payment event from another contact is never emitted as an exhibit', async () => {
+    mockTableResults['payment_events'] = {
+      data: {
+        id: 'pe_other', contact_id: 'c_other', enrollment_id: 'enr_1', offer_id: 'offer_1',
+        event_type: 'sale', amount: 20, processor: 'stripe', processor_transaction_id: 'pi_other',
+        created_at: '2026-07-13T17:19:57Z',
+      },
+      error: null,
+    };
+
+    const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', {
+      ...scopeOpts,
+      paymentEventId: 'pe_other',
+    });
+
+    expect(list.exhibits.some((e) => e.source === 'payment_event')).toBe(false);
+    expect(list.sourceErrors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'payment_events', message: expect.stringContaining('does not match') }),
+    ]));
   });
 
   test('signed packet leads and unlinked comms sort last for 4855-style priorities (no consent key)', async () => {
@@ -204,13 +271,14 @@ describe('noise filtering', () => {
     mockTableResults['evidence_communication'] = {
       data: [
         // Unlinked workflow email inside the service window — kept, but never leading
-        { id: 'comm_u', enrollment_id: null, comm_type: 'Email', direction: 'outbound', comm_date: '2026-06-07T00:48:45Z', body_preview: 'Payment reminder' },
+        { id: 'comm_u', enrollment_id: null, comm_type: 'Email', direction: 'outbound', comm_date: '2026-06-07T00:48:45Z', body_preview: 'Program One payment reminder' },
       ],
       error: null,
     };
 
     const list = await defenseExhibitsService.buildExhibitList('loc_1', 'c_1', {
       ...scopeOpts,
+      scopeConfidence: 'inferred',
       // Mastercard 4855 priorities — note: no 'consent' key
       evidencePriorities: ['sessions', 'modules', 'milestones', 'service_access', 'signoffs', 'communication'],
     });

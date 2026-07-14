@@ -514,6 +514,21 @@ describe('Defense Service - Merchant voice & letter structure', () => {
 });
 
 describe('Defense Service - What was sold (offer context)', () => {
+  test('live plural installments value is described as a plan, never paid in full', async () => {
+    (offerRepository.findById as jest.Mock).mockResolvedValueOnce({
+      ...offerRow,
+      payment_type: 'installments',
+      price: 2,
+      installment_amount: 1,
+      num_payments: 2,
+    });
+
+    const context = await defenseService.getOfferContext('loc_1', 'offer_1');
+
+    expect(context?.priceText).toBe('$2.00 total (2 daily payments of $1.00)');
+    expect(context?.priceText).not.toContain('paid in full');
+  });
+
   test('system prompt instructs offer-context usage per dispute type and evidence variety', () => {
     const prompt = defenseService.buildSystemPrompt('services_not_provided', null, null);
     expect(prompt).toContain('OFFER CONTEXT — USE IT');

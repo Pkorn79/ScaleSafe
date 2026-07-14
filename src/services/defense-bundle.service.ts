@@ -28,8 +28,10 @@ export const defenseBundleService = {
     contactId: string,
     opts?: {
       enrollmentId?: string | null;
+      paymentEventId?: string | null;
       scopeConfidence?: string;
       offerId?: string | null;
+      offerName?: string | null;
       enrollmentStart?: string | null;
       enrollmentEnd?: string | null;
     },
@@ -64,8 +66,10 @@ export const defenseBundleService = {
     const enrollmentId = opts?.enrollmentId || packet.enrollment_id || undefined;
     const exhibitList = await defenseExhibitsService.buildExhibitList(locationId, contactId, {
       enrollmentId,
+      paymentEventId: opts?.paymentEventId ?? packet.payment_event_id ?? undefined,
       scopeConfidence: opts?.scopeConfidence,
       offerId: opts?.offerId ?? (packet as any).offer_id ?? undefined,
+      offerName: opts?.offerName ?? (packet as any).evidence_snapshot?.scope?.offerName ?? undefined,
       enrollmentStart: opts?.enrollmentStart ?? undefined,
       enrollmentEnd: opts?.enrollmentEnd ?? undefined,
       evidencePriorities,
@@ -104,6 +108,7 @@ export const defenseBundleService = {
     let exhibitsPdfBuffer: Buffer | null = null;
     if (exhibitList.exhibits.length > 0) {
       const timelineRows = buildTimelineRows(exhibitList.exhibits, {
+        transactionDate: (packet as any).evidence_snapshot?.scope?.transactionDate || null,
         disputeDate: packet.chargeback_date || null,
       });
       const exhibitsHtml = buildExhibitsSummaryHtml(exhibitList.exhibits, merchant.business_name || '', timelineRows);

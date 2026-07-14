@@ -348,16 +348,79 @@ No setting, workflow, processor, payment, enrollment, or external system was cha
 - Severity recommendation: P1 processor-state integrity.
 - Local repair: retrieve and validate the exact membership before action, reject ended or non-recurring memberships, confirm Whop's resulting state before updating ScaleSafe, and persist Whop's verified renewal/cancellation timestamp.
 - Required regression: a valid recurring membership pauses, resumes with its renewal date restored, and cancels only after Whop confirms each state. A completed one-time membership performs no action and creates no local state, evidence, or workflow side effect.
+- Live retest: deploy `0235e24` passed. Membership `mem_8d7yjd21BXcBPy` paused only after Whop reported `payment_collection_paused = true`, resumed with the verified July 21 renewal date restored, and cancelled only after Whop reported `canceled`. Historical completed membership `mem_9E5jJNXTlIXWOT` was rejected without changing ScaleSafe state, evidence, or workflow counts.
 
-### FIND-035 - GHL lifecycle emails render the program as `[object Object]`
+### FIND-035 - GHL lifecycle emails render event variables as `[object Object]`
 
 - Area: GHL subscription paused/resumed workflow templates.
 - Live proof: the certification client received pause and resume emails naming the subscription as `[object Object]`.
-- App-side proof: the exact trigger deliveries contain plain-string `offer_name`, `offerName`, `program_name`, and `programName` values, and the contact's ScaleSafe offer-name custom fields also contain the correct plain-string program name.
+- App-side proof: the exact trigger deliveries contain plain-string `offer_name`, `offerName`, `program_name`, and `programName` values. Read-only GHL inspection confirmed the published email actions use bare Marketplace custom-trigger variables such as `{{offer_name}}`, `{{next_billing_date}}`, and `{{payments_remaining}}`; those variables render as objects in this trigger configuration.
 - Impact: customer-facing lifecycle notices are confusing and cannot serve as clean communication evidence.
-- Classification: P1 GHL workflow configuration defect, pending read-only inspection of the exact merge field used by each email action. No workflow setting has been changed.
-- Required remediation: replace the object-valued merge field with the exact text custom field or supported trigger text field, then prove pause and resume emails name the correct enrollment when the contact has multiple programs.
+- Classification: P1 combined app/workflow contract defect. The app must refresh the exact enrollment's contact fields before firing, and the GHL actions must use those contact fields. No GHL workflow setting has been changed yet.
+- Code repair: commit `f025190` writes the exact enrollment's program, payment count, status, and next billing date before pause/resume delivery; it suppresses the customer trigger if the prerequisite field write fails.
+- Required GHL repair: use `{{contact.offer_program_name}}`, `{{contact.ss_next_payment_date}}`, and `{{contact.ss_payments_remaining}}`; remove the literal pause-template conditional instruction and use the offer business/support contact fields for signoff copy.
 - Required regression: one pause and one resume produce the correct program name, no `[object Object]`, one workflow execution each, and enrollment-linked communication evidence.
+
+### FIND-036 - Stripe cancels finite plans early and prorates the final installment
+
+- Area: Stripe finite installment scheduling and money integrity.
+- Live proof: offer `CERT 2026-07-13 Stripe Plan` was configured for two `$1.00` daily payments. Stripe stored a `$1.00` recurring price but settled the final invoice for `$0.96` because the subscription period ended at 11:00 PM instead of midnight.
+- Processor proof: the Stripe invoice line was marked as proration and covered a 23-hour period. The subscription `cancel_at` was exactly one hour before the full-cycle boundary.
+- Code proof: `stripeCancelAtSeconds()` intentionally subtracted 3,600 seconds from every finite-plan cancellation timestamp, and its unit tests required that behavior.
+- Impact: daily, weekly, monthly, quarterly, and annual finite plans can undercharge their final installment. The error grows with the installment amount and duration of the shortened period.
+- Severity recommendation: P1 money integrity.
+- Repair: commit `a7623c7` removes the one-hour offset and tests exact calendar boundaries for every supported cadence.
+- Required regression: a new two-payment daily Stripe plan charges the configured initial and recurring amounts exactly once each; the final invoice is not prorated and no third invoice is created.
+
+### FIND-037 - Recurring receipt names a different active enrollment
+
+- Area: GHL payment receipts for contacts with multiple enrollments.
+- Live proof: Stripe recurring transaction `ch_3TsujNQ4vjJOpWaV2G7by0IE` belonged to `CERT 2026-07-13 Stripe Plan`, and the ScaleSafe trigger payload named that offer. The received GHL email instead said `CERT 2026-07-13 Whop Choice`, a newer enrollment on the same contact.
+- Code proof: recurring payment handling updated payment counters but did not refresh `contact.offer_program_name`; the GHL receipt action therefore read the last enrollment to overwrite that contact field.
+- Impact: a valid receipt can describe the wrong purchase, confuse the customer, and become misleading communication evidence.
+- Severity recommendation: P1 multi-enrollment workflow integrity.
+- Repair: commit `f025190` refreshes the exact recurring enrollment's offer/business/support and payment fields before firing `ss_payment_received`.
+- Required regression: a recurring payment for an older enrollment sends a receipt naming that enrollment even when the same contact has newer active programs.
+
+### FIND-038 - Defense detail remains pending after compilation completes
+
+- Area: Defense compilation UI.
+- Live proof: packet `13971614-ca2d-4107-931e-41be587a5446` completed in Railway, generated its PDF, and fired `ss_defense_ready`, while the open detail view remained `Pending` until the merchant navigated away and reopened it.
+- Impact: merchants can wait indefinitely or retry a compilation that already succeeded.
+- Repair: poll only while status is `pending` or `processing`, stop after completion/unmount, and show a bounded long-running message after five minutes.
+- Required regression: an asynchronously compiled packet updates in place without navigation or duplicate compilation.
+
+### FIND-039 - Supplying the enrollment drops selected transaction metadata
+
+- Area: Dispute scope resolution.
+- Live proof: the packet selected payment event `e0612e07-aedc-46ab-adb4-ed5b8d810903`, but its frozen scope had null processor, processor transaction ID, and transaction date because the resolver returned from the enrollment branch first.
+- Impact: the letter and timeline omit the exact disputed transaction identifiers even though the merchant selected the transaction.
+- Repair: resolve the payment first whenever a payment ID exists, verify its tenant/contact/enrollment/offer relationship, and preserve its processor metadata.
+- Required regression: matching payment plus enrollment retains transaction metadata; mismatched enrollment or offer fails closed.
+
+### FIND-040 - Exact packet includes sibling-enrollment communications
+
+- Area: Enrollment-scoped exhibit assembly.
+- Live proof: the Stripe Plan packet included same-day Stripe PIF and Whop Choice emails from sibling enrollments because date-window and offer-name fallbacks were accepted under exact scope.
+- Impact: bank-facing evidence can describe purchases unrelated to the disputed transaction, including repeat purchases of the same offer.
+- Repair: exact scope requires an enrollment identifier; offer/date/name inference is permitted only in an explicitly inferred packet that requires review.
+- Required regression: two programs and two enrollments of the same offer on one contact produce exhibits only for the selected enrollment.
+
+### FIND-041 - Plural installment value is described as paid in full
+
+- Area: Defense offer context.
+- Live proof: the selected offer stores `payment_type = installments`, while the context builder recognized only singular `installment` and generated paid-in-full language.
+- Impact: the defense letter materially misstates the agreement and transaction structure.
+- Repair: normalize both supported installment values before generating price/payment language.
+- Required regression: plural `installments` produces the configured count, cadence, and installment amount and never says paid in full.
+
+### FIND-042 - Generic cancellation note passes the service-delivery gate
+
+- Area: Defense readiness and unified evidence.
+- Live proof: no milestone or signoff existed for the selected enrollment, but an unlinked GHL cancellation note entered as a generic custom event, was described as delivery, and helped a Visa 13.1 packet reach `complete` and fire `ss_defense_ready`.
+- Impact: ScaleSafe can mark a services-not-provided defense ready without actual delivery evidence, and AI may turn an operational note into a false milestone claim.
+- Repair: generic custom events are excluded unless explicitly approved with a delivery/access/deliverable/milestone proof role; the selected payment is included separately as payment evidence.
+- Required regression: a 13.1 packet with payment/consent but no delivery proof lands on `needs_review` and does not fire ready.
 
 ## Operations Access
 

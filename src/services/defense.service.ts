@@ -278,8 +278,10 @@ export const defenseService = {
     // 2. Build the single-source-of-truth exhibit list, scoped to the resolved enrollment.
     const exhibitScope = {
       enrollmentId: scope.enrollmentId || undefined,
+      paymentEventId: scope.paymentEventId,
       scopeConfidence: scope.scopeConfidence,
       offerId: scope.offerId,
+      offerName: scope.offerName,
       enrollmentStart: scope.enrollmentStart,
       enrollmentEnd: scope.enrollmentEnd,
       evidencePriorities,
@@ -616,7 +618,8 @@ export const defenseService = {
 
       let priceText: string | null = null;
       const total = Number(offer.price || 0);
-      if (offer.payment_type === 'installment' && offer.installment_amount) {
+      const paymentType = String(offer.payment_type || '').trim().toLowerCase();
+      if (['installment', 'installments'].includes(paymentType) && offer.installment_amount) {
         const freq = String(offer.installment_frequency || 'monthly').replace(/_/g, ' ');
         priceText = `${total ? `$${total.toFixed(2)} total` : 'Installment plan'} (${offer.num_payments || '?'} ${freq} payments of $${Number(offer.installment_amount).toFixed(2)})`;
       } else if (total) {
@@ -1570,8 +1573,10 @@ LETTER STRUCTURE:
     const template = await defenseRepository.getDefenseTemplate(category);
     const exhibitScope = {
       enrollmentId: scope.enrollmentId || undefined,
+      paymentEventId: scope.paymentEventId,
       scopeConfidence: scope.scopeConfidence,
       offerId: scope.offerId,
+      offerName: scope.offerName,
       enrollmentStart: scope.enrollmentStart,
       enrollmentEnd: scope.enrollmentEnd,
       evidencePriorities: normalizeEvidencePriorities(strategy?.evidence_priorities),

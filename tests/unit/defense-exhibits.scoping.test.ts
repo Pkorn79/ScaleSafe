@@ -44,19 +44,36 @@ describe('scopedRows fail-safe', () => {
     expect(result.map((r) => r.id)).toEqual(['legacy_match', 'legacy_snake']);
   });
 
-  test('unlinked rows within the enrollment window are included; outside are excluded', () => {
+  test('exact scope rejects date-only rows even inside the enrollment window', () => {
     const windowStart = new Date('2026-01-01');
     const windowEnd = new Date('2026-01-31');
     const within = scopedRows(
       [{ id: 'x', enrollment_id: null, created_at: '2026-01-15' }],
       'enr_target', 'created_at', windowStart, windowEnd, null, 'exact',
     );
+    expect(within).toEqual([]);
+  });
+
+  test('inferred scope may use the enrollment window for otherwise unlinked legacy rows', () => {
+    const windowStart = new Date('2026-01-01');
+    const windowEnd = new Date('2026-01-31');
+    const within = scopedRows(
+      [{ id: 'x', enrollment_id: null, created_at: '2026-01-15' }],
+      'enr_target', 'created_at', windowStart, windowEnd, null, 'inferred',
+    );
     expect(within.map((r) => r.id)).toEqual(['x']);
 
     const outside = scopedRows(
       [{ id: 'y', enrollment_id: null, created_at: '2026-05-15' }],
-      'enr_target', 'created_at', windowStart, windowEnd, null, 'exact',
+      'enr_target', 'created_at', windowStart, windowEnd, null, 'inferred',
     );
     expect(outside).toEqual([]);
+  });
+
+  test('offer-only rows are excluded from exact scope but allowed for inferred scope', () => {
+    const rows = [{ id: 'offer_only', enrollment_id: null, offer_id: 'offer_1', created_at: '2026-01-15' }];
+
+    expect(scopedRows(rows, 'enr_target', 'created_at', null, null, 'offer_1', 'exact')).toEqual([]);
+    expect(scopedRows(rows, 'enr_target', 'created_at', null, null, 'offer_1', 'inferred').map((r) => r.id)).toEqual(['offer_only']);
   });
 });

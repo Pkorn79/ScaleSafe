@@ -105,6 +105,9 @@
 
       <!-- Tab bodies -->
       <section class="tab-body">
+        <div v-if="isCompiling" class="compilation-callout">
+          Compiling the defense letter and evidence bundle. This page will update automatically.
+        </div>
         <LetterTab
           v-if="activeTab === 'letter'"
           :letter-text="packet.defense_letter_text || ''"
@@ -143,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import ProfileTabs, { type TabDef } from '../components/ProfileTabs.vue';
@@ -169,6 +172,10 @@ const submitting = ref(false);
 const regenerating = ref(false);
 const savingEdit = ref(false);
 const actionError = ref('');
+let compilationPollTimer: ReturnType<typeof setTimeout> | null = null;
+let compilationPollStartedAt = 0;
+const COMPILATION_POLL_MS = 2000;
+const COMPILATION_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const tabs: TabDef[] = [
   { key: 'letter',   label: 'Letter',   icon: FileText },
@@ -184,6 +191,26 @@ const isPreSubmit = computed(() => {
   // explains why review is required first.
   return ls === 'pending_submission' && ['complete', 'needs_review'].includes(packet.value?.status);
 });
+
+const isCompiling = computed(() => ['pending', 'processing'].includes(packet.value?.status));
+
+function stopCompilationPolling() {
+  if (compilationPollTimer) clearTimeout(compilationPollTimer);
+  compilationPollTimer = null;
+}
+
+function scheduleCompilationPoll() {
+  stopCompilationPolling();
+  if (!isCompiling.value) return;
+  if (Date.now() - compilationPollStartedAt >= COMPILATION_POLL_TIMEOUT_MS) {
+    actionError.value = 'Defense compilation is taking longer than expected. You can leave this page and return later.';
+    return;
+  }
+  compilationPollTimer = setTimeout(async () => {
+    await refresh();
+    scheduleCompilationPoll();
+  }, COMPILATION_POLL_MS);
+}
 
 const daysRemaining = computed(() => {
   const d = packet.value?.deadline || packet.value?.response_deadline;
@@ -341,8 +368,12 @@ watch(activeTab, (val) => {
 onMounted(async () => {
   const hash = (typeof window !== 'undefined' && window.location.hash || '').replace('#', '');
   if (tabs.some(t => t.key === hash)) activeTab.value = hash;
+  compilationPollStartedAt = Date.now();
   await refresh();
+  scheduleCompilationPoll();
 });
+
+onUnmounted(stopCompilationPolling);
 </script>
 
 <style scoped>
@@ -457,5 +488,15 @@ onMounted(async () => {
 
 .tab-body {
   padding-top: 4px;
+}
+
+.compilation-callout {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
 }
 </style>

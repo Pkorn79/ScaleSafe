@@ -75,6 +75,32 @@ async function loadEnrollment(
   }
 }
 
+async function loadPaymentEvent(
+  locationId: string,
+  contactId: string,
+  paymentEventId: string,
+): Promise<any | null> {
+  try {
+    const { data } = await getSupabase()
+      .from('payment_events')
+      .select('id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, processor_subscription_id, created_at')
+      .eq('id', paymentEventId)
+      .eq('location_id', locationId)
+      .maybeSingle();
+    if (!data) return null;
+    if (data.contact_id && data.contact_id !== contactId) return null;
+    if (!data.contact_id) {
+      if (!data.enrollment_id) return null;
+      const enrollment = await loadEnrollment(locationId, contactId, data.enrollment_id);
+      if (!enrollment) return null;
+    }
+    return data;
+  } catch (err: any) {
+    logger.warn({ err: err.message, paymentEventId }, 'dispute-scope: payment_event lookup failed');
+    return null;
+  }
+}
+
 async function resolveOfferName(locationId: string, offerId: string | null): Promise<string | null> {
   if (!offerId) return null;
   try {
@@ -127,7 +153,7 @@ export const disputeScopeService = {
     const gaps: string[] = [];
 
     // 1. Explicit enrollmentId supplied — verify ownership, enrich, treat as exact.
-    if (input.enrollmentId) {
+    if (input.enrollmentId && !input.paymentEventId) {
       const enrollment = await loadEnrollment(locationId, contactId, input.enrollmentId);
       if (enrollment) {
         return buildExactScope(locationId, enrollment, 'exact', {
@@ -146,19 +172,7 @@ export const disputeScopeService = {
 
     // 2. paymentEventId supplied — load the disputed transaction and resolve from it.
     if (input.paymentEventId) {
-      let pe: any = null;
-      try {
-        const { data } = await getSupabase()
-          .from('payment_events')
-          .select('id, enrollment_id, offer_id, processor, processor_transaction_id, processor_subscription_id, created_at')
-          .eq('id', input.paymentEventId)
-          .eq('location_id', locationId)
-          .eq('contact_id', contactId)
-          .maybeSingle();
-        pe = data || null;
-      } catch (err: any) {
-        logger.warn({ err: err.message, paymentEventId: input.paymentEventId }, 'dispute-scope: payment_event lookup failed');
-      }
+      const pe = await loadPaymentEvent(locationId, contactId, input.paymentEventId);
 
       if (pe) {
         const base = {
@@ -170,6 +184,24 @@ export const disputeScopeService = {
         };
 
         // 2a. Transaction is directly linked to an enrollment — exact.
+        if (input.enrollmentId && pe.enrollment_id && pe.enrollment_id !== input.enrollmentId) {
+          gaps.push('The selected transaction and selected program do not match; no program evidence was included.');
+          return emptyScope({ ...base, scopeConfidence: 'contact_only', gaps });
+        }
+
+        if (input.enrollmentId) {
+          const selectedEnrollment = await loadEnrollment(locationId, contactId, input.enrollmentId);
+          if (!selectedEnrollment) {
+            gaps.push('Supplied enrollment could not be verified against this contact/location; evidence is contact-wide and needs review.');
+            return emptyScope({ ...base, scopeConfidence: 'contact_only', gaps });
+          }
+          if (pe.offer_id && selectedEnrollment.offer_id && pe.offer_id !== selectedEnrollment.offer_id) {
+            gaps.push('The selected transaction and selected program reference different offers; no program evidence was included.');
+            return emptyScope({ ...base, scopeConfidence: 'contact_only', gaps });
+          }
+          return buildExactScope(locationId, selectedEnrollment, 'exact', base, gaps);
+        }
+
         if (pe.enrollment_id) {
           const enrollment = await loadEnrollment(locationId, contactId, pe.enrollment_id);
           if (enrollment) {

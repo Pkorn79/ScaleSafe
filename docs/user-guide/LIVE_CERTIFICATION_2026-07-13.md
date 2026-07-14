@@ -233,6 +233,22 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 - Resume succeeded in Whop (`payment_collection_paused = false`) but ScaleSafe left `next_billing_date` null instead of restoring July 21. FIND-034 tracks the code defect and the required cancel retest after deployment.
 - A pre-fix historical paid-in-full Whop membership has external status `completed` but previously accepted local pause/resume state and workflow writes. The same finding adds a preflight/readback guard so ended one-time memberships cannot generate false lifecycle evidence.
 - The corresponding GHL pause and resume emails rendered the program as `[object Object]`, while ScaleSafe trigger payloads and contact custom fields contained the correct string. FIND-035 tracks the GHL workflow-template defect; no workflow was changed.
+- Post-fix processor retest passed: pause, resume with July 21 renewal restoration, and immediate cancellation each matched Whop state and produced one local evidence/workflow side effect. A completed historical one-time membership was rejected without local mutation. Whop lifecycle processing is certified; customer email copy remains blocked on FIND-035.
+
+### STRIPE-PLAN-RECUR-001 Trace
+
+- Enrollment `122e1aad-b21c-446b-9828-9ab0c15b3c15` collected its second Stripe installment through the live recurring webhook path. Exactly one recurring ledger event was created for Charge `ch_3TsujNQ4vjJOpWaV2G7by0IE`, payment progress reached 2 of 2, billing was marked complete, and no duplicate charge was found.
+- The configured installment was `$1.00`, but Stripe settled `$0.96`. Direct processor inspection proved the final invoice was a 23-hour proration caused by ScaleSafe's one-hour-early `cancel_at`. Commit `a7623c7` is deployed; a fresh finite plan must verify the final amount after its next billing boundary.
+- The exact ScaleSafe trigger payload named `CERT 2026-07-13 Stripe Plan`, but the GHL receipt named the contact's newer Whop program. FIND-037 tracks the contact-field collision; commit `f025190` refreshes the event's exact enrollment fields before trigger delivery.
+
+### DEFENSE-STRIPE-PLAN-001 Trace
+
+- Packet `13971614-ca2d-4107-931e-41be587a5446` was compiled for the selected `$2.00` Stripe payment on enrollment `122e1aad-b21c-446b-9828-9ab0c15b3c15` using Visa 13.1.
+- Railway proved the asynchronous compile completed, stored a seven-page PDF with nine exhibits, and fired one `ss_defense_ready`, but the open UI remained `Pending` until reopened (FIND-038).
+- The frozen scope dropped the selected payment's processor ID/date when the enrollment was also supplied (FIND-039).
+- The packet mixed exact Stripe Plan emails with sibling Stripe PIF and Whop Choice emails (FIND-040), described the plural `installments` offer as paid in full (FIND-041), and treated an unlinked cancellation note as service delivery despite no milestone/signoff for this enrollment (FIND-042).
+- The repair requires exact enrollment identifiers for exact-scope activity, preserves selected payment metadata, adds the selected payment as a first-class exhibit, excludes unapproved generic custom events, and automatically refreshes pending compilation status.
+- Expected post-deploy result: the packet becomes `needs_review` because Visa 13.1 has no actual delivery proof; it includes the exact payment and only linked program evidence, and it does not fire another ready event during regeneration.
 
 ### NMI-QMS-001 Trace
 
@@ -315,8 +331,15 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-031 | P2 | Client-summary stale-state defect | Whop QMS live payment | Recent Payments refreshes while Total Charged and Last Payment remain on the preceding transaction | Fix `9ecece0` deployed | New QMS sale must update table, total, and last-payment timestamp together |
 | FIND-032 | P1 | Refund availability defect | Whop full-refund live test | Fully refunded original payment retains an active Refund action | Fix `e8ab1a2` deployed | Full refund hides action; partial refund exposes only remaining balance |
 | FIND-033 | P1 | Whop refund reconciliation defect | Whop full-refund live test and Railway trace | Whop's returned `pay_...` ID is treated as a refund ID; claim is mislinked to original sale | Fix `2ddbf9a` deployed | Pass: one signed `rf_...` row, linked claim, evidence, workflow, and correct remaining balance |
-| FIND-034 | P1 | Whop processor-state integrity defect | Fresh recurring and historical completed membership lifecycle tests | Successful POST is trusted without state proof; resume discards renewal date | Fixed locally; deployment pending | Pause/resume/cancel current recurring membership; reject completed one-time membership |
-| FIND-035 | P1 | GHL workflow configuration defect | Whop pause/resume live emails | Correct app strings render as `[object Object]` in GHL email actions | Open; no GHL change made | Inspect templates, replace merge field, test multi-enrollment pause/resume |
+| FIND-034 | P1 | Whop processor-state integrity defect | Fresh recurring and historical completed membership lifecycle tests | Successful POST was trusted without state proof; resume discarded renewal date | Fix `0235e24` deployed | Pass: pause/resume/cancel verified; completed one-time membership rejected without side effects |
+| FIND-035 | P1 | App/workflow field-contract defect | Whop pause/resume live emails | Bare trigger variables render as `[object Object]`; lifecycle fields were not refreshed before delivery | Code fix `f025190` pushed; GHL templates unchanged | Owner-approved template edit plus fresh pause/resume email proof |
+| FIND-036 | P1 | Stripe money integrity defect | First live finite-plan recurring charge | One-hour-early `cancel_at` prorated final `$1.00` installment to `$0.96` | Fix `a7623c7` deployed | Fresh two-payment daily plan must settle full final amount with no extra invoice |
+| FIND-037 | P1 | Multi-enrollment workflow integrity defect | Stripe recurring receipt | Receipt named newer Whop enrollment instead of exact Stripe program | Fix `f025190` pushed | Older-enrollment recurring receipt must name exact program |
+| FIND-038 | P2 | Defense UI state defect | Live Visa 13.1 compilation | Detail stayed Pending after backend completed | Local fix verified | Deploy and compile/reopen without navigation |
+| FIND-039 | P1 | Transaction-scope integrity defect | Live Visa 13.1 compilation | Enrollment-first branch dropped selected processor transaction/date | Local fix verified | Regenerate exact packet and inspect frozen scope |
+| FIND-040 | P1 | Evidence isolation defect | Live Visa 13.1 compilation | Same-day sibling-program communications entered exact packet | Local fix verified | Regenerate and confirm only selected enrollment evidence |
+| FIND-041 | P1 | Defense factual-accuracy defect | Live Visa 13.1 compilation | `installments` was described as paid in full | Local fix verified | Regenerate and inspect offer/payment language |
+| FIND-042 | P1 | Defense readiness defect | Live Visa 13.1 compilation | Generic cancellation note counted as delivery and permitted ready | Local fix verified | Regenerate; expect needs_review and no new ready trigger |
 
 ## Screenshot Rules
 
