@@ -160,7 +160,7 @@ describe('Light Checkout Mode', () => {
 describe('Clone Offer', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('should create a copy with new ID and "(Copy)" suffix', async () => {
+  it('should suffix only the internal label when cloning', async () => {
     mockGetById.mockResolvedValue({
       id: 'offer-orig',
       location_id: 'loc-1',
@@ -177,11 +177,13 @@ describe('Clone Offer', () => {
 
     const clone = await offerService.cloneOffer('offer-orig', 'loc-1');
 
-    expect(clone.offer_name).toBe('Premium Coaching (Copy)');
+    expect(clone.offer_name).toBe('Premium Coaching');
+    expect(clone.internal_name).toBe('Premium Coaching (Copy)');
     expect(clone.id).toBe('offer-clone');
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        offer_name: 'Premium Coaching (Copy)',
+        offer_name: 'Premium Coaching',
+        internal_name: 'Premium Coaching (Copy)',
         price: 5000,
         active: false,
         ghl_product_id: null,

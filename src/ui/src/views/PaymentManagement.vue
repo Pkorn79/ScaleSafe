@@ -158,7 +158,10 @@
           <tr v-for="p in payments" :key="p.id">
             <td>{{ formatDate(p.date) }}</td>
             <td>
-              {{ p.programName || 'Unassigned payment' }}
+              {{ p.offerInternalName || p.programName || 'Unassigned payment' }}
+              <div v-if="p.offerInternalName && p.offerInternalName !== p.programName" class="text-sm text-muted">
+                Client sees: {{ p.programName }}
+              </div>
               <div v-if="p.paymentNumber" class="text-sm text-muted">
                 Payment {{ p.paymentNumber }}<span v-if="p.paymentsRemaining === 0">, final</span>
               </div>

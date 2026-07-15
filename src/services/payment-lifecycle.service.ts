@@ -20,6 +20,7 @@ import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { whopService } from './whop.service';
 import { moneyOperationService } from './money-operation.service';
+import { resolveProgramName } from '../utils/program-name';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -735,7 +736,7 @@ export const paymentLifecycleService = {
       try {
         const supabase = getSupabase();
         let enrollmentQuery = supabase.from('enrollments')
-          .select('id, offer_id, payments_made, payments_total, processor_type, processor_subscription_id')
+          .select('id, offer_id, program_name_snapshot, payments_made, payments_total, processor_type, processor_subscription_id')
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId);
         if (params.enrollmentId) {
@@ -749,8 +750,8 @@ export const paymentLifecycleService = {
         processor = processor || enr?.processor_type || '';
         subscriptionId = subscriptionId || enr?.processor_subscription_id || '';
         if (enr?.offer_id) {
-          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
-          offerName = ofr?.offer_name || '';
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).eq('location_id', params.locationId).single();
+          offerName = resolveProgramName(enr, ofr);
           paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
         }
       } catch {}
@@ -1085,7 +1086,7 @@ export const paymentLifecycleService = {
       try {
         const supabase = getSupabase();
         let enrollmentQuery = supabase.from('enrollments')
-          .select('id, offer_id, payments_made, payments_total, updated_at, next_billing_date, processor_type, processor_subscription_id')
+          .select('id, offer_id, program_name_snapshot, payments_made, payments_total, updated_at, next_billing_date, processor_type, processor_subscription_id')
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId);
         if (params.enrollmentId) {
@@ -1100,8 +1101,8 @@ export const paymentLifecycleService = {
         subscriptionId = subscriptionId || enr?.processor_subscription_id || '';
         nextBillingDate = enr?.next_billing_date || '';
         if (enr?.offer_id) {
-          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).single();
-          offerName = ofr?.offer_name || '';
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name, num_payments').eq('id', enr.offer_id).eq('location_id', params.locationId).single();
+          offerName = resolveProgramName(enr, ofr);
           paymentsRemaining = Math.max(0, (enr.payments_total || ofr?.num_payments || 0) - (enr.payments_made || 0));
         }
         if (enr?.updated_at) {
@@ -1315,7 +1316,7 @@ export const paymentLifecycleService = {
       try {
         const supabase = getSupabase();
         let enrollmentQuery = supabase.from('enrollments')
-          .select('id, enrolled_at, offer_id')
+          .select('id, enrolled_at, offer_id, program_name_snapshot')
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId);
         if (params.enrollmentId) {
@@ -1328,8 +1329,8 @@ export const paymentLifecycleService = {
         enrollmentDate = enr?.enrolled_at || '';
         const resolvedOfferId = params.offerId || enr?.offer_id;
         if (resolvedOfferId) {
-          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name').eq('id', resolvedOfferId).maybeSingle();
-          offerName = ofr?.offer_name || '';
+          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name').eq('id', resolvedOfferId).eq('location_id', params.locationId).maybeSingle();
+          offerName = resolveProgramName(enr, ofr);
         }
       } catch {}
       fireTriggerInBackground(params.locationId, 'ss_cancellation_requested', {

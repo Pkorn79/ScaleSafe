@@ -33,7 +33,7 @@ export async function runRecurringBilling(): Promise<void> {
   try {
     const { data, error } = await supabase
       .from('enrollments')
-      .select('id, location_id, merchant_id, contact_id, offer_id, payment_type, payments_made, payments_total, next_billing_date, status, email, processor_type, processor_subscription_id')
+      .select('id, location_id, merchant_id, contact_id, offer_id, program_name_snapshot, payment_type, payments_made, payments_total, next_billing_date, status, email, processor_type, processor_subscription_id')
       .lte('next_billing_date', today)
       .in('status', ['enrolled', 'active'])
       .in('payment_type', ['installments', 'installment', 'subscription'])

@@ -26,6 +26,7 @@ import { sendPulseForEnrollment } from '../jobs/pulse-cadence-check';
 import { groupPaymentEventsByEnrollment } from '../services/payment-enrollment-matching.service';
 import { communicationService } from '../services/communication.service';
 import { triggerDeliveryJobService } from '../services/trigger-delivery-job.service';
+import { resolveInternalOfferName, resolveProgramName } from '../utils/program-name';
 
 const MESSAGE_LINKABLE_ENROLLMENT_STATUSES = [
   'enrolled', 'active', 'paused', 'consent_captured', 'paid_pending_enrollment',
@@ -546,7 +547,7 @@ export const dashboardController = {
       if (enrollmentIds.length) {
         const { data: enrs } = await supabase
           .from('enrollments')
-          .select('id, offer_id')
+          .select('id, offer_id, program_name_snapshot')
           .eq('location_id', locationId)
           .in('id', enrollmentIds);
         const offerIds = [...new Set((enrs || []).map((e: any) => e.offer_id).filter(Boolean))];
@@ -561,7 +562,7 @@ export const dashboardController = {
         for (const e of enrs || []) {
           linkByEnrollment[e.id] = {
             offerId: e.offer_id || null,
-            offerName: e.offer_id ? offerNames[e.offer_id] || null : null,
+            offerName: resolveProgramName(e, { offer_name: e.offer_id ? offerNames[e.offer_id] : null }) || null,
           };
         }
       }
@@ -733,7 +734,7 @@ export const dashboardController = {
       // (matches the client_list_view logic from migration 050: active > paused > pending > completed > cancelled)
       const { data: allEnrollments } = await supabase
         .from('enrollments')
-        .select('id, email, status, payment_amount, payment_type, processor_type, enrolled_at, offer_id, digital_signature, payments_made, payments_total, next_billing_date, created_at')
+        .select('id, email, status, payment_amount, payment_type, processor_type, enrolled_at, offer_id, program_name_snapshot, digital_signature, payments_made, payments_total, next_billing_date, created_at')
         .eq('location_id', locationId)
         .eq('contact_id', contactId);
 
@@ -777,7 +778,7 @@ export const dashboardController = {
       // Get offer name, saved payment method, payment summary in parallel
       const [offerResult, cardResult, paymentSummaryResult, dunningResult] = await Promise.allSettled([
         enrollment?.offer_id
-          ? supabase.from('offers_mirror').select('offer_name, payment_type, num_payments, installment_amount, installment_frequency').eq('id', enrollment.offer_id).single()
+          ? supabase.from('offers_mirror').select('offer_name, internal_name, payment_type, num_payments, installment_amount, installment_frequency').eq('id', enrollment.offer_id).eq('location_id', locationId).single()
           : Promise.resolve({ data: null }),
         supabase.from('payment_methods').select('*')
           .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
@@ -813,7 +814,8 @@ export const dashboardController = {
         paymentType: enrollment?.payment_type || '',
         processorType: enrollment?.processor_type || '',
         enrolledAt: enrollment?.enrolled_at || null,
-        offerName: offer?.offer_name || '',
+        offerName: resolveProgramName(enrollment, offer),
+        offerInternalName: offer ? resolveInternalOfferName(offer) : '',
         signature: enrollment?.digital_signature || '',
         // Payment enrichment
         cardOnFile: cardSummary(card),
@@ -849,7 +851,7 @@ export const dashboardController = {
       // Get all enrollments for this contact, with offer details
       const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('id, status, offer_id, payment_amount, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items, pulse_cadence_enabled, pulse_frequency_days, next_pulse_due_at, last_pulse_sent_at')
+        .select('id, status, offer_id, program_name_snapshot, payment_amount, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, billing_setup_error, billing_completed_at, enrolled_at, cancelled_at, completed_at, payments_made, payments_total, next_billing_date, digital_signature, packet_pdf_path, created_at, email, current_milestone, selected_checkout_items, pulse_cadence_enabled, pulse_frequency_days, next_pulse_due_at, last_pulse_sent_at')
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
@@ -957,7 +959,8 @@ export const dashboardController = {
         return {
           id: e.id,
           status: e.status,
-          offerName: offer?.offer_name || 'Unknown Program',
+          offerName: resolveProgramName(e, offer, 'Unknown Program'),
+          offerInternalName: resolveInternalOfferName(offer, resolveProgramName(e, offer, 'Unknown Program')),
           offerPrice: offer?.price || e.payment_amount || 0,
           paymentType: e.payment_type || offer?.payment_type || 'one_time',
           processorType: e.processor_type || null,
@@ -1140,7 +1143,7 @@ export const dashboardController = {
       // Verify enrollment belongs to location + check sequential order
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('enrollments')
-        .select('id, location_id, contact_id, current_milestone, offer_id, email')
+        .select('id, location_id, contact_id, current_milestone, offer_id, program_name_snapshot, email')
         .eq('id', enrollmentId)
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
@@ -1177,7 +1180,7 @@ export const dashboardController = {
       const milestoneName = (offer as any)?.[`m${requestedMilestoneNumber}_name`] || `Milestone ${requestedMilestoneNumber}`;
       const milestoneDelivers = (offer as any)?.[`m${requestedMilestoneNumber}_delivers`] || '';
       const milestoneClientDoes = (offer as any)?.[`m${requestedMilestoneNumber}_client_does`] || '';
-      const offerName = (offer as any)?.offer_name || '';
+      const offerName = resolveProgramName(enrollment, offer);
       let milestoneMerchant: any = null;
       try {
         milestoneMerchant = await merchantRepository.findByLocationId(locationId);
@@ -1636,7 +1639,7 @@ export const dashboardController = {
       const [enrollmentRes, signoffRes] = await Promise.all([
         supabase
           .from('enrollments')
-          .select('id, offer_id, packet_pdf_path, created_at')
+          .select('id, offer_id, program_name_snapshot, packet_pdf_path, created_at')
           .eq('location_id', locationId)
           .eq('contact_id', contactId)
           .not('packet_pdf_path', 'is', null)
@@ -1664,7 +1667,7 @@ export const dashboardController = {
       // The frontend FilesTab downloads via the existing streaming route to avoid URL leakage.
       const packets = (enrollmentRes.data || []).map(e => ({
         enrollmentId: e.id,
-        offerName: e.offer_id ? (offerMap[e.offer_id] || 'Enrollment Packet') : 'Enrollment Packet',
+        offerName: resolveProgramName(e, { offer_name: e.offer_id ? offerMap[e.offer_id] : null }, 'Enrollment Packet'),
         createdAt: e.created_at,
       }));
 

@@ -170,6 +170,7 @@ describe('Enrollment Funnel Service', () => {
         location_id: 'loc-1',
         active: true,
         offer_name: 'Coaching Program',
+        internal_name: 'CERT Coaching 2026-07',
         program_description: 'A great program',
         price: 5000,
         payment_type: 'installment',
@@ -212,6 +213,7 @@ describe('Enrollment Funnel Service', () => {
 
       // Must NOT expose internal IDs
       expect((result as any).ghl_product_id).toBeUndefined();
+      expect((result as any).internal_name).toBeUndefined();
       expect((result as any).merchant_id).toBeUndefined();
       expect((result as any).location_id).toBeUndefined();
     });

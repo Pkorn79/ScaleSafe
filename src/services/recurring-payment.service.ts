@@ -11,6 +11,7 @@ import {
 } from '../constants/ghl-fields';
 import { logger } from '../utils/logger';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { resolveProgramName } from '../utils/program-name';
 
 /**
  * Shared handlers for recurring payment success/failure.
@@ -28,6 +29,7 @@ interface RecurringPaymentParams {
     location_id: string;
     contact_id: string;
     offer_id: string | null;
+    program_name_snapshot?: string | null;
     payments_made: number;
     payments_total: number | null;
     payment_type: string;
@@ -103,7 +105,8 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   newPaymentsMade: number;
   duplicate: boolean;
 }> {
-  const { enrollment: enr, processorType, transactionId, amountCents, offerName, installmentFrequency, source } = params;
+  const { enrollment: enr, processorType, transactionId, amountCents, installmentFrequency, source } = params;
+  const offerName = resolveProgramName(enr, { offer_name: params.offerName }, params.offerName);
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
   const isNmiHistorySync = source === 'nmi_history_sync';

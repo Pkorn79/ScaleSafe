@@ -11,6 +11,7 @@ import { triggerService } from '../services/trigger.service';
 import { appEventTypeMatches } from '../utils/app-event-type';
 import { logger } from '../utils/logger';
 import { buildPulseCheckUrl } from '../utils/pulse-check-link';
+import { resolveProgramName } from '../utils/program-name';
 
 const DEFAULT_PULSE_FREQUENCY_DAYS = 30;
 const PULSE_TRIGGER_KEY = 'ss_app_event';
@@ -34,6 +35,7 @@ interface PulseEnrollmentRow {
   location_id: string;
   contact_id?: string | null;
   offer_id?: string | null;
+  program_name_snapshot?: string | null;
   status?: string | null;
   pulse_cadence_enabled?: boolean | null;
   pulse_frequency_days?: number | null;
@@ -79,7 +81,7 @@ export async function runPulseCadenceCheck(): Promise<void> {
 
   const { data: enrollments, error } = await supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, status, pulse_frequency_days, next_pulse_due_at')
+    .select('id, location_id, contact_id, offer_id, program_name_snapshot, status, pulse_frequency_days, next_pulse_due_at')
     .eq('pulse_cadence_enabled', true)
     .lte('next_pulse_due_at', now.toISOString())
     .in('status', ['enrolled', 'active']);
@@ -188,11 +190,12 @@ export async function sendPulseForEnrollment(params: {
   });
   const supportEmail = (merchant as any).support_email || (merchant as any).email || '';
   const businessName = (merchant as any).dba_name || merchant.business_name || '';
+  const programName = resolveProgramName(enrollment, offer);
 
   const contactSync = await syncPulseContactFields({
     locationId: enrollment.location_id,
     contactId: enrollment.contact_id,
-    offerName: offer?.offer_name || '',
+    offerName: programName,
     pulseUrl,
     dueDateDisplay,
     intervalLabel,
@@ -237,7 +240,7 @@ export async function sendPulseForEnrollment(params: {
   const deliveryChannel: PulseDeliveryChannel = activeAppEventSubscriptions > 0 ? 'shared_app_event' : 'dedicated_pulse_trigger';
   const payload = buildPulsePayload({
     enrollment,
-    offerName: offer?.offer_name || '',
+    offerName: programName,
     pulseUrl,
     frequencyDays,
     intervalLabel,
@@ -456,7 +459,7 @@ function formatPulseIntervalLabel(days: number): string {
 function enrollmentQuery(supabase: any, enrollmentId: string, locationId?: string) {
   let query = supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, status, pulse_cadence_enabled, pulse_frequency_days, next_pulse_due_at, last_pulse_sent_at')
+    .select('id, location_id, contact_id, offer_id, program_name_snapshot, status, pulse_cadence_enabled, pulse_frequency_days, next_pulse_due_at, last_pulse_sent_at')
     .eq('id', enrollmentId);
   if (locationId) query = query.eq('location_id', locationId);
   return query.maybeSingle();

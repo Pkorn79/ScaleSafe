@@ -38,7 +38,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Offer Name</th>
+            <th>Internal Offer</th>
             <th>Tracking ID</th>
             <th>Price</th>
             <th>Payment</th>
@@ -51,7 +51,8 @@
         <tbody>
           <tr v-for="offer in filteredOffers" :key="offer.id">
             <td>
-              <strong>{{ offer.offer_name }}</strong>
+              <strong>{{ internalOfferName(offer) }}</strong>
+              <div class="text-sm text-muted">Client sees: {{ customerProgramName(offer) }}</div>
               <div class="text-sm text-muted">{{ offer.delivery_method || 'Not set' }}</div>
             </td>
             <td>
@@ -104,7 +105,9 @@
 
     <!-- Send Link Modal -->
     <Modal v-model:open="showSendModal" title="Send Enrollment Link">
-      <p class="text-sm text-muted mb-4" style="margin-top:-4px">Sending link for: <strong>{{ sendForm.offerName }}</strong></p>
+      <p class="text-sm text-muted mb-4" style="margin-top:-4px">
+        Sending <strong>{{ sendForm.internalName }}</strong>; client sees <strong>{{ sendForm.offerName }}</strong>.
+      </p>
 
       <div class="form-group">
         <label class="form-label">First Name *</label>
@@ -164,6 +167,7 @@ import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
 import { offerProcessorKey, offerProcessorLabel } from '../lib/paymentDisplay';
+import { customerProgramName, internalOfferName } from '../lib/offerNames';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -192,6 +196,7 @@ const sendLoading = ref(false);
 const sendError = ref('');
 const sendForm = ref({
   offerId: '',
+  internalName: '',
   offerName: '',
   firstName: '',
   lastName: '',
@@ -232,7 +237,7 @@ async function copyLink(offerId: string) {
 }
 
 async function cloneOffer(offer: any) {
-  if (!confirm(`Clone '${offer.offer_name}'? This will create an inactive copy you can edit.`)) return;
+  if (!confirm(`Clone '${internalOfferName(offer)}'? This will create an inactive copy you can edit.`)) return;
   try {
     const result = await api.post<any>(`/api/offers/${offer.id}/clone`, {});
     if (result?.offer?.id) {
@@ -248,6 +253,7 @@ async function cloneOffer(offer: any) {
 function openSendLink(offer: any) {
   sendForm.value = {
     offerId: offer.id,
+    internalName: internalOfferName(offer),
     offerName: offer.offer_name,
     firstName: '',
     lastName: '',
@@ -292,7 +298,7 @@ async function submitSendLink() {
 }
 
 async function archiveOffer(offer: any) {
-  if (!confirm(`Archive '${offer.offer_name}'? It will be deactivated and hidden from clients.`)) return;
+  if (!confirm(`Archive '${internalOfferName(offer)}'? It will be deactivated and hidden from clients.`)) return;
   try {
     await api.put(`/api/offers/${offer.id}`, { active: false });
     offer.active = false;

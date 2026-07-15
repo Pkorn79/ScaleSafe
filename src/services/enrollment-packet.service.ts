@@ -5,6 +5,7 @@ import { merchantService } from './merchant.service';
 import { renderHtmlToPdf } from './pdf-renderer.service';
 import { storageService } from './storage.service';
 import { logger } from '../utils/logger';
+import { resolveProgramName } from '../utils/program-name';
 
 interface PacketData {
   enrollment: Record<string, any>;
@@ -87,6 +88,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
     ? new Date(e.consent_captured_at).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'long', timeZone: 'America/Chicago' })
     : 'N/A';
   const clientName = [e.first_name, e.last_name].filter(Boolean).join(' ') || e.digital_signature || e.email || 'N/A';
+  const programName = resolveProgramName(e, offer, 'N/A');
 
   // Parse device info
   let deviceDisplay = 'N/A';
@@ -236,7 +238,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
 
 <h2>2. Program Details</h2>
 <table class="info-table">
-  <tr><td>Program</td><td>${esc(offer?.offer_name || 'N/A')}</td></tr>
+  <tr><td>Program</td><td>${esc(programName)}</td></tr>
   ${offer?.program_description ? `<tr><td>Description</td><td>${esc(offer.program_description)}</td></tr>` : ''}
   <tr><td>Delivery Method</td><td>${esc(offer?.delivery_method || 'N/A')}</td></tr>
   <tr><td>Price</td><td>$${displayPrice.toFixed(2)}</td></tr>

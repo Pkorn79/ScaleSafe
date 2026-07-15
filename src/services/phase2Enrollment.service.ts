@@ -17,6 +17,7 @@ import {
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES } from '../constants/standard-clauses';
+import { resolveProgramName } from '../utils/program-name';
 
 // GHL CHECKBOX field_value for the single-option "Yes" Click-Wrap fields. Pulled to a
 // const so the manual E2E verification step (see CHANGELOG 2026-04-26) can swap in
@@ -101,6 +102,7 @@ function applyOfferContactFields(
   offer: any,
   merchant: any,
   selectedPaymentType?: unknown,
+  customerProgramName?: string,
 ): void {
   const businessName = merchant?.dba_name || merchant?.business_name || '';
   const receiptPriceDisplay = formatMoney(getSelectedPlanReceiptPrice(offer, selectedPaymentType || offer.payment_type));
@@ -111,13 +113,14 @@ function applyOfferContactFields(
   const numPayments = offer.num_payments ?? '';
 
   customFields[OFFER_CONTACT_FIELDS.BUSINESS_NAME] = businessName;
-  customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = offer.offer_name || '';
+  const programName = customerProgramName || offer.offer_name || '';
+  customFields[OFFER_CONTACT_FIELDS.OFFER_NAME] = programName;
   customFields[OFFER_CONTACT_FIELDS.PRICE] = receiptPriceDisplay;
   customFields[OFFER_CONTACT_FIELDS.PAYMENT_TYPE] = paymentTypeDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_AMOUNT] = billingAmountDisplay;
   customFields[OFFER_CONTACT_FIELDS.INSTALLMENT_FREQUENCY] = frequencyDisplay;
   customFields[OFFER_CONTACT_FIELDS.NUM_PAYMENTS] = numPayments;
-  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = offer.offer_name || '';
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME] = programName;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = receiptPriceDisplay;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = merchantSupportEmail(merchant);
@@ -185,7 +188,7 @@ export const phase2EnrollmentService = {
     if (enrollment.offer_id) {
       try {
         enrollmentOffer = await offerRepository.getById(enrollment.offer_id, params.locationId);
-        offerName = enrollmentOffer.offer_name;
+        offerName = resolveProgramName(enrollment, enrollmentOffer);
       } catch {
         logger.warn({ offerId: enrollment.offer_id }, 'Could not fetch offer for trigger payload');
       }
@@ -299,7 +302,7 @@ export const phase2EnrollmentService = {
           [SS_CONTACT_FIELDS.LAST_EVIDENCE_DATE]: new Date().toISOString().split('T')[0],
         };
         if (enrollmentOffer) {
-          applyOfferContactFields(customFields, enrollmentOffer, merchant, params.paymentType);
+          applyOfferContactFields(customFields, enrollmentOffer, merchant, params.paymentType, offerName);
         }
         applyPaymentContactFields(customFields, params.paymentAmount, 1, params.paymentsTotal, enrolledAt);
         await api.put(`/contacts/${resolvedContactId}`, { customField: customFields });
@@ -732,7 +735,7 @@ export const phase2EnrollmentService = {
     try {
       if (enrollment.offer_id) {
         const offer = await offerRepository.findById(enrollment.offer_id, params.locationId);
-        programName = offer?.offer_name || '';
+        programName = resolveProgramName(enrollment, offer);
       }
       const merchant = await merchantRepository.getByLocationId(params.locationId);
       supportEmail = merchantSupportEmail(merchant);

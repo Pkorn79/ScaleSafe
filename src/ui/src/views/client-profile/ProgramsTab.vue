@@ -26,7 +26,10 @@
     <div v-for="enr in enrollments" :key="enr.id" class="enrollment-card">
       <div class="flex-between">
         <div>
-          <strong style="font-size:14px">{{ enr.offerName }}</strong>
+          <strong style="font-size:14px">{{ internalOfferName(enr) }}</strong>
+          <div v-if="internalOfferName(enr) !== customerProgramName(enr)" class="text-sm text-muted">
+            Client sees: {{ customerProgramName(enr) }}
+          </div>
           <span class="badge" :class="enrollmentBadge(enr.status)" style="margin-left:8px">{{ enr.status }}</span>
           <span v-if="enr.processorType" class="badge" :class="processorBadge(enr.processorType)" style="margin-left:6px">{{ processorLabel(enr.processorType) }}</span>
         </div>
@@ -185,6 +188,7 @@
 import { ref, computed } from 'vue';
 import { GraduationCap } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
+import { customerProgramName, internalOfferName } from '../../lib/offerNames';
 import Modal from '../../components/Modal.vue';
 import EmptyState from '../../components/EmptyState.vue';
 import { pluralize } from '../../utils/humanize';

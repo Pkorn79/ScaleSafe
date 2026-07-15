@@ -8,6 +8,7 @@ import {
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
+import { resolveProgramName } from '../utils/program-name';
 
 /**
  * Frequent job: scan enrollments for upcoming installment/subscription payments
@@ -176,7 +177,7 @@ export async function getPaymentReminderDiagnostics(locationId: string): Promise
   ] = await Promise.all([
     supabase
       .from('enrollments')
-      .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, status')
+      .select('id, location_id, contact_id, offer_id, program_name_snapshot, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, billing_setup_status, status')
       .eq('location_id', locationId)
       .in('status', ['enrolled', 'active'])
       .in('payment_type', ['installments', 'installment', 'subscription'])
@@ -294,7 +295,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
 
   const baseQuery = supabase
     .from('enrollments')
-    .select('id, location_id, contact_id, offer_id, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, payments_made, payments_total')
+    .select('id, location_id, contact_id, offer_id, program_name_snapshot, next_billing_date, payment_type, processor_type, processor_subscription_id, whop_membership_id, payments_made, payments_total')
     .in('status', ['enrolled', 'active'])
     .in('payment_type', ['installments', 'installment', 'subscription'])
     // Batch H: never remind for an enrollment whose processor billing setup did not complete
@@ -356,7 +357,7 @@ async function sendRemindersForWindow(supabase: ReturnType<typeof getSupabase>, 
           .select('offer_name, installment_amount, price, processor_override')
           .eq('id', enr.offer_id)
           .single();
-        offerName = offer?.offer_name || '';
+        offerName = resolveProgramName(enr, offer);
         amount = offer?.installment_amount || offer?.price || 0;
         processor = enr.processor_type || offer?.processor_override || '';
       }

@@ -15,6 +15,7 @@ import {
   WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
   WORKFLOW_MILESTONE_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
+import { resolveProgramName } from '../utils/program-name';
 
 function getClientIp(req: Request): string {
   return req.headers['x-forwarded-for']?.toString().split(',')[0].trim()
@@ -63,7 +64,7 @@ async function resolveMilestoneEnrollment(
 
   const { data, error } = await supabase
     .from('enrollments')
-    .select('id, offer_id, current_milestone')
+    .select('id, offer_id, program_name_snapshot, current_milestone')
     .eq('id', params.enrollmentId)
     .eq('location_id', params.locationId)
     .eq('contact_id', params.contactId)
@@ -83,7 +84,7 @@ async function resolvePulseEnrollment(
 
   const { data, error } = await supabase
     .from('enrollments')
-    .select('id, offer_id, first_name, last_name, email')
+    .select('id, offer_id, program_name_snapshot, first_name, last_name, email')
     .eq('id', params.enrollmentId)
     .eq('location_id', params.locationId)
     .eq('contact_id', params.contactId)
@@ -504,7 +505,7 @@ export async function getMilestoneConfig(req: Request, res: Response, next: Next
       milestoneName: (offer as any)?.[`m${milestoneNumber}_name`] || `Milestone ${milestoneNumber}`,
       delivers: (offer as any)?.[`m${milestoneNumber}_delivers`] || '',
       clientDoes: (offer as any)?.[`m${milestoneNumber}_client_does`] || '',
-      offerName: offer?.offer_name || '',
+      offerName: resolveProgramName(enrollment, offer),
       merchantName: merchant?.business_name || '',
       enrollmentId: enrollment.id,
       milestoneNumber,
@@ -558,7 +559,7 @@ export async function submitMilestoneSignoff(req: Request, res: Response, next: 
     const milestoneDelivers = (offer as any)?.[`m${milestoneNumber}_delivers`] || '';
     const milestoneClientDoes = (offer as any)?.[`m${milestoneNumber}_client_does`] || '';
     const workSummary = [milestoneDelivers, milestoneClientDoes].filter(Boolean).join('. Client responsibility: ') || null;
-    const offerName = (offer as any)?.offer_name || '';
+    const offerName = resolveProgramName(enrollment, offer);
     let signoffMerchant: any = null;
     try {
       signoffMerchant = await merchantRepository.findByLocationId(locationId);
@@ -754,7 +755,7 @@ export async function getPulseCheckConfig(req: Request, res: Response, next: Nex
       locationId,
       enrollmentId: enrollment.id,
       offerId: enrollment.offer_id || '',
-      offerName: offer?.offer_name || '',
+      offerName: resolveProgramName(enrollment, offer),
       merchantName: merchant?.business_name || '',
       clientName: [enrollment.first_name, enrollment.last_name].filter(Boolean).join(' '),
     });

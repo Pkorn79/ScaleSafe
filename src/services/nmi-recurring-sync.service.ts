@@ -115,7 +115,7 @@ export const nmiRecurringSyncService = {
     const supabase = getSupabase();
     const { data: enrollment, error } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at, enrolled_at, created_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at, enrolled_at, created_at')
       .eq('location_id', locationId)
       .eq('id', enrollmentId)
       .single();

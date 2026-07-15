@@ -124,7 +124,7 @@
           <select class="form-select" v-model="selectedOfferId">
             <option value="">Choose an offer...</option>
             <option v-for="o in activeOffers" :key="o.id" :value="o.id">
-              {{ o.offer_name }} - ${{ o.price }}
+              {{ merchantOfferLabel(o) }} - ${{ o.price }}
             </option>
           </select>
         </div>
@@ -168,7 +168,7 @@
           <select class="form-select" v-model="assignOfferId">
             <option value="">Choose an offer...</option>
             <option v-for="o in activeOffers" :key="o.id" :value="o.id">
-              {{ o.offer_name }} - ${{ o.price || 0 }}
+              {{ merchantOfferLabel(o) }} - ${{ o.price || 0 }}
             </option>
           </select>
         </div>
@@ -202,7 +202,7 @@
             <select class="form-select" v-model="payFirstOfferId">
               <option value="">Choose an offer...</option>
               <option v-for="o in activeOffers" :key="o.id" :value="o.id">
-                {{ o.offer_name }} - ${{ o.price || 0 }}
+                {{ merchantOfferLabel(o) }} - ${{ o.price || 0 }}
               </option>
             </select>
           </div>
@@ -278,12 +278,12 @@
         <select class="form-select" v-model="messageEnrollmentId">
           <option value="">Select the program this message relates to...</option>
           <option v-for="enrollment in messageEnrollmentCandidates" :key="enrollment.id" :value="enrollment.id">
-            {{ enrollment.offerName }} ({{ humanizeEventType(enrollment.status) }})
+            {{ merchantOfferLabel(enrollment) }} ({{ humanizeEventType(enrollment.status) }})
           </option>
         </select>
       </div>
       <p v-else-if="messageEnrollmentCandidates.length === 1" class="text-sm text-muted">
-        This message will be linked to {{ messageEnrollmentCandidates[0].offerName }}.
+        This message will be linked to {{ merchantOfferLabel(messageEnrollmentCandidates[0]) }}.
       </p>
       <p v-else class="text-sm text-muted">No active program is available; this will remain a client-level communication.</p>
       <div v-if="messageResult" class="text-sm" style="color:#10b981;margin-bottom:8px">{{ messageResult }}</div>
@@ -325,6 +325,7 @@ import CommunicationsTab from './client-profile/CommunicationsTab.vue';
 import FilesTab from './client-profile/FilesTab.vue';
 import { humanizeEventType } from '../utils/humanize';
 import { nextScheduledBilling } from '../lib/paymentDisplay';
+import { merchantOfferLabel } from '../lib/offerNames';
 
 const route = useRoute();
 const api = useApi();

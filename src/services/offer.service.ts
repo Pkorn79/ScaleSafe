@@ -8,6 +8,7 @@ import { checkoutCartService, CheckoutAddonInput } from './checkout-cart.service
 interface CreateOfferInput {
   locationId: string;
   offerName: string;
+  internalName?: string;
   trackingId?: string;
   programDescription?: string;
   deliveryMethod?: string;
@@ -260,6 +261,12 @@ export const offerService = {
 
   async create(input: CreateOfferInput): Promise<OfferRecord> {
     const { locationId } = input;
+    const customerFacingName = input.offerName?.trim();
+    if (!customerFacingName) {
+      throw new ValidationError('Client-facing program name is required.');
+    }
+    input.offerName = customerFacingName;
+    const internalName = input.internalName?.trim() || customerFacingName;
 
     // Auto-calculate installment amount
     if (input.paymentType === 'installments') {
@@ -358,6 +365,7 @@ export const offerService = {
       ghl_product_id: ghlProductId,
       ghl_price_ids: priceIds,
       offer_name: input.offerName,
+      internal_name: internalName,
       tracking_id: input.trackingId?.trim() || null,
       program_description: input.programDescription,
       delivery_method: input.deliveryMethod,
@@ -478,7 +486,17 @@ export const offerService = {
     }
 
     if ((updates as any).active !== undefined) dbUpdates.active = (updates as any).active;
-    if (updates.offerName !== undefined) dbUpdates.offer_name = updates.offerName;
+    if (updates.offerName !== undefined) {
+      const customerFacingName = updates.offerName.trim();
+      if (!customerFacingName) {
+        throw new ValidationError('Client-facing program name is required.');
+      }
+      dbUpdates.offer_name = customerFacingName;
+    }
+    if (updates.internalName !== undefined) {
+      dbUpdates.internal_name = updates.internalName.trim()
+        || String(dbUpdates.offer_name || existing.offer_name).trim();
+    }
     if (updates.trackingId !== undefined) dbUpdates.tracking_id = updates.trackingId?.trim() || null;
     if (updates.programDescription !== undefined) dbUpdates.program_description = updates.programDescription;
     if (updates.deliveryMethod !== undefined) dbUpdates.delivery_method = updates.deliveryMethod;
@@ -686,7 +704,8 @@ export const offerService = {
       }
     }
 
-    clone.offer_name = `${source.offer_name} (Copy)`;
+    clone.offer_name = source.offer_name;
+    clone.internal_name = `${source.internal_name || source.offer_name} (Copy)`;
     clone.ghl_product_id = null;
     clone.ghl_price_ids = {};
     clone.ghl_custom_object_id = null;

@@ -636,6 +636,7 @@ async function handlePaymentSucceeded(payload: any, locationId: string, merchant
       location_id: locationId,
       contact_id: enrollment.contact_id || '',
       offer_id: enrollment.offer_id,
+      program_name_snapshot: enrollment.program_name_snapshot || null,
       payments_made: Number(enrollment.payments_made || 0),
       payments_total: enrollment.payments_total,
       payment_type: normalizePaymentType(enrollment.payment_type) || selectedPaymentType,

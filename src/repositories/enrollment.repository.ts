@@ -6,6 +6,7 @@ export interface EnrollmentRecord {
   location_id: string;
   contact_id: string;
   offer_id: string | null;
+  program_name_snapshot: string | null;
   merchant_id: string | null;
   status: string;
   consent_token: string | null;

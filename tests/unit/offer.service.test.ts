@@ -136,6 +136,35 @@ describe('offer tracking ID', () => {
     }));
   });
 
+  it('stores a separate merchant-only name while keeping the public program name', async () => {
+    await offerService.create({
+      locationId: 'loc-1',
+      internalName: 'CERT 2026-07-15 Stripe Plan',
+      offerName: 'Executive Coaching Program',
+      price: 100,
+      paymentType: 'one_time',
+    });
+
+    expect(offerRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      internal_name: 'CERT 2026-07-15 Stripe Plan',
+      offer_name: 'Executive Coaching Program',
+    }));
+  });
+
+  it('defaults the merchant-only name to the public name', async () => {
+    await offerService.create({
+      locationId: 'loc-1',
+      offerName: 'Client Program',
+      price: 100,
+      paymentType: 'one_time',
+    });
+
+    expect(offerRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      internal_name: 'Client Program',
+      offer_name: 'Client Program',
+    }));
+  });
+
   it('stores optional tracking ID on offer update', async () => {
     await offerService.update('offer-1', 'loc-1', {
       trackingId: 'CAMPAIGN-A',
@@ -209,7 +238,7 @@ describe('offerService.cloneOffer (#13/#31)', () => {
 
   it('does not copy Whop processor IDs or tracking_id into the clone', async () => {
     (offerRepository.getById as jest.Mock).mockResolvedValueOnce({
-      id: 'offer-src', location_id: 'loc-1', offer_name: 'Coaching',
+      id: 'offer-src', location_id: 'loc-1', offer_name: 'Coaching', internal_name: 'CERT Coaching Plan',
       price: 6000, num_payments: 6, checkout_type: 'whop',
       whop_product_id: 'prod_live', whop_plan_id: 'plan_live', whop_sync_status: 'synced',
       tracking_id: 'trk_123',
@@ -222,6 +251,8 @@ describe('offerService.cloneOffer (#13/#31)', () => {
       whop_plan_id: null,
       whop_sync_status: null,
       tracking_id: null,
+      offer_name: 'Coaching',
+      internal_name: 'CERT Coaching Plan (Copy)',
       checkout_type: 'whop', // still a Whop offer — provisions its own product/plan on first sync
       active: false,
     }));

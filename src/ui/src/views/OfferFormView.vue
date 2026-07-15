@@ -13,8 +13,15 @@
     <form v-else-if="!merchantConfigLoading" @submit.prevent="save" class="card" style="max-width: 720px">
       <!-- Program Info -->
       <div class="form-group">
-        <label class="form-label">Program Name *</label>
+        <label class="form-label">Internal Offer Name</label>
+        <input class="form-input" v-model="form.internalName" placeholder="Optional operational label" />
+        <p class="text-sm text-muted mt-2">Only your team sees this name. If blank, the client-facing name is used.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Client-facing Program Name *</label>
         <input class="form-input" v-model="form.offerName" required />
+        <p class="text-sm text-muted mt-2">Clients see this name at checkout and in enrollment messages, agreements, and receipts.</p>
       </div>
 
       <div class="form-group">
@@ -554,6 +561,7 @@ const standardClauses = [
 ];
 
 const form = ref({
+  internalName: '',
   offerName: '',
   trackingId: '',
   programDescription: '',
@@ -700,6 +708,7 @@ onMounted(async () => {
   if (isEdit.value) {
     try {
       const offer = await api.get<any>(`/api/offers/${route.params.id}`);
+      form.value.internalName = offer.internal_name || offer.offer_name || '';
       form.value.offerName = offer.offer_name || '';
       form.value.trackingId = offer.tracking_id || '';
       form.value.programDescription = offer.program_description || '';
@@ -839,6 +848,7 @@ async function save() {
   clauses.push({ title: form.value.customClause2Title, text: form.value.customClause2Text });
 
   const payload: any = {
+    internalName: form.value.internalName,
     offerName: form.value.offerName,
     trackingId: form.value.trackingId,
     programDescription: form.value.programDescription,

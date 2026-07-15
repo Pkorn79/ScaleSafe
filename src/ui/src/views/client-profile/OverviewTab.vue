@@ -34,7 +34,7 @@
         <div class="card-title">Next Scheduled Payment</div>
         <div v-if="nextBillingEnrollment" style="margin-top:4px">
           <div class="card-value" style="font-size:18px">{{ nextBillingDisplay }}</div>
-          <div class="text-sm text-muted" style="margin-top:4px">{{ nextBillingEnrollment.offerName }}</div>
+          <div class="text-sm text-muted" style="margin-top:4px">{{ internalOfferName(nextBillingEnrollment) }}</div>
           <div v-if="nextBillingAmount" class="text-sm text-muted" style="margin-top:2px">
             {{ nextBillingAmount }} per {{ nextBillingEnrollment.installmentFrequency || 'billing period' }}
           </div>
@@ -89,6 +89,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { nextScheduledBilling } from '../../lib/paymentDisplay';
+import { internalOfferName } from '../../lib/offerNames';
 
 const props = defineProps<{
   contactId: string;

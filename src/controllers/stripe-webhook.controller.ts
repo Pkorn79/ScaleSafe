@@ -615,7 +615,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
   // Look up enrollment by processor_subscription_id
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+    .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
     .eq('location_id', merchant.location_id)
     .single();

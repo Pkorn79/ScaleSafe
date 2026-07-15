@@ -44,7 +44,10 @@
         class="program-progress-card"
       >
         <div class="program-progress-header">
-          <strong class="text-sm">{{ enr.offerName }}</strong>
+          <strong class="text-sm">{{ internalOfferName(enr) }}</strong>
+          <span v-if="internalOfferName(enr) !== customerProgramName(enr)" class="text-xs text-muted">
+            Client sees: {{ customerProgramName(enr) }}
+          </span>
           <span class="badge badge-blue text-xs">{{ enr.paymentType === 'subscription' ? 'Subscription' : 'Installments' }}</span>
           <span class="badge text-xs" :class="processorBadge(enr.processorType)">{{ processorLabel(enr.processorType) }}</span>
         </div>
@@ -115,7 +118,10 @@
           <tr v-for="p in recentPayments" :key="p.id">
             <td class="text-sm">{{ formatDate(p.date) }}</td>
             <td class="text-sm">
-              {{ p.programName || 'Unassigned payment' }}
+              {{ p.offerInternalName || p.programName || 'Unassigned payment' }}
+              <div v-if="p.offerInternalName && p.offerInternalName !== p.programName" class="text-xs text-muted">
+                Client sees: {{ p.programName }}
+              </div>
               <div v-if="p.offerTrackingId" class="text-xs text-muted">Tracking ID: {{ p.offerTrackingId }}</div>
               <div v-if="p.paymentNumber" class="text-xs text-muted">
                 Payment {{ p.paymentNumber }}<span v-if="p.paymentsRemaining === 0">, final</span>
@@ -153,6 +159,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useApi } from '../../composables/useApi';
+import { customerProgramName, internalOfferName } from '../../lib/offerNames';
 
 const props = defineProps<{
   contactId: string;

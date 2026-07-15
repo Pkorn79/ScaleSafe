@@ -31,7 +31,7 @@
           :key="offer.id"
           :value="offer.id"
         >
-          {{ offer.offer_name }}
+          {{ merchantOfferLabel(offer) }}
         </option>
       </select>
       <p class="text-sm text-muted mt-2">
@@ -163,6 +163,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import { useApi } from '../composables/useApi';
+import { merchantOfferLabel } from '../lib/offerNames';
 
 declare global {
   interface Window {

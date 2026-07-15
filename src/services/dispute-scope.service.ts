@@ -1,5 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
+import { resolveProgramName } from '../utils/program-name';
 
 /**
  * Dispute Scope Service — resolves the specific enrollment/program a disputed
@@ -63,7 +64,7 @@ async function loadEnrollment(
   try {
     const { data } = await getSupabase()
       .from('enrollments')
-      .select('id, offer_id, enrolled_at, created_at, completed_at, cancelled_at')
+      .select('id, offer_id, program_name_snapshot, enrolled_at, created_at, completed_at, cancelled_at')
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
       .eq('id', enrollmentId)
@@ -132,7 +133,8 @@ async function buildExactScope(
   gaps: string[],
 ): Promise<DisputeScope> {
   const offerId = enrollment?.offer_id || null;
-  const offerName = await resolveOfferName(locationId, offerId);
+  const currentOfferName = await resolveOfferName(locationId, offerId);
+  const offerName = resolveProgramName(enrollment, { offer_name: currentOfferName }) || null;
   const win = windowFromEnrollment(enrollment);
   if (!offerId) gaps.push('Enrollment has no linked offer/program on file.');
   return emptyScope({
@@ -244,7 +246,7 @@ export const disputeScopeService = {
  */
 async function inferEnrollment(locationId: string, contactId: string, pe: any): Promise<any | null> {
   const supabase = getSupabase();
-  const select = 'id, offer_id, enrolled_at, created_at, completed_at, cancelled_at';
+  const select = 'id, offer_id, program_name_snapshot, enrolled_at, created_at, completed_at, cancelled_at';
 
   // Match by processor subscription id (recurring installments share it).
   if (pe.processor_subscription_id) {

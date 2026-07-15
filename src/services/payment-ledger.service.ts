@@ -1,5 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
+import { resolveInternalOfferName, resolveProgramName } from '../utils/program-name';
 
 export interface PaymentLedgerFilters {
   contactId?: string;
@@ -24,6 +25,7 @@ export interface PaymentLedgerRow {
   enrollmentId: string | null;
   offerId: string | null;
   offerTrackingId: string | null;
+  offerInternalName: string | null;
   programName: string;
   amount: number;
   currency: string;
@@ -159,6 +161,7 @@ const ENROLLMENT_COLUMNS = [
   'id',
   'contact_id',
   'offer_id',
+  'program_name_snapshot',
   'email',
   'first_name',
   'last_name',
@@ -187,6 +190,7 @@ const BASE_ENROLLMENT_COLUMNS = [
 ].join(', ');
 
 const ENROLLMENT_FALLBACK_DEFAULTS = {
+  program_name_snapshot: null,
   email: null,
   first_name: null,
   last_name: null,
@@ -599,7 +603,7 @@ async function fetchOfferMap(locationId: string, events: any[], enrollments: Map
 
   let response: any = await getSupabase()
     .from('offers_mirror')
-    .select('id, offer_name, tracking_id, payment_type, price, installment_amount, installment_frequency, num_payments')
+    .select('id, offer_name, internal_name, tracking_id, payment_type, price, installment_amount, installment_frequency, num_payments')
     .eq('location_id', locationId)
     .in('id', [...offerIds]);
 
@@ -693,7 +697,8 @@ function buildRow(
   );
   const customerEmail = String(linkedEnrollment?.email || contactEnrollment?.email || event.customer_email || '').trim();
   const processor = String(event.processor || linkedEnrollment?.processor_type || 'unknown').toLowerCase();
-  const programName = offer?.offer_name || 'Unassigned payment';
+  const programName = resolveProgramName(linkedEnrollment, offer, 'Unassigned payment');
+  const offerInternalName = offer ? resolveInternalOfferName(offer, programName) : null;
   const paymentNumber = event.payment_number == null ? null : Number(event.payment_number);
   const eventPaymentsTotal = event.payments_total == null ? null : Number(event.payments_total);
   const enrollmentPaymentsTotal = linkedEnrollment?.payments_total == null ? null : Number(linkedEnrollment.payments_total);
@@ -717,6 +722,7 @@ function buildRow(
     enrollmentId: event.enrollment_id || linkedEnrollment?.id || null,
     offerId: offer?.id || linkedEnrollment?.offer_id || event.offer_id || null,
     offerTrackingId: offer?.tracking_id || null,
+    offerInternalName,
     programName,
     amount,
     currency: event.currency || 'usd',

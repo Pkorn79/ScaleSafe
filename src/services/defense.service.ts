@@ -351,6 +351,7 @@ export const defenseService = {
     // 6b. What was sold — the frozen offer terms, so the letter explains the
     // purchase before arguing about delivery.
     const offerContext = await this.getOfferContext(input.locationId, scope.offerId);
+    if (offerContext && scope.offerName) offerContext.offerName = scope.offerName;
 
     // 7. Build the AI prompt with the rewritten clinical-tone structure
     const systemPrompt = this.buildSystemPrompt(category, strategy, template, exhibitList, offerContext);
