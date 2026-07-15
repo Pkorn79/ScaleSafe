@@ -34,6 +34,20 @@ export function localTodayDateOnly(now = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export function hasRemainingRecurringBilling(
+  enrollment: BillingDisplayEnrollment,
+): boolean {
+  if (enrollment.billingCompletedAt) return false;
+
+  const paymentType = String(enrollment.paymentType || '').toLowerCase();
+  if (paymentType === 'subscription') return true;
+  if (!['installment', 'installments'].includes(paymentType)) return false;
+
+  const made = Number(enrollment.paymentsMade || 0);
+  const total = Number(enrollment.paymentsTotal || 0);
+  return total <= 0 || made < total;
+}
+
 export function isScheduledBillingEnrollment(
   enrollment: BillingDisplayEnrollment,
   today = localTodayDateOnly(),
@@ -46,13 +60,7 @@ export function isScheduledBillingEnrollment(
 
   const billingStatus = String(enrollment.billingSetupStatus || 'ok').toLowerCase();
   if (['failed', 'pending', 'needs_reconciliation'].includes(billingStatus)) return false;
-  if (enrollment.billingCompletedAt || enrollment.billingIssue) return false;
-
-  if (paymentType !== 'subscription') {
-    const made = Number(enrollment.paymentsMade || 0);
-    const total = Number(enrollment.paymentsTotal || 0);
-    if (total > 0 && made >= total) return false;
-  }
+  if (enrollment.billingIssue || !hasRemainingRecurringBilling(enrollment)) return false;
 
   const nextDate = normalizeDateOnly(enrollment.nextBillingDate);
   const todayDate = normalizeDateOnly(today);

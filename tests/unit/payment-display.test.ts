@@ -1,4 +1,5 @@
 import {
+  hasRemainingRecurringBilling,
   isScheduledBillingEnrollment,
   nextScheduledBilling,
   offerProcessorKey,
@@ -24,6 +25,13 @@ describe('payment display helpers', () => {
     expect(isScheduledBillingEnrollment({ ...activeInstallment, status: 'paused' }, '2026-07-14')).toBe(false);
     expect(isScheduledBillingEnrollment({ ...activeInstallment, billingSetupStatus: 'failed' }, '2026-07-14')).toBe(false);
     expect(isScheduledBillingEnrollment({ ...activeInstallment, billingIssue: { code: 'missing_subscription' } }, '2026-07-14')).toBe(false);
+  });
+
+  it('does not treat fully paid installments as manageable recurring billing', () => {
+    expect(hasRemainingRecurringBilling(activeInstallment)).toBe(true);
+    expect(hasRemainingRecurringBilling({ ...activeInstallment, paymentsMade: 3 })).toBe(false);
+    expect(hasRemainingRecurringBilling({ ...activeInstallment, billingCompletedAt: '2026-07-14T12:00:00Z' })).toBe(false);
+    expect(hasRemainingRecurringBilling({ ...activeInstallment, paymentType: 'subscription', paymentsMade: 99, paymentsTotal: 99 })).toBe(true);
   });
 
   it('returns the nearest valid enrollment without borrowing a stale date', () => {

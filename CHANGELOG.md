@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Workflow setup displays Required, Recommended, or Optional instead of internal beta-priority terms.
 - Offer processor labels identify Whop correctly instead of falling back to Default.
 - Client next-payment summaries ignore stale dates, completed plans, paused billing, failed setup, and plans with visible billing issues.
+- Payment Management no longer presents a fully paid installment plan as an actionable recurring plan solely because a stale processor subscription ID remains on the enrollment.
 - Installment progress no longer counts order bumps or upgrades as scheduled plan principal; checkout extras remain visible as separate line items.
 - The legacy standalone offer preview no longer presents enrollment as a coming-soon feature.
 

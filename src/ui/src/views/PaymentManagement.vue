@@ -297,6 +297,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
+import { hasRemainingRecurringBilling } from '../lib/paymentDisplay';
 import Modal from '../components/Modal.vue';
 
 const route = useRoute();
@@ -402,6 +403,7 @@ function isManageableRecurringEnrollment(enrollment: any): boolean {
   const status = String(enrollment?.status || '').toLowerCase();
   if (status === 'paid_pending_enrollment' || status === 'payment_processing') return false;
   if (['cancelled', 'completed'].includes(status)) return false;
+  if (!hasRemainingRecurringBilling(enrollment)) return false;
   const billingStatus = String(enrollment?.billingSetupStatus || 'ok').toLowerCase();
   if (['failed', 'pending', 'needs_reconciliation'].includes(billingStatus)) return false;
   return ['enrolled', 'active', 'paused'].includes(status) || Boolean(enrollment?.processorSubscriptionId);
