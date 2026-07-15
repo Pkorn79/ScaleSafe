@@ -106,6 +106,18 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
     }));
     expect(result.paymentEventId).toBe('pe_1');
     expect(result.newPaymentsMade).toBe(2);
+    expect(mockLogEvidence).toHaveBeenCalledWith(
+      'payment_confirmation',
+      'loc_1',
+      'contact_1',
+      'stripe_webhook',
+      expect.objectContaining({
+        enrollment_id: 'enr_1',
+        payment_event_id: 'pe_1',
+        processor: 'stripe',
+        ghl_transaction_id: 'ch_2',
+      }),
+    );
     expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.objectContaining({
       payment_number: 2,
       payments_remaining: 0,

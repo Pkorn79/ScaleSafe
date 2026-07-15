@@ -196,6 +196,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
             confidence: 'strong',
           },
           enrollmentId: enr.id,
+          paymentEventId,
           metadata: {
             actor: 'processor',
             service: { enrollmentId: enr.id, offerId: enr.offer_id, offerName },
