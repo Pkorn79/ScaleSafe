@@ -1,7 +1,7 @@
 # ScaleSafe Controlled Beta Launch Checklist
 
 Reconciled: 2026-07-15 CDT
-Deployed SHA: `a04205c2b90b3cb99410d4396bb666faf193c007`
+Deployed SHA: `ba80838a00f4e920206dca77f7dd907fbb4fc42d`
 Production schema: `101`
 Detailed current status: `docs/user-guide/OPEN_REMEDIATION_REGISTER.md`
 
@@ -46,7 +46,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Checkout amounts are server-recalculated and processors receive integer cents.
 - [ ] Certify the NMI official signed/verified webhook callback for every NMI configuration offered in beta.
 - [ ] If saved-method NMI charging is in beta scope, prove one fresh method displays the authorized last four before an owner-approved charge.
-- [ ] After the current branch deploys, prove a dual-option Quick Checkout paid-in-full selection creates no recurring enrollment or subscription.
+- [x] A live PMG dual-option Quick Checkout paid-in-full selection charged `$1.50`, created one completed PIF enrollment linked to the client and offer, displayed no next billing or saved recurring method, and created no recurring plan or processor subscription. Railway recorded `paymentType: pif` and `nextBilling: null` with clean 200 responses.
 
 ## 5. GHL Installation And Workflows
 
@@ -71,7 +71,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Defense regeneration runs in the background, preserves the selected transaction, and stays `needs_review` when delivery proof is absent.
 - [x] A `needs_review` packet does not fire `ss_defense_ready`.
 - [x] Current defense output identifies evidence gaps, includes pulse follow-up facts, and does not assert service delivery that was not proved.
-- [ ] After the current branch deploys, verify local/manual defense rows do not appear in Stripe Active Disputes.
+- [x] PMG Stripe Risk Health reports zero Active Disputes after the Stripe-only queue fix; local/manual defense rows no longer appear as Stripe disputes.
 
 ## 7. Reviewer Documentation
 
@@ -92,9 +92,10 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] `npm run build` passes.
 - [x] `npm audit --omit=dev` reports zero production vulnerabilities.
 - [x] Tracked-tree secret scan passes; `.env`, `scripts/.dbpass`, temporary evidence exports, and recovery credentials remain untracked/ignored.
-- [ ] CI is green for the exact release SHA.
+- [x] GitHub CI is green for exact release SHA `ba80838a00f4e920206dca77f7dd907fbb4fc42d`.
 - [x] Changelog describes the release changes; this branch requires no new migration.
-- [ ] Railway deploys the intended SHA and rollback to the preceding known-good deployment is recorded.
+- [x] Railway deployed exact release SHA `ba80838a00f4e920206dca77f7dd907fbb4fc42d`; `/health` and post-deploy logs are clean.
+- [ ] Practice and record one Railway rollback to the preceding known-good deployment before general availability.
 
 ## 9. Controlled-Beta Owner Decisions
 
