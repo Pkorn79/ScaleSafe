@@ -12,6 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Offer processor labels identify Whop correctly instead of falling back to Default.
 - Client next-payment summaries ignore stale dates, completed plans, paused billing, failed setup, and plans with visible billing issues.
 - Payment Management no longer presents a fully paid installment plan as an actionable recurring plan solely because a stale processor subscription ID remains on the enrollment.
+- Open merchant sessions recover once from stale lazy-loaded assets after a Railway deployment instead of leaving the route blank until a manual refresh.
 - Installment progress no longer counts order bumps or upgrades as scheduled plan principal; checkout extras remain visible as separate line items.
 - The legacy standalone offer preview no longer presents enrollment as a coming-soon feature.
 
