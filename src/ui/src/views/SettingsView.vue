@@ -350,7 +350,7 @@
                   <div>
                     <div class="trigger-health-title">
                       {{ row.label }}
-                      <span class="mini-badge" :class="`mini-badge-${row.betaStatus}`">{{ row.betaStatus }}</span>
+                      <span class="mini-badge" :class="`mini-badge-${row.betaStatus}`">{{ triggerPriorityLabel(row.betaStatus) }}</span>
                     </div>
                     <div class="text-sm text-muted">{{ row.key }} - {{ row.firesFrom }}</div>
                   </div>
@@ -694,6 +694,15 @@ function formatCheckedAt(value: string) {
 function formatHealthTime(value: string | null) {
   if (!value) return 'never';
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function triggerPriorityLabel(value: string) {
+  return ({
+    critical: 'Required',
+    important: 'Recommended',
+    optional: 'Optional',
+    deferred: 'Not required',
+  } as Record<string, string>)[value] || value;
 }
 
 async function handleLogoUpload(event: Event) {

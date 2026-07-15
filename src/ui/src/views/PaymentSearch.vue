@@ -707,49 +707,6 @@ async function loadNmiTrace(row: any) {
   border-radius: 10px;
 }
 
-.payment-roadmap {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 10px;
-}
-
-.payment-settings-preview {
-  background: var(--ss-cream-50);
-}
-
-.settings-stub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 10px;
-}
-
-.payment-roadmap-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 12px;
-  border: 1px solid var(--ss-navy-200);
-  border-radius: 10px;
-  background: #fff;
-  color: inherit;
-  text-decoration: none;
-}
-
-.payment-roadmap-card strong {
-  display: block;
-  color: var(--ss-navy-900);
-  font-size: 13px;
-  margin-bottom: 3px;
-}
-
-.payment-roadmap-card span {
-  display: block;
-  color: var(--ss-navy-500);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .tab-btn {
   border: 0;
   background: transparent;

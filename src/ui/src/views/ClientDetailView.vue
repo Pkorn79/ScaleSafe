@@ -324,6 +324,7 @@ import EvidenceTab from './client-profile/EvidenceTab.vue';
 import CommunicationsTab from './client-profile/CommunicationsTab.vue';
 import FilesTab from './client-profile/FilesTab.vue';
 import { humanizeEventType } from '../utils/humanize';
+import { nextScheduledBilling } from '../lib/paymentDisplay';
 
 const route = useRoute();
 const api = useApi();
@@ -460,12 +461,8 @@ function formatDateShort(d: string | null): string {
 
 // Summary strip derived values
 const nextBillingShort = computed(() => {
-  const upcoming = enrollments.value
-    .filter(e => ['enrolled', 'active'].includes(e.status))
-    .map(e => e.nextBillingDate)
-    .filter(Boolean)
-    .sort();
-  return upcoming.length > 0 ? formatDateShort(upcoming[0]) : '';
+  const enrollment = nextScheduledBilling(enrollments.value);
+  return enrollment?.nextBillingDate ? formatDateShort(enrollment.nextBillingDate) : '';
 });
 
 const lastActivityShort = computed(() => {

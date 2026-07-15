@@ -1,4 +1,4 @@
-export type FeatureStatus = 'live' | 'beta' | 'needs_setup' | 'coming_soon' | 'internal';
+export type FeatureStatus = 'planned' | 'researching';
 
 export type FeatureArea =
   | 'clients'
@@ -7,8 +7,7 @@ export type FeatureArea =
   | 'evidence'
   | 'defense'
   | 'ai'
-  | 'integrations'
-  | 'settings';
+  | 'integrations';
 
 export interface FeatureItem {
   id: string;
@@ -19,18 +18,12 @@ export interface FeatureItem {
   userValue: string;
   workflow: string[];
   currentState?: string;
-  proofNeeded?: string;
   dependencies?: string[];
-  channels?: string[];
-  internalOnly?: boolean;
 }
 
 export const featureStatusLabels: Record<FeatureStatus, string> = {
-  live: 'Live',
-  beta: 'Beta',
-  needs_setup: 'Needs Setup',
-  coming_soon: 'Coming Soon',
-  internal: 'Internal',
+  planned: 'Planned',
+  researching: 'Exploring',
 };
 
 export const featureAreaLabels: Record<FeatureArea, string> = {
@@ -41,323 +34,147 @@ export const featureAreaLabels: Record<FeatureArea, string> = {
   defense: 'Defense',
   ai: 'AI Assistant',
   integrations: 'Integrations',
-  settings: 'Settings',
 };
 
+// Merchant-facing roadmap. Working and setup-ready features belong on their
+// real product pages and in the user guide, not in a development-status list.
 export const featureCatalog: FeatureItem[] = [
   {
-    id: 'ghl-communications',
-    title: 'GHL Communications Evidence',
+    id: 'dashboard-attention-center',
+    title: 'Dashboard Attention Center',
     area: 'clients',
-    status: 'beta',
-    summary: 'Captures inbound and outbound GHL messages as client-level evidence.',
-    userValue: 'Shows the client conversation trail without asking the merchant to copy messages into ScaleSafe.',
+    status: 'planned',
+    summary: 'A compact work queue for disputes, pulse follow-ups, and upcoming milestones.',
+    userValue: 'Keeps action items visible without requiring merchants to search through individual client records.',
     workflow: [
-      'GHL sends inbound or outbound message webhook.',
-      'ScaleSafe stores readable communication evidence on the client.',
-      'Merchant can link important messages to a program when needed.',
+      'Dashboard tabs show open disputes, pulse responses, and milestones that need attention.',
+      'Attention dots identify tabs with new or urgent work.',
+      'A merchant can dismiss a dashboard item without deleting or resolving its underlying record.',
     ],
-    currentState: 'Built for GHL message webhooks and visible in client evidence.',
-    proofNeeded: 'Validate channel labels for email, SMS, chat, WhatsApp/social inbox sources, and client replies.',
-    channels: ['Email', 'SMS', 'Chat', 'Call', 'Social inbox when GHL sends the source'],
   },
   {
-    id: 'activity-ledger',
-    title: 'Client Activity Ledger',
-    area: 'clients',
-    status: 'beta',
-    summary: 'Combines client-level appointments, invoices, notes, tasks, opportunities, messages, payments, and evidence.',
-    userValue: 'Gives merchants one simple timeline of what happened with a client.',
+    id: 'scheduled-milestones',
+    title: 'Scheduled Milestones',
+    area: 'offers',
+    status: 'planned',
+    summary: 'Let offer milestones carry expected delivery windows relative to enrollment.',
+    userValue: 'Surfaces upcoming fulfillment work at the right time and makes milestone completion easier to manage.',
     workflow: [
-      'GHL activity arrives through official marketplace webhooks.',
-      'ScaleSafe attaches activity to the client first.',
-      'Program-specific linking happens only when the merchant or payload provides a strong connection.',
-    ],
-    currentState: 'Backend capture exists for supported GHL activity. UI should continue to mature around the timeline.',
-    proofNeeded: 'Live-test each GHL event type and confirm noisy unsupported events are skipped.',
-  },
-  {
-    id: 'ghl-invoices',
-    title: 'GHL Invoice Evidence',
-    area: 'clients',
-    status: 'beta',
-    summary: 'Tracks invoice created, sent, paid, partially paid, updated, voided, and deleted events.',
-    userValue: 'Adds billing proof to the client record even when the invoice was created inside GHL.',
-    workflow: [
-      'GHL invoice webhook is received.',
-      'ScaleSafe records invoice state and line item context as client-level evidence.',
-      'Defense packets can include invoice proof inside the dispute window.',
-    ],
-    currentState: 'Invoice evidence capture exists.',
-    proofNeeded: 'Confirm line item display and paid/voided lifecycle in live testing.',
-  },
-  {
-    id: 'ghl-appointments',
-    title: 'GHL Appointment Evidence',
-    area: 'clients',
-    status: 'beta',
-    summary: 'Records booked, updated, cancelled, completed, and no-show appointment activity when GHL sends status.',
-    userValue: 'Shows service delivery attempts and session activity without forcing scheduling inside ScaleSafe.',
-    workflow: [
-      'Appointment changes happen in GHL calendars.',
-      'ScaleSafe records the event to the client timeline.',
-      'Show/no-show status is used when present in the GHL payload or workflow source.',
-    ],
-    currentState: 'Appointment evidence capture exists.',
-    proofNeeded: 'Verify status naming from real GHL appointment events and Zoom/Meet-adjacent workflows.',
-  },
-  {
-    id: 'ghl-courses',
-    title: 'GHL Course Activity',
-    area: 'clients',
-    status: 'needs_setup',
-    summary: 'Records course access, login, lesson progress, module completion, and product completion through a ScaleSafe course webhook.',
-    userValue: 'Helps prove access and consumption for course, membership, and coaching programs.',
-    workflow: [
-      'Merchant adds GHL course workflow triggers.',
-      'GHL posts course activity to ScaleSafe.',
-      'ScaleSafe records service access, module progress, and completion evidence.',
-    ],
-    currentState: 'Course activity webhook bridge exists.',
-    proofNeeded: 'Create the GHL workflow trigger set and run a live course login/lesson completion test.',
-    dependencies: ['GHL course workflows', 'Merchant webhook secret'],
-  },
-  {
-    id: 'quick-manual-sale',
-    title: 'Quick Manual Sale',
-    area: 'clients',
-    status: 'beta',
-    summary: 'Lets a merchant charge a client on the phone or Zoom, then send the paid enrollment link.',
-    userValue: 'Reduces sales friction for high-ticket phone sales while still collecting enrollment consent evidence.',
-    workflow: [
-      'Merchant selects or creates a client.',
-      'Merchant selects an offer and charges the card through Stripe or NMI tokenization.',
-      'ScaleSafe sends a paid enrollment link so the client signs terms without paying again.',
-    ],
-    currentState: 'Initial flow exists and should be polished through beta testing.',
-    proofNeeded: 'Run PIF, installment, failed-charge, and paid-enrollment completion tests.',
-  },
-  {
-    id: 'nmi-multi-mid',
-    title: 'NMI Multi-MID Routing',
-    area: 'payments',
-    status: 'beta',
-    summary: 'Supports multiple NMI merchant accounts and offer-level routing.',
-    userValue: 'Lets merchants route different offers or brands through the right NMI account.',
-    workflow: [
-      'Merchant adds one or more NMI processor configs.',
-      'Offer chooses the intended NMI merchant account.',
-      'Checkout, recurring billing, refunds, and webhooks preserve that processor assignment.',
-    ],
-    currentState: 'Processor config foundation and offer-level NMI processor selection exist.',
-    proofNeeded: 'Run a two-MID test: checkout, recurring webhook, refund, and ledger attribution.',
-  },
-  {
-    id: 'ach',
-    title: 'ACH Payments',
-    area: 'payments',
-    status: 'beta',
-    summary: 'Add bank debit payment support for merchants who want card alternatives.',
-    userValue: 'Reduces card fees and gives high-ticket clients another way to pay.',
-    workflow: [
-      'Merchant enables ACH-capable processor setup.',
-      'Client authorizes bank payment through the processor-approved flow.',
-      'ScaleSafe records payment, authorization, and refund evidence.',
+      'Merchant assigns an expected delivery window to each offer milestone.',
+      'Upcoming milestones appear in the dashboard attention center before they are due.',
+      'Completion uses the existing enrollment-scoped milestone and client sign-off flow.',
     ],
   },
   {
     id: 'financing',
-    title: 'Financing / BNPL',
+    title: 'Financing and BNPL',
     area: 'payments',
-    status: 'coming_soon',
-    summary: 'Support approved third-party financing or pay-over-time options.',
-    userValue: 'Helps merchants close high-ticket buyers without manually managing custom payment plans.',
+    status: 'researching',
+    summary: 'Support certified third-party financing or pay-over-time options.',
+    userValue: 'Can help merchants offer financing without manually administering a custom payment plan.',
     workflow: [
-      'Merchant enables a financing provider.',
+      'Merchant enables a certified financing provider.',
       'Client applies or selects financing during checkout.',
-      'ScaleSafe stores financing/payment status as evidence.',
-    ],
-  },
-  {
-    id: 'whop',
-    title: 'Whop Checkout Channel',
-    area: 'integrations',
-    status: 'beta',
-    summary: 'Use Whop checkout for selected ScaleSafe offers while keeping ScaleSafe enrollment evidence in front.',
-    userValue: 'Lets merchants use Whop checkout without losing ScaleSafe consent, evidence, and defense records.',
-    workflow: [
-      'Merchant connects Whop in Payment Settings.',
-      'Merchant selects Whop as the offer checkout channel.',
-      'ScaleSafe captures enrollment evidence, embeds Whop checkout, and records Whop payment/membership webhooks.',
+      'ScaleSafe records the verified financing and fulfillment relationship without representing itself as the lender.',
     ],
   },
   {
     id: 'fanbasis',
     title: 'FanBasis Checkout Channel',
     area: 'integrations',
-    status: 'coming_soon',
-    summary: 'Use FanBasis (Merchant of Record) checkout — cards, Apple/Google Pay, Cash App, and BNPL where enabled — on selected ScaleSafe offers.',
-    userValue: 'Lets merchants offer financing and alternative payment methods through FanBasis without losing ScaleSafe consent, evidence, and defense records.',
+    status: 'researching',
+    summary: 'Complete and certify the existing FanBasis checkout foundation after provider approval.',
+    userValue: 'Would add provider-supported checkout and financing options while preserving ScaleSafe enrollment evidence.',
     workflow: [
-      'Merchant connects FanBasis in Payment Settings.',
-      'Merchant selects FanBasis as the offer checkout channel.',
-      'ScaleSafe captures enrollment evidence, renders FanBasis checkout, and records FanBasis payment webhooks.',
+      'ScaleSafe certifies checkout behavior against an approved FanBasis account.',
+      'Merchant enables FanBasis for selected offers.',
+      'Verified payment and membership events remain tied to the correct enrollment.',
     ],
-  },
-  {
-    id: 'checkout-upsells',
-    title: 'Order Bumps and Upsells',
-    area: 'offers',
-    status: 'beta',
-    summary: 'Add optional add-ons and upsell paths around the ScaleSafe checkout.',
-    userValue: 'Lets merchants increase order value while preserving clean payment and evidence records.',
-    workflow: [
-      'Merchant configures add-ons on the offer.',
-      'Client chooses accepted add-ons during checkout.',
-      'ScaleSafe records exactly what was purchased and agreed to.',
-    ],
-  },
-  {
-    id: 'source-closer-tracking',
-    title: 'Source and Closer Tracking',
-    area: 'offers',
-    status: 'coming_soon',
-    summary: 'Track source, setter, closer, campaign, and partner attribution through enrollment and payment records.',
-    userValue: 'Helps merchants see which sales channels produce reliable clients and risky disputes.',
-    workflow: [
-      'Merchant tags links or chooses attribution during manual sale.',
-      'ScaleSafe carries that attribution into payment, client, and defense records.',
-      'Reports surface conversion and risk by source.',
-    ],
-  },
-  {
-    id: 'evidence-linking',
-    title: 'Manual Evidence Linking',
-    area: 'evidence',
-    status: 'beta',
-    summary: 'Let merchants connect important client-level evidence to the right program.',
-    userValue: 'Avoids guessing while still giving merchants control over what supports a specific enrollment.',
-    workflow: [
-      'ScaleSafe captures client-level evidence automatically.',
-      'Merchant clicks Link to Program on important records.',
-      'Defense packets treat linked records as program-specific proof.',
-    ],
-    currentState: 'Visible action exists and needs completion/verification.',
-    proofNeeded: 'Click-test link-to-program from client evidence and confirm defense packet inclusion.',
+    currentState: 'Foundation exists, but checkout remains unavailable until provider certification is possible.',
+    dependencies: ['Approved FanBasis account', 'Provider sandbox or live certification'],
   },
   {
     id: 'enrollment-evidence-readiness',
     title: 'Program Evidence Readiness',
     area: 'evidence',
-    status: 'coming_soon',
-    summary: 'Score evidence strength per program or enrollment instead of only at the client level.',
-    userValue: 'Helps merchants see which specific client programs have strong or weak documentation before a dispute happens.',
+    status: 'planned',
+    summary: 'Score evidence strength per program instead of relying on one contact-level activity score.',
+    userValue: 'Shows which individual enrollments have strong documentation and which need attention.',
     workflow: [
       'ScaleSafe groups evidence by enrollment.',
-      'The readiness score is calculated by practical dispute evidence buckets.',
-      'Merchant sees gaps for consent, delivery, communication, payment, refund, and cancellation evidence.',
+      'Authorization, terms, delivery, communication, satisfaction, and payment records are evaluated separately.',
+      'Merchant sees concrete evidence gaps for the selected program.',
     ],
   },
   {
     id: 'pulse-v2-alerts',
     title: 'Pulse Follow-Up Alerts',
     area: 'evidence',
-    status: 'coming_soon',
-    summary: 'Use structured pulse responses to surface satisfaction, delivery, billing, and refund concerns earlier.',
-    userValue: 'Turns pulse check-ins into stronger service proof and earlier risk detection.',
+    status: 'planned',
+    summary: 'Turn pulse concerns and requests for help into visible merchant follow-up work.',
+    userValue: 'Helps merchants respond before a service concern becomes a cancellation or dispute.',
     workflow: [
-      'Client answers structured pulse questions.',
-      'Low satisfaction, billing concerns, or follow-up requests create merchant alerts.',
-      'Responses are linked to the enrollment evidence timeline.',
+      'Client submits a structured pulse response.',
+      'Low satisfaction, billing concerns, or a follow-up request creates an attention item.',
+      'Merchant action and the original response remain linked to the enrollment.',
     ],
   },
   {
     id: 'support-sla-evidence',
-    title: 'Support SLA Evidence',
+    title: 'Support Response Analytics',
     area: 'clients',
-    status: 'coming_soon',
-    summary: 'Measure support response timing and unresolved complaint age from GHL communication timestamps.',
-    userValue: 'Shows whether the merchant responded quickly and reasonably when the client asked for help.',
+    status: 'planned',
+    summary: 'Measure response timing and unresolved complaint age from supported communication records.',
+    userValue: 'Helps merchants document timely, reasonable support when it is relevant to a dispute.',
     workflow: [
-      'GHL messages are timestamped and attached to the client.',
+      'Supported messages remain timestamped on the client and enrollment timelines.',
       'ScaleSafe calculates first response, last merchant touch, and unresolved concern age.',
-      'Defense packets can include support responsiveness when relevant.',
+      'Defense packets use the measurements only when the underlying communication is in scope.',
     ],
   },
   {
-    id: 'stripe-defense-layer',
-    title: 'Stripe Defense Layer',
+    id: 'network-alert-integration',
+    title: 'Network Alert Integration',
     area: 'defense',
-    status: 'coming_soon',
-    summary: 'Prepare Stripe-ready dispute evidence bundles and submission helpers.',
-    userValue: 'Turns ScaleSafe records into cleaner Stripe dispute responses.',
+    status: 'researching',
+    summary: 'Bring eligible Ethoca, Verifi, and RDR alert outcomes into ScaleSafe when practical provider access exists.',
+    userValue: 'Would give merchants one place to understand pre-dispute alert activity and the evidence behind a response decision.',
     workflow: [
-      'Dispute arrives through Stripe.',
-      'ScaleSafe selects the strongest evidence by reason.',
-      'Merchant reviews and submits through the guided defense flow.',
-    ],
-  },
-  {
-    id: 'verifi-ethoca',
-    title: 'Network Alert Guidance',
-    area: 'defense',
-    status: 'coming_soon',
-    summary: 'Provide setup guidance and future visibility for Ethoca, Verifi, RDR, and processor-side alert programs.',
-    userValue: 'Can reduce chargebacks when network alerts are enabled through WholePay, the processor, or an accessible provider.',
-    workflow: [
-      'WholePay or the merchant confirms which alert programs are available.',
-      'ScaleSafe tracks setup status and recommended response practices.',
-      'Future integrations may record alert outcomes when practical API access exists.',
+      'WholePay or the merchant enables an eligible alert provider.',
+      'ScaleSafe receives verified alert and resolution events.',
+      'The alert outcome is linked to the correct payment and enrollment without changing processor truth.',
     ],
   },
   {
     id: 'defense-outcome-analytics',
     title: 'Defense Outcome Analytics',
     area: 'defense',
-    status: 'coming_soon',
-    summary: 'Track win/loss and recovery patterns by reason code, offer, processor, evidence completeness, and refund timing.',
-    userValue: 'Helps ScaleSafe and merchants learn what actually reduces disputes and improves outcomes.',
+    status: 'planned',
+    summary: 'Analyze outcomes by reason code, offer, processor, evidence completeness, and refund timing.',
+    userValue: 'Helps merchants learn which practices and evidence patterns produce better outcomes.',
     workflow: [
-      'Merchant records dispute outcomes.',
-      'ScaleSafe groups outcomes by reason, offer, source, and processor.',
-      'Roadmap decisions are guided by real beta and production data.',
+      'Merchant records or imports the dispute outcome.',
+      'ScaleSafe connects the outcome to its scoped payment, enrollment, and evidence profile.',
+      'Reports identify patterns without presenting correlation as guaranteed causation.',
     ],
   },
   {
     id: 'ai-assistant',
-    title: 'AI Assistant and Control Layer',
+    title: 'Permissioned AI Assistant',
     area: 'ai',
-    status: 'coming_soon',
-    summary: 'Add a permissioned assistant for summaries, audits, setup guidance, and eventually safe actions.',
-    userValue: 'Gives merchants a plain-English way to understand clients, evidence, payments, and setup gaps.',
+    status: 'researching',
+    summary: 'Add a permissioned assistant for summaries, audits, setup guidance, and carefully approved actions.',
+    userValue: 'Would give merchants a plain-language way to understand payments, clients, evidence, and setup gaps.',
     workflow: [
-      'Merchant asks a question or gives a command.',
-      'Assistant reads permitted ScaleSafe records.',
-      'Actions require clear permissions and audit logs before anything changes.',
+      'Merchant asks a question about records they are permitted to access.',
+      'Assistant reads tenant-scoped ScaleSafe data and explains its sources.',
+      'Any future action requires explicit permission and an audit record.',
     ],
-  },
-  {
-    id: 'cloudflare-security',
-    title: 'Cloudflare Security Layer',
-    area: 'settings',
-    status: 'internal',
-    summary: 'Internal security hardening layer under evaluation.',
-    userValue: 'Hidden from merchant-facing roadmap.',
-    workflow: ['Evaluate value.', 'Avoid blocking checkout, GHL, processor, milestone, and webhook routes.', 'Roll out only after verification.'],
-    internalOnly: true,
   },
 ];
 
-export const publicFeatureCatalog = featureCatalog.filter((feature) => !feature.internalOnly && feature.status !== 'internal');
-
-export function getFeatureById(id: string) {
-  return featureCatalog.find((feature) => feature.id === id);
-}
+export const publicFeatureCatalog = featureCatalog;
 
 export function getPublicFeatureById(id: string) {
   return publicFeatureCatalog.find((feature) => feature.id === id);
-}
-
-export function getFeaturesByArea(area: FeatureArea) {
-  return publicFeatureCatalog.filter((feature) => feature.area === area);
 }

@@ -65,8 +65,8 @@
               </span>
             </td>
             <td>
-              <span class="badge" :class="offer.processor_override === 'nmi' ? 'badge-blue' : offer.processor_override === 'stripe' ? 'badge-purple' : 'badge-gray'">
-                {{ offer.processor_override === 'nmi' ? 'NMI' : offer.processor_override === 'stripe' ? 'Stripe' : 'Default' }}
+              <span class="badge" :class="offerProcessorBadge(offer)">
+                {{ offerProcessorLabel(offer) }}
               </span>
             </td>
             <td>
@@ -163,6 +163,7 @@ import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
+import { offerProcessorKey, offerProcessorLabel } from '../lib/paymentDisplay';
 
 const api = useApi();
 const routerNav = useRouter();
@@ -178,6 +179,13 @@ const offerTabs = computed(() => [
   { key: 'active', label: 'Active', count: activeOffers.value.length },
   { key: 'archived', label: 'Archived', count: archivedOffers.value.length },
 ]);
+
+function offerProcessorBadge(offer: Record<string, unknown>) {
+  const processor = offerProcessorKey(offer);
+  if (processor === 'nmi' || processor === 'whop') return 'badge-blue';
+  if (processor === 'stripe') return 'badge-purple';
+  return 'badge-gray';
+}
 // Send link modal state
 const showSendModal = ref(false);
 const sendLoading = ref(false);

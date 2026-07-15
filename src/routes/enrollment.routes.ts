@@ -140,7 +140,7 @@ function enrollmentPage(offer: any): string {
           ${offer.compiled_tc_html}
         </div>
       ` : ''}
-      <p class="footer">Enrollment form coming soon. Contact your service provider to get started.</p>
+      <p class="footer">Offer details preview. Contact your service provider for the enrollment link.</p>
     </div>
     <p class="footer">Powered by ScaleSafe</p>
   </div>

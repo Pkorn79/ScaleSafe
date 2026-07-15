@@ -565,16 +565,6 @@ async function compile() {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.defense-settings-preview {
-  background: var(--ss-cream-50);
-}
-
-.settings-stub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 10px;
-}
-
 .defense-card:hover {
   border-color: var(--ss-primary-500);
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.10);

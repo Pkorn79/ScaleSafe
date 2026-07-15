@@ -3,6 +3,22 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Beta surface and recovery cleanup (2026-07-14)
+
+### Fixed
+- Merchant roadmap pages now list future work only; working features no longer carry stale beta, setup, preview, or coming-soon treatment.
+- Unreleased integrations and FanBasis checkout controls stay hidden until they are actually released for the tenant.
+- Workflow setup displays Required, Recommended, or Optional instead of internal beta-priority terms.
+- Offer processor labels identify Whop correctly instead of falling back to Default.
+- Client next-payment summaries ignore stale dates, completed plans, paused billing, failed setup, and plans with visible billing issues.
+- Installment progress no longer counts order bumps or upgrades as scheduled plan principal; checkout extras remain visible as separate line items.
+- The legacy standalone offer preview no longer presents enrollment as a coming-soon feature.
+
+### Added
+- An encrypted off-platform Supabase database and Storage backup toolkit, stale-backup health check, scratch-only restore verifier, and daily systemd timer under `ops/recovery`.
+- A beta closeout execution plan separating agent-owned verification from owner-only Marketplace and recovery credential actions.
+- Focused regression coverage for recurring-payment visibility and hosted-checkout processor labels.
+
 ## Unreleased - Live Stripe payment integrity fixes (2026-07-13)
 
 ### Fixed

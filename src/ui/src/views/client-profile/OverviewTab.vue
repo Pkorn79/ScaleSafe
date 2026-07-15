@@ -29,24 +29,17 @@
       <div class="card">
         <div class="card-title">Paid Lifetime</div>
         <div class="card-value">${{ Number(enrollmentInfo?.totalCharged || 0).toFixed(2) }}</div>
-        <div v-if="programTotal > 0" class="text-sm text-muted" style="margin-top:4px">
-          of ${{ programTotal.toFixed(2) }} program total
-        </div>
       </div>
       <div class="card">
-        <div class="card-title">{{ isRecurring ? 'Installment Progress' : 'Next Billing' }}</div>
-        <div v-if="isRecurring" style="margin-top:4px">
-          <div class="card-value" style="font-size:18px">
-            {{ enrollmentInfo?.paymentsMade || 0 }} of {{ enrollmentInfo?.paymentsTotal || '?' }} paid
-          </div>
-          <div class="text-sm text-muted" style="margin-top:4px">
-            <span v-if="nextBillingDisplay">Next: {{ nextBillingDisplay }}</span>
-            <span v-else>-</span>
+        <div class="card-title">Next Scheduled Payment</div>
+        <div v-if="nextBillingEnrollment" style="margin-top:4px">
+          <div class="card-value" style="font-size:18px">{{ nextBillingDisplay }}</div>
+          <div class="text-sm text-muted" style="margin-top:4px">{{ nextBillingEnrollment.offerName }}</div>
+          <div v-if="nextBillingAmount" class="text-sm text-muted" style="margin-top:2px">
+            {{ nextBillingAmount }} per {{ nextBillingEnrollment.installmentFrequency || 'billing period' }}
           </div>
         </div>
-        <div v-else class="card-value" style="font-size:18px">
-          {{ nextBillingDisplay || '-' }}
-        </div>
+        <div v-else class="card-value" style="font-size:18px">None scheduled</div>
       </div>
     </div>
 
@@ -95,6 +88,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { nextScheduledBilling } from '../../lib/paymentDisplay';
 
 const props = defineProps<{
   contactId: string;
@@ -124,7 +118,11 @@ function formatDate(d: string): string {
 
 function formatDateShort(d: string): string {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(d);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function formatEvidenceType(type: string): string {
@@ -146,30 +144,20 @@ function summarize(item: any): string {
   return '';
 }
 
-// Next billing: soonest across all active enrollments with installment frequency
+// The nearest billing date must belong to a genuinely active billing schedule.
+const nextBillingEnrollment = computed(() => nextScheduledBilling(props.enrollments));
+
 const nextBillingDisplay = computed(() => {
-  if (!props.enrollments) return '';
-  const upcoming = props.enrollments
-    .filter(e => ['enrolled', 'active'].includes(e.status))
-    .map(e => e.nextBillingDate)
-    .filter(Boolean)
-    .sort();
-  if (upcoming.length === 0) return '';
-  return formatDateShort(upcoming[0]);
+  const date = nextBillingEnrollment.value?.nextBillingDate;
+  return date ? formatDateShort(date) : '';
 });
 
-// Recurring? (drives whether to show installment progress card vs next-billing card)
-const isRecurring = computed(() => {
-  const t = String(props.enrollmentInfo?.paymentType || '').toLowerCase();
-  return t === 'installments' || t === 'installment' || t === 'subscription';
+const nextBillingAmount = computed(() => {
+  const enrollment = nextBillingEnrollment.value;
+  const amount = Number(enrollment?.installmentAmount || enrollment?.paymentAmount || 0);
+  return amount > 0 ? `$${amount.toFixed(2)}` : '';
 });
 
-// Program total = paymentsTotal × installmentAmount (or 0 if not applicable)
-const programTotal = computed(() => {
-  const made = Number(props.enrollmentInfo?.paymentsTotal || 0);
-  const amt = Number(props.enrollmentInfo?.installmentAmount || 0);
-  return made > 0 && amt > 0 ? made * amt : 0;
-});
 </script>
 
 <style scoped>

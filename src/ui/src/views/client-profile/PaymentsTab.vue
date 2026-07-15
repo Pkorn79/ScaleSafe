@@ -49,10 +49,7 @@
           <span class="badge text-xs" :class="processorBadge(enr.processorType)">{{ processorLabel(enr.processorType) }}</span>
         </div>
         <div v-if="enr.paymentType !== 'subscription'" class="text-sm mt-1">
-          {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} paid
-          <span v-if="enrProgramTotal(enr) > 0">
-            - ${{ enrAmountPaid(enr) }} of ${{ enrProgramTotal(enr).toFixed(2) }}
-          </span>
+          {{ enr.paymentsMade || 0 }} of {{ enr.paymentsTotal || '?' }} installments paid
         </div>
         <div v-else class="text-sm mt-1">
           ${{ Number(enr.installmentAmount || enr.paymentAmount || 0).toFixed(2) }} /
@@ -61,7 +58,15 @@
         <div v-if="enr.installmentAmount && enr.paymentType !== 'subscription'" class="text-muted text-xs" style="margin-top:2px">
           ${{ Number(enr.installmentAmount).toFixed(2) }} per {{ enr.installmentFrequency || 'month' }}
         </div>
-        <div v-if="enr.nextBillingDate" class="text-muted text-xs" style="margin-top:2px">
+        <div v-if="enrProgramTotal(enr) > 0 && enr.paymentType !== 'subscription'" class="text-muted text-xs" style="margin-top:2px">
+          Scheduled plan total: ${{ enrProgramTotal(enr).toFixed(2) }}
+        </div>
+        <div v-if="enrollmentExtras(enr).length" class="payment-line-items text-xs">
+          <span v-for="item in enrollmentExtras(enr)" :key="item.key" class="payment-line-item">
+            {{ item.label }}
+          </span>
+        </div>
+        <div v-if="shouldShowNextBilling(enr)" class="text-muted text-xs" style="margin-top:2px">
           Next: {{ formatDateShort(enr.nextBillingDate) }}
         </div>
         <div v-if="enr.lastPaymentDate" class="text-muted text-xs" style="margin-top:2px">
@@ -179,10 +184,14 @@ const activeRecurringEnrollments = computed(() => {
     const status = String(e.status || '').toLowerCase();
     const type = String(e.paymentType || '').toLowerCase();
     const billingStatus = String(e.billingSetupStatus || 'ok').toLowerCase();
-    const isActive = ['enrolled', 'active', 'paused'].includes(status) || Boolean(e.processorSubscriptionId);
+    const isActive = ['enrolled', 'active', 'paused'].includes(status);
     const billingReady = !['failed', 'pending', 'needs_reconciliation'].includes(billingStatus);
     const isRecurring = ['installments', 'installment', 'subscription'].includes(type);
-    return isActive && billingReady && isRecurring;
+    const isComplete = Boolean(e.billingCompletedAt)
+      || (type !== 'subscription'
+        && Number(e.paymentsTotal || 0) > 0
+        && Number(e.paymentsMade || 0) >= Number(e.paymentsTotal || 0));
+    return isActive && billingReady && isRecurring && !isComplete;
   });
 });
 
@@ -190,13 +199,6 @@ function enrProgramTotal(enr: any): number {
   const total = Number(enr.paymentsTotal || 0);
   const amt = Number(enr.installmentAmount || 0);
   return total > 0 && amt > 0 ? total * amt : 0;
-}
-
-function enrAmountPaid(enr: any): string {
-  if (enr.amountPaidActual != null) return Number(enr.amountPaidActual || 0).toFixed(2);
-  const paid = Number(enr.paymentsMade || 0);
-  const amt = Number(enr.installmentAmount || 0);
-  return (paid * amt).toFixed(2);
 }
 
 function progressPct(enr: any): number {
@@ -260,7 +262,7 @@ function firstPaymentDate(enr: any): string {
 function displayLineItems(payment: any) {
   const items = Array.isArray(payment?.lineItems) ? payment.lineItems : [];
   return items
-    .filter((item: any) => item && (item.kind || item.type) !== 'base_offer')
+    .filter((item: any) => item && !['base_offer', 'dual_pricing_adjustment'].includes(item.kind || item.type))
     .map((item: any, index: number) => {
       const itemType = item.kind || item.type;
       const title = String(item.title || item.label || item.name || (itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on')).trim();
@@ -269,6 +271,19 @@ function displayLineItems(payment: any) {
       const prefix = itemType === 'pre_payment_upsell' ? 'Upgrade' : 'Add-on';
       return { key: `${payment.id}-${index}`, label: `${prefix}: ${title}${price}` };
     });
+}
+
+function enrollmentExtras(enrollment: any) {
+  return displayLineItems({
+    id: enrollment.id,
+    lineItems: enrollment.selectedCheckoutItems,
+  });
+}
+
+function shouldShowNextBilling(enrollment: any): boolean {
+  return ['enrolled', 'active'].includes(String(enrollment.status || '').toLowerCase())
+    && Boolean(enrollment.nextBillingDate)
+    && !enrollment.billingIssue;
 }
 
 onMounted(async () => {

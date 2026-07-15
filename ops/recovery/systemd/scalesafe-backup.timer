@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the ScaleSafe off-platform backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:17:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=scalesafe-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -2,11 +2,11 @@
   <div>
     <SectionHeader
       eyebrow="Roadmap"
-      :title="['What is', 'coming.']"
-      description="A practical map of live, beta, setup-needed, and upcoming ScaleSafe capabilities."
+      :title="['What we are', 'considering next.']"
+      description="Future improvements under active planning or research. Available ScaleSafe features live on their working pages, not in this roadmap."
     />
 
-    <div class="roadmap-summary grid grid-4 mb-4">
+    <div class="roadmap-summary grid grid-2 mb-4">
       <div v-for="item in summary" :key="item.status" class="card metric-card">
         <div class="card-title">{{ item.label }}</div>
         <div class="card-value">{{ item.count }}</div>
@@ -55,10 +55,8 @@ const activeFilter = ref<FilterKey>('all');
 
 const filters: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'live', label: featureStatusLabels.live },
-  { key: 'beta', label: featureStatusLabels.beta },
-  { key: 'needs_setup', label: featureStatusLabels.needs_setup },
-  { key: 'coming_soon', label: featureStatusLabels.coming_soon },
+  { key: 'planned', label: featureStatusLabels.planned },
+  { key: 'researching', label: featureStatusLabels.researching },
 ];
 
 const summary = computed(() => filters

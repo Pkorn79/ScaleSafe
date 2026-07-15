@@ -54,6 +54,9 @@ interface ConnectionStatus {
   connectionType: string;
   setupStatus: string;
   healthStatus: string;
+  authorizationStatus: string;
+  webhookStatus: string;
+  evidenceStatus: string;
   lastEvidenceAt: string | null;
   lastEventAt: string | null;
   publishedCount: number;
@@ -119,6 +122,11 @@ const categories = [
 const visibleProviders = computed(() => {
   const needle = query.value.trim().toLowerCase();
   return providers.value.filter((provider) => {
+    const merchantVisible = provider.key === 'ghl_native'
+      || provider.connected
+      || provider.hasConnection
+      || provider.connectable;
+    if (!merchantVisible) return false;
     if (category.value !== 'all' && provider.category !== category.value) return false;
     return !needle || `${provider.name} ${provider.summary} ${provider.capabilities.join(' ')}`.toLowerCase().includes(needle);
   });
@@ -156,9 +164,8 @@ function releaseLabel(provider: Provider) {
   if (provider.connected) return 'Connected';
   if (provider.hasConnection) return 'Setup needed';
   return ({
-    native: 'Native', available: 'Available', beta: 'Beta', guided: 'Guided setup',
-    planned: `Wave ${provider.wave}`, discovery: 'Research', disabled: 'Unavailable',
-  } as Record<string, string>)[provider.releaseStatus] || 'Planned';
+    native: 'Native', available: 'Available', beta: 'Available', guided: 'Guided setup',
+  } as Record<string, string>)[provider.releaseStatus] || 'Setup needed';
 }
 
 function formatDate(value: string | null) {
@@ -326,7 +333,7 @@ onBeforeUnmount(() => {
 
     <section class="catalog-band">
       <div class="catalog-head">
-        <h2>Integration catalog</h2>
+        <h2>Available integrations</h2>
         <label class="search-box">
           <Search :size="16" />
           <input v-model="query" type="search" placeholder="Search platforms" />
@@ -358,7 +365,7 @@ onBeforeUnmount(() => {
           <button v-else-if="provider.connectable" class="connect-button" @click="beginConnect(provider)">
             <Plug :size="15" /> Connect
           </button>
-          <div v-else class="availability"><Clock3 :size="14" />{{ releaseLabel(provider) }}</div>
+          <div v-else class="availability"><Clock3 :size="14" />Setup needed</div>
         </article>
         <div v-if="!visibleProviders.length" class="no-results">No matching integrations</div>
       </div>

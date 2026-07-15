@@ -37,9 +37,6 @@
                 <span>{{ step }}</span>
               </div>
             </div>
-            <button class="btn btn-secondary" disabled>
-              Preview only
-            </button>
           </div>
         </section>
 
@@ -58,10 +55,6 @@
               <span>Current state</span>
               <strong>{{ feature.currentState }}</strong>
             </div>
-            <div v-if="feature.proofNeeded">
-              <span>Proof needed</span>
-              <strong>{{ feature.proofNeeded }}</strong>
-            </div>
           </div>
 
           <div v-if="feature.dependencies?.length" class="mt-4">
@@ -73,14 +66,6 @@
             </div>
           </div>
 
-          <div v-if="feature.channels?.length" class="mt-4">
-            <div class="card-title">Channels</div>
-            <div class="pill-wrap">
-              <span v-for="channel in feature.channels" :key="channel" class="badge badge-blue">
-                {{ channel }}
-              </span>
-            </div>
-          </div>
         </aside>
       </div>
     </template>
