@@ -6,7 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## Unreleased - Beta surface and recovery cleanup (2026-07-14)
 
 ### Fixed
-- Dual-option Quick Checkout now uses the buyer's selected payment choice when deciding whether to create recurring enrollment state. Choosing paid in full can no longer leave a false installment plan behind merely because the offer also supports installments.
+- Dual-option Quick Checkout now creates a completed, non-recurring PIF enrollment when the buyer chooses paid in full. The payment stays attached to the client and offer without inheriting the offer's installment label, next billing date, saved recurring plan, or processor subscription.
 - Stripe dispute routes now require a real Stripe dispute ID and Stripe processor scope. Locally compiled defense rows no longer appear in the Stripe active-dispute queue or expose impossible Stripe actions.
 - Merchant views use an offer's internal label while client-facing enrollment, message, and workflow surfaces continue using the public program name.
 - Offers now support a separate internal name without changing the existing client-facing offer name or historical enrollment records.

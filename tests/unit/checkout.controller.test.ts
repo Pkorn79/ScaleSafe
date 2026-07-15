@@ -480,7 +480,7 @@ describe('Checkout Controller', () => {
       expect(mockProcessor.charge).not.toHaveBeenCalled();
     });
 
-    it('does not create recurring state when dual-option Quick Checkout selects paid in full', async () => {
+    it('creates a completed PIF enrollment without recurring state when dual-option Quick Checkout selects paid in full', async () => {
       const offer = {
         id: 'offer-dual-quick',
         location_id: 'loc-1',
@@ -516,7 +516,10 @@ describe('Checkout Controller', () => {
         const execute = async () => {
           if (operation === 'insert') {
             inserts.push({ table, payload });
-            return { data: null, error: null };
+            return {
+              data: table === 'enrollments' ? { id: 'enr_dual_pif' } : null,
+              error: null,
+            };
           }
           if (table === 'offers_mirror') return { data: offer, error: null };
           return { data: null, error: null };
@@ -556,7 +559,15 @@ describe('Checkout Controller', () => {
       await processPayment(req, res);
 
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
-      expect(inserts.some((row) => row.table === 'enrollments')).toBe(false);
+      expect(inserts).toContainEqual(expect.objectContaining({
+        table: 'enrollments',
+        payload: expect.objectContaining({
+          payment_type: 'pif',
+          payments_total: null,
+          next_billing_date: null,
+          billing_setup_status: 'ok',
+        }),
+      }));
       expect(mockProcessor.createSubscription).not.toHaveBeenCalled();
     });
 

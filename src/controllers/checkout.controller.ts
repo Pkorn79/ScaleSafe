@@ -37,6 +37,7 @@ function computeNextBillingDate(installmentFrequency: string | null | undefined,
 function normalizePaymentType(choice?: string): string {
   if (!choice) return 'pif';
   if (choice === 'installments') return 'installment';
+  if (choice === 'one_time' || choice === 'paid_in_full') return 'pif';
   return choice;
 }
 
@@ -1382,8 +1383,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       }
 
       // ─── Quick Pay enrollment + receipt ──────────────────────────
-      // For installment/subscription Quick Pay offers, create a synthetic enrollment
-      // row so the payment-reminder job and processor subscription setup can key off it.
+      // Every offer-backed Quick Pay creates an enrollment. Recurring choices also
+      // carry the schedule needed by reminders and processor subscription setup.
       let quickPayEnrollmentId: string | null = contextEnrollmentId || null;
       let quickPayPaymentKind: 'one_off' | 'installment' | 'subscription' = 'one_off';
       let quickPayPaymentsTotal: number | null = null;
@@ -1396,7 +1397,10 @@ export async function processPayment(req: Request, res: Response): Promise<void>
           const selectedQuickPayType = normalizePaymentType(String(boundPaymentChoice || offerPaymentType || 'pif'));
           const isRecurringQuickPay = selectedQuickPayType === 'installment'
             || selectedQuickPayType === 'subscription';
-          if (isRecurringQuickPay || contextEnrollmentId) {
+          const shouldTrackQuickPayEnrollment = contextEnrollmentId
+            || selectedQuickPayType === 'pif'
+            || isRecurringQuickPay;
+          if (shouldTrackQuickPayEnrollment) {
             if (isRecurringQuickPay) {
               quickPayPaymentKind = selectedQuickPayType === 'subscription' ? 'subscription' : 'installment';
               quickPayPaymentsTotal = selectedQuickPayType === 'subscription'
@@ -1453,14 +1457,16 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                 .from('enrollments')
                 .select('id')
                 .eq('payment_transaction_id', result.transactionId)
+                .eq('location_id', merchant.locationId)
                 .maybeSingle();
 
               if (existingEnr?.id) {
                 quickPayEnrollmentId = existingEnr.id;
               } else {
-                const quickPayBillingComplete = quickPayPaymentKind === 'installment'
-                  && quickPayPaymentsTotal != null
-                  && quickPayPaymentsTotal <= 1;
+                const quickPayBillingComplete = !isRecurringQuickPay
+                  || (quickPayPaymentKind === 'installment'
+                    && quickPayPaymentsTotal != null
+                    && quickPayPaymentsTotal <= 1);
                 const nextBilling = quickPayBillingComplete
                   ? null
                   : computeNextBillingDate((offer as any)?.installment_frequency);
@@ -1475,19 +1481,20 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     email: quickPayEmail || null,
                     status: paymentProcessing ? 'payment_processing' : 'enrolled',
                     payment_amount: amount / 100,
-                    payment_type: quickPayPaymentKind,
+                    payment_type: selectedQuickPayType,
                     payment_transaction_id: result.transactionId,
                     processor_type: procConfig.processor_type,
                     initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
                     initial_payment_method: paymentMethod,
-                    payments_made: 1,
+                    payments_made: paymentProcessing ? 0 : 1,
                     payments_total: quickPayPaymentsTotal,
                     next_billing_date: nextBilling,
                     // Batch H: a recurring enrollment starts 'pending' until its processor
                     // subscription is confirmed; a single-payment installment is already 'ok'.
                     billing_setup_status: quickPayBillingComplete ? 'ok' : 'pending',
                     ...(quickPayBillingComplete ? { billing_completed_at: enrolledAt } : {}),
-                    enrolled_at: enrolledAt,
+                    enrolled_at: paymentProcessing ? null : enrolledAt,
+                    selected_checkout_items: cartQuote?.lineItems || [],
                   } as any)
                   .select('id')
                   .single();
@@ -1499,14 +1506,15 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   if (quickPayEnrollmentId) {
                     await supabase.from('payment_events')
                       .update({ enrollment_id: quickPayEnrollmentId })
-                      .eq('processor_transaction_id', result.transactionId);
+                      .eq('processor_transaction_id', result.transactionId)
+                      .eq('location_id', merchant.locationId);
                   }
-                  logger.info({ enrollmentId: quickPayEnrollmentId, contactId: resolvedQuickPayContact, offerId, paymentKind: quickPayPaymentKind, nextBilling }, 'Quick Pay: synthetic enrollment created for recurring billing');
+                  logger.info({ enrollmentId: quickPayEnrollmentId, contactId: resolvedQuickPayContact, offerId, paymentType: selectedQuickPayType, nextBilling }, 'Quick Pay: offer enrollment created');
                 }
               }
               }
             } else {
-              logger.warn({ offerId }, 'Quick Pay: installment/subscription offer but no resolvable contactId — skipping enrollment creation');
+              logger.warn({ offerId }, 'Quick Pay: offer payment has no resolvable contactId — skipping enrollment creation');
             }
           }
         } catch (offerErr: any) {
@@ -1524,7 +1532,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             location_id: merchant.locationId,
             offer_id: offerId,
             program_name: productDetails?.[0]?.name || '',
-            payment_type: normalizePaymentType(req.body.paymentChoice),
+            payment_type: normalizePaymentType(boundPaymentChoice),
             processor: procConfig.processor_type,
           });
         } catch (mapErr: any) {
