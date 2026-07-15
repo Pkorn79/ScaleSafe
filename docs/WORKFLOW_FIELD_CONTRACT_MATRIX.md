@@ -219,7 +219,7 @@ The GHL API can read workflow metadata but does not expose full email/SMS action
 | `SS - Enrollment Payment Receipt` | Published | Fires. Must edit stale merge fields. |
 | `SS - Recurring Payment Reciept` | Published | Spelling in GHL is `Reciept`; consider correcting before snapshot if safe. Verify SS payment fields populate. |
 | `SS - Post Payment Actions` | Draft | Keep only if confirmed V2 and needed. |
-| `SS--Pulse-Check-Cadence` | Published | Old tag/timer-driven pulse cadence. Exclude/retire in favor of app-owned `SS - Pulse Check Due` pattern. |
+| `SS--Pulse-Check-Cadence` | Published | Live reviewer inspection on 2026-07-14 confirmed this legacy-named workflow uses `ScaleSafe App Event` with `Event Type = Pulse Check Due` and one email action. It is functionally the required app-owned pulse workflow. Rename only after a controlled review; do not create a duplicate workflow. |
 | Evidence logger workflows `SYS2-*` / `WF - 02` | Published | Must use `https://dashboard.scalesafe.app/webhooks/ghl/forms` plus `x-scalesafe-webhook-secret`. |
 
 ## Snapshot Gate

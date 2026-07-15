@@ -1,70 +1,74 @@
 # ScaleSafe Open Remediation Register
 
-Closed review baseline: `1dce009bc056f3987e30636b5acf6ada211ae87a` on 2026-07-14.
+Reconciled: 2026-07-15 CDT
+Deployed code baseline: `a04205c2b90b3cb99410d4396bb666faf193c007`
+Production schema: `101`
+Working branch: `codex/beta-remediation`
 
-This file contains only work that remains open after the July live certification. The numbered findings in `LIVE_FINDINGS.md` remain the historical evidence ledger; fixed findings are intentionally omitted here.
+This is the current open-work list. `LIVE_FINDINGS.md` and `LIVE_CERTIFICATION_2026-07-13.md` remain historical audit records and intentionally retain the original findings.
 
-## Stop-Ship Before A Real Beta Merchant
+## Stop-Ship Before The First Real Beta Merchant
 
-| Finding | Area | Classification | Required outcome | Dependency |
-|---|---|---|---|---|
-| FIND-067 | Supabase capacity and failure containment | Operations plus code | Healthy paid production compute; bounded dependency timeouts; low idle worker request rate | Owner upgrades production plan/compute |
-| FIND-068 | Database and private-file recovery | Operations | Managed backup, encrypted off-platform export, private Storage manifest/backup, scratch restore proof | Owner enables paid backup capability |
-| FIND-049/050/051/052/053/054/055 | Defense factual and scope integrity | Code/data | No unsupported delivery claims, sibling evidence, omitted pulse concern, unexplained dual pricing, impossible chronology, or wrong processor | None for code; live packet retest later |
-| FIND-057 | Zoom participant identity | Code | Host participation can never become client attendance evidence | None |
-| FIND-061/062 | Stripe Risk Health truth | Code | Stripe-only snapshot selection and one normalized API/UI DTO | None |
-| FIND-064 | Connector event-history 500 | Code/schema query | Route returns exact client/program event history from live schema | None |
-| FIND-066 | Manual communication enrollment binding | Product/code | One-active enrollment auto-links; multiple eligible enrollments require explicit choice | None |
-| FIND-074 | Installed GHL Custom Page SSO | Code/integration/live proof | Trusted location context reaches backend once; parent timeout is typed and observable | Installed GHL page retest after code deploy |
+| Gate | Current truth | Required proof to close | Owner |
+| --- | --- | --- | --- |
+| Recovery proof (FIND-068) | Supabase Pro now provides managed daily backups. The off-platform encrypted database/Storage toolkit exists and its shell syntax passes, but no real encrypted snapshot or scratch restore has been completed. | One complete encrypted off-platform snapshot, private Storage inventory/archive, `COMPLETE.json`, successful `verify-latest.sh`, and one isolated scratch restore with count and sample-file verification. | Philip plus recovery operator |
+| Clean reviewer package (FIND-073) | The dedicated `ScaleSafe` GHL sub-account opens and is tenant-isolated, but the attached Snapshot inventory still contains legacy/duplicate assets documented in `REVIEWER_SNAPSHOT_INVENTORY.md`. | Install or certify the approved V2 allowlist, remove obsolete packaged assets, run Provisioning Health, and preserve sanitized proof. | Philip with Codex verification |
 
-## Required Publication And Controlled-Beta Gates
+## Publication And Owner-Configuration Gates
 
-| Finding | Area | Classification | Required outcome | Dependency |
-|---|---|---|---|---|
-| FIND-007 | NMI official webhook readiness | Configuration/live proof | Signed/verified live webhook path certified per active NMI configuration | Owner/NMI setup access |
-| FIND-013 | Deleted GHL trigger subscription | GHL configuration | Stale subscription removed and exact workflows republished/retested | Owner-approved GHL workflow edit |
-| FIND-025 | NMI saved-method identity | Data/UI | Safely identify card ending before any saved-method charge | NMI test data or fresh vaulted card |
-| FIND-035 | Lifecycle workflow template fields | GHL configuration | Pause/resume emails render exact program fields, never objects | Owner-approved GHL template edit |
-| FIND-036/037 | Stripe recurring amount and workflow proof | Missing live proof | Fresh finite plan settles full amount and names exact enrollment | One new Stripe sandbox cycle |
-| FIND-056 | Zoom setup discovery | Code/live proof | Discovery query succeeds and health separates OAuth from event/evidence proof | None for code; live event later |
-| FIND-059 | Connector status truth | Code/UI | Draft/testing/disabled connections never appear healthy or as published evidence | None |
-| FIND-073 | Reviewer Snapshot packaging | GHL configuration/package | Clean V2 allowlist installed in a scratch account | Owner approves source Snapshot cleanup |
-| FIND-075 | Marketplace scope drift | Marketplace configuration | Exact least-privilege list and reviewer explanations | Owner-assisted exact scope export/save |
+These are not unresolved application-code defects, but GHL review or processor launch should not proceed without them.
 
-## Important Beta Reliability Work
+| Gate | Required action |
+| --- | --- |
+| Marketplace submission package | Record the installation/connection/end-to-end video, the scope-justification video, provide reviewer credentials outside the repository, and paste the reviewer notes. |
+| Public review URLs | Deploy the prepared `marketing/` package. The current privacy, terms, support, guide, FAQ, and troubleshooting paths return HTTP 200 but all resolve to the generic landing-page fallback rather than their own content. Verify unique page titles/content after deployment. |
+| Marketplace scopes (FIND-075) | Export/save the final least-privilege scope list and retain one plain-language explanation per scope. Products and Opportunities remain excluded unless current runtime use is proved. |
+| NMI official webhook (FIND-007) | Certify a signed/verified live callback for each NMI configuration offered during beta. Do not infer webhook readiness from successful dashboard charges. |
+| GHL lifecycle templates (FIND-035) | Confirm pause/resume/cancel templates use the documented scalar contact fields and produce one correctly named program message. Disable any unverified workflow rather than shipping `[object Object]`. |
+| Production release control (FIND-072) | Protect `main` with green CI/owner review or record a controlled-beta exception and practice one Railway rollback. |
+| Repository visibility | Confirm the public GitHub repository is intentional; otherwise make it private after checking Railway access. |
 
-| Finding | Area | Classification | Required outcome |
-|---|---|---|---|
-| FIND-044 | Dashboard cold scans | Code/performance | No read-side mutations; bounded cold latency; reduced periodic fan-out |
-| FIND-045 | Milestone completion latency | Code/reliability | Durable save returns promptly; trigger work is observable in background |
-| FIND-048 | Defense regeneration latency | Code/reliability | Durable background compilation with progress and retry state |
-| FIND-058 | Settings product truth | UI/content | Remove obsolete roadmap/coming-soon material from operational settings |
-| FIND-060 | Payment processor filter | UI | Whop appears through capability-driven filtering |
-| FIND-063 | Dispute queue truth | Code/UI | Active and historical disputes have status-appropriate actions |
-| FIND-065 | Client action feedback | UI | Notes/messages show one success state and refresh affected data |
-| FIND-069 | SSO error classification | Code/UI | Reinstall guidance only for a proven missing/revoked installation |
-| FIND-070 | Cross-region deployment | Operations | App and database co-located or measured exception approved |
-| FIND-072 | Production release control | Operations/security | Green reviewed branch cannot bypass production gate |
+## Code Ready, Awaiting Deployment And Live Readback
 
-## Completed Locally But Not Yet Integrated
+| Area | Local result | Required live readback |
+| --- | --- | --- |
+| Stripe active dispute queue | Routes now require `processor = stripe` and a non-null Stripe dispute ID; local/manual defense rows are rejected. Focused route tests pass. | After deploy, PMG Stripe Risk Health must show no local `$2` test-defense row in Active Disputes. |
+| Dual-option Quick Checkout | Recurring state is now derived from the selected payment choice, not merely the offer's default type. Focused checkout test passes. | After deploy, one paid-in-full selection on a dual offer must create no subscription or recurring enrollment. No charge is required if certified through a processor test fixture. |
 
-- FIND-071: `.gitignore` now excludes `scripts/.dbpass`, `tmp/`, and extracted temporary defense text. The change remains uncommitted on the remediation branch.
-- Review closure: FIND-074 and FIND-075 are now in the certification ledger, journal, Snapshot inventory, and historical findings register.
-- Code remediation is complete locally for FIND-044/045/048/049-058/059-067/069/074. This includes factual defense guards, processor/date validation, connector and Stripe health truth, Zoom host exclusion, bulk dashboard scoring, durable milestone delivery, queued defense regeneration, typed dependency failures, and settings cleanup.
-- Migration 099 is required before this branch can deploy. It installs the durable trigger-delivery queue, atomic defense-regeneration claim, service-only RLS, and schema version 99.
-- Full local verification on 2026-07-14: 160 suites / 1,326 tests passed, TypeScript passed, production build passed, `git diff --check` passed, and `npm audit --omit=dev` reported zero vulnerabilities.
-- These findings remain launch gates until migration 099 is applied and the named live regressions are certified in the internal test location.
+## Features That Need One Remaining Live Proof
 
-## Remediation Order
+These do not block the base product when described accurately, but they must not be advertised as certified until their proof is captured.
 
-1. Code-only correctness repairs with narrow regressions: FIND-064, FIND-061/062, FIND-059, FIND-060, FIND-063, FIND-065/066.
-2. Authentication and dependency failure handling: FIND-074, FIND-069, and the code portion of FIND-067.
-3. Defense factual-integrity batch: FIND-049 through FIND-055.
-4. Zoom identity and discovery: FIND-056/057.
-5. Background-job and dashboard performance: FIND-044/045/048 and worker polling from FIND-067.
-6. Owner-operated infrastructure and publication gates: FIND-007/013/025/035/068/070/072/073/075.
-7. Fresh live proof for Stripe recurring, GHL workflows, connector publication, Zoom attendance, and the reviewer install.
+| Area | Current proof | Missing proof |
+| --- | --- | --- |
+| Zoom attendance (FIND-057) | OAuth is connected, health distinguishes authorization from evidence, host exclusion is implemented, and the connection awaits a completed participant session. | One real non-host participant event matched once to the correct enrollment and visible in the client evidence/defense path. |
+| Enrollment-linked direct messages (FIND-066) | UI requires or selects the exact enrollment and displays the client-facing program name; automated tests cover the contract. | One harmless PMG message sent after the fix, observed in GHL and linked to that exact enrollment. |
+| NMI saved-method identity (FIND-025) | New data paths retain masked identity when NMI returns it. Historical methods without last four remain ambiguous and are correctly unsafe to select. | A fresh vaulted method showing the authorized last four, followed by a separately approved low-value charge if NMI saved charging is in beta scope. |
+| Zoom/connector defense exhibit | Connector history loads and GHL fulfillment publishes exact enrollment evidence. | One Zoom-derived exhibit in an enrollment-scoped packet after the attendance proof above. |
 
-## Deployment Rule
+## Closed By Deployed Code And Current Live Proof
 
-Remediation work starts from `codex/beta-remediation`. Do not push directly to `main` or trigger Railway production deployment until focused tests, the full suite, typecheck, build, migration review, and owner approval are complete.
+- FIND-044: dashboard reads are bounded, read-only, and currently respond below the three-second observation threshold.
+- FIND-045: milestone state is durable and trigger delivery is queued/observable.
+- FIND-048: defense regeneration returns `202` and completes in the durable background path.
+- FIND-049 through FIND-055: current defense regeneration stays `needs_review` when delivery is absent, does not assert unsupported delivery, preserves the selected Stripe transaction, includes the pulse follow-up facts, explains the `$65` pricing difference, and does not fire `ss_defense_ready`.
+- FIND-056/059/064: Evidence Connections separates OAuth, observed events, and published evidence; connector history loads from the live schema.
+- FIND-060: Payments exposes Stripe, NMI, Whop, and GHL processor filters.
+- FIND-061/062: Stripe Risk Health reads Stripe-only data and renders the normalized DTO.
+- FIND-063: terminal Stripe disputes stay out of the active queue; the remaining local-row edge case is fixed on the working branch above.
+- FIND-065: successful client actions provide one success state and refresh affected data.
+- FIND-067 code portion: idle workers use bounded behavior, dependency failures are typed, and production health recovered after the Supabase upgrade.
+- FIND-067 operations proof: the continuous 2026-07-15 4:46:45-5:47:42 PM CDT observation contained 134 HTTP requests, zero 4xx/5xx, zero requests over three seconds, a 1.536-second maximum, zero application warning/error lines, and ten consecutive healthy app/Supabase/schema probes. Reopen this finding if the Supabase resource warning or database timeouts return.
+- FIND-069/074: PMG and the clean reviewer sub-account both complete trusted location-bound SSO without a cross-account chooser; dependency and parent-context failures are separately classified.
+- FIND-071: password/temp evidence paths are ignored and no live secret was found in the tracked-tree scan.
+- FIND-036/037: the fresh Stripe finite plan charged `$1` first installment plus a one-time `$1` add-on, then one final `$1` installment; it completed at 2/2 with no next billing date. `ss_payment_received` was delivered once for payment 2 with the exact enrollment and program name.
+
+## Accepted Controlled-Beta Limitations
+
+- Railway remains in `us-west2` while Supabase is in `us-east-1` (FIND-070). Current measured health is acceptable for the controlled beta; continue latency monitoring and revisit regional alignment before scale.
+- Historical test records contain stale workflow copy, ambiguous saved methods, and intentionally unrealistic Stripe risk metrics. They remain in PMG for regression work and must not be used in reviewer screenshots.
+- FanBasis checkout/webhooks remain disabled pending provider approval and are outside beta certification.
+
+## Release Rule
+
+Do not call the beta ready until the stop-ship table is empty. Before any production push, run focused tests, the full Jest suite, TypeScript, production build, dependency audit, diff/secret checks, and record the deployed SHA.

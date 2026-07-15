@@ -480,6 +480,86 @@ describe('Checkout Controller', () => {
       expect(mockProcessor.charge).not.toHaveBeenCalled();
     });
 
+    it('does not create recurring state when dual-option Quick Checkout selects paid in full', async () => {
+      const offer = {
+        id: 'offer-dual-quick',
+        location_id: 'loc-1',
+        offer_name: 'Dual Quick Checkout',
+        active: true,
+        price: 100,
+        payment_type: 'installments',
+        installment_amount: 25,
+        installment_frequency: 'monthly',
+        num_payments: 4,
+        pif_price: 90,
+        pif_discount_enabled: true,
+        processor_override: null,
+        nmi_processor_id: null,
+      };
+      mockCheckoutCartQuote.mockResolvedValue({
+        selectedAmountCents: 9000,
+        selectedAmount: 90,
+        futureRecurringSelectedAmountCents: 2500,
+        lineItems: [],
+      });
+      mockProcessor.charge.mockResolvedValue({
+        success: true,
+        transactionId: 'txn_dual_pif',
+        chargeId: 'txn_dual_pif',
+        status: 'approved',
+      });
+
+      const inserts: Array<{ table: string; payload: any }> = [];
+      mockFrom.mockImplementation((table: string) => {
+        let operation: 'select' | 'insert' | 'update' = 'select';
+        let payload: any = null;
+        const execute = async () => {
+          if (operation === 'insert') {
+            inserts.push({ table, payload });
+            return { data: null, error: null };
+          }
+          if (table === 'offers_mirror') return { data: offer, error: null };
+          return { data: null, error: null };
+        };
+        const builder: any = {
+          select: jest.fn(() => builder),
+          insert: jest.fn((value: any) => {
+            operation = 'insert';
+            payload = value;
+            return builder;
+          }),
+          update: jest.fn((value: any) => {
+            operation = 'update';
+            payload = value;
+            return builder;
+          }),
+          eq: jest.fn(() => builder),
+          single: jest.fn(() => execute()),
+          maybeSingle: jest.fn(() => execute()),
+          then: (resolve: any, reject: any) => execute().then(resolve, reject),
+        };
+        return builder;
+      });
+
+      const req = mockReq({
+        publishableKey: 'pk_test',
+        offerId: offer.id,
+        paymentToken: 'tok_card',
+        amount: 9000,
+        currency: 'USD',
+        contactId: 'contact_1',
+        contactEmail: 'client@example.com',
+        contactName: 'Client One',
+        paymentChoice: 'pif',
+      });
+      const res = mockRes();
+      await processPayment(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+      expect(inserts.some((row) => row.table === 'enrollments')).toBe(false);
+      expect(mockProcessor.createSubscription).not.toHaveBeenCalled();
+    });
+
     it('saves card when requested and payment succeeds', async () => {
       mockProcessor.charge.mockResolvedValue({
         success: true,

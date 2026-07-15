@@ -1,5 +1,29 @@
 # Environment Configuration
 .env
+scripts/.dbpass
+
+# Local review artifacts (may contain client/evidence data)
+tmp/
+tmp_defense_packet_text*.txt
+docs/defense-output-samples/
+docs/ScaleSafe_E2E_Beta_Testing_Tracker.xlsx
+docs/DEFENSE_PACKET_LIVE_TEST_FABLE_HANDOFF_2026-07-06.md
+docs/DEFENSE_PACKET_REGENERATED_REVIEW_PROMPT_2026-07-06.md
+docs/RECOVERY_PARTNER_HANDOFF_RESEARCH_NOTES.md
+docs/PROJECT_MEMORY_VISUAL_UX_PASS.md
+docs/VISUAL_UX_CLEANUP_PROTOCOL.md
+docs/user-guide/LIVE_TEST_JOURNAL.md
+docs/user-guide/PUBLIC_SITE_AUDIT.md
+docs/user-guide/WEBSITE_CONTENT_PLAN.md
+docs/user-guide/assets/CLIENT-MESSAGE-*.png
+docs/user-guide/assets/OPS-*.png
+docs/user-guide/assets/dashboard-overview.png
+docs/user-guide/assets/clients-controls.png
+docs/user-guide/assets/defense-packet-detail.png
+docs/user-guide/assets/offers-list.png
+docs/user-guide/assets/payments-reconciliation-summary.png
+docs/user-guide/assets/stripe-risk-health.png
+supabase/manual_chunks/
 
 # Dependency directory
 node_modules

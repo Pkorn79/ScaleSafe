@@ -6,22 +6,22 @@
 ## Current Direction
 
 - ScaleSafe V2 does not use Make.com. Treat Make.com references in older docs as V1/history only.
-- Snapshot packaging is blocked until beta scope is frozen, installment billing is functionally proven, pulse cadence is tested, and PMG's webhook-secret custom value repair/sync is verified.
+- Installment billing and pulse cadence now have live proof. Snapshot packaging is blocked on the clean V2 asset allowlist, final scope freeze, Provisioning Health, and one fresh reviewer certification.
 - The app already provisions what it can through API. The Snapshot should contain the GHL-native assets that are hard or impossible to create reliably through API.
 - Webhook secrets are implemented in observe mode. Snapshot/workflow webhooks should include `x-scalesafe-webhook-secret` with value `{{ custom_values.scalesafe_webhook_secret }}`, but backend enforcement should stay off until active workflows are confirmed signed.
 - Offer checkout/enrollment links are durable public links and must not expire by default. Quick checkout links (`/quick-checkout?offerId=...`) and full enrollment funnel links (`/welcome?offerId=...`) may be used in funnels, automations, emails, ads, or client follow-ups. Signed 14-day public action tokens are only for sensitive client actions such as payment update, subscription cancellation, and milestone signoff.
 - Current workflow email/SMS templates are accepted as the beta source of truth. The app now creates/writes the workflow-compatible contact fields they expect, including `contact.offer_program_name`, `contact.offer_price_display`, `contact.offer_number_of_payments`, and `contact.offer_support_email`. Run Settings > Provisioning Health > Repair Fields before snapshot export and after fresh install.
 
-## Current Beta Finish Path Status - 2026-05-22
+## Current Beta Finish Path Status - 2026-07-15
 
 - Phase 1 payment truth shipped: final installment payoff marks billing complete without completing the program.
 - Phase 2 payment ledger shipped: all-payments reporting, date filters, processor/billing/status filters, and schema-drift fallbacks.
 - Phase 3 processor clarity/lifecycle controls shipped: per-plan pause/resume/cancel controls and processor-aware stored-card handling.
 - Phase 4 reconciliation diagnostics shipped and should stay visible during beta.
 - Phase 4B payment display truth shipped: unlinked payment rows and reconciliation issues now show `Unassigned payment` instead of borrowing a program from the same contact. Offer Tracking ID is available after migration `057_offer_tracking_id.sql`.
-- Phase 5 payment workflow proof is still live-testing work: enrollment complete, payment received, failed payment, Stripe refund retest, Whop refund webhook-only behavior, and chargeback/defense workflows. Payment reminders are verified working from multiple live upcoming-payment reminder sends as of Philip's 2026-06-24 retest. NMI recurring and Stripe recurring are recorded as verified working from Philip's live/sandbox tests.
-- Phase 6 pulse cadence is code-shipped but still needs GHL smoke proof: send a test pulse, confirm `ss_app_event` delivery with `event_type = pulse_check_due`, confirm GHL workflow execution/outbound email, submit SYS2-09, and verify `pulse_checkin` evidence links to the enrollment.
-- Phase 7 fresh install E2E remains blocked until Phases 5 and 6 are clean.
+- Phase 5 core payment workflows have live proof for enrollment complete, payment received, reminders, Stripe finite recurring, refunds, and Whop pay-first consent. NMI official signed callback proof and scalar lifecycle-template proof remain owner/configuration gates.
+- Phase 6 pulse cadence passed app event, GHL workflow execution, outbound message, client submission, exact-enrollment evidence, and dashboard follow-up proof.
+- Phase 7 installed Custom Page SSO passes in both PMG and the dedicated reviewer sub-account. The remaining gate is certifying the clean V2 Snapshot contents and Provisioning Health, not basic app installation.
 - Phase 8 production hardening: automatic fallback billing and automatic NMI history sync are no longer scheduled. NMI recurring beta proof must come from the live processor webhook path, not repair/import jobs.
 
 ## App-Provisioned On Install
@@ -49,7 +49,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 | Evidence forms SYS2-07 through SYS2-11 | Exists/partially verified | Package forms. Ensure any workflow/custom webhook action posts directly to `https://dashboard.scalesafe.app/webhooks/ghl/forms` or the current production app URL, with header `x-scalesafe-webhook-secret: {{ custom_values.scalesafe_webhook_secret }}`. |
 | Notification workflows | Built/published per Cowork workflow reference | Package active V2 workflows. Do not include obsolete V1 duplicates. |
 | Evidence form workflows | WF-01/WF-02 published | Package after webhook URL/header check. |
-| `SS - Pulse Check Due` workflow | Required for beta | Package the workflow that listens to the shared Marketplace trigger `ss_app_event` / `ScaleSafe App Event` and filters `Event Type = Pulse Check Due` in the GHL UI. The payload value is `event_type = pulse_check_due`. The app owns cadence and sends `enrollment_id`, `contact_id`, `offer_name`, `form_url`, `pulse_check_url`, and context fields. Exclude the old tag-driven pulse workflow. |
+| Pulse Check Due workflow | Required for beta | Package exactly one workflow that listens to the shared Marketplace trigger `ss_app_event` / `ScaleSafe App Event` and filters `Event Type = Pulse Check Due` in the GHL UI. The payload value is `event_type = pulse_check_due`. The app owns cadence and sends `enrollment_id`, `contact_id`, `offer_name`, `form_url`, `pulse_check_url`, and context fields. The reviewer workflow is currently named `SS--Pulse-Check-Cadence`, but its live trigger/filter contract is correct. Do not add a second workflow merely to correct the name. |
 | Enrollment funnel | Not started/currently biggest unknown | Build/package current V2 flow or explicitly defer if the app-hosted enrollment/Quick Pay path fully replaces it for beta. |
 
 ## Do Not Package
@@ -69,6 +69,8 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
 - `SS - Bump Acceptance Confirmation` should remain draft/deferred while order bumps are post-beta.
 - The active app has 20 valid trigger keys in `src/constants/trigger-keys.ts`, including the shared `ss_app_event` multi-event trigger used for upcoming payment reminders and pulse checks.
 - Current managed SS contact fields are 6, including `ss_engagement_status` for at-risk/re-engagement workflows. Merchant provisioning now creates all 6.
+- The reviewer sub-account already has ScaleSafe installed. Its current `Unable to Connect` page was reproduced during the production Supabase outage and must not be treated as an installation failure or a reason to reinstall.
+- Live reviewer inspection confirmed that `SS--Pulse-Check-Cadence` is app-event-driven and correctly filtered for `Pulse Check Due`; its name is legacy, but its behavior is current.
 
 ## Manual GHL Checklist
 
@@ -81,7 +83,7 @@ These should not be manually duplicated in the Snapshot unless GHL requires them
    - Header name is `x-scalesafe-webhook-secret`.
    - Header value is `{{ custom_values.scalesafe_webhook_secret }}`.
    - Body includes `locationId`, `contactId` or resolvable contact identity, `formId`, and `data`.
-6. Confirm `SS - Pulse Check Due` exists, uses the shared Marketplace trigger `ScaleSafe App Event` / `ss_app_event`, filters `Event Type = Pulse Check Due`, sends an email/SMS with `pulse_check_url` or `form_url`, and the old tag-driven pulse cadence workflow is excluded or clearly disabled.
+6. Confirm exactly one pulse workflow uses the shared Marketplace trigger `ScaleSafe App Event` / `ss_app_event`, filters `Event Type = Pulse Check Due`, and sends an email/SMS with `pulse_check_url` or `form_url`. Verify the trigger and filter in the editor; do not rely on the workflow name alone.
 7. Confirm all active notification workflow email/SMS bodies use the canonical field replacements in `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md`.
 8. Confirm all active notification workflows listen to the correct current trigger keys/payload shapes, including `ss_app_event` with `event_type = upcoming_payment_reminder` before billing and `ss_payment_received` after installments.
 9. Confirm no V1 Make.com or Accept.blue assets are included in the Snapshot package.

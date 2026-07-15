@@ -26,6 +26,7 @@
     <div class="links">
       <a href="/support.html">Support</a>
       <a href="/guide.html">User Guide</a>
+      <a href="/faq.html">FAQ</a>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
     </div>
@@ -33,7 +34,7 @@
 </header>
 <main class="wrap">
   <h1>Troubleshooting</h1>
-  <p class="muted">What to capture before reporting a ScaleSafe issue.</p>
+  <p class="muted">Collect processor, ScaleSafe, and GoHighLevel proof before changing configuration. A processor success, app-event delivery, and customer email are three different facts.</p>
 
   <div class="grid">
     <section class="card">
@@ -76,6 +77,50 @@
         <li>Confirm ScaleSafe saved the processor subscription ID on the enrollment.</li>
         <li>Check billing setup status. Reminders are skipped when billing is not ready.</li>
         <li>Confirm the next billing date is inside the reminder window.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Installation and provisioning</div>
+      <h2>ScaleSafe will not open or the install has warnings</h2>
+      <ul>
+        <li>Open ScaleSafe from the intended GHL sub-account, not from an agency-wide launcher.</li>
+        <li>Record the location ID shown by GHL and the exact installation time.</li>
+        <li>Complete merchant fields, funnel domain, snapshot assets, workflows, and processor setup before using Provisioning Health as a final pass/fail check.</li>
+        <li>Do not reinstall repeatedly until Railway HTTP/deploy logs and the failed health item have been reviewed.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Evidence matching</div>
+      <h2>Activity appears on the client but not the program</h2>
+      <ul>
+        <li>Confirm the event belongs to the correct GHL contact and location.</li>
+        <li>Check whether the Evidence row says Linked or Link to Program.</li>
+        <li>Record the enrollment dates, event timestamp, external resource, and any stable enrollment reference.</li>
+        <li>Do not assign the event to the newest enrollment merely because it is newest.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Defense packet</div>
+      <h2>The letter, exhibits, or status do not agree</h2>
+      <ul>
+        <li>Record the packet ID, transaction, enrollment, reason code, dispute date, and processor deadline.</li>
+        <li>Compare the letter exhibit index, on-screen Exhibits tab, and downloaded PDF.</li>
+        <li>Do not submit a Needs Review packet until every factual claim and exhibit is checked.</li>
+        <li>If Stripe submission fails, confirm the packet was not marked submitted locally.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="tag">Evidence Connections</div>
+      <h2>Zoom, GHL, or external activity is unresolved</h2>
+      <ul>
+        <li>Confirm the connection belongs to the current sub-account and is healthy.</li>
+        <li>Record the provider event ID, client identity, resource, source timestamp, and expected enrollment.</li>
+        <li>Test events are diagnostic and should never appear as production evidence.</li>
+        <li>Merchants should not repair events one by one; send the connection health and event details to support.</li>
       </ul>
     </section>
   </div>

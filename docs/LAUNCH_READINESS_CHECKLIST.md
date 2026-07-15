@@ -1,192 +1,109 @@
-# ScaleSafe — Launch Readiness Checklist
+# ScaleSafe Controlled Beta Launch Checklist
 
-> **Purpose.** The go-live gate for ScaleSafe. Nothing ships to general availability until every
-> **Blocker** is checked. This is the single source of truth for "are we safe to launch?" — it
-> supersedes scattered notes in the CHANGELOG and session handoffs.
->
-> **How to use.** Copy the relevant section into the PR/release description and check each box with
-> evidence (a link, a command output, a screenshot). A box is only "done" when verified, not when
-> "should work." Owner: Philip. Last structural update: 2026-06-15.
+Reconciled: 2026-07-15 CDT
+Deployed SHA: `a04205c2b90b3cb99410d4396bb666faf193c007`
+Production schema: `101`
+Detailed current status: `docs/user-guide/OPEN_REMEDIATION_REGISTER.md`
 
-Legend: 🔴 **Blocker** (must pass to launch) · 🟡 **Should-fix** (launch with a tracked exception) ·
-🟢 **Nice-to-have**
+This checklist is for the first controlled beta merchant and the GoHighLevel Marketplace review package. Historical findings remain in the certification ledger; fixed items are not repeated as open work here.
 
----
+## 1. Hard Launch Gates
 
-## 0. Pre-deploy gate (run on EVERY deploy, not just launch)
+- [ ] **Encrypted recovery is proven.** Create one off-platform encrypted database and private-Storage snapshot, verify its completion marker and hashes, and complete one isolated scratch restore. Supabase managed backups alone do not satisfy this gate.
+- [x] **Production health soak is complete.** From 2026-07-15 4:46:45 PM through 5:47:42 PM CDT, Railway recorded 134 HTTP requests, zero 4xx/5xx, zero requests over three seconds, a 1.536-second maximum, and zero application warning/error lines. Ten closing `/health` probes all reported app/Supabase/schema `ok`.
+- [ ] **Reviewer Snapshot is clean.** Certify the approved V2 asset allowlist in the dedicated `ScaleSafe` GHL sub-account; obsolete SYS2/model-specific/duplicate assets are absent or explicitly removed from the submitted Snapshot.
 
-ScaleSafe auto-deploys from GitHub `main` to Railway. Because migrations and code deploy
-independently, **a code deploy that lands before its migrations will throw on live traffic.**
+## 2. Marketplace Submission Package
 
-- [ ] 🔴 **Apply all migrations referenced in the current CHANGELOG `Unreleased` section to Supabase
-  BEFORE merging/deploying that code.** As of this writing the Unreleased batch requires
-  `072_payment_events_unique_txn`, `073_record_recurring_payment`, `074_enrollment_billing_setup_status`,
-  `077_decrement_payments_made`, and `078_dispute_events_whop_processor`. Without them, live recurring
-  webhooks, refunds, and dunning retries throw (they call `record_recurring_payment` /
-  `decrement_enrollment_payments_made`). **Always re-read the live CHANGELOG Unreleased block — this
-  list drifts.** (See `supabase/migrations/` for the latest: 079/080 also land checkout add-ons + dual-pricing.)
-- [ ] 🔴 Confirm the migration actually applied (query the new object in Supabase, don't assume).
-- [ ] 🔴 CHANGELOG updated for the release (project rule — every commit has an entry).
-- [ ] 🟡 Rollback plan noted: previous Railway deploy is one-click redeploy; migrations are
-  forward-only — confirm each new migration is additive/safe to leave in place if code is rolled back.
+- [ ] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
+- [ ] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
+- [ ] Provide reviewer GHL credentials through the Marketplace form, never the repository.
+- [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
+- [ ] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
+- [ ] Export and save the final least-privilege Marketplace scope list and explanations.
+- [ ] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
+- [ ] Deploy the prepared public help/legal pages and confirm privacy, terms, support, guide, FAQ, and troubleshooting URLs serve their own content without authentication. Current live paths return `200` but fall back to the generic landing page.
 
----
+## 3. Production Environment And Schema
 
-## 1. Payments correctness — open verification items (🔴 Blockers)
+- [x] `NODE_ENV=production` in Railway.
+- [x] `PROCESSOR_ENCRYPTION_KEY`, `PUBLIC_ACTION_TOKEN_SECRET`, Stripe secrets, Supabase service key, GHL app credentials, and Turnstile keys are present in Railway.
+- [x] `ALLOW_LEGACY_PUBLIC_ACTION_LINKS` is absent/false.
+- [x] Supabase is on Pro and managed daily backups are enabled with seven-day retention.
+- [x] Production schema RPC reports version `101`.
+- [x] `/health` currently reports app, Supabase, and schema `ok`.
+- [ ] Confirm `VITE_ENABLE_DAILY_TEST_BILLING` is disabled before live merchant billing begins. It may remain enabled only while the documented daily test cycle is intentionally running.
+- [ ] Confirm Stripe is in the intended environment for the reviewer account and live processing is not accidentally enabled for review tests.
 
-These are the two known-open items from the last session handoff. Both must be closed before
-onboarding real merchants who take live payments.
+## 4. Processor And Money Safety
 
-- [ ] 🔴 **Group B — no day-1 double-bill (recurring).** In a **test-mode** Stripe account, run a
-  fresh 2-pay weekly enrollment and confirm: `$0.50` charges day 1 (upfront only, via
-  `processor.charge()`), then a second `$0.50` fires one week later as a `subscription_cycle`
-  invoice — **not** two charges on day 1. Verifies the `billing_cycle_anchor` +
-  `proration_behavior='none'` fix. (Disconnect → reconnect test-mode Stripe on Settings → Payments first.)
-- [x] 🔴 **Group F — NMI Query API permission.** Confirm the merchant's NMI `security_key` has
-  **Query API permission enabled** in the NMI portal, so vaulted-card metadata (`****`/brand/exp)
-  populates instead of staying `unknown`. Affected legacy `payment_methods` rows only self-heal on
-  re-vault. Document this as an onboarding step for every NMI merchant.
-  **Current merchant proof captured 2026-06-15:** live NMI recurring test showed subscription ID
-  `12190152581`, NMI vault `1035592018`, card brand `mc`, expiration `1/2028`, payment progress
-  `1 of 4`, and next billing date `2026-06-16`.
-- [ ] 🔴 Run the full payment-flow integration suite green:
-  `npx jest --testPathPattern="payment-flow|dispute-flow"`.
-- [ ] 🟡 Spot-check one real end-to-end on each rail: NMI charge + vault, Stripe Connect direct
-  charge, refund (reverses the ledger), pause/resume/cancel.
+- [x] Stripe paid-in-full checkout records one payment, enrollment, consent packet, receipt, and welcome delivery.
+- [x] Stripe finite recurring test completed the exact two-payment schedule at the full amount, with a one-time add-on charged only on payment one and no next billing after payment two.
+- [x] Stripe recurring receipt payload names the exact enrollment and payment number.
+- [x] Stripe and NMI refunds have passed live tests.
+- [x] Whop hosted checkout, PIF/installment choice, add-on capture, QMS pay-first consent, and refund lifecycle have live proof in PMG.
+- [x] Durable money-operation and refund claims protect duplicate processor calls.
+- [x] Checkout amounts are server-recalculated and processors receive integer cents.
+- [ ] Certify the NMI official signed/verified webhook callback for every NMI configuration offered in beta.
+- [ ] If saved-method NMI charging is in beta scope, prove one fresh method displays the authorized last four before an owner-approved charge.
+- [ ] After the current branch deploys, prove a dual-option Quick Checkout paid-in-full selection creates no recurring enrollment or subscription.
 
----
+## 5. GHL Installation And Workflows
 
-## 2. Ship-quality / engineering gates
+- [x] PMG and the dedicated reviewer sub-account complete trusted, location-bound SSO.
+- [x] The reviewer sub-account shows tenant-isolated empty data rather than PMG records.
+- [x] Enrollment link, payment receipt, welcome, upcoming payment reminder, pulse, milestone, and milestone-signoff paths have live proof.
+- [x] Deleted GHL trigger subscriptions are automatically deactivated after a terminal GHL response.
+- [x] Pulse app-event delivery, workflow execution, URL/interval fields, client submission, evidence, and dashboard follow-up state have been observed.
+- [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`.
+- [ ] Run Provisioning Health in the final reviewer Snapshot and save sanitized proof.
+- [ ] Confirm exactly one app-event pulse workflow and no competing tag/timer cadence workflow.
+- [ ] Complete one harmless enrollment-linked direct message after the current fix and verify the GHL echo remains on the selected enrollment.
 
-- [ ] 🔴 `npm run typecheck` clean.
-- [ ] 🔴 `npm test` (jest) green.
-- [ ] 🔴 `npm run build` succeeds (note: Windows `copy-build-assets` step is cosmetic; CI runs on
-  Linux and completes fully).
-- [ ] 🔴 CI workflow exists and runs on push to `main` (typecheck + jest + build + `npm audit --omit=dev`).
-- [ ] 🔴 Launch-critical routes have test coverage: checkout, quick manual sale, offer save/clone,
-  payment-provider repair/provisioning, dispute/EFW, refund, pause/resume/cancel, webhook idempotency.
-- [ ] 🟡 `npm audit --omit=dev` reviewed; no unpatched **high/critical** in the payments dependency
-  surface (`stripe`, `pg`, `axios`, `express`, `multer`, `body-parser`).
-- [ ] 🟢 Dependabot (or scheduled audit) enabled.
+## 6. Evidence, Connectors, And Defense
 
----
+- [x] Enrollment consent, payment, communication, appointment, milestone, signoff, and pulse evidence are enrollment-scoped when a defensible exact match exists.
+- [x] Ambiguous contact activity remains client-level and is excluded from exact-enrollment defense packets.
+- [x] GHL appointment evidence distinguishes scheduled engagement from attended/completed delivery.
+- [x] Evidence Connections history loads with source, event state, client/program target, and match method.
+- [x] Zoom OAuth is tenant-isolated and health separates authorization, observed event, and published evidence.
+- [ ] Prove one real non-host Zoom participant event publishes once to the correct enrollment before calling Zoom attendance certified.
+- [x] Defense regeneration runs in the background, preserves the selected transaction, and stays `needs_review` when delivery proof is absent.
+- [x] A `needs_review` packet does not fire `ss_defense_ready`.
+- [x] Current defense output identifies evidence gaps, includes pulse follow-up facts, and does not assert service delivery that was not proved.
+- [ ] After the current branch deploys, verify local/manual defense rows do not appear in Stripe Active Disputes.
 
-## 3. Security & multi-tenancy (🔴 Blockers)
+## 7. Reviewer Documentation
 
-ScaleSafe is multi-tenant from day one and holds encrypted processor credentials — these are
-non-negotiable.
+- [x] Working merchant guide exists at `docs/user-guide/README.md`.
+- [x] FAQ exists at `docs/user-guide/FAQ.md`.
+- [x] Workflow reference exists at `docs/user-guide/WORKFLOW_REFERENCE.md`.
+- [x] Deep test protocol exists at `docs/user-guide/DEEP_DIVE_TEST_PLAN.md`.
+- [x] Reviewer test script, installation guide, and troubleshooting guide are complete.
+- [ ] Complete the sanitized screenshot set using `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`; PMG engineering captures are not submission assets.
+- [ ] Ensure screenshots contain no real client PII, card/bank data, processor secrets, webhook secrets, access tokens, or signed private-file URLs.
+- [x] Public claims use “reduce chargebacks” and “organize evidence,” not guaranteed prevention or guaranteed wins.
 
-- [ ] 🔴 Every data query filters by `location_id` (per CLAUDE.md). No cross-merchant leakage.
-- [ ] 🔴 Processor credentials encrypted at rest: `processor_configs` uses AES-256-GCM
-  (`src/utils/field-encryption.ts`); `PROCESSOR_ENCRYPTION_KEY` set in Railway prod and **never** logged.
-- [ ] 🔴 RLS lockdown migration (`046_rls_lockdown`) + public-schema hardening (`059`) applied in prod.
-- [ ] 🔴 Webhook signature verification enforced in prod for GHL, NMI silent-post, and Stripe.
-  Confirm `ALLOW_UNSIGNED_GHL_WEBHOOKS` is **not** set in production.
-- [ ] 🔴 No secrets in the repo or in committed `.env`. `.env.example` is the only env file tracked.
-- [ ] 🔴 **Rotate Supabase credentials after historical git exposure.** Historical commit audit found
-  Supabase DB credentials in `.claude/settings.local.json` in git history. Do not rewrite git history
-  for launch; rotate the Supabase database password and service/JWT secret, then update Railway
-  production variables and redeploy. Evidence: Supabase rotation screenshot + Railway variable update +
-  successful prod health check.
-- [ ] 🟡 Run `/security-review` on the current branch before launch; triage findings.
-- [ ] 🟡 **Rate-limit hardening batch queued.** Add/verify throttling for GHL Custom Payment Provider
-  query URL, public payment-update/milestone-signoff/pulse-check POSTs, and `/auth/sso`; set Express
-  `trust proxy` correctly for Railway; consider a shared store before larger scale. Defer until current
-  Oke/Philip retests settle unless abuse appears.
-- [ ] 🟡 Rate limiting active on public/checkout routes (`rateLimiter` middleware).
-- [ ] 🟡 Public checkout/action pages pass XSS/CSP tests (`public-route-xss`, `public-widget-csp`).
+## 8. Engineering Release Checks
 
----
+- [x] `git diff --check` passes.
+- [x] `npm run typecheck` passes.
+- [x] `npm test -- --runInBand` passes: 164 suites and 1,346 tests.
+- [x] `npm run build` passes.
+- [x] `npm audit --omit=dev` reports zero production vulnerabilities.
+- [x] Tracked-tree secret scan passes; `.env`, `scripts/.dbpass`, temporary evidence exports, and recovery credentials remain untracked/ignored.
+- [ ] CI is green for the exact release SHA.
+- [x] Changelog describes the release changes; this branch requires no new migration.
+- [ ] Railway deploys the intended SHA and rollback to the preceding known-good deployment is recorded.
 
-## 4. OAuth / install / provisioning
+## 9. Controlled-Beta Owner Decisions
 
-- [ ] 🔴 Fresh GHL install on a clean sub-account completes: OAuth → SSO handshake → merchant
-  provisioned → SS contact fields + custom values created.
-- [ ] 🔴 Post-provision GHL state verified via Make.com MCP: `read_all_custom_values`,
-  `list_ghl_custom_fields`, `list_offer_records`, `get_co_schema_v_2_fresh` — no schema drift, no
-  missing field IDs.
-- [ ] 🟡 Re-install / token-refresh path tested (GHL tokens encrypted per migration `068`).
+- [ ] Protect `main` and require green CI/owner approval, or record a temporary controlled-beta exception with rollback proof.
+- [ ] Confirm whether the GitHub repository should remain public.
+- [ ] Accept the measured Railway `us-west2` to Supabase `us-east-1` topology for controlled beta or schedule regional alignment.
+- [ ] Explicitly list beta-supported processor actions and keep unsupported/deferred controls hidden.
+- [ ] Keep FanBasis disabled until provider approval and separate certification.
 
----
+## Launch Decision
 
-## 5. Product / UX readiness
-
-- [x] 🟡 Error feedback is visible to merchants — toast system added; failed actions (post/put/del)
-  auto-toast. (Views can adopt `toast.success(...)` for positive confirmation incrementally.)
-- [~] 🟡 Key flows have loading states — `Skeleton.vue` added; `DashboardView` first-load uses it.
-  *(long forms — OfferFormView/SettingsView — can adopt it next.)*
-- [x] 🟡 **WCAG contrast — RESOLVED.** Primary CTA moved emerald-500 (≈2.54:1, failed) → emerald-700
-  `#047857` (≈5.5:1, passes AA) across `.btn-primary`/`.btn-success`/`.ss-btn-primary`. Risk indicators
-  and other CTAs still want a full Lighthouse/a11y pass (see §5 audit, pending app-run).
-- [ ] 🟡 Keyboard navigation works for `Tabs.vue` / `Modal.vue`; mobile/responsive checked.
-- [ ] 🟢 Empty states present on every list view (clients, payments, offers, disputes).
-
----
-
-## 6. Go-to-market
-
-- [~] 🟡 GHL Marketplace listing — evidence-first private-beta draft updated
-  (`docs/GHL_MARKETPLACE_LISTING.md`). *Still needs: exact live OAuth scope strings copied from the GHL
-  Marketplace app config, screenshots, hosted privacy/terms/support URLs, and brand-owner sign-off.*
-- [~] 🟡 Landing page — evidence-first private-beta draft aligned with the Marketplace positioning
-  (`marketing/index.html`, self-contained, on-brand). *Still needs: brand-owner copy sign-off,
-  structured-data/JSON-LD + AEO meta, hosted privacy/terms/support links, final install/beta CTA URL,
-  and hosting.*
-- [~] 🟡 Public legal/support pages — static Privacy, Terms, Support, User Guide, and Troubleshooting
-  pages exist under `marketing/` and are linked from the landing page. *Still needs hosting at
-  `https://scalesafe.app` and final legal/brand review.*
-- [~] 🟡 Merchant onboarding content / help center covers the chargeback-defense value loop and the
-  NMI Query-API enable step (from §1). *Initial static guide/troubleshooting pages exist; expand after
-  Oke's beta testing exposes repeated questions.*
-- [ ] 🟡 Chargeback-reduction positioning verified across public copy: use "reduce chargebacks,"
-  "build the evidence trail," and "improve dispute readiness"; avoid "prevent chargebacks,"
-  "win every chargeback," and automated-representment claims that are not live.
-- [ ] 🟡 Evidence readiness copy is accurate: current score is contact-level readiness, not
-  enrollment-level scoring and not a win-probability prediction.
-- [ ] 🟡 Pulse beta proof captured: due app event sent, GHL workflow delivered, client submitted,
-  and pulse evidence linked to the enrollment.
-- [ ] 🟡 Pulse merchant alerting defined and tested: submitted pulse responses appear somewhere
-  visible for the merchant, and any response marked as needing attention creates an obvious dashboard
-  warning/notification tied to the correct client, program, and enrollment.
-  - Implemented 2026-07-08: dashboard "Pulse check-ins" card (`GET /api/dashboard/pulse-checkins`)
-    lists recent submissions with client, program, score, and feedback; `follow_up_needed` or a
-    satisfaction of 2/5 or lower shows a red "needs attention" badge with the reason, attention
-    items sort first, and rows click through to the client profile. Unlinked legacy rows show a
-    "Not linked to a program — review" badge instead of guessing an enrollment. Data comes from
-    ScaleSafe's own `evidence_pulse_checkins` (not GHL delivery). Manual verify: submit one pulse
-    normally and one with the follow-up box checked, then confirm both render on the dashboard
-    with the flagged one on top.
-- [ ] 🟡 Processor-side prevention setup checklist exists for WholePay/NMI merchants covering
-  descriptor clarity, Ethoca/Verifi/RDR availability, and optional 3DS/Radar guidance without
-  implying ScaleSafe-native network-alert automation.
-- [ ] 🟢 Incident/support runbook + status page.
-
----
-
-## 7. Operations & monitoring
-
-- [ ] 🔴 `/health` endpoint green in prod; Railway health check passing (3-retry config).
-- [ ] 🟡 Error monitoring/alerting on payment + webhook handlers (a silent recurring-webhook failure
-  is a money bug — Stripe webhook now returns 5xx so failures are retried; confirm they're also alerted).
-- [ ] 🟡 A way to see, per merchant, that recurring billing is actually firing (reconciliation/audit).
-- [ ] 🟡 **At-risk dashboard performance batch queued.** Security audit found
-  `/api/dashboard/at-risk` / `disengagementService.checkAllClients` can behave as an unbounded N+1
-  query path. Fix before scaling beyond early beta or if the route becomes slow/timeouts in testing.
-- [ ] 🟢 **Money-route hardening backlog queued.** Review NMI webhook retry/200 behavior, refund
-  idempotency window, and internal error-text exposure. Not a current launch blocker unless Oke/Philip
-  retests surface symptoms.
-- [ ] 🟢 Backup/restore of Supabase validated.
-
----
-
-### Sign-off
-
-Launch is approved only when all 🔴 Blockers are checked and every 🟡 Should-fix is either done or
-has a written, owner-acknowledged exception.
-
-| Gate | Owner | Date | Evidence |
-|---|---|---|---|
-| Payments correctness (§1) | | | |
-| Security & tenancy (§3) | | | |
-| OAuth/provisioning (§4) | | | |
-| Final go/no-go | Philip | | |
+ScaleSafe is a **NO-GO for the first real beta merchant** while any item in Section 1 remains open. Marketplace submission also requires Sections 2 and 7. Other unchecked items require completion or a written owner-approved controlled-beta exception before launch.

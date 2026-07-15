@@ -4,90 +4,220 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>User Guide - ScaleSafe</title>
-<meta name="description" content="ScaleSafe user guide." />
-<style>
-  :root { --bg:#0a0f1c; --panel:#0f172a; --text:#e2e8f0; --muted:#94a3b8; --line:rgba(148,163,184,.22); --accent:#34d399; }
-  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
-  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  .wrap{max-width:920px;margin:0 auto;padding:32px 22px 64px}
-  header{border-bottom:1px solid var(--line);background:rgba(15,23,42,.72);position:sticky;top:0;backdrop-filter:blur(12px)}
-  nav{max-width:1080px;margin:0 auto;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
-  .brand{font-weight:800;color:#fff}.links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
-  h1{font-size:44px;line-height:1.05;margin:44px 0 10px;color:#fff} h2{font-size:24px;margin:36px 0 10px;color:#fff}
-  h3{font-size:17px;margin:20px 0 6px;color:#fff} p,li{color:#cbd5e1}.muted{color:var(--muted)}
-  .card{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:20px;margin:20px 0}
-  footer{border-top:1px solid var(--line);margin-top:42px;padding-top:22px;color:var(--muted);font-size:14px}
-</style>
+<meta name="description" content="A practical guide to installing, configuring, and operating ScaleSafe." />
+<link rel="stylesheet" href="help.css" />
 </head>
 <body>
-<header>
-  <nav>
+<header class="site-header">
+  <nav class="top-nav" aria-label="Primary navigation">
     <a class="brand" href="/">ScaleSafe</a>
-    <div class="links">
-      <a href="/support.html">Support</a>
+    <div class="top-links">
+      <a aria-current="page" href="/guide.html">User Guide</a>
+      <a href="/faq.html">FAQ</a>
       <a href="/troubleshooting.html">Troubleshooting</a>
-      <a href="/privacy.html">Privacy</a>
-      <a href="/terms.html">Terms</a>
+      <a href="/support.html">Support</a>
     </div>
   </nav>
 </header>
-<main class="wrap">
-  <h1>User Guide</h1>
-  <p class="muted">A practical operating guide for ScaleSafe private beta merchants.</p>
 
-  <section class="card">
-    <h2>1. Install and provisioning</h2>
-    <ol>
-      <li>Install ScaleSafe from the GoHighLevel Marketplace or beta install link.</li>
-      <li>Open ScaleSafe inside GoHighLevel and confirm SSO login works.</li>
-      <li>Open Settings and run Provisioning Health.</li>
-      <li>Confirm merchant status, webhook secret, custom values, contact fields, trigger subscriptions, and payment settings.</li>
-    </ol>
-  </section>
+<div class="help-layout">
+  <aside class="help-sidebar" aria-label="Guide sections">
+    <p class="sidebar-label">On this page</p>
+    <a href="#start">Start here</a>
+    <a href="#setup">Merchant setup</a>
+    <a href="#processors">Payment processors</a>
+    <a href="#offers">Offers</a>
+    <a href="#clients">Clients and enrollments</a>
+    <a href="#payments">Payments</a>
+    <a href="#evidence">Evidence</a>
+    <a href="#pulse">Milestones and pulse</a>
+    <a href="#defense">Defense</a>
+    <a href="#integrations">Evidence Connections</a>
+    <a href="#daily">Daily operating routine</a>
+  </aside>
 
-  <section class="card">
-    <h2>2. Connect payment settings</h2>
-    <h3>Stripe</h3>
-    <p>Connect the merchant's Stripe account, enable the needed payment methods in Stripe, and test with Stripe sandbox before live use.</p>
-    <h3>NMI</h3>
-    <p>Add the merchant's NMI credentials, confirm the account can process live transactions, and make sure Query API permission is enabled so vaulted card metadata can populate.</p>
-  </section>
+  <main class="help-content">
+    <div class="page-intro" id="start">
+      <p class="eyebrow">Private beta operating guide</p>
+      <h1>Use ScaleSafe with a clean, repeatable workflow.</h1>
+      <p class="lead">ScaleSafe connects enrollment, payment, fulfillment, communication, and client engagement to the correct client program. This guide follows the order a merchant should actually use.</p>
+      <div class="status-row" aria-label="Guide status">
+        <span>Verified against the live beta app</span>
+        <span>Updated July 12, 2026</span>
+      </div>
+    </div>
 
-  <section class="card">
-    <h2>3. Build offers</h2>
-    <ol>
-      <li>Create an offer and choose full enrollment or quick checkout.</li>
-      <li>Set pricing: one-time, installments, subscription, or PIF/installment option.</li>
-      <li>Add terms, refund language, milestones, pulse cadence, tags, dual pricing, and one-time checkout add-ons where needed.</li>
-      <li>Save, reload, and open the public checkout/enrollment link to confirm the client-facing page is correct.</li>
-    </ol>
-  </section>
+    <section class="guide-section" id="setup">
+      <div class="section-number">01</div>
+      <div>
+        <h2>Complete merchant setup</h2>
+        <p>Open <strong>Settings</strong> inside the correct GoHighLevel sub-account. Enter the merchant's business information before treating Provisioning Health as a final certification.</p>
+        <ol class="steps">
+          <li><strong>Business identity:</strong> legal name, brand name, support email, website, location, industry, service type, and description.</li>
+          <li><strong>Enrollment funnel URL:</strong> enter the merchant's GHL funnel domain so generated enrollment links use the correct subdomain.</li>
+          <li><strong>Evidence modules:</strong> enable the collection modules the merchant will actually use.</li>
+          <li><strong>Workflow settings:</strong> confirm engagement, dunning, reminder, and pulse behavior for this location.</li>
+          <li><strong>Provisioning Health:</strong> run the check after merchant fields, snapshot assets, workflows, and processors are in place.</li>
+        </ol>
+        <div class="callout warning"><strong>Do not expose secrets.</strong> Webhook values, processor credentials, and integration tokens belong only in their designated setup fields.</div>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>4. Run clients through checkout</h2>
-    <p>For full enrollment, clients complete contact details, offer review, terms/signature, then payment. For quick checkout, the client pays from the shorter hosted page. For quick manual sale, the merchant enters the card and can optionally send the enrollment packet link afterward.</p>
-  </section>
+    <section class="guide-section" id="processors">
+      <div class="section-number">02</div>
+      <div>
+        <h2>Connect the payment channels the merchant will use</h2>
+        <p>Open <strong>Settings &gt; Payments</strong>. ScaleSafe supports different controls for each payment channel.</p>
+        <div class="comparison" role="region" aria-label="Processor comparison" tabindex="0">
+          <table>
+            <thead><tr><th>Channel</th><th>What ScaleSafe uses it for</th><th>Important setup note</th></tr></thead>
+            <tbody>
+              <tr><td>Stripe</td><td>Card, ACH, recurring billing, refunds, saved methods, disputes, and early fraud warnings.</td><td>Use a sandbox account for review testing before switching the merchant to live processing.</td></tr>
+              <tr><td>NMI</td><td>Card, vault, recurring billing, refunds, saved methods, and named MID routes.</td><td>Configure the official webhook and Query API access needed for reliable transaction and vaulted-card metadata.</td></tr>
+              <tr><td>Whop</td><td>Hosted checkout, initial and recurring payment tracking, refunds, and membership lifecycle actions when Whop IDs exist.</td><td>Whop collects the payment inside its hosted form; ScaleSafe keeps enrollment and evidence records.</td></tr>
+              <tr><td>FanBasis</td><td>Foundation only during beta preparation.</td><td>Checkout remains unavailable until the integration is certified against an approved account.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Choose a default processor for offers that do not have an explicit override. Test each processor path the merchant plans to use.</p>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>5. Verify workflows</h2>
-    <ul>
-      <li><strong>Payment Received:</strong> receipt/payment confirmation only.</li>
-      <li><strong>Send Enrollment Link:</strong> enrollment packet link only.</li>
-      <li><strong>Enrollment Complete:</strong> welcome/access only after terms/signature/enrollment completion.</li>
-      <li><strong>Payment Failed:</strong> failed payment/dunning path.</li>
-      <li><strong>Refund Processed:</strong> refund confirmation.</li>
-      <li><strong>ScaleSafe App Event:</strong> payment reminders and pulse check-ins.</li>
-    </ul>
-  </section>
+    <section class="guide-section" id="offers">
+      <div class="section-number">03</div>
+      <div>
+        <h2>Create an offer that matches the real sale</h2>
+        <p>The offer defines what the client buys, how they pay, what they accept, and what fulfillment ScaleSafe should track.</p>
+        <figure class="product-figure">
+          <img src="assets/offer-builder.png" alt="ScaleSafe offer builder showing program, delivery, duration, and pricing fields" />
+          <figcaption>The offer builder starts with the program, delivery method, duration, price, and payment structure.</figcaption>
+        </figure>
+        <div class="check-grid">
+          <div><strong>Program</strong><span>Name, description, delivery method, duration, and optional tracking ID.</span></div>
+          <div><strong>Payment</strong><span>Paid in full, installments, ongoing subscription, dual pricing, and processor route.</span></div>
+          <div><strong>Checkout</strong><span>Full enrollment for stronger evidence or quick checkout for a shorter purchase path.</span></div>
+          <div><strong>Consent</strong><span>Refund policy, clickwrap clauses, custom terms, signature, and purchase summary.</span></div>
+          <div><strong>Engagement</strong><span>Pulse cadence and up to eight delivery milestones.</span></div>
+          <div><strong>Add-ons</strong><span>Optional order bumps and upgrades recorded with the purchase.</span></div>
+        </div>
+        <div class="callout"><strong>Versioning rule:</strong> clone an offer when the commercial terms materially change. Existing enrollment history must continue to reflect what that client accepted.</div>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>6. Evidence and defense</h2>
-    <p>Use the client profile to review evidence, communications, payment records, milestones, pulse check-ins, and defense packets. Defense workflows should be reviewed before submission to a processor or bank.</p>
-  </section>
+    <section class="guide-section" id="clients">
+      <div class="section-number">04</div>
+      <div>
+        <h2>Choose the correct client action</h2>
+        <p>A client profile contains Overview, Programs, Payments, Evidence, Messages, and Files. The action used at the top of the profile determines what happens next.</p>
+        <dl class="action-list">
+          <div><dt>Send Offer</dt><dd>Sends the selected enrollment link through the configured GHL email or SMS workflow. The client reviews the offer, accepts terms, and pays.</dd></div>
+          <div><dt>Quick Manual Sale</dt><dd>Collects payment first. When an offer is selected, the client receives a consent-only enrollment packet afterward. Whop checkout stays inside the QMS modal.</dd></div>
+          <div><dt>Assign Offer</dt><dd>Directly enrolls the client without consent pages or payment. Use only when payment and consent are intentionally handled elsewhere.</dd></div>
+          <div><dt>Send Message</dt><dd>Sends a merchant-written email or SMS through GHL and preserves the communication in the client record.</dd></div>
+        </dl>
+        <div class="callout warning"><strong>Client-only QMS:</strong> leaving the offer blank creates an unassigned payment. It does not create a program, enrollment packet, or welcome workflow.</div>
+      </div>
+    </section>
 
-  <footer>
-    <p>Need help? <a href="/support.html">Contact ScaleSafe support</a>. Powered by <a href="https://getwholepay.com" target="_blank" rel="noopener">Whole Pay</a>.</p>
-  </footer>
-</main>
+    <section class="guide-section" id="payments">
+      <div class="section-number">05</div>
+      <div>
+        <h2>Use processor truth and ScaleSafe records together</h2>
+        <p>The Payments workspace includes the ledger, client payment management, and reconciliation.</p>
+        <ul class="plain-list">
+          <li><strong>All Payments:</strong> filter by tracking ID, processor, billing type, status, and date.</li>
+          <li><strong>Clients:</strong> review total charged, refunded, and the most recent payment before opening payment management.</li>
+          <li><strong>Reconciliation:</strong> identify missing processor IDs, overdue billing, duplicates, unassigned payments, and recent failures.</li>
+        </ul>
+        <p>Refund, pause, resume, cancel, saved-method charge, and payment-update controls require the processor identifier shown on that record. ScaleSafe should change local state only after the processor confirms the action.</p>
+        <div class="callout"><strong>Reconciliation does not move money.</strong> It identifies records that require investigation and keeps the processor reference visible.</div>
+      </div>
+    </section>
+
+    <section class="guide-section" id="evidence">
+      <div class="section-number">06</div>
+      <div>
+        <h2>Read evidence in the context of one enrollment</h2>
+        <p>The Evidence tab can include consent, payment, attendance, sessions, milestones, pulse responses, communication, appointments, service access, course progress, resources, refunds, cancellations, and verified external activity.</p>
+        <div class="two-state">
+          <div><span class="state linked">Linked</span><p>ScaleSafe has a defensible match to one exact program enrollment.</p></div>
+          <div><span class="state pending">Link to Program</span><p>The activity belongs to the client, but ScaleSafe has not safely assigned it to one program.</p></div>
+        </div>
+        <p>Unlinked activity remains useful client context. It must not be presented as proof for an unrelated transaction. ScaleSafe never chooses the newest enrollment simply because it is newest.</p>
+        <div class="callout warning"><strong>Appointment distinction:</strong> scheduled is engagement. Attended or completed is stronger service-delivery evidence.</div>
+      </div>
+    </section>
+
+    <section class="guide-section" id="pulse">
+      <div class="section-number">07</div>
+      <div>
+        <h2>Use milestones and pulse responses as a client-service loop</h2>
+        <p>Milestones document what the merchant delivered and what the client was responsible for. Client sign-off creates a separate signed record.</p>
+        <p>Pulse check-ins ask the client about progress, satisfaction, concerns, and whether follow-up is needed. A response that requests attention appears on the Dashboard so the merchant can respond while the relationship is active.</p>
+        <ol class="steps compact">
+          <li>Confirm the offer has pulse enabled and a cadence.</li>
+          <li>Confirm the GHL ScaleSafe App Event workflow is published and allows the intended re-entry behavior.</li>
+          <li>Confirm the app event reached GHL, the outbound message was observed, and the client response was submitted.</li>
+          <li>Confirm the response is linked to the correct enrollment.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="guide-section" id="defense">
+      <div class="section-number">08</div>
+      <div>
+        <h2>Compile a defense around the disputed transaction</h2>
+        <ol class="steps">
+          <li>Select the client and the actual disputed transaction whenever it is available.</li>
+          <li>Choose the card brand reason code and enter the processor's real response deadline.</li>
+          <li>Compile the packet and read the letter, exhibits, and PDF as one submission.</li>
+          <li>Correct any inaccurate statement. A Needs Review packet is not submission-ready by default.</li>
+          <li>Submit through the supported processor workflow or record the merchant's external submission.</li>
+          <li>Record the bank's outcome when it arrives.</li>
+        </ol>
+        <div class="callout warning"><strong>No outcome guarantee:</strong> ScaleSafe organizes relevant records and supports the response workflow. The issuing bank decides the dispute.</div>
+      </div>
+    </section>
+
+    <section class="guide-section" id="integrations">
+      <div class="section-number">09</div>
+      <div>
+        <h2>Connect fulfillment without creating evidence noise</h2>
+        <p>Evidence Connections currently includes native GHL Fulfillment, Zoom, the Custom Software API, and the staged integration catalog.</p>
+        <ul class="plain-list">
+          <li>Each connection belongs to the current GHL sub-account.</li>
+          <li>External events become program evidence only after ScaleSafe resolves one exact enrollment.</li>
+          <li>Ambiguous events remain outside the defense timeline.</li>
+          <li>Test events are diagnostic only and do not become production evidence.</li>
+          <li>Merchants should not be required to repair events one at a time.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="guide-section" id="daily">
+      <div class="section-number">10</div>
+      <div>
+        <h2>Daily merchant routine</h2>
+        <ol class="steps">
+          <li>Review urgent dispute deadlines.</li>
+          <li>Respond to pulse check-ins marked for follow-up.</li>
+          <li>Review failed payments and reconciliation warnings.</li>
+          <li>Review pending defense packets and actual processor deadlines.</li>
+          <li>Follow up with at-risk clients while service concerns can still be addressed.</li>
+        </ol>
+        <div class="next-links">
+          <a href="/faq.html"><strong>Read the FAQ</strong><span>Short answers to product and policy questions.</span></a>
+          <a href="/troubleshooting.html"><strong>Troubleshoot a workflow</strong><span>Collect the right proof before changing anything.</span></a>
+          <a href="/support.html"><strong>Contact support</strong><span>Send a complete support request.</span></a>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="site-footer">
+  <div><strong>ScaleSafe</strong> | Powered by <a href="https://getwholepay.com" target="_blank" rel="noopener">Whole Pay</a></div>
+  <div><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:support@scalesafe.app">support@scalesafe.app</a></div>
+</footer>
 </body>
 </html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frequently Asked Questions - ScaleSafe</title>
+<meta name="description" content="Answers about ScaleSafe setup, payments, evidence, integrations, security, and chargeback defense." />
+<link rel="stylesheet" href="help.css" />
+</head>
+<body>
+<header class="site-header">
+  <nav class="top-nav" aria-label="Primary navigation">
+    <a class="brand" href="/">ScaleSafe</a>
+    <div class="top-links">
+      <a href="/guide.html">User Guide</a>
+      <a aria-current="page" href="/faq.html">FAQ</a>
+      <a href="/troubleshooting.html">Troubleshooting</a>
+      <a href="/support.html">Support</a>
+    </div>
+  </nav>
+</header>
+
+<main class="faq-page">
+  <div class="page-intro compact-intro">
+    <p class="eyebrow">ScaleSafe help center</p>
+    <h1>Frequently asked questions</h1>
+    <p class="lead">Clear answers about what ScaleSafe does, what it does not do, and how merchant records stay tied to the correct client program.</p>
+    <label class="faq-search-label" for="faq-search">Search questions</label>
+    <input id="faq-search" class="faq-search" type="search" placeholder="Try: refunds, Whop, evidence, deadline..." autocomplete="off" />
+    <p id="faq-empty" class="faq-empty" hidden>No questions match that search.</p>
+  </div>
+
+  <section class="faq-group" data-faq-group>
+    <h2>Product and installation</h2>
+    <details data-faq><summary>What is ScaleSafe?</summary><p>ScaleSafe helps high-ticket and mixed-ticket service businesses collect enrollment, payment, fulfillment, communication, and engagement evidence throughout the customer relationship. It organizes those records for operations and chargeback response.</p></details>
+    <details data-faq><summary>Does ScaleSafe replace GoHighLevel?</summary><p>No. ScaleSafe runs inside a GoHighLevel sub-account and uses GHL for selected contacts, communication, workflow, and fulfillment activity.</p></details>
+    <details data-faq><summary>Is ScaleSafe installed once per agency?</summary><p>Each merchant installation is bound to a specific GHL sub-account. An agency may install ScaleSafe in multiple sub-accounts, but their records remain isolated.</p></details>
+    <details data-faq><summary>When should I run Provisioning Health?</summary><p>Run it after the merchant information, enrollment funnel domain, snapshot assets, workflows, custom values, and intended processors are configured. It is a final setup check, not the first setup step.</p></details>
+  </section>
+
+  <section class="faq-group" data-faq-group>
+    <h2>Payments and processors</h2>
+    <details data-faq><summary>Which payment channels are supported?</summary><p>The active beta channels are Stripe, NMI, and Whop. Available actions differ by processor and by the payment or subscription identifiers returned by that processor. FanBasis checkout remains deferred until certification.</p></details>
+    <details data-faq><summary>Does ScaleSafe hold merchant funds?</summary><p>No. Stripe and NMI payments settle through the merchant's connected accounts. Hosted channels such as Whop collect payment through their own checkout.</p></details>
+    <details data-faq><summary>Does ScaleSafe store full card numbers?</summary><p>No. ScaleSafe uses processor-hosted or tokenized payment methods and shows only appropriate masked details.</p></details>
+    <details data-faq><summary>Can I refund Stripe, NMI, and Whop payments?</summary><p>An eligible payment can be refunded when ScaleSafe has the processor payment identifier required for that action. ScaleSafe should record the refund only after the processor confirms it.</p></details>
+    <details data-faq><summary>What is Payment Reconciliation?</summary><p>Reconciliation flags records that are difficult to prove against processor truth, such as missing subscription IDs, overdue billing, duplicates, unassigned payments, and recent failures. It does not silently repair records or move money.</p></details>
+    <details data-faq><summary>Why is a payment unassigned?</summary><p>ScaleSafe received the payment but could not tie it to one exact enrollment. A Quick Manual Sale with no offer intentionally creates this type of client-level payment.</p></details>
+    <details data-faq><summary>What is the difference between installments and a subscription?</summary><p>Installments divide a fixed program price into a defined number of payments. A subscription renews until it is cancelled. The offer and processor record must reflect the intended structure.</p></details>
+  </section>
+
+  <section class="faq-group" data-faq-group>
+    <h2>Clients, consent, and evidence</h2>
+    <details data-faq><summary>What evidence can ScaleSafe collect?</summary><p>Evidence may include consent, accepted terms, payment history, milestones, pulse responses, appointments, attendance, messages, files, service access, course progress, resources, refunds, cancellations, and verified third-party activity.</p></details>
+    <details data-faq><summary>What does Linked mean in the Evidence timeline?</summary><p>ScaleSafe has tied the record to one exact enrollment. That match allows the record to support the correct client journey and disputed transaction.</p></details>
+    <details data-faq><summary>What does Link to Program mean?</summary><p>The activity belongs to the client, but ScaleSafe does not yet have a safe, unique enrollment match. It remains client-level context and should not be treated as proof for an unrelated program.</p></details>
+    <details data-faq><summary>Does ScaleSafe choose the newest enrollment when matching is unclear?</summary><p>No. Multiple possible enrollments are ambiguous. ScaleSafe must not assign evidence to the newest program merely because it is newest.</p></details>
+    <details data-faq><summary>Is a scheduled appointment proof of delivery?</summary><p>No. A scheduled appointment is engagement evidence. An attended or completed appointment is stronger delivery evidence.</p></details>
+    <details data-faq><summary>What happens when a pulse response requests follow-up?</summary><p>The Dashboard surfaces the response so the merchant can act. The response also remains part of that enrollment's evidence timeline.</p></details>
+    <details data-faq><summary>Is the Evidence Readiness score a win prediction?</summary><p>No. The current score is a contact-level indicator of collected evidence. It does not predict whether a bank will decide a dispute in the merchant's favor.</p></details>
+  </section>
+
+  <section class="faq-group" data-faq-group>
+    <h2>Defense and account health</h2>
+    <details data-faq><summary>Does ScaleSafe prevent every chargeback or guarantee a win?</summary><p>No. A customer can still file a chargeback, and the issuing bank decides the outcome. ScaleSafe helps reduce avoidable disputes and improves the merchant's ability to present organized, relevant evidence.</p></details>
+    <details data-faq><summary>What does Needs Review mean?</summary><p>ScaleSafe could not safely treat the packet as submission-ready. The transaction may not match one exact enrollment, required evidence may be missing, or the AI draft may have been unavailable. Read and correct it before submission.</p></details>
+    <details data-faq><summary>Does ScaleSafe submit every defense automatically?</summary><p>No. Compilation and submission are separate. Submission depends on processor support and the merchant's authorized workflow.</p></details>
+    <details data-faq><summary>Is the response deadline always exact?</summary><p>No. ScaleSafe may initialize a deadline using the card network's maximum window. The processor can require an earlier response, so enter the exact due date shown in the processor portal.</p></details>
+    <details data-faq><summary>Why can Stripe Risk Health look extreme in a sandbox?</summary><p>Test accounts often contain few transactions and many deliberate dispute tests. A small denominator can create an unrealistic rate. Treat it as test data, not a prediction.</p></details>
+  </section>
+
+  <section class="faq-group" data-faq-group>
+    <h2>Integrations and security</h2>
+    <details data-faq><summary>Can ScaleSafe collect evidence outside GHL?</summary><p>Yes. Evidence Connections support verified external activity. The current beta foundation includes GHL Fulfillment, Zoom, and the Custom Software API, with named integrations released in stages.</p></details>
+    <details data-faq><summary>Do merchants repair every unmatched integration event?</summary><p>No. Automatic matching should publish only when there is one defensible enrollment. Ambiguous events are an integration-health issue for ScaleSafe support, not a recurring merchant cleanup task.</p></details>
+    <details data-faq><summary>Can one merchant see another merchant's records?</summary><p>No. ScaleSafe derives the merchant location from trusted authentication and keeps tenant-owned records scoped to that location.</p></details>
+    <details data-faq><summary>Are integration credentials visible after connection?</summary><p>Sensitive credentials are encrypted or hashed as appropriate and are not displayed in normal merchant workflows.</p></details>
+  </section>
+
+  <div class="faq-footer-cta">
+    <div><h2>Still have a question?</h2><p>Include the sub-account, client, offer, processor, exact time, and transaction ID when money moved.</p></div>
+    <a class="help-button" href="mailto:support@scalesafe.app?subject=ScaleSafe%20Support%20Request">Contact support</a>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div><strong>ScaleSafe</strong> | Powered by <a href="https://getwholepay.com" target="_blank" rel="noopener">Whole Pay</a></div>
+  <div><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="mailto:support@scalesafe.app">support@scalesafe.app</a></div>
+</footer>
+
+<script>
+  (function () {
+    var input = document.getElementById('faq-search');
+    var empty = document.getElementById('faq-empty');
+    var items = Array.prototype.slice.call(document.querySelectorAll('[data-faq]'));
+    var groups = Array.prototype.slice.call(document.querySelectorAll('[data-faq-group]'));
+    input.addEventListener('input', function () {
+      var query = input.value.trim().toLowerCase();
+      var visible = 0;
+      items.forEach(function (item) {
+        var match = !query || item.textContent.toLowerCase().indexOf(query) !== -1;
+        item.hidden = !match;
+        if (match) visible += 1;
+      });
+      groups.forEach(function (group) {
+        group.hidden = group.querySelectorAll('[data-faq]:not([hidden])').length === 0;
+      });
+      empty.hidden = visible !== 0;
+    });
+  })();
+</script>
+</body>
+</html>

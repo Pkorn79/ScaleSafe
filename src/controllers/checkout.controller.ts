@@ -1393,21 +1393,23 @@ export async function processPayment(req: Request, res: Response): Promise<void>
         try {
           const offer = resolvedOffer || await offerRepository.findById(offerId, merchant.locationId);
           const offerPaymentType = (offer as any)?.payment_type || 'one_time';
-          const isRecurringQuickPay = offerPaymentType === 'installment'
-            || offerPaymentType === 'installments'
-            || offerPaymentType === 'subscription';
+          const selectedQuickPayType = normalizePaymentType(String(boundPaymentChoice || offerPaymentType || 'pif'));
+          const isRecurringQuickPay = selectedQuickPayType === 'installment'
+            || selectedQuickPayType === 'subscription';
           if (isRecurringQuickPay || contextEnrollmentId) {
             if (isRecurringQuickPay) {
-            quickPayPaymentKind = offerPaymentType === 'subscription' ? 'subscription' : 'installment';
-            quickPayPaymentsTotal = offerPaymentType === 'subscription' ? null : ((offer as any)?.num_payments || null);
-            quickPayPaymentsRemaining = quickPayPaymentsTotal ? Math.max(0, quickPayPaymentsTotal - 1) : 0;
+              quickPayPaymentKind = selectedQuickPayType === 'subscription' ? 'subscription' : 'installment';
+              quickPayPaymentsTotal = selectedQuickPayType === 'subscription'
+                ? null
+                : ((offer as any)?.num_payments || null);
+              quickPayPaymentsRemaining = quickPayPaymentsTotal ? Math.max(0, quickPayPaymentsTotal - 1) : 0;
             }
 
             if (resolvedQuickPayContact) {
               if (contextEnrollmentId) {
                 const contextPaymentType = isRecurringQuickPay
                   ? quickPayPaymentKind
-                  : normalizePaymentType(String(req.body.paymentChoice || offerPaymentType || 'pif'));
+                  : selectedQuickPayType;
                 const contextBillingComplete = quickPayPaymentKind === 'one_off'
                   || (quickPayPaymentKind === 'installment' && quickPayPaymentsTotal != null && quickPayPaymentsTotal <= 1);
                 const contextNextBilling = contextBillingComplete

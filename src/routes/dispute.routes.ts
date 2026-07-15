@@ -57,6 +57,7 @@ router.get('/:merchantId', async (req: Request, res: Response) => {
       .select('*')
       .eq('merchant_id', merchantId)
       .eq('processor', 'stripe')
+      .not('stripe_dispute_id', 'is', null)
       .in('status', ['needs_response', 'warning_needs_response', 'under_review', 'warning_under_review'])
       .order('created_at', { ascending: false })
       .limit(50);
@@ -91,10 +92,11 @@ router.get('/:merchantId/:disputeId', async (req: Request, res: Response) => {
       .from('dispute_events')
       .select('*')
       .eq('merchant_id', merchantId)
+      .eq('processor', 'stripe')
       .eq('id', req.params.disputeId)
       .single();
 
-    if (!dispute) {
+    if (!dispute?.stripe_dispute_id) {
       res.status(404).json({ error: 'Dispute not found' });
       return;
     }
@@ -122,6 +124,7 @@ router.post('/:merchantId/:disputeId/prepare', async (req: Request, res: Respons
       .from('dispute_events')
       .select('*')
       .eq('merchant_id', merchantId)
+      .eq('processor', 'stripe')
       .eq('id', req.params.disputeId)
       .single();
 
@@ -183,10 +186,11 @@ router.post('/:merchantId/:disputeId/accept', async (req: Request, res: Response
       .from('dispute_events')
       .select('*')
       .eq('merchant_id', merchantId)
+      .eq('processor', 'stripe')
       .eq('id', req.params.disputeId)
       .single();
 
-    if (!dispute) {
+    if (!dispute?.stripe_dispute_id) {
       res.status(404).json({ error: 'Dispute not found' });
       return;
     }

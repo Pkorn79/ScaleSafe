@@ -9,7 +9,10 @@ This folder contains the static public site intended for `https://scalesafe.app`
 - `terms.html` - terms of service
 - `support.html` - support hub
 - `guide.html` - user guide
+- `faq.html` - searchable product FAQ
 - `troubleshooting.html` - troubleshooting guide
+- `help.css` - shared user-guide and FAQ styling
+- `assets/` - sanitized product images used by public help pages
 
 ## Launch notes
 

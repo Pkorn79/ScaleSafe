@@ -112,6 +112,7 @@ function query(result: { data: any; error?: any }) {
   const res = { data: result.data, error: result.error ?? null };
   c.select = jest.fn(() => c);
   c.eq = jest.fn(() => c);
+  c.not = jest.fn(() => c);
   c.in = jest.fn(() => c);
   c.order = jest.fn(() => c);
   c.limit = jest.fn(() => c);
@@ -151,6 +152,7 @@ describe('GET /api/disputes/:merchantId — list disputes', () => {
     expect(q.eq).toHaveBeenCalledWith('merchant_id', MERCHANT_ID);
     // Stripe queue only — NMI/manual dispute rows stay in the Defense tab
     expect(q.eq).toHaveBeenCalledWith('processor', 'stripe');
+    expect(q.not).toHaveBeenCalledWith('stripe_dispute_id', 'is', null);
     expect(q.in).toHaveBeenCalledWith('status', [
       'needs_response', 'warning_needs_response', 'under_review', 'warning_under_review',
     ]);
@@ -203,6 +205,15 @@ describe('GET /api/disputes/:merchantId/:disputeId — single dispute', () => {
     mockFrom.mockReturnValueOnce(query({ data: null }));
 
     const res = await request(app).get(`/api/disputes/${MERCHANT_ID}/missing`);
+
+    expect(res.status).toBe(404);
+    expect(mockAssembleEvidencePacket).not.toHaveBeenCalled();
+  });
+
+  it('404s for a local defense row without a Stripe dispute id', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: { id: 'd-local', processor: 'stripe', stripe_dispute_id: null } }));
+
+    const res = await request(app).get(`/api/disputes/${MERCHANT_ID}/d-local`);
 
     expect(res.status).toBe(404);
     expect(mockAssembleEvidencePacket).not.toHaveBeenCalled();
@@ -303,6 +314,15 @@ describe('POST /api/disputes/:merchantId/:disputeId/accept — accept dispute', 
     mockFrom.mockReturnValueOnce(query({ data: null }));
 
     const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/nope/accept`).send({});
+
+    expect(res.status).toBe(404);
+    expect(mockDisputesClose).not.toHaveBeenCalled();
+  });
+
+  it('404s without calling Stripe for a local defense row', async () => {
+    mockFrom.mockReturnValueOnce(query({ data: { id: 'd-local', processor: 'stripe', stripe_dispute_id: null } }));
+
+    const res = await request(app).post(`/api/disputes/${MERCHANT_ID}/d-local/accept`).send({});
 
     expect(res.status).toBe(404);
     expect(mockDisputesClose).not.toHaveBeenCalled();
