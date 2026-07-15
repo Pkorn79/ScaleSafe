@@ -25,7 +25,10 @@
           <tbody>
             <tr v-for="p in packets" :key="p.enrollmentId">
               <td>
-                <strong>{{ p.offerName || 'Enrollment Packet' }}</strong>
+                <strong>{{ p.offerInternalName || p.offerName || 'Enrollment Packet' }}</strong>
+                <div v-if="p.offerInternalName && p.offerInternalName !== p.offerName" class="text-xs text-muted">
+                  Client sees: {{ p.offerName }}
+                </div>
               </td>
               <td class="text-sm">{{ formatDate(p.createdAt) }}</td>
               <td>

@@ -70,7 +70,7 @@
                 <select class="form-select" v-model="selectedEnrollmentId">
                   <option value="">Select program...</option>
                   <option v-for="enrollment in enrollments" :key="enrollment.id" :value="enrollment.id">
-                    {{ enrollment.offer_name || enrollment.offerName || enrollment.program_name || 'Program' }}
+                    {{ internalOfferName(enrollment) }}{{ internalOfferName(enrollment) !== customerProgramName(enrollment) ? ` · Client sees: ${customerProgramName(enrollment)}` : '' }}
                   </option>
                 </select>
                 <button class="btn btn-sm btn-primary" @click="saveLink" :disabled="linkSaving || !selectedEnrollmentId">
@@ -103,6 +103,7 @@ import { ref, computed, onMounted } from 'vue';
 import { FileSearch } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
 import EmptyState from '../../components/EmptyState.vue';
+import { customerProgramName, internalOfferName } from '../../lib/offerNames';
 
 const props = defineProps<{
   contactId: string;

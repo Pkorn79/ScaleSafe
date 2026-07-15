@@ -84,8 +84,8 @@ const enrollmentRows = [
   { id: 'enr_2', offer_id: 'offer_2' },
 ];
 const offerRows = [
-  { id: 'offer_1', offer_name: 'Coaching Program A' },
-  { id: 'offer_2', offer_name: 'Mastermind B' },
+  { id: 'offer_1', offer_name: 'Coaching Program A', internal_name: 'Ops A' },
+  { id: 'offer_2', offer_name: 'Mastermind B', internal_name: 'Ops B' },
 ];
 
 beforeEach(() => {
@@ -110,6 +110,7 @@ describe('dashboardController.pulseCheckins', () => {
       id: 'pc_ok',
       contactName: 'Happy Client',
       offerName: 'Coaching Program A',
+      offerInternalName: 'Ops A',
       enrollmentId: 'enr_1',
       linked: true,
       satisfaction: 5,
@@ -137,6 +138,7 @@ describe('dashboardController.pulseCheckins', () => {
       followUpNeeded: true,
       attentionReason: 'Client requested follow-up',
       offerName: 'Mastermind B',
+      offerInternalName: 'Ops B',
       enrollmentId: 'enr_2',
     });
     expect(body.checkins[1].id).toBe('pc_ok');

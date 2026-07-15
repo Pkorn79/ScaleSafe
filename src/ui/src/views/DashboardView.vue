@@ -137,7 +137,10 @@
         <div style="min-width:0">
           <div class="text-sm">
             <strong>{{ pc.contactName || 'Unknown client' }}</strong>
-            <span v-if="pc.offerName" class="text-muted" style="margin-left:8px">{{ pc.offerName }}</span>
+            <span v-if="pc.offerName" class="text-muted" style="margin-left:8px">
+              {{ pc.offerInternalName || pc.offerName }}
+              <span v-if="pc.offerInternalName && pc.offerInternalName !== pc.offerName"> · Client sees: {{ pc.offerName }}</span>
+            </span>
             <span v-else-if="!pc.linked" class="badge badge-yellow" style="margin-left:8px">Not linked to a program — review</span>
             <span v-if="pc.needsAttention" class="badge badge-red" style="margin-left:8px">⚠ {{ pc.attentionReason }}</span>
           </div>

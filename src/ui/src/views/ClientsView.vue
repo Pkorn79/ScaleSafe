@@ -67,7 +67,12 @@
               <div v-if="c.email" class="text-sm text-muted">{{ c.email }}</div>
               <div v-if="!c.contactId" class="text-xs text-muted">Contact sync pending</div>
             </td>
-            <td class="text-sm">{{ c.offerName || '-' }}</td>
+            <td class="text-sm">
+              <strong>{{ c.offerInternalName || c.offerName || '-' }}</strong>
+              <div v-if="c.offerInternalName && c.offerName && c.offerInternalName !== c.offerName" class="text-xs text-muted">
+                Client sees: {{ c.offerName }}
+              </div>
+            </td>
             <td>
               <span class="badge" :class="statusBadge(c.status)">{{ c.status }}</span>
             </td>

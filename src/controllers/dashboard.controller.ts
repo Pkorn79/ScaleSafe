@@ -543,7 +543,7 @@ export const dashboardController = {
       // Resolve program names through the checkin's own enrollment — never inferred
       // from the contact's other/newest enrollments. Unlinked rows stay unlinked.
       const enrollmentIds = [...new Set(checkins.map((r: any) => r.enrollment_id).filter(Boolean))];
-      const linkByEnrollment: Record<string, { offerId: string | null; offerName: string | null }> = {};
+      const linkByEnrollment: Record<string, { offerId: string | null; offerName: string | null; offerInternalName: string | null }> = {};
       if (enrollmentIds.length) {
         const { data: enrs } = await supabase
           .from('enrollments')
@@ -551,18 +551,22 @@ export const dashboardController = {
           .eq('location_id', locationId)
           .in('id', enrollmentIds);
         const offerIds = [...new Set((enrs || []).map((e: any) => e.offer_id).filter(Boolean))];
-        const offerNames: Record<string, string> = {};
+        const offersById: Record<string, any> = {};
         if (offerIds.length) {
           const { data: offers } = await supabase
             .from('offers_mirror')
-            .select('id, offer_name')
+            .select('id, offer_name, internal_name')
+            .eq('location_id', locationId)
             .in('id', offerIds);
-          for (const o of offers || []) offerNames[o.id] = o.offer_name;
+          for (const o of offers || []) offersById[o.id] = o;
         }
         for (const e of enrs || []) {
+          const offer = e.offer_id ? offersById[e.offer_id] : null;
+          const offerName = resolveProgramName(e, offer) || null;
           linkByEnrollment[e.id] = {
             offerId: e.offer_id || null,
-            offerName: resolveProgramName(e, { offer_name: e.offer_id ? offerNames[e.offer_id] : null }) || null,
+            offerName,
+            offerInternalName: offer ? resolveInternalOfferName(offer, offerName || '') : offerName,
           };
         }
       }
@@ -579,6 +583,7 @@ export const dashboardController = {
           enrollmentId: r.enrollment_id || null,
           offerId: link?.offerId ?? r.raw_payload?.offerId ?? null,
           offerName: link?.offerName ?? null,
+          offerInternalName: link?.offerInternalName ?? link?.offerName ?? null,
           /** False for legacy rows with no enrollment link — surfaced for review, never guessed. */
           linked: !!r.enrollment_id,
           satisfaction: r.sentiment_score ?? null,
@@ -1654,22 +1659,28 @@ export const dashboardController = {
 
       // Resolve offer names for packet rows
       const offerIds = [...new Set((enrollmentRes.data || []).map(e => e.offer_id).filter(Boolean))];
-      let offerMap: Record<string, string> = {};
+      const offerMap: Record<string, any> = {};
       if (offerIds.length > 0) {
         const { data: offers } = await supabase
           .from('offers_mirror')
-          .select('id, offer_name')
+          .select('id, offer_name, internal_name')
+          .eq('location_id', locationId)
           .in('id', offerIds);
-        for (const o of (offers || [])) offerMap[o.id] = o.offer_name;
+        for (const o of (offers || [])) offerMap[o.id] = o;
       }
 
       // Build packet list — do NOT pre-generate signed URLs (merchant can hit /api/enrollments/:id/packet)
       // The frontend FilesTab downloads via the existing streaming route to avoid URL leakage.
-      const packets = (enrollmentRes.data || []).map(e => ({
-        enrollmentId: e.id,
-        offerName: resolveProgramName(e, { offer_name: e.offer_id ? offerMap[e.offer_id] : null }, 'Enrollment Packet'),
-        createdAt: e.created_at,
-      }));
+      const packets = (enrollmentRes.data || []).map(e => {
+        const offer = e.offer_id ? offerMap[e.offer_id] : null;
+        const offerName = resolveProgramName(e, offer, 'Enrollment Packet');
+        return {
+          enrollmentId: e.id,
+          offerName,
+          offerInternalName: offer ? resolveInternalOfferName(offer, offerName) : offerName,
+          createdAt: e.created_at,
+        };
+      });
 
       const signoffs = (signoffRes.data || []).map((s: any) => ({
         id: s.id,
@@ -1732,8 +1743,36 @@ export const dashboardController = {
       const { data: rows, count, error } = await query;
       if (error) throw error;
 
+      const enrollmentIds = [...new Set((rows || []).map((row: any) => row.enrollment_id).filter(Boolean))];
+      const offerIds = [...new Set((rows || []).map((row: any) => row.offer_id).filter(Boolean))];
+      const enrollmentById: Record<string, any> = {};
+      const offerById: Record<string, any> = {};
+
+      if (enrollmentIds.length) {
+        const { data: enrollments, error: enrollmentError } = await supabase
+          .from('enrollments')
+          .select('id, offer_id, program_name_snapshot')
+          .eq('location_id', locationId)
+          .in('id', enrollmentIds);
+        if (enrollmentError) throw enrollmentError;
+        for (const enrollment of enrollments || []) enrollmentById[enrollment.id] = enrollment;
+      }
+
+      if (offerIds.length) {
+        const { data: offers, error: offerError } = await supabase
+          .from('offers_mirror')
+          .select('id, offer_name, internal_name')
+          .eq('location_id', locationId)
+          .in('id', offerIds);
+        if (offerError) throw offerError;
+        for (const offer of offers || []) offerById[offer.id] = offer;
+      }
+
       const clients = (rows || []).map((r: any) => {
         const contactId = String(r.contact_id || '').trim();
+        const enrollment = r.enrollment_id ? enrollmentById[r.enrollment_id] : null;
+        const offer = r.offer_id ? offerById[r.offer_id] : null;
+        const offerName = resolveProgramName(enrollment, offer, r.offer_name || '');
         return {
           contactId,
           enrollmentId: r.enrollment_id,
@@ -1742,7 +1781,8 @@ export const dashboardController = {
           email: r.email || '',
           status: r.status || 'unknown',
           paymentType: r.payment_type || '',
-          offerName: r.offer_name || '',
+          offerName,
+          offerInternalName: offer ? resolveInternalOfferName(offer, offerName) : offerName,
           enrolledAt: r.enrolled_at || null,
           lastActivityDate: r.last_activity_date || null,
           hasCard: r.has_card || false,

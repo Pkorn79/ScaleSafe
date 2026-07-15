@@ -125,7 +125,7 @@
         <select v-else class="form-select" v-model="selectedTransactionId" @change="onTransactionSelected">
           <option value="">Manual entry (no specific transaction)</option>
           <option v-for="t in transactions" :key="t.id" :value="t.id">
-            {{ formatTimestamp(t.date, 'short') }} - ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerName ? ' - ' + t.offerName : '' }}{{ t.transactionId ? ' - ' + maskTransactionId(t.transactionId) : '' }}
+            {{ formatTimestamp(t.date, 'short') }} - ${{ Number(t.amount || 0).toFixed(2) }}{{ t.offerInternalName || t.offerName ? ' - ' + (t.offerInternalName || t.offerName) : '' }}{{ t.offerInternalName && t.offerInternalName !== t.offerName ? ' (client sees: ' + t.offerName + ')' : '' }}{{ t.transactionId ? ' - ' + maskTransactionId(t.transactionId) : '' }}
           </option>
         </select>
         <div v-if="transactions.length === 0 && !transactionsLoading && compileForm.contactId" class="text-sm text-muted mt-2">
@@ -247,7 +247,7 @@ const compileForm = ref({
 });
 
 // Transaction selector state
-const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; processor: string; offerName: string; enrollmentId: string; offerId: string }>>([]);
+const transactions = ref<Array<{ id: string; date: string; amount: number; transactionId: string; processor: string; offerName: string; offerInternalName: string; enrollmentId: string; offerId: string }>>([]);
 const transactionsLoading = ref(false);
 const selectedTransactionId = ref('');
 

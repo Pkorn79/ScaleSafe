@@ -3,6 +3,7 @@ import { defenseService } from '../services/defense.service';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
 import { defenseInputValidationService } from '../services/defense-input-validation.service';
+import { resolveInternalOfferName, resolveProgramName } from '../utils/program-name';
 
 export const defenseController = {
   /** GET /api/defense/transactions/:contactId — list payment events for the transaction selector */
@@ -25,24 +26,27 @@ export const defenseController = {
 
       // Resolve offer names for each enrollment
       const enrollmentIds = [...new Set((events || []).map(e => e.enrollment_id).filter(Boolean))];
-      const offerMap: Record<string, { offerName: string; offerId: string }> = {};
+      const offerMap: Record<string, { offerName: string; offerInternalName: string; offerId: string }> = {};
       if (enrollmentIds.length > 0) {
         const { data: enrollments } = await supabase
           .from('enrollments')
-          .select('id, offer_id')
+          .select('id, offer_id, program_name_snapshot')
           .eq('location_id', locationId)
           .in('id', enrollmentIds);
         const offerIds = [...new Set((enrollments || []).map(e => e.offer_id).filter(Boolean))];
         if (offerIds.length > 0) {
           const { data: offers } = await supabase
             .from('offers_mirror')
-            .select('id, offer_name')
+            .select('id, offer_name, internal_name')
             .eq('location_id', locationId)
             .in('id', offerIds);
-          const offerNameMap = new Map((offers || []).map(o => [o.id, o.offer_name]));
+          const offerById = new Map((offers || []).map(o => [o.id, o]));
           for (const enr of (enrollments || [])) {
+            const offer = enr.offer_id ? offerById.get(enr.offer_id) : null;
+            const offerName = resolveProgramName(enr, offer);
             offerMap[enr.id] = {
-              offerName: enr.offer_id ? (offerNameMap.get(enr.offer_id) || '') : '',
+              offerName,
+              offerInternalName: offer ? resolveInternalOfferName(offer, offerName) : offerName,
               offerId: enr.offer_id || '',
             };
           }
@@ -58,6 +62,7 @@ export const defenseController = {
         enrollmentId: e.enrollment_id || null,
         offerId: e.enrollment_id ? (offerMap[e.enrollment_id]?.offerId || '') : '',
         offerName: e.enrollment_id ? (offerMap[e.enrollment_id]?.offerName || '') : '',
+        offerInternalName: e.enrollment_id ? (offerMap[e.enrollment_id]?.offerInternalName || '') : '',
       }));
 
       res.json({ transactions });

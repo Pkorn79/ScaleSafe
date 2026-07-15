@@ -140,7 +140,10 @@
                   <div v-if="row.customerEmail" class="text-xs text-muted">{{ row.customerEmail }}</div>
                 </td>
                 <td>
-                  {{ row.programName }}
+                  {{ row.offerInternalName || row.programName }}
+                  <div v-if="row.offerInternalName && row.offerInternalName !== row.programName" class="text-xs text-muted">
+                    Client sees: {{ row.programName }}
+                  </div>
                   <div v-if="row.paymentNumber" class="text-xs text-muted">
                     Payment {{ row.paymentNumber }}<span v-if="row.paymentsRemaining === 0">, final</span>
                   </div>

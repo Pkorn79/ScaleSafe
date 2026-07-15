@@ -78,7 +78,10 @@
       <div v-for="enr in recurringEnrollments" :key="enr.id" class="recurring-plan">
         <div>
           <div class="recurring-title">
-            <strong>{{ enr.offerName || 'Program' }}</strong>
+            <strong>{{ enr.offerInternalName || enr.offerName || 'Program' }}</strong>
+            <span v-if="enr.offerInternalName && enr.offerInternalName !== enr.offerName" class="text-sm text-muted">
+              Client sees: {{ enr.offerName }}
+            </span>
             <span class="badge badge-gray">{{ paymentTypeLabel(enr.paymentType) }}</span>
             <span class="badge" :class="processorBadge(enr.processorType)">{{ processorLabel(enr.processorType) }}</span>
             <span class="badge" :class="statusBadge(enr.status)">{{ enr.status }}</span>
@@ -255,7 +258,7 @@
     </Modal>
 
     <!-- Pause Subscription Modal -->
-    <Modal v-model:open="showPauseModal" :title="`Pause ${selectedEnrollment?.offerName || 'Plan'}`">
+    <Modal v-model:open="showPauseModal" :title="`Pause ${selectedEnrollment?.offerInternalName || selectedEnrollment?.offerName || 'Plan'}`">
       <p class="text-sm text-muted mb-4" style="margin-top:-4px">
         Pausing will use the {{ processorLabel(selectedEnrollment?.processorType) }} subscription tied to this program and stop future billing until resumed.
       </p>
@@ -272,7 +275,7 @@
     </Modal>
 
     <!-- Cancel Subscription Modal -->
-    <Modal v-model:open="showCancelModal" :title="`Cancel ${selectedEnrollment?.offerName || 'Plan'}`">
+    <Modal v-model:open="showCancelModal" :title="`Cancel ${selectedEnrollment?.offerInternalName || selectedEnrollment?.offerName || 'Plan'}`">
       <p class="text-sm text-muted mb-4" style="margin-top:-4px">
         This will permanently cancel the {{ processorLabel(selectedEnrollment?.processorType) }} subscription tied to this program and stop all future billing.
       </p>
@@ -549,7 +552,7 @@ async function sendCardUpdateRequest(enrollment: any) {
       enrollmentId: enrollment.id,
       sendTrigger: true,
     });
-    cardUpdateResult.value = `Payment method update request sent for ${enrollment.offerName || 'program'}.`;
+    cardUpdateResult.value = `Payment method update request sent for ${enrollment.offerInternalName || enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 6000);
   } catch (e: any) { actionError.value = e.message || 'Failed to send payment method update request'; }
   cardUpdateSending.value = false;
@@ -567,7 +570,7 @@ async function copyCardUpdateLink(enrollment: any) {
     });
     const link = result.link || '';
     await navigator.clipboard.writeText(link);
-    cardUpdateResult.value = `Payment method update link copied for ${enrollment.offerName || 'program'}.`;
+    cardUpdateResult.value = `Payment method update link copied for ${enrollment.offerInternalName || enrollment.offerName || 'program'}.`;
     setTimeout(() => { cardUpdateResult.value = ''; }, 3000);
   } catch (e: any) {
     actionError.value = e.message || 'Failed to create payment method update link';
@@ -624,7 +627,7 @@ async function runEnrollmentAction(enrollment: any, action: 'pause' | 'resume' |
       reason,
     });
     await Promise.all([loadEnrollments(), loadClientInfo(), loadHistory()]);
-    const name = enrollment.offerName || 'Plan';
+    const name = enrollment.offerInternalName || enrollment.offerName || 'Plan';
     const resultLabel = action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'resumed';
     subResult.value = `${name} ${resultLabel}.`;
     setTimeout(() => { subResult.value = ''; }, 4000);
