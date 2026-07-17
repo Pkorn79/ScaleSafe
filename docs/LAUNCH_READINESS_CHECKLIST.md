@@ -1,7 +1,7 @@
 # ScaleSafe Controlled Beta Launch Checklist
 
-Reconciled: 2026-07-15 CDT
-Deployed SHA: `ba80838a00f4e920206dca77f7dd907fbb4fc42d`
+Reconciled: 2026-07-16 CDT
+Deployed SHA: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
 Production schema: `101`
 Detailed current status: `docs/user-guide/OPEN_REMEDIATION_REGISTER.md`
 
@@ -88,13 +88,13 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 - [x] `git diff --check` passes.
 - [x] `npm run typecheck` passes.
-- [x] `npm test -- --runInBand` passes: 164 suites and 1,346 tests.
+- [x] `npm test -- --runInBand` passes: 165 suites and 1,348 tests.
 - [x] `npm run build` passes.
 - [x] `npm audit --omit=dev` reports zero production vulnerabilities.
 - [x] Tracked-tree secret scan passes; `.env`, `scripts/.dbpass`, temporary evidence exports, and recovery credentials remain untracked/ignored.
-- [x] GitHub CI is green for exact release SHA `ba80838a00f4e920206dca77f7dd907fbb4fc42d`.
+- [x] GitHub CI is green for exact release SHA `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`.
 - [x] Changelog describes the release changes; this branch requires no new migration.
-- [x] Railway deployed exact release SHA `ba80838a00f4e920206dca77f7dd907fbb4fc42d`; `/health` and post-deploy logs are clean.
+- [x] Railway deployed exact release SHA `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`; `/health` and post-deploy logs are clean.
 - [ ] Practice and record one Railway rollback to the preceding known-good deployment before general availability.
 
 ## 9. Controlled-Beta Owner Decisions

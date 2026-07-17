@@ -1,7 +1,7 @@
 # ScaleSafe Open Remediation Register
 
-Reconciled: 2026-07-15 CDT
-Deployed code baseline: `ba80838a00f4e920206dca77f7dd907fbb4fc42d`
+Reconciled: 2026-07-16 CDT
+Deployed code baseline: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
 Production schema: `101`
 Working branch: `codex/beta-remediation`
 
@@ -56,6 +56,7 @@ These do not block the base product when described accurately, but they must not
 - FIND-071: password/temp evidence paths are ignored and no live secret was found in the tracked-tree scan.
 - FIND-036/037: the fresh Stripe finite plan charged `$1` first installment plus a one-time `$1` add-on, then one final `$1` installment; it completed at 2/2 with no next billing date. `ss_payment_received` was delivered once for payment 2 with the exact enrollment and program name.
 - Dual-option Quick Checkout: a live `$1.50` Stripe paid-in-full selection on the installment-capable certification offer created one client-linked PIF enrollment and payment, no next billing, no saved recurring method, no recurring-plan display, and no processor subscription. Railway logged the exact enrollment as `paymentType: pif` with `nextBilling: null` and no warning/error response.
+- Reviewer full enrollment: the dedicated `ScaleSafe` location produced one linked Stripe sandbox payment, enrollment, consent record, enrollment-payment record, and private packet. Receipt and welcome messages were received. Public enrollment and checkout surfaces now use the DBA/brand, customer maps retain the public program name, and packet clause acceptance reflects the semantic IDs recorded at signature time.
 
 ## Accepted Controlled-Beta Limitations
 
