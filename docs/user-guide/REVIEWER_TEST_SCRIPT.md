@@ -33,36 +33,42 @@ Expected result:
 
 ## 3. Create Or Review An Offer
 
-Use fixture `Reviewer - Stripe PIF`.
+Use the prepared fixture:
+
+- Internal name: `CERT 2026-07-16 Stripe PIF`
+- Client-facing program name: `ScaleSafe Reviewer Test Program`
+- Offer ID: `df133917-a190-4981-9dcb-9d6f58f2a009`
+- Enrollment URL: `https://review.scalesafe.app/welcome?offerId=df133917-a190-4981-9dcb-9d6f58f2a009`
 
 Expected configuration:
 
-- Client-facing program name: `Reviewer Program`
-- Internal name: `Reviewer - Stripe PIF`
+- Client-facing program name: `ScaleSafe Reviewer Test Program`
+- Internal name: `CERT 2026-07-16 Stripe PIF`
 - Stripe processor
 - Paid in full
 - Full enrollment
-- Bot protection enabled for the public checkout
+- Two relevant acknowledgments: Purchase Summary and Cardholder Authorization
 - One simple milestone
 
 Expected result:
 
 - Merchant lists show the internal name.
-- Enrollment pages and client communications show `Reviewer Program`.
+- Enrollment pages and client communications show `ScaleSafe Reviewer Test Program`.
 
 ## 4. Complete Enrollment And Payment
 
-1. Open the full-enrollment link.
+1. Open the prepared full-enrollment link above.
 2. Complete identity, program review, terms, and signature.
-3. Complete Turnstile when shown.
-4. Pay with the Stripe test card.
+3. Before paying, confirm the ScaleSafe logo renders and the terms link opens `https://dashboard.scalesafe.app/terms/BxiqLzUf4Rh5GXR6DUZ3`.
+4. Complete Turnstile only if it is enabled for the fixture.
+5. Pay with the Stripe test card.
 
 Expected result:
 
 - Success appears once.
 - Stripe records one test payment.
 - ScaleSafe creates one client, one enrollment, one payment, and one signed packet.
-- Receipt and welcome workflow deliveries reference `Reviewer Program`.
+- Receipt and welcome workflow deliveries reference `ScaleSafe Reviewer Test Program`.
 - The client Evidence tab links consent and payment to the exact enrollment.
 
 ## 5. Review Client And Payment Records
@@ -81,7 +87,7 @@ Mark the reviewer milestone complete or use the prepared GHL appointment fixture
 Expected result:
 
 - The exact enrollment is updated.
-- Milestone or attended appointment evidence appears under `Reviewer Program`.
+- Milestone or attended appointment evidence appears under `ScaleSafe Reviewer Test Program`.
 - A scheduled-only appointment is labeled engagement; attended/completed activity may be delivery evidence.
 
 ## 7. Compile A Test Defense

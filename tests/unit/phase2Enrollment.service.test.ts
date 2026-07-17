@@ -169,6 +169,7 @@ describe('Phase 2 Enrollment Service - completeEnrollment', () => {
 
     expect(mockEvidenceCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        merchant_id: 'merchant_1',
         evidence_type: 'enrollment_payment',
         enrollment_id: 'enr_1',
         data: expect.objectContaining({

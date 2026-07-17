@@ -194,6 +194,7 @@ describe('Enrollment Funnel Service', () => {
 
       mockFindByLocationId.mockResolvedValue({
         business_name: 'Test Business',
+        dba_name: 'Test Brand',
         support_email: 'support@test.com',
       });
 
@@ -209,7 +210,7 @@ describe('Enrollment Funnel Service', () => {
       expect(result!.clauses[0].title).toBe('Refund Policy');
       expect(result!.compiledTcHtml).toBe('<p>Terms here</p>');
       expect(result!.tcUrl).toBe('http://localhost:3000/terms/loc-1');
-      expect(result!.merchantName).toBe('Test Business');
+      expect(result!.merchantName).toBe('Test Brand');
       expect(result!.merchantSupportEmail).toBe('support@test.com');
 
       // Must NOT expose internal IDs

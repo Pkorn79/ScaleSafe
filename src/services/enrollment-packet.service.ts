@@ -6,11 +6,12 @@ import { renderHtmlToPdf } from './pdf-renderer.service';
 import { storageService } from './storage.service';
 import { logger } from '../utils/logger';
 import { resolveProgramName } from '../utils/program-name';
+import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 
 interface PacketData {
   enrollment: Record<string, any>;
   offer: OfferRecord | null;
-  merchant: { businessName: string; supportEmail: string; logoUrl: string };
+  merchant: { businessName: string; legalBusinessName: string; supportEmail: string; logoUrl: string };
   evidence: any[];
 }
 
@@ -23,11 +24,12 @@ export const enrollmentPacketService = {
     const enrollment = await enrollmentRepository.getById(enrollmentId, locationId);
     const offer = enrollment.offer_id ? await offerRepository.findById(enrollment.offer_id, locationId) : null;
 
-    let merchant = { businessName: '', supportEmail: '', logoUrl: '' };
+    let merchant = { businessName: '', legalBusinessName: '', supportEmail: '', logoUrl: '' };
     try {
       const config = await merchantService.getFullConfig(locationId);
       merchant = {
-        businessName: config.businessName || '',
+        businessName: config.dbaName || config.businessName || '',
+        legalBusinessName: config.businessName || '',
         supportEmail: config.supportEmail || '',
         logoUrl: config.logoUrl || '',
       };
@@ -134,10 +136,17 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
     for (let i = 1; i <= 11; i++) {
       const title = (offer as any)[`clause_slot_${i}_title`];
       if (title) {
-        const accepted = acceptedSet.has(`clause_${i}`);
+        const text = (offer as any)[`clause_slot_${i}_text`] || '';
+        const normalizedTitle = String(title).replace(/\s*\(recommended\)\s*$/i, '').trim().toLowerCase();
+        const standardClause = STANDARD_CLAUSES.find((clause) => (
+          clause.label.replace(/\s*\(recommended\)\s*$/i, '').trim().toLowerCase() === normalizedTitle
+          || clause.text.trim() === String(text).trim()
+        ));
+        const accepted = acceptedSet.has(standardClause?.key || `clause_${i}`)
+          || acceptedSet.has(`clause_${i}`);
         clauseItems.push(`<tr>
-          <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb">${accepted ? '✓' : '—'}</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb"><strong>${esc(title)}</strong><br><span style="color:#6b7280;font-size:11px">${esc((offer as any)[`clause_slot_${i}_text`] || '')}</span></td>
+          <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb">${accepted ? 'Yes' : 'No'}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb"><strong>${esc(title)}</strong><br><span style="color:#6b7280;font-size:11px">${esc(text)}</span></td>
         </tr>`);
       }
     }
@@ -193,6 +202,10 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
   const logoHtml = merchant.logoUrl
     ? `<img src="${esc(merchant.logoUrl)}" style="max-width:150px;max-height:60px;margin-bottom:8px" /><br>`
     : '';
+  const legalBusinessHtml = merchant.legalBusinessName
+    && merchant.legalBusinessName.trim().toLowerCase() !== merchant.businessName.trim().toLowerCase()
+    ? `<div style="font-size:10px;color:#6b7280;margin-top:2px">Legal business: ${esc(merchant.legalBusinessName)}</div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html>
@@ -223,6 +236,7 @@ function buildEnrollmentPacketHtml(data: PacketData): string {
 <div class="header">
   ${logoHtml}
   <div style="font-size:14px;font-weight:600;color:#374151">${esc(merchant.businessName)}</div>
+  ${legalBusinessHtml}
   <h1>Enrollment Packet</h1>
   <div class="subtitle">Generated ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })} — This document is a frozen record of the enrollment agreement</div>
   <div style="font-size:10px;color:#9ca3af;margin-top:2px">Document Ref: EP-${esc(e.id?.slice(0, 8) || 'N/A')}</div>
@@ -266,7 +280,7 @@ ${clauseItems.length > 0 ? `
 <div style="margin-top:12px">
   <strong style="font-size:12px">Individual Clause Acceptance</strong>
   <p style="font-size:11px;color:#374151;margin:6px 0 8px;line-height:1.5">The following clauses were individually presented to the client during the enrollment process. Each clause required separate review and active acknowledgment before the client could proceed. Checked clauses below were individually accepted by the client.</p>
-  <table class="clause-table" style="margin-top:4px"><thead><tr><th style="width:30px">✓</th><th>Clause</th></tr></thead><tbody>${clauseItems.join('')}</tbody></table>
+  <table class="clause-table" style="margin-top:4px"><thead><tr><th style="width:65px">Accepted</th><th>Clause</th></tr></thead><tbody>${clauseItems.join('')}</tbody></table>
   <p style="font-size:11px;color:#374151;margin:8px 0 0;line-height:1.5">In addition to the individual clauses above, the client scrolled through the full terms document (scroll depth: ${e.scroll_depth != null ? e.scroll_depth + '%' : 'N/A'}) and provided their digital signature to confirm acceptance.</p>
 </div>` : ''}
 

@@ -158,7 +158,7 @@ describe('Checkout Controller', () => {
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
             single: jest.fn().mockResolvedValue({
-              data: { business_name: 'Test Biz', default_processor: 'nmi' },
+              data: { business_name: 'Test Biz LLC', dba_name: 'Test Biz', default_processor: 'nmi' },
             }),
           }),
         }),
@@ -566,6 +566,14 @@ describe('Checkout Controller', () => {
           payments_total: null,
           next_billing_date: null,
           billing_setup_status: 'ok',
+        }),
+      }));
+      expect(inserts).toContainEqual(expect.objectContaining({
+        table: 'payment_customer_map',
+        payload: expect.objectContaining({
+          offer_id: offer.id,
+          program_name: 'Dual Quick Checkout',
+          payment_type: 'pif',
         }),
       }));
       expect(mockProcessor.createSubscription).not.toHaveBeenCalled();

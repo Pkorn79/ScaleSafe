@@ -3,6 +3,23 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Reviewer enrollment evidence and branding (2026-07-16)
+
+### Fixed
+- Client-facing enrollment, checkout configuration, and payment-confirmation surfaces now prefer the merchant's DBA/brand name while signed packets retain the legal entity name when it differs.
+- Enrollment packets now map semantic click-wrap identifiers to the clauses actually accepted instead of displaying every current clause as unaccepted.
+- Full and quick checkout customer maps now retain the public program name and the buyer's resolved payment choice rather than an absent GHL product label or stale request value.
+- Completion-time consent and enrollment-payment evidence now retain the resolved merchant ID, including enrollments whose merchant link was backfilled after consent capture.
+
+### Documentation
+- Expanded the installation runbook with merchant-profile setup, ScaleSafe-hosted terms, stable logo storage, subdomain and sending-domain setup, exact workflow proof, and a full evidence-linked checkout certification sequence.
+- Updated the Marketplace reviewer script to use the certified reviewer offer, public program name, funnel URL, branding checks, and canonical terms URL.
+
+### Verified
+- Reviewer Stripe sandbox checkout created one linked client, enrollment, payment, consent record, enrollment-payment record, and private signed packet; the receipt and welcome emails were received.
+- Focused enrollment/checkout/packet regression suites pass 52 tests; the full suite passes 165 suites and 1,348 tests.
+- TypeScript typecheck, production build, root and UI production dependency audits, diff check, and redacted tracked-tree secret scan pass.
+
 ## Unreleased - Beta surface and recovery cleanup (2026-07-14)
 
 ### Fixed

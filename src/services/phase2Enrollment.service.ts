@@ -317,6 +317,7 @@ export const phase2EnrollmentService = {
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
+        merchant_id: resolvedMerchantId,
         evidence_type: 'consent',
         data: {
           digital_signature: (enrollment as any).digital_signature || '',
@@ -332,6 +333,7 @@ export const phase2EnrollmentService = {
         location_id: params.locationId,
         contact_id: resolvedContactId,
         enrollment_id: params.enrollmentId,
+        merchant_id: resolvedMerchantId,
         evidence_type: 'enrollment_payment',
         data: {
           amount: params.paymentAmount,

@@ -538,7 +538,7 @@ export async function getCheckoutConfig(req: Request, res: Response): Promise<vo
   const supabase = getSupabase();
   const { data: merchantRow } = await supabase
     .from('merchants')
-    .select('business_name, default_processor')
+    .select('business_name, dba_name, default_processor')
     .eq('id', merchant.merchantId)
     .single();
 
@@ -548,7 +548,7 @@ export async function getCheckoutConfig(req: Request, res: Response): Promise<vo
 
     const response: Record<string, any> = {
       processorType: procConfig.processor_type,
-      merchantName: merchantRow?.business_name || '',
+      merchantName: merchantRow?.dba_name || merchantRow?.business_name || '',
     };
 
     if (procConfig.processor_type === 'nmi') {
@@ -590,7 +590,7 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
     res.json({
       checkoutType: 'whop',
       processorType: 'whop',
-      merchantName: merchant.business_name || '',
+      merchantName: merchant.dba_name || merchant.business_name || '',
       publishableKey: merchant.provider_publishable_key || '',
       whopPlanId: (offer as any).whop_plan_id || '',
       whopSyncStatus: (offer as any).whop_sync_status || '',
@@ -610,7 +610,7 @@ export async function getCheckoutConfigByOffer(req: Request, res: Response): Pro
     const response: Record<string, any> = {
       offerId: offer.id,
       processorType: procConfig.processor_type,
-      merchantName: merchant.business_name || '',
+      merchantName: merchant.dba_name || merchant.business_name || '',
       publishableKey: merchant.provider_publishable_key || '',
       ...turnstileConfigForOffer(offer),
     };
@@ -665,7 +665,7 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
     res.json({
       checkoutType: 'whop',
       processorType: 'whop',
-      merchantName: merchant.business_name || '',
+      merchantName: merchant.dba_name || merchant.business_name || '',
       whopPlanId: offer.whop_plan_id || '',
       whopSyncStatus: offer.whop_sync_status || '',
       ...turnstileConfigForOffer(offer as any),
@@ -691,7 +691,7 @@ export async function getCheckoutConfigByProduct(req: Request, res: Response): P
     const response: Record<string, any> = {
       offerId: offer.id,
       processorType: procConfig.processor_type,
-      merchantName: merchant.business_name || '',
+      merchantName: merchant.dba_name || merchant.business_name || '',
       ...turnstileConfigForOffer(offer as any),
     };
 
@@ -1291,8 +1291,8 @@ export async function processPayment(req: Request, res: Response): Promise<void>
               contact_id: resolvedContactId,
               location_id: merchant.locationId,
               offer_id: offerId || (enrollment as any).offer_id || '',
-              program_name: productDetails?.[0]?.name || '',
-              payment_type: normalizePaymentType(req.body.paymentChoice),
+              program_name: checkoutOfferName,
+              payment_type: normalizePaymentType(boundPaymentChoice),
               processor: procConfig.processor_type,
             });
           } catch (mapErr: any) {
@@ -1531,7 +1531,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             contact_id: resolvedQuickPayContact || '',
             location_id: merchant.locationId,
             offer_id: offerId,
-            program_name: productDetails?.[0]?.name || '',
+            program_name: checkoutOfferName,
             payment_type: normalizePaymentType(boundPaymentChoice),
             processor: procConfig.processor_type,
           });

@@ -61,8 +61,8 @@ router.get('/payment-thank-you', async (req: Request, res: Response) => {
       const { getSupabase } = require('../clients/supabase.client');
       const { data: offer } = await getSupabase().from('offers_mirror').select('location_id').eq('id', offerId).single();
       if (offer) {
-        const { data: merchant } = await getSupabase().from('merchants').select('business_name').eq('location_id', offer.location_id).single();
-        merchantName = merchant?.business_name || '';
+        const { data: merchant } = await getSupabase().from('merchants').select('business_name, dba_name').eq('location_id', offer.location_id).single();
+        merchantName = merchant?.dba_name || merchant?.business_name || '';
       }
     } catch {}
   }

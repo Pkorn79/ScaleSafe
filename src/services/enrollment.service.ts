@@ -358,7 +358,7 @@ export const enrollmentService = {
         || `${config.appUrl.replace(/\/$/, '')}/terms/${encodeURIComponent(offer.location_id)}`,
       quickCheckoutConsentText: (offer as any).quick_checkout_consent_text || null,
       clauses,
-      merchantName: merchant?.business_name || '',
+      merchantName: merchant?.dba_name || merchant?.business_name || '',
       merchantSupportEmail: merchant?.support_email || '',
       merchantLogoUrl: merchant?.logo_url || null,
       checkoutAddons: checkoutAddons.map((addon) => ({
