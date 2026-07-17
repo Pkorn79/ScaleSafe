@@ -21,7 +21,10 @@ This guide is written for ScaleSafe merchants, operators, and support staff. It 
 13. [Troubleshooting](TROUBLESHOOTING.md)
 14. [Reviewer Test Script](REVIEWER_TEST_SCRIPT.md)
 15. [Reviewer Screenshot Manifest](REVIEWER_ASSET_MANIFEST.md)
-15. [Reviewer Snapshot Inventory](REVIEWER_SNAPSHOT_INVENTORY.md) (operator reference)
+16. [Screenshot Catalog](SCREENSHOT_CATALOG_2026-07-17.md)
+17. [Reviewer Snapshot Inventory](REVIEWER_SNAPSHOT_INVENTORY.md) (operator reference)
+
+Marketplace permission explanations and the scope-video runbook are maintained in [GoHighLevel Marketplace Scope Explanations](../GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md).
 
 ## Getting Started
 

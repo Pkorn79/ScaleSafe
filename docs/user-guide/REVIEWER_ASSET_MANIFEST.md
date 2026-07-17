@@ -1,37 +1,58 @@
 # Reviewer Screenshot Manifest
 
-Use only screenshots marked **Approved** in the GoHighLevel Marketplace submission. PMG captures are retained as internal test evidence and must not be submitted merely because they are stored beside the guide.
+Status: Sanitized screenshot pass completed July 17, 2026.
 
-## Approved
+Use only screenshots marked **Public Safe** in public pages or the GoHighLevel Marketplace submission. Every image was captured from the dedicated ScaleSafe reviewer sub-account or a public reviewer funnel and checked at full resolution.
 
-| File | Surface | Review |
+## Current Reviewer Fixture
+
+- Internal offer name: `CERT 2026-07-16 Stripe PIF`
+- Public program name: `ScaleSafe Reviewer Test Program`
+- Tracking ID: `GHL_REVIEW_STRIPE_PIF`
+- Processor: Stripe test mode
+- Price: $1.00 paid in full
+
+## Public Safe
+
+| File | Surface | Best use |
 | --- | --- | --- |
-| `assets/reviewer-dashboard-clean.png` | Dedicated `ScaleSafe` reviewer sub-account dashboard | Approved. Empty tenant-isolated state; no PMG client, payment, or evidence data. |
-| `assets/offer-builder.png` | Blank offer builder | Approved. No entered merchant, client, processor, or credential data. |
+| `assets/reviewer-2026-07-17/01-offers-list.png` | Reviewer offer list | Marketplace review, offer-management help, product site feature section. |
+| `assets/reviewer-2026-07-17/02-dashboard.png` | Clean reviewer dashboard | Marketplace review, dashboard help, product overview. |
+| `assets/reviewer-2026-07-17/03-enrollment-program.png` | Enrollment/program card | Client-record and enrollment documentation. The crop excludes the client identity and stale historical test row. |
+| `assets/reviewer-2026-07-17/04-defense-workspace.png` | Empty defense workspace | Defense workflow overview without client or dispute data. |
+| `assets/reviewer-2026-07-17/06-evidence-connections.png` | Evidence Connections catalog | Integrations page and connection help. |
+| `assets/reviewer-2026-07-17/07-payments-overview-sanitized.png` | Sanitized payment filters/summary | Payment-management documentation. The crop excludes client and processor identifiers. |
+| `assets/reviewer-2026-07-17/09-public-enrollment-welcome.png` | Public enrollment welcome page | Enrollment and consent-flow walkthrough. |
+| `assets/reviewer-2026-07-17/10-public-offer-review.png` | Public offer, milestone, and refund review | Product site, Marketplace journey, and enrollment help. |
 
 ## Internal Only
 
-The following captures contain PMG test identities, test offer names, operational metrics, incident details, or historical findings. Keep them for engineering reference; do not include them in the reviewer package:
+| File | Reason |
+| --- | --- |
+| `assets/reviewer-2026-07-17/05-stripe-risk-health.png` | No client PII, but the deliberately artificial test metrics show a critical account state and are not representative marketing material. |
+| `assets/reviewer-2026-07-17/08-offer-builder.png` | Useful operator reference, but the sticky bar displays `Unsaved changes` on initial load. |
+| `assets/reviewer-2026-07-17/08-offer-builder-overview.png` | Same initial-load dirty-state caveat. |
+| `assets/reviewer-2026-07-17/10-merchant-terms-page.png` | This is a merchant-specific terms page, not ScaleSafe's own Terms of Service. |
 
-- `assets/dashboard-overview.png`
-- `assets/clients-controls.png`
-- `assets/offers-list.png`
-- `assets/payments-reconciliation-summary.png`
-- `assets/stripe-risk-health.png`
-- `assets/defense-packet-detail.png`
-- `assets/CLIENT-MESSAGE-001_evidence-unlinked_2026-07-14.png`
-- `assets/OPS-SUPABASE-001_project-unhealthy_2026-07-14.png`
-- `assets/OPS-SUPABASE-002_database-health_2026-07-14.png`
+The older captures directly under `assets/` include PMG test identities, historical failures, processor records, or internal operational data. They remain engineering evidence and are not approved for public reuse.
 
-## Capture After Reviewer Fixtures Exist
+## Still Needed From A Fictional Demo Record
 
-Capture these from the dedicated reviewer sub-account after the fixtures in `REVIEWER_TEST_SCRIPT.md` have been created:
+- Client evidence timeline with consent, payment, communication, milestone, pulse, appointment, and fulfillment evidence.
+- Completed defense packet detail and exhibits with a fictional dispute and no signed private-file URL.
+- Refund and recurring lifecycle controls with fictional payment identifiers.
+- Milestone completion/sign-off and pulse follow-up states.
+- Provisioning Health with all location IDs, webhook URLs, secrets, credentials, and personal emails masked.
+- Stripe Risk Health populated with a representative sandbox fixture rather than the current synthetic critical metrics.
 
-- Reviewer offer list showing only `Reviewer - Stripe PIF` and public name `Reviewer Program`.
-- Stripe test checkout before card entry; no card number, client email, signed token, or private URL visible.
-- Reviewer client Programs/Evidence view using a fictional identity.
-- Defense packet detail with fictional data and no signed private-file URL visible.
-- Provisioning Health with secrets, IDs, emails, and webhook URLs cropped or masked.
-- Evidence Connections health with credential controls and tenant identifiers omitted.
+Do not create these from the current real test client. Seed one fictional reviewer client so the images remain safe as the website and help center evolve.
 
-Before approval, inspect each image at full resolution for names, emails, phone numbers, addresses, card/bank data, processor IDs, API keys, access tokens, signed URLs, webhook secrets, and browser autofill suggestions.
+## Inspection Checklist
+
+Before any screenshot is published, inspect it at full resolution for:
+
+- Names, email addresses, phone numbers, postal addresses, and IP addresses.
+- Card or bank data and browser autofill suggestions.
+- Processor customer, payment, transaction, subscription, membership, or vault IDs.
+- GHL location/contact IDs, API keys, access tokens, webhook secrets, and signed URLs.
+- Internal incident data, unrealistic test metrics, stale records, and unsupported feature labels.

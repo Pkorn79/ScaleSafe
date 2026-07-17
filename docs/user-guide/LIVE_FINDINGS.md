@@ -772,13 +772,14 @@ The later certification created isolated test offers, payments, evidence, a clie
 - Required repair: isolate the installed iframe topology and current GHL message behavior, retain strict response-origin validation, add explicit `parent_context_timeout` telemetry/UI, and test the exact installed Custom Page surface. Do not add a cross-sub-account chooser or trust a location supplied by the browser URL.
 - Required regression: reviewer and PMG installed pages each produce exactly one trusted location-bound `/auth/sso`; agency-context preview still fails closed; an absent parent response fails quickly with typed guidance and no tenant fallback.
 
-### FIND-075 - Marketplace draft retains stale scopes
+### FIND-075 - Marketplace scope list requires exact least-privilege reconciliation
 
 - Area: GHL Marketplace least privilege and reviewer documentation.
-- Live proof: the current draft reports 29 selected scopes. Read-only inspection confirmed Products and Opportunities remain selected even though both were previously identified as old product directions. Other sensitive or broad selections require an exact runtime-use map before submission. No checkbox or Save action was used during review.
+- Live proof: the reviewer installation's stored OAuth grant contains 29 scopes. Nineteen map to current code, `payments/custom-provider.readonly` needs a clean-install decision, and nine currently have no code-backed beta use: `locations.write`, `marketplace-external-auth-migration.write`, three Objects scopes, two Payments Integration scopes, `products.readonly`, and `products/prices.readonly`. The editable Marketplace draft must still be checked in case it has changed since this installation was authorized.
+- Corrected code proof: Products and Opportunities are not removable stale scopes today. `src/services/offer.service.ts` creates GHL product and price records when an offer is created, `src/services/merchant.service.ts` reads opportunity pipelines, and `src/services/enrollment.service.ts` creates an opportunity during enrollment. Other broad selections still require a current runtime or selected-webhook justification.
 - Impact: unnecessary scopes expand access, increase Marketplace review friction, and make the scope-explanation video inaccurate.
 - Severity recommendation: P2 configuration and publication gate.
-- Required repair: export the exact selected list, map every scope to a current route/service or Snapshot requirement, remove scopes without a code-backed beta use, and write one plain-language reviewer explanation per retained scope.
+- Required repair: use `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md` to reconcile the exact selected list, retain every current code dependency, remove scopes without a code-backed beta use, and use the plain-language explanation for each retained scope.
 - Required regression: install with the reduced scope set in a scratch sub-account and certify SSO, contacts, conversations, custom fields/values, workflows, appointments, and payment-provider paths without re-adding stale capabilities.
 
 ## Operations Access

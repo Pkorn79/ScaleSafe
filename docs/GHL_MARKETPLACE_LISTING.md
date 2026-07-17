@@ -64,29 +64,23 @@ External Authentication should remain OFF. ScaleSafe does not use a separate thi
 
 The selected GHL app permissions/scopes still matter for review, but they do not need to be turned into a public listing section unless HighLevel specifically asks for permission justifications during review.
 
-If HighLevel asks for permission/scope justifications, copy the exact selected names from the live Marketplace app configuration and use this working table:
+The code-backed least-privilege map, reviewer explanations, removal candidates, and scope-video runbook are maintained in `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md`.
 
-| Live GHL scope | Why ScaleSafe needs it |
-|---|---|
-| Copy exact selected scope only if GHL asks | Read and update the installed location so ScaleSafe can provision merchant settings, custom values, and workflow-ready records. |
-| Copy exact selected scope only if GHL asks | Read and update contacts so ScaleSafe can attach offers, enrollment/payment fields, evidence status, and workflow context to the right client. |
-| Copy exact selected scope only if GHL asks | Read custom fields/custom values so ScaleSafe can verify provisioning health and keep workflow merge fields mapped. |
-| Copy exact selected scope only if GHL asks | Register and execute Marketplace workflow triggers used for receipts, enrollment links, welcome/access, payment failures, refunds, chargebacks, and app events. |
-| Copy exact selected scope only if GHL asks | Read relevant CRM activity such as conversations, appointments, notes, tasks, opportunities, and invoice events for evidence timelines where enabled. |
-
-Remove any row that is not actually requested by the app.
+Before submission, export the exact live selection and reconcile every selected scope against that document. Do not remove Products or Opportunities permissions while current offer and enrollment code still depends on them. Remove any selected scope without a current, code-backed beta use.
 
 ## Screenshots / media plan
 
 Capture screenshots with realistic, non-PII demo data. Use the same sample merchant,
 offer, and test client across the set.
 
-1. Dashboard / provisioning health showing the app is installed and workflow health is visible.
+1. Dashboard showing the app is installed and the reviewer account is healthy.
 2. Offer setup showing checkout mode, pricing, terms, milestones, pulse cadence, and add-ons.
 3. Checkout or enrollment flow showing the client-facing purchase summary and consent/payment path.
 4. Client evidence timeline showing consent, payment, communications, milestone, and pulse records.
 5. Payments view showing recurring progress, saved payment method, and processor subscription ID.
 6. Defense workflow showing a dispute packet or evidence assembly screen.
+
+The current sanitized media set and publication restrictions are recorded in `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`.
 
 ## Support & compliance
 
