@@ -384,7 +384,7 @@
     html += '<p class="ss-subtitle">Please review and accept the following before proceeding.</p>';
 
     // Section 1: Terms Document Link
-    var termsUrl = window.location.origin + '/terms/' + encodeURIComponent(offer.locationId || '');
+    var termsUrl = offer.tcUrl || (API_BASE + '/terms/' + encodeURIComponent(offer.locationId || ''));
     html += '<div style="background:#f9fafb;border:1px solid var(--ss-border);border-radius:8px;padding:16px;margin-bottom:20px;">';
     html += '<p style="font-size:15px;font-weight:600;margin-bottom:8px;">Terms &amp; Conditions</p>';
     html += '<p style="font-size:14px;color:var(--ss-muted);margin-bottom:12px;">Please review the full terms and conditions before accepting.</p>';

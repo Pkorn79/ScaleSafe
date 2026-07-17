@@ -1,5 +1,6 @@
 import { ghlApi } from '../clients/ghl.client';
 import { getSupabase } from '../clients/supabase.client';
+import { config } from '../config';
 import { offerRepository } from '../repositories/offer.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { logger } from '../utils/logger';
@@ -353,7 +354,8 @@ export const enrollmentService = {
       refundWindowText: offer.refund_window_text || '',
       milestones,
       compiledTcHtml: offer.compiled_tc_html || '',
-      tcUrl: (offer as any).tc_url || null,
+      tcUrl: (offer as any).tc_url
+        || `${config.appUrl.replace(/\/$/, '')}/terms/${encodeURIComponent(offer.location_id)}`,
       quickCheckoutConsentText: (offer as any).quick_checkout_consent_text || null,
       clauses,
       merchantName: merchant?.business_name || '',
