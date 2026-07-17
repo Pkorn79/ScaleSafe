@@ -122,11 +122,14 @@ The GHL Business Profile logo and the ScaleSafe Merchant Setup logo are separate
 
 ### Configure Payment Processors
 
-1. Open the ScaleSafe payment processor settings.
-2. Connect only the processors in this merchant's approved launch scope.
-3. Record whether each connection is test or live; never infer this from the account name alone.
-4. When more than one processor is connected, choose and record the default processor.
-5. Confirm the processor account belongs to this merchant before creating an offer.
+1. Confirm the HighLevel Marketplace plan shown in ScaleSafe.
+2. Standard ($99/month) permits Stripe and Whop.
+3. WholePay ($59/month) permits Stripe, Whop, and NMI only after ScaleSafe HQ verifies the merchant's WholePay-provisioned NMI account and approves the exact GHL location.
+4. Open the ScaleSafe payment processor settings.
+5. Connect only the processors in this merchant's approved launch scope.
+6. Record whether each connection is test or live; never infer this from the account name alone.
+7. When more than one processor is connected, choose and record the default processor.
+8. Confirm the processor account belongs to this merchant before creating an offer.
 
 Processor ownership:
 

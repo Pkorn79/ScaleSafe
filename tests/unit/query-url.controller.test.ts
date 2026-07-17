@@ -7,6 +7,11 @@ const mockMarkProviderStarted = jest.fn();
 const mockMarkProviderAccepted = jest.fn();
 const mockMarkRecorded = jest.fn();
 const mockMarkUnknown = jest.fn();
+const mockAssertNewProcessorActivityAllowed = jest.fn();
+
+jest.mock('../../src/services/marketplace-entitlement.service', () => ({
+  assertNewProcessorActivityAllowed: (...args: any[]) => mockAssertNewProcessorActivityAllowed(...args),
+}));
 
 jest.mock('../../src/services/payment-provider.service', () => ({
   paymentProviderService: { getMerchantByApiKey: mockGetMerchantByApiKey },
@@ -151,6 +156,7 @@ function mockRefundTables(
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAssertNewProcessorActivityAllowed.mockResolvedValue({ accessAllowed: true });
   mockGetMerchantByApiKey.mockResolvedValue(MERCHANT);
   mockResolveProcessor.mockResolvedValue({ processorType: 'nmi', config: { processor_type: 'nmi' } });
   mockCreateProcessorClient.mockReturnValue(mockProcessor);

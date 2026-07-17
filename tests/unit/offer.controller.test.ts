@@ -26,11 +26,22 @@ jest.mock('../../src/middleware/tenantContext', () => ({
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
 const mockCloneOffer = jest.fn();
+const mockGetById = jest.fn();
+const mockAssertNewProcessorActivityAllowed = jest.fn();
 jest.mock('../../src/services/offer.service', () => ({
   offerService: {
     create: (...args: any[]) => mockCreate(...args),
     update: (...args: any[]) => mockUpdate(...args),
     cloneOffer: (...args: any[]) => mockCloneOffer(...args),
+    getById: (...args: any[]) => mockGetById(...args),
+  },
+}));
+jest.mock('../../src/services/marketplace-entitlement.service', () => ({
+  assertNewProcessorActivityAllowed: (...args: any[]) => mockAssertNewProcessorActivityAllowed(...args),
+}));
+jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantRepository: {
+    getByLocationId: jest.fn().mockResolvedValue({ default_processor: 'stripe' }),
   },
 }));
 
@@ -62,6 +73,8 @@ let next: NextFunction & jest.Mock;
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveLocationId.mockReturnValue('loc-1');
+  mockAssertNewProcessorActivityAllowed.mockResolvedValue({ accessAllowed: true });
+  mockGetById.mockResolvedValue({ checkout_type: 'direct', processor_override: 'stripe' });
   next = jest.fn() as any;
 });
 

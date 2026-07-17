@@ -10,6 +10,17 @@
     <div v-if="pageLoading" class="loading">Loading processor status...</div>
 
     <template v-if="!pageLoading">
+      <div class="card">
+        <div class="flex-between">
+          <div>
+            <h3 class="section-title" style="margin-bottom:0">Marketplace Plan</h3>
+            <p class="text-sm text-muted mt-2">{{ ssoSession.entitlement.planLabel }}</p>
+          </div>
+          <span class="badge badge-green">Active</span>
+        </div>
+        <p class="text-sm text-muted mt-2">{{ ssoSession.entitlement.message }}</p>
+      </div>
+
       <!-- Default Processor Toggle (only show if both connected) -->
       <div v-if="nmiConnected && stripeConnected" class="card">
         <h3 class="section-title">Default Processor</h3>
@@ -18,6 +29,7 @@
           <button
             class="btn"
             :class="defaultProcessor === 'nmi' ? 'btn-primary' : 'btn-secondary'"
+            :disabled="!nmiPlanAvailable"
             @click="setDefaultProcessor('nmi')"
           >
             NMI
@@ -95,7 +107,7 @@
               </p>
             </div>
             <div class="route-actions">
-              <button v-if="!route.isDefault" class="btn btn-secondary btn-sm" @click="setDefaultNmiRoute(route.id)">
+              <button v-if="!route.isDefault" class="btn btn-secondary btn-sm" :disabled="!nmiPlanAvailable" @click="setDefaultNmiRoute(route.id)">
                 Make Default
               </button>
               <button class="btn btn-danger btn-sm" @click="deactivateNmiRoute(route)">
@@ -105,7 +117,7 @@
           </div>
         </div>
 
-        <div>
+        <div v-if="nmiPlanAvailable">
           <h4 class="subsection-title mb-4">{{ nmiConnected ? 'Add NMI Route' : 'Connect NMI' }}</h4>
           <div class="form-group">
             <label class="form-label">Route Name</label>
@@ -162,6 +174,14 @@
           <div v-if="nmiTestResult" class="mt-2 text-sm" :style="{ color: nmiTestResult.success ? '#059669' : '#dc2626' }">
             {{ nmiTestResult.message }}
           </div>
+        </div>
+        <div v-else class="webhook-panel">
+          <h4 class="subsection-title">WholePay approval required</h4>
+          <p class="text-sm text-muted mt-2">
+            New NMI setup is available only on the $59 WholePay plan after ScaleSafe HQ
+            verifies the merchant's WholePay-provisioned NMI account. Stripe and Whop remain
+            available on the standard plan.
+          </p>
         </div>
 
         <div v-if="nmiConnected">
@@ -422,6 +442,7 @@ import { useApi, ssoSession } from '../composables/useApi';
 import SectionHeader from '../components/SectionHeader.vue';
 
 const api = useApi();
+const nmiPlanAvailable = computed(() => ssoSession.entitlement.processors.nmi);
 
 const pageLoading = ref(true);
 const loadError = ref<string | null>(null);

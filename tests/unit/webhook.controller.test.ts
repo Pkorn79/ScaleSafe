@@ -14,6 +14,8 @@ const mockTriggerUpsertSubscription = jest.fn();
 const mockTriggerDeactivateSubscription = jest.fn();
 const mockEnsureLegacyConnection = jest.fn();
 const mockIngestLegacyEvidence = jest.fn();
+const mockApplyMarketplacePlan = jest.fn();
+const mockApplyMarketplaceBillingStatus = jest.fn();
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -111,6 +113,12 @@ jest.mock('../../src/services/evidence-connector.service', () => ({
   evidenceConnectorService: {
     ingestLegacy: (...args: any[]) => mockIngestLegacyEvidence(...args),
   },
+}));
+
+jest.mock('../../src/services/marketplace-entitlement.service', () => ({
+  marketplacePlanKey: (planId: string) => planId === 'plan_standard' ? 'standard' : 'unknown',
+  applyMarketplacePlan: (...args: any[]) => mockApplyMarketplacePlan(...args),
+  applyMarketplaceBillingStatus: (...args: any[]) => mockApplyMarketplaceBillingStatus(...args),
 }));
 
 jest.mock('../../src/services/notification.service', () => ({
@@ -531,6 +539,45 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ received: false, retry: true });
+  });
+
+  test('PLAN_CHANGE records the new trusted Marketplace plan', async () => {
+    mockApplyMarketplacePlan.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'PLAN_CHANGE',
+      locationId: 'loc_1',
+      currentPlanId: 'plan_old',
+      newPlanId: 'plan_standard',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockApplyMarketplacePlan).toHaveBeenCalledWith(expect.objectContaining({
+      locationId: 'loc_1',
+      planId: 'plan_standard',
+      previousPlanId: 'plan_old',
+      eventType: 'PLAN_CHANGE',
+    }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('APP_PAYMENT_STATUS records billing truth', async () => {
+    mockApplyMarketplaceBillingStatus.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'APP_PAYMENT_STATUS',
+      locationId: 'loc_1',
+      previousStatus: 'COMPLETE',
+      newStatus: 'FAILED',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockApplyMarketplaceBillingStatus).toHaveBeenCalledWith(expect.objectContaining({
+      locationId: 'loc_1',
+      status: 'FAILED',
+      eventType: 'APP_PAYMENT_STATUS',
+    }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
   });
 });
 

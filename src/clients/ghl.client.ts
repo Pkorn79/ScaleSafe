@@ -119,6 +119,7 @@ export interface TokenResponse extends TokenPair {
   tokenScope: GhlTokenScope;
   approvedLocations: InstalledLocation[];
   installedLocations?: InstalledLocation[];
+  planId: string;
   _debug?: Record<string, unknown>;
 }
 
@@ -230,6 +231,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   const refreshToken = data.refresh_token || data.refreshToken || '';
   const expiresIn = Number(data.expires_in || data.expiresIn || 86400);
   const scopes = parseScopeList(data.scope || data.scopes);
+  const planId = String(data.planId || data.plan_id || '').trim();
   const userType = String(data.userType || data.user_type || '').trim().toLowerCase();
   const tokenScope: GhlTokenScope = locationId || userType === 'location' ? 'location' : 'company';
   const approvedLocations = normalizeInstalledLocationsResponse(
@@ -256,6 +258,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     hadCompanyId: !!companyId,
     tokenScope,
     approvedLocationCount: approvedLocations.length,
+    hasPlanId: !!planId,
   };
 
   let installedLocations: InstalledLocation[] = [];
@@ -294,6 +297,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
     tokenScope,
     approvedLocations,
     installedLocations,
+    planId,
     _debug: debug,
   };
 }

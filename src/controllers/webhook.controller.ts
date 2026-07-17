@@ -16,6 +16,11 @@ import { merchantHasOAuthCredentials, merchantRepository } from '../repositories
 import { merchantService } from '../services/merchant.service';
 import { evidenceConnectionService } from '../services/evidence-connection.service';
 import { evidenceConnectorService } from '../services/evidence-connector.service';
+import {
+  applyMarketplaceBillingStatus,
+  applyMarketplacePlan,
+  marketplacePlanKey,
+} from '../services/marketplace-entitlement.service';
 
 function webhookType(body: Record<string, any>): string {
   return String(body.type || body.event_type || body.eventType || body.triggerData?.eventType || '').trim();
@@ -129,9 +134,10 @@ export const webhookController = {
    */
   async ghlAppLifecycle(req: Request, res: Response, _next: NextFunction) {
     const body = req.body || {};
-    const type = webhookType(body);
+    const type = webhookType(body).toUpperCase();
     const locationId = String(body.locationId || '').trim();
     const companyId = String(body.companyId || '').trim();
+    const installPlanId = String(body.planId || body.plan_id || '').trim();
 
     try {
       if (type === 'INSTALL') {
@@ -146,6 +152,11 @@ export const webhookController = {
           existing = await merchantRepository.update(locationId, {
             company_id: companyId || existing.company_id,
             status: 'active',
+            ...(installPlanId ? {
+              marketplace_plan_id: installPlanId,
+              marketplace_plan_key: marketplacePlanKey(installPlanId),
+              marketplace_plan_updated_at: new Date().toISOString(),
+            } : {}),
             ...(reinstalling ? {
               // Never reactivate credentials retained from a prior install.
               // OAuth (or a current same-company bulk authorization) must bind
@@ -177,6 +188,10 @@ export const webhookController = {
             company_id: companyId || undefined,
             ghl_access_token: '',
             ghl_refresh_token: '',
+            ...(installPlanId ? {
+              marketplace_plan_id: installPlanId,
+              marketplace_plan_key: marketplacePlanKey(installPlanId),
+            } : {}),
           });
           logger.info({ locationId, companyId }, 'GHL app INSTALL: merchant stub created (tokens pending OAuth)');
         }
@@ -188,6 +203,14 @@ export const webhookController = {
           && authorizedMerchant.snapshot_status !== 'installed') {
           merchantService.provisionMerchant(locationId).catch((err) => {
             logger.error({ err, locationId }, 'Provisioning after GHL INSTALL failed');
+          });
+        }
+        if (installPlanId) {
+          await applyMarketplacePlan({
+            locationId,
+            planId: installPlanId,
+            body,
+            eventType: 'INSTALL',
           });
         }
       } else if (type === 'UNINSTALL' && locationId) {
@@ -216,6 +239,33 @@ export const webhookController = {
         } else {
           logger.info({ locationId }, 'GHL app UNINSTALL for unknown location — ignored');
         }
+      } else if (type === 'PLAN_CHANGE') {
+        if (!locationId) throw new ValidationError('PLAN_CHANGE did not include locationId');
+        await applyMarketplacePlan({
+          locationId,
+          planId: body.newPlanId || body.new_plan_id || body.planId || body.plan_id,
+          previousPlanId: body.currentPlanId || body.current_plan_id || body.previousPlanId || body.previous_plan_id,
+          body,
+          eventType: 'PLAN_CHANGE',
+        });
+      } else if (type === 'APP_PAYMENT_STATUS') {
+        if (!locationId) throw new ValidationError('APP_PAYMENT_STATUS did not include locationId');
+        if (body.planId || body.plan_id) {
+          await applyMarketplacePlan({
+            locationId,
+            planId: body.planId || body.plan_id,
+            body,
+            eventType: 'APP_PAYMENT_STATUS_PLAN',
+          });
+        }
+        await applyMarketplaceBillingStatus({
+          locationId,
+          // HighLevel's AppPaymentStatus contract uses newStatus. Keep the
+          // aliases for defensive compatibility with older/test payloads.
+          status: body.newStatus || body.new_status || body.status || body.paymentStatus || body.payment_status,
+          body,
+          eventType: 'APP_PAYMENT_STATUS',
+        });
       }
       res.json({ received: true });
     } catch (err: any) {
@@ -253,7 +303,7 @@ export const webhookController = {
       return;
     }
 
-    if (type === 'INSTALL' || type === 'UNINSTALL') {
+    if (['INSTALL', 'UNINSTALL', 'PLAN_CHANGE', 'APP_PAYMENT_STATUS'].includes(type.toUpperCase())) {
       await webhookController.ghlAppLifecycle(req, res, next);
       return;
     }

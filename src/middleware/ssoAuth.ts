@@ -5,6 +5,7 @@ import { AuthenticationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
+import { assertMarketplaceAppAccess } from '../services/marketplace-entitlement.service';
 
 const AGENCY_CONTEXT_MESSAGE =
   'ScaleSafe must be opened from the sub-account you want to manage. '
@@ -43,6 +44,7 @@ export async function ssoAuth(req: Request, _res: Response, next: NextFunction):
     try {
       const merchant = await merchantRepository.findByLocationId(ssoContext.locationId);
       assertActiveGhlMerchantBinding(merchant as any, ssoContext);
+      assertMarketplaceAppAccess(merchant as any);
       req.tenantContext = {
         locationId: ssoContext.locationId,
         companyId: ssoContext.companyId,

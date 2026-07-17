@@ -30,6 +30,13 @@ export class ForbiddenError extends AppError {
   }
 }
 
+export class MarketplaceEntitlementError extends AppError {
+  constructor(message: string, public entitlementState: string) {
+    super(message, 403, 'MARKETPLACE_ENTITLEMENT_REQUIRED');
+    this.name = 'MarketplaceEntitlementError';
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(resource: string) {
     super(`${resource} not found`, 404, 'NOT_FOUND');

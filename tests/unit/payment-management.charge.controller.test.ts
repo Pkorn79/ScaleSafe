@@ -1,5 +1,10 @@
 import { Request, Response } from 'express';
 
+const mockAssertNewProcessorActivityAllowed = jest.fn();
+jest.mock('../../src/services/marketplace-entitlement.service', () => ({
+  assertNewProcessorActivityAllowed: (...args: any[]) => mockAssertNewProcessorActivityAllowed(...args),
+}));
+
 const mockFrom = jest.fn();
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -92,6 +97,7 @@ function mockTables(options: { method?: any; ledgerError?: any } = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAssertNewProcessorActivityAllowed.mockResolvedValue({ accessAllowed: true });
   mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
   mockCreateProcessorClient.mockReturnValue(processor);
   mockBegin.mockResolvedValue({ action: 'execute', operation: { id: 'op_charge_1' } });

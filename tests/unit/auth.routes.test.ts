@@ -81,6 +81,7 @@ const BASE_TOKEN_RESPONSE = {
   scopes: ['contacts.readonly', 'locations.readonly'],
   tokenScope: 'location',
   approvedLocations: [],
+  planId: '6a5aaf8e77d47a4f4f207bcb',
 };
 
 const MERCHANT_RECORD = {
@@ -146,6 +147,8 @@ describe('GET /auth/callback', () => {
     expect(res.body.locationId).toBe('loc-abc');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-abc',
+      marketplace_plan_id: '6a5aaf8e77d47a4f4f207bcb',
+      marketplace_plan_key: 'standard',
       config: expect.objectContaining({
         ghl_token_scope: 'location',
         ghl_token_location_id: 'loc-abc',

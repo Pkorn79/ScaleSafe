@@ -1,5 +1,10 @@
 const mockGetMerchantByPublishableKey = jest.fn();
 const mockGetMerchantByApiKey = jest.fn();
+const mockAssertNewProcessorActivityAllowed = jest.fn();
+
+jest.mock('../../src/services/marketplace-entitlement.service', () => ({
+  assertNewProcessorActivityAllowed: (...args: any[]) => mockAssertNewProcessorActivityAllowed(...args),
+}));
 
 jest.mock('../../src/services/payment-provider.service', () => ({
   paymentProviderService: {
@@ -122,6 +127,7 @@ const mockProcessor = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAssertNewProcessorActivityAllowed.mockResolvedValue({ accessAllowed: true });
   mockGetMerchantByPublishableKey.mockResolvedValue(MERCHANT);
   mockResolveProcessor.mockResolvedValue({
     processorType: 'nmi',

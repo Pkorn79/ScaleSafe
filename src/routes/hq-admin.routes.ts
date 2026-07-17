@@ -13,6 +13,10 @@ import {
   type ProviderOutcomeKind,
   type ProviderOutcomeResolution,
 } from '../services/provider-outcome-resolution.service';
+import {
+  marketplaceEntitlementForMerchant,
+  setWholepayApproval,
+} from '../services/marketplace-entitlement.service';
 
 const router = Router();
 
@@ -141,6 +145,7 @@ async function merchantOverview(merchant: MerchantRecord) {
     snapshotStatus: merchant.snapshot_status,
     installedAt: merchant.installed_at,
     updatedAt: merchant.updated_at,
+    entitlement: marketplaceEntitlementForMerchant(merchant),
     processors,
     counts: {
       activeEnrollments,
@@ -246,6 +251,36 @@ router.get('/internal/hq/api/merchants/:locationId', debugLimiter, requireHqToke
   } catch (err: any) {
     logger.error({ err: err?.message || String(err), locationId: req.params.locationId }, 'HQ merchant detail failed');
     res.status(500).json({ error: err?.message || 'HQ merchant detail failed' });
+  }
+});
+
+router.post('/internal/hq/api/merchants/:locationId/wholepay-approval', debugLimiter, requireHqToken, async (req: Request, res: Response) => {
+  try {
+    const locationId = req.params.locationId;
+    const approved = req.body?.approved;
+    if (typeof approved !== 'boolean') {
+      res.status(400).json({ error: 'approved must be true or false' });
+      return;
+    }
+    const entitlement = await setWholepayApproval({
+      locationId,
+      approved,
+      approvedBy: adminLabel(req),
+      merchantReference: String(req.body?.merchantReference || ''),
+    });
+    await audit(req, approved ? 'hq.approve_wholepay_merchant' : 'hq.revoke_wholepay_merchant', {
+      targetLocationId: locationId,
+      targetType: 'merchant',
+      targetId: locationId,
+      metadata: {
+        marketplacePlanId: entitlement.planId,
+        merchantReferenceProvided: !!String(req.body?.merchantReference || '').trim(),
+      },
+    });
+    res.json({ entitlement });
+  } catch (err: any) {
+    logger.error({ err: err?.message || String(err), locationId: req.params.locationId }, 'HQ WholePay approval update failed');
+    res.status(err?.statusCode || 500).json({ error: err?.message || 'WholePay approval update failed' });
   }
 });
 
@@ -596,7 +631,9 @@ async function rotateConnector(){clearError();try{const result=await request('/i
 async function replayConnector(){clearError();try{const result=await request('/internal/hq/api/evidence-connections/'+activeSetup.connection.id+'/replay','POST',{});showNotice(result.replayed+' eligible events queued for replay.');await openSetup(activeSetup.connection.id)}catch(e){showError(e.message)}}
 function outcomeRows(title,kind,rows){if(!rows||!rows.length)return '';return '<h3>'+escapeHtml(title)+'</h3><table><thead><tr><th>Type</th><th>Status</th><th>Provider reference</th><th>Error</th><th>Updated</th><th>Resolution</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.operation_type||r.offer_name||r.defense_packet_id||r.original_payment_event_id||'')+'</td><td><span class="pill '+(r.status==='unknown'||r.status==='needs_reconciliation'?'bad':'warn')+'">'+escapeHtml(r.status)+'</span></td><td>'+escapeHtml(r.processor_reference||r.processor_refund_id||r.provider_reference||r.processor_subscription_id||'')+'</td><td>'+escapeHtml(r.error_message||r.billing_setup_error||'')+'</td><td>'+fmtDate(r.updated_at)+'</td><td>'+(r.status==='unknown'||r.status==='needs_reconciliation'?'<button data-kind="'+attr(kind)+'" data-id="'+attr(r.id)+'" data-operation="'+attr(r.operation_type||'')+'" onclick="resolveOutcome(this.dataset.kind,this.dataset.id,this.dataset.operation)">Resolve</button>':'Worker retrying local records')+'</td></tr>').join('')+'</tbody></table>'}
 async function resolveOutcome(kind,id,operationType){clearError();const resolution=window.prompt('Type provider_accepted if the processor confirms success, or not_processed only after confirming nothing was processed.');if(!resolution)return;if(resolution!=='provider_accepted'&&resolution!=='not_processed'){showError('Resolution was not recognized.');return}let providerReference='';let responsePayload;let reconciliationPayload;let nextBillingDate='';if(resolution==='provider_accepted'){providerReference=window.prompt('Enter the exact processor reference from the provider dashboard.')||'';if(!providerReference)return;if(kind==='billing_setup'){nextBillingDate=window.prompt('Enter the next processor billing date as YYYY-MM-DD.')||'';if(!nextBillingDate)return}if(operationType==='checkout_ach_intent'||operationType==='manual_sale_ach_intent'){const raw=window.prompt('Paste verified Stripe response JSON containing clientSecret and paymentIntentId.');if(!raw)return;try{responsePayload=JSON.parse(raw)}catch(e){showError('Stripe response JSON is invalid.');return}}}const confirmation=window.prompt('Type '+(resolution==='provider_accepted'?'CONFIRM PROVIDER ACCEPTED':'CONFIRM NOT PROCESSED')+' exactly.');if(!confirmation)return;try{await request('/internal/hq/api/provider-outcomes/'+kind+'/'+encodeURIComponent(id)+'/resolve','POST',{resolution,confirmation,providerReference,responsePayload,reconciliationPayload,nextBillingDate});showNotice('Provider outcome resolved. Accepted local records will finish reconciliation automatically.');await detail(activeDetailLocation);await load()}catch(e){showError(e.message)}}
-async function detail(locationId){clearError();activeDetailLocation=locationId;try{const d=await api('/internal/hq/api/merchants/'+encodeURIComponent(locationId));const summary={merchant:d.merchant,recentPayments:d.recentPayments,recentTriggers:d.recentTriggers,recentEnrollments:d.recentEnrollments,warnings:d.warnings};$('detail').innerHTML='<h2>Merchant detail</h2><pre>'+escapeHtml(JSON.stringify(summary,null,2))+'</pre>'+outcomeRows('Money operations','money_operation',d.unresolvedMoneyOperations)+outcomeRows('Refund claims','refund_claim',d.unresolvedRefundClaims)+outcomeRows('Defense submissions','defense_submission',d.unresolvedDefenseSubmissions)+outcomeRows('Recurring billing setup','billing_setup',d.unresolvedBillingSetups)}catch(e){showError(e.message)}}
+function entitlementPanel(merchant){const e=merchant.entitlement||{};const canApprove=e.planKey==='wholepay';return '<div class="panel"><h3>Marketplace entitlement</h3><p><strong>'+escapeHtml(e.planLabel||'Unknown')+'</strong> <span class="pill '+(e.accessAllowed?'':'bad')+'">'+escapeHtml(e.accessState||'unknown')+'</span></p><p class="muted">'+escapeHtml(e.message||'')+'</p>'+(canApprove?'<div class="actions"><button onclick="setWholepayApproval(true)">Approve WholePay merchant</button><button class="danger" onclick="setWholepayApproval(false)">Revoke approval</button></div>':'')+'</div>'}
+async function setWholepayApproval(approved){clearError();let merchantReference='';if(approved){merchantReference=window.prompt('Enter the WholePay/NMI merchant reference (recommended).')||''}else if(!window.confirm('Revoke WholePay approval? New ScaleSafe activity will be locked, but existing processor lifecycle records will remain intact.')){return}try{await request('/internal/hq/api/merchants/'+encodeURIComponent(activeDetailLocation)+'/wholepay-approval','POST',{approved,merchantReference});showNotice(approved?'WholePay merchant approved.':'WholePay approval revoked.');await detail(activeDetailLocation);await load()}catch(e){showError(e.message)}}
+async function detail(locationId){clearError();activeDetailLocation=locationId;try{const d=await api('/internal/hq/api/merchants/'+encodeURIComponent(locationId));const summary={merchant:d.merchant,recentPayments:d.recentPayments,recentTriggers:d.recentTriggers,recentEnrollments:d.recentEnrollments,warnings:d.warnings};$('detail').innerHTML='<h2>Merchant detail</h2>'+entitlementPanel(d.merchant)+'<pre>'+escapeHtml(JSON.stringify(summary,null,2))+'</pre>'+outcomeRows('Money operations','money_operation',d.unresolvedMoneyOperations)+outcomeRows('Refund claims','refund_claim',d.unresolvedRefundClaims)+outcomeRows('Defense submissions','defense_submission',d.unresolvedDefenseSubmissions)+outcomeRows('Recurring billing setup','billing_setup',d.unresolvedBillingSetups)}catch(e){showError(e.message)}}
 function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function attr(s){return escapeHtml(s).replace(/'/g,'&#39;')}
 $('load').addEventListener('click',load); if(sessionStorage.getItem('ss_hq_token')){$('token').value=sessionStorage.getItem('ss_hq_token')}

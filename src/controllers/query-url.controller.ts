@@ -7,6 +7,7 @@ import { ProcessorType } from '../types/processor.types';
 import { getCardBrandImageUrl, getCardBrandTitle } from '../utils/card-brands';
 import { logger } from '../utils/logger';
 import { moneyOperationService } from '../services/money-operation.service';
+import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
 
 interface MerchantRef {
   merchantId: string;
@@ -330,6 +331,7 @@ async function handleChargePayment(req: Request, res: Response, merchant: Mercha
     processor_override: pm.processor_type as 'nmi' | 'stripe',
     nmi_processor_id: null,
   });
+  await assertNewProcessorActivityAllowed(merchant.locationId, config.processor_type);
   const processor = createProcessorClient(config);
 
   const operation = await moneyOperationService.begin({
@@ -492,6 +494,7 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
     processor_override: pm.processor_type as 'nmi' | 'stripe',
     nmi_processor_id: null,
   });
+  await assertNewProcessorActivityAllowed(merchant.locationId, config.processor_type);
   const processor = createProcessorClient(config);
 
   const operation = await moneyOperationService.begin({

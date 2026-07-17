@@ -42,6 +42,15 @@ export interface MerchantRecord {
   status: string;
   installed_at: string;
   updated_at: string;
+  marketplace_plan_id: string | null;
+  marketplace_plan_key: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  marketplace_billing_status: 'unknown' | 'pending' | 'complete' | 'failed';
+  marketplace_plan_updated_at: string | null;
+  marketplace_billing_updated_at: string | null;
+  wholepay_approved_at: string | null;
+  wholepay_approved_by: string | null;
+  wholepay_approval_revoked_at: string | null;
+  wholepay_merchant_reference: string | null;
 }
 
 export function merchantHasOAuthCredentials(merchant: Partial<MerchantRecord> | null | undefined): boolean {
@@ -60,6 +69,9 @@ interface OAuthInstallRecord {
   ghl_scopes?: string;
   business_name?: string;
   config?: Record<string, unknown>;
+  marketplace_plan_id?: string;
+  marketplace_plan_key?: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  marketplace_plan_updated_at?: string;
 }
 
 export const merchantRepository = {
@@ -153,6 +165,8 @@ export const merchantRepository = {
     business_name?: string;
     support_email?: string;
     config?: Record<string, unknown>;
+    marketplace_plan_id?: string;
+    marketplace_plan_key?: 'legacy' | 'standard' | 'wholepay' | 'unknown';
   }): Promise<MerchantRecord> {
     const insertData = this.encryptTokenUpdates(data);
     let { data: merchant, error } = await getSupabase()

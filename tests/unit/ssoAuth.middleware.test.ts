@@ -152,4 +152,29 @@ describe('ssoAuth location binding', () => {
     expect(res.status).toBe(500);
     expect(res.body.message).toBe('database unavailable');
   });
+
+  it('blocks an unapproved WholePay plan without changing the tenant binding', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc_1', companyId: 'comp_1', userId: 'user_1',
+    });
+    mockFindByLocationId.mockResolvedValue({
+      location_id: 'loc_1',
+      company_id: 'comp_1',
+      status: 'active',
+      ghl_access_token_encrypted: 'access',
+      ghl_refresh_token_encrypted: 'refresh',
+      config: { ghl_token_scope: 'location', ghl_token_location_id: 'loc_1' },
+      marketplace_plan_key: 'wholepay',
+      marketplace_plan_id: '6a5aafc2d91fdf0b8aace176',
+      marketplace_billing_status: 'complete',
+      wholepay_approved_at: null,
+      wholepay_approval_revoked_at: null,
+    });
+
+    const res = await request(app()).get('/protected').set('x-sso-payload', 'encrypted');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('MARKETPLACE_ENTITLEMENT_REQUIRED');
+    expect(res.body.message).toMatch(/requires an active NMI merchant account/i);
+  });
 });

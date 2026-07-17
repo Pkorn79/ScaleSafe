@@ -3,6 +3,18 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Marketplace billing entitlements (2026-07-17)
+
+### Added
+- HighLevel Marketplace plan and billing-status persistence for the $99 Standard and conditional $59 WholePay plans.
+- ScaleSafe HQ approval and revocation controls for WholePay-provisioned NMI merchants.
+- Backend processor capability enforcement across offers, public checkout, Quick Manual Sale, saved-card charges, GHL custom-provider charges, and NMI setup.
+- Merchant-facing plan status and clear locked states for pending WholePay approval, failed billing, and unknown plans.
+
+### Security
+- Marketplace plan truth comes from signed HighLevel install, plan-change, and payment-status events; browser payloads cannot select a plan or NMI entitlement.
+- Existing installations are explicitly grandfathered by migration 102, while new unrecognized installs fail closed.
+
 ## Unreleased - Reviewer enrollment evidence and branding (2026-07-16)
 
 ### Fixed

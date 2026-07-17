@@ -37,7 +37,7 @@ ScaleSafe is powered by Whole Pay:
    - **Insights**
 5. For this task, work only inside:
    - **Build > Profile**
-   - **Build > Pricing** only to verify it is already set to Free
+   - **Build > Pricing** only to verify the approved paid plans
    - App review/listing fields that HighLevel asks you to complete
    - Any public-review/listing configuration screen if HighLevel prompts for it
 
@@ -64,9 +64,14 @@ Update only listing/public-facing fields:
 
 ### Build > Pricing
 
-Pricing is already set to Free for beta. Verify it only.
+Verify these two approved recurring plans without changing their IDs:
 
-Do not change pricing, create billing meters, create paid/freemium plans, or set up HighLevel-managed billing unless Philip explicitly approves it later.
+- ScaleSafe Standard: $99/month.
+- WholePay Approved Merchant: $59/month.
+
+The $59 plan is conditional. It is unlocked inside ScaleSafe only after ScaleSafe HQ verifies an active NMI merchant account established through WholePay. Do not add a free plan, billing meter, or additional paid plan without Philip's approval.
+
+The exact plan IDs and certification process are in `docs/MARKETPLACE_BILLING_AND_ENTITLEMENTS.md`.
 
 ### App permissions / scopes
 

@@ -18,6 +18,7 @@ import { turnstileService } from '../services/turnstile.service';
 import crypto from 'crypto';
 import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 import { moneyOperationService } from '../services/money-operation.service';
+import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
 
 /** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
 function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
@@ -240,6 +241,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
       res.status(404).json({ success: false, error: 'Merchant not found' });
       return;
     }
+    await assertNewProcessorActivityAllowed(offer.location_id, 'stripe');
 
     if (publishableKey) {
       const publicMerchant = await paymentProviderService.getMerchantByPublishableKey(String(publishableKey));
@@ -900,6 +902,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
     }
 
     const { config: procConfig } = await resolveProcessor(merchant.merchantId, merchant.locationId, offerHint);
+    await assertNewProcessorActivityAllowed(merchant.locationId, procConfig.processor_type);
     const processor = createProcessorClient(procConfig);
 
     logger.info({
@@ -1962,6 +1965,7 @@ export async function createWhopCheckoutSession(req: Request, res: Response): Pr
       res.status(400).json({ success: false, error: 'Offer is not configured for Whop checkout' });
       return;
     }
+    await assertNewProcessorActivityAllowed(offer.location_id, 'whop');
     await turnstileService.verifyForOffer(req, offer);
 
     const supabase = getSupabase();

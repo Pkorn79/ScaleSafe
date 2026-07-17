@@ -12,7 +12,8 @@
 - **Tagline (<= ~60 chars):** Build the evidence trail before the dispute happens.
 - **Category:** Payments / Finance
 - **Secondary category:** Sales & CRM tooling
-- **GHL Pricing setting:** Free for beta. Do not create billing meters or paid/freemium plans until Philip approves Marketplace-managed billing.
+- **GHL Pricing:** $99/month ScaleSafe Standard; $59/month WholePay Approved Merchant.
+- **Eligibility note:** The $59 plan requires an active NMI merchant account established through WholePay and ScaleSafe HQ approval.
 - **Business note:** Private beta / contact for access.
 - **Powered by:** Whole Pay - https://getwholepay.com
 
@@ -37,14 +38,14 @@ defense workflow so the merchant can respond with cleaner documentation and less
 manual digging.
 
 ScaleSafe is powered by Whole Pay and runs inside GoHighLevel. It works with the
-merchant's own connected Stripe or NMI account. Payments settle directly to the
+merchant's own connected Stripe, NMI, or Whop account. Payments settle directly to the
 merchant's processor account; ScaleSafe does not hold funds.
 
 **What you get**
 
 - Timestamped evidence capture across the client lifecycle
 - Click-wrap consent and purchase-summary records for enrollment flows
-- Payment, refund, recurring, and card-on-file visibility for Stripe and NMI
+- Payment, refund, and recurring visibility for Stripe, NMI, and Whop, plus card-on-file controls where the processor supports them
 - Client evidence timelines with communications, milestones, pulse check-ins, and delivery proof
 - Defense packet workflows for disputes
 - GoHighLevel workflow triggers for receipts, enrollment links, welcome/access, refunds, failed payments, reminders, and app events
@@ -54,7 +55,7 @@ merchant's processor account; ScaleSafe does not hold funds.
 
 1. **Evidence timeline** - capture consent, payment, communication, delivery, refund, and cancellation records in one place.
 2. **Defense workflow** - organize the evidence a merchant needs when a dispute appears.
-3. **Processor-direct payments** - use connected Stripe or NMI accounts; ScaleSafe does not hold merchant funds.
+3. **Processor-direct payments** - use connected Stripe, NMI, or Whop accounts; ScaleSafe does not hold merchant funds.
 4. **Recurring payment visibility** - track installment/subscription progress, payment reminders, refunds, pauses, resumes, and cancellations.
 5. **Native GHL workflow automation** - fire purpose-built Marketplace triggers for receipts, enrollment links, welcome/access, refunds, failed payments, and app events.
 
@@ -96,7 +97,9 @@ The current sanitized media set and publication restrictions are recorded in `do
 - [ ] If GHL review asks for permission/scope justifications, exact selected permissions/scopes are copied from the Marketplace app config and justified without changing app settings.
 - [ ] Screenshots captured with non-PII sample data and approved by Philip.
 - [ ] Privacy policy, terms, and support/help URLs hosted and linked.
-- [ ] GHL Pricing is set to Free for beta; no billing meters or paid/freemium plans created unless Philip approves Marketplace-managed billing.
+- [ ] The $99 Standard and $59 WholePay plans use the IDs recorded in `docs/MARKETPLACE_BILLING_AND_ENTITLEMENTS.md`.
+- [ ] `PlanChange` and `AppPaymentStatus` send signed events to the production GHL webhook URL.
+- [ ] WholePay eligibility, approval, and plan-change behavior pass the entitlement certification script.
 - [ ] Group B Stripe sandbox double-bill verification is passed or explicitly waived by Philip.
 - [ ] Fresh install on a clean sub-account passes end-to-end.
 - [ ] Philip signs off on final copy before submission.

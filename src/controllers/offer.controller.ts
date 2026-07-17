@@ -7,9 +7,34 @@ import { ValidationError } from '../utils/errors';
 import { dualPricingService } from '../services/dual-pricing.service';
 import { logger } from '../utils/logger';
 import { offerEvidenceIntegrationService } from '../services/offer-evidence-integration.service';
+import { merchantRepository } from '../repositories/merchant.repository';
+import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
 
 function actor(req: Request): string {
   return req.tenantContext?.email || req.tenantContext?.userId || 'merchant_offer_editor';
+}
+
+async function assertOfferProcessorAllowed(
+  locationId: string,
+  input: Record<string, any>,
+  existing?: Record<string, any>,
+): Promise<void> {
+  const checkoutType = input.checkoutType ?? existing?.checkout_type ?? 'direct';
+  if (checkoutType === 'whop') {
+    await assertNewProcessorActivityAllowed(locationId, 'whop');
+    return;
+  }
+  const override = input.processorOverride !== undefined
+    ? input.processorOverride
+    : existing?.processor_override;
+  if (override === 'nmi' || override === 'stripe') {
+    await assertNewProcessorActivityAllowed(locationId, override);
+    return;
+  }
+  const merchant = await merchantRepository.getByLocationId(locationId);
+  if (merchant.default_processor === 'nmi' || merchant.default_processor === 'stripe') {
+    await assertNewProcessorActivityAllowed(locationId, merchant.default_processor);
+  }
 }
 
 export const offerController = {
@@ -21,6 +46,7 @@ export const offerController = {
       const { offerName } = req.body;
       if (!offerName) throw new ValidationError('offerName required');
 
+      await assertOfferProcessorAllowed(locationId, req.body || {});
       const offer = await offerService.create({ ...req.body, locationId });
       res.status(201).json(offer);
     } catch (err) { next(err); }
@@ -120,6 +146,8 @@ export const offerController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
+      const existing = await offerService.getById(req.params.id, locationId);
+      await assertOfferProcessorAllowed(locationId, req.body || {}, existing as any);
       const offer = await offerService.update(req.params.id, locationId, req.body);
       res.json(offer);
     } catch (err) { next(err); }
@@ -139,6 +167,7 @@ export const offerController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
       const offer = await offerService.getById(req.params.id, locationId);
+      await assertOfferProcessorAllowed(locationId, {}, offer as any);
       const appBaseUrl = config.appUrl;
 
       // Read the merchant's funnel URL from config
@@ -174,6 +203,8 @@ export const offerController = {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
 
+      const source = await offerService.getById(req.params.id, locationId);
+      await assertOfferProcessorAllowed(locationId, {}, source as any);
       const offer = await offerService.cloneOffer(req.params.id, locationId);
       res.status(201).json({
         success: true,

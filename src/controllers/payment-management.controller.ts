@@ -14,6 +14,7 @@ import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
 import { moneyOperationService } from '../services/money-operation.service';
+import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
 
 function getMerchantId(req: Request): string {
   return (req as any).merchantId || '';
@@ -791,6 +792,7 @@ export async function chargeStoredCard(req: Request, res: Response, next: NextFu
       processor_override: method.processor_type || null,
       nmi_processor_id: null,
     });
+    await assertNewProcessorActivityAllowed(locationId, procConfig.processor_type);
     const processor = createProcessorClient(procConfig);
 
     // #9: charge the saved card via chargeStoredCard (customerId + paymentMethodId), not

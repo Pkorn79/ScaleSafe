@@ -443,10 +443,13 @@
         <div class="form-group">
           <label class="form-label">Payment Processor</label>
           <select class="form-select" v-model="form.processorOverride">
-            <option value="">Use Default{{ defaultProcessorLabel ? ' (' + defaultProcessorLabel + ')' : '' }}</option>
-            <option value="nmi">NMI</option>
+            <option value="" :disabled="defaultProcessor === 'nmi' && !nmiPlanAvailable">Use Default{{ defaultProcessorLabel ? ' (' + defaultProcessorLabel + ')' : '' }}</option>
+            <option value="nmi" :disabled="!nmiPlanAvailable">NMI{{ !nmiPlanAvailable ? ' (WholePay approval required)' : '' }}</option>
             <option value="stripe" :disabled="!stripeConnected">Stripe{{ !stripeConnected ? ' (not connected)' : '' }}</option>
           </select>
+          <p v-if="!nmiPlanAvailable" class="text-sm text-muted mt-2">
+            NMI offers require the WholePay Marketplace plan and ScaleSafe HQ approval.
+          </p>
         </div>
         <div
           v-if="(form.processorOverride === 'nmi' || (!form.processorOverride && defaultProcessor === 'nmi')) && nmiProcessorIds.length > 1"
@@ -514,6 +517,7 @@ import StickySaveBar from '../components/StickySaveBar.vue';
 const route = useRoute();
 const routerNav = useRouter();
 const api = useApi();
+const nmiPlanAvailable = computed(() => ssoSession.entitlement.processors.nmi);
 const { loading, error } = api;
 
 const isEdit = computed(() => !!route.params.id);

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { processorConfigService, nmiWebhookCallbackUrl } from '../services/processor-config.service';
+import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { resolveLocationId } from '../middleware/tenantContext';
 import { ValidationError } from '../utils/errors';
@@ -52,6 +53,7 @@ export const processorConfigController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
+      await assertNewProcessorActivityAllowed(locationId, 'nmi');
 
       const { label, securityKey, tokenizationKey, processorId, isDefault } = req.body || {};
       if (!securityKey || !tokenizationKey) {
@@ -99,6 +101,7 @@ export const processorConfigController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
+      await assertNewProcessorActivityAllowed(locationId, 'nmi');
       const { id } = req.params;
       if (!id) throw new ValidationError('NMI config id required');
 
@@ -208,6 +211,7 @@ export const processorConfigController = {
     try {
       const locationId = resolveLocationId(req);
       if (!locationId) throw new ValidationError('locationId required');
+      await assertNewProcessorActivityAllowed(locationId, 'nmi');
 
       const { securityKey, tokenizationKey, processorId } = req.body || {};
       if (!securityKey || !tokenizationKey) {
@@ -279,6 +283,9 @@ export const processorConfigController = {
       const { processor } = req.body || {};
       if (!['nmi', 'stripe'].includes(processor)) {
         throw new ValidationError('processor must be "nmi" or "stripe"');
+      }
+      if (processor === 'nmi') {
+        await assertNewProcessorActivityAllowed(locationId, 'nmi');
       }
 
       const merchant = await merchantRepository.getByLocationId(locationId);

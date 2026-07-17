@@ -29,6 +29,12 @@ const connectionMessage = computed(() => {
   if (reinstallRequired.value) return 'ScaleSafe could not verify an active installation for this sub-account.';
   return 'ScaleSafe could not verify secure GoHighLevel account context.';
 });
+
+const entitlementTitle = computed(() => {
+  if (ssoSession.entitlement.accessState === 'needs_wholepay_approval') return 'WholePay Approval Needed';
+  if (ssoSession.entitlement.accessState === 'payment_failed') return 'Marketplace Billing Needs Attention';
+  return 'Marketplace Plan Needs Attention';
+});
 </script>
 
 <template>
@@ -93,6 +99,28 @@ const connectionMessage = computed(() => {
         <summary class="cursor-pointer mb-1">Technical details</summary>
         <code class="block bg-slate-100 p-2 rounded text-[11px] break-all text-slate-500">{{ ssoSession.error || 'No location context received' }}</code>
       </details>
+    </div>
+  </div>
+
+  <div
+    v-else-if="!ssoSession.entitlement.accessAllowed"
+    class="flex items-center justify-center min-h-screen bg-slate-50 p-6"
+  >
+    <div class="bg-white rounded-xl p-10 max-w-lg w-full shadow-sm text-center">
+      <div class="w-12 h-12 rounded-full bg-amber-50 text-amber-600 text-2xl font-bold flex items-center justify-center mx-auto mb-4">!</div>
+      <h1 class="text-xl font-semibold text-slate-900 mb-2">{{ entitlementTitle }}</h1>
+      <p class="text-slate-500 text-sm leading-relaxed mb-5">{{ ssoSession.entitlement.message }}</p>
+      <div v-if="ssoSession.entitlement.accessState === 'needs_wholepay_approval'" class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
+        <p>
+          The $59 WholePay plan is reserved for merchants with an active NMI merchant
+          account established through WholePay. ScaleSafe HQ will enable the account
+          after the merchant account is verified.
+        </p>
+      </div>
+      <p class="text-xs text-slate-400">
+        Contact <a href="mailto:support@scalesafe.app" class="text-ss-primary-500 no-underline">support@scalesafe.app</a>
+        for approval or plan assistance.
+      </p>
     </div>
   </div>
 

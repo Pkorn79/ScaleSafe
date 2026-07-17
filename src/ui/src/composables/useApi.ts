@@ -1,6 +1,19 @@
 import { ref, reactive } from 'vue';
 import { toast } from './useToast';
 
+export interface MarketplaceEntitlement {
+  planId: string | null;
+  planKey: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  planLabel: string;
+  billingStatus: 'unknown' | 'pending' | 'complete' | 'failed';
+  accessAllowed: boolean;
+  accessState: 'active' | 'needs_wholepay_approval' | 'payment_failed' | 'unknown_plan';
+  message: string;
+  wholepayApproved: boolean;
+  wholepayApprovedAt: string | null;
+  processors: { stripe: boolean; nmi: boolean; whop: boolean };
+}
+
 interface SsoSession {
   locationId: string;
   companyId: string;
@@ -14,6 +27,7 @@ interface SsoSession {
   /** True when GHL launched ScaleSafe from agency context (no sub-account).
    *  The app fails closed — there is deliberately NO sub-account chooser. */
   agencyContext: boolean;
+  entitlement: MarketplaceEntitlement;
 }
 
 export type SsoErrorCode =
@@ -46,6 +60,18 @@ const ssoSession = reactive<SsoSession>({
   error: null,
   errorCode: null,
   agencyContext: false,
+  entitlement: {
+    planId: null,
+    planKey: 'legacy',
+    planLabel: 'Legacy installation',
+    billingStatus: 'unknown',
+    accessAllowed: true,
+    accessState: 'active',
+    message: '',
+    wholepayApproved: false,
+    wholepayApprovedAt: null,
+    processors: { stripe: true, nmi: true, whop: true },
+  },
 });
 
 let ssoInitPromise: Promise<void> | null = null;
@@ -90,6 +116,7 @@ function applySsoData(data: any): void {
   ssoSession.email = data.email;
   ssoSession.role = data.role;
   ssoSession.userName = data.userName;
+  if (data.entitlement) ssoSession.entitlement = data.entitlement;
   ssoSession.error = null;
   ssoSession.errorCode = null;
   ssoSession.agencyContext = false;

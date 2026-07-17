@@ -8,6 +8,10 @@ import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError, ServiceUnavailableError } from '../utils/errors';
 import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
 import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
+import {
+  marketplaceEntitlementForMerchant,
+  marketplacePlanKey,
+} from '../services/marketplace-entitlement.service';
 
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
@@ -49,6 +53,11 @@ async function persistOAuthTarget(target: InstalledLocation, token: TokenRespons
     ghl_token_expires_at: token.expiresAt.toISOString(),
     ghl_scopes: token.scopes.join(' '),
     business_name: existing?.business_name || target.name || undefined,
+    ...(token.planId ? {
+      marketplace_plan_id: token.planId,
+      marketplace_plan_key: marketplacePlanKey(token.planId),
+      marketplace_plan_updated_at: new Date().toISOString(),
+    } : {}),
     config: {
       ...(existing?.config || {}),
       ghl_token_scope: token.tokenScope,
@@ -280,6 +289,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       role: ssoContext.role,
       userName: ssoContext.userName,
       snapshotStatus: responseSnapshotStatus,
+      entitlement: marketplaceEntitlementForMerchant(merchant),
     });
   } catch (err) {
     next(err);

@@ -109,6 +109,29 @@ beforeEach(() => {
 });
 
 describe('createNmi', () => {
+  it('blocks NMI setup for a Standard Marketplace merchant', async () => {
+    mockGetByLocationId.mockResolvedValue({
+      ...merchant,
+      marketplace_plan_id: '6a5aaf8e77d47a4f4f207bcb',
+      marketplace_plan_key: 'standard',
+      marketplace_billing_status: 'complete',
+      wholepay_approved_at: null,
+      wholepay_approval_revoked_at: null,
+    });
+
+    await processorConfigController.createNmi(
+      mockReq({ securityKey: 'security-key', tokenizationKey: 'tokenization-key' }),
+      mockRes(),
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'MARKETPLACE_ENTITLEMENT_REQUIRED',
+      statusCode: 403,
+    }));
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
   it('rejects when locationId cannot be resolved', async () => {
     mockLocationId = null;
     await processorConfigController.createNmi(

@@ -19,6 +19,7 @@ import { dualPricingService } from './dual-pricing.service';
 import { checkoutCartService } from './checkout-cart.service';
 import { whopService } from './whop.service';
 import { moneyOperationService } from './money-operation.service';
+import { assertNewProcessorActivityAllowed } from './marketplace-entitlement.service';
 import { deliverEnrollmentLink, type EnrollmentLinkDeliveryResult } from './enrollment-link-delivery.service';
 import { formatMoney, getSelectedPlanReceiptPrice } from '../utils/offer-display';
 import {
@@ -281,6 +282,7 @@ export const payFirstEnrollmentService = {
       offer = await offerRepository.findById(offerId, locationId);
       if (!offer || !offer.active) throw new ValidationError('Offer not found or inactive');
       if ((offer.checkout_type || 'direct') === 'whop') {
+        await assertNewProcessorActivityAllowed(locationId, 'whop');
         return {
           processorType: 'whop',
           merchantName: merchant.business_name || '',
@@ -293,6 +295,7 @@ export const payFirstEnrollmentService = {
       ? { processor_override: offer.processor_override || null, nmi_processor_id: offer.nmi_processor_id || null }
       : undefined;
     const { config: procConfig } = await resolveProcessor(merchant.id, locationId, offerHint);
+    await assertNewProcessorActivityAllowed(locationId, procConfig.processor_type);
     const response: Record<string, unknown> = {
       processorType: procConfig.processor_type,
       merchantName: merchant.business_name || '',
@@ -319,6 +322,7 @@ export const payFirstEnrollmentService = {
     if ((offer.checkout_type || 'direct') !== 'whop') {
       throw new ValidationError('Selected offer is not configured for Whop checkout');
     }
+    await assertNewProcessorActivityAllowed(input.locationId, 'whop');
 
     const contactId = await upsertContact(input.locationId, input);
     const name = splitName(input.firstName, input.lastName, input.email);
@@ -612,6 +616,7 @@ export const payFirstEnrollmentService = {
       ? { processor_override: (offer.processor_override || null) as ProcessorType | null, nmi_processor_id: offer.nmi_processor_id || null }
       : undefined;
     const { config: procConfig } = await resolveProcessor(merchant.id, input.locationId, offerHint);
+    await assertNewProcessorActivityAllowed(input.locationId, procConfig.processor_type);
     const processor = createProcessorClient(procConfig);
     if (offer) {
       const quote = await dualPricingService.quoteOffer(
@@ -1282,6 +1287,7 @@ export const payFirstEnrollmentService = {
     if (procConfig.processor_type !== 'stripe') {
       throw new ValidationError('This sale is not configured for Stripe ACH.');
     }
+    await assertNewProcessorActivityAllowed(input.locationId, 'stripe');
 
     const amountCents = dollarsToCents(input.amount);
     if (amountCents <= 0) throw new ValidationError('Amount must be greater than zero');

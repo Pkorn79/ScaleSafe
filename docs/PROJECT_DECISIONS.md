@@ -12,8 +12,9 @@ This file records product and launch decisions that should not be re-litigated u
 
 - GHL External Authentication stays OFF.
 - ScaleSafe does not use an extra third-party OAuth step during GHL app installation.
-- Marketplace pricing stays Free during private beta.
-- Do not create GHL billing meters, paid plans, or freemium plans unless Philip explicitly approves later.
+- Marketplace billing uses a $99 Standard plan for Stripe/Whop and a conditional $59 WholePay plan for Stripe/Whop/NMI.
+- The $59 plan requires an active NMI merchant account established through WholePay and ScaleSafe HQ approval; choosing the cheaper plan alone does not unlock ScaleSafe.
+- Existing pre-billing installs remain grandfathered as legacy locations.
 - Permission/scope justifications are only prepared if HighLevel specifically asks during review.
 
 ## Testing / QA Workflow
