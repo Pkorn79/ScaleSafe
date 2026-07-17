@@ -1,0 +1,36 @@
+---
+import { Menu } from "@lucide/astro";
+
+const navItems = [
+  { href: "/product", label: "How it works" },
+  { href: "/evidence-defense", label: "Evidence & defense" },
+  { href: "/payments", label: "Payments" },
+  { href: "/integrations", label: "Integrations" },
+  { href: "/pricing", label: "Pricing" },
+];
+---
+
+<header class="site-header">
+  <div class="site-header__inner shell">
+    <a class="brand-link" href="/" aria-label="ScaleSafe home">
+      <img src="/images/brand/scalesafe-lockup.svg" alt="ScaleSafe by WholePay" width="210" height="60" />
+    </a>
+
+    <nav class="desktop-nav" aria-label="Primary navigation">
+      {navItems.map((item) => <a href={item.href}>{item.label}</a>)}
+    </nav>
+
+    <div class="header-actions">
+      <a class="text-link desktop-only" href="https://dashboard.scalesafe.app">Sign in</a>
+      <a class="button button--small" href="/beta">Request beta access</a>
+      <details class="mobile-menu">
+        <summary aria-label="Open navigation"><Menu size={22} stroke-width={2} /></summary>
+        <nav aria-label="Mobile navigation">
+          {navItems.map((item) => <a href={item.href}>{item.label}</a>)}
+          <a href="https://dashboard.scalesafe.app">Sign in</a>
+        </nav>
+      </details>
+    </div>
+  </div>
+</header>
+

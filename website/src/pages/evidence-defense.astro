@@ -1,0 +1,106 @@
+---
+import { Check, ClipboardCheck, FileStack, FingerprintPattern, Link2, MessagesSquare, ShieldCheck, TriangleAlert } from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+import CtaBand from "@components/CtaBand.astro";
+
+const evidenceTypes = [
+  [FingerprintPattern, "Consent and authorization", "Offer terms, responsibilities, clickwrap acceptance, signature, timestamp, and payment structure."],
+  [FileStack, "Payment and lifecycle", "Charges, installments, processor IDs, refunds, cancellations, pauses, resumes, and payment progress."],
+  [MessagesSquare, "Communication and support", "GoHighLevel messages and activity records with timestamps and enrollment context where it can be established."],
+  [ClipboardCheck, "Delivery and engagement", "Milestones, sign-off, pulse, appointments, attendance, access, course activity, resources, and connected-system events."],
+];
+---
+
+<BaseLayout title="Evidence and defense" description="See how ScaleSafe builds enrollment-scoped evidence and compiles reason-code-aware chargeback defense packets for merchant review.">
+  <PageHero
+    eyebrow="Evidence and defense"
+    title="The right evidence for the transaction being disputed."
+    lead="ScaleSafe does not dump every activity for a contact into a packet. It resolves the charge to one enrollment, then builds the story around that program and reason code."
+    image="/images/product/defense-packet-detail.png"
+    alt="ScaleSafe defense packet workspace"
+  />
+
+  <section class="scope-section">
+    <div class="shell scope-grid">
+      <div>
+        <p class="eyebrow">Enrollment-first scope</p>
+        <h2>One contact can have many programs. A dispute cannot.</h2>
+      </div>
+      <div>
+        <p>Evidence that belongs to another offer can make a response confusing or inaccurate. ScaleSafe uses the disputed payment, processor identifiers, and enrollment references to find the exact program before collecting exhibits.</p>
+        <ul>
+          <li><Check size={18} /> No "newest enrollment" fallback when the match is ambiguous</li>
+          <li><Check size={18} /> Contact-only records are treated as lower-confidence context</li>
+          <li><Check size={18} /> External events stay out until they resolve to one enrollment</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="evidence-section">
+    <div class="shell">
+      <div class="section-heading"><p class="eyebrow">Evidence sources</p><h2>Capture the commercial relationship, not just the receipt.</h2><p>A defense becomes useful when the payment record is connected to what the client accepted, received, acknowledged, and communicated.</p></div>
+      <div class="evidence-grid">
+        {evidenceTypes.map(([Icon, title, body]) => <article><Icon size={25} /><h3>{title}</h3><p>{body}</p></article>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="strategy-section">
+    <div class="shell strategy-grid">
+      <figure><div class="product-frame"><img src="/images/product/defense-letter-active.png" alt="Chargeback defense letter for merchant review" width="933" height="883" loading="lazy" /></div><figcaption class="image-caption">The draft explains the transaction, offer, timeline, and selected exhibits in readable form.</figcaption></figure>
+      <div>
+        <p class="eyebrow">Reason-code strategy</p>
+        <h2>Different claims need different proof.</h2>
+        <p>Services-not-provided, canceled recurring, fraud, duplicate processing, refund-not-received, and misrepresentation claims do not ask the bank the same question. ScaleSafe changes evidence priority and response guidance based on the card-network reason code.</p>
+        <ul class="strategy-list">
+          <li><Link2 size={21} /><span>Transaction timeline tied to the disputed payment</span></li>
+          <li><ShieldCheck size={21} /><span>Reason-code-specific evidence priority</span></li>
+          <li><ClipboardCheck size={21} /><span>Draft response plus organized exhibits</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="review-section">
+    <div class="shell review-grid">
+      <div class="review-callout"><TriangleAlert size={28} /><div><h2>Needs Review is a safeguard, not a failure.</h2><p>If the transaction cannot be scoped confidently, a required signed packet is missing, the reason code is unknown, or the AI draft falls back, ScaleSafe holds the packet for review and does not fire the ready workflow.</p></div></div>
+      <div><h3>Merchant control remains explicit</h3><p>The merchant reads the letter, checks the exhibits, corrects any inaccurate statement, and decides whether to submit. ScaleSafe does not promise a chargeback win and does not replace legal or processor guidance.</p></div>
+    </div>
+  </section>
+
+  <CtaBand title="Organize the evidence before the deadline appears." />
+</BaseLayout>
+
+<style>
+  .scope-section, .evidence-section, .strategy-section, .review-section { padding: 110px 0; }
+  .scope-grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 90px; align-items: start; }
+  .scope-grid h2 { margin-bottom: 0; }
+  .scope-grid > div:last-child > p { color: var(--slate); font-size: 1.12rem; }
+  .scope-grid ul, .strategy-list { margin: 28px 0 0; padding: 0; list-style: none; }
+  .scope-grid li, .strategy-list li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .scope-grid li svg, .strategy-list svg { color: var(--mint-dark); }
+  .evidence-section { background: var(--mist); }
+  .evidence-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
+  .evidence-grid article { min-height: 280px; padding: 30px 26px; border-right: 1px solid var(--line); }
+  .evidence-grid article:last-child { border-right: 0; }
+  .evidence-grid svg { margin-bottom: 45px; color: var(--teal); }
+  .evidence-grid p { color: var(--slate); }
+  .strategy-section { color: var(--white); background: var(--ink); }
+  .strategy-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 80px; align-items: center; }
+  .strategy-grid figure { margin: 0; }
+  .strategy-grid .product-frame { aspect-ratio: 1.06; }
+  .strategy-grid > div > p:not(.eyebrow) { color: var(--slate-light); font-size: 1.08rem; }
+  .strategy-list li { border-color: rgba(255,255,255,.15); color: #d6e1e8; }
+  .strategy-list svg { color: var(--mint); }
+  .strategy-section .image-caption { color: var(--slate-light); }
+  .review-section { background: var(--attention-bg); }
+  .review-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 70px; align-items: center; }
+  .review-callout { display: grid; grid-template-columns: 42px 1fr; gap: 18px; }
+  .review-callout > svg { margin-top: 6px; color: var(--attention); }
+  .review-callout h2 { font-size: 3.4rem; }
+  .review-grid p { color: var(--slate); }
+  @media (max-width: 900px) { .scope-grid, .strategy-grid, .review-grid { grid-template-columns: 1fr; gap: 46px; } .evidence-grid { grid-template-columns: 1fr 1fr; } .evidence-grid article:nth-child(2) { border-right: 0; } }
+  @media (max-width: 560px) { .scope-section, .evidence-section, .strategy-section, .review-section { padding: 82px 0; } .evidence-grid { grid-template-columns: 1fr; } .evidence-grid article, .evidence-grid article:nth-child(2) { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); } .evidence-grid svg { margin-bottom: 26px; } .review-callout h2 { font-size: 2.35rem; } }
+</style>

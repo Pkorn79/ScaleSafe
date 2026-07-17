@@ -1,0 +1,53 @@
+---
+const productLinks = [
+  { href: "/product", label: "How it works" },
+  { href: "/evidence-defense", label: "Evidence & defense" },
+  { href: "/payments", label: "Payments" },
+  { href: "/stripe-defense", label: "Stripe defense" },
+  { href: "/integrations", label: "Integrations" },
+  { href: "/pricing", label: "Pricing" },
+];
+
+const resourceLinks = [
+  { href: "/guide", label: "Product guide" },
+  { href: "/faq", label: "FAQ" },
+  { href: "/troubleshooting", label: "Troubleshooting" },
+  { href: "/support", label: "Support" },
+  { href: "/security", label: "Security & trust" },
+];
+---
+
+<footer class="site-footer">
+  <div class="shell footer-grid">
+    <div class="footer-brand">
+      <img src="/images/brand/scalesafe-lockup-white.svg" alt="ScaleSafe by WholePay" width="230" height="66" />
+      <p>Evidence-ready payments and client records for high-ticket GoHighLevel businesses.</p>
+      <a href="mailto:support@scalesafe.app">support@scalesafe.app</a>
+    </div>
+
+    <div>
+      <h2>Product</h2>
+      <ul>{productLinks.map((item) => <li><a href={item.href}>{item.label}</a></li>)}</ul>
+    </div>
+
+    <div>
+      <h2>Resources</h2>
+      <ul>{resourceLinks.map((item) => <li><a href={item.href}>{item.label}</a></li>)}</ul>
+    </div>
+
+    <div>
+      <h2>Legal</h2>
+      <ul>
+        <li><a href="/privacy">Privacy policy</a></li>
+        <li><a href="/terms">Terms of service</a></li>
+        <li><a href="https://dashboard.scalesafe.app">Merchant sign in</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="shell footer-bottom">
+    <p>&copy; {new Date().getFullYear()} Whole Pay. ScaleSafe is a Whole Pay product.</p>
+    <p>ScaleSafe organizes evidence for merchant review. The issuing bank decides dispute outcomes.</p>
+  </div>
+</footer>
+

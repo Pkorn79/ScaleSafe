@@ -1,0 +1,28 @@
+---
+import { BellRing, Check, FileInput, Gauge, Radar, ShieldCheck } from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+import CtaBand from "@components/CtaBand.astro";
+
+const tools = [
+  [BellRing, "Early warnings and dispute alerts", "Understand which Stripe and card-network alerts are available, turn on the right notifications, and make a deliberate refund decision before a formal dispute where the program allows it."],
+  [FileInput, "Evidence submission", "Resolve the disputed charge to its ScaleSafe enrollment, compile the relevant packet, review it, and use the supported Stripe evidence-submission workflow."],
+  [Gauge, "Risk Health", "Track the operational signals ScaleSafe can observe and separate configuration guidance from verified processor or card-network status."],
+  [Radar, "Radar and 3D Secure guidance", "Use additional fraud controls where strangers can pay unattended. Keep higher-friction controls focused on the checkout paths that actually need them."],
+];
+---
+
+<BaseLayout title="Stripe defense" description="Use ScaleSafe with Stripe alerts, reason-code-aware evidence, supported evidence submission, and practical Radar and 3D Secure guidance.">
+  <PageHero eyebrow="Stripe defense" title="Use Stripe's defense tools with the client record behind them." lead="Alerts can help you act earlier. Evidence can help you respond better. ScaleSafe connects both to the offer, consent, payment, and fulfillment history that created the transaction." image="/images/product/dashboard-active.png" alt="ScaleSafe dashboard with dispute activity" />
+
+  <section class="tool-section"><div class="shell"><div class="section-heading"><p class="eyebrow">The useful layers</p><h2>Focus on the tools that fit high-ticket operators.</h2><p>ScaleSafe does not turn every ecommerce fraud feature into a product claim. It emphasizes the controls that matter for public checkout, mixed-ticket sales, early dispute handling, and evidence submission.</p></div><div class="tool-grid">{tools.map(([Icon,title,body])=><article><Icon size={25}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
+
+  <section class="submission-section"><div class="shell submission-grid"><div><p class="eyebrow">Supported submission workflow</p><h2>The packet and the processor response should agree.</h2><p>ScaleSafe prepares the reason-code-aware letter and exhibits, then submits supported evidence fields through Stripe only after the merchant reviews the packet. A Stripe rejection cannot be recorded as a successful submission.</p><ul><li><Check size={18}/> Transaction and enrollment scope resolved first</li><li><Check size={18}/> Missing or fallback evidence can force Needs Review</li><li><Check size={18}/> Stripe response stored with the packet history</li><li><Check size={18}/> Duplicate dispute events remain idempotent</li></ul></div><figure><div class="product-frame"><img src="/images/product/defense-letter-active.png" alt="ScaleSafe defense letter prepared for review" width="933" height="883" loading="lazy"/></div><figcaption class="image-caption">The merchant reviews the letter and evidence before using a supported submission path.</figcaption></figure></div></section>
+
+  <section class="boundary-section"><div class="shell"><ShieldCheck size={30}/><div><h2>Processor-side controls remain processor-side.</h2><p>Stripe decides how Radar, 3D Secure, Early Fraud Warnings, alert programs, and dispute windows work. ScaleSafe can guide setup, record available signals, and submit supported evidence; it does not represent itself as Stripe, a card network, or the issuing bank.</p></div></div></section>
+  <CtaBand title="Put the client record behind your Stripe response." />
+</BaseLayout>
+
+<style>
+  .tool-section,.submission-section,.boundary-section{padding:110px 0}.tool-section{background:var(--white)}.tool-grid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}.tool-grid article{min-height:310px;padding:30px 26px;border-right:1px solid var(--line)}.tool-grid article:last-child{border-right:0}.tool-grid svg{margin-bottom:48px;color:var(--teal)}.tool-grid p{color:var(--slate)}.submission-section{color:var(--white);background:var(--ink)}.submission-grid{display:grid;grid-template-columns:.95fr 1.05fr;gap:78px;align-items:center}.submission-grid>div>p:not(.eyebrow){color:var(--slate-light);font-size:1.08rem}.submission-grid ul{margin:26px 0 0;padding:0;list-style:none}.submission-grid li{display:flex;gap:9px;padding:10px 0;border-top:1px solid rgba(255,255,255,.15)}.submission-grid li svg{color:var(--mint);flex:0 0 auto}.submission-grid figure{margin:0}.submission-grid .product-frame{aspect-ratio:1.06}.submission-section .image-caption{color:var(--slate-light)}.boundary-section{background:var(--attention-bg)}.boundary-section>.shell{display:grid;grid-template-columns:54px 1fr;gap:20px;max-width:960px}.boundary-section svg{margin-top:8px;color:var(--attention)}.boundary-section h2{font-size:3.5rem}.boundary-section p{color:var(--slate);font-size:1.08rem}@media(max-width:900px){.tool-grid{grid-template-columns:1fr 1fr}.tool-grid article:nth-child(2){border-right:0}.submission-grid{grid-template-columns:1fr;gap:46px}}@media(max-width:560px){.tool-section,.submission-section,.boundary-section{padding:82px 0}.tool-grid{grid-template-columns:1fr}.tool-grid article,.tool-grid article:nth-child(2){min-height:0;border-right:0;border-bottom:1px solid var(--line)}.tool-grid svg{margin-bottom:28px}.boundary-section h2{font-size:2.35rem}}
+</style>

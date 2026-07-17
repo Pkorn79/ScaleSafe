@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="160" viewBox="0 0 560 160">
+  <g transform="translate(-14 -28) scale(0.62)">
+    <g transform="translate(22 0) skewX(-12)">
+      <rect x="52" y="118" width="42" height="94" rx="15" fill="#1ABC9C"/>
+      <rect x="108" y="72" width="42" height="140" rx="15" fill="#1ABC9C"/>
+      <rect x="164" y="28" width="42" height="184" rx="15" fill="#ffffff"/>
+    </g>
+  </g>
+  <text x="150" y="88" font-family="'Inter Tight', Inter, sans-serif" font-weight="800" font-size="56" letter-spacing="0">
+    <tspan fill="#ffffff">Scale</tspan><tspan fill="#1ABC9C">Safe</tspan>
+  </text>
+  <text x="153" y="118" font-family="'DM Sans', sans-serif" font-weight="600" font-size="15" letter-spacing="0" fill="#9fb3c8">BY WHOLEPAY</text>
+</svg>

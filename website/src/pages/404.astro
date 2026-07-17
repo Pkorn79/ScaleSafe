@@ -1,0 +1,22 @@
+---
+import { House, LifeBuoy } from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Page not found" description="The requested ScaleSafe page could not be found.">
+  <main class="not-found">
+    <div class="shell not-found__inner">
+      <p class="eyebrow">404</p>
+      <h1>This page is not part of the record.</h1>
+      <p>The address may have changed, or the link may be incomplete.</p>
+      <div class="not-found__actions">
+        <a class="button" href="/"><House size={18} />Return home</a>
+        <a class="button button--ghost" href="/support"><LifeBuoy size={18} />Visit support</a>
+      </div>
+    </div>
+  </main>
+</BaseLayout>
+
+<style>
+  .not-found{min-height:68vh;display:grid;place-items:center;padding:110px 0;color:var(--white);background:var(--ink)}.not-found__inner{max-width:850px}.not-found h1{max-width:780px;margin-bottom:24px}.not-found__inner>p:not(.eyebrow){max-width:620px;color:#d5e0e7;font-size:1.15rem}.not-found__actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px}@media(max-width:560px){.not-found{padding:86px 0}.not-found__actions{display:grid}.not-found__actions .button{width:100%}}
+</style>

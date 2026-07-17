@@ -1,0 +1,110 @@
+---
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  eyebrow?: string;
+  updated?: string;
+  frontmatter?: Omit<Props, "frontmatter">;
+}
+
+const article = Astro.props.frontmatter ?? Astro.props;
+const { title, description, eyebrow = "ScaleSafe resources", updated } = article;
+---
+
+<BaseLayout title={title} description={description}>
+  <header class="article-header">
+    <div class="shell">
+      <p class="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      <p>{description}</p>
+      {updated && <p class="article-updated">Last updated {updated}</p>}
+    </div>
+  </header>
+  <div class="article-shell shell">
+    <article class="article-content"><slot /></article>
+  </div>
+</BaseLayout>
+
+<style>
+  .article-header {
+    padding: 110px 0 80px;
+    color: var(--white);
+    background: var(--ink);
+  }
+
+  .article-header h1 {
+    max-width: 900px;
+    margin-bottom: 24px;
+  }
+
+  .article-header .shell > p:not(.eyebrow, .article-updated) {
+    max-width: 760px;
+    color: #d6e1e8;
+    font-size: 1.18rem;
+  }
+
+  .article-updated {
+    margin: 26px 0 0;
+    color: #9fb2bf;
+    font-size: 0.85rem;
+  }
+
+  .article-shell {
+    padding: 82px 0 110px;
+  }
+
+  .article-content {
+    max-width: 830px;
+  }
+
+  .article-content :global(h2) {
+    margin: 64px 0 20px;
+    font-size: 2.65rem;
+  }
+
+  .article-content :global(h2:first-child) {
+    margin-top: 0;
+  }
+
+  .article-content :global(h3) {
+    margin: 36px 0 13px;
+  }
+
+  .article-content :global(p),
+  .article-content :global(li) {
+    color: var(--slate);
+    font-size: 1.03rem;
+  }
+
+  .article-content :global(ul),
+  .article-content :global(ol) {
+    padding-left: 1.35rem;
+  }
+
+  .article-content :global(li + li) {
+    margin-top: 8px;
+  }
+
+  .article-content :global(.note) {
+    margin: 32px 0;
+    padding: 22px 24px;
+    border-left: 4px solid var(--mint);
+    background: var(--mist);
+  }
+
+  .article-content :global(.note p:last-child) {
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 720px) {
+    .article-header h1 {
+      font-size: 2.75rem;
+    }
+
+    .article-content :global(h2) {
+      font-size: 2rem;
+    }
+  }
+</style>

@@ -1,0 +1,850 @@
+---
+import {
+  ArrowRight,
+  Check,
+  CircleAlert,
+  ClipboardCheck,
+  Link2,
+  MessageSquareText,
+  RefreshCw,
+  ShieldCheck,
+  Signal,
+  WalletCards,
+} from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const lifecycle = [
+  {
+    phase: "Before payment",
+    title: "Set the terms clearly",
+    body: "Define the offer, payment structure, responsibilities, refund terms, delivery, milestones, and pulse cadence before the client signs.",
+  },
+  {
+    phase: "During delivery",
+    title: "Build the client record",
+    body: "Connect payment, messages, milestones, pulse responses, appointments, attendance, service access, and fulfillment to one enrollment.",
+  },
+  {
+    phase: "If a dispute happens",
+    title: "Respond with the right story",
+    body: "Resolve the disputed transaction to its program, prioritize evidence by reason code, and compile a focused packet for merchant review.",
+  },
+];
+
+const attention = [
+  {
+    icon: Signal,
+    title: "Pulse responses",
+    body: "Scheduled check-ins record progress, satisfaction, concerns, and requests for follow-up while the relationship is active.",
+  },
+  {
+    icon: ClipboardCheck,
+    title: "Milestone sign-off",
+    body: "Document what was delivered and invite the client to acknowledge completion at meaningful points in the program.",
+  },
+  {
+    icon: CircleAlert,
+    title: "Attention items",
+    body: "Surface open disputes, failed payments, and client concerns early enough for the merchant to act.",
+  },
+];
+
+const processors = [
+  { name: "Stripe", status: "Available", body: "Card and ACH checkout, recurring billing, refunds, and supported Stripe evidence submission." },
+  { name: "NMI", status: "Available", body: "Direct merchant processing, vaulted methods, installments, refunds, and reconciliation controls." },
+  { name: "Whop", status: "Beta", body: "Hosted checkout with payment and membership lifecycle records linked back to ScaleSafe." },
+];
+
+const integrations = [
+  ["GoHighLevel", "Native", "Contacts, workflows, appointments, messages, and fulfillment activity."],
+  ["Zoom", "Beta", "Meeting activity enters the evidence pipeline through a merchant-owned connection."],
+  ["Custom software", "Available", "A tenant-bound Evidence API connects service access and client activity to exact enrollments."],
+  ["Course platforms", "Staged", "Named course, community, and agency integrations are released after provider certification."],
+];
+---
+
+<BaseLayout
+  title="ScaleSafe"
+  description="Build the evidence trail before the dispute happens. ScaleSafe connects consent, payment, fulfillment, communication, and client engagement to the exact enrollment and transaction."
+>
+  <section class="hero">
+    <img class="hero__image" src="/images/product/dashboard-active.png" alt="ScaleSafe dashboard showing open disputes and pulse check-ins" width="1684" height="991" />
+    <div class="hero__veil"></div>
+    <div class="shell hero__content">
+      <p class="hero__kicker">A GoHighLevel Marketplace app for high-ticket businesses</p>
+      <h1>ScaleSafe: evidence before the dispute.</h1>
+      <p class="hero__lead">Connect consent, payment, fulfillment, communication, and engagement to the exact program and transaction, so you can respond with relevant evidence.</p>
+      <div class="hero__actions">
+        <a class="button" href="/beta">Request private beta access <ArrowRight size={18} /></a>
+        <a class="button button--ghost" href="#lifecycle">See how ScaleSafe works</a>
+      </div>
+      <ul class="hero__facts" aria-label="Product facts">
+        <li><Check size={17} /> Runs inside your GoHighLevel sub-account</li>
+        <li><Check size={17} /> Funds settle through your connected processor</li>
+        <li><Check size={17} /> Merchant review remains in control</li>
+      </ul>
+    </div>
+    <p class="hero__caption">An active ScaleSafe test dashboard showing disputes, pulse check-ins, and attention items.</p>
+  </section>
+
+  <section class="lifecycle" id="lifecycle">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">The evidence lifecycle</p>
+        <h2>The record is built long before a dispute.</h2>
+        <p>Every enrollment carries its own evidence, from the first signature through fulfillment. If a dispute arrives, the important proof is already organized around the right client journey.</p>
+      </div>
+      <ol class="lifecycle-list">
+        {lifecycle.map((step, index) => (
+          <li>
+            <span class="step-number">0{index + 1}</span>
+            <p class="step-phase">{step.phase}</p>
+            <h3>{step.title}</h3>
+            <p>{step.body}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="attention-section">
+    <div class="shell attention-layout">
+      <div>
+        <div class="section-heading">
+          <p class="eyebrow">Operational attention</p>
+          <h2>See problems while the relationship is active.</h2>
+          <p>Good dispute prevention is often ordinary operations done clearly: ask how the client is doing, document delivery, and respond when something needs attention.</p>
+        </div>
+        <div class="attention-list">
+          {attention.map((item) => (
+            <article>
+              <item.icon size={22} stroke-width={2} />
+              <div>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+      <figure>
+        <div class="product-frame attention-image">
+          <img src="/images/product/dashboard-overview.png" alt="ScaleSafe dashboard with dispute deadline and pulse follow-up alert" width="1920" height="968" loading="lazy" />
+        </div>
+        <figcaption class="image-caption">Dispute deadlines and client follow-up requests are visible from the merchant dashboard.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="defense-section section-ink" id="defense">
+    <div class="shell defense-grid">
+      <div class="defense-copy">
+        <p class="eyebrow">Evidence and defense</p>
+        <h2>A reason-code-aware packet, assembled for your review.</h2>
+        <ul class="defense-points">
+          <li><ShieldCheck size={22} /><span>The disputed transaction is resolved to its exact enrollment. Contact-wide noise stays out.</span></li>
+          <li><Link2 size={22} /><span>The reason code determines which evidence is prioritized and how the packet is structured.</span></li>
+          <li><ClipboardCheck size={22} /><span>Packets that cannot be fully verified remain in <strong>Needs Review</strong> instead of being presented as ready.</span></li>
+          <li><MessageSquareText size={22} /><span>The merchant reads, edits, and decides what to submit. The issuing bank decides the outcome.</span></li>
+        </ul>
+        <a class="inline-link" href="/evidence-defense">Explore evidence and defense <ArrowRight size={17} /></a>
+      </div>
+      <figure>
+        <div class="product-frame defense-image">
+          <img src="/images/product/defense-letter-active.png" alt="ScaleSafe chargeback defense letter for a high-ticket transaction" width="933" height="883" loading="lazy" />
+        </div>
+        <figcaption class="image-caption">A compiled defense letter tied to a selected transaction and reason code.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="payments-section" id="payments">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">Payments</p>
+        <h2>Works with the way you already get paid.</h2>
+        <p>Paid in full, installments, subscriptions, refunds, and lifecycle actions remain linked to the enrollment. ScaleSafe does not hold merchant funds.</p>
+      </div>
+      <div class="processor-layout">
+        <div class="processor-list">
+          {processors.map((processor) => (
+            <article>
+              <WalletCards size={22} />
+              <div>
+                <div class="processor-heading"><h3>{processor.name}</h3><span>{processor.status}</span></div>
+                <p>{processor.body}</p>
+              </div>
+            </article>
+          ))}
+          <p class="processor-note">Capabilities differ by processor and are labeled as they ship.</p>
+          <a class="inline-link inline-link--dark" href="/payments">Review payment capabilities <ArrowRight size={17} /></a>
+        </div>
+        <figure>
+          <div class="product-frame payment-image">
+            <img src="/images/product/payments-overview.png" alt="ScaleSafe payments management overview" width="1920" height="968" loading="lazy" />
+          </div>
+          <figcaption class="image-caption">Processor records and lifecycle actions in one merchant payment view.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="integration-section section-dark" id="integrations">
+    <div class="shell integration-grid">
+      <div>
+        <div class="section-heading">
+          <p class="eyebrow">Evidence connections</p>
+          <h2>Match fulfillment to the exact enrollment.</h2>
+          <p>GoHighLevel is the native operating environment. Connected sources remain isolated to the merchant sub-account, and ambiguous events stay out of defense evidence.</p>
+        </div>
+        <div class="integration-list">
+          {integrations.map(([name, status, body]) => (
+            <article>
+              <RefreshCw size={20} />
+              <div><h3>{name}</h3><p>{body}</p></div>
+              <span>{status}</span>
+            </article>
+          ))}
+        </div>
+        <a class="inline-link" href="/integrations">See the integration roadmap <ArrowRight size={17} /></a>
+      </div>
+      <figure>
+        <div class="product-frame integration-image">
+          <img src="/images/product/evidence-connections.png" alt="ScaleSafe evidence connections catalog" width="1920" height="968" loading="lazy" />
+        </div>
+        <figcaption class="image-caption">Merchant-owned evidence connections with connection health and source status.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="pricing-section" id="pricing">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">Private beta pricing</p>
+        <h2>Two plans, scoped setup.</h2>
+        <p>Both plans include enrollment-scoped evidence, operational attention, and defense packet review. Custom setup is scoped when fulfillment systems or processor configuration need hands-on implementation.</p>
+      </div>
+      <div class="pricing-grid">
+        <article class="price-card">
+          <div><p class="plan-name">NMI plan</p><p class="price"><strong>$59</strong><span>/month</span></p></div>
+          <ul>
+            <li><Check size={18} /> NMI payment and recurring records</li>
+            <li><Check size={18} /> Enrollment-scoped evidence and attention items</li>
+            <li><Check size={18} /> Compiled defense packet for merchant review</li>
+          </ul>
+        </article>
+        <article class="price-card price-card--featured">
+          <div><p class="plan-name">Stripe plan</p><p class="price"><strong>$99</strong><span>/month</span></p></div>
+          <ul>
+            <li><Check size={18} /> Stripe payment and recurring records</li>
+            <li><Check size={18} /> Supported Stripe evidence-submission workflow</li>
+            <li><Check size={18} /> Stripe Risk Health and alert guidance</li>
+          </ul>
+        </article>
+      </div>
+      <p class="pricing-note">Pricing and availability are confirmed during private-beta onboarding. Custom setup is implementation support, priced by scope.</p>
+      <div class="center-actions"><a class="button" href="/beta">Request private beta access <ArrowRight size={18} /></a><a class="text-action" href="/pricing">View pricing details</a></div>
+    </div>
+  </section>
+
+  <section class="final-cta">
+    <div class="shell final-cta__inner">
+      <div>
+        <p class="eyebrow">Built for the whole client relationship</p>
+        <h2>Stop rebuilding the story after the dispute arrives.</h2>
+      </div>
+      <div>
+        <p>Join the private beta and connect payment, consent, delivery, and client engagement around the exact programs you sell.</p>
+        <a class="button" href="/beta">Request beta access <ArrowRight size={18} /></a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: min(760px, calc(100svh - 140px));
+    overflow: hidden;
+    display: grid;
+    align-items: center;
+    color: var(--white);
+    background: var(--ink);
+  }
+
+  .hero__image,
+  .hero__veil {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero__image {
+    object-fit: cover;
+    object-position: center top;
+    opacity: 0.62;
+  }
+
+  .hero__veil {
+    background: rgba(4, 18, 34, 0.76);
+  }
+
+  .hero__content {
+    position: relative;
+    z-index: 2;
+    padding: 52px 0 58px;
+  }
+
+  .hero__kicker {
+    max-width: 690px;
+    margin-bottom: 24px;
+    color: var(--mint);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+  }
+
+  .hero h1 {
+    max-width: 930px;
+    margin-bottom: 28px;
+  }
+
+  .hero__lead {
+    max-width: 720px;
+    margin-bottom: 34px;
+    color: #d6e1e8;
+    font-size: 1.3rem;
+  }
+
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .hero__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 28px;
+    margin: 34px 0 0;
+    padding: 0;
+    list-style: none;
+    color: #d6e1e8;
+    font-size: 0.9rem;
+  }
+
+  .hero__facts li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero__facts svg {
+    color: var(--mint);
+  }
+
+  .hero__caption {
+    position: absolute;
+    right: 26px;
+    bottom: 18px;
+    z-index: 2;
+    margin: 0;
+    color: #cfdae1;
+    font-size: 0.76rem;
+  }
+
+  .lifecycle,
+  .attention-section,
+  .payments-section,
+  .pricing-section {
+    padding: 118px 0;
+  }
+
+  .lifecycle {
+    padding-top: 20px;
+    background: var(--white);
+  }
+
+  .lifecycle-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+    list-style: none;
+  }
+
+  .lifecycle-list li {
+    min-height: 320px;
+    padding: 32px 34px 20px 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .lifecycle-list li + li {
+    padding-left: 34px;
+  }
+
+  .lifecycle-list li:last-child {
+    border-right: 0;
+  }
+
+  .step-number {
+    color: var(--mint-dark);
+    font-family: var(--font-display);
+    font-size: 2.2rem;
+    font-weight: 800;
+  }
+
+  .step-phase {
+    margin: 32px 0 11px;
+    color: var(--teal);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+  }
+
+  .lifecycle-list h3 {
+    margin-bottom: 14px;
+  }
+
+  .lifecycle-list li > p:last-child {
+    color: var(--slate);
+  }
+
+  .attention-section {
+    background: var(--mist);
+  }
+
+  .attention-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: 72px;
+  }
+
+  .attention-list article {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .attention-list article:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .attention-list svg {
+    margin-top: 2px;
+    color: var(--teal);
+  }
+
+  .attention-list h3,
+  .attention-list p {
+    margin-bottom: 4px;
+  }
+
+  .attention-list p {
+    color: var(--slate);
+  }
+
+  .attention-layout figure,
+  .defense-grid figure,
+  .processor-layout figure,
+  .integration-grid figure {
+    margin: 0;
+  }
+
+  .attention-image {
+    aspect-ratio: 1.62;
+  }
+
+  .defense-section,
+  .integration-section {
+    padding: 118px 0;
+    color: var(--white);
+    background: var(--ink);
+  }
+
+  .defense-grid,
+  .integration-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: 78px;
+  }
+
+  .defense-copy h2,
+  .integration-grid h2 {
+    margin-bottom: 34px;
+  }
+
+  .defense-points {
+    margin: 0 0 34px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .defense-points li {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+    padding: 17px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    color: #d6e1e8;
+  }
+
+  .defense-points li:last-child {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .defense-points svg {
+    color: var(--mint);
+  }
+
+  .defense-image {
+    aspect-ratio: 1.06;
+  }
+
+  .inline-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--mint);
+    font-weight: 700;
+  }
+
+  .inline-link--dark {
+    color: var(--teal);
+  }
+
+  .section-ink .image-caption,
+  .section-dark .image-caption {
+    color: var(--slate-light);
+  }
+
+  .processor-layout {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: center;
+    gap: 74px;
+  }
+
+  .processor-list article {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    padding: 20px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .processor-list article > svg {
+    margin-top: 4px;
+    color: var(--teal);
+  }
+
+  .processor-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .processor-heading h3 {
+    margin-bottom: 4px;
+  }
+
+  .processor-heading span,
+  .integration-list > article > span {
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: var(--teal);
+    background: #e0f4ef;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+  }
+
+  .processor-list p {
+    margin-bottom: 0;
+    color: var(--slate);
+  }
+
+  .processor-note {
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.86rem;
+  }
+
+  .payment-image {
+    aspect-ratio: 1.65;
+  }
+
+  .integration-section {
+    background: var(--ink-2);
+  }
+
+  .integration-list {
+    margin-bottom: 28px;
+  }
+
+  .integration-list article {
+    display: grid;
+    grid-template-columns: 30px 1fr auto;
+    gap: 12px;
+    align-items: start;
+    padding: 18px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .integration-list article:last-child {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .integration-list svg {
+    margin-top: 3px;
+    color: var(--mint);
+  }
+
+  .integration-list h3,
+  .integration-list p {
+    margin-bottom: 3px;
+  }
+
+  .integration-list p {
+    color: var(--slate-light);
+  }
+
+  .integration-list > article > span {
+    color: var(--mint);
+    background: rgba(26, 188, 156, 0.11);
+  }
+
+  .integration-image {
+    aspect-ratio: 1.48;
+  }
+
+  .pricing-section {
+    background: var(--white);
+  }
+
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .price-card {
+    display: grid;
+    grid-template-columns: 0.72fr 1.28fr;
+    gap: 34px;
+    min-height: 270px;
+    padding: 36px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--mist);
+  }
+
+  .price-card--featured {
+    color: var(--white);
+    background: var(--blue);
+    border-color: var(--blue);
+  }
+
+  .plan-name {
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  .price {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .price strong {
+    font-family: var(--font-display);
+    font-size: 3.3rem;
+    line-height: 1;
+  }
+
+  .price span {
+    color: var(--slate);
+  }
+
+  .price-card--featured .price span {
+    color: #bbcad4;
+  }
+
+  .price-card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .price-card li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 9px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .price-card--featured li {
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .price-card li svg {
+    color: var(--mint-dark);
+  }
+
+  .price-card--featured li svg {
+    color: var(--mint);
+  }
+
+  .pricing-note {
+    margin: 20px 0 0;
+    color: var(--slate);
+    font-size: 0.88rem;
+  }
+
+  .center-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 36px;
+  }
+
+  .text-action {
+    color: var(--teal);
+    font-weight: 700;
+  }
+
+  .final-cta {
+    padding: 94px 0;
+    color: var(--white);
+    background: var(--blue);
+  }
+
+  .final-cta__inner {
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 90px;
+    align-items: end;
+  }
+
+  .final-cta h2 {
+    margin-bottom: 0;
+  }
+
+  .final-cta__inner > div:last-child > p {
+    color: #d6e1e8;
+    font-size: 1.08rem;
+  }
+
+  @media (max-width: 980px) {
+    .attention-layout,
+    .defense-grid,
+    .processor-layout,
+    .integration-grid {
+      grid-template-columns: 1fr;
+      gap: 50px;
+    }
+
+    .lifecycle-list li {
+      min-height: 360px;
+    }
+
+    .final-cta__inner {
+      gap: 50px;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .hero {
+      min-height: calc(100svh - 112px);
+    }
+
+    .hero {
+      align-items: start;
+    }
+
+    .hero__image {
+      object-position: 34% top;
+    }
+
+    .hero__veil {
+      background: rgba(4, 18, 34, 0.83);
+    }
+
+    .hero__content {
+      padding: 56px 0 60px;
+    }
+
+    .hero h1 {
+      margin-bottom: 20px;
+      font-size: 2.75rem;
+    }
+
+    .hero__lead {
+      margin-bottom: 24px;
+      font-size: 1.08rem;
+    }
+
+    .hero__actions .button {
+      width: 100%;
+    }
+
+    .hero__actions .button--ghost,
+    .hero__facts,
+    .hero__caption {
+      display: none;
+    }
+
+    .lifecycle,
+    .attention-section,
+    .defense-section,
+    .payments-section,
+    .integration-section,
+    .pricing-section {
+      padding: 84px 0;
+    }
+
+    .lifecycle {
+      padding-top: 16px;
+    }
+
+    .lifecycle-list {
+      grid-template-columns: 1fr;
+    }
+
+    .lifecycle-list li,
+    .lifecycle-list li + li {
+      min-height: 0;
+      padding: 28px 0;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .step-phase {
+      margin-top: 16px;
+    }
+
+    .pricing-grid,
+    .final-cta__inner {
+      grid-template-columns: 1fr;
+    }
+
+    .price-card {
+      grid-template-columns: 1fr;
+    }
+
+    .center-actions {
+      flex-direction: column;
+    }
+  }
+</style>

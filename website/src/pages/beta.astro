@@ -1,0 +1,52 @@
+---
+import { Check, Mail } from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+---
+
+<BaseLayout title="Request private beta access" description="Request ScaleSafe private beta access for a high-ticket coaching, consulting, agency, course, community, or mixed-ticket business.">
+  <PageHero compact eyebrow="ScaleSafe private beta" title="Tell us how you sell, fulfill, and get paid." lead="We will use this information to confirm fit, payment-channel support, and the smallest useful setup for your business." image="/images/product/dashboard-active.png" alt="ScaleSafe merchant dashboard" />
+
+  <section class="beta-section">
+    <div class="shell beta-grid">
+      <div class="beta-context">
+        <p class="eyebrow">What happens next</p>
+        <h2>A practical setup conversation.</h2>
+        <p>ScaleSafe is onboarding a small number of merchants while we certify fresh installs and real operating workflows. The request is not an automatic software purchase.</p>
+        <ul>
+          <li><Check size={18} /> Confirm your processor and offer structure</li>
+          <li><Check size={18} /> Identify the evidence you already create</li>
+          <li><Check size={18} /> Scope only the setup your business needs</li>
+          <li><Check size={18} /> Plan a test offer before live use</li>
+        </ul>
+        <p class="contact-note"><Mail size={18} /> Prefer email? <a href="mailto:support@scalesafe.app?subject=ScaleSafe%20private%20beta">support@scalesafe.app</a></p>
+      </div>
+
+      <div class="form-wrap">
+        <iframe
+          src="https://api.leadconnectorhq.com/widget/form/FRpHmBg4RIHTU6j3dMww"
+          id="inline-FRpHmBg4RIHTU6j3dMww"
+          class="ghl-form"
+          title="ScaleSafe private beta request"
+          data-layout="{'id':'INLINE'}"
+          data-trigger-type="alwaysShow"
+          data-trigger-value=""
+          data-activation-type="alwaysActivated"
+          data-activation-value=""
+          data-deactivation-type="neverDeactivate"
+          data-deactivation-value=""
+          data-form-name="ScaleSafe Private Beta Request"
+          data-height="760"
+          data-layout-iframe-id="inline-FRpHmBg4RIHTU6j3dMww"
+          data-form-id="FRpHmBg4RIHTU6j3dMww"
+        ></iframe>
+        <p class="form-note">By submitting, you agree that ScaleSafe may contact you about the private beta. Review our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>.</p>
+      </div>
+    </div>
+  </section>
+  <script is:inline src="https://link.msgsndr.com/js/form_embed.js"></script>
+</BaseLayout>
+
+<style>
+  .beta-section{padding:110px 0;background:var(--mist)}.beta-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:86px;align-items:start}.beta-context{position:sticky;top:112px}.beta-context>p:not(.eyebrow,.contact-note){color:var(--slate);font-size:1.08rem}.beta-context ul{margin:28px 0;padding:0;list-style:none}.beta-context li{display:flex;gap:9px;padding:11px 0;border-top:1px solid var(--line);font-weight:600}.beta-context li svg{color:var(--mint-dark);flex:0 0 auto}.contact-note{display:flex;align-items:center;gap:8px;margin-top:28px}.contact-note svg{color:var(--teal)}.contact-note a{color:var(--teal);font-weight:700}.form-wrap{padding:24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--white);box-shadow:var(--shadow)}.ghl-form{display:block;width:100%;min-height:760px;border:0;border-radius:6px;background:var(--white)}.form-note{margin:16px 8px 0;color:var(--slate);font-size:.78rem}.form-note a{color:var(--teal);font-weight:700}@media(max-width:800px){.beta-grid{grid-template-columns:1fr;gap:46px}.beta-context{position:static}}@media(max-width:560px){.beta-section{padding:82px 0}.form-wrap{padding:14px 8px}.ghl-form{min-height:820px}.form-note{margin-inline:10px}}
+</style>

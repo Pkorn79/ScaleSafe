@@ -1,0 +1,104 @@
+---
+import { ArrowRight, Check, CircleDollarSign, ClipboardPenLine, FileSearch, MessageCircleMore, Route, Send } from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+import CtaBand from "@components/CtaBand.astro";
+
+const stages = [
+  [ClipboardPenLine, "Offer and consent", "Define the real payment structure, responsibilities, delivery, refund terms, milestones, and pulse cadence. The client reviews and accepts the offer before enrollment."],
+  [CircleDollarSign, "Payment and enrollment", "Connect Stripe, NMI, or Whop. ScaleSafe records the payment against the correct program while funds settle through the merchant's provider."],
+  [Send, "Workflow delivery", "GoHighLevel workflows deliver the enrollment link, receipt, welcome message, reminders, and other app events using the enrollment-specific payload."],
+  [Route, "Fulfillment trail", "Appointments, milestones, pulse responses, communications, attendance, access, course activity, and external evidence accumulate under the exact enrollment."],
+  [MessageCircleMore, "Attention loop", "Client concerns, missed progress, failed payments, and open disputes surface while the merchant can still respond."],
+  [FileSearch, "Dispute response", "The disputed transaction resolves to its enrollment. ScaleSafe prioritizes evidence by reason code and compiles a packet for merchant review."],
+];
+---
+
+<BaseLayout title="How ScaleSafe works" description="Follow the ScaleSafe workflow from offer and consent through payment, fulfillment evidence, client attention, and dispute response.">
+  <PageHero
+    eyebrow="How ScaleSafe works"
+    title="One client journey. One defensible record."
+    lead="ScaleSafe keeps the commercial terms, payment, fulfillment, communication, and client engagement connected to the program they actually belong to."
+    image="/images/product/offer-builder.png"
+    alt="ScaleSafe offer builder"
+  />
+
+  <section class="stage-section">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">The operating sequence</p>
+        <h2>Capture what happened as it happens.</h2>
+        <p>The product is designed around the order merchants already work in, not around a chargeback form completed months later.</p>
+      </div>
+      <ol class="stage-grid">
+        {stages.map(([Icon, title, body], index) => (
+          <li>
+            <span>0{index + 1}</span>
+            <Icon size={24} />
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="journey-section">
+    <div class="shell journey-grid">
+      <div>
+        <p class="eyebrow">The client experience</p>
+        <h2>Clear before they pay. Simple after they pay.</h2>
+        <p>The client sees the offer summary, payment choice where applicable, responsibilities, terms, and signature flow. A quick manual sale switches to a consent-only enrollment path because the payment is already complete.</p>
+        <ul>
+          <li><Check size={18} /> Exact offer and payment structure</li>
+          <li><Check size={18} /> Clickwrap terms and signature</li>
+          <li><Check size={18} /> Merchant-branded communications</li>
+          <li><Check size={18} /> No duplicate payment choice after QMS</li>
+        </ul>
+      </div>
+      <figure>
+        <div class="product-frame client-image"><img src="/images/product/public-offer-review.png" alt="ScaleSafe public offer review" width="1920" height="968" loading="lazy" /></div>
+        <figcaption class="image-caption">The client reviews the offer and responsibilities before continuing.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="record-section">
+    <div class="shell record-grid">
+      <figure>
+        <div class="product-frame record-image"><img src="/images/product/enrollment-program.png" alt="ScaleSafe program enrollment record" width="1920" height="968" loading="lazy" /></div>
+        <figcaption class="image-caption">Program, payment progress, milestones, and fulfillment context remain connected.</figcaption>
+      </figure>
+      <div>
+        <p class="eyebrow">The merchant record</p>
+        <h2>Manage the program, not scattered artifacts.</h2>
+        <p>A client may have several active and historical programs. ScaleSafe keeps payment progress and evidence tied to the enrollment so a newer offer does not overwrite the older program's workflow fields.</p>
+        <a class="inline-link inline-link--dark" href="/evidence-defense">See how enrollment scoping protects defense evidence <ArrowRight size={17} /></a>
+      </div>
+    </div>
+  </section>
+
+  <CtaBand />
+</BaseLayout>
+
+<style>
+  .stage-section, .journey-section, .record-section { padding: 110px 0; }
+  .stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
+  .stage-grid li { min-height: 300px; padding: 28px 28px 24px 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stage-grid li:nth-child(3n + 2), .stage-grid li:nth-child(3n + 3) { padding-left: 28px; }
+  .stage-grid li:nth-child(3n) { border-right: 0; }
+  .stage-grid li > span { float: right; color: var(--slate-light); font-family: var(--font-display); font-size: 1.6rem; font-weight: 800; }
+  .stage-grid svg { margin: 12px 0 42px; color: var(--teal); }
+  .stage-grid p { color: var(--slate); }
+  .journey-section { background: var(--mist); }
+  .journey-grid, .record-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 76px; }
+  .journey-grid h2, .record-grid h2 { margin-bottom: 24px; }
+  .journey-grid > div > p:not(.eyebrow), .record-grid > div > p:not(.eyebrow) { color: var(--slate); font-size: 1.08rem; }
+  .journey-grid ul { margin: 28px 0 0; padding: 0; list-style: none; }
+  .journey-grid li { display: flex; align-items: center; gap: 9px; padding: 9px 0; font-weight: 600; }
+  .journey-grid li svg { color: var(--mint-dark); }
+  figure { margin: 0; }
+  .client-image, .record-image { aspect-ratio: 1.55; }
+  @media (max-width: 860px) { .stage-grid { grid-template-columns: 1fr 1fr; } .stage-grid li, .stage-grid li:nth-child(3n + 2), .stage-grid li:nth-child(3n + 3) { padding: 26px 22px; border-right: 1px solid var(--line); } .stage-grid li:nth-child(even) { border-right: 0; } .journey-grid, .record-grid { grid-template-columns: 1fr; gap: 46px; } }
+  @media (max-width: 560px) { .stage-section, .journey-section, .record-section { padding: 82px 0; } .stage-grid { grid-template-columns: 1fr; } .stage-grid li, .stage-grid li:nth-child(even) { min-height: 0; border-right: 0; } .record-grid figure { order: 2; } }
+</style>

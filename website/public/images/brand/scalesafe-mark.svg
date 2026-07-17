@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 240" role="img" aria-label="ScaleSafe">
+  <g transform="translate(10 0) skewX(-12)">
+    <rect x="16" y="116" width="44" height="104" rx="15" fill="#1ABC9C"/>
+    <rect x="78" y="66" width="44" height="154" rx="15" fill="#1ABC9C"/>
+    <rect x="140" y="16" width="44" height="204" rx="15" fill="#002F5F"/>
+  </g>
+</svg>
