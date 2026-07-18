@@ -38,7 +38,7 @@ Onboarding covers the Marketplace installation, merchant settings, branding, sub
 
 ### Which payment channels does ScaleSafe support?
 
-The active beta channels are Stripe, NMI, and Whop. ScaleSafe brings their checkout, payment, refund, and account activity into the client-program record.
+The active beta channels include connected Stripe accounts, WholePay merchant processing, and Whop hosted checkout. ScaleSafe brings supported checkout, payment, refund, and account activity into the client-program record.
 
 ### How does ScaleSafe handle payment details?
 
@@ -46,7 +46,7 @@ ScaleSafe uses processor-hosted or tokenized payment methods. Merchant records d
 
 ### Can a merchant issue refunds from ScaleSafe?
 
-Eligible Stripe, NMI, and Whop payments can be refunded when ScaleSafe has the processor identifier required for that action. ScaleSafe records the refund only after the processor confirms it.
+Eligible payments can be refunded when ScaleSafe has the provider identifier required for that action. ScaleSafe records the refund only after the provider confirms it.
 
 ### What is Payment Reconciliation?
 

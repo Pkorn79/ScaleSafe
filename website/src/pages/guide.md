@@ -93,7 +93,7 @@ The Payments workspace has three views:
 
 The payment ledger records the date, client, program, tracking ID, billing type, processor, amount, status, source, and processor transaction ID. Recurring program views also show payment number, first and last payment dates, next billing, subscription ID, and the linked payment method when available.
 
-Refund, saved-method charge, pause, resume, cancel, and manual NMI import controls are processor-sensitive actions. The available action depends on the processor and whether ScaleSafe has the required processor payment or subscription identifier.
+Refund, saved-method charge, pause, resume, cancel, and manual payment-import controls are provider-sensitive actions. The available action depends on the provider and whether ScaleSafe has the required payment or subscription identifier.
 
 Reconciliation findings are operational warnings. They do not automatically modify processor or enrollment state.
 
@@ -157,7 +157,7 @@ Merchant Settings contains business information, the enrollment-funnel URL, defa
 
 **Provisioning Health** verifies the merchant record, GHL OAuth connection, workflow authentication, processors, ScaleSafe custom fields/values, trigger subscriptions, reminders, and pulse readiness. A warning should be investigated; it does not always mean checkout is blocked.
 
-Payment Settings contains processor-specific configuration for NMI, Stripe, Whop, and the deferred FanBasis channel. NMI supports named MID routes and an official webhook configuration. Stripe includes ACH setup guidance and a link to Stripe's dispute-prevention settings. Whop is a hosted checkout channel and exposes only actions supported by Whop identifiers.
+Payment Settings contains configuration for WholePay merchant processing, Stripe, Whop, and the deferred FanBasis channel. WholePay processing supports named merchant-account routes and verified payment notifications. Stripe includes ACH setup guidance and a link to Stripe's dispute-prevention settings. Whop is a hosted checkout channel and exposes only actions supported by Whop identifiers.
 
 Evidence Connections currently shows native GHL Fulfillment, Zoom, the universal Custom Software API, and the staged integration catalog. GHL and external events publish as enrollment evidence only after ScaleSafe resolves one defensible program match.
 

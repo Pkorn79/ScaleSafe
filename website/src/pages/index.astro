@@ -30,7 +30,7 @@ const lifecycle = [
 
 const paymentChannels = [
   ["Stripe", "Card and ACH checkout, payment plans, subscriptions, refunds, Risk Health, and supported dispute evidence submission."],
-  ["NMI", "Card and bank checkout, saved payment methods, recurring billing, refunds, and WholePay merchant processing."],
+  ["WholePay", "Merchant-account processing with card and bank checkout, saved payment methods, recurring billing, refunds, and payment reconciliation."],
   ["Whop", "Hosted checkout, recurring membership payments, refunds, and membership pause, resume, and cancellation."],
 ];
 ---
@@ -52,7 +52,7 @@ const paymentChannels = [
       </div>
       <ul class="hero-facts" aria-label="ScaleSafe product facts">
         <li><Check size={17} /> Runs inside GoHighLevel</li>
-        <li><Check size={17} /> Works with Stripe, NMI, and Whop</li>
+        <li><Check size={17} /> Works with Stripe, WholePay, and Whop</li>
         <li><Check size={17} /> You review every defense before submission</li>
       </ul>
     </div>
@@ -199,18 +199,18 @@ const paymentChannels = [
       <div class="section-heading">
         <p class="eyebrow">Private beta pricing</p>
         <h2>One product. Two ways to qualify.</h2>
-        <p>Both plans include the ScaleSafe client record, payment tracking, operational alerts, and defense workflow. WholePay Approved pricing is available only after WholePay verifies the merchant's NMI processing relationship.</p>
+        <p>Both plans include the ScaleSafe client record, payment tracking, operational alerts, and defense workflow. WholePay Approved pricing is available to merchants approved for a WholePay merchant account.</p>
       </div>
       <div class="pricing-grid">
         <article class="price-card price-card--featured">
           <p class="plan-name">Standard</p><p class="price"><strong>$99</strong><span>/month</span></p>
-          <p>For approved merchants using Stripe and/or Whop.</p>
-          <ul><li><Check size={18} /> Stripe and Whop support</li><li><Check size={18} /> ScaleSafe evidence and defense workflow</li><li><Check size={18} /> Marketplace subscription</li></ul>
+          <p>For approved merchants using their existing supported payment setup.</p>
+          <ul><li><Check size={18} /> Supported connected payment channels</li><li><Check size={18} /> ScaleSafe evidence and defense workflow</li><li><Check size={18} /> Marketplace subscription</li></ul>
         </article>
         <article class="price-card">
           <p class="plan-name">WholePay Approved</p><p class="price"><strong>$59</strong><span>/month</span></p>
-          <p>For merchants whose NMI processing account is approved and verified through WholePay.</p>
-          <ul><li><Check size={18} /> Stripe, Whop, and NMI support</li><li><Check size={18} /> The same ScaleSafe product</li><li><Check size={18} /> Eligibility confirmed by WholePay</li></ul>
+          <p>For merchants approved for a merchant processing account through WholePay.</p>
+          <ul><li><Check size={18} /> WholePay merchant processing</li><li><Check size={18} /> The same ScaleSafe product</li><li><Check size={18} /> Eligibility confirmed by WholePay</li></ul>
         </article>
       </div>
       <p class="pricing-note">Custom setup may be quoted when your business needs hands-on processor, workflow, fulfillment, or integration work.</p>

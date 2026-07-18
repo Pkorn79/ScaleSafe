@@ -37,6 +37,9 @@ This file records product and launch decisions that should not be re-litigated u
 - Recurring/installment billing should be processor-native through Stripe, NMI, or future Whop.
 - If processor subscription setup fails, ScaleSafe should surface the issue clearly and avoid pretending billing is healthy.
 - Payment reminder workflows must use trigger payload fields, not stale contact fields, for payment-specific values.
+- Stripe platform-controlled pricing is deferred until ScaleSafe has at least five paying Stripe merchants and at least $100,000 in combined monthly Stripe payment volume for two consecutive months.
+- At that trigger, contact Stripe Connect about IC+ network-cost passthrough, WholePay-controlled merchant pricing, retained processing markup, Stripe-managed risk, and treatment of existing Standard OAuth connected accounts. Use `docs/STRIPE_CONNECT_PRICING_OUTREACH.md`.
+- Until Stripe approves a different commercial structure, Stripe monetization remains the ScaleSafe subscription plus any Stripe Connect revenue share for which the platform qualifies. Do not add transaction application fees by default.
 
 ## UI / UX
 

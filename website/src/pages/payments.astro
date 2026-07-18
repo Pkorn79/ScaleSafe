@@ -13,12 +13,12 @@ const structures = [
 
 const channels = [
   ["Stripe", "Card and ACH checkout", "Paid in full, installments, subscriptions, refunds, saved methods, Risk Health, and supported dispute evidence submission."],
-  ["NMI", "WholePay merchant processing", "Card and bank checkout, saved methods, recurring billing, refunds, and payment reconciliation."],
+  ["WholePay", "Merchant-account processing", "Card and bank checkout, saved methods, recurring billing, refunds, and payment reconciliation."],
   ["Whop", "Hosted checkout", "Paid-in-full and recurring checkout, recorded add-ons, refunds, and membership pause, resume, and cancellation."],
 ];
 ---
 
-<BaseLayout title="Payments" description="ScaleSafe supports paid-in-full, installment, subscription, card, ACH, Stripe, NMI, and Whop payment records tied to the correct client program.">
+<BaseLayout title="Payments" description="ScaleSafe supports paid-in-full, installment, subscription, card, bank, Stripe, WholePay, and Whop payment records tied to the correct client program.">
   <PageHero
     eyebrow="Payments"
     title="Get paid in the way the offer is actually sold."
@@ -30,7 +30,7 @@ const channels = [
 
   <section class="structure-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Offer structure</p><h2>Match the payment plan to the offer.</h2><p>Use the billing model that fits the way the program is sold and delivered.</p></div><div class="structure-grid">{structures.map(([Icon,title,body])=><article><Icon size={24}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
 
-  <section class="settlement-section"><div class="shell settlement-grid"><div><p class="eyebrow">Where the money goes</p><h2>Your connected provider settles the funds.</h2></div><div><p>ScaleSafe coordinates the checkout and records the payment against the client program. Stripe, NMI, or Whop handles payment and settlement through the merchant's connected account.</p><ul class="plain-list"><li><Check size={18}/>Processor transaction references stay with the payment</li><li><Check size={18}/>Refunds and account changes remain visible in the client history</li><li><Check size={18}/>Payment evidence is available when a dispute needs to be reviewed</li></ul></div></div></section>
+  <section class="settlement-section"><div class="shell settlement-grid"><div><p class="eyebrow">Where the money goes</p><h2>Your connected provider settles the funds.</h2></div><div><p>ScaleSafe coordinates the checkout and records the payment against the client program. Stripe, WholePay merchant processing, or a hosted provider such as Whop handles payment and settlement through the merchant's connected account.</p><ul class="plain-list"><li><Check size={18}/>Processor transaction references stay with the payment</li><li><Check size={18}/>Refunds and account changes remain visible in the client history</li><li><Check size={18}/>Payment evidence is available when a dispute needs to be reviewed</li></ul></div></div></section>
 
   <section class="channel-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Connected payment channels</p><h2>Use one operating record across providers.</h2><p>ScaleSafe brings each provider's checkout, payment, refund, and account actions into the same client-program history.</p></div><div class="channel-list">{channels.map(([name,label,body])=><article><div><h3>{name}</h3><span>{label}</span></div><p>{body}</p></article>)}</div></div></section>
 
