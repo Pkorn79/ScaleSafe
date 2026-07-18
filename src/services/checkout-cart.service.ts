@@ -265,7 +265,7 @@ export const checkoutCartService = {
     if (quote.dualPricingEnabled && quote.paymentMethod === 'card' && cardAdjustmentCents > 0) {
       lineItems.push({
         type: 'dual_pricing_adjustment',
-        label: `Card price adjustment (${quote.cardUpliftPercent.toFixed(2)}%)`,
+        label: `Card price difference (${quote.cardUpliftPercent.toFixed(2)}% above bank-transfer price)`,
         description: 'Difference between the displayed bank-transfer price and selected card price.',
         amountCents: cardAdjustmentCents,
         amount: centsToDollars(cardAdjustmentCents),

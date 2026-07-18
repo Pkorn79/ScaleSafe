@@ -618,13 +618,14 @@ export const payFirstEnrollmentService = {
     const { config: procConfig } = await resolveProcessor(merchant.id, input.locationId, offerHint);
     await assertNewProcessorActivityAllowed(input.locationId, procConfig.processor_type);
     const processor = createProcessorClient(procConfig);
+    let dualQuote: Awaited<ReturnType<typeof dualPricingService.quoteOffer>> | null = null;
     if (offer) {
-      const quote = await dualPricingService.quoteOffer(
+      dualQuote = await dualPricingService.quoteOffer(
         offer,
         input.paymentType,
         input.paymentMethod === 'ach' ? 'ach' : 'card',
       );
-      if (quote.selectedAmountCents > 0 && quote.selectedAmountCents !== dollarsToCents(input.amount)) {
+      if (dualQuote.selectedAmountCents > 0 && dualQuote.selectedAmountCents !== dollarsToCents(input.amount)) {
         throw new ValidationError('Payment amount does not match selected offer');
       }
     }
@@ -1029,6 +1030,16 @@ export const payFirstEnrollmentService = {
         payment_status: paymentProcessing ? 'processing' : 'succeeded',
         payment_method_type: paymentMethod,
         selected_payment_method: paymentMethod,
+        card_uplift_percent: dualQuote?.dualPricingEnabled && paymentMethod === 'card' ? dualQuote.cardUpliftPercent : 0,
+        processor_deduction_percent: dualQuote?.dualPricingEnabled && paymentMethod === 'card' ? dualQuote.processorDeductionPercent : 0,
+        line_items: offer && dualQuote && dualQuote.achAmountCents > 0
+          ? [{
+            type: 'base_offer',
+            label: offer.offer_name || 'Program enrollment',
+            amountCents: dualQuote.achAmountCents,
+            amount: dualQuote.achAmountCents / 100,
+          }]
+          : undefined,
         raw_webhook_payload: {
           source: 'quick_manual_sale',
           processor: procConfig.processor_type,

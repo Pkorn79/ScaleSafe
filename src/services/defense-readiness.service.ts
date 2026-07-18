@@ -170,7 +170,7 @@ export const defenseReadinessService = {
     if (unreconciledPayment) {
       strategyFlags.push(
         `The stored checkout components do not reconcile to the disputed processor amount (${unreconciledPayment.summary}). `
-        + 'Verify the accepted card/bank price and adjustment before submitting.',
+        + 'Verify the accepted card/bank price before submitting.',
       );
     }
 

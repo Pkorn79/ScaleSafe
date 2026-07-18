@@ -16,10 +16,14 @@ import { resolveProgramName } from '../utils/program-name';
 /**
  * Shared handlers for recurring payment success/failure.
  *
- * Called from three sources:
- *   1. recurring-billing.ts (daily cron — legacy + fallback)
- *   2. stripe-webhook.controller.ts (invoice.payment_succeeded/failed)
- *   3. nmi-silent-post.controller.ts (NMI Silent Post notifications)
+ * Called from two sources:
+ *   1. stripe-webhook.controller.ts (invoice.payment_succeeded/failed)
+ *   2. nmi-silent-post.controller.ts (NMI Silent Post notifications)
+ *
+ * All recurring billing is processor-native (Stripe subscriptions / NMI
+ * recurring) posting back through webhooks. ScaleSafe never charges saved
+ * cards from a cron; the old jobs/recurring-billing.ts fallback was removed
+ * 2026-07-18 (it was never scheduled and did not apply dual pricing).
  */
 
 interface RecurringPaymentParams {

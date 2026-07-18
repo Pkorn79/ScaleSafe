@@ -312,6 +312,41 @@ export const phase2EnrollmentService = {
       }
     }
 
+    // Reconstruct the full charge components for the ledger. The enrollment's
+    // selected_checkout_items intentionally exclude the base offer row
+    // (lineItemsToSelectedCheckoutItems), so a ledger row built from them alone
+    // could never reconcile to the charged amount. The consent-time quote is
+    // always card-priced; when the actual charge matches the bank price, drop
+    // the card-price row instead of misreporting it as part of the charge.
+    const storedCheckoutItems: any[] = Array.isArray((enrollment as any).selected_checkout_items)
+      ? (enrollment as any).selected_checkout_items
+      : [];
+    const itemCents = (item: any) => (Number.isFinite(Number(item?.amountCents))
+      ? Math.round(Number(item.amountCents))
+      : Math.round(Number(item?.amount || 0) * 100));
+    const paymentAmountCents = Math.round(Number(params.paymentAmount || 0) * 100);
+    const cardPriceItem = storedCheckoutItems.find((item: any) => item?.type === 'dual_pricing_adjustment');
+    const snapshotCardCents = Math.round(Number(cardPriceItem?.pricing?.cardAmountCents ?? NaN));
+    const snapshotBankCents = Math.round(Number(cardPriceItem?.pricing?.achAmountCents ?? NaN));
+    const paidBankPrice = Number.isFinite(snapshotBankCents)
+      && paymentAmountCents === snapshotBankCents
+      && paymentAmountCents !== snapshotCardCents;
+    const paidCardPrice = Boolean(cardPriceItem) && !paidBankPrice
+      && Number.isFinite(snapshotCardCents) && paymentAmountCents === snapshotCardCents;
+    const ledgerComponentItems = paidBankPrice
+      ? storedCheckoutItems.filter((item: any) => item?.type !== 'dual_pricing_adjustment')
+      : storedCheckoutItems;
+    const componentTotalCents = ledgerComponentItems.reduce((sum: number, item: any) => sum + itemCents(item), 0);
+    const baseOfferCents = paymentAmountCents - componentTotalCents;
+    const ledgerLineItems = paymentAmountCents > 0 && baseOfferCents > 0
+      ? [{
+        type: 'base_offer',
+        label: offerName || (enrollment as any).program_name_snapshot || 'Program enrollment',
+        amountCents: baseOfferCents,
+        amount: baseOfferCents / 100,
+      }, ...ledgerComponentItems]
+      : ledgerComponentItems;
+
     const completionWrites: Promise<unknown>[] = [
       phase2EvidenceRepository.create({
         location_id: params.locationId,
@@ -340,9 +375,7 @@ export const phase2EnrollmentService = {
           payment_type: params.paymentType,
           transaction_id: params.transactionId,
           payments_total: params.paymentsTotal,
-          line_items: Array.isArray((enrollment as any).selected_checkout_items)
-            ? (enrollment as any).selected_checkout_items
-            : [],
+          line_items: ledgerLineItems,
           timestamp: new Date().toISOString(),
         },
       }),
@@ -357,9 +390,9 @@ export const phase2EnrollmentService = {
         processor: params.processorType || 'ghl',
         processor_transaction_id: params.transactionId,
         amount: params.paymentAmount,
-        line_items: Array.isArray((enrollment as any).selected_checkout_items)
-          ? (enrollment as any).selected_checkout_items
-          : [],
+        line_items: ledgerLineItems,
+        selected_payment_method: paidCardPrice ? 'card' : undefined,
+        card_uplift_percent: paidCardPrice ? Number(cardPriceItem?.pricing?.cardUpliftPercent || 0) : undefined,
         payment_number: 1,
         payments_remaining: params.paymentsTotal ? params.paymentsTotal - 1 : undefined,
         source: 'checkout',

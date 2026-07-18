@@ -19,9 +19,11 @@ test('payment line-item reconciliation identifies explained and unexplained tota
   expect(reconcilePaymentLineItems(2065, [
     { type: 'base_offer', amountCents: 200_000 },
     { type: 'dual_pricing_adjustment', amountCents: 6500 },
-  ])).toEqual({ hasLineItems: true, lineItemTotal: 2065, difference: 0, reconciled: true });
+  ])).toEqual({ hasLineItems: true, lineItemTotal: 2065, difference: 0, reconciled: true, reconciledAsBankPrice: false });
 
+  // Without the stored dual-pricing context, bank-price components still do
+  // not reconcile to a card charge — the uplift is never assumed.
   expect(reconcilePaymentLineItems(2065, [
     { type: 'base_offer', amountCents: 200_000 },
-  ])).toEqual({ hasLineItems: true, lineItemTotal: 2000, difference: 65, reconciled: false });
+  ])).toEqual({ hasLineItems: true, lineItemTotal: 2000, difference: 65, reconciled: false, reconciledAsBankPrice: false });
 });

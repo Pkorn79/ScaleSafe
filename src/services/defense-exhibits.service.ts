@@ -184,11 +184,16 @@ export function pulseExhibitSummary(pulse: any): string {
   return summary;
 }
 
-export function reconcilePaymentLineItems(amount: unknown, lineItems: unknown): {
+export function reconcilePaymentLineItems(amount: unknown, lineItems: unknown, pricingContext?: {
+  selectedPaymentMethod?: string | null;
+  cardUpliftPercent?: number | null;
+  checkoutPricing?: { bank_amount_cents?: unknown; card_amount_cents?: unknown } | null;
+}): {
   hasLineItems: boolean;
   lineItemTotal: number;
   difference: number;
   reconciled: boolean;
+  reconciledAsBankPrice: boolean;
 } {
   const items = Array.isArray(lineItems) ? lineItems : [];
   const lineItemTotalCents = items.reduce((sum, item: any) => {
@@ -198,11 +203,35 @@ export function reconcilePaymentLineItems(amount: unknown, lineItems: unknown): 
     return sum + cents;
   }, 0);
   const amountCents = Math.round(Number(amount || 0) * 100);
+  const rawMatch = items.length > 0 && amountCents === lineItemTotalCents;
+
+  // Dual pricing: older write paths store components at the bank-transfer price
+  // while the processor charged the card price. Reconcile those through the
+  // uplift (or checkout pricing snapshot) stored on the payment event instead
+  // of flagging a false mismatch.
+  let bankPriceMatch = false;
+  if (!rawMatch && items.length > 0 && String(pricingContext?.selectedPaymentMethod || '') === 'card') {
+    const uplift = Number(pricingContext?.cardUpliftPercent || 0);
+    if (uplift > 0 && amountCents === Math.round(lineItemTotalCents * (1 + uplift / 100))) {
+      bankPriceMatch = true;
+    }
+    if (!bankPriceMatch) {
+      const snapshot = pricingContext?.checkoutPricing;
+      const snapshotBankCents = Math.round(Number(snapshot?.bank_amount_cents ?? NaN));
+      const snapshotCardCents = Math.round(Number(snapshot?.card_amount_cents ?? NaN));
+      if (Number.isFinite(snapshotBankCents) && Number.isFinite(snapshotCardCents)
+        && lineItemTotalCents === snapshotBankCents && amountCents === snapshotCardCents) {
+        bankPriceMatch = true;
+      }
+    }
+  }
+
   return {
     hasLineItems: items.length > 0,
     lineItemTotal: lineItemTotalCents / 100,
     difference: (amountCents - lineItemTotalCents) / 100,
-    reconciled: items.length > 0 && amountCents === lineItemTotalCents,
+    reconciled: rawMatch || bankPriceMatch,
+    reconciledAsBankPrice: bankPriceMatch,
   };
 }
 
@@ -932,7 +961,11 @@ export const defenseExhibitsService = {
           recordSourceError('payment_events', new Error('The selected payment event does not match the scoped client and enrollment.'));
         } else if (payment) {
           const lineItems = Array.isArray(payment.line_items) ? payment.line_items : [];
-          const pricing = reconcilePaymentLineItems(payment.amount, lineItems);
+          const pricing = reconcilePaymentLineItems(payment.amount, lineItems, {
+            selectedPaymentMethod: payment.selected_payment_method,
+            cardUpliftPercent: payment.card_uplift_percent,
+            checkoutPricing: payment.evidence_data?.checkout_pricing || null,
+          });
           const lineItemText = lineItems.map((item: any) => {
             const amount = Number.isFinite(Number(item?.amount))
               ? Number(item.amount)
@@ -947,7 +980,9 @@ export const defenseExhibitsService = {
           let summary = `${processor} recorded the disputed $${Number(payment.amount || 0).toFixed(2)} ${String(payment.event_type || 'payment').replace(/_/g, ' ')} on ${fmtDate(occurredAt)}. Transaction ID: ${transactionId}. Status: ${payment.payment_status || 'recorded'}.`;
           if (sequence) summary += ` Payment ${sequence}${total ? ` of ${total}` : ''}.`;
           if (lineItemText) summary += ` Charge components: ${lineItemText}.`;
-          if (pricing.hasLineItems && pricing.reconciled) {
+          if (pricing.hasLineItems && pricing.reconciledAsBankPrice) {
+            summary += ` The stored components total $${pricing.lineItemTotal.toFixed(2)}, the bank-transfer price for this purchase; the client paid by card, and the card price of $${Number(payment.amount || 0).toFixed(2)} matches the processor charge.`;
+          } else if (pricing.hasLineItems && pricing.reconciled) {
             summary += ` The stored components total $${pricing.lineItemTotal.toFixed(2)}, matching the processor charge.`;
           } else if (pricing.hasLineItems) {
             summary += ` WARNING: stored components total $${pricing.lineItemTotal.toFixed(2)} and do not reconcile to the $${Number(payment.amount || 0).toFixed(2)} processor charge.`;

@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Changed
 - Defense letters no longer announce evidence gaps to the dispute reviewer. When no service-delivery evidence exists, the letter is built entirely on the evidence on file (consent forensics, accepted terms and policies, client engagement) and simply omits delivery claims; internal gap notes are now explicitly marked as drafting constraints the model must never quote or allude to in the letter. Merchant-facing review warnings and the accept recommendation are unchanged.
 
+## Unreleased - Dual pricing tracking and reconciliation (2026-07-18)
+
+### Fixed
+- Defense packet reconciliation now understands dual pricing: a card charge recorded with bank-price components reconciles through the payment event's stored uplift or checkout pricing snapshot instead of emitting a false "components do not reconcile" warning, and the exhibit states the bank and card prices affirmatively for the letter. Historical payment events reconcile without any backfill.
+- Enrollment-completion payment events (GHL-native payment path) now record the full charge components — the base offer row was being stripped, so those ledger rows could never reconcile — and stamp the selected payment method and card uplift when the charge matches the card price. A charge matching the bank price drops the unpaid card-price row instead of misreporting it.
+- Quick Manual Sale payment events now record the card uplift and bank-price component from the validated dual-pricing quote, so card-priced manual sales reconcile in defense packets.
+- The dual-pricing line item and packet review copy no longer use "adjustment" wording; dual pricing is presented as two prices, never a surcharge.
+
+### Removed
+- Deleted the dead fallback recurring-billing job (`src/jobs/recurring-billing.ts`). It was never scheduled, charged saved cards directly from a cron, and did not apply dual pricing. All recurring billing is processor-native (Stripe subscriptions / NMI recurring) posting back through webhooks.
+
 ## Unreleased - Marketplace billing entitlements (2026-07-17)
 
 ### Added
