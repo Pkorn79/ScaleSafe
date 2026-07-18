@@ -27,6 +27,24 @@ function esc(s: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+const H2_STYLE = 'font-size:16px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin:16px 0 8px';
+
+// A short standalone line with no terminal punctuation is a section header the
+// model wrote without Markdown (e.g. "What the Client Purchased"). Letters
+// generated before headers were emitted as "## ..." rely on this to render bold.
+function isBareHeaderLine(line: string): boolean {
+  const t = (line || '').trim();
+  return t.length >= 2
+    && t.length <= 60
+    && /^[A-Z]/.test(t)
+    && /[A-Za-z]$/.test(t)          // headers end in a word — dates/amounts don't
+    && !/[.,:;!?]$/.test(t)
+    && !t.includes(',')             // letterhead lines ("July 18, 2026") aren't headers
+    && !t.includes('—')             // neither are addressee lines ("Bank — Dept")
+    && t.split(/\s+/).length <= 8
+    && !t.startsWith('-');
+}
+
 function buildLetterHtml(opts: {
   letterText: string;
   merchantName: string;
@@ -47,12 +65,22 @@ function buildLetterHtml(opts: {
       // H3 headers
       p = p.replace(/^### (.+)$/gm, '<h3 style="font-size:14px;font-weight:600;color:#1f2937;margin:12px 0 6px">$1</h3>');
       // H2 headers
-      p = p.replace(/^## (.+)$/gm, '<h2 style="font-size:16px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin:16px 0 8px">$1</h2>');
+      p = p.replace(/^## (.+)$/gm, `<h2 style="${H2_STYLE}">$1</h2>`);
       // Bold
       p = p.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
       // List items
       p = p.replace(/^- (.+)$/gm, '<li style="margin-bottom:4px">$1</li>');
       if (p.includes('<li')) p = `<ul style="margin:6px 0 6px 16px;padding:0">${p}</ul>`;
+      // Bare section headers without Markdown: bold the header line, keep any
+      // following lines in the same block as the paragraph body.
+      if (!p.startsWith('<')) {
+        const lines = p.split('\n');
+        if (isBareHeaderLine(lines[0])) {
+          const rest = lines.slice(1).join('\n').trim();
+          const header = `<h2 style="${H2_STYLE}">${lines[0].trim()}</h2>`;
+          p = rest ? `${header}<p style="margin:0 0 8px;line-height:1.6">${rest}</p>` : header;
+        }
+      }
       if (!p.startsWith('<h') && !p.startsWith('<ul')) p = `<p style="margin:0 0 8px;line-height:1.6">${p}</p>`;
       return p;
     })

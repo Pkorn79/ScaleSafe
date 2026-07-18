@@ -3,6 +3,11 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Defense letter section headers render bold (2026-07-18)
+
+### Fixed
+- Defense letter PDFs now render section headers ("What the Client Purchased", "Transaction Timeline", etc.) as bold styled headings. The letter prompt emits Markdown headers going forward, and the PDF renderer also recognizes bare header lines so previously generated letters format correctly without regeneration.
+
 ## Unreleased - Risk Health recommendations are actionable (2026-07-18)
 
 ### Fixed

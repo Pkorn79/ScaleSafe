@@ -762,6 +762,10 @@ LETTER STRUCTURE:
 8. Request — a short section stating plainly what we are asking the reviewer for: that this chargeback be declined/reversed based on the evidence above (or, when a credit was already issued before the dispute, that the case be resolved as credit previously issued with no second recovery). Factual, not pleading. Every letter must contain this section.
 9. Conclusion (factual summary, not argumentative)
 10. Exhibit index — one line per exhibit stating what it PROVES, not just what it is (e.g. "Exhibit A — Signed enrollment agreement: establishes authorization and the agreed terms")
+
+FORMATTING:
+- Write every section header as a Markdown H2: a line starting with "## " (e.g. "## What the Client Purchased"), followed by a blank line.
+- Body text is plain paragraphs separated by blank lines. Use no other Markdown except sparing **bold** for key facts.
 `;
 
     if (exhibitList) {
