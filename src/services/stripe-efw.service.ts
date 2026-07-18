@@ -95,19 +95,24 @@ export const stripeEfwService = {
     const stripe = getStripe();
 
     try {
+      // Paginate: a single 100-row page caps the denominator and inflates the
+      // rate for any merchant with >100 monthly charges — this rate decides
+      // whether we tell the merchant to refund an EFW, so it must be real.
       const [disputes, charges] = await Promise.all([
         stripe.disputes.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount: merchant.stripe_user_id },
-        ),
+        ).autoPagingToArray({ limit: 5000 }),
         stripe.charges.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount: merchant.stripe_user_id },
-        ),
+        ).autoPagingToArray({ limit: 5000 }),
       ]);
 
-      if (charges.data.length === 0) return 0;
-      return disputes.data.length / charges.data.length;
+      // Card-network ratios count settled transactions — exclude failed charges.
+      const paidCharges = charges.filter((c: any) => c.paid);
+      if (paidCharges.length === 0) return 0;
+      return disputes.length / paidCharges.length;
     } catch (err: any) {
       logger.error({ err: err.message }, 'Failed to compute dispute rate');
       return 0;

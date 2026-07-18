@@ -9,11 +9,15 @@ const mockSupabaseUpsert = jest.fn().mockResolvedValue({ error: null });
 const mockFrom = jest.fn();
 const queryEqCalls: Record<string, Array<[string, any]>> = {};
 
+const mockEmptyStripeList = () => jest.fn(() => ({
+  autoPagingToArray: jest.fn().mockResolvedValue([]),
+}));
+
 jest.mock('stripe', () => jest.fn(() => ({
-  disputes: { list: jest.fn().mockResolvedValue({ data: [] }) },
-  charges: { list: jest.fn().mockResolvedValue({ data: [] }) },
-  radar: { earlyFraudWarnings: { list: jest.fn().mockResolvedValue({ data: [] }) } },
-  balanceTransactions: { list: jest.fn().mockResolvedValue({ data: [] }) },
+  disputes: { list: mockEmptyStripeList() },
+  charges: { list: mockEmptyStripeList() },
+  radar: { earlyFraudWarnings: { list: mockEmptyStripeList() } },
+  balanceTransactions: { list: mockEmptyStripeList() },
 })));
 
 jest.mock('../../src/clients/supabase.client', () => ({

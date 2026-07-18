@@ -11,6 +11,10 @@ import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { AccountHealthSnapshot } from '../types/stripe-defense.types';
 
+// Upper bound on paginated Stripe list fetches (50 pages of 100). Rates for a
+// merchant beyond this volume use a capped denominator and log a warning.
+const STRIPE_PAGINATION_CAP = 5000;
+
 let _stripe: any = null;
 function getStripe() {
   if (!_stripe) {
@@ -47,51 +51,52 @@ export class StripeHealthService {
     const stripeAccount = merchant.stripe_user_id;
     const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
 
-    // Pull data from Stripe (parallel calls)
-    let disputes: any, charges: any, efws: any;
+    // Pull data from Stripe (parallel, paginated). A single unpaginated page
+    // silently caps the dispute-rate denominator at 100 charges, inflating the
+    // rate for any merchant doing >100 charges/month — the busier the account,
+    // the more fabricated the "risk".
+    let disputes: any[], charges: any[], efws: any[];
     try {
-      const results = await Promise.all([
+      [disputes, charges, efws] = await Promise.all([
         getStripe().disputes.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
-        ),
+        ).autoPagingToArray({ limit: STRIPE_PAGINATION_CAP }),
         getStripe().charges.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
-        ),
+        ).autoPagingToArray({ limit: STRIPE_PAGINATION_CAP }),
         getStripe().radar.earlyFraudWarnings.list(
           { created: { gte: thirtyDaysAgo }, limit: 100 },
           { stripeAccount }
-        ).catch(() => ({ data: [] })), // EFW API may not be available
-        getStripe().balanceTransactions.list(
-          { type: 'adjustment', created: { gte: thirtyDaysAgo }, limit: 100 },
-          { stripeAccount }
-        ).catch(() => ({ data: [] })),
+        ).autoPagingToArray({ limit: STRIPE_PAGINATION_CAP }).catch(() => []), // EFW API may not be available
       ]);
-      disputes = results[0];
-      charges = results[1];
-      efws = results[2];
     } catch (err: any) {
       logger.error({ err: err.message, merchantId, stripeAccount }, 'Failed to fetch Stripe data for health snapshot');
       throw new Error(`Stripe API error during health check: ${err.message}`);
     }
+    if (charges.length >= STRIPE_PAGINATION_CAP) {
+      logger.warn({ merchantId, cap: STRIPE_PAGINATION_CAP }, 'Health snapshot hit the charge pagination cap; dispute rate uses a capped denominator');
+    }
 
-    // Compute metrics
-    const totalCharges = charges.data.length;
-    const totalDisputes = disputes.data.length;
-    const totalEfws = efws.data.length;
+    // Compute metrics. Card-network ratios count settled transactions, so
+    // failed charges are excluded from the denominator.
+    const paidCharges = charges.filter((c: any) => c.paid);
+    const totalCharges = paidCharges.length;
+    const totalDisputes = disputes.length;
+    const totalEfws = efws.length;
 
     const disputeRate = totalCharges > 0 ? totalDisputes / totalCharges : 0;
     const efwRate = totalCharges > 0 ? totalEfws / totalCharges : 0;
 
     // Win/loss breakdown
-    const won = disputes.data.filter((d: any) => d.status === 'won').length;
-    const lost = disputes.data.filter((d: any) => d.status === 'lost').length;
-    const pending = disputes.data.filter((d: any) => d.status !== 'won' && d.status !== 'lost').length;
+    const won = disputes.filter((d: any) => d.status === 'won').length;
+    const lost = disputes.filter((d: any) => d.status === 'lost').length;
+    const pending = disputes.filter((d: any) => d.status !== 'won' && d.status !== 'lost').length;
     const recoveryRate = (won + lost) > 0 ? won / (won + lost) : 0;
 
     // Financial exposure: sum of pending dispute amounts
-    const financialExposureCents = disputes.data
+    const financialExposureCents = disputes
       .filter((d: any) => d.status !== 'won' && d.status !== 'lost')
       .reduce((sum: number, d: any) => sum + d.amount, 0);
 
@@ -107,7 +112,7 @@ export class StripeHealthService {
 
     // Reason code breakdown
     const reasonBreakdown: Record<string, number> = {};
-    for (const d of disputes.data) {
+    for (const d of disputes) {
       const reason = (d as any).reason || 'unknown';
       reasonBreakdown[reason] = (reasonBreakdown[reason] || 0) + 1;
     }

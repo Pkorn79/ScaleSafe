@@ -155,8 +155,10 @@ describe('Risk Audit Scores', () => {
       expect(stripeRiskAuditService.computeRadarDataQualityScore(pis)).toBe(100);
     });
 
-    it('returns 0 for empty PIs', () => {
-      expect(stripeRiskAuditService.computeRadarDataQualityScore([])).toBe(0);
+    it('returns 100 (no false alarm) when there are no customer-present PIs', () => {
+      // Merchant-initiated recurring charges can never carry session IP/email;
+      // an empty customer-present sample has nothing measurably missing.
+      expect(stripeRiskAuditService.computeRadarDataQualityScore([])).toBe(100);
     });
 
     it('returns 50 for IP only', () => {

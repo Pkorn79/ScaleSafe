@@ -151,15 +151,32 @@ export const defenseRepository = {
   },
 
   async recordOutcome(defensePacketId: string, locationId: string, outcome: 'won' | 'lost' | 'withdrawn', amountRecovered: number, notes?: string): Promise<void> {
-    const { error } = await getSupabase()
+    const supabase = getSupabase();
+
+    // One outcome row per packet. recordOutcome can fire more than once for
+    // the same dispute (manual Won/Lost button plus the webhook auto-record,
+    // double-clicks, retries) — a second insert would double-count Total
+    // Value Recovered and the win rate, so update the existing row instead.
+    const { data: existing, error: findError } = await supabase
       .from('defense_outcomes')
-      .insert({
-        defense_packet_id: defensePacketId,
-        location_id: locationId,
-        outcome,
-        amount_recovered: outcome === 'won' ? amountRecovered : 0,
-        notes,
-      });
+      .select('id')
+      .eq('defense_packet_id', defensePacketId)
+      .eq('location_id', locationId)
+      .limit(1)
+      .maybeSingle();
+    if (findError) throw findError;
+
+    const record = {
+      defense_packet_id: defensePacketId,
+      location_id: locationId,
+      outcome,
+      amount_recovered: outcome === 'won' ? amountRecovered : 0,
+      notes,
+    };
+
+    const { error } = existing?.id
+      ? await supabase.from('defense_outcomes').update(record).eq('id', existing.id)
+      : await supabase.from('defense_outcomes').insert(record);
 
     if (error) throw error;
   },
