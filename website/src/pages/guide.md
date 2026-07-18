@@ -18,7 +18,7 @@ ScaleSafe onboarding uses a location-bound Marketplace install, Merchant Setup, 
 
 The Dashboard provides an operational summary of the merchant account.
 
-![ScaleSafe dashboard](/images/product/dashboard-active.png)
+![ScaleSafe dashboard](/images/product/dashboard-operations.png)
 
 The verified dashboard currently shows:
 
@@ -52,8 +52,6 @@ The verified list view includes:
 - Active, archived, or quick-checkout status.
 - Enrollment or checkout link.
 - Copy, Send, Edit, Clone, and Archive actions.
-
-![ScaleSafe offer builder](/images/product/offer-builder.png)
 
 The offer builder includes program identity, delivery method and duration, pricing, payment type, dual pricing, checkout add-ons, refund policy, full-enrollment or quick-checkout experience, bot protection, pulse cadence, clickwrap clauses, checkout channel, processor routing, connected delivery, and up to eight milestones.
 

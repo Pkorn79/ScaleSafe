@@ -1,106 +1,73 @@
 ---
-import { Check, ClipboardCheck, FileStack, FingerprintPattern, Link2, MessagesSquare, ShieldCheck, TriangleAlert } from "@lucide/astro";
+import { Check, ClipboardCheck, FileStack, MessagesSquare, ShieldCheck, TriangleAlert } from "@lucide/astro";
 import BaseLayout from "@layouts/BaseLayout.astro";
 import PageHero from "@components/PageHero.astro";
 import CtaBand from "@components/CtaBand.astro";
 
 const evidenceTypes = [
-  [FingerprintPattern, "Consent and authorization", "Offer terms, responsibilities, clickwrap acceptance, signature, timestamp, and payment structure."],
-  [FileStack, "Payment and lifecycle", "Charges, installments, processor IDs, refunds, cancellations, pauses, resumes, and payment progress."],
-  [MessagesSquare, "Communication and support", "GoHighLevel messages and activity records with timestamps and enrollment context where it can be established."],
-  [ClipboardCheck, "Delivery and engagement", "Milestones, sign-off, pulse, appointments, attendance, access, course activity, resources, and connected-system events."],
+  [ClipboardCheck, "Agreement", "The offer, payment terms, refund policy, client responsibilities, clickwrap acceptance, signature, and enrollment date."],
+  [FileStack, "Payment history", "The disputed charge, payment plan, processor reference, prior payments, refunds, cancellations, and account changes."],
+  [MessagesSquare, "Client relationship", "Messages, pulse responses, support history, milestone sign-off, appointments, attendance, access, and fulfillment activity."],
 ];
 ---
 
-<BaseLayout title="Evidence and defense" description="See how ScaleSafe builds enrollment-scoped evidence and compiles reason-code-aware chargeback defense packets for merchant review.">
+<BaseLayout title="Evidence and defense" description="ScaleSafe builds program-level evidence and organizes the right agreement, payment, delivery, and client records for merchant chargeback review." image="/images/product/defense-letter-active.png">
   <PageHero
     eyebrow="Evidence and defense"
-    title="The right evidence for the transaction being disputed."
-    lead="ScaleSafe does not dump every activity for a contact into a packet. It resolves the charge to one enrollment, then builds the story around that program and reason code."
-    image="/images/product/defense-packet-detail.png"
-    alt="ScaleSafe defense packet workspace"
+    title="Show what the client agreed to and what happened next."
+    lead="ScaleSafe starts with the disputed transaction, finds the program it belongs to, and organizes the records that help explain the purchase, delivery, and client relationship."
+    image="/images/product/defense-letter-active.png"
+    alt="ScaleSafe chargeback defense letter for a high-ticket transaction"
+    caption="A real ScaleSafe test packet for a $2,065 transaction. The merchant reviews the response before anything is submitted."
   />
 
-  <section class="scope-section">
-    <div class="shell scope-grid">
-      <div>
-        <p class="eyebrow">Enrollment-first scope</p>
-        <h2>One contact can have many programs. A dispute cannot.</h2>
-      </div>
-      <div>
-        <p>Evidence that belongs to another offer can make a response confusing or inaccurate. ScaleSafe uses the disputed payment, processor identifiers, and enrollment references to find the exact program before collecting exhibits.</p>
-        <ul>
-          <li><Check size={18} /> No "newest enrollment" fallback when the match is ambiguous</li>
-          <li><Check size={18} /> Contact-only records are treated as lower-confidence context</li>
-          <li><Check size={18} /> External events stay out until they resolve to one enrollment</li>
-        </ul>
-      </div>
+  <section class="scenario-section">
+    <div class="shell scenario-grid">
+      <div><p class="eyebrow">The real question</p><h2>Can you prove this specific purchase?</h2></div>
+      <div><p>A client may have bought more than one program. A useful response cannot mix the terms, payments, messages, or delivery records from unrelated purchases. ScaleSafe keeps the evidence with the enrollment it came from, then uses the disputed payment to find the right one.</p><ul class="plain-list"><li><Check size={18}/>The selected transaction leads the response</li><li><Check size={18}/>Other programs stay out of the packet</li><li><Check size={18}/>Unclear records are not presented as verified proof</li></ul></div>
     </div>
   </section>
 
-  <section class="evidence-section">
+  <section class="source-section">
     <div class="shell">
-      <div class="section-heading"><p class="eyebrow">Evidence sources</p><h2>Capture the commercial relationship, not just the receipt.</h2><p>A defense becomes useful when the payment record is connected to what the client accepted, received, acknowledged, and communicated.</p></div>
-      <div class="evidence-grid">
-        {evidenceTypes.map(([Icon, title, body]) => <article><Icon size={25} /><h3>{title}</h3><p>{body}</p></article>)}
-      </div>
+      <div class="section-heading"><p class="eyebrow">What ScaleSafe collects</p><h2>The commercial relationship, not just the receipt.</h2><p>A strong record can show authorization, delivery, participation, communication, and how the merchant responded when the client needed help.</p></div>
+      <div class="source-grid">{evidenceTypes.map(([Icon,title,body])=><article><Icon size={25}/><h3>{title}</h3><p>{body}</p></article>)}</div>
     </div>
   </section>
 
-  <section class="strategy-section">
-    <div class="shell strategy-grid">
-      <figure><div class="product-frame"><img src="/images/product/defense-letter-active.png" alt="Chargeback defense letter for merchant review" width="933" height="883" loading="lazy" /></div><figcaption class="image-caption">The draft explains the transaction, offer, timeline, and selected exhibits in readable form.</figcaption></figure>
+  <section class="story-section">
+    <div class="shell split-grid">
+      <figure><div class="product-frame"><img src="/images/product/evidence-pulse-linked.png" alt="Client pulse check-in preserved in the ScaleSafe evidence timeline" width="1908" height="1008" loading="lazy"/></div><figcaption class="image-caption">The client's own response is timestamped and linked to the program.</figcaption></figure>
+      <div><p class="eyebrow">A simple example</p><h2>The client says the service was not provided.</h2><p>ScaleSafe can place the signed enrollment, the disputed payment, attendance or delivery records, milestone activity, pulse responses, and relevant communication in date order. The response can explain what was promised, what was delivered, and what the client said during the program.</p><p>When delivery proof is missing, ScaleSafe should say so. It should not turn unrelated activity into a stronger claim than the records support.</p></div>
+    </div>
+  </section>
+
+  <section class="packet-section">
+    <div class="shell packet-grid">
       <div>
-        <p class="eyebrow">Reason-code strategy</p>
-        <h2>Different claims need different proof.</h2>
-        <p>Services-not-provided, canceled recurring, fraud, duplicate processing, refund-not-received, and misrepresentation claims do not ask the bank the same question. ScaleSafe changes evidence priority and response guidance based on the card-network reason code.</p>
-        <ul class="strategy-list">
-          <li><Link2 size={21} /><span>Transaction timeline tied to the disputed payment</span></li>
-          <li><ShieldCheck size={21} /><span>Reason-code-specific evidence priority</span></li>
-          <li><ClipboardCheck size={21} /><span>Draft response plus organized exhibits</span></li>
-        </ul>
+        <p class="eyebrow">The defense packet</p>
+        <h2>Built for review, not blind submission.</h2>
+        <p>The card-brand reason code changes what matters. A cancellation dispute needs a different lead than a service-not-provided or fraud claim. ScaleSafe uses that reason to order the story and exhibits.</p>
       </div>
+      <ol>
+        <li><span>1</span><div><h3>Confirm the charge</h3><p>Select the disputed transaction and card-brand reason code.</p></div></li>
+        <li><span>2</span><div><h3>Compile the record</h3><p>Build the timeline, draft response, and exhibit list from the matching program.</p></div></li>
+        <li><span>3</span><div><h3>Review the truth</h3><p>Edit, regenerate, or hold the packet when the records need attention.</p></div></li>
+        <li><span>4</span><div><h3>Submit deliberately</h3><p>Use the supported submission path only after the merchant approves the response.</p></div></li>
+      </ol>
     </div>
   </section>
 
-  <section class="review-section">
-    <div class="shell review-grid">
-      <div class="review-callout"><TriangleAlert size={28} /><div><h2>Needs Review is a safeguard, not a failure.</h2><p>If the transaction cannot be scoped confidently, a required signed packet is missing, the reason code is unknown, or the AI draft falls back, ScaleSafe holds the packet for review and does not fire the ready workflow.</p></div></div>
-      <div><h3>Merchant control remains explicit</h3><p>The merchant reads the letter, checks the exhibits, corrects any inaccurate statement, and decides whether to submit. ScaleSafe does not promise a chargeback win and does not replace legal or processor guidance.</p></div>
-    </div>
-  </section>
-
-  <CtaBand title="Organize the evidence before the deadline appears." />
+  <section class="guard-section"><div class="shell"><TriangleAlert size={30}/><div><h2>Needs Review is a safety feature.</h2><p>If ScaleSafe cannot confidently tie the transaction to one program, a key signed file is missing, the reason code is unknown, or the generated draft falls back, the packet is held for review instead of being called ready.</p></div></div></section>
+  <section class="boundary-section"><div class="shell"><ShieldCheck size={25}/><p>ScaleSafe helps merchants organize and submit evidence. It cannot prevent every chargeback, guarantee a win, or make the issuing bank's decision.</p></div></section>
+  <CtaBand title="Build the evidence before the deadline starts." />
 </BaseLayout>
 
 <style>
-  .scope-section, .evidence-section, .strategy-section, .review-section { padding: 110px 0; }
-  .scope-grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 90px; align-items: start; }
-  .scope-grid h2 { margin-bottom: 0; }
-  .scope-grid > div:last-child > p { color: var(--slate); font-size: 1.12rem; }
-  .scope-grid ul, .strategy-list { margin: 28px 0 0; padding: 0; list-style: none; }
-  .scope-grid li, .strategy-list li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); }
-  .scope-grid li svg, .strategy-list svg { color: var(--mint-dark); }
-  .evidence-section { background: var(--mist); }
-  .evidence-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); }
-  .evidence-grid article { min-height: 280px; padding: 30px 26px; border-right: 1px solid var(--line); }
-  .evidence-grid article:last-child { border-right: 0; }
-  .evidence-grid svg { margin-bottom: 45px; color: var(--teal); }
-  .evidence-grid p { color: var(--slate); }
-  .strategy-section { color: var(--white); background: var(--ink); }
-  .strategy-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 80px; align-items: center; }
-  .strategy-grid figure { margin: 0; }
-  .strategy-grid .product-frame { aspect-ratio: 1.06; }
-  .strategy-grid > div > p:not(.eyebrow) { color: var(--slate-light); font-size: 1.08rem; }
-  .strategy-list li { border-color: rgba(255,255,255,.15); color: #d6e1e8; }
-  .strategy-list svg { color: var(--mint); }
-  .strategy-section .image-caption { color: var(--slate-light); }
-  .review-section { background: var(--attention-bg); }
-  .review-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 70px; align-items: center; }
-  .review-callout { display: grid; grid-template-columns: 42px 1fr; gap: 18px; }
-  .review-callout > svg { margin-top: 6px; color: var(--attention); }
-  .review-callout h2 { font-size: 3.4rem; }
-  .review-grid p { color: var(--slate); }
-  @media (max-width: 900px) { .scope-grid, .strategy-grid, .review-grid { grid-template-columns: 1fr; gap: 46px; } .evidence-grid { grid-template-columns: 1fr 1fr; } .evidence-grid article:nth-child(2) { border-right: 0; } }
-  @media (max-width: 560px) { .scope-section, .evidence-section, .strategy-section, .review-section { padding: 82px 0; } .evidence-grid { grid-template-columns: 1fr; } .evidence-grid article, .evidence-grid article:nth-child(2) { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); } .evidence-grid svg { margin-bottom: 26px; } .review-callout h2 { font-size: 2.35rem; } }
+  .scenario-section,.source-section,.story-section,.packet-section,.guard-section,.boundary-section{padding:110px 0}.scenario-grid,.packet-grid{display:grid;grid-template-columns:.85fr 1.15fr;gap:86px}.scenario-grid h2,.packet-grid h2{margin:0}.scenario-grid>div:last-child>p,.packet-grid>div>p{color:var(--slate);font-size:1.08rem}.source-section{background:var(--mist)}.source-grid{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}.source-grid article{min-height:290px;padding:30px;border-right:1px solid var(--line)}.source-grid article:last-child{border-right:0}.source-grid svg{margin-bottom:46px;color:var(--teal)}.source-grid p{color:var(--slate)}
+  .story-section{background:var(--white)}.split-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:76px;align-items:center}.split-grid figure{margin:0}.split-grid .product-frame{aspect-ratio:1.7}.split-grid>div>p:not(.eyebrow){color:var(--slate);font-size:1.08rem}
+  .packet-section{color:var(--white);background:var(--ink)}.packet-section .eyebrow{color:var(--mint)}.packet-grid>div>p{color:var(--slate-light)}.packet-grid ol{margin:0;padding:0;list-style:none}.packet-grid li{display:grid;grid-template-columns:38px 1fr;gap:16px;padding:18px 0;border-top:1px solid rgba(255,255,255,.15)}.packet-grid li>span{display:grid;width:30px;height:30px;place-items:center;border:1px solid var(--mint);border-radius:50%;color:var(--mint);font-weight:700}.packet-grid h3,.packet-grid p{margin-bottom:4px}.packet-grid p{color:var(--slate-light)}
+  .guard-section{background:var(--attention-bg)}.guard-section>.shell{display:grid;grid-template-columns:54px 1fr;gap:18px;max-width:960px}.guard-section svg{margin-top:8px;color:var(--attention)}.guard-section p{color:var(--slate);font-size:1.08rem}.boundary-section{padding:34px 0;background:var(--mist)}.boundary-section>.shell{display:flex;align-items:center;gap:14px}.boundary-section svg{flex:0 0 auto;color:var(--teal)}.boundary-section p{margin:0;color:var(--slate)}
+  @media(max-width:860px){.scenario-grid,.packet-grid,.split-grid{grid-template-columns:1fr;gap:46px}.source-grid{grid-template-columns:1fr}.source-grid article{min-height:0;border-right:0;border-bottom:1px solid var(--line)}.source-grid svg{margin-bottom:26px}}
+  @media(max-width:560px){.scenario-section,.source-section,.story-section,.packet-section,.guard-section{padding:82px 0}.boundary-section>.shell{align-items:flex-start}.guard-section>.shell{grid-template-columns:38px 1fr}.guard-section h2{font-size:2.2rem}}
 </style>

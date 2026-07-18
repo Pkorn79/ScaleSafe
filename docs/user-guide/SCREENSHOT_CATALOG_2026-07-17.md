@@ -19,6 +19,18 @@ Source folder: `docs/user-guide/assets/reviewer-2026-07-17/`
 | `10-public-offer-review.png` | Offer summary, price, milestone responsibilities, refund policy, and support | Public safe | Homepage/product page, Marketplace journey, enrollment guide | Continue is disabled until the milestone acknowledgment is selected. |
 | `10-merchant-terms-page.png` | Public terms page generated for the reviewer merchant | Internal only | Merchant setup reference | It is not ScaleSafe's platform Terms of Service. |
 
+## PMG Public-Site Assets
+
+Source folder: `website/public/images/product/`
+
+| File | What it shows | Publication status | Recommended placement | Caveat |
+| --- | --- | --- | --- | --- |
+| `dashboard-operations.png` | Active PMG dashboard with open disputes, pulse follow-up, defense activity, and operating totals | Public approved | Homepage hero, product overview, VSL | Uses the active test environment and should not be described as a typical merchant result. |
+| `client-programs-high-ticket.png` | High-ticket client program record with payment, delivery, and program context | Public approved | Product page, client journey, VSL | Use to explain enrollment-level tracking rather than promise a particular outcome. |
+| `evidence-pulse-linked.png` | Pulse response preserved as evidence under the related program | Public approved | Evidence page, pulse explanation, VSL | Reason-code labels are relevance metadata, not factual allegations. |
+| `evidence-connections-live.png` | Live GHL and Zoom evidence connections and connection health | Public approved | Integrations page, setup guide, VSL | Only describe integrations shown as connected or currently supported. |
+| `stripe-risk-health-live.png` | Stripe risk and account-health workspace populated with PMG test activity | Public approved with context | Stripe defense page, VSL | Test-heavy activity can produce unusual risk totals; caption it as an operating view, not a benchmark. |
+
 ## Existing Public Help And Legal Sources
 
 | Public page | Source file | Current role |
