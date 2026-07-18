@@ -40,6 +40,18 @@ export function normalizeRiskAuditResult(row: Record<string, any>): RiskAuditRes
   };
 }
 
+/**
+ * Per-transaction data checks only make sense for customer-present
+ * transactions. Stripe-billed subscription invoices (pi.invoice set) are
+ * merchant-initiated: the customer isn't there, so no session IP or email can
+ * ever be on those PaymentIntents. Scoring them as "missing data" permanently
+ * penalizes recurring-revenue merchants whose enrollments carry full consent
+ * forensics in ScaleSafe.
+ */
+export function customerPresentPaymentIntents(pis: any[]): any[] {
+  return (pis || []).filter((pi: any) => !pi?.invoice);
+}
+
 export const stripeRiskAuditService = {
   async runAudit(merchantId: string): Promise<RiskAuditResult> {
     const supabase = getSupabase();
@@ -68,7 +80,7 @@ export const stripeRiskAuditService = {
         this.fetchAll(stripe, 'charges', { created: { gte: ninetyDaysAgo } }, stripeAccount),
         this.fetchEfws(stripe, ninetyDaysAgo, stripeAccount),
         stripe.customers.list({ limit: 100 }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
-        stripe.paymentIntents.list({ limit: 20 }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
+        stripe.paymentIntents.list({ limit: 100 }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
       ]);
     } catch (err: any) {
       logger.error({ err: err.message, merchantId, stripeAccount }, 'Failed to fetch Stripe data for risk audit');
@@ -104,12 +116,14 @@ export const stripeRiskAuditService = {
     const uniqueCustomerCount = Object.keys(customerChargeCounts).length;
     const repeatCustomerCount = Object.values(customerChargeCounts).filter(n => n > 1).length;
 
+    const customerPresentPIs = customerPresentPaymentIntents(recentPIs);
+
     // Compute 5 scores
     const scoreDisputeRate = this.computeDisputeRateScore(totalDisputes, totalCharges);
-    const scoreEvidenceReadiness = this.computeEvidenceReadinessScore(recentPIs, disputes);
+    const scoreEvidenceReadiness = this.computeEvidenceReadinessScore(customerPresentPIs, disputes);
     const scoreDescriptorQuality = await this.computeDescriptorQualityScore(stripe, stripeAccount, recentPIs);
     const scoreRepeatClientRate = this.computeRepeatClientRateScore(repeatCustomerCount, uniqueCustomerCount);
-    const scoreRadarDataQuality = this.computeRadarDataQualityScore(recentPIs);
+    const scoreRadarDataQuality = this.computeRadarDataQualityScore(customerPresentPIs);
 
     // Overall risk level
     const avgScore = (scoreDisputeRate + scoreEvidenceReadiness + scoreDescriptorQuality + scoreRepeatClientRate + scoreRadarDataQuality) / 5;
@@ -192,8 +206,12 @@ export const stripeRiskAuditService = {
     return 0;
   },
 
+  // Callers pass customer-present PaymentIntents only — merchant-initiated
+  // subscription charges can never carry session data and must not be scored.
   computeEvidenceReadinessScore(recentPIs: any[], disputes: any[]): number {
-    if (recentPIs.length === 0) return 0;
+    // No customer-present transactions in the sample = nothing measurable is
+    // missing. Do not raise a false alarm for recurring-only billing windows.
+    if (recentPIs.length === 0) return 100;
     let score = 0;
     const total = recentPIs.length;
 
@@ -245,8 +263,9 @@ export const stripeRiskAuditService = {
     return 20;
   },
 
+  // Callers pass customer-present PaymentIntents only — see runAudit.
   computeRadarDataQualityScore(recentPIs: any[]): number {
-    if (recentPIs.length === 0) return 0;
+    if (recentPIs.length === 0) return 100;
     let score = 0;
     const total = recentPIs.length;
 
@@ -282,8 +301,8 @@ export const stripeRiskAuditService = {
       recs.push({
         module: 'evidence_vault',
         priority: 'high',
-        reason: 'Most of your past transactions have incomplete evidence',
-        metric: `${evidenceScore}% evidence completeness`,
+        reason: 'Customer-present transactions are missing evidence fields on the Stripe charge (email, IP, description)',
+        metric: `${evidenceScore}% evidence completeness on customer-present transactions`,
       });
     }
 
@@ -310,8 +329,8 @@ export const stripeRiskAuditService = {
       recs.push({
         module: 'radar_enrichment',
         priority: 'medium',
-        reason: 'Customer IP and email data is missing from most transactions',
-        metric: `Radar data quality: ${radarScore}/100`,
+        reason: 'Customer IP and email data is missing from most customer-present transactions',
+        metric: `Radar data quality: ${radarScore}/100 (customer-present transactions)`,
       });
     }
 

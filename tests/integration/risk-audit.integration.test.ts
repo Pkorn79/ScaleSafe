@@ -44,7 +44,7 @@ jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { stripeRiskAuditService } from '../../src/services/stripe-risk-audit.service';
+import { stripeRiskAuditService, customerPresentPaymentIntents } from '../../src/services/stripe-risk-audit.service';
 
 describe('Risk Audit Integration', () => {
 
@@ -84,8 +84,10 @@ describe('Risk Audit Integration', () => {
   });
 
   describe('Evidence Readiness Scoring', () => {
-    it('should score 0 for empty payment intents', () => {
-      expect(stripeRiskAuditService.computeEvidenceReadinessScore([], [])).toBe(0);
+    it('scores 100 (no false alarm) when there are no customer-present payment intents', () => {
+      // A recurring-only billing window has nothing measurable missing —
+      // merchant-initiated charges can never carry session IP/email.
+      expect(stripeRiskAuditService.computeEvidenceReadinessScore([], [])).toBe(100);
     });
 
     it('should score high for well-instrumented PIs', () => {
@@ -144,6 +146,34 @@ describe('Risk Audit Integration', () => {
       }));
 
       expect(stripeRiskAuditService.computeRadarDataQualityScore(pis)).toBe(0);
+    });
+
+    it('scores 100 (no false alarm) when there are no customer-present payment intents', () => {
+      expect(stripeRiskAuditService.computeRadarDataQualityScore([])).toBe(100);
+    });
+  });
+
+  describe('Customer-present transaction filtering', () => {
+    it('excludes Stripe-billed subscription invoice PIs from data-quality scoring', () => {
+      const checkoutPI = {
+        id: 'pi_checkout',
+        invoice: null,
+        receipt_email: 'client@example.com',
+        metadata: { customer_ip: '1.2.3.4', customer_email: 'client@example.com' },
+      };
+      const subscriptionPIs = Array(8).fill(null).map((_, i) => ({
+        id: `pi_recurring_${i}`,
+        invoice: `in_${i}`,
+        receipt_email: null,
+        metadata: {},
+      }));
+
+      const filtered = customerPresentPaymentIntents([checkoutPI, ...subscriptionPIs]);
+      expect(filtered).toEqual([checkoutPI]);
+
+      // A recurring-heavy merchant with a fully instrumented checkout must not
+      // score 0/100 because Stripe-billed installments lack session data.
+      expect(stripeRiskAuditService.computeRadarDataQualityScore(filtered)).toBe(100);
     });
   });
 

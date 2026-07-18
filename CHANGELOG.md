@@ -3,6 +3,11 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Risk audit scores recurring volume fairly (2026-07-18)
+
+### Fixed
+- The Stripe risk audit's evidence-readiness and Radar data-quality scores now evaluate only customer-present transactions. Stripe-billed subscription invoice PaymentIntents are merchant-initiated — no session IP or email can ever exist on them — so recurring-heavy merchants were permanently scored 0/100 and told their transactions had "incomplete evidence" despite full consent forensics on every enrollment. Empty customer-present samples score 100 (nothing measurable is missing) instead of 0, the audit samples 100 recent PaymentIntents instead of 20, and the recommendation copy now states that it measures customer-present transactions.
+
 ## Unreleased - Defense letter advocacy fix (2026-07-18)
 
 ### Changed
