@@ -15,6 +15,60 @@ import { logger } from '../utils/logger';
 // Use require() for clean instantiation — types come from inference.
 const Stripe = require('stripe');
 
+const STRIPE_METADATA_VALUE_LIMIT = 500;
+
+function compactLineItemsMetadata(value: string): string {
+  if (value.length <= STRIPE_METADATA_VALUE_LIMIT) return value;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error('line_items metadata is not an array');
+
+    const compact = parsed.map((item: any) => {
+      const amountCents = Number(item?.amountCents);
+      return {
+        type: String(item?.type || item?.kind || 'checkout_item').slice(0, 40),
+        ...(item?.addonId ? { addonId: String(item.addonId).slice(0, 100) } : {}),
+        ...(item?.label ? { label: String(item.label).slice(0, 80) } : {}),
+        ...(Number.isFinite(amountCents) ? { amountCents: Math.round(amountCents) } : {}),
+      };
+    });
+
+    const compactJson = JSON.stringify(compact);
+    if (compactJson.length <= STRIPE_METADATA_VALUE_LIMIT) return compactJson;
+
+    const essentialsJson = JSON.stringify(compact.map((item: any) => ({
+      type: item.type,
+      ...(item.addonId ? { addonId: item.addonId } : {}),
+      ...(Number.isFinite(item.amountCents) ? { amountCents: item.amountCents } : {}),
+    })));
+    if (essentialsJson.length <= STRIPE_METADATA_VALUE_LIMIT) return essentialsJson;
+
+    const totalAmountCents = compact.reduce(
+      (sum: number, item: any) => sum + (Number.isFinite(item.amountCents) ? item.amountCents : 0),
+      0,
+    );
+    return JSON.stringify([{
+      type: 'checkout_summary',
+      label: `${compact.length} checkout items; full detail retained in ScaleSafe`,
+      amountCents: totalAmountCents,
+    }]);
+  } catch {
+    return JSON.stringify([{
+      type: 'checkout_summary',
+      label: 'Full checkout detail retained in ScaleSafe',
+    }]);
+  }
+}
+
+export function sanitizeStripeMetadata(metadata: Record<string, string> = {}): Record<string, string> {
+  return Object.fromEntries(Object.entries(metadata).map(([key, rawValue]) => {
+    const value = String(rawValue ?? '');
+    if (key === 'line_items') return [key, compactLineItemsMetadata(value)];
+    return [key, value.slice(0, STRIPE_METADATA_VALUE_LIMIT)];
+  }));
+}
+
 /**
  * Compute a subscription cancel_at (epoch seconds) that yields exactly `totalPayments`
  * calendar cycles. Uses calendar arithmetic (real month lengths / leap years) rather than a
@@ -309,7 +363,7 @@ export class StripeClient implements ProcessorInterface {
         customer: request.customerId,
         items: [{ price: price.id }],
         default_payment_method: request.paymentMethodId,
-        metadata: request.metadata,
+        metadata: sanitizeStripeMetadata(request.metadata || {}),
       };
 
       // Defer the first billing cycle to startDate (next_billing_date) instead of
@@ -494,7 +548,7 @@ export class StripeClient implements ProcessorInterface {
           },
         },
         description: request.description,
-        metadata: request.metadata || {},
+        metadata: sanitizeStripeMetadata(request.metadata || {}),
       };
 
       if (request.setupFutureUsage) {
@@ -563,7 +617,7 @@ export class StripeClient implements ProcessorInterface {
       }
     }
 
-    return meta;
+    return sanitizeStripeMetadata(meta);
   }
 
   private async findOrCreateCustomer(email: string, name?: string, idempotencyKey?: string): Promise<any> {

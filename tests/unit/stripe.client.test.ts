@@ -130,6 +130,41 @@ describe('StripeClient', () => {
       expect(params.payment_method_options.card.request_three_d_secure).toBe('any');
     });
 
+    it('compacts oversized line-item metadata without losing checkout amounts', async () => {
+      mockStripe.paymentIntents.create.mockResolvedValue({
+        id: 'pi_metadata',
+        status: 'succeeded',
+        amount: 206500,
+        currency: 'usd',
+        latest_charge: 'ch_metadata',
+      });
+
+      const lineItems = [
+        { type: 'base_offer', label: 'Full Offer Test', amountCents: 190000, amount: 1900 },
+        { type: 'order_bump', addonId: 'e56dded4-d3f9-47f5-86f7-0da2d41e44b8', label: 'Onboarding Call', description: 'x'.repeat(220), amountCents: 10000, amount: 100 },
+        { type: 'dual_pricing_adjustment', label: 'Card price difference (3.25% above bank-transfer price)', description: 'x'.repeat(220), amountCents: 6500, amount: 65, pricing: { selectedPaymentMethod: 'card' } },
+      ];
+
+      await client.charge({
+        amount: 206500,
+        currency: 'usd',
+        paymentToken: 'pm_metadata',
+        metadata: {
+          line_items: JSON.stringify(lineItems),
+          offer_description: 'y'.repeat(700),
+        },
+      });
+
+      const [params] = mockStripe.paymentIntents.create.mock.calls[0];
+      expect(params.metadata.line_items.length).toBeLessThanOrEqual(500);
+      expect(params.metadata.offer_description.length).toBe(500);
+      expect(JSON.parse(params.metadata.line_items)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'base_offer', amountCents: 190000 }),
+        expect.objectContaining({ type: 'order_bump', amountCents: 10000 }),
+        expect.objectContaining({ type: 'dual_pricing_adjustment', amountCents: 6500 }),
+      ]));
+    });
+
     it('handles card decline as StripeCardError', async () => {
       const cardErr = new Error('Your card was declined');
       (cardErr as any).type = 'StripeCardError';
@@ -170,6 +205,22 @@ describe('StripeClient', () => {
         expect.objectContaining({ amount: 5000, customer: 'cus_ach' }),
         expect.objectContaining({ stripeAccount: 'acct_test123', idempotencyKey: 'checkout-ach-attempt-123' }),
       );
+    });
+
+    it('applies the same metadata limit to ACH PaymentIntents', async () => {
+      mockStripe.customers.list.mockResolvedValue({ data: [{ id: 'cus_ach' }] });
+      mockStripe.paymentIntents.create.mockResolvedValue({
+        id: 'pi_ach', client_secret: 'secret', status: 'requires_payment_method',
+      });
+
+      await client.createAchPaymentIntent({
+        amount: 5000,
+        customerEmail: 'ach@example.com',
+        metadata: { offer_description: 'z'.repeat(700) },
+      });
+
+      const [params] = mockStripe.paymentIntents.create.mock.calls[0];
+      expect(params.metadata.offer_description.length).toBe(500);
     });
   });
 

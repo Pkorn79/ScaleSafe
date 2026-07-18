@@ -732,10 +732,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .offer-price{font-size:24px;font-weight:700;color:#3b82f6}
 .offer-desc{font-size:14px;color:#6b7280;line-height:1.5;margin-bottom:8px}
 .offer-refund{font-size:13px;color:#6b7280;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-top:8px}
-.dual-pricing-box{background:#f8fafc;border:1px solid #dbeafe;border-radius:8px;padding:12px;margin:10px 0 12px}
-.dual-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#475569;margin:3px 0}
-.dual-row strong{font-size:14px;color:#111827}
-.dual-note{font-size:12px;color:#64748b;line-height:1.35;margin-top:6px}
 .addon-box{margin-top:12px}
 .addon-section{margin-top:12px}
 .addon-section-title{font-size:13px;font-weight:700;color:#374151;margin-bottom:8px}
@@ -756,8 +752,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .price-summary-row strong{font-size:14px;color:#111827}
 .method-toggle{display:none;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:12px}
 .method-toggle.active{display:flex}
-.method-option{flex:1;border:0;background:#f9fafb;color:#374151;padding:10px;font-size:14px;font-weight:600;cursor:pointer}
+.method-option{flex:1;min-width:0;border:0;background:#f9fafb;color:#374151;padding:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
+.method-option-label{font-size:14px;font-weight:600}
+.method-option-price{font-size:13px;font-weight:700}
+.method-option-savings{font-size:11px;font-weight:600;color:#047857;min-height:14px}
 .method-option.active{background:#2563eb;color:#fff}
+.method-option.active .method-option-savings{color:#d1fae5}
 .method-option:disabled{color:#9ca3af;cursor:not-allowed;background:#f3f4f6}
 .divider{height:1px;background:#e5e7eb;margin:20px 0}
 .section-title{font-size:14px;font-weight:600;color:#374151;margin-bottom:12px}
@@ -815,12 +815,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <div id="installment-note" class="hidden" style="display:none;font-size:12px;color:#6b7280;text-align:center;margin-bottom:8px"></div>
     <div id="price-summary" class="price-summary hidden">
-      <div class="price-summary-row"><span>Due today</span><strong id="due-today-price"></strong></div>
       <div id="future-payment-row" class="price-summary-row hidden"><span id="future-payment-label">Future payments</span><strong id="future-payment-price"></strong></div>
-    </div>
-    <div id="dual-pricing-box" class="dual-pricing-box hidden">
-      <div class="dual-row"><span>Bank transfer due today</span><strong id="dual-ach-price"></strong></div>
-      <div class="dual-row"><span>Card due today</span><strong id="dual-card-price"></strong></div>
     </div>
     <div id="checkout-addons" class="addon-box hidden"></div>
 
@@ -849,8 +844,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
     <div class="section-title">Payment Information</div>
     <div id="payment-method-toggle" class="method-toggle">
-      <button type="button" id="method-ach" class="method-option">Bank Transfer</button>
-      <button type="button" id="method-card" class="method-option active">Card</button>
+      <button type="button" id="method-ach" class="method-option">
+        <span class="method-option-label">Bank Transfer</span>
+        <span id="method-ach-price" class="method-option-price"></span>
+        <span id="method-ach-savings" class="method-option-savings"></span>
+      </button>
+      <button type="button" id="method-card" class="method-option active">
+        <span class="method-option-label">Card</span>
+        <span id="method-card-price" class="method-option-price"></span>
+        <span class="method-option-savings"></span>
+      </button>
     </div>
     <div id="nmi-fields" class="hidden">
       <div id="nmi-card-fields">
@@ -1424,9 +1427,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var quote = await refreshCheckoutQuote();
     if (!quote) {
       el('offer-price').textContent = '--';
-      el('due-today-price').textContent = '--';
-      el('price-summary').classList.remove('hidden');
-      el('dual-pricing-box').classList.add('hidden');
+      el('price-summary').classList.add('hidden');
       el('future-payment-row').classList.add('hidden');
       el('pay-btn').textContent = processorType === 'whop' ? 'Continue to Whop checkout' : 'Pay';
       return;
@@ -1441,23 +1442,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       note = 'Future payments: ' + formatCurrency(quote.futureRecurringSelectedAmount) + ' / ' + (offerData.installmentFrequency || 'month');
     }
     el('offer-price').textContent = formatCurrency(displayPrice);
-    el('due-today-price').textContent = formatCurrency(displayPrice);
-    el('price-summary').classList.remove('hidden');
     if ((paymentChoice === 'installments' || paymentChoice === 'subscription') && quote.futureRecurringSelectedAmount > 0) {
       el('future-payment-label').textContent = paymentChoice === 'subscription' ? 'Future payments' : 'Remaining payments';
       el('future-payment-price').textContent = paymentChoice === 'subscription'
         ? formatCurrency(quote.futureRecurringSelectedAmount) + ' / ' + (offerData.installmentFrequency || 'month')
         : formatCurrency(quote.futureRecurringSelectedAmount);
       el('future-payment-row').classList.remove('hidden');
+      el('price-summary').classList.remove('hidden');
     } else {
       el('future-payment-row').classList.add('hidden');
+      el('price-summary').classList.add('hidden');
     }
     if (quote.dualPricingEnabled) {
-      el('dual-ach-price').textContent = formatCurrency(quote.achAmount);
-      el('dual-card-price').textContent = formatCurrency(quote.cardAmount);
-      el('dual-pricing-box').classList.remove('hidden');
+      el('method-ach-price').textContent = formatCurrency(quote.achAmount);
+      el('method-card-price').textContent = formatCurrency(quote.cardAmount);
+      var savings = Math.max(0, Number(quote.cardAmount || 0) - Number(quote.achAmount || 0));
+      el('method-ach-savings').textContent = savings > 0 ? 'Save ' + formatCurrency(savings) : '';
     } else {
-      el('dual-pricing-box').classList.add('hidden');
+      el('method-ach-price').textContent = '';
+      el('method-card-price').textContent = '';
+      el('method-ach-savings').textContent = '';
     }
     updatePaymentMethodUi();
     el('pay-btn').textContent = processorType === 'whop'

@@ -75,4 +75,15 @@ describe('public widget CSP', () => {
     expect(response.text).toContain('renderWhopCheckout(custName, custEmail, custPhone)');
     expect(response.text).toContain('contactPhone: custPhone');
   });
+
+  it('shows dual prices in the payment choices without a redundant due-today summary', async () => {
+    const response = await request(app()).get('/quick-checkout').expect(200);
+
+    expect(response.text).toContain('id="method-ach-price"');
+    expect(response.text).toContain('id="method-card-price"');
+    expect(response.text).toContain('id="method-ach-savings"');
+    expect(response.text).not.toContain('Bank transfer due today');
+    expect(response.text).not.toContain('Card due today');
+    expect(response.text).not.toContain('id="due-today-price"');
+  });
 });
