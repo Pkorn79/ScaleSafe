@@ -3,6 +3,13 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Risk Health recommendations are actionable (2026-07-18)
+
+### Fixed
+- The risk audit's PaymentIntent sample now covers only succeeded transactions from the 90-day audit window. It previously read the last 100 PaymentIntents of all time — including abandoned checkouts and transactions predating ScaleSafe's data capture — which kept Radar data quality at 0/100 even after customer-present filtering.
+- Every Recommended Action on the Risk Health tab now includes a concrete action for the merchant (activate prevention steps, set a statement descriptor, run sales through ScaleSafe checkout). Previously the list showed reasons and metrics with no action at all.
+- The CE 3.0 repeat-client finding is now surfaced as a green "Working for you" strength with explicit "nothing to do" copy, instead of a red HIGH alert for what is good news.
+
 ## Unreleased - Defense letter relevance rule (2026-07-18)
 
 ### Changed

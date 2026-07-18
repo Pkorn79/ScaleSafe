@@ -158,17 +158,26 @@ describe('Risk Audit Integration', () => {
       const checkoutPI = {
         id: 'pi_checkout',
         invoice: null,
+        status: 'succeeded',
         receipt_email: 'client@example.com',
         metadata: { customer_ip: '1.2.3.4', customer_email: 'client@example.com' },
+      };
+      const abandonedPI = {
+        id: 'pi_abandoned',
+        invoice: null,
+        status: 'requires_payment_method',
+        receipt_email: null,
+        metadata: {},
       };
       const subscriptionPIs = Array(8).fill(null).map((_, i) => ({
         id: `pi_recurring_${i}`,
         invoice: `in_${i}`,
+        status: 'succeeded',
         receipt_email: null,
         metadata: {},
       }));
 
-      const filtered = customerPresentPaymentIntents([checkoutPI, ...subscriptionPIs]);
+      const filtered = customerPresentPaymentIntents([checkoutPI, abandonedPI, ...subscriptionPIs]);
       expect(filtered).toEqual([checkoutPI]);
 
       // A recurring-heavy merchant with a fully instrumented checkout must not
@@ -216,7 +225,8 @@ describe('Risk Audit Integration', () => {
 
       const ceRec = recs.find(r => r.module === 'ce30_blocking');
       expect(ceRec).toBeDefined();
-      expect(ceRec!.priority).toBe('high');
+      // CE 3.0 qualification is good news — surfaced as a green strength, not an alert.
+      expect(ceRec!.priority).toBe('strength');
     });
 
     it('should recommend radar_enrichment for low radar quality', () => {

@@ -167,10 +167,11 @@
           class="recommendation-item mb-4"
         >
           <div class="flex gap-2" style="align-items:flex-start">
-            <span class="badge" :class="priorityBadge(rec.priority)">{{ rec.priority.toUpperCase() }}</span>
+            <span class="badge" :class="priorityBadge(rec.priority)">{{ priorityLabel(rec.priority) }}</span>
             <div>
               <div class="text-sm" style="font-weight:500">{{ rec.reason }}</div>
               <div class="text-sm text-muted">{{ rec.metric }}</div>
+              <div v-if="rec.action" class="text-sm" style="margin-top:4px">{{ rec.action }}</div>
             </div>
           </div>
         </div>
@@ -358,8 +359,14 @@ function priorityBadge(priority: string): string {
     high: 'badge-red',
     medium: 'badge-yellow',
     low: 'badge-green',
+    strength: 'badge-green',
   };
   return map[priority] || 'badge-gray';
+}
+
+function priorityLabel(priority: string): string {
+  // A strength is good news, not an alert — never render it as a severity tier.
+  return priority === 'strength' ? 'WORKING FOR YOU' : priority.toUpperCase();
 }
 </script>
 

@@ -49,7 +49,9 @@ export function normalizeRiskAuditResult(row: Record<string, any>): RiskAuditRes
  * forensics in ScaleSafe.
  */
 export function customerPresentPaymentIntents(pis: any[]): any[] {
-  return (pis || []).filter((pi: any) => !pi?.invoice);
+  // Abandoned/incomplete PaymentIntents never charged anyone — only succeeded,
+  // non-invoice PIs represent customer-present transactions worth scoring.
+  return (pis || []).filter((pi: any) => !pi?.invoice && pi?.status === 'succeeded');
 }
 
 export const stripeRiskAuditService = {
@@ -80,7 +82,7 @@ export const stripeRiskAuditService = {
         this.fetchAll(stripe, 'charges', { created: { gte: ninetyDaysAgo } }, stripeAccount),
         this.fetchEfws(stripe, ninetyDaysAgo, stripeAccount),
         stripe.customers.list({ limit: 100 }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
-        stripe.paymentIntents.list({ limit: 100 }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
+        stripe.paymentIntents.list({ limit: 100, created: { gte: ninetyDaysAgo } }, { stripeAccount }).then((r: any) => r.data).catch(() => []),
       ]);
     } catch (err: any) {
       logger.error({ err: err.message, merchantId, stripeAccount }, 'Failed to fetch Stripe data for risk audit');
@@ -294,6 +296,7 @@ export const stripeRiskAuditService = {
         priority: 'critical',
         reason: 'Your dispute rate exceeds Visa VAMP early warning threshold',
         metric: `Current rate: ${(disputeRate * 100).toFixed(2)}%`,
+        action: 'Open Defense → Dispute Prevention and activate the Visa RDR and Ethoca steps so disputes are resolved before they count against your ratio.',
       });
     }
 
@@ -303,6 +306,7 @@ export const stripeRiskAuditService = {
         priority: 'high',
         reason: 'Customer-present transactions are missing evidence fields on the Stripe charge (email, IP, description)',
         metric: `${evidenceScore}% evidence completeness on customer-present transactions`,
+        action: 'Run new sales through ScaleSafe checkout — it attaches email, IP, and description to every charge automatically. Charges processed outside ScaleSafe cannot be backfilled, so this improves as recent volume replaces older transactions.',
       });
     }
 
@@ -312,6 +316,7 @@ export const stripeRiskAuditService = {
         priority: 'medium',
         reason: 'Your statement descriptor is missing or generic',
         metric: `Descriptor quality score: ${descriptorScore}/100`,
+        action: 'Set a statement descriptor your clients will recognize in Stripe → Settings → Business → Public details. Unrecognized descriptors are a top cause of "I don\'t know this charge" disputes.',
       });
     }
 
@@ -319,9 +324,10 @@ export const stripeRiskAuditService = {
     if (repeatRate > 30) {
       recs.push({
         module: 'ce30_blocking',
-        priority: 'high',
-        reason: 'Your repeat client rate qualifies many transactions for CE 3.0 dispute blocking',
+        priority: 'strength',
+        reason: 'Your repeat client rate qualifies many transactions for Visa CE 3.0 dispute blocking',
         metric: `${repeatCount} repeat clients (${repeatRate.toFixed(0)}% of volume)`,
+        action: 'Nothing to do — ScaleSafe already captures the identity data CE 3.0 requires and applies it automatically when a fraud dispute arrives.',
       });
     }
 
@@ -331,6 +337,7 @@ export const stripeRiskAuditService = {
         priority: 'medium',
         reason: 'Customer IP and email data is missing from most customer-present transactions',
         metric: `Radar data quality: ${radarScore}/100 (customer-present transactions)`,
+        action: 'Run new sales through ScaleSafe checkout — IP and email attach automatically. This score reflects your recent Stripe charges and improves as ScaleSafe-processed volume replaces older transactions.',
       });
     }
 

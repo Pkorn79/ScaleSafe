@@ -26,9 +26,13 @@ export interface RiskAuditResult {
 
 export interface ModuleRecommendation {
   module: string;
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  // 'strength' marks a positive finding (rendered green, no alarm) — e.g. a
+  // repeat-client rate that qualifies transactions for CE 3.0 blocking.
+  priority: 'critical' | 'high' | 'medium' | 'low' | 'strength';
   reason: string;
   metric: string;
+  // Concrete merchant guidance. Older stored audits predate this field.
+  action?: string;
 }
 
 export interface StripeEvidenceVaultEntry {
