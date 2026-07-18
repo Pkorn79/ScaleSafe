@@ -11,10 +11,10 @@ const current = [
 ];
 
 const roadmap = [
-  [GraduationCap, "Courses and communities", "Kajabi, Teachable, Thinkific, Circle, Mighty Networks, LearnWorlds, LearnDash, MemberPress, and other certified providers."],
+  [GraduationCap, "Courses and communities", "Kajabi, Teachable, Thinkific, Circle, Mighty Networks, LearnWorlds, LearnDash, MemberPress, and other course platforms."],
   [CalendarCheck, "Meetings and scheduling", "Google Meet, Calendly, and other sources that can help confirm scheduled and attended client sessions."],
   [Workflow, "Agency delivery", "ClickUp, Asana, monday.com, Teamwork, client portals, approvals, tasks, deliverables, and project activity."],
-  [MessageSquareText, "Support and files", "Selected support conversations, client-facing files, acknowledgements, and delivery records without collecting unrelated private data."],
+  [MessageSquareText, "Support and files", "Merchant-selected support conversations, client-facing files, acknowledgements, and delivery records."],
 ];
 ---
 
@@ -25,14 +25,14 @@ const roadmap = [
     lead="ScaleSafe connects the systems you use to communicate and fulfill, then keeps useful activity with the client program it belongs to."
     image="/images/product/evidence-connections-live.png"
     alt="ScaleSafe evidence connections showing GoHighLevel fulfillment and Zoom connected"
-    caption="This active PMG test account has native GoHighLevel fulfillment and a merchant-owned Zoom account connected."
+    caption="GoHighLevel fulfillment and a merchant-owned Zoom account connected in ScaleSafe."
   />
 
   <section class="current-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Working foundation</p><h2>Start with the tools already closest to the client.</h2><p>GoHighLevel is the native operating environment. Zoom and custom software can add delivery activity that would otherwise live outside the client record.</p></div><div class="current-grid">{current.map(([Icon,title,status,body])=><article><Icon size={24}/><div><div class="current-head"><h3>{title}</h3><span>{status}</span></div><p>{body}</p></div></article>)}</div></div></section>
 
-  <section class="matching-section"><div class="shell matching-grid"><div><p class="eyebrow">Automatic matching</p><h2>The merchant should not repair every event by hand.</h2></div><div><p>ScaleSafe uses the merchant account, client identity, program timing, and known resource or enrollment references to connect activity to the right program. Once a connection is set up, normal events should continue to arrive automatically.</p><ul class="plain-list"><li><Check size={18}/>Every connection belongs to one merchant sub-account</li><li><Check size={18}/>Repeated purchases remain separate programs</li><li><Check size={18}/>Unclear activity is held out of defense evidence instead of being guessed</li></ul></div></div></section>
+  <section class="matching-section"><div class="shell matching-grid"><div><p class="eyebrow">Automatic matching</p><h2>Connect once and keep the record moving.</h2></div><div><p>ScaleSafe uses the merchant account, client identity, program timing, and known resource or enrollment references to connect activity to the right program. Once connected, normal fulfillment activity continues to arrive automatically.</p><ul class="plain-list"><li><Check size={18}/>Evidence stays with one merchant sub-account</li><li><Check size={18}/>Repeated purchases remain separate programs</li><li><Check size={18}/>Matched activity joins the correct enrollment timeline</li></ul></div></div></section>
 
-  <section class="roadmap-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Integration catalog</p><h2>Expanding around how coaches and agencies fulfill.</h2><p>Named integrations are released in waves after their authentication, event matching, and evidence output are certified. The list below is direction, not a claim that every provider is live today.</p></div><div class="roadmap-grid">{roadmap.map(([Icon,title,body])=><article><Icon size={24}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
+  <section class="roadmap-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Integration catalog</p><h2>Expanding around how coaches and agencies fulfill.</h2><p>The next integrations focus on the places where merchants teach, meet, manage projects, share deliverables, and support clients.</p></div><div class="roadmap-grid">{roadmap.map(([Icon,title,body])=><article><Icon size={24}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
 
   <section class="setup-section"><div class="shell setup-grid"><div><p class="eyebrow">Merchant setup</p><h2>Connect once, then let the records flow.</h2></div><ol><li><span>1</span><div><h3>Choose the platform</h3><p>Open Evidence Connections inside the merchant's ScaleSafe account.</p></div></li><li><span>2</span><div><h3>Authorize the merchant account</h3><p>Sign in through the provider or follow a short API-key or webhook setup.</p></div></li><li><span>3</span><div><h3>Confirm the offers</h3><p>Review suggested matches between the provider's courses, projects, or services and ScaleSafe offers.</p></div></li><li><span>4</span><div><h3>Activate and monitor</h3><p>Run a test, then use connection health to confirm evidence continues to arrive.</p></div></li></ol></div></section>
   <CtaBand title="Connect fulfillment to the client story." body="Tell us which systems you use. Private-beta setup focuses on the smallest useful connection for your business." />
