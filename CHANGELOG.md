@@ -3,6 +3,11 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Defense letter advocacy fix (2026-07-18)
+
+### Changed
+- Defense letters no longer announce evidence gaps to the dispute reviewer. When no service-delivery evidence exists, the letter is built entirely on the evidence on file (consent forensics, accepted terms and policies, client engagement) and simply omits delivery claims; internal gap notes are now explicitly marked as drafting constraints the model must never quote or allude to in the letter. Merchant-facing review warnings and the accept recommendation are unchanged.
+
 ## Unreleased - Marketplace billing entitlements (2026-07-17)
 
 ### Added

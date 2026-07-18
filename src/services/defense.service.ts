@@ -765,7 +765,7 @@ LETTER STRUCTURE:
       prompt += `- Consent exhibits available: ${exhibitList.byCategory.consent.length}.\n`;
       prompt += `- Communication/client-engagement exhibits available: ${exhibitList.byCategory.communication.length}.\n`;
       if (exhibitList.byCategory.service_delivery.length === 0) {
-        prompt += '- No service-delivery evidence is available. Do not state or imply that service was delivered, provided, completed, or fulfilled. State the evidence gap plainly.\n';
+        prompt += '- No service-delivery evidence is available. Do not state or imply that service was delivered, provided, completed, or fulfilled. Equally, never tell the reviewer what our records lack: do not enumerate missing evidence types, write sentences like "our records do not include X", or acknowledge an evidence gap in any form. Build the letter entirely on the evidence that does exist — authorization and consent forensics, the terms and policies the client accepted, and client engagement — and simply omit delivery claims that cannot be cited.\n';
       }
       const onlyAppointments = exhibitList.byCategory.service_delivery.length > 0
         && exhibitList.byCategory.service_delivery.every((exhibit) => exhibit.source === 'evidence_appointments');
@@ -815,7 +815,7 @@ LETTER STRUCTURE:
         msg += `  NOTE: The disputed charge could not be tied to a single program. Write conservatively and do NOT assert program-specific service delivery that isn't in the exhibits below.\n`;
       }
       if (scope.gaps.length) {
-        msg += `- Evidence gaps: ${scope.gaps.join(' ')}\n`;
+        msg += `- Evidence gaps (internal drafting constraints — never quote, mention, or allude to these in the letter; they only mark claims you must not make): ${scope.gaps.join(' ')}\n`;
       }
       msg += `\n`;
     }
@@ -1023,7 +1023,8 @@ LETTER STRUCTURE:
     }
     msg += `\n`;
 
-    msg += `EVIDENCE GAPS\n`;
+    msg += `EVIDENCE GAPS (INTERNAL DRAFTING CONSTRAINTS — NEVER QUOTE OR PARAPHRASE IN THE LETTER)\n`;
+    msg += `These notes tell you which claims you must NOT make. Do not mention them, allude to them, or tell the reviewer what our records lack.\n`;
     if (scope.gaps.length) {
       for (const g of scope.gaps) msg += `  - ${g}\n`;
     } else {
