@@ -482,6 +482,8 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
       config: expect.objectContaining({
         ghl_token_scope: null,
         location_access_token_encrypted: null,
+        ghl_install_event_at: expect.any(String),
+        ghl_uninstalled_at: null,
       }),
     }));
     expect(mockAdoptCompanyAuthorization).toHaveBeenCalledWith('loc_new', 'comp_1');
@@ -520,7 +522,11 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
       status: 'uninstalled',
       ghl_access_token_encrypted: null,
       ghl_refresh_token_encrypted: null,
-      config: expect.objectContaining({ ghl_token_scope: null }),
+      config: expect.objectContaining({
+        ghl_token_scope: null,
+        ghl_install_event_at: null,
+        ghl_uninstalled_at: expect.any(String),
+      }),
     }));
     expect(res.json).toHaveBeenCalledWith({ received: true });
   });

@@ -17,8 +17,13 @@ const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
 const mockUpdateSnapshotStatus = jest.fn();
 const mockUpsertOAuthInstall = jest.fn();
+const mockMerchantHasOAuthCredentials = jest.fn((merchant: any) => Boolean(
+  (merchant?.ghl_access_token_encrypted || merchant?.ghl_access_token)
+  && (merchant?.ghl_refresh_token_encrypted || merchant?.ghl_refresh_token),
+));
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
+  merchantHasOAuthCredentials: mockMerchantHasOAuthCredentials,
   merchantRepository: {
     findByLocationId: mockFindByLocationId,
     findByCompanyId: mockFindByCompanyId,
@@ -247,6 +252,10 @@ describe('GET /auth/callback', () => {
       location_id: 'loc-existing',
       business_name: 'Existing Account',
     }));
+    for (const [install] of mockUpsertOAuthInstall.mock.calls) {
+      expect(install).not.toHaveProperty('marketplace_plan_id');
+      expect(install).not.toHaveProperty('marketplace_plan_key');
+    }
   });
 
   it('one failing sub-account does not abort the install for the others', async () => {
@@ -391,6 +400,40 @@ describe('POST /auth/sso', () => {
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('INSTALLATION_INVALID');
     expect(res.body.message).toMatch(/not actively installed/i);
+  });
+
+  it('reports a recent uninstall as installation pending while GHL lifecycle events settle', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc', companyId: 'comp-xyz', userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue({
+      ...MERCHANT_RECORD,
+      status: 'uninstalled',
+      config: { ...MERCHANT_RECORD.config, ghl_uninstalled_at: new Date().toISOString() },
+    });
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('INSTALLATION_PENDING');
+    expect(res.body.message).toMatch(/retry automatically/i);
+  });
+
+  it('reports a recent tokenless INSTALL stub as pending instead of demanding reinstall', async () => {
+    mockDecryptSsoPayload.mockReturnValue({
+      locationId: 'loc-abc', companyId: 'comp-xyz', userId: 'user-1',
+    });
+    mockFindByLocationId.mockResolvedValue({
+      ...MERCHANT_RECORD,
+      ghl_access_token_encrypted: null,
+      ghl_refresh_token_encrypted: null,
+      config: { ...MERCHANT_RECORD.config, ghl_install_event_at: new Date().toISOString() },
+    });
+
+    const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('INSTALLATION_PENDING');
   });
 
   it('rejects initial SSO when GHL company and installed merchant disagree', async () => {

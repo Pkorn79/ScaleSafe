@@ -3,6 +3,12 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Marketplace reinstall settling (2026-07-18)
+
+### Fixed
+- Recent HighLevel reinstalls now remain in a bounded "finishing installation" state and retry automatically while HighLevel's OAuth and per-location lifecycle events arrive out of order. Tenant binding remains fail-closed if HighLevel never confirms the exact sub-account.
+- Company-level OAuth callbacks no longer copy a newly selected Marketplace plan onto other installed sub-accounts returned by HighLevel's broad installed-locations lookup.
+
 ## Unreleased - Defense letter section headers render bold (2026-07-18)
 
 ### Fixed

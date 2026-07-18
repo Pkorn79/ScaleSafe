@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { exchangeCodeForTokens, InstalledLocation, TokenResponse } from '../clients/ghl.client';
-import { merchantRepository } from '../repositories/merchant.repository';
+import { merchantHasOAuthCredentials, merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
@@ -15,6 +15,25 @@ import {
 
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
+const INSTALL_SETTLING_WINDOW_MS = 10 * 60 * 1000;
+
+function isRecentLifecycleTimestamp(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    && Date.now() - timestamp >= 0
+    && Date.now() - timestamp <= INSTALL_SETTLING_WINDOW_MS;
+}
+
+function installationIsSettling(merchant: Record<string, any>): boolean {
+  const merchantConfig = (merchant.config || {}) as Record<string, unknown>;
+  if (merchant.status === 'uninstalled') {
+    return isRecentLifecycleTimestamp(merchantConfig.ghl_uninstalled_at);
+  }
+  return merchant.status === 'active'
+    && !merchantHasOAuthCredentials(merchant as any)
+    && isRecentLifecycleTimestamp(merchantConfig.ghl_install_event_at);
+}
 
 function oauthDebugResponse(debug: Record<string, unknown> | undefined) {
   if (config.isProd || !debug) return undefined;
@@ -41,7 +60,11 @@ function installTargets(locationId: string, installedLocations: InstalledLocatio
   return targets;
 }
 
-async function persistOAuthTarget(target: InstalledLocation, token: TokenResponse) {
+async function persistOAuthTarget(
+  target: InstalledLocation,
+  token: TokenResponse,
+  options: { includePlan: boolean } = { includePlan: true },
+) {
   const existing = await merchantRepository.findByLocationId(target.locationId);
   const companyId = token.companyId || existing?.company_id || undefined;
 
@@ -53,7 +76,7 @@ async function persistOAuthTarget(target: InstalledLocation, token: TokenRespons
     ghl_token_expires_at: token.expiresAt.toISOString(),
     ghl_scopes: token.scopes.join(' '),
     business_name: existing?.business_name || target.name || undefined,
-    ...(token.planId ? {
+    ...(options.includePlan && token.planId ? {
       marketplace_plan_id: token.planId,
       marketplace_plan_key: marketplacePlanKey(token.planId),
       marketplace_plan_updated_at: new Date().toISOString(),
@@ -104,8 +127,12 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     logger.info('OAuth callback received, exchanging code for tokens');
 
     const tokenResponse = await exchangeCodeForTokens(code);
-    const { locationId, companyId, installedLocations, _debug } = tokenResponse;
+    const { locationId, companyId, approvedLocations, installedLocations, _debug } = tokenResponse;
     const targets = installTargets(locationId, installedLocations);
+    const planTargetIds = new Set<string>([
+      ...(locationId ? [locationId] : []),
+      ...(approvedLocations || []).map((location) => String(location.locationId || '').trim()).filter(Boolean),
+    ]);
 
     if (targets.length === 0) {
       logger.error({
@@ -131,7 +158,13 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       for (const target of targets) {
         const targetLocationId = target.locationId;
         try {
-          const merchant = await persistOAuthTarget(target, tokenResponse);
+          // A legacy company-token lookup returns every installed sub-account,
+          // not necessarily the sub-account that just selected a plan. Only an
+          // exact token location or GHL-approved location may receive callback
+          // plan metadata; the per-location INSTALL webhook remains authoritative.
+          const merchant = await persistOAuthTarget(target, tokenResponse, {
+            includePlan: planTargetIds.has(targetLocationId),
+          });
           if (merchant.snapshot_status !== 'installed') provisionTargets.push(targetLocationId);
           logger.info(
             { locationId: targetLocationId, tokenScope: tokenResponse.tokenScope },
@@ -245,6 +278,14 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       res.status(401).json({
         error: 'INSTALLATION_NOT_FOUND',
         message: 'ScaleSafe is not installed for this GoHighLevel sub-account.',
+      });
+      return;
+    }
+    if (installationIsSettling(merchant as any)) {
+      logger.info({ hasLocationId: true }, 'SSO: GHL installation lifecycle is still settling');
+      res.status(409).json({
+        error: 'INSTALLATION_PENDING',
+        message: 'GoHighLevel is still finishing this ScaleSafe installation. ScaleSafe will retry automatically.',
       });
       return;
     }

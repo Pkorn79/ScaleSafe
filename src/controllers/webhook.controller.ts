@@ -146,6 +146,7 @@ export const webhookController = {
           res.json({ received: true });
           return;
         }
+        const lifecycleTimestamp = new Date().toISOString();
         let existing = await merchantRepository.findByLocationId(locationId);
         if (existing) {
           const reinstalling = existing.status === 'uninstalled';
@@ -157,17 +158,14 @@ export const webhookController = {
               marketplace_plan_key: marketplacePlanKey(installPlanId),
               marketplace_plan_updated_at: new Date().toISOString(),
             } : {}),
-            ...(reinstalling ? {
-              // Never reactivate credentials retained from a prior install.
-              // OAuth (or a current same-company bulk authorization) must bind
-              // this new installation before merchant SSO is accepted.
-              ghl_access_token: '',
-              ghl_refresh_token: '',
-              ghl_access_token_encrypted: null,
-              ghl_refresh_token_encrypted: null,
-              ghl_token_expires_at: null,
-              config: {
-                ...(existing.config || {}),
+            config: {
+              ...(existing.config || {}),
+              ghl_install_event_at: lifecycleTimestamp,
+              ghl_uninstalled_at: null,
+              ...(reinstalling ? {
+                // Never reactivate credentials retained from a prior install.
+                // OAuth (or a current same-company bulk authorization) must bind
+                // this new installation before merchant SSO is accepted.
                 ghl_token_scope: null,
                 ghl_token_company_id: null,
                 ghl_token_location_id: null,
@@ -176,7 +174,14 @@ export const webhookController = {
                 location_access_token_encrypted: null,
                 location_refresh_token_encrypted: null,
                 location_token_expires_at: null,
-              },
+              } : {}),
+            },
+            ...(reinstalling ? {
+              ghl_access_token: '',
+              ghl_refresh_token: '',
+              ghl_access_token_encrypted: null,
+              ghl_refresh_token_encrypted: null,
+              ghl_token_expires_at: null,
             } : {}),
           } as any);
           logger.info({ locationId, companyId }, 'GHL app INSTALL: existing merchant reactivated');
@@ -188,6 +193,10 @@ export const webhookController = {
             company_id: companyId || undefined,
             ghl_access_token: '',
             ghl_refresh_token: '',
+            config: {
+              ghl_install_event_at: lifecycleTimestamp,
+              ghl_uninstalled_at: null,
+            },
             ...(installPlanId ? {
               marketplace_plan_id: installPlanId,
               marketplace_plan_key: marketplacePlanKey(installPlanId),
@@ -216,6 +225,7 @@ export const webhookController = {
       } else if (type === 'UNINSTALL' && locationId) {
         const existing = await merchantRepository.findByLocationId(locationId);
         if (existing) {
+          const lifecycleTimestamp = new Date().toISOString();
           await merchantRepository.update(locationId, {
             status: 'uninstalled',
             ghl_access_token: '',
@@ -225,6 +235,8 @@ export const webhookController = {
             ghl_token_expires_at: null,
             config: {
               ...(existing.config || {}),
+              ghl_install_event_at: null,
+              ghl_uninstalled_at: lifecycleTimestamp,
               ghl_token_scope: null,
               ghl_token_company_id: null,
               ghl_token_location_id: null,

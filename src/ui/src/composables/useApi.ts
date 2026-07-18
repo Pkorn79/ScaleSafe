@@ -35,6 +35,7 @@ export type SsoErrorCode =
   | 'parent_context_timeout'
   | 'empty_parent_payload'
   | 'agency_context'
+  | 'installation_pending'
   | 'installation_missing'
   | 'installation_invalid'
   | 'authentication_invalid'
@@ -76,6 +77,8 @@ const ssoSession = reactive<SsoSession>({
 
 let ssoInitPromise: Promise<void> | null = null;
 let ssoAttempt = 0;
+const INSTALL_SETTLE_RETRY_MS = 3_000;
+const INSTALL_SETTLE_TIMEOUT_MS = 2 * 60 * 1000;
 
 const DEFAULT_GHL_PARENT_ORIGINS = [
   'https://app.gohighlevel.com',
@@ -134,6 +137,7 @@ function setSsoError(code: SsoErrorCode, message: string): void {
 }
 
 function backendErrorCode(status: number, code: string): SsoErrorCode {
+  if (code === 'INSTALLATION_PENDING') return 'installation_pending';
   if (code === 'INSTALLATION_NOT_FOUND') return 'installation_missing';
   if (code === 'INSTALLATION_INVALID') return 'installation_invalid';
   if (code === 'INVALID_SSO_PAYLOAD') return 'authentication_invalid';
@@ -141,7 +145,7 @@ function backendErrorCode(status: number, code: string): SsoErrorCode {
   return 'unknown';
 }
 
-async function completeSsoHandshake(encryptedPayload: string, attempt: number): Promise<void> {
+async function completeSsoHandshakeOnce(encryptedPayload: string, attempt: number): Promise<void> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 12_000);
   let res: Response;
@@ -182,6 +186,25 @@ async function completeSsoHandshake(encryptedPayload: string, attempt: number): 
   }
 
   applySsoData(body);
+}
+
+async function completeSsoHandshake(encryptedPayload: string, attempt: number): Promise<void> {
+  const installSettleDeadline = Date.now() + INSTALL_SETTLE_TIMEOUT_MS;
+
+  while (attempt === ssoAttempt) {
+    try {
+      await completeSsoHandshakeOnce(encryptedPayload, attempt);
+      return;
+    } catch (err: any) {
+      const pending = err instanceof SsoHandshakeError && err.code === 'installation_pending';
+      if (!pending || Date.now() >= installSettleDeadline) throw err;
+
+      ssoSession.errorCode = 'installation_pending';
+      ssoSession.error = err.message;
+      ssoSession.ready = false;
+      await new Promise((resolve) => window.setTimeout(resolve, INSTALL_SETTLE_RETRY_MS));
+    }
+  }
 }
 
 /**

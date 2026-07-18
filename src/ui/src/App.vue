@@ -13,6 +13,7 @@ const reinstallRequired = computed(() =>
 );
 
 const connectionTitle = computed(() => {
+  if (ssoSession.errorCode === 'installation_pending') return 'Installation Is Still Finishing';
   if (ssoSession.errorCode === 'service_unavailable' || ssoSession.errorCode === 'backend_timeout') return 'ScaleSafe Is Temporarily Unavailable';
   if (ssoSession.errorCode === 'parent_context_timeout') return 'GoHighLevel Context Was Not Received';
   if (reinstallRequired.value) return 'ScaleSafe Installation Needs Attention';
@@ -20,6 +21,9 @@ const connectionTitle = computed(() => {
 });
 
 const connectionMessage = computed(() => {
+  if (ssoSession.errorCode === 'installation_pending') {
+    return 'GoHighLevel has not finished confirming this sub-account installation. Leave the app open and retry in a moment.';
+  }
   if (ssoSession.errorCode === 'service_unavailable' || ssoSession.errorCode === 'backend_timeout') {
     return 'Your installation may be fine. ScaleSafe could not reach account services; wait a moment and try again.';
   }
@@ -42,7 +46,7 @@ const entitlementTitle = computed(() => {
   <div v-if="!ssoSession.ready" class="flex items-center justify-center min-h-screen bg-slate-50">
     <div class="text-center text-slate-500 text-sm">
       <div class="w-9 h-9 border-3 border-slate-200 border-t-ss-primary-500 rounded-full mx-auto mb-4 animate-spin"></div>
-      <p>Connecting to GoHighLevel...</p>
+      <p>{{ ssoSession.errorCode === 'installation_pending' ? 'Finishing your ScaleSafe installation...' : 'Connecting to GoHighLevel...' }}</p>
     </div>
   </div>
 
