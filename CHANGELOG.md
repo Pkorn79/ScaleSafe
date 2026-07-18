@@ -3,11 +3,10 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
-## Unreleased - Analytics substrate fixes (2026-07-18)
+## Unreleased - Defense letter relevance rule (2026-07-18)
 
-### Fixed
-- The 30-day dispute rate behind the Risk Health banner, VAMP/Mastercard status, and EFW refund recommendations was computed from a single unpaginated Stripe page — the denominator silently capped at 100 charges, so any merchant doing more than 100 charges a month saw an inflated rate (e.g. 4 disputes over 800 real charges reported as 4% instead of 0.5%), false "critical" risk levels, and EFW advice to refund charges they could safely hold. Both services now paginate up to 5,000 records and count only settled (paid) charges in the denominator, matching how card networks compute the ratio.
-- Recording a defense outcome twice for the same packet (manual Won/Lost button plus the Stripe webhook auto-record, double-clicks, retries) inserted duplicate rows that double-counted Total Value Recovered and the win rate. Outcome recording now updates the existing row per packet instead of inserting a second one, which also makes outcome corrections (Won → Lost) behave correctly.
+### Changed
+- Defense letters must now justify every sentence: unprompted negative assertions ("our records do not show a cancellation request", "no reply was received") are banned unless the dispute category's strategy explicitly calls for that statement, and the letter never comments on internal bookkeeping or amount discrepancies. Keeps the argument from being buried in irrelevant detail.
 
 ## Unreleased - Analytics substrate fixes (2026-07-18)
 

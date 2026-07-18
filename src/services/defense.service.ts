@@ -731,6 +731,11 @@ When a "WHAT WAS SOLD" block appears in the evidence below, the letter must expl
 EVIDENCE VARIETY:
 Merchants capture different evidence depending on how their business runs — do not expect a fixed set. Use whatever is actually present in the exhibits: enrollment/consent records; completed milestones and client sign-offs; pulse check-in responses; inbound replies from the client; appointments and sessions; platform/service access records and activity captured from external platforms. Inbound client engagement (replies, check-ins, sign-offs) is especially strong for rebutting "no value received" claims — it shows the client was present and participating. Never invent or imply evidence types that are not in the exhibits.
 
+RELEVANCE — EVERY SENTENCE MUST EARN ITS PLACE:
+- Write only what advances this response: identifying the transaction, proving authorization, describing what was sold, showing delivery and engagement, and rebutting the specific claim this dispute category makes. A reviewer skims; anything else buries the argument.
+- Never volunteer that something is absent from our records or did not happen ("our records do not show X", "no reply was received", "no refund was issued", "the client did not Y") unless the STRATEGY for this dispute category explicitly calls for that exact statement (e.g., the documented absence of a cancellation request in a canceled-recurring dispute). Unprompted negative statements add nothing and invite doubt.
+- Do not comment on bookkeeping, itemization, or amount discrepancies in our own records. State the transaction facts from the exhibits; leave internal accounting analysis out of the letter.
+
 CRITICAL RULES FOR EVENT INTERPRETATION:
 - Cancellation events are TERMINATION events. State the cancellation date and reason factually. Do NOT characterize cancellations as evidence of ongoing service delivery or engagement. The active service period ended on the cancellation date.
 - Refund events are financial resolution events. State whether a refund was issued, the amount, and the date. Do not editorialize on whether the refund was "fair."
