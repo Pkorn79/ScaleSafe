@@ -82,7 +82,7 @@ Use `Not Applicable` when a layer legitimately does not participate. Do not call
 | OPS-RELEASE-001 | Production release control | Inspect branch protection and Railway source/deploy behavior | Production requires a green reviewed commit or an explicit audited owner exception | N/A | Fail: main auto-deploys | N/A | N/A | N/A | GitHub main unprotected | Should fix | FIND-072 |
 | GHL-SNAPSHOT-001 | Reviewer Snapshot inventory | Inspect the already-installed clean reviewer account without changing configuration | Install is recognized; current V2 allowlist is packaged once; obsolete/duplicate assets are absent | Partial: app installed, Snapshot populated | N/A | N/A | N/A | 29 workflows, 3 funnels, 27 forms, 160 fields, 22 values | Obsolete/duplicate assets present | Fail packaging gate | FIND-073 |
 | GHL-SSO-001 | Installed Custom Page SSO | Open the installed app from reviewer and PMG sub-account context | GHL returns user/location context and backend SSO begins once | Fail: parent-frame timeout in both locations | No `/auth/sso` from the timed-out attempts | N/A | N/A | Marketplace preview returned agency context | N/A | Fail | FIND-074 |
-| GHL-SCOPES-001 | Marketplace least privilege | Compare selected draft scopes with current runtime use and approved product scope | Only code-backed beta scopes remain selected and are documented for review | Partial: draft reports 29 selected | N/A | N/A | N/A | Stale Products and Opportunities confirmed among selections | N/A | Fail configuration gate | FIND-075 |
+| GHL-SCOPES-001 | Marketplace least privilege | Compare selected draft scopes with current runtime use and enabled Marketplace modules | Only required beta scopes remain selected and are documented for review | Historical fail: draft reported 29; resolved July 18 with 20 saved scopes | N/A | N/A | N/A | Product/price access retained for offer creation and custom payments; legacy Opportunity access removed | N/A | Reauthorization regression remains | FIND-075 |
 
 ## Isolated Offer Fixtures
 
@@ -435,7 +435,7 @@ Every authorized NMI charge must be written here immediately. A row may not be o
 | FIND-072 | P2 | Operations-security gap | OPS-RELEASE-001 | Unprotected main automatically deploys to production | Open | Add owner-approved branch/status/deployment gates and practice rollback |
 | FIND-073 | P2 | Marketplace Snapshot packaging defect | GHL-SNAPSHOT-001 | Clean reviewer install contains obsolete SYS2, model-specific onboarding, and duplicate GHL assets | Open | Build and certify a clean V2 Snapshot in a separate scratch location |
 | FIND-074 | P1 | GHL Custom Page SSO defect | GHL-SSO-001 | Installed reviewer and PMG pages time out before backend SSO begins | Open | Isolate parent-frame messaging behavior and add a bounded, observable handshake fallback/test |
-| FIND-075 | P2 | Marketplace scope configuration drift | GHL-SCOPES-001 | Draft still carries stale capabilities, including Products and Opportunities | Open configuration gate | Export exact list, map each scope to runtime use, remove unneeded scopes, and record reviewer explanations |
+| FIND-075 | P2 | Marketplace scope configuration drift | GHL-SCOPES-001 | Historical run found 29 scopes; direct draft reconciliation on July 18 reduced this to 20 and removed unused webhooks | Resolved configuration gate; reauthorization regression remains | Reauthorize the clean reviewer install and run the scope regression without re-adding removed scopes |
 
 ## Screenshot Rules
 

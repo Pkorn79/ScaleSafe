@@ -139,7 +139,7 @@ This validates the setup order:
 - Decide which three draft workflows belong in beta and document that decision.
 - Rebuild the Snapshot from a clean V2 source so obsolete forms/folders do not ship.
 - Preserve only one pulse workflow using the verified app-event/filter contract.
-- Export and approve the exact least-privilege Marketplace scope list. The current draft reports 29 selected scopes and still includes capabilities previously identified as stale, including Products and Opportunities.
+- The editable Marketplace draft now has 20 approved least-privilege scopes. Reauthorize the reviewer installation so its stored OAuth grant matches the reduced draft, then run the scope regression in `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md`.
 - Connect a reviewer/test domain.
 - Complete merchant business/setup values, then run Provisioning Health.
 - Reinstall the rebuilt Snapshot into a separate scratch sub-account before replacing this reviewer environment.

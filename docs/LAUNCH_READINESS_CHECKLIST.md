@@ -20,7 +20,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [ ] Provide reviewer GHL credentials through the Marketplace form, never the repository.
 - [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
 - [ ] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
-- [ ] Export and save the final least-privilege Marketplace scope list and explanations.
+- [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
 - [ ] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
 - [ ] Deploy the prepared public help/legal pages and confirm privacy, terms, support, guide, FAQ, and troubleshooting URLs serve their own content without authentication. Current live paths return `200` but fall back to the generic landing page.
 

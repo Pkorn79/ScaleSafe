@@ -22,7 +22,7 @@ These are not unresolved application-code defects, but GHL review or processor l
 | --- | --- |
 | Marketplace submission package | Record the installation/connection/end-to-end video, the scope-justification video, provide reviewer credentials outside the repository, and paste the reviewer notes. |
 | Public review URLs | Deploy the prepared `marketing/` package. The current privacy, terms, support, guide, FAQ, and troubleshooting paths return HTTP 200 but all resolve to the generic landing-page fallback rather than their own content. Verify unique page titles/content after deployment. |
-| Marketplace scopes (FIND-075) | Export/save the final least-privilege scope list and retain one plain-language explanation per scope. Products and Opportunities remain excluded unless current runtime use is proved. |
+| Marketplace scope video | The final 20-scope least-privilege list is saved and documented in `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md`. Record the separate scope-justification video and reauthorize the clean reviewer install against the reduced grant. |
 | NMI official webhook (FIND-007) | Certify a signed/verified live callback for each NMI configuration offered during beta. Do not infer webhook readiness from successful dashboard charges. |
 | GHL lifecycle templates (FIND-035) | Confirm pause/resume/cancel templates use the documented scalar contact fields and produce one correctly named program message. Disable any unverified workflow rather than shipping `[object Object]`. |
 | Production release control (FIND-072) | Protect `main` with green CI/owner review or record a controlled-beta exception and practice one Railway rollback. |
