@@ -2,6 +2,8 @@
 
 This file records product and launch decisions that should not be re-litigated unless Philip explicitly reopens them.
 
+For current feature, plan, launch, roadmap, and document status, use `docs/MASTER_INDEX.md`.
+
 ## Client / Contact Behavior
 
 - Duplicate client email should resolve to the existing contact/client.

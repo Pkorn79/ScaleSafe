@@ -89,6 +89,7 @@ Report mismatches before moving on. Do not use an Offers Custom Object as beta v
 
 ## Key Reference Docs
 
+- `docs/MASTER_INDEX.md` — Current source of truth for feature, plan, launch, roadmap, and document status
 - `docs/FULL_ARCHITECTURE_MAP.md` — Every table, endpoint, service across all 10 phases
 - `docs/SCALESAFE_APP_BLUEPRINT_v2.1.md` — Complete product spec
 - `docs/CUSTOM_PAYMENT_PROVIDER_BUILD_PLAN.md` — Payment infrastructure build plan (Phases A-E + S1-S4)

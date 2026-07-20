@@ -4,6 +4,8 @@ Status: Working draft based on live product verification.
 
 This guide is written for ScaleSafe merchants, operators, and support staff. It documents what the product actually does in the live test account. Screenshots and instructions are added only after the related workflow is observed or tested.
 
+Repository-wide feature, plan, launch, roadmap, and document status is maintained in the [ScaleSafe Master Index](../MASTER_INDEX.md).
+
 ## Guide Sections
 
 1. [Getting Started](#getting-started)

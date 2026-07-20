@@ -1,5 +1,7 @@
 # ScaleSafe Controlled Beta Launch Checklist
 
+> Current status rollup: `docs/MASTER_INDEX.md`. This checklist preserves detailed launch gates, but its reconciliation header may predate later certified work.
+
 Reconciled: 2026-07-16 CDT
 Deployed SHA: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
 Production schema: `101`

@@ -6,6 +6,8 @@ Audience: coding agents working inside `C:\Users\p_kor_e1dk2i3\ScaleSafe`.
 
 This file is about implementation: files changed, security findings, tests, known code risks, and next code tasks. It is not the planning/documents log for Claude Cowork.
 
+Current product, plan, launch, roadmap, and document status lives in `docs/MASTER_INDEX.md`. Entries below are a chronological technical record and may describe findings or priorities that were later resolved.
+
 ## Operating Rule For Codex
 
 At the end of each meaningful Codex coding session, update this file with:

@@ -1,5 +1,7 @@
 # ScaleSafe Open Remediation Register
 
+> Current status rollup: `docs/MASTER_INDEX.md`. This register preserves detailed finding history; use the Master Index when this file's older baseline conflicts with later proof.
+
 Reconciled: 2026-07-16 CDT
 Deployed code baseline: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
 Production schema: `101`

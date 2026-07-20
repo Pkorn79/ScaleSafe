@@ -9,16 +9,13 @@ Use this file at the start of a Claude Code CLI session working in:
 You are working in the active ScaleSafe V2 codebase. Before changing anything, read:
 
 1. `CLAUDE.md`
-2. `docs\CLAUDE_CODE_CODEX_LOG.md`
-3. `docs\FULL_ARCHITECTURE_MAP.md` as architecture background only
+2. `docs\MASTER_INDEX.md`
+3. `docs\CLAUDE_CODE_CODEX_LOG.md`
+4. `docs\FULL_ARCHITECTURE_MAP.md` as architecture background only
 
-Treat `docs\CLAUDE_CODE_CODEX_LOG.md` as the latest Codex technical handoff for code work. Continue from its open findings and verification notes.
+Treat `docs\MASTER_INDEX.md` as the current source of truth for product, feature, plan, launch, roadmap, and document status. Treat `docs\CLAUDE_CODE_CODEX_LOG.md` as technical history and verify any open finding against the Master Index and current code before acting.
 
-For product/status questions, the source of truth lives outside this repo in the Cowork folder:
-
-`C:\Users\p_kor_e1dk2i3\OneDrive\Documents\Claude\Projects\ScaleSafe\docs\FEATURE_LEDGER.md`
-
-Do not create a new roadmap, ledger, status tracker, or planning system unless Philip explicitly asks. If product status changes because of code work, ask Philip whether to update the Cowork feature ledger or provide a Cowork-ready note for him to paste.
+The former external Cowork `FEATURE_LEDGER.md` is retired as a source of truth. Do not create a new roadmap, ledger, status tracker, or planning system unless Philip explicitly asks. Update `docs\MASTER_INDEX.md` when product status changes.
 
 Important: reading these files is for awareness. Do not begin implementation, run broad refactors, stage files, commit, push, or deploy unless Philip explicitly asks you to take action in the current session.
 

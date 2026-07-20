@@ -3,6 +3,14 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Repository Master Index (2026-07-20)
+
+### Added
+- A single repository-owned Master Index covering current feature status, live-certification boundaries, launch gates, roadmap items, plans, research, operating documents, website sources, agent instructions, and historical archives.
+
+### Changed
+- Repository agent prompts, launch/remediation entry points, project decisions, and the user guide now direct status questions to the Master Index instead of the stale external Feature Ledger or dated technical logs.
+
 ## Unreleased - ScaleSafe operator skill and onboarding SOP (2026-07-20)
 
 ### Added
