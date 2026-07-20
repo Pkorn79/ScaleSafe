@@ -3,6 +3,16 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - ScaleSafe operator skill and onboarding SOP (2026-07-20)
+
+### Added
+- A repository-local ScaleSafe Operator skill for Codex/ChatGPT and Claude, with guarded workflows for merchant onboarding, routine operations, certification, and troubleshooting.
+- A literal new-account operator checklist covering Marketplace installation, tenant verification, domains and email, merchant settings, billing entitlement, processors, provisioning, workflows, evidence connections, certification, and handoff.
+- Setup guidance for using the same operating instructions from repository-aware agents or browser chat projects.
+
+### Changed
+- Claude's repository instructions now point to the current V2 provisioning and live-verification sources instead of retired Make.com and Offers Custom Object setup requirements.
+
 ## Unreleased - Archived offers stop pulse check-ins (2026-07-19)
 
 ### Fixed

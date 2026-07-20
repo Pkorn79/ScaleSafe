@@ -24,23 +24,23 @@ ScaleSafe is a GHL Marketplace app that helps coaches and service providers defe
 6. **Services never send communications** — they fire GHL custom workflow triggers; GHL workflows handle comms.
 7. **Payment architecture:** ScaleSafe processes payments through merchant's connected NMI or Stripe accounts via GHL Custom Payment Provider. ScaleSafe never holds funds — transactions settle directly to the merchant's processor account. NMI is the processing rail. Stripe is the defense + optional processing rail (connected via Stripe Connect OAuth with direct charges).
 8. **The 6 SS contact fields** the app manages are in `SS_CONTACT_FIELDS` in `ghl-fields.ts`. Do not add more without explicit approval.
-9. **Offers Custom Object** key is `custom_objects.offers`. Schema is in `docs/ghl-offers-custom-object-schema.md`.
+9. **Offers Custom Object sync is disabled for beta.** Do not make it an onboarding requirement. The app still creates the GHL Product/Price records used by its checkout/payment-provider bridge.
 
 ## Never Do
 
-- **Never invent GHL field IDs or custom value IDs.** Always verify against `src/constants/ghl-custom-value-ids.ts` or use Make.com tools to read live state.
+- **Never invent GHL field IDs or custom value IDs.** Verify against current constants and the exact merchant's Provisioning Health or live GHL state.
 - **Never commit `.env` files, credentials, or database connection strings.** Check for secrets before staging.
 - **Never modify the Supabase schema without a migration file** in `supabase/migrations/`.
 - **Never assume GHL uses camelCase.** GHL mixes snake_case and camelCase inconsistently (e.g., `sso_key` not `ssoKey`, `location_id` not `locationId` in some contexts). Always verify against working code or API docs.
 - **Never add features, refactoring, or "improvements" beyond what was requested.**
-- **Never touch:** OAuth flow, webhook handlers, evidence/defense services, or Make.com code unless explicitly asked.
+- **Never touch:** OAuth flow, webhook handlers, or evidence/defense services unless explicitly asked. Do not reintroduce retired V1 Make.com dependencies.
 
 ## Docs Trust Warning
 
 Documents in `/docs` may contain inaccuracies introduced by an external AI session. **Before implementing anything based on a `/docs` file:**
 
 1. Verify GHL field names, IDs, and schemas against the constants files in `src/constants/`
-2. If the claim is about live GHL state (what fields exist, what values are set), verify using Make.com MCP tools (`read_all_custom_values`, `list_ghl_custom_fields`, `get_co_schema_v_2_fresh`)
+2. If the claim is about live GHL state, verify the exact merchant through Provisioning Health, the current GHL UI, or a current authenticated GHL API/connector.
 3. The constants files and live GHL data are the **source of truth**, not the docs
 
 ### Payment Processing (Custom Payment Provider)
@@ -77,23 +77,28 @@ Every commit must have a corresponding entry in `CHANGELOG.md`. Update the chang
 
 ## Post-Deploy Verification
 
-After any change touching provisioning, offers, or config sync, run these Make.com MCP tools to verify GHL state:
+After a change touching provisioning, offers, or config sync:
 
-1. `read_all_custom_values` — check business info, module toggles, T&C config
-2. `list_ghl_custom_fields` — verify SS fields exist with correct IDs
-3. `list_offer_records` — verify offers have correct data
-4. `get_co_schema_v_2_fresh` — verify Custom Object schema hasn't drifted
+1. Run the exact merchant's ScaleSafe Provisioning Health check.
+2. Verify required ScaleSafe custom fields and values in that GHL location.
+3. Verify offer data and client-facing names through the ScaleSafe UI.
+4. Check Railway logs for failed sync requests.
+5. Prove any affected workflow from ScaleSafe delivery through GHL execution and outbound communication.
 
-Report any mismatches before moving on.
+Report mismatches before moving on. Do not use an Offers Custom Object as beta verification.
 
 ## Key Reference Docs
 
 - `docs/FULL_ARCHITECTURE_MAP.md` — Every table, endpoint, service across all 10 phases
 - `docs/SCALESAFE_APP_BLUEPRINT_v2.1.md` — Complete product spec
 - `docs/CUSTOM_PAYMENT_PROVIDER_BUILD_PLAN.md` — Payment infrastructure build plan (Phases A-E + S1-S4)
-- `docs/GHL_AUTOMATION_COMPANION.md` — All 18 triggers with payloads
+- `docs/WORKFLOW_FIELD_CONTRACT_MATRIX.md` — Current workflow scalar-field contract
+- `docs/user-guide/INSTALLATION_GUIDE.md` — Current merchant installation order
 - `docs/ghl-custom-values-reference.md` — Custom value IDs and names
-- `docs/ghl-offers-custom-object-schema.md` — Offers Custom Object schema
+
+## ScaleSafe Operator Skill
+
+For merchant installation, onboarding, live operation, certification, or troubleshooting, read `.agents/skills/operate-scalesafe/SKILL.md` and only the reference file it selects. Follow its tenant boundary, approval gates, logs-first troubleshooting, and one-step-at-a-time guidance. Do not reconstruct an alternate setup process from archived specifications.
 
 ## Build & Test
 

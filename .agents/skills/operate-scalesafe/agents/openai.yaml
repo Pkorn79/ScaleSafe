@@ -1,0 +1,4 @@
+interface:
+  display_name: "ScaleSafe Operator"
+  short_description: "Install, operate, test, and troubleshoot ScaleSafe safely"
+  default_prompt: "Set up or operate ScaleSafe for the current GoHighLevel sub-account using tenant-safe, evidence-backed steps."
