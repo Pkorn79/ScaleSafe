@@ -298,11 +298,11 @@ async function submitSendLink() {
 }
 
 async function archiveOffer(offer: any) {
-  if (!confirm(`Archive '${internalOfferName(offer)}'? It will be deactivated and hidden from clients.`)) return;
+  if (!confirm(`Archive '${internalOfferName(offer)}'? It will be hidden from clients and scheduled pulse check-ins for its active enrollments will stop.`)) return;
   try {
     await api.put(`/api/offers/${offer.id}`, { active: false });
     offer.active = false;
-    showToast('Offer archived');
+    showToast('Offer archived; scheduled pulse check-ins stopped');
   } catch (err: any) {
     showToast(err?.message || 'Could not archive offer.');
   }

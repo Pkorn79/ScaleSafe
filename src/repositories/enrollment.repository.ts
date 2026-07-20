@@ -141,6 +141,23 @@ export const enrollmentRepository = {
     }
   },
 
+  async disablePulseCadenceForOffer(locationId: string, offerId: string): Promise<number> {
+    const { data, error } = await getSupabase()
+      .from('enrollments')
+      .update({
+        pulse_cadence_enabled: false,
+        next_pulse_due_at: null,
+      })
+      .eq('location_id', locationId)
+      .eq('offer_id', offerId)
+      .eq('pulse_cadence_enabled', true)
+      .in('status', ['enrolled', 'active'])
+      .select('id');
+
+    if (error) throw error;
+    return (data || []).length;
+  },
+
   async listByLocation(
     locationId: string,
     filters?: { status?: string; page?: number; limit?: number },

@@ -344,4 +344,48 @@ describe('runPulseCadenceCheck', () => {
     expect(mockFireTrigger).not.toHaveBeenCalled();
     expect(mockIdempotencyRecord).not.toHaveBeenCalled();
   });
+
+  it('stops cadence and does not fire when the linked offer is inactive', async () => {
+    const updatePayloads: any[] = [];
+    const row = {
+      id: 'enr_1',
+      location_id: 'loc_1',
+      contact_id: 'contact_1',
+      offer_id: 'offer_1',
+      status: 'enrolled',
+      pulse_cadence_enabled: true,
+      pulse_frequency_days: 1,
+      next_pulse_due_at: '2026-06-29T00:00:00.000Z',
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        return {
+          ...enrollmentQuery(row),
+          ...updateQuery((payload: any) => updatePayloads.push(payload)),
+        };
+      }
+      if (table === 'offers_mirror') {
+        const query: any = {
+          select: jest.fn(() => query),
+          eq: jest.fn(() => query),
+          maybeSingle: jest.fn(async () => ({
+            data: { offer_name: 'Archived Program', pulse_frequency_days: 1, active: false },
+            error: null,
+          })),
+        };
+        return query;
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await runPulseCadenceCheck();
+
+    expect(mockGhlPut).not.toHaveBeenCalled();
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+    expect(updatePayloads).toContainEqual({
+      pulse_cadence_enabled: false,
+      next_pulse_due_at: null,
+    });
+    expect(mockIdempotencyRecord).not.toHaveBeenCalled();
+  });
 });

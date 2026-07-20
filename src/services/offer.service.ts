@@ -1,4 +1,5 @@
 import { ghlApi } from '../clients/ghl.client';
+import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { offerRepository, OfferRecord } from '../repositories/offer.repository';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
@@ -7,6 +8,7 @@ import { checkoutCartService, CheckoutAddonInput } from './checkout-cart.service
 
 interface CreateOfferInput {
   locationId: string;
+  active?: boolean;
   offerName: string;
   internalName?: string;
   trackingId?: string;
@@ -485,7 +487,7 @@ export const offerService = {
       if (calcAmount) dbUpdates.installment_amount = calcAmount;
     }
 
-    if ((updates as any).active !== undefined) dbUpdates.active = (updates as any).active;
+    if (updates.active !== undefined) dbUpdates.active = updates.active;
     if (updates.offerName !== undefined) {
       const customerFacingName = updates.offerName.trim();
       if (!customerFacingName) {
@@ -638,6 +640,15 @@ export const offerService = {
       }
     }
     const effectiveCheckoutType = (updates.checkoutType || (offer as any).checkout_type || 'direct') as 'direct' | 'whop';
+    if (updates.active === false || updates.pulseCadenceEnabled === false) {
+      const disabledEnrollments = await enrollmentRepository.disablePulseCadenceForOffer(locationId, offer.id);
+      logger.info(
+        { offerId: offer.id, locationId, disabledEnrollments },
+        updates.active === false
+          ? 'Offer archived; active enrollment pulse cadences disabled'
+          : 'Offer pulse cadence disabled; active enrollment pulse cadences disabled',
+      );
+    }
     if (updates.checkoutAddons !== undefined) {
       await checkoutCartService.replaceOfferAddons(locationId, offer.id, updates.checkoutAddons);
     }

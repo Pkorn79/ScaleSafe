@@ -3,6 +3,13 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Archived offers stop pulse check-ins (2026-07-19)
+
+### Fixed
+- Archiving an offer, or turning off its pulse cadence, now disables scheduled pulse check-ins for that offer's active enrollments and clears their next due dates.
+- The pulse worker independently refuses and cleans up any cadence tied to an inactive or missing offer, preventing historical schedules from continuing after an offer is archived.
+- The archive confirmation now states that scheduled pulse check-ins will stop.
+
 ## Unreleased - Marketplace reinstall settling (2026-07-18)
 
 ### Fixed

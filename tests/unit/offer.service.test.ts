@@ -18,12 +18,19 @@ jest.mock('../../src/repositories/offer.repository', () => ({
   },
 }));
 
+jest.mock('../../src/repositories/enrollment.repository', () => ({
+  enrollmentRepository: {
+    disablePulseCadenceForOffer: jest.fn().mockResolvedValue(0),
+  },
+}));
+
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 import { compileTcHtml, calcInstallmentAmount, buildRefundText, offerService } from '../../src/services/offer.service';
 import { offerRepository } from '../../src/repositories/offer.repository';
+import { enrollmentRepository } from '../../src/repositories/enrollment.repository';
 import { checkoutCartService } from '../../src/services/checkout-cart.service';
 
 describe('calcInstallmentAmount', () => {
@@ -177,6 +184,15 @@ describe('offer tracking ID', () => {
       }),
       'loc-1',
     );
+  });
+
+  it('stops active enrollment pulse cadences when an offer is archived', async () => {
+    (offerRepository.update as jest.Mock).mockResolvedValueOnce({ id: 'offer-1', active: false });
+    (enrollmentRepository.disablePulseCadenceForOffer as jest.Mock).mockResolvedValueOnce(3);
+
+    await offerService.update('offer-1', 'loc-1', { active: false });
+
+    expect(enrollmentRepository.disablePulseCadenceForOffer).toHaveBeenCalledWith('loc-1', 'offer-1');
   });
 
   it('normalizes blank refund policy to null on offer update', async () => {

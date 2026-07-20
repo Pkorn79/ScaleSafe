@@ -152,6 +152,35 @@ export async function sendPulseForEnrollment(params: {
     return skippedPulseResult('pulse_not_due', 'Pulse check is not due yet.');
   }
 
+  const { data: offer, error: offerError } = enrollment.offer_id
+    ? await supabase
+      .from('offers_mirror')
+      .select('offer_name, pulse_frequency_days, active')
+      .eq('id', enrollment.offer_id)
+      .eq('location_id', enrollment.location_id)
+      .maybeSingle()
+    : { data: null, error: null };
+
+  if (offerError) throw offerError;
+  if (enrollment.offer_id && (!offer || offer.active === false)) {
+    const { error: disableError } = await supabase
+      .from('enrollments')
+      .update({
+        pulse_cadence_enabled: false,
+        next_pulse_due_at: null,
+      })
+      .eq('id', enrollment.id)
+      .eq('location_id', enrollment.location_id);
+    if (disableError) throw disableError;
+
+    return skippedPulseResult(
+      offer ? 'offer_inactive' : 'offer_not_found',
+      offer
+        ? 'Pulse cadence was stopped because the offer is inactive.'
+        : 'Pulse cadence was stopped because the linked offer no longer exists.',
+    );
+  }
+
   const pulseEventId = [
     'pulse-check',
     enrollment.location_id,
@@ -168,14 +197,6 @@ export async function sendPulseForEnrollment(params: {
     logger.warn({ locationId: enrollment.location_id, enrollmentId: enrollment.id }, 'Pulse due but pulse module is disabled');
     return skippedPulseResult('pulse_module_disabled', 'Pulse module is disabled for this merchant.');
   }
-
-  const { data: offer } = enrollment.offer_id
-    ? await supabase
-      .from('offers_mirror')
-      .select('offer_name, pulse_frequency_days')
-      .eq('id', enrollment.offer_id)
-      .maybeSingle()
-    : { data: null };
 
   const frequencyDays = normalizeFrequency(enrollment.pulse_frequency_days);
   const nextDue = new Date(now);
