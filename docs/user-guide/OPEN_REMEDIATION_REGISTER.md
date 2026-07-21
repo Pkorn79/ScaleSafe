@@ -13,7 +13,7 @@ This is the current open-work list. `LIVE_FINDINGS.md` and `LIVE_CERTIFICATION_2
 
 | Gate | Current truth | Required proof to close | Owner |
 | --- | --- | --- | --- |
-| Recovery proof (FIND-068) | Supabase Pro now provides managed daily backups. The off-platform encrypted database/Storage toolkit exists and its shell syntax passes, but no real encrypted snapshot or scratch restore has been completed. | One complete encrypted off-platform snapshot, private Storage inventory/archive, `COMPLETE.json`, successful `verify-latest.sh`, and one isolated scratch restore with count and sample-file verification. | Philip plus recovery operator |
+| Recovery proof (FIND-068) | **Closed 2026-07-21.** Encrypted snapshot `20260721T175646Z` passed `COMPLETE.json`, SHA-256/off-platform verification, and a schema-102 scratch restore with matching critical counts, all 105 Storage objects, and readable private PDFs. | [Recovery drill proof](../RECOVERY_DRILL_2026-07-21.md) | Philip plus Codex |
 | Clean reviewer package (FIND-073) | The dedicated `ScaleSafe` GHL sub-account opens and is tenant-isolated, but the attached Snapshot inventory still contains legacy/duplicate assets documented in `REVIEWER_SNAPSHOT_INVENTORY.md`. | Install or certify the approved V2 allowlist, remove obsolete packaged assets, run Provisioning Health, and preserve sanitized proof. | Philip with Codex verification |
 
 ## Publication And Owner-Configuration Gates

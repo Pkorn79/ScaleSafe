@@ -11,7 +11,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 ## 1. Hard Launch Gates
 
-- [ ] **Encrypted recovery is proven.** Create one off-platform encrypted database and private-Storage snapshot, verify its completion marker and hashes, and complete one isolated scratch restore. Supabase managed backups alone do not satisfy this gate.
+- [x] **Encrypted recovery is proven.** Snapshot `20260721T175646Z` restored successfully into an isolated scratch project with schema 102, matching critical counts, all 105 Storage objects, and readable enrollment/defense PDFs. See `docs/RECOVERY_DRILL_2026-07-21.md`.
 - [x] **Production health soak is complete.** From 2026-07-15 4:46:45 PM through 5:47:42 PM CDT, Railway recorded 134 HTTP requests, zero 4xx/5xx, zero requests over three seconds, a 1.536-second maximum, and zero application warning/error lines. Ten closing `/health` probes all reported app/Supabase/schema `ok`.
 - [ ] **Reviewer Snapshot is clean.** Certify the approved V2 asset allowlist in the dedicated `ScaleSafe` GHL sub-account; obsolete SYS2/model-specific/duplicate assets are absent or explicitly removed from the submitted Snapshot.
 

@@ -8,6 +8,7 @@ Type=oneshot
 User=scalesafe-backup
 Group=scalesafe-backup
 SupplementaryGroups=docker
+WorkingDirectory=/opt/scalesafe-recovery
 ExecStart=/opt/scalesafe-recovery/backup.sh /etc/scalesafe-recovery/backup.env
 UMask=0077
 NoNewPrivileges=true

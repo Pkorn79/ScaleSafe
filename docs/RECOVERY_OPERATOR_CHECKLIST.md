@@ -79,17 +79,19 @@ sudo -u scalesafe-backup /opt/scalesafe-recovery/verify-latest.sh /etc/scalesafe
 Fill this only after the real drill:
 
 ```text
-Backup snapshot ID:
-Backup completed at:
-Schema version:
-Source Git SHA:
-Verification result:
-Scratch project reference:
-Restore started/completed:
-Database count comparison:
-Storage inventory comparison:
-Sample file hashes verified:
-Outbound integrations disabled:
-Operator:
-Owner approval:
+Backup snapshot ID: 20260721T175646Z
+Backup completed at: 2026-07-21T17:57:12Z
+Schema version: 102
+Source Git SHA: 67d9ea3f40d8882b0bbcd32163f0736261257597 (repository HEAD observed during closeout)
+Verification result: PASS - COMPLETE.json healthy; encrypted SHA-256 manifest and off-platform download comparison passed
+Scratch project reference: dcatalmzhgoxwokvxvoa (deleted after verification)
+Restore started/completed: completed 2026-07-21T20:09:09Z
+Database count comparison: PASS
+Storage inventory comparison: PASS - 105 of 105 objects
+Sample file hashes verified: PASS - full rclone download comparison plus readable enrollment and defense PDFs
+Outbound integrations disabled: PASS - scratch was never connected to any application or external provider
+Operator: Philip Korniotes with Codex-assisted verification
+Owner approval: PASS; temporary restore credentials and scratch project deleted after proof was preserved
 ```
+
+Full proof: `docs/RECOVERY_DRILL_2026-07-21.md`.

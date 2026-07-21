@@ -60,7 +60,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Public website | **Shipped source, deployment proof required** | Astro and static help/legal sources exist. Verify every Marketplace URL serves its own current page after final deployment. |
 | Production schema | **Shipped through migration 102** | Apply later migrations before dependent code and record the new schema version here. |
 | Production health | **Previously certified soak** | Reopen if Supabase resource warnings, timeouts, worker pressure, or recurring 4xx/5xx responses return. |
-| Independent recovery | **Open launch gate** | Recovery scripts exist, but one encrypted off-platform backup and isolated scratch restore still need proof. |
+| Independent recovery | **Certified** | Encrypted snapshot `20260721T175646Z` passed completion/hash checks and an isolated schema-102 scratch restore with all 105 Storage objects and readable private PDFs. See [Recovery Drill](RECOVERY_DRILL_2026-07-21.md). |
 | Release governance | **Open owner decision** | Protect `main`/require green CI or record a controlled-beta exception; practice one Railway rollback. |
 
 ## Product Capability Index
@@ -161,15 +161,14 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Tenant isolation and webhook authentication | **Shipped core** | auth/webhook middleware and connector services | Payloads cannot select their own tenant. |
 | Trigger delivery durability | **Shipped** | migration 099, trigger delivery worker | GHL app-event acceptance is not mislabeled as customer communication delivery. |
 | Background money reconciliation | **Shipped** | migration 098, money reconciliation worker | Multi-instance claims/leases prevent duplicate work. |
-| Recovery toolkit | **Shipped tooling, not certified recovery** | [Recovery Toolkit](../ops/recovery/README.md), [Recovery Checklist](RECOVERY_OPERATOR_CHECKLIST.md) | Launch gate closes only after encrypted backup and scratch restore proof. |
+| Recovery toolkit | **Shipped and restore-certified** | [Recovery Toolkit](../ops/recovery/README.md), [Recovery Checklist](RECOVERY_OPERATOR_CHECKLIST.md), [Recovery Drill](RECOVERY_DRILL_2026-07-21.md) | Daily encrypted B2 backup is scheduled; the July 21 scratch restore passed. |
 | AI operator skill and account SOP | **Shipped** | [AI Operator Setup](user-guide/AI_OPERATOR_SETUP.md), [Operator Skill](../.agents/skills/operate-scalesafe/SKILL.md) | Guides or operates one authorized tenant with approval gates and logs-first troubleshooting. |
 
 ## Open Controlled-Beta Work
 
 ### Stop-Ship
 
-1. Complete and verify one encrypted off-platform database/Storage backup.
-2. Restore that exact snapshot into an isolated scratch project and verify counts and sample-file hashes.
+No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the encrypted backup and isolated restore drill on July 21, 2026.
 
 ### Publication And Owner Actions
 
