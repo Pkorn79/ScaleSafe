@@ -1,6 +1,8 @@
 # GoHighLevel Reviewer Test Script
 
-Use the credentials supplied privately in the Marketplace submission. Do not store credentials in this repository.
+ScaleSafe has no separate username or password. The HighLevel reviewer installs the submitted app version in a reviewer-controlled GHL sub-account and opens ScaleSafe through GHL SSO. Do not supply a shared GHL user: HighLevel's native login enforces email OTP, so such credentials are not suitable for unattended review.
+
+The fixture below documents the certified reference journey shown in the submitted walkthrough. A reviewer running the journey in a different GHL test sub-account should create equivalent fictional records there and use only reviewer-owned test processor credentials.
 
 Reviewer fixture:
 
@@ -13,9 +15,9 @@ The submission operator must create and verify the named reviewer fixtures below
 
 ## 1. Open ScaleSafe
 
-1. Sign in with the supplied reviewer user.
-2. Open the `ScaleSafe` sub-account.
-3. Select ScaleSafe from the custom menu.
+1. Install the submitted ScaleSafe version and attached Snapshot in one reviewer-controlled GHL test sub-account.
+2. Select the Standard plan if HighLevel prompts for a plan; WholePay approval and NMI are not required for review.
+3. Open that exact sub-account and select ScaleSafe from the custom menu.
 
 Expected result:
 

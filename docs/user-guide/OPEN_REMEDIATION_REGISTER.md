@@ -39,7 +39,7 @@ These do not block the base product when described accurately, but they must not
 
 - FIND-068: Supabase Pro managed backups are active; encrypted snapshot `20260721T175646Z` passed off-platform verification and a complete isolated restore. See `docs/RECOVERY_DRILL_2026-07-21.md`.
 - FIND-073: `ScaleSafe V2 Clean Certified 2` passed the scratch-install allowlist certification and replaced the legacy reviewer package.
-- Marketplace submission package: the end-to-end and scope videos, reviewer credentials, reviewer notes, final 20-scope explanation, and certified Snapshot were submitted for GHL review.
+- Marketplace submission package: the end-to-end and scope videos, SSO-based reviewer access instructions, reviewer notes, final 20-scope explanation, and certified Snapshot were submitted for GHL review. ScaleSafe has no separate login, and shared GHL credentials are not used because HighLevel enforces email OTP.
 - Public review URLs: privacy, terms, support, guide, FAQ, and troubleshooting returned `200` with distinct page titles/content on July 21, 2026. Legacy `.html` Marketplace URLs redirect to the corresponding live pages.
 - FIND-044: dashboard reads are bounded, read-only, and currently respond below the three-second observation threshold.
 - FIND-045: milestone state is durable and trigger delivery is queued/observable.

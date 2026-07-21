@@ -56,7 +56,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Clean V2 Snapshot | **Certified** | `ScaleSafe V2 Clean Certified 2` passed a scratch installation on July 19, 2026. Attach and use only the certified package. |
 | Marketplace scopes | **Certified configuration** | Final 20-scope list is saved; the separate explanation video has been recorded. Reauthorize the reviewer install if GHL requires it. |
 | Marketplace billing | **Shipped** | Standard is $99 for Stripe/Whop. WholePay is $59 for Stripe/Whop/NMI and requires HQ approval. A limited gated free plan is planned after Marketplace approval. |
-| Marketplace submission | **Submitted - under GHL review** | Marketplace currently shows `v1.0.0 review`. Walkthrough, workflow, scope, reviewer credentials, notes, pricing, and certified Snapshot were submitted. |
+| Marketplace submission | **Submitted - under GHL review** | Marketplace currently shows `v1.0.0 review`. The July 21 resubmission removed the unusable shared GHL login and states the correct access model: reviewers install into their own HighLevel review sub-account and open ScaleSafe through GHL SSO. Walkthrough, workflow, scope, notes, pricing, and certified Snapshot remain submitted. |
 | Public website | **Deployed and verified** | Privacy, terms, support, guide, FAQ, and troubleshooting pages returned `200` with distinct titles/content on July 21, 2026; legacy `.html` Marketplace URLs redirect correctly. |
 | Production schema | **Shipped through migration 102** | Apply later migrations before dependent code and record the new schema version here. |
 | Production health | **Previously certified soak** | Reopen if Supabase resource warnings, timeouts, worker pressure, or recurring 4xx/5xx responses return. |

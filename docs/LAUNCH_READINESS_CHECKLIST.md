@@ -19,7 +19,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 - [x] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
 - [x] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
-- [x] Provide reviewer GHL credentials through the Marketplace form, never the repository.
+- [x] State in the Marketplace form that ScaleSafe has no separate credentials: reviewers install it in their own HighLevel review sub-account and enter through HighLevel SSO. Do not supply a shared GHL user that depends on email OTP.
 - [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
 - [x] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
 - [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
