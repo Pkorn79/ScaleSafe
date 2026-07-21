@@ -35,7 +35,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Production schema RPC reports version `102`.
 - [x] `/health` currently reports app, Supabase, and schema `ok`.
 - [ ] Confirm `VITE_ENABLE_DAILY_TEST_BILLING` is disabled before live merchant billing begins. It may remain enabled only while the documented daily test cycle is intentionally running.
-- [ ] Confirm Stripe is in the intended environment for the reviewer account and live processing is not accidentally enabled for review tests.
+- [x] Reviewer Stripe is connected to the intended WholePay sandbox/test account. The successful July 16 reviewer test-card enrollment proves the review path is not using live Stripe processing.
 
 ## 4. Processor And Money Safety
 
@@ -58,8 +58,8 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Deleted GHL trigger subscriptions are automatically deactivated after a terminal GHL response.
 - [x] Pulse app-event delivery, workflow execution, URL/interval fields, client submission, evidence, and dashboard follow-up state have been observed.
 - [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`.
-- [ ] Run Provisioning Health in the final reviewer Snapshot and save sanitized proof.
-- [ ] Confirm exactly one app-event pulse workflow and no competing tag/timer cadence workflow.
+- [x] Final reviewer Snapshot Provisioning Health passed on July 21: merchant/OAuth/webhook health is good, all 90 beta contact fields and 21 custom values are present, and 24 active workflow subscriptions are mapped. Thirty cleanup candidates were advisory only and were left untouched.
+- [x] Reviewer workflow inspection confirmed one published pulse workflow, `SS--Pulse-Check-Cadence`, using `ScaleSafe App Event` with `Event Type = Pulse Check Due`. The second App Event subscription is the published `SS- Payment Reminder` workflow filtered to `Upcoming Payment Reminder`; no competing tag/timer pulse path was found.
 - [ ] Complete one harmless enrollment-linked direct message after the current fix and verify the GHL echo remains on the selected enrollment.
 
 ## 6. Evidence, Connectors, And Defense

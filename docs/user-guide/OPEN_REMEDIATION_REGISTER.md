@@ -57,6 +57,7 @@ These do not block the base product when described accurately, but they must not
 - FIND-036/037: the fresh Stripe finite plan charged `$1` first installment plus a one-time `$1` add-on, then one final `$1` installment; it completed at 2/2 with no next billing date. `ss_payment_received` was delivered once for payment 2 with the exact enrollment and program name.
 - Dual-option Quick Checkout: a live `$1.50` Stripe paid-in-full selection on the installment-capable certification offer created one client-linked PIF enrollment and payment, no next billing, no saved recurring method, no recurring-plan display, and no processor subscription. Railway logged the exact enrollment as `paymentType: pif` with `nextBilling: null` and no warning/error response.
 - Reviewer full enrollment: the dedicated `ScaleSafe` location produced one linked Stripe sandbox payment, enrollment, consent record, enrollment-payment record, and private packet. Receipt and welcome messages were received. Public enrollment and checkout surfaces now use the DBA/brand, customer maps retain the public program name, and packet clause acceptance reflects the semantic IDs recorded at signature time.
+- Reviewer final health: the July 21 Provisioning Health check passed with all 90 beta fields, 21 custom values, and 24 active workflow subscriptions. The one pulse-specific workflow uses the filtered ScaleSafe App Event path, and the other App Event subscription is the separate upcoming-payment reminder. No GHL repair or cleanup action was taken.
 
 ## Accepted Controlled-Beta Limitations
 
