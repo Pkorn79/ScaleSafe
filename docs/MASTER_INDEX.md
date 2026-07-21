@@ -57,7 +57,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Marketplace scopes | **Certified configuration** | Final 20-scope list is saved; the separate explanation video has been recorded. Reauthorize the reviewer install if GHL requires it. |
 | Marketplace billing | **Shipped** | Standard is $99 for Stripe/Whop. WholePay is $59 for Stripe/Whop/NMI and requires HQ approval. A limited gated free plan is planned after Marketplace approval. |
 | Marketplace submission | **Owner action** | Walkthrough and scope videos exist and reviewer credentials were prepared outside the repo. Final form submission/approval remains external. |
-| Public website | **Shipped source, deployment proof required** | Astro and static help/legal sources exist. Verify every Marketplace URL serves its own current page after final deployment. |
+| Public website | **Deployed and verified** | Privacy, terms, support, guide, FAQ, and troubleshooting pages returned `200` with distinct titles/content on July 21, 2026; legacy `.html` Marketplace URLs redirect correctly. |
 | Production schema | **Shipped through migration 102** | Apply later migrations before dependent code and record the new schema version here. |
 | Production health | **Previously certified soak** | Reopen if Supabase resource warnings, timeouts, worker pressure, or recurring 4xx/5xx responses return. |
 | Independent recovery | **Certified** | Encrypted snapshot `20260721T175646Z` passed completion/hash checks and an isolated schema-102 scratch restore with all 105 Storage objects and readable private PDFs. See [Recovery Drill](RECOVERY_DRILL_2026-07-21.md). |
@@ -173,10 +173,9 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 ### Publication And Owner Actions
 
 1. Submit the completed Marketplace package and track GHL review status.
-2. Verify all public privacy, terms, support, guide, FAQ, and troubleshooting URLs after final deployment.
-3. Confirm the reviewer install uses the certified clean V2 Snapshot and current entitlement.
-4. Disable daily test billing before live merchant billing.
-5. Decide repository visibility and production branch protection; practice one Railway rollback.
+2. Confirm the reviewer install uses the certified clean V2 Snapshot and current entitlement.
+3. Disable daily test billing before live merchant billing.
+4. Decide repository visibility and production branch protection; practice one Railway rollback.
 
 ### Remaining Feature Proof
 

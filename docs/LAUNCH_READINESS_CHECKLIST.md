@@ -24,7 +24,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
 - [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
 - [x] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
-- [ ] Deploy the prepared public help/legal pages and confirm privacy, terms, support, guide, FAQ, and troubleshooting URLs serve their own content without authentication. Current live paths return `200` but fall back to the generic landing page.
+- [x] Public privacy, terms, support, guide, FAQ, and troubleshooting pages return `200` with distinct page titles/content. Legacy `.html` privacy, terms, and support URLs redirect to the corresponding live pages.
 
 ## 3. Production Environment And Schema
 
