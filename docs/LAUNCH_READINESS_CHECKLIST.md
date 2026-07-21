@@ -2,9 +2,9 @@
 
 > Current status rollup: `docs/MASTER_INDEX.md`. This checklist preserves detailed launch gates, but its reconciliation header may predate later certified work.
 
-Reconciled: 2026-07-16 CDT
-Deployed SHA: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
-Production schema: `101`
+Reconciled: 2026-07-21 CDT
+Current release SHA: `67d9ea3f40d8882b0bbcd32163f0736261257597`
+Production schema: `102`
 Detailed current status: `docs/user-guide/OPEN_REMEDIATION_REGISTER.md`
 
 This checklist is for the first controlled beta merchant and the GoHighLevel Marketplace review package. Historical findings remain in the certification ledger; fixed items are not repeated as open work here.
@@ -13,17 +13,17 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 - [x] **Encrypted recovery is proven.** Snapshot `20260721T175646Z` restored successfully into an isolated scratch project with schema 102, matching critical counts, all 105 Storage objects, and readable enrollment/defense PDFs. See `docs/RECOVERY_DRILL_2026-07-21.md`.
 - [x] **Production health soak is complete.** From 2026-07-15 4:46:45 PM through 5:47:42 PM CDT, Railway recorded 134 HTTP requests, zero 4xx/5xx, zero requests over three seconds, a 1.536-second maximum, and zero application warning/error lines. Ten closing `/health` probes all reported app/Supabase/schema `ok`.
-- [ ] **Reviewer Snapshot is clean.** Certify the approved V2 asset allowlist in the dedicated `ScaleSafe` GHL sub-account; obsolete SYS2/model-specific/duplicate assets are absent or explicitly removed from the submitted Snapshot.
+- [x] **Reviewer Snapshot is clean.** `ScaleSafe V2 Clean Certified 2` passed the July 19 scratch installation and is the approved reviewer package.
 
 ## 2. Marketplace Submission Package
 
-- [ ] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
-- [ ] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
-- [ ] Provide reviewer GHL credentials through the Marketplace form, never the repository.
+- [x] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
+- [x] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
+- [x] Provide reviewer GHL credentials through the Marketplace form, never the repository.
 - [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
-- [ ] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
+- [x] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
 - [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
-- [ ] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
+- [x] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
 - [ ] Deploy the prepared public help/legal pages and confirm privacy, terms, support, guide, FAQ, and troubleshooting URLs serve their own content without authentication. Current live paths return `200` but fall back to the generic landing page.
 
 ## 3. Production Environment And Schema
@@ -32,7 +32,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] `PROCESSOR_ENCRYPTION_KEY`, `PUBLIC_ACTION_TOKEN_SECRET`, Stripe secrets, Supabase service key, GHL app credentials, and Turnstile keys are present in Railway.
 - [x] `ALLOW_LEGACY_PUBLIC_ACTION_LINKS` is absent/false.
 - [x] Supabase is on Pro and managed daily backups are enabled with seven-day retention.
-- [x] Production schema RPC reports version `101`.
+- [x] Production schema RPC reports version `102`.
 - [x] `/health` currently reports app, Supabase, and schema `ok`.
 - [ ] Confirm `VITE_ENABLE_DAILY_TEST_BILLING` is disabled before live merchant billing begins. It may remain enabled only while the documented daily test cycle is intentionally running.
 - [ ] Confirm Stripe is in the intended environment for the reviewer account and live processing is not accidentally enabled for review tests.
@@ -109,4 +109,4 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 ## Launch Decision
 
-ScaleSafe is a **NO-GO for the first real beta merchant** while any item in Section 1 remains open. Marketplace submission also requires Sections 2 and 7. Other unchecked items require completion or a written owner-approved controlled-beta exception before launch.
+ScaleSafe has no remaining Section 1 stop-ship gate. Marketplace submission is complete and under GHL review. Remaining unchecked items require live proof, owner configuration, or a written controlled-beta exception before the affected capability is offered.

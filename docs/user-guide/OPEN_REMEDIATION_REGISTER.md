@@ -2,19 +2,16 @@
 
 > Current status rollup: `docs/MASTER_INDEX.md`. This register preserves detailed finding history; use the Master Index when this file's older baseline conflicts with later proof.
 
-Reconciled: 2026-07-16 CDT
-Deployed code baseline: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
-Production schema: `101`
+Reconciled: 2026-07-21 CDT
+Current release baseline: `67d9ea3f40d8882b0bbcd32163f0736261257597`
+Production schema: `102`
 Working branch: `codex/beta-remediation`
 
 This is the current open-work list. `LIVE_FINDINGS.md` and `LIVE_CERTIFICATION_2026-07-13.md` remain historical audit records and intentionally retain the original findings.
 
 ## Stop-Ship Before The First Real Beta Merchant
 
-| Gate | Current truth | Required proof to close | Owner |
-| --- | --- | --- | --- |
-| Recovery proof (FIND-068) | **Closed 2026-07-21.** Encrypted snapshot `20260721T175646Z` passed `COMPLETE.json`, SHA-256/off-platform verification, and a schema-102 scratch restore with matching critical counts, all 105 Storage objects, and readable private PDFs. | [Recovery drill proof](../RECOVERY_DRILL_2026-07-21.md) | Philip plus Codex |
-| Clean reviewer package (FIND-073) | The dedicated `ScaleSafe` GHL sub-account opens and is tenant-isolated, but the attached Snapshot inventory still contains legacy/duplicate assets documented in `REVIEWER_SNAPSHOT_INVENTORY.md`. | Install or certify the approved V2 allowlist, remove obsolete packaged assets, run Provisioning Health, and preserve sanitized proof. | Philip with Codex verification |
+No open stop-ship gate remains. FIND-068 closed with the July 21 encrypted backup/restore drill. FIND-073 closed when `ScaleSafe V2 Clean Certified 2` passed the July 19 scratch installation and became the approved reviewer package.
 
 ## Publication And Owner-Configuration Gates
 
@@ -22,9 +19,7 @@ These are not unresolved application-code defects, but GHL review or processor l
 
 | Gate | Required action |
 | --- | --- |
-| Marketplace submission package | Record the installation/connection/end-to-end video, the scope-justification video, provide reviewer credentials outside the repository, and paste the reviewer notes. |
 | Public review URLs | Deploy the prepared `marketing/` package. The current privacy, terms, support, guide, FAQ, and troubleshooting paths return HTTP 200 but all resolve to the generic landing-page fallback rather than their own content. Verify unique page titles/content after deployment. |
-| Marketplace scope video | The final 20-scope least-privilege list is saved and documented in `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md`. Record the separate scope-justification video and reauthorize the clean reviewer install against the reduced grant. |
 | NMI official webhook (FIND-007) | Certify a signed/verified live callback for each NMI configuration offered during beta. Do not infer webhook readiness from successful dashboard charges. |
 | GHL lifecycle templates (FIND-035) | Confirm pause/resume/cancel templates use the documented scalar contact fields and produce one correctly named program message. Disable any unverified workflow rather than shipping `[object Object]`. |
 | Production release control (FIND-072) | Protect `main` with green CI/owner review or record a controlled-beta exception and practice one Railway rollback. |
@@ -43,6 +38,9 @@ These do not block the base product when described accurately, but they must not
 
 ## Closed By Deployed Code And Current Live Proof
 
+- FIND-068: Supabase Pro managed backups are active; encrypted snapshot `20260721T175646Z` passed off-platform verification and a complete isolated restore. See `docs/RECOVERY_DRILL_2026-07-21.md`.
+- FIND-073: `ScaleSafe V2 Clean Certified 2` passed the scratch-install allowlist certification and replaced the legacy reviewer package.
+- Marketplace submission package: the end-to-end and scope videos, reviewer credentials, reviewer notes, final 20-scope explanation, and certified Snapshot were submitted for GHL review.
 - FIND-044: dashboard reads are bounded, read-only, and currently respond below the three-second observation threshold.
 - FIND-045: milestone state is durable and trigger delivery is queued/observable.
 - FIND-048: defense regeneration returns `202` and completes in the durable background path.
