@@ -2,16 +2,12 @@
 
 ScaleSafe has no separate username or password. The HighLevel reviewer installs the submitted app version in a reviewer-controlled GHL sub-account and opens ScaleSafe through GHL SSO. Do not supply a shared GHL user: HighLevel's native login enforces email OTP, so such credentials are not suitable for unattended review.
 
-The fixture below documents the certified reference journey shown in the submitted walkthrough. A reviewer running the journey in a different GHL test sub-account should create equivalent fictional records there and use only reviewer-owned test processor credentials.
+The reviewer should run the journey in a reviewer-controlled GHL test sub-account using fictional records and reviewer-owned Stripe test credentials. The private ScaleSafe certification account shown in the submitted walkthrough is reference material only and is not required for reviewer access.
 
-Reviewer fixture:
+Suggested test payment:
 
-- GHL sub-account: `ScaleSafe`
-- GHL location: `BxiqLzUf4Rh5GXR6DUZ3`
-- Processor: connected Stripe test account
+- Processor: Stripe test mode
 - Test card: Stripe test Visa `4242 4242 4242 4242`, any future expiry, any CVC
-
-The submission operator must create and verify the named reviewer fixtures below before recording the final video or sharing credentials.
 
 ## 1. Open ScaleSafe
 
@@ -35,17 +31,15 @@ Expected result:
 
 ## 3. Create Or Review An Offer
 
-Use the prepared fixture:
+Create a simple test offer:
 
-- Internal name: `CERT 2026-07-16 Stripe PIF`
+- Internal name: `Reviewer Stripe PIF Test`
 - Client-facing program name: `ScaleSafe Reviewer Test Program`
-- Offer ID: `df133917-a190-4981-9dcb-9d6f58f2a009`
-- Enrollment URL: `https://review.scalesafe.app/welcome?offerId=df133917-a190-4981-9dcb-9d6f58f2a009`
 
 Expected configuration:
 
 - Client-facing program name: `ScaleSafe Reviewer Test Program`
-- Internal name: `CERT 2026-07-16 Stripe PIF`
+- Internal name: `Reviewer Stripe PIF Test`
 - Stripe processor
 - Paid in full
 - Full enrollment
@@ -59,9 +53,9 @@ Expected result:
 
 ## 4. Complete Enrollment And Payment
 
-1. Open the prepared full-enrollment link above.
+1. Copy and open the full-enrollment link generated for the test offer.
 2. Complete identity, program review, terms, and signature.
-3. Before paying, confirm the ScaleSafe logo renders and the terms link opens `https://dashboard.scalesafe.app/terms/BxiqLzUf4Rh5GXR6DUZ3`.
+3. Before paying, confirm the ScaleSafe logo renders and the terms link opens the terms page generated for the review sub-account.
 4. Complete Turnstile only if it is enabled for the fixture.
 5. Pay with the Stripe test card.
 

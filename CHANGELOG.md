@@ -3,6 +3,15 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Whop lifecycle capability display (2026-07-21)
+
+### Fixed
+- Client Programs and Payment Management now use the same Whop lifecycle capability check.
+- Older Whop enrollments without a membership ID no longer show Pause, Resume, or Cancel controls that the Whop API cannot perform; the program card explains why those controls are unavailable.
+
+### Verified
+- Focused capability tests, TypeScript typecheck, and the production backend/UI build passed.
+
 ## Unreleased - Exact lifecycle workflow fields (2026-07-21)
 
 ### Fixed

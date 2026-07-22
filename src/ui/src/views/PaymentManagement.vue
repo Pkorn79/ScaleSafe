@@ -304,6 +304,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { hasRemainingRecurringBilling } from '../lib/paymentDisplay';
+import { canControlProcessorLifecycle, isWhopEnrollment } from '../lib/paymentLifecycleCapabilities';
 import Modal from '../components/Modal.vue';
 
 const route = useRoute();
@@ -440,16 +441,12 @@ function paymentsRemaining(enrollment: any): number | null {
   return Math.max(0, total - Number(enrollment?.paymentsMade || 0));
 }
 
-function isWhopEnrollment(enrollment: any): boolean {
-  return String(enrollment?.processorType || '').toLowerCase() === 'whop';
-}
-
 function canRequestPaymentUpdate(enrollment: any): boolean {
   return !isWhopEnrollment(enrollment);
 }
 
 function canPause(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
+  if (!canControlProcessorLifecycle(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   if (!['enrolled', 'active'].includes(status)) return false;
   const type = String(enrollment?.paymentType || '').toLowerCase();
@@ -459,18 +456,14 @@ function canPause(enrollment: any): boolean {
 }
 
 function canResume(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
+  if (!canControlProcessorLifecycle(enrollment)) return false;
   return String(enrollment?.status || '').toLowerCase() === 'paused';
 }
 
 function canCancel(enrollment: any): boolean {
-  if (isWhopEnrollment(enrollment) && !hasProcessorSubscription(enrollment)) return false;
+  if (!canControlProcessorLifecycle(enrollment)) return false;
   const status = String(enrollment?.status || '').toLowerCase();
   return !['cancelled', 'completed'].includes(status);
-}
-
-function hasProcessorSubscription(enrollment: any): boolean {
-  return Boolean(String(enrollment?.processorSubscriptionId || '').trim());
 }
 
 onMounted(async () => {

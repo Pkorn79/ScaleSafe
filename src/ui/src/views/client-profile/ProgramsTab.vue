@@ -100,6 +100,10 @@
         </div>
       </div>
 
+      <div v-if="isWhopEnrollment(enr) && !canControlProcessorLifecycle(enr)" class="billing-warning mt-2">
+        Whop pause, resume, and cancel are unavailable because this enrollment has no Whop membership ID.
+      </div>
+
       <!-- Milestone progress -->
       <div v-if="enr.milestones && enr.milestones.length > 0" class="milestone-block">
         <div class="flex-between">
@@ -189,6 +193,7 @@ import { ref, computed } from 'vue';
 import { GraduationCap } from 'lucide-vue-next';
 import { useApi } from '../../composables/useApi';
 import { customerProgramName, internalOfferName } from '../../lib/offerNames';
+import { canControlProcessorLifecycle, isWhopEnrollment } from '../../lib/paymentLifecycleCapabilities';
 import Modal from '../../components/Modal.vue';
 import EmptyState from '../../components/EmptyState.vue';
 import { pluralize } from '../../utils/humanize';
@@ -259,13 +264,14 @@ const actionModalConfirmLabel = computed(() => {
 
 // Status action visibility
 function canPause(enr: any): boolean {
-  return ['enrolled', 'active'].includes(enr.status);
+  return canControlProcessorLifecycle(enr) && ['enrolled', 'active'].includes(enr.status);
 }
 function canResume(enr: any): boolean {
-  return enr.status === 'paused';
+  return canControlProcessorLifecycle(enr) && enr.status === 'paused';
 }
 function canCancel(enr: any): boolean {
-  return ['enrolled', 'active', 'paused', 'consent_captured', 'device_captured'].includes(enr.status);
+  return canControlProcessorLifecycle(enr)
+    && ['enrolled', 'active', 'paused', 'consent_captured', 'device_captured'].includes(enr.status);
 }
 function canComplete(enr: any): boolean {
   return ['enrolled', 'active'].includes(enr.status);

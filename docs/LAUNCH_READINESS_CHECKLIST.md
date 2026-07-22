@@ -82,7 +82,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Workflow reference exists at `docs/user-guide/WORKFLOW_REFERENCE.md`.
 - [x] Deep test protocol exists at `docs/user-guide/DEEP_DIVE_TEST_PLAN.md`.
 - [x] Reviewer test script, installation guide, and troubleshooting guide are complete.
-- [ ] Complete the sanitized screenshot set using `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`; PMG engineering captures are not submission assets.
+- [ ] Complete the expanded fictional-demo screenshot set listed in `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`. The initial public-safe reviewer captures are complete; PMG engineering captures are not submission assets.
 - [ ] Ensure screenshots contain no real client PII, card/bank data, processor secrets, webhook secrets, access tokens, or signed private-file URLs.
 - [x] Public claims use “reduce chargebacks” and “organize evidence,” not guaranteed prevention or guaranteed wins.
 
