@@ -1,16 +1,16 @@
 # Command Center And Guardian Independent Architecture Review
 
-**Status:** Ten-lane Fable review completed and independently reconciled by Codex  
-**Architecture baseline:** `008b3bf68eaaa7f2dc825399b05acba70c1fba66` on `codex/beta-remediation`  
-**Production reference at review start:** `67d9ea3f40d8882b0bbcd32163f0736261257597`  
-**Database schema:** 102  
+**Status:** Ten-lane Fable review completed and independently reconciled by Codex
+**Architecture baseline:** `008b3bf68eaaa7f2dc825399b05acba70c1fba66` on `codex/beta-remediation`
+**Production reference at review start:** `67d9ea3f40d8882b0bbcd32163f0736261257597`
+**Database schema:** Production 102; migration 103 drafted and unapplied
 **Review date:** 2026-07-22
 
 ## Executive Verdict
 
 **Conditional architecture approval.** The original direction was sound, but implementation should not start from the unreconciled draft. The reviewed architecture is acceptable only with the amendments now incorporated into `COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md`.
 
-No production code, SQL, provider configuration, or deployment was changed during this review. Phase 1 remains blocked on Philip's owner-decision approval and creation of an isolated staging context.
+No production code, SQL, provider configuration, or deployment was changed during this review. Philip approved the recommended Phase 1 defaults on 2026-07-22. Phase 1 is implemented on the isolated branch but remains uncertified until it passes the dedicated-host and scratch-database staging gate.
 
 ## Review Method
 
@@ -129,8 +129,8 @@ The Command Center workstream stays off `main`, which auto-deploys. Live SQL is 
 
 | Phase | Review disposition | Blocking prerequisite |
 | --- | --- | --- |
-| 0 - Architecture | Ready for owner approval | Approve recommended defaults and resolve genuinely open decisions |
-| 1 - Identity and isolation | Not started | Dedicated operator hostname and isolated staging context |
+| 0 - Architecture | Approved and complete | Recommended defaults approved 2026-07-22; genuinely open later-phase decisions remain tracked |
+| 1 - Identity and isolation | Implemented locally; staging proof pending | Dedicated operator hostname, isolated Railway service, scratch Supabase migration, and live isolation certification |
 | 2 - Health and incidents | Not started | Phase 1 gate plus owner-approved thresholds/resource budget |
 | 3 - Guardian and alerting | Not started | Alert provider, VPS-risk decision, sanitized backup status handoff |
 | 4 - Platform dashboard | Not started | Phases 1-3 certified and legacy-token cutover runbook |
@@ -138,6 +138,6 @@ The Command Center workstream stays off `main`, which auto-deploys. Live SQL is 
 | 6 - Controlled actions | Not started | Read-only operation proven and each action individually certified |
 | 7 - Optimization | Deferred | Real beta operating data |
 
-## Owner Approval Point
+## Owner Approval Record
 
-The reconciled plan's Section 19 separates recommended defaults that can be approved as one batch from genuinely open choices. No implementation or migration should begin until that approval is recorded.
+Philip approved the reconciled plan's recommended Phase 1 defaults on 2026-07-22. That approval authorized isolated implementation only. Production deployment, live SQL, DNS, and feature enablement still require separate explicit approval.

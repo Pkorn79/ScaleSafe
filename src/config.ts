@@ -19,9 +19,31 @@ function optionalPositiveInteger(key: string, fallback: number, minimum = 1): nu
   return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
 }
 
+function explicitPositiveInteger(key: string): number | null {
+  const raw = process.env[key] || '';
+  if (!/^\d+$/.test(raw)) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function decodeAes256Key(value: string): Buffer | null {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return Buffer.from(value, 'hex');
+  try {
+    const decoded = Buffer.from(value, 'base64');
+    return decoded.length === 32 ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
 const ghlClientId = required('GHL_APP_CLIENT_ID');
+const operatorCommandCenterEnabled = process.env.OPERATOR_COMMAND_CENTER_ENABLED === 'true';
+const operatorAuthEnabled = process.env.OPERATOR_AUTH_ENABLED === 'true';
+const operatorHost = optional('OPERATOR_HOST', 'ops.scalesafe.app').toLowerCase();
+const operatorTrustProxyHops = explicitPositiveInteger('OPERATOR_TRUST_PROXY_HOPS');
+const operatorTokenEncryptionKey = process.env.OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY || '';
 
 function deriveGhlAppId(clientId: string): string {
   const explicit = process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '';
@@ -46,6 +68,42 @@ failIfProductionFlagEnabled('ALLOW_LEGACY_PUBLIC_ACTION_LINKS');
 if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
   console.error('FATAL: Missing required environment variable: PUBLIC_ACTION_TOKEN_SECRET');
   process.exit(1);
+}
+
+if (operatorAuthEnabled && !operatorCommandCenterEnabled) {
+  console.error('FATAL: OPERATOR_AUTH_ENABLED requires OPERATOR_COMMAND_CENTER_ENABLED=true');
+  process.exit(1);
+}
+
+if (operatorCommandCenterEnabled && isProd) {
+  const validOperatorHost = /^(?=.{1,253}$)(?!-)[a-z0-9.-]+(?<!-)$/.test(operatorHost)
+    && !operatorHost.includes('/')
+    && operatorHost.includes('.');
+  if (!validOperatorHost) {
+    console.error('FATAL: OPERATOR_HOST must be one exact hostname');
+    process.exit(1);
+  }
+  if (!operatorTrustProxyHops) {
+    console.error('FATAL: OPERATOR_TRUST_PROXY_HOPS must be an explicit positive integer');
+    process.exit(1);
+  }
+}
+
+if (operatorAuthEnabled) {
+  if (!process.env.SUPABASE_PUBLISHABLE_KEY && !process.env.SUPABASE_ANON_KEY) {
+    console.error('FATAL: Operator auth requires SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY');
+    process.exit(1);
+  }
+  const operatorKey = decodeAes256Key(operatorTokenEncryptionKey);
+  if (!operatorKey) {
+    console.error('FATAL: OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY must be a 32-byte hex or base64 key');
+    process.exit(1);
+  }
+  const processorKey = decodeAes256Key(process.env.PROCESSOR_ENCRYPTION_KEY || '');
+  if (processorKey && operatorKey.equals(processorKey)) {
+    console.error('FATAL: Operator auth and processor encryption must use different keys');
+    process.exit(1);
+  }
 }
 
 export const config = {
@@ -100,6 +158,22 @@ export const config = {
 
   // Internal ScaleSafe HQ console. If unset, HQ routes return 404.
   hqAdminToken: process.env.SCALESAFE_HQ_ADMIN_TOKEN || '',
+
+  // Isolated ScaleSafe operator command center. Both flags default off so the
+  // Marketplace application can deploy without exposing unfinished routes.
+  operator: {
+    enabled: operatorCommandCenterEnabled,
+    authEnabled: operatorAuthEnabled,
+    host: operatorHost,
+    origin: `https://${operatorHost}`,
+    trustProxyHops: operatorTrustProxyHops || 0,
+    supabaseAuthKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+    tokenEncryptionKey: operatorTokenEncryptionKey,
+    authAttemptMinutes: optionalPositiveInteger('OPERATOR_AUTH_ATTEMPT_MINUTES', 10),
+    sessionIdleMinutes: optionalPositiveInteger('OPERATOR_SESSION_IDLE_MINUTES', 30),
+    sessionAbsoluteMinutes: optionalPositiveInteger('OPERATOR_SESSION_ABSOLUTE_MINUTES', 720),
+    invitationHours: optionalPositiveInteger('OPERATOR_INVITATION_HOURS', 72),
+  },
 
   // Global emergency switch. Per-provider and per-location rollout is stored
   // in the database rather than Railway environment variables.

@@ -26,11 +26,15 @@ import paymentLifecycleRoutes from './payment-lifecycle.routes';
 import processorConfigRoutes from './processor-config.routes';
 import { evidenceConnectionManagementRoutes, evidenceConnectorPublicRoutes } from './evidence-connector.routes';
 import zoomIntegrationRoutes from './zoom-integration.routes';
+import operatorRoutes from './operator.routes';
 
 const router = Router();
 
 // Health — no rate limiting
 router.use(healthRoutes);
+
+// Isolated operator routes are host-gated and disabled by default.
+router.use(operatorRoutes);
 
 // Auth — no rate limiting (OAuth callbacks)
 router.use('/auth', authRoutes);

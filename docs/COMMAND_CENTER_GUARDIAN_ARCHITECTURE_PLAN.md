@@ -1,10 +1,10 @@
 # ScaleSafe Command Center And Guardian Architecture Plan
 
-**Status:** Independently reviewed planning baseline; owner approval pending  
-**Implementation status:** No implementation authorized by this document  
-**Repository baseline:** `008b3bf68eaaa7f2dc825399b05acba70c1fba66` on `codex/beta-remediation`  
-**Production reference at planning start:** `origin/main` at `67d9ea3f40d8882b0bbcd32163f0736261257597`  
-**Database schema:** Version 102  
+**Status:** Independently reviewed architecture; recommended Phase 1 defaults approved by Philip on 2026-07-22
+**Implementation status:** Phase 1 implemented on isolated branch; isolated staging certification still required
+**Repository baseline:** `008b3bf68eaaa7f2dc825399b05acba70c1fba66` on `codex/beta-remediation`
+**Production reference at planning start:** `origin/main` at `67d9ea3f40d8882b0bbcd32163f0736261257597`
+**Database schema:** Production remains version 102; migration 103 is drafted and unapplied
 **Last updated:** 2026-07-22
 
 ## 1. Purpose
@@ -1265,9 +1265,11 @@ Gate:
 
 Nothing merges to `main`, no live migration is applied, and no production flag is enabled without owner approval while the GHL Marketplace application is under review.
 
-## 19. Owner Decisions Required Before Phase 1
+## 19. Phase 1 Approval Record And Remaining Owner Decisions
 
 ### 19.1 Recommended Defaults For One Batch Approval
+
+**Approved by Philip on 2026-07-22.** These defaults govern the isolated Phase 1 implementation. They do not authorize production SQL, deployment, DNS, or feature enablement.
 
 1. Use `ops.scalesafe.app` as the dedicated operator hostname on the existing backend/codebase.
 2. Keep the default reseller view account-level, exclude client PII/evidence and payment dollar totals, and allow one active primary reseller per merchant.

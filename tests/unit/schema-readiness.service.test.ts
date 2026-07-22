@@ -8,20 +8,20 @@ import { schemaReadinessService } from '../../src/services/schema-readiness.serv
 
 beforeEach(() => jest.clearAllMocks());
 
-test('accepts migration 099 as deployment-ready', async () => {
-  mockRpc.mockResolvedValue({ data: 99, error: null });
+test('accepts migration 103 as deployment-ready', async () => {
+  mockRpc.mockResolvedValue({ data: 103, error: null });
 
-  await expect(schemaReadinessService.check()).resolves.toEqual({ ready: true, version: 99 });
+  await expect(schemaReadinessService.check()).resolves.toEqual({ ready: true, version: 103 });
   await expect(schemaReadinessService.assertReady()).resolves.toBeUndefined();
 });
 
-test('blocks startup when migration 099 has not been applied', async () => {
-  mockRpc.mockResolvedValue({ data: 98, error: null });
+test('blocks startup when migration 103 has not been applied', async () => {
+  mockRpc.mockResolvedValue({ data: 102, error: null });
 
   await expect(schemaReadinessService.check()).resolves.toEqual({
     ready: false,
-    version: 98,
-    error: 'Schema version 98 is below required version 99',
+    version: 102,
+    error: 'Schema version 102 is below required version 103',
   });
 });
 

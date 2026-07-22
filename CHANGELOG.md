@@ -3,6 +3,24 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Command Center Phase 1 identity foundation (2026-07-22)
+
+### Added
+- A default-off, dedicated-host operator identity plane using server-side Supabase Auth, mandatory TOTP MFA, app-owned opaque sessions, host-only cookies, exact-origin CSRF protection, and live authorization checks.
+- Migration 103 for operator organizations, users, memberships, reseller assignments, time-limited support grants, invitations, authentication attempts, sessions, append-only audit events, and database-backed rate limits.
+- Atomic database functions for reseller assignment transfer, support-grant decisions, invitation acceptance, session creation/revocation, and the one-time platform-owner bootstrap.
+- Isolated operator routes and a minimal authentication surface under `/internal/operator`; unmatched internal paths can no longer fall through to the merchant SPA.
+- Focused tests for feature flags, host isolation, mixed merchant/operator identity rejection, cookies, CSRF, MFA, invitations, live assignment enforcement, startup key separation, RLS migration requirements, and fail-closed audit behavior.
+
+### Safety
+- All operator flags default off. Migration 103 is not applied, and no production deployment, DNS, provider configuration, or feature enablement is part of this change.
+- Production remains on schema 102 until the isolated staging gate is completed and Philip separately approves production timing.
+
+### Verified
+- Focused Phase 1 suite: 9 suites and 61 tests passed.
+- Full repository suite: 177 suites and 1,438 tests passed.
+- TypeScript typecheck and the production backend/UI build passed.
+
 ## Unreleased - Whop lifecycle capability display (2026-07-21)
 
 ### Fixed

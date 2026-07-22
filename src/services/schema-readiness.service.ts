@@ -1,6 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 
-const REQUIRED_SCHEMA_VERSION = 99;
+const REQUIRED_SCHEMA_VERSION = 103;
 
 export const schemaReadinessService = {
   async check(): Promise<{ ready: boolean; version: number | null; error?: string }> {
@@ -25,7 +25,7 @@ export const schemaReadinessService = {
   async assertReady(): Promise<void> {
     const result = await this.check();
     if (!result.ready) {
-      throw new Error(`ScaleSafe database is not deployment-ready: ${result.error || 'migration 099 is missing'}`);
+      throw new Error(`ScaleSafe database is not deployment-ready: ${result.error || 'migration 103 is missing'}`);
     }
   },
 };
