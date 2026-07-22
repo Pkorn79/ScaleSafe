@@ -25,9 +25,29 @@ CREATE TABLE IF NOT EXISTS account_health_snapshots (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_health_snapshots_merchant ON account_health_snapshots(merchant_id);
-CREATE INDEX idx_health_snapshots_location ON account_health_snapshots(location_id);
-CREATE INDEX idx_health_snapshots_computed ON account_health_snapshots(computed_at DESC);
+-- Migration 019 creates an earlier version of this table. CREATE TABLE IF NOT
+-- EXISTS does not merge the newer columns into that table, so add the S4 shape
+-- explicitly for clean, sequential migration replays.
+ALTER TABLE account_health_snapshots
+  ADD COLUMN IF NOT EXISTS computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS period_days INTEGER DEFAULT 30,
+  ADD COLUMN IF NOT EXISTS total_charges INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_disputes INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_efws INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS dispute_rate NUMERIC(7,6) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS disputes_won INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS disputes_lost INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS disputes_pending INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS financial_exposure_cents BIGINT DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS avg_evidence_score INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS reason_code_breakdown JSONB DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS risk_level TEXT DEFAULT 'unknown',
+  ADD COLUMN IF NOT EXISTS vamp_status TEXT DEFAULT 'safe',
+  ADD COLUMN IF NOT EXISTS mc_status TEXT DEFAULT 'safe';
+
+CREATE INDEX IF NOT EXISTS idx_health_snapshots_merchant ON account_health_snapshots(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_health_snapshots_location ON account_health_snapshots(location_id);
+CREATE INDEX IF NOT EXISTS idx_health_snapshots_computed ON account_health_snapshots(computed_at DESC);
 
 -- Stripe Radar Value Lists — tracked per merchant
 CREATE TABLE IF NOT EXISTS stripe_radar_lists (
@@ -40,9 +60,9 @@ CREATE TABLE IF NOT EXISTS stripe_radar_lists (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_radar_lists_merchant ON stripe_radar_lists(merchant_id);
-CREATE INDEX idx_radar_lists_location ON stripe_radar_lists(location_id);
-CREATE UNIQUE INDEX idx_radar_lists_merchant_alias ON stripe_radar_lists(merchant_id, list_alias);
+CREATE INDEX IF NOT EXISTS idx_radar_lists_merchant ON stripe_radar_lists(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_radar_lists_location ON stripe_radar_lists(location_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_radar_lists_merchant_alias ON stripe_radar_lists(merchant_id, list_alias);
 
 -- Add stripe_connected and stripe_user_id columns to merchants if not present
 ALTER TABLE merchants ADD COLUMN IF NOT EXISTS stripe_connected BOOLEAN DEFAULT false;

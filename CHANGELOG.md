@@ -11,14 +11,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Atomic database functions for reseller assignment transfer, support-grant decisions, invitation acceptance, session creation/revocation, and the one-time platform-owner bootstrap.
 - Isolated operator routes and a minimal authentication surface under `/internal/operator`; unmatched internal paths can no longer fall through to the merchant SPA.
 - Focused tests for feature flags, host isolation, mixed merchant/operator identity rejection, cookies, CSRF, MFA, invitations, live assignment enforcement, startup key separation, RLS migration requirements, and fail-closed audit behavior.
+- Clean-replay regression coverage for historical migration interactions in migrations 031, 086, and 095.
+
+### Fixed
+- Fresh databases can now replay all migrations through schema 103 without manual SQL shims.
+- Duplicate reseller external references now return a clear `409 CONFLICT` instead of an unhandled `500`.
 
 ### Safety
-- All operator flags default off. Migration 103 is not applied, and no production deployment, DNS, provider configuration, or feature enablement is part of this change.
-- Production remains on schema 102 until the isolated staging gate is completed and Philip separately approves production timing.
+- All operator flags default off. Migration 103 is not applied to production, and no production deployment, DNS, provider configuration, bootstrap, or feature enablement is part of this change.
+- Production remains on schema 102 until Philip separately approves production timing.
 
 ### Verified
-- Focused Phase 1 suite: 9 suites and 61 tests passed.
-- Full repository suite: 177 suites and 1,438 tests passed.
+- Isolated staging certification: 62/62 requirements passed after reconciling one obsolete harness label.
+- Disposable clean database replay: 103/103 migrations applied without shims; schema version 103 verified and the project deleted.
+- Focused replay/admin suite: 2 suites and 11 tests passed.
+- Full repository suite: 178 suites and 1,442 tests passed.
 - TypeScript typecheck and the production backend/UI build passed.
 
 ## Unreleased - Whop lifecycle capability display (2026-07-21)

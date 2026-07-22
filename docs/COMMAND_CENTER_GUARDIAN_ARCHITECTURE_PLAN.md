@@ -1,10 +1,10 @@
 # ScaleSafe Command Center And Guardian Architecture Plan
 
 **Status:** Independently reviewed architecture; recommended Phase 1 defaults approved by Philip on 2026-07-22
-**Implementation status:** Phase 1 implemented on isolated branch; isolated staging certification still required
+**Implementation status:** Phase 1 isolated staging certification passed; production remains unchanged and unauthorized
 **Repository baseline:** `008b3bf68eaaa7f2dc825399b05acba70c1fba66` on `codex/beta-remediation`
 **Production reference at planning start:** `origin/main` at `67d9ea3f40d8882b0bbcd32163f0736261257597`
-**Database schema:** Production remains version 102; migration 103 is drafted and unapplied
+**Database schema:** Production remains version 102; migration 103 is certified only in isolated staging
 **Last updated:** 2026-07-22
 
 ## 1. Purpose

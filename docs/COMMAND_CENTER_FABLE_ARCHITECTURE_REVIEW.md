@@ -10,7 +10,7 @@
 
 **Conditional architecture approval.** The original direction was sound, but implementation should not start from the unreconciled draft. The reviewed architecture is acceptable only with the amendments now incorporated into `COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md`.
 
-No production code, SQL, provider configuration, or deployment was changed during this review. Philip approved the recommended Phase 1 defaults on 2026-07-22. Phase 1 is implemented on the isolated branch but remains uncertified until it passes the dedicated-host and scratch-database staging gate.
+No production code, SQL, provider configuration, or deployment was changed during this review. Philip approved the recommended Phase 1 defaults on 2026-07-22. Phase 1 subsequently passed the dedicated-host, scratch-database, tenant-isolation, audit-failure, and clean-migration-replay staging gates. Production rollout remains separately unauthorized.
 
 ## Review Method
 
@@ -130,7 +130,7 @@ The Command Center workstream stays off `main`, which auto-deploys. Live SQL is 
 | Phase | Review disposition | Blocking prerequisite |
 | --- | --- | --- |
 | 0 - Architecture | Approved and complete | Recommended defaults approved 2026-07-22; genuinely open later-phase decisions remain tracked |
-| 1 - Identity and isolation | Implemented locally; staging proof pending | Dedicated operator hostname, isolated Railway service, scratch Supabase migration, and live isolation certification |
+| 1 - Identity and isolation | Isolated staging gate passed | Separate owner approval for any production rollout |
 | 2 - Health and incidents | Not started | Phase 1 gate plus owner-approved thresholds/resource budget |
 | 3 - Guardian and alerting | Not started | Alert provider, VPS-risk decision, sanitized backup status handoff |
 | 4 - Platform dashboard | Not started | Phases 1-3 certified and legacy-token cutover runbook |

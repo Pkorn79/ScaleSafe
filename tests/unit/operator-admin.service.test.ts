@@ -119,6 +119,25 @@ describe('operator admin service audit boundary', () => {
     );
   });
 
+  it('returns a conflict instead of an internal error for a duplicate reseller reference', async () => {
+    mockRepository.createResellerOrganization.mockRejectedValueOnce(
+      new Error('duplicate key value violates unique constraint "operator_organizations_external_reference_key"'),
+    );
+
+    await expect(operatorAdminService.createResellerOrganization(requestStub, {
+      name: 'Partner One',
+      externalReference: 'partner-one',
+    })).rejects.toMatchObject({ statusCode: 409, code: 'CONFLICT' });
+    expect(mockAuditRequest).toHaveBeenCalledWith(
+      requestStub,
+      expect.objectContaining({
+        action: 'operator.organization.create',
+        result: 'failed',
+        metadata: { error_class: 'database_rejected' },
+      }),
+    );
+  });
+
   it('blocks assignment transfer when the audit-intent write fails', async () => {
     mockAuditRequest.mockRejectedValueOnce(new Error('audit unavailable'));
     await expect(operatorAdminService.transferAssignment(requestStub, {

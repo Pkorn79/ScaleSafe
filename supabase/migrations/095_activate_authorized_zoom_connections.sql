@@ -14,8 +14,8 @@ WHERE connection.provider_key = 'zoom'
   AND connection.setup_status = 'testing'
   AND EXISTS (
     SELECT 1
-    FROM evidence_provider_authorizations AS authorization
-    WHERE authorization.connection_id = connection.id
-      AND authorization.provider_key = 'zoom'
-      AND authorization.status = 'active'
+    FROM evidence_provider_authorizations AS provider_auth
+    WHERE provider_auth.connection_id = connection.id
+      AND provider_auth.provider_key = 'zoom'
+      AND provider_auth.status = 'active'
   );

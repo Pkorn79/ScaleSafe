@@ -101,25 +101,56 @@ ALTER TABLE evidence_enrollment_payment
 
 -- Backfill the code-expected columns from the legacy live columns where present.
 
-UPDATE evidence_consent
-SET consent_timestamp = consent_date
-WHERE consent_timestamp IS NULL
-  AND consent_date IS NOT NULL;
+-- These source columns existed only in the drifted live schema. Guard each
+-- backfill so a clean migration replay does not fail when the legacy column was
+-- never present.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'evidence_consent'
+      AND column_name = 'consent_date'
+  ) THEN
+    EXECUTE 'UPDATE evidence_consent
+      SET consent_timestamp = consent_date
+      WHERE consent_timestamp IS NULL AND consent_date IS NOT NULL';
+  END IF;
 
-UPDATE evidence_enrollment_payment
-SET payment_timestamp = payment_date
-WHERE payment_timestamp IS NULL
-  AND payment_date IS NOT NULL;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'evidence_enrollment_payment'
+      AND column_name = 'payment_date'
+  ) THEN
+    EXECUTE 'UPDATE evidence_enrollment_payment
+      SET payment_timestamp = payment_date
+      WHERE payment_timestamp IS NULL AND payment_date IS NOT NULL';
+  END IF;
 
-UPDATE evidence_enrollment_payment
-SET ghl_transaction_id = transaction_id
-WHERE ghl_transaction_id IS NULL
-  AND transaction_id IS NOT NULL;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'evidence_enrollment_payment'
+      AND column_name = 'transaction_id'
+  ) THEN
+    EXECUTE 'UPDATE evidence_enrollment_payment
+      SET ghl_transaction_id = transaction_id
+      WHERE ghl_transaction_id IS NULL AND transaction_id IS NOT NULL';
+  END IF;
 
-UPDATE evidence_enrollment_payment
-SET last_four = card_last_four
-WHERE last_four IS NULL
-  AND card_last_four IS NOT NULL;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'evidence_enrollment_payment'
+      AND column_name = 'card_last_four'
+  ) THEN
+    EXECUTE 'UPDATE evidence_enrollment_payment
+      SET last_four = card_last_four
+      WHERE last_four IS NULL AND card_last_four IS NOT NULL';
+  END IF;
+END;
+$$;
 
 -- 2. Allow fallback ('system') letters in the version history
 

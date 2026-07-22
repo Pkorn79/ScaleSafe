@@ -175,6 +175,9 @@ export const operatorAdminService = {
         targetType: 'operator_organization',
         metadata: { error_class: 'database_rejected' },
       });
+      if (/duplicate|unique/i.test((err as any)?.message || '')) {
+        throw new ConflictError('A reseller organization already uses that external reference');
+      }
       throw err;
     }
   },
