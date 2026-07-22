@@ -2,9 +2,9 @@
 
 **Purpose:** One repository-owned source of truth for what ScaleSafe contains, what is live-certified, what still needs proof, what is planned, and which documents are authoritative.
 
-**Last reconciled:** July 21, 2026
+**Last reconciled:** July 22, 2026
 
-**Code baseline:** `e75989d`
+**Code baseline:** `008b3bf`
 
 **Latest migration:** `102_marketplace_entitlements.sql`
 
@@ -198,7 +198,7 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | Named evidence adapters for course, agency, community, support, file, checkout, and reporting systems | **Planned in waves** | [Connector Automation Plan](UNIVERSAL_EVIDENCE_CONNECTOR_AUTOMATION_PLAN.md) |
 | Outcome analytics by reason, offer, processor, evidence, refund timing, and alerts | **Planned** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
 | Recovery/legal/collections partner referral handoff | **Planned, legal review required** | Private research notes plus [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
-| Guardian backup/security verification service | **Planned after deterministic recovery proof** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
+| Command Center, Guardian, and reseller account dashboard | **Architecture independently reviewed; owner approval pending** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Verified Fable Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md), [Fable Review Prompt](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW_PROMPT.md) |
 | NMI billing portal and Stripe-shaped merchant API | **Deferred post-beta** | [Project Decisions](PROJECT_DECISIONS.md) |
 | FanBasis checkout and lifecycle certification | **Deferred pending provider approval** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) |
 | Gated limited free Marketplace plan | **Planned after approval** | This index |
