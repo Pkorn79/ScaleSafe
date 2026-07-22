@@ -28,6 +28,7 @@ import {
   WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS,
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
+import { resolveWorkflowRefundPolicy, resolveWorkflowTermsUrl } from '../utils/workflow-offer-fields';
 
 interface RecordPayFirstInput {
   locationId: string;
@@ -1935,8 +1936,8 @@ export const payFirstEnrollmentService = {
         customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = receiptPriceDisplay;
         customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
         customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = supportEmail;
-        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = (merchant as any)?.tc_document_url || '';
-        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = (offer as any).refund_policy || (offer as any).refund_terms || '';
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = resolveWorkflowTermsUrl(offer, merchant);
+        customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = resolveWorkflowRefundPolicy(offer);
         customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT] = formatMoney(Number(enrollment.payment_amount || 0));
         customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE] = formatDate(enrolledAt);
         customFields[WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE] = paymentsMade;

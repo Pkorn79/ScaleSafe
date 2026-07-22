@@ -3,6 +3,17 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Exact lifecycle workflow fields (2026-07-21)
+
+### Fixed
+- Cancellation now refreshes the selected enrollment's program, business, support, refund-policy, and terms fields before firing the GHL customer workflow, matching the existing pause/resume safety pattern.
+- Cancellation workflow delivery is suppressed when the exact enrollment or prerequisite GHL field update cannot be verified, preventing a multi-enrollment contact from receiving a message for the wrong program.
+- Enrollment field writers now read the current `refund_window_text` and per-offer/merchant terms URL instead of obsolete property names that could leave cancellation copy blank.
+
+### Verified
+- Full Jest suite: 168 suites and 1,377 tests passed.
+- TypeScript typecheck and the production backend/UI build passed.
+
 ## Unreleased - Repository Master Index (2026-07-20)
 
 ### Added

@@ -20,7 +20,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
 - [x] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
 - [x] State in the Marketplace form that ScaleSafe has no separate credentials: reviewers install it in their own HighLevel review sub-account and enter through HighLevel SSO. Do not supply a shared GHL user that depends on email OTP.
-- [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
+- [x] Reviewer access uses the review team's own HighLevel test sub-account and GHL SSO; no shared agency-owner or OTP-dependent reviewer user is supplied.
 - [x] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
 - [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
 - [x] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
@@ -57,7 +57,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Enrollment link, payment receipt, welcome, upcoming payment reminder, pulse, milestone, and milestone-signoff paths have live proof.
 - [x] Deleted GHL trigger subscriptions are automatically deactivated after a terminal GHL response.
 - [x] Pulse app-event delivery, workflow execution, URL/interval fields, client submission, evidence, and dashboard follow-up state have been observed.
-- [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`.
+- [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`. The app-side exact-enrollment sync now covers all three paths; rendered GHL proof remains.
 - [x] Final reviewer Snapshot Provisioning Health passed on July 21: merchant/OAuth/webhook health is good, all 90 beta contact fields and 21 custom values are present, and 24 active workflow subscriptions are mapped. Thirty cleanup candidates were advisory only and were left untouched.
 - [x] Reviewer workflow inspection confirmed one published pulse workflow, `SS--Pulse-Check-Cadence`, using `ScaleSafe App Event` with `Event Type = Pulse Check Due`. The second App Event subscription is the published `SS- Payment Reminder` workflow filtered to `Upcoming Payment Reminder`; no competing tag/timer pulse path was found.
 - [ ] Complete one harmless enrollment-linked direct message after the current fix and verify the GHL echo remains on the selected enrollment.

@@ -21,6 +21,7 @@ import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { whopService } from './whop.service';
 import { moneyOperationService } from './money-operation.service';
 import { resolveProgramName } from '../utils/program-name';
+import { resolveWorkflowRefundPolicy, resolveWorkflowTermsUrl } from '../utils/workflow-offer-fields';
 
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -74,6 +75,50 @@ async function syncLifecycleWorkflowContact(params: {
         triggerKey: params.triggerKey,
       },
       'Lifecycle workflow contact field sync failed; customer trigger suppressed',
+    );
+    return false;
+  }
+}
+
+async function syncCancellationWorkflowContact(params: {
+  locationId: string;
+  contactId: string;
+  offerName: string;
+  businessName: string;
+  supportEmail: string;
+  refundPolicy: string;
+  termsUrl: string;
+}): Promise<boolean> {
+  if (!params.offerName) {
+    logger.warn(
+      { locationId: params.locationId, contactId: params.contactId },
+      'Cancellation workflow contact field sync skipped because the exact program name was unavailable',
+    );
+    return false;
+  }
+
+  try {
+    const api = await ghlApi(params.locationId);
+    await api.put(`/contacts/${params.contactId}`, {
+      customField: {
+        [OFFER_CONTACT_FIELDS.BUSINESS_NAME]: params.businessName,
+        [OFFER_CONTACT_FIELDS.OFFER_NAME]: params.offerName,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PROGRAM_NAME]: params.offerName,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL]: params.supportEmail,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY]: params.refundPolicy,
+        [WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL]: params.termsUrl,
+      },
+    });
+    return true;
+  } catch (err: any) {
+    logger.warn(
+      {
+        err: err?.message || String(err),
+        locationId: params.locationId,
+        contactId: params.contactId,
+        triggerKey: 'ss_cancellation_requested',
+      },
+      'Cancellation workflow contact field sync failed; customer trigger suppressed',
     );
     return false;
   }
@@ -1310,53 +1355,74 @@ export const paymentLifecycleService = {
 
     // Fire trigger — flat doc contract: contact_id, offer_id, reason, refund_eligibility, enrollment_date
     try {
-      let enrollmentId = params.enrollmentId || '';
-      let enrollmentDate = '';
-      let offerName = '';
-      try {
-        const supabase = getSupabase();
-        let enrollmentQuery = supabase.from('enrollments')
-          .select('id, enrolled_at, offer_id, program_name_snapshot')
-          .eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId);
-        if (params.enrollmentId) {
-          enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
-        } else {
-          enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
-        }
-        const { data: enr } = await enrollmentQuery.maybeSingle();
-        enrollmentId = enrollmentId || enr?.id || '';
-        enrollmentDate = enr?.enrolled_at || '';
-        const resolvedOfferId = params.offerId || enr?.offer_id;
-        if (resolvedOfferId) {
-          const { data: ofr } = await supabase.from('offers_mirror').select('offer_name').eq('id', resolvedOfferId).eq('location_id', params.locationId).maybeSingle();
-          offerName = resolveProgramName(enr, ofr);
-        }
-      } catch {}
-      fireTriggerInBackground(params.locationId, 'ss_cancellation_requested', {
-        event_type: 'cancellation_requested',
-        location_id: params.locationId,
+      const supabase = getSupabase();
+      let enrollmentQuery = supabase.from('enrollments')
+        .select('id, enrolled_at, offer_id, program_name_snapshot')
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId);
+      if (params.enrollmentId) {
+        enrollmentQuery = enrollmentQuery.eq('id', params.enrollmentId);
+      } else {
+        enrollmentQuery = enrollmentQuery.order('created_at', { ascending: false }).limit(1);
+      }
+      const { data: enrollment, error: enrollmentError } = await enrollmentQuery.maybeSingle();
+      if (enrollmentError) throw enrollmentError;
+      if (!enrollment) throw new Error('Exact cancellation enrollment was not found');
+
+      const resolvedOfferId = params.offerId || enrollment.offer_id || '';
+      if (!resolvedOfferId) throw new Error('Cancellation enrollment has no offer');
+
+      const { data: offer, error: offerError } = await supabase.from('offers_mirror')
+        .select('offer_name, refund_window_text, tc_url')
+        .eq('id', resolvedOfferId)
+        .eq('location_id', params.locationId)
+        .maybeSingle();
+      if (offerError) throw offerError;
+      if (!offer) throw new Error('Cancellation offer was not found');
+
+      const merchant = await merchantRepository.getByLocationId(params.locationId);
+      const offerName = resolveProgramName(enrollment, offer);
+      const workflowFieldsReady = await syncCancellationWorkflowContact({
         locationId: params.locationId,
-        contact_id: params.contactId,
         contactId: params.contactId,
-        enrollment_id: enrollmentId,
-        enrollmentId,
-        offer_id: params.offerId,
-        offerId: params.offerId,
-        offer_name: offerName,
         offerName,
-        program_name: offerName,
-        programName: offerName,
-        processor: params.processorType || '',
-        subscription_id: params.processorSubscriptionId || '',
-        subscriptionId: params.processorSubscriptionId || '',
-        reason: params.reason,
-        refund_eligibility: 'per_terms',
-        refundEligibility: 'per_terms',
-        enrollment_date: enrollmentDate,
-        enrollmentDate,
+        businessName: merchant.dba_name || merchant.business_name || '',
+        supportEmail: merchant.support_email || '',
+        refundPolicy: resolveWorkflowRefundPolicy(offer),
+        termsUrl: resolveWorkflowTermsUrl(offer, merchant),
       });
-    } catch { /* non-blocking */ }
+
+      if (workflowFieldsReady) {
+        fireTriggerInBackground(params.locationId, 'ss_cancellation_requested', {
+          event_type: 'cancellation_requested',
+          location_id: params.locationId,
+          locationId: params.locationId,
+          contact_id: params.contactId,
+          contactId: params.contactId,
+          enrollment_id: enrollment.id,
+          enrollmentId: enrollment.id,
+          offer_id: resolvedOfferId,
+          offerId: resolvedOfferId,
+          offer_name: offerName,
+          offerName,
+          program_name: offerName,
+          programName: offerName,
+          processor: params.processorType || '',
+          subscription_id: params.processorSubscriptionId || '',
+          subscriptionId: params.processorSubscriptionId || '',
+          reason: params.reason,
+          refund_eligibility: 'per_terms',
+          refundEligibility: 'per_terms',
+          enrollment_date: enrollment.enrolled_at || '',
+          enrollmentDate: enrollment.enrolled_at || '',
+        });
+      }
+    } catch (err: any) {
+      logger.warn(
+        { err: err?.message || String(err), enrollmentId: params.enrollmentId, locationId: params.locationId },
+        'Cancellation workflow trigger suppressed because exact enrollment fields could not be prepared',
+      );
+    }
 
     // Update GHL contact — only set status to 'cancelled' if NO other active enrollments exist
     try {

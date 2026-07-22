@@ -2,7 +2,7 @@
 
 **Purpose:** One repository-owned source of truth for what ScaleSafe contains, what is live-certified, what still needs proof, what is planned, and which documents are authoritative.
 
-**Last reconciled:** July 20, 2026
+**Last reconciled:** July 21, 2026
 
 **Code baseline:** `e75989d`
 
@@ -180,7 +180,7 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 ### Remaining Feature Proof
 
 1. Certify NMI official callback and fresh masked saved-method identity for every NMI setup offered.
-2. Verify pause/resume/cancel workflow messages use scalar program fields.
+2. Deploy the completed exact-enrollment lifecycle field sync, then verify pause/resume/cancel workflow messages render the selected program and no `[object Object]` values.
 3. Publish one real non-host Zoom attendance event to the correct enrollment and defense packet.
 4. Send one harmless enrollment-linked direct message and verify the GHL echo remains on that enrollment.
 

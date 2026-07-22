@@ -169,11 +169,14 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
       installment_amount: 100,
       installment_frequency: 'weekly',
       num_payments: 2,
+      refund_window_text: 'Full refund within 14 days.',
+      tc_url: 'https://merchant.example/terms/scale-safe-beta',
     });
     (merchantRepository.getByLocationId as jest.Mock).mockResolvedValue({
       id: 'merch_1',
       business_name: 'ScaleSafe Merchant',
       support_email: 'support@example.com',
+      config: { tc_document_url: 'https://merchant.example/default-terms' },
     });
     mockGhlApi.mockResolvedValue({
       put: jest.fn().mockResolvedValue({ data: {} }),
@@ -254,6 +257,8 @@ describe('payFirstEnrollmentService.finalizePaidPendingEnrollment', () => {
           'contact.offer_program_name': 'ScaleSafe Beta',
           'contact.offer_name': 'ScaleSafe Beta',
           'contact.offer_support_email': 'support@example.com',
+          'contact.offer_refund_policy': 'Full refund within 14 days.',
+          'contact.offer_tc_document_url': 'https://merchant.example/terms/scale-safe-beta',
           'contact.ss_enrollment_status': 'enrolled',
         }),
       }),

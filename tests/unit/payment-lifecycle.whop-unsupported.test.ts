@@ -15,6 +15,7 @@ const mockMoneyMarkRecorded = jest.fn();
 const mockMoneyMarkUnknown = jest.fn();
 const mockProcessorResume = jest.fn();
 const mockEnrollmentUpdate = jest.fn();
+const mockMerchantGet = jest.fn();
 let enrollmentNextBillingDate: string | null = '2026-07-01';
 
 jest.mock('../../src/services/processor.factory', () => ({
@@ -57,7 +58,7 @@ jest.mock('../../src/services/money-operation.service', () => ({
 }));
 
 jest.mock('../../src/repositories/merchant.repository', () => ({
-  merchantRepository: { getByLocationId: jest.fn() },
+  merchantRepository: { getByLocationId: (...args: any[]) => mockMerchantGet(...args) },
 }));
 
 jest.mock('../../src/services/payment-methods.service', () => ({
@@ -120,7 +121,14 @@ function builder(table: string) {
       };
     }
     if (table === 'offers_mirror') return {
-      data: { offer_name: 'Whop Program', num_payments: 5, installment_amount: 2.2, installment_frequency: 'weekly' },
+      data: {
+        offer_name: 'Whop Program',
+        num_payments: 5,
+        installment_amount: 2.2,
+        installment_frequency: 'weekly',
+        refund_window_text: 'No refunds after delivery begins.',
+        tc_url: 'https://merchant.example/terms/whop-program',
+      },
       error: null,
     };
     if (table === 'payment_methods') return {
@@ -152,6 +160,12 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
     mockLogEvidence.mockResolvedValue(undefined);
     mockGhlPut.mockResolvedValue({});
     mockGhlPost.mockResolvedValue({});
+    mockMerchantGet.mockResolvedValue({
+      business_name: 'Merchant Legal Name',
+      dba_name: 'Merchant Brand',
+      support_email: 'support@merchant.example',
+      config: { tc_document_url: 'https://merchant.example/default-terms' },
+    });
     mockSupabaseFrom.mockImplementation((table: string) => builder(table));
     mockMoneyBegin.mockResolvedValue({ action: 'execute', operation: { id: 'money-op-1' } });
     mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
@@ -237,6 +251,26 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       cancelled_at: '2026-07-14T00:30:00Z',
       next_billing_date: null,
     }));
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact-1', expect.objectContaining({
+      customField: expect.objectContaining({
+        'contact.offer_business_name': 'Merchant Brand',
+        'contact.offer_name': 'Whop Program',
+        'contact.offer_program_name': 'Whop Program',
+        'contact.offer_support_email': 'support@merchant.example',
+        'contact.offer_refund_policy': 'No refunds after delivery begins.',
+        'contact.offer_tc_document_url': 'https://merchant.example/terms/whop-program',
+      }),
+    }));
+  });
+
+  it('suppresses the cancellation workflow when exact enrollment fields cannot be synced', async () => {
+    mockGhlPut.mockRejectedValueOnce(new Error('GHL unavailable'));
+
+    await paymentLifecycleService.cancelSubscription(whopParams);
+
+    expect(mockCancelWhop).toHaveBeenCalledWith('loc-1', 'mem_123');
+    expect(mockLogEvidence).toHaveBeenCalled();
+    expect(mockTriggerFire).not.toHaveBeenCalledWith('loc-1', 'ss_cancellation_requested', expect.anything());
   });
 
   it('rejects Whop lifecycle action when the membership id is missing', async () => {

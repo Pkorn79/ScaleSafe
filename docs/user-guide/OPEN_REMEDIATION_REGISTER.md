@@ -20,7 +20,7 @@ These are not unresolved application-code defects, but GHL review or processor l
 | Gate | Required action |
 | --- | --- |
 | NMI official webhook (FIND-007) | Certify a signed/verified live callback for each NMI configuration offered during beta. Do not infer webhook readiness from successful dashboard charges. |
-| GHL lifecycle templates (FIND-035) | Confirm pause/resume/cancel templates use the documented scalar contact fields and produce one correctly named program message. Disable any unverified workflow rather than shipping `[object Object]`. |
+| GHL lifecycle templates (FIND-035) | App-side pause/resume/cancel sync now refreshes the exact enrollment's scalar program fields before delivery and suppresses the customer trigger if refresh fails. Deploy, confirm the GHL templates use the documented contact fields, and capture one correctly named message for each action. |
 | Production release control (FIND-072) | Protect `main` with green CI/owner review or record a controlled-beta exception and practice one Railway rollback. |
 | Repository visibility | Confirm the public GitHub repository is intentional; otherwise make it private after checking Railway access. |
 
@@ -58,6 +58,7 @@ These do not block the base product when described accurately, but they must not
 - Dual-option Quick Checkout: a live `$1.50` Stripe paid-in-full selection on the installment-capable certification offer created one client-linked PIF enrollment and payment, no next billing, no saved recurring method, no recurring-plan display, and no processor subscription. Railway logged the exact enrollment as `paymentType: pif` with `nextBilling: null` and no warning/error response.
 - Reviewer full enrollment: the dedicated `ScaleSafe` location produced one linked Stripe sandbox payment, enrollment, consent record, enrollment-payment record, and private packet. Receipt and welcome messages were received. Public enrollment and checkout surfaces now use the DBA/brand, customer maps retain the public program name, and packet clause acceptance reflects the semantic IDs recorded at signature time.
 - Reviewer final health: the July 21 Provisioning Health check passed with all 90 beta fields, 21 custom values, and 24 active workflow subscriptions. The one pulse-specific workflow uses the filtered ScaleSafe App Event path, and the other App Event subscription is the separate upcoming-payment reminder. No GHL repair or cleanup action was taken.
+- FIND-035 code portion: cancellation now matches pause/resume by refreshing the exact enrollment's program, business, support, refund-policy, and terms fields before firing. Obsolete workflow field lookups were corrected to use `refund_window_text`, the offer terms URL, and the merchant config fallback. Full Jest, typecheck, and production build passed; live rendered GHL proof remains open.
 
 ## Accepted Controlled-Beta Limitations
 

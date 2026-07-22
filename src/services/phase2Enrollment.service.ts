@@ -18,6 +18,7 @@ import {
 } from '../constants/ghl-fields';
 import { STANDARD_CLAUSES } from '../constants/standard-clauses';
 import { resolveProgramName } from '../utils/program-name';
+import { resolveWorkflowRefundPolicy, resolveWorkflowTermsUrl } from '../utils/workflow-offer-fields';
 
 // GHL CHECKBOX field_value for the single-option "Yes" Click-Wrap fields. Pulled to a
 // const so the manual E2E verification step (see CHANGELOG 2026-04-26) can swap in
@@ -124,8 +125,8 @@ function applyOfferContactFields(
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.PRICE_DISPLAY] = receiptPriceDisplay;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.NUMBER_OF_PAYMENTS] = numPayments;
   customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.SUPPORT_EMAIL] = merchantSupportEmail(merchant);
-  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = merchant?.tc_document_url || '';
-  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = offer.refund_policy || offer.refund_terms || '';
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.TC_DOCUMENT_URL] = resolveWorkflowTermsUrl(offer, merchant);
+  customFields[WORKFLOW_COMPAT_OFFER_CONTACT_FIELDS.REFUND_POLICY] = resolveWorkflowRefundPolicy(offer);
 }
 
 interface CompleteEnrollmentParams {
