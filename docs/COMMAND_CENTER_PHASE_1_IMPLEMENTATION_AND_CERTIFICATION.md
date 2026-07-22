@@ -160,6 +160,7 @@ Creating a reseller with an already-used external reference correctly failed at 
 - Production backend/UI build: pass.
 - Patch secret scan: no high-confidence secret hit except the explicit fake Stripe fixture in `tests/setup-env.ts`.
 - Dependency advisory lookup: pending explicit approval because npm receives the dependency manifest.
+- The first post-certification branch redeploy for commit `b6c41e1` failed before the build started because Railway's internal build-orchestrator snapshot service refused its connection. No ScaleSafe code ran, and the prior certified staging container remained active while the isolated branch deployment was retried.
 
 ## Acceptance Gate
 
