@@ -3,6 +3,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { ghlApi } from '../clients/ghl.client';
 import { logger } from '../utils/logger';
 import { AdaptivePoller } from '../utils/adaptive-poller';
+import { commandCenterHealthService } from './command-center-health.service';
 import { triggerService } from './trigger.service';
 import type { TriggerDeliveryJob } from './trigger-delivery-job.service';
 
@@ -37,6 +38,7 @@ async function updateClaimedJob(job: TriggerDeliveryJob, updates: Record<string,
     .eq('location_id', job.location_id)
     .eq('lease_owner', workerId);
   if (error) throw error;
+  commandCenterHealthService.markMerchantDirty(job.location_id, 'trigger_delivery_changed');
 }
 
 async function retryFieldSync(job: TriggerDeliveryJob, error: Error): Promise<void> {
@@ -121,19 +123,42 @@ async function processJob(job: TriggerDeliveryJob): Promise<void> {
 async function tick(): Promise<number> {
   if (running) return 0;
   running = true;
+  const startedAt = new Date();
+  let workCount = 0;
+  let tickError: unknown;
   try {
     const jobs = await claimJobs(5);
     await Promise.all(jobs.map(processJob));
-    return jobs.length;
+    workCount = jobs.length;
+    return workCount;
   } catch (err: any) {
+    tickError = err;
     logger.error({ err: err?.message || String(err) }, 'Trigger delivery worker tick failed');
     return 0;
   } finally {
     running = false;
+    commandCenterHealthService.recordWorkerTick({
+      workerKey: 'worker.trigger_delivery',
+      instanceId: workerId,
+      startedAt,
+      workCount,
+      error: tickError,
+    });
   }
 }
 
-const poller = new AdaptivePoller({ task: tick });
+const poller = new AdaptivePoller({
+  task: tick,
+  taskTimeoutMs: commandCenterHealthService.workerTimeoutMs('worker.trigger_delivery'),
+  onTimeout: ({ startedAt, timedOutAt }) => commandCenterHealthService.recordWorkerTick({
+    workerKey: 'worker.trigger_delivery',
+    instanceId: workerId,
+    startedAt,
+    completedAt: timedOutAt,
+    workCount: 0,
+    timedOut: true,
+  }),
+});
 
 export const triggerDeliveryWorker = {
   start(): void {

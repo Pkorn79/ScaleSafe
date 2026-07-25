@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import type { DefenseCompilationJobInput } from './defense.service';
 import { defenseSubmissionService } from './defense-submission.service';
 import { AdaptivePoller } from '../utils/adaptive-poller';
+import { commandCenterHealthService } from './command-center-health.service';
 
 const workerId = `defense_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 let running = false;
@@ -45,6 +46,7 @@ async function finishPacket(packet: ClaimedDefensePacket): Promise<void> {
     .eq('location_id', packet.location_id)
     .eq('compilation_lease_owner', workerId);
   if (error) throw error;
+  commandCenterHealthService.markMerchantDirty(packet.location_id, 'defense_changed');
 }
 
 async function failPacket(packet: ClaimedDefensePacket, error: Error): Promise<void> {
@@ -74,6 +76,7 @@ async function failPacket(packet: ClaimedDefensePacket, error: Error): Promise<v
     .eq('location_id', packet.location_id)
     .eq('compilation_lease_owner', workerId);
   if (updateError) throw updateError;
+  commandCenterHealthService.markMerchantDirty(packet.location_id, 'defense_changed');
 }
 
 async function processPacket(packet: ClaimedDefensePacket): Promise<void> {
@@ -107,20 +110,43 @@ async function processPacket(packet: ClaimedDefensePacket): Promise<void> {
 async function tick(): Promise<number> {
   if (running) return 0;
   running = true;
+  const startedAt = new Date();
+  let workCount = 0;
+  let tickError: unknown;
   try {
     const packets = await claimPackets(3);
     await Promise.all(packets.map(processPacket));
     const reconciled = await defenseSubmissionService.reconcileAccepted(20);
-    return packets.length + reconciled;
+    workCount = packets.length + reconciled;
+    return workCount;
   } catch (err: any) {
+    tickError = err;
     logger.error({ err: err.message }, 'Defense operations worker tick failed');
     return 0;
   } finally {
     running = false;
+    commandCenterHealthService.recordWorkerTick({
+      workerKey: 'worker.defense_compilation',
+      instanceId: workerId,
+      startedAt,
+      workCount,
+      error: tickError,
+    });
   }
 }
 
-const poller = new AdaptivePoller({ task: tick });
+const poller = new AdaptivePoller({
+  task: tick,
+  taskTimeoutMs: commandCenterHealthService.workerTimeoutMs('worker.defense_compilation'),
+  onTimeout: ({ startedAt, timedOutAt }) => commandCenterHealthService.recordWorkerTick({
+    workerKey: 'worker.defense_compilation',
+    instanceId: workerId,
+    startedAt,
+    completedAt: timedOutAt,
+    workCount: 0,
+    timedOut: true,
+  }),
+});
 
 export const defenseCompilationWorker = {
   start(): void {

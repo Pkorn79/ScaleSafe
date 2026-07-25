@@ -19,7 +19,12 @@ import { logger } from '../utils/logger';
  * Offers without program_duration_value are skipped — those PIF enrollments
  * stay "enrolled" until manually completed by the merchant.
  */
-export async function runPifCompletionCheck(): Promise<void> {
+export async function runPifCompletionCheck(): Promise<{
+  total: number;
+  completed: number;
+  skipped: number;
+  failed: number;
+}> {
   const supabase = getSupabase();
   const today = new Date();
 
@@ -34,25 +39,30 @@ export async function runPifCompletionCheck(): Promise<void> {
 
   if (error) {
     logger.error({ err: error.message }, 'PIF completion check query failed');
-    return;
+    throw error;
   }
 
   if (!enrollments || enrollments.length === 0) {
     logger.info('PIF completion check: no eligible enrollments');
-    return;
+    return { total: 0, completed: 0, skipped: 0, failed: 0 };
   }
 
   // Batch-fetch all relevant offers for duration info
   const offerIds = [...new Set(enrollments.map(e => e.offer_id).filter(Boolean))];
-  const { data: offers } = await supabase
+  const { data: offers, error: offersError } = await supabase
     .from('offers_mirror')
     .select('id, offer_name, program_duration_value, program_duration_unit, auto_complete_on_duration_end')
     .in('id', offerIds);
+  if (offersError) {
+    logger.error({ err: offersError.message }, 'PIF completion offer query failed');
+    throw offersError;
+  }
 
   const offerMap = new Map((offers || []).map(o => [o.id, o]));
 
   let completed = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const enr of enrollments) {
     const offer = offerMap.get(enr.offer_id);
@@ -79,12 +89,14 @@ export async function runPifCompletionCheck(): Promise<void> {
 
     // Program duration has expired — mark as completed
     try {
-      await supabase.from('enrollments')
+      const { error: updateError } = await supabase.from('enrollments')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
         })
-        .eq('id', enr.id);
+        .eq('id', enr.id)
+        .eq('location_id', enr.location_id);
+      if (updateError) throw updateError;
 
       // Log evidence
       try {
@@ -133,9 +145,12 @@ export async function runPifCompletionCheck(): Promise<void> {
         programEndDate: endDate.toISOString(),
       }, 'PIF completion: program duration expired — enrollment completed');
     } catch (err: any) {
+      failed++;
       logger.error({ err: err.message, enrollmentId: enr.id }, 'PIF completion: update failed');
     }
   }
 
-  logger.info({ total: enrollments.length, completed, skipped }, 'PIF completion check done');
+  const result = { total: enrollments.length, completed, skipped, failed };
+  logger.info(result, 'PIF completion check done');
+  return result;
 }

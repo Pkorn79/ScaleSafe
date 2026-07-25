@@ -94,6 +94,14 @@ export function requireOperatorAuthEnabled(_req: Request, res: Response, next: N
   next();
 }
 
+export function requireOperatorHealthEnabled(_req: Request, res: Response, next: NextFunction): void {
+  if (!operatorConfig()?.healthEnabled) {
+    res.status(404).json({ error: 'NOT_FOUND', message: 'Not found' });
+    return;
+  }
+  next();
+}
+
 export function requireOperatorOrigin(req: Request, res: Response, next: NextFunction): void {
   const expected = operatorConfig()?.origin;
   const supplied = String(req.headers.origin || '');
@@ -161,6 +169,7 @@ export function requireOperatorCsrf(req: Request, res: Response, next: NextFunct
 export function requireOperatorPermission(permission: OperatorPermission, options: {
   locationParam?: string;
   sensitiveRead?: boolean;
+  hideUnauthorized?: boolean;
 } = {}) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const context = req.operatorContext;
@@ -174,9 +183,10 @@ export function requireOperatorPermission(permission: OperatorPermission, option
 
     if (!context || !operatorAuthorizationService.hasPermission(context, permission)) {
       await auditDenial(req, { action: permission, reason: 'permission_denied', targetLocationId: locationId, actor });
-      res.status(locationId ? 404 : 403).json({
-        error: locationId ? 'NOT_FOUND' : 'FORBIDDEN',
-        message: locationId ? 'Resource not found' : 'Access denied',
+      const hidden = Boolean(locationId || options.hideUnauthorized);
+      res.status(hidden ? 404 : 403).json({
+        error: hidden ? 'NOT_FOUND' : 'FORBIDDEN',
+        message: hidden ? 'Resource not found' : 'Access denied',
       });
       return;
     }

@@ -21,8 +21,8 @@
   "dependencies": {
     "@sparticuz/chromium": "^147.0.0",
     "@supabase/supabase-js": "^2.39.0",
-    "axios": "^1.16.1",
-    "body-parser": "^1.20.5",
+    "axios": "^1.18.1",
+    "body-parser": "^1.20.6",
     "cors": "^2.8.6",
     "dotenv": "^16.3.1",
     "express": "^4.22.2",

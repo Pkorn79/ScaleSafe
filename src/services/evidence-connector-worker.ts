@@ -7,6 +7,7 @@ import { evidenceService } from './evidence.service';
 import { externalEvidenceAttachmentService } from './external-evidence-attachment.service';
 import { schedulingEventRepository } from '../repositories/scheduling-event.repository';
 import { AdaptivePoller } from '../utils/adaptive-poller';
+import { commandCenterHealthService } from './command-center-health.service';
 
 const workerId = `connector_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 const retryDelaysMs = [5 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
@@ -311,16 +312,28 @@ async function processEvent(event: ExternalEvidenceEventRecord): Promise<void> {
 async function tick(): Promise<number> {
   if (running) return 0;
   running = true;
+  const startedAt = new Date();
+  let workCount = 0;
+  let tickError: unknown;
   try {
     const events = await evidenceConnectorRepository.claimEvents(workerId, 20);
     await Promise.all(events.map((event) => processEvent(event)));
     const expiredContexts = await cleanupExpiredContexts();
-    return events.length + expiredContexts;
+    workCount = events.length + expiredContexts;
+    return workCount;
   } catch (err: any) {
+    tickError = err;
     logger.error({ err: err.message }, 'External evidence worker tick failed');
     return 0;
   } finally {
     running = false;
+    commandCenterHealthService.recordWorkerTick({
+      workerKey: 'worker.external_evidence',
+      instanceId: workerId,
+      startedAt,
+      workCount,
+      error: tickError,
+    });
   }
 }
 
@@ -343,7 +356,18 @@ async function cleanupExpiredContexts(): Promise<number> {
   }
 }
 
-const poller = new AdaptivePoller({ task: tick });
+const poller = new AdaptivePoller({
+  task: tick,
+  taskTimeoutMs: commandCenterHealthService.workerTimeoutMs('worker.external_evidence'),
+  onTimeout: ({ startedAt, timedOutAt }) => commandCenterHealthService.recordWorkerTick({
+    workerKey: 'worker.external_evidence',
+    instanceId: workerId,
+    startedAt,
+    completedAt: timedOutAt,
+    workCount: 0,
+    timedOut: true,
+  }),
+});
 
 export const evidenceConnectorWorker = {
   start(): void {

@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { EvidenceType, EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { commandCenterHealthService } from './command-center-health.service';
 
 export const evidenceService = {
   /**
@@ -27,6 +28,7 @@ export const evidenceService = {
     };
 
     await evidenceRepository.insert(evidenceType, record);
+    commandCenterHealthService.markMerchantDirty(locationId, 'evidence_changed');
 
     // Update GHL contact: last evidence date + evidence score
     let newScore = 0;

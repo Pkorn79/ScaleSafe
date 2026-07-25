@@ -12,6 +12,27 @@ export interface OperatorIdentityRecord {
   organization: any;
 }
 
+export interface OperatorSessionContextRecord {
+  session_id: string;
+  operator_user_id: string;
+  organization_id: string;
+  membership_id: string;
+  auth_assurance: string;
+  csrf_token_hash: string;
+  last_seen_at: string;
+  absolute_expires_at: string;
+  user_id: string;
+  user_status: string;
+  membership_operator_user_id: string;
+  membership_organization_id: string;
+  membership_status: string;
+  membership_role: string;
+  organization_status: string;
+  organization_type: string;
+  location_access_mode: string;
+  location_ids: string[];
+}
+
 export const operatorRepository = {
   async findIdentityByAuthUserId(authUserId: string): Promise<OperatorIdentityRecord | null> {
     const supabase = getSupabase();
@@ -122,6 +143,17 @@ export const operatorRepository = {
       .maybeSingle();
     throwIfError(error, 'Operator session lookup failed');
     return data || null;
+  },
+
+  async resolveSessionContext(
+    sessionTokenHash: string,
+  ): Promise<OperatorSessionContextRecord | null> {
+    const { data, error } = await getSupabase().rpc('resolve_operator_session_context', {
+      p_session_token_hash: sessionTokenHash,
+    });
+    throwIfError(error, 'Operator session context lookup failed');
+    const row = Array.isArray(data) ? data[0] : data;
+    return row || null;
   },
 
   async findLiveIdentityForSession(session: any): Promise<OperatorIdentityRecord | null> {

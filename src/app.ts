@@ -7,6 +7,7 @@ import { captureRawBody } from './middleware/rawBody';
 import { securityHeaders } from './middleware/securityHeaders';
 import routes from './routes';
 import { config } from './config';
+import { applicationMetrics } from './middleware/applicationMetrics';
 
 export function createApp(): express.Application {
   const app = express();
@@ -45,6 +46,7 @@ export function createApp(): express.Application {
 
   // Request logging
   app.use(requestLogger);
+  app.use(applicationMetrics);
 
   // All routes
   app.use(routes);

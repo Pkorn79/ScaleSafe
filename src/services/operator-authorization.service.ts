@@ -18,11 +18,18 @@ const ROLE_PERMISSIONS: Record<OperatorRole, readonly OperatorPermission[]> = {
     'operator.invitations.manage',
     'operator.assignments.manage',
     'operator.support_grants.manage',
+    'platform.health.read',
+    'platform.incidents.manage',
     'merchant.summary.read',
   ],
-  platform_ops: ['operator.session.read', 'merchant.summary.read'],
-  platform_support: ['operator.session.read', 'merchant.summary.read'],
-  security_auditor: ['operator.session.read', 'operator.audit.read'],
+  platform_ops: [
+    'operator.session.read',
+    'platform.health.read',
+    'platform.incidents.manage',
+    'merchant.summary.read',
+  ],
+  platform_support: ['operator.session.read', 'platform.health.read', 'merchant.summary.read'],
+  security_auditor: ['operator.session.read', 'operator.audit.read', 'platform.health.read'],
   reseller_owner: ['operator.session.read', 'operator.invitations.manage', 'merchant.summary.read'],
   reseller_operator: ['operator.session.read', 'merchant.summary.read'],
   reseller_viewer: ['operator.session.read', 'merchant.summary.read'],
@@ -40,17 +47,16 @@ export interface OperatorResolution {
   };
 }
 
-function activeIdentityMatchesSession(session: any, identity: any): boolean {
+function activeSessionContext(record: any): boolean {
   return Boolean(
-    identity?.user?.id === session.operator_user_id
-    && identity.user.status === 'active'
-    && identity?.membership?.id === session.membership_id
-    && identity.membership.operator_user_id === session.operator_user_id
-    && identity.membership.organization_id === session.organization_id
-    && identity.membership.status === 'active'
-    && identity?.organization?.id === session.organization_id
-    && identity.organization.status === 'active'
-    && isOperatorRole(identity.membership.role),
+    record?.user_id === record?.operator_user_id
+    && record.user_status === 'active'
+    && record?.membership_operator_user_id === record?.operator_user_id
+    && record.membership_organization_id === record.organization_id
+    && record.membership_status === 'active'
+    && record.organization_status === 'active'
+    && ['platform', 'reseller'].includes(record.organization_type)
+    && isOperatorRole(record.membership_role),
   );
 }
 
@@ -61,41 +67,36 @@ export const operatorAuthorizationService = {
 
   async resolveSessionToken(sessionToken: string): Promise<OperatorResolution> {
     const sessionTokenHash = hashOperatorValue(sessionToken);
-    const session = await operatorRepository.findSession(sessionTokenHash);
+    const session = await operatorRepository.resolveSessionContext(sessionTokenHash);
     if (!session) return { context: null, denialReason: 'session_missing_or_expired' };
 
-    const identity = await operatorRepository.findLiveIdentityForSession(session);
-    const role = isOperatorRole(identity?.membership?.role) ? identity.membership.role : undefined;
+    const role = isOperatorRole(session.membership_role) ? session.membership_role : undefined;
     const actor = {
       operatorUserId: session.operator_user_id,
       organizationId: session.organization_id,
       membershipId: session.membership_id,
-      sessionId: session.id,
+      sessionId: session.session_id,
       role,
     };
 
-    if (!activeIdentityMatchesSession(session, identity) || session.auth_assurance !== 'aal2' || !role) {
+    if (!activeSessionContext(session) || session.auth_assurance !== 'aal2' || !role) {
       return { context: null, denialReason: 'operator_identity_inactive', actor };
     }
-    const activeIdentity = identity!;
 
-    let mode: OperatorContext['locationAccess']['mode'] = 'none';
-    let locations: string[] = [];
-    if (role === 'platform_owner' || role === 'platform_ops') {
-      mode = 'all';
-    } else if (role === 'platform_support') {
-      mode = 'support_grants';
-      locations = await operatorRepository.listActiveSupportGrantLocations(session.operator_user_id);
-    } else if (activeIdentity.organization.organization_type === 'reseller') {
-      mode = 'assigned';
-      locations = await operatorRepository.listActiveAssignmentLocations(session.organization_id);
-    }
+    const mode = (
+      ['all', 'assigned', 'support_grants', 'none'].includes(session.location_access_mode)
+        ? session.location_access_mode
+        : 'none'
+    ) as OperatorContext['locationAccess']['mode'];
+    const locations = Array.isArray(session.location_ids)
+      ? session.location_ids.map(String)
+      : [];
 
     const context: OperatorContext = Object.freeze({
       operatorUserId: session.operator_user_id,
-      sessionId: session.id,
+      sessionId: session.session_id,
       organizationId: session.organization_id,
-      organizationType: activeIdentity.organization.organization_type,
+      organizationType: session.organization_type as OperatorContext['organizationType'],
       membershipId: session.membership_id,
       role,
       permissions: this.permissionsForRole(role),
@@ -113,10 +114,13 @@ export const operatorAuthorizationService = {
         absoluteExpiry,
       );
       operatorRepository.touchSession(
-        session.id,
+        session.session_id,
         new Date(nextIdle).toISOString(),
         new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      ).catch((err) => logger.warn({ err, sessionId: session.id }, 'Operator session touch failed'));
+      ).catch((err) => logger.warn(
+        { err, sessionId: session.session_id },
+        'Operator session touch failed',
+      ));
     }
 
     return { context, actor };

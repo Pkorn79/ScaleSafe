@@ -16,6 +16,8 @@ export type OperatorPermission =
   | 'operator.invitations.manage'
   | 'operator.assignments.manage'
   | 'operator.support_grants.manage'
+  | 'platform.health.read'
+  | 'platform.incidents.manage'
   | 'merchant.summary.read';
 
 export interface OperatorContext {

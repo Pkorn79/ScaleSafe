@@ -41,6 +41,7 @@ const isProd = nodeEnv === 'production';
 const ghlClientId = required('GHL_APP_CLIENT_ID');
 const operatorCommandCenterEnabled = process.env.OPERATOR_COMMAND_CENTER_ENABLED === 'true';
 const operatorAuthEnabled = process.env.OPERATOR_AUTH_ENABLED === 'true';
+const operatorHealthIncidentsEnabled = process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED === 'true';
 const operatorHost = optional('OPERATOR_HOST', 'ops.scalesafe.app').toLowerCase();
 const operatorTrustProxyHops = explicitPositiveInteger('OPERATOR_TRUST_PROXY_HOPS');
 const operatorTokenEncryptionKey = process.env.OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY || '';
@@ -72,6 +73,11 @@ if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
 
 if (operatorAuthEnabled && !operatorCommandCenterEnabled) {
   console.error('FATAL: OPERATOR_AUTH_ENABLED requires OPERATOR_COMMAND_CENTER_ENABLED=true');
+  process.exit(1);
+}
+
+if (operatorHealthIncidentsEnabled && !operatorCommandCenterEnabled) {
+  console.error('FATAL: OPERATOR_HEALTH_INCIDENTS_ENABLED requires OPERATOR_COMMAND_CENTER_ENABLED=true');
   process.exit(1);
 }
 
@@ -164,6 +170,7 @@ export const config = {
   operator: {
     enabled: operatorCommandCenterEnabled,
     authEnabled: operatorAuthEnabled,
+    healthEnabled: operatorHealthIncidentsEnabled,
     host: operatorHost,
     origin: `https://${operatorHost}`,
     trustProxyHops: operatorTrustProxyHops || 0,

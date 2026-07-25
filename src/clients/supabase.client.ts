@@ -3,6 +3,26 @@ import { config } from '../config';
 
 let client: SupabaseClient | null = null;
 
+export interface SupabaseRequestObservation {
+  timedOut: boolean;
+}
+
+let requestObserver: ((event: SupabaseRequestObservation) => void) | null = null;
+
+export function setSupabaseRequestObserver(
+  observer: ((event: SupabaseRequestObservation) => void) | null,
+): void {
+  requestObserver = observer;
+}
+
+function observeSupabaseRequest(event: SupabaseRequestObservation): void {
+  try {
+    requestObserver?.(event);
+  } catch {
+    // Monitoring must never affect a database request.
+  }
+}
+
 export function createFetchWithTimeout(fetchImpl: typeof fetch, timeoutMs: number): typeof fetch {
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const controller = new AbortController();
@@ -31,6 +51,7 @@ export function createFetchWithTimeout(fetchImpl: typeof fetch, timeoutMs: numbe
     } finally {
       clearTimeout(timeout);
       upstreamSignal?.removeEventListener('abort', abortFromUpstream);
+      observeSupabaseRequest({ timedOut });
     }
   }) as typeof fetch;
 }

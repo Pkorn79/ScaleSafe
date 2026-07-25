@@ -75,7 +75,11 @@ export interface PulseCadenceDiagnosticReport {
   message: string;
 }
 
-export async function runPulseCadenceCheck(): Promise<void> {
+export async function runPulseCadenceCheck(): Promise<{
+  total: number;
+  sent: number;
+  skipped: number;
+}> {
   const supabase = getSupabase();
   const now = new Date();
 
@@ -88,11 +92,11 @@ export async function runPulseCadenceCheck(): Promise<void> {
 
   if (error) {
     logger.error({ err: error.message }, 'Pulse cadence query failed');
-    return;
+    throw error;
   }
   if (!enrollments || enrollments.length === 0) {
     logger.info('No pulse check-ins due');
-    return;
+    return { total: 0, sent: 0, skipped: 0 };
   }
 
   let sent = 0;
@@ -118,6 +122,7 @@ export async function runPulseCadenceCheck(): Promise<void> {
   }
 
   logger.info({ total: enrollments.length, sent, skipped }, 'Pulse cadence check complete');
+  return { total: enrollments.length, sent, skipped };
 }
 
 export async function sendPulseForEnrollment(params: {

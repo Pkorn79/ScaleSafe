@@ -23,6 +23,7 @@ import { config } from '../../src/config';
 import {
   operatorFeatureAndHost,
   requireOperatorCsrf,
+  requireOperatorHealthEnabled,
   requireOperatorPermission,
   requireOperatorSession,
 } from '../../src/middleware/operatorAuth';
@@ -54,6 +55,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (config.operator as any).enabled = true;
   (config.operator as any).authEnabled = true;
+  (config.operator as any).healthEnabled = true;
   (config.operator as any).host = 'ops.scalesafe.app';
   (config.operator as any).origin = 'https://ops.scalesafe.app';
   mockResolveSession.mockResolvedValue({ context: CONTEXT, actor: {} });
@@ -80,6 +82,36 @@ describe('operator request boundary', () => {
       .get('/internal/operator/api/session')
       .set('Host', 'dashboard.scalesafe.app');
     expect(response.status).toBe(404);
+  });
+
+  it('returns 404 for Phase 2 routes while health incidents are disabled', async () => {
+    (config.operator as any).healthEnabled = false;
+    const app = baseApp();
+    app.get('/internal/operator/api/health', requireOperatorHealthEnabled, (_req, res) => res.json({ ok: true }));
+
+    const response = await request(app).get('/internal/operator/api/health');
+
+    expect(response.status).toBe(404);
+  });
+
+  it('hides platform-only health routes from reseller roles', async () => {
+    mockHasPermission.mockReturnValue(false);
+    const app = baseApp();
+    app.get(
+      '/internal/operator/api/health',
+      operatorFeatureAndHost,
+      requireOperatorSession,
+      requireOperatorPermission('platform.health.read', { hideUnauthorized: true }),
+      (_req, res) => res.json({ ok: true }),
+    );
+
+    const response = await request(app)
+      .get('/internal/operator/api/health')
+      .set('Host', 'ops.scalesafe.app')
+      .set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: 'NOT_FOUND', message: 'Resource not found' });
   });
 
   it('rejects a request that tries to combine GHL and operator identity planes', async () => {

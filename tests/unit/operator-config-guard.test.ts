@@ -44,4 +44,27 @@ describe('operator configuration startup guard', () => {
     expect(() => loadConfigWith('a'.repeat(64), 'b'.repeat(64))).not.toThrow();
     expect(exit).not.toHaveBeenCalled();
   });
+
+  it('rejects health incidents without the isolated command center', () => {
+    jest.resetModules();
+    process.env.OPERATOR_COMMAND_CENTER_ENABLED = 'false';
+    process.env.OPERATOR_AUTH_ENABLED = 'false';
+    process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED = 'true';
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+
+    expect(() => require('../../src/config')).toThrow('EXIT_1');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps health incidents disabled by default', () => {
+    jest.resetModules();
+    process.env.OPERATOR_COMMAND_CENTER_ENABLED = 'true';
+    process.env.OPERATOR_AUTH_ENABLED = 'false';
+    delete process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED;
+    const loaded = require('../../src/config');
+
+    expect(loaded.config.operator.healthEnabled).toBe(false);
+  });
 });

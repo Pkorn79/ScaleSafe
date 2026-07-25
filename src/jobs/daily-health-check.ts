@@ -23,7 +23,7 @@ export async function runDailyHealthCheck(): Promise<{ processed: number; failed
 
   if (error) {
     logger.error({ error }, 'Failed to fetch merchants for health check');
-    return { processed: 0, failed: 0 };
+    throw error;
   }
 
   if (!merchants || merchants.length === 0) {

@@ -4,14 +4,18 @@ import {
   operatorFeatureAndHost,
   requireOperatorAuthEnabled,
   requireOperatorCsrf,
+  requireOperatorHealthEnabled,
   requireOperatorOrigin,
   requireOperatorPermission,
   requireOperatorSession,
 } from '../middleware/operatorAuth';
 import { operatorRepository } from '../repositories/operator.repository';
+import { commandCenterHealthRepository } from '../repositories/command-center-health.repository';
 import { operatorAdminService } from '../services/operator-admin.service';
 import { operatorAuthService } from '../services/operator-auth.service';
 import { operatorAuthorizationService } from '../services/operator-authorization.service';
+import { commandCenterIncidentService } from '../services/command-center-incident.service';
+import { ValidationError } from '../utils/errors';
 import {
   operatorAuthCss,
   operatorAuthJs,
@@ -30,11 +34,80 @@ import {
 
 const router = Router();
 const base = '/internal/operator';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function asyncRoute(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     handler(req, res).catch(next);
   };
+}
+
+function pageLimit(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 200) {
+    throw new ValidationError('Invalid page limit');
+  }
+  return parsed;
+}
+
+function decodeCursor(value: unknown, kind: 'time' | 'merchant'): any | null {
+  if (value === undefined || value === null || value === '') return null;
+  const encoded = String(value);
+  if (encoded.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    throw new ValidationError('Invalid page cursor');
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('invalid cursor');
+    }
+    if (kind === 'time') {
+      if (
+        typeof parsed.at !== 'string'
+        || !Number.isFinite(new Date(parsed.at).getTime())
+        || typeof parsed.id !== 'string'
+        || !UUID_PATTERN.test(parsed.id)
+      ) {
+        throw new Error('invalid time cursor');
+      }
+      return { at: parsed.at, id: parsed.id };
+    }
+    if (
+      !Number.isInteger(parsed.needsAttentionCount)
+      || parsed.needsAttentionCount < 0
+      || typeof parsed.lastReconciledAt !== 'string'
+      || !Number.isFinite(new Date(parsed.lastReconciledAt).getTime())
+      || typeof parsed.locationId !== 'string'
+      || parsed.locationId.length < 1
+      || parsed.locationId.length > 100
+    ) {
+      throw new Error('invalid merchant cursor');
+    }
+    return {
+      needsAttentionCount: parsed.needsAttentionCount,
+      lastReconciledAt: parsed.lastReconciledAt,
+      locationId: parsed.locationId,
+    };
+  } catch {
+    throw new ValidationError('Invalid page cursor');
+  }
+}
+
+function encodeCursor(value: Record<string, unknown> | null, kind: 'time' | 'merchant'): string | null {
+  if (!value) return null;
+  const normalized = kind === 'time'
+    ? {
+      at: String(value.lastObservedAt || value.lastSeenAt || ''),
+      id: String(value.id || ''),
+    }
+    : {
+      needsAttentionCount: Number(value.needsAttentionCount),
+      lastReconciledAt: String(value.lastReconciledAt || ''),
+      locationId: String(value.locationId || ''),
+    };
+  return Buffer.from(JSON.stringify(normalized), 'utf8').toString('base64url');
 }
 
 router.use(base, operatorFeatureAndHost);
@@ -129,7 +202,85 @@ router.get(
   },
 );
 
+router.get(
+  `${base}/api/health`,
+  requireOperatorHealthEnabled,
+  requireOperatorSession,
+  requireOperatorPermission('platform.health.read', { sensitiveRead: true, hideUnauthorized: true }),
+  asyncRoute(async (req, res) => {
+    const limit = pageLimit(req.query.limit, 200);
+    const page = await commandCenterHealthRepository.getPlatformOverviewPage({
+      limit,
+      checksCursor: decodeCursor(req.query.checksCursor, 'time'),
+      incidentsCursor: decodeCursor(req.query.incidentsCursor, 'time'),
+      merchantsCursor: decodeCursor(req.query.merchantsCursor, 'merchant'),
+    });
+    res.json({
+      generatedAt: new Date().toISOString(),
+      contractVersion: 'command-center-health-v1.1',
+      checks: page.checks,
+      incidents: page.incidents,
+      merchants: page.merchants,
+      pagination: {
+        checksCursor: encodeCursor(page.next.checks, 'time'),
+        incidentsCursor: encodeCursor(page.next.incidents, 'time'),
+        merchantsCursor: encodeCursor(page.next.merchants, 'merchant'),
+      },
+    });
+  }),
+);
+
+router.get(
+  `${base}/api/incidents`,
+  requireOperatorHealthEnabled,
+  requireOperatorSession,
+  requireOperatorPermission('platform.health.read', { sensitiveRead: true, hideUnauthorized: true }),
+  asyncRoute(async (req, res) => {
+    const limit = pageLimit(req.query.limit, 100);
+    const includeResolved = String(req.query.includeResolved || '') === 'true';
+    const page = await commandCenterHealthRepository.listIncidentsPage({
+      limit,
+      includeResolved,
+      cursor: decodeCursor(req.query.cursor, 'time'),
+    });
+    res.json({
+      incidents: page.incidents,
+      nextCursor: encodeCursor(page.next, 'time'),
+    });
+  }),
+);
+
 const mutationMiddleware = [requireOperatorSession, requireOperatorOrigin, requireOperatorCsrf];
+
+router.post(
+  `${base}/api/incidents/:incidentId/acknowledge`,
+  requireOperatorHealthEnabled,
+  ...mutationMiddleware,
+  requireOperatorPermission('platform.incidents.manage', { hideUnauthorized: true }),
+  asyncRoute(async (req, res) => {
+    const incident = await commandCenterIncidentService.acknowledge(
+      req,
+      req.params.incidentId,
+      req.body?.summary,
+    );
+    res.json({ incident });
+  }),
+);
+
+router.post(
+  `${base}/api/incidents/:incidentId/suppress`,
+  requireOperatorHealthEnabled,
+  ...mutationMiddleware,
+  requireOperatorPermission('platform.incidents.manage', { hideUnauthorized: true }),
+  asyncRoute(async (req, res) => {
+    const incident = await commandCenterIncidentService.suppress(
+      req,
+      req.params.incidentId,
+      req.body || {},
+    );
+    res.json({ incident });
+  }),
+);
 
 router.post(
   `${base}/api/organizations/resellers`,

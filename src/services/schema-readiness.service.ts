@@ -1,6 +1,14 @@
 import { getSupabase } from '../clients/supabase.client';
+import { config } from '../config';
 
-const REQUIRED_SCHEMA_VERSION = 103;
+export const BASE_REQUIRED_SCHEMA_VERSION = 103;
+export const COMMAND_CENTER_HEALTH_SCHEMA_VERSION = 104;
+
+function requiredSchemaVersion(): number {
+  return config.operator.healthEnabled
+    ? COMMAND_CENTER_HEALTH_SCHEMA_VERSION
+    : BASE_REQUIRED_SCHEMA_VERSION;
+}
 
 export const schemaReadinessService = {
   async check(): Promise<{ ready: boolean; version: number | null; error?: string }> {
@@ -10,11 +18,12 @@ export const schemaReadinessService = {
         return { ready: false, version: null, error: error.message || 'Schema version check failed' };
       }
       const version = Number(data);
+      const requiredVersion = requiredSchemaVersion();
       return {
-        ready: Number.isInteger(version) && version >= REQUIRED_SCHEMA_VERSION,
+        ready: Number.isInteger(version) && version >= requiredVersion,
         version: Number.isFinite(version) ? version : null,
-        ...(!Number.isInteger(version) || version < REQUIRED_SCHEMA_VERSION
-          ? { error: `Schema version ${Number.isFinite(version) ? version : 'unknown'} is below required version ${REQUIRED_SCHEMA_VERSION}` }
+        ...(!Number.isInteger(version) || version < requiredVersion
+          ? { error: `Schema version ${Number.isFinite(version) ? version : 'unknown'} is below required version ${requiredVersion}` }
           : {}),
       };
     } catch (err: any) {
@@ -25,7 +34,7 @@ export const schemaReadinessService = {
   async assertReady(): Promise<void> {
     const result = await this.check();
     if (!result.ready) {
-      throw new Error(`ScaleSafe database is not deployment-ready: ${result.error || 'migration 103 is missing'}`);
+      throw new Error(`ScaleSafe database is not deployment-ready: ${result.error || 'required migration is missing'}`);
     }
   },
 };

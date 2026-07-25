@@ -3,6 +3,8 @@ const mockRegenerateLetter = jest.fn().mockResolvedValue(undefined);
 const mockReconcileAccepted = jest.fn().mockResolvedValue(undefined);
 const mockRpc = jest.fn();
 const mockUpdate = jest.fn();
+const mockMarkMerchantHealthDirty = jest.fn().mockResolvedValue(undefined);
+const mockRecordWorkerHeartbeat = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../src/services/defense.service', () => ({
   defenseService: {
@@ -30,6 +32,20 @@ jest.mock('../../src/clients/supabase.client', () => ({
   }),
 }));
 
+jest.mock('../../src/config', () => ({
+  config: {
+    nodeEnv: 'test',
+    operator: { healthEnabled: true },
+  },
+}));
+
+jest.mock('../../src/repositories/command-center-health.repository', () => ({
+  commandCenterHealthRepository: {
+    markMerchantHealthDirty: (...args: unknown[]) => mockMarkMerchantHealthDirty(...args),
+    recordWorkerHeartbeat: (...args: unknown[]) => mockRecordWorkerHeartbeat(...args),
+  },
+}));
+
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -41,6 +57,8 @@ beforeEach(() => {
   mockRunCompilation.mockResolvedValue(undefined);
   mockRegenerateLetter.mockResolvedValue(undefined);
   mockReconcileAccepted.mockResolvedValue(undefined);
+  mockMarkMerchantHealthDirty.mockResolvedValue(undefined);
+  mockRecordWorkerHeartbeat.mockResolvedValue(undefined);
 });
 
 afterAll(() => defenseCompilationWorker.stop());
@@ -108,5 +126,41 @@ test('a regeneration job targets exactly one letter version', async () => {
   expect(mockRunCompilation).not.toHaveBeenCalled();
   expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
     compilation_completed_at: expect.any(String),
+  }));
+});
+
+test('finishes defense compilation when health tables reject both writes', async () => {
+  const input = {
+    locationId: 'loc_1', contactId: 'c_1', reasonCode: '13.1',
+    disputeAmount: 500, disputeDate: '2026-07-01', deadline: '2026-07-20',
+  };
+  mockRpc.mockResolvedValue({
+    data: [{
+      id: 'def_health_fault',
+      location_id: 'loc_1',
+      compilation_input: input,
+      compilation_category: 'services_not_provided',
+      compilation_attempts: 1,
+    }],
+    error: null,
+  });
+  mockMarkMerchantHealthDirty.mockRejectedValueOnce(
+    new Error('health dirty table unavailable'),
+  );
+  mockRecordWorkerHeartbeat.mockRejectedValueOnce(
+    new Error('health heartbeat table unavailable'),
+  );
+
+  await expect(defenseCompilationWorker.runOnce()).resolves.toBeUndefined();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  expect(mockRunCompilation).toHaveBeenCalledWith(
+    'def_health_fault',
+    input,
+    'services_not_provided',
+  );
+  expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    compilation_completed_at: expect.any(String),
+    compilation_lease_owner: null,
   }));
 });
