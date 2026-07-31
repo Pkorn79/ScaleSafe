@@ -1,0 +1,4 @@
+ops/recovery/*.sh text eol=lf
+ops/recovery/test/*.sh text eol=lf
+ops/recovery/systemd/*.service text eol=lf
+ops/recovery/systemd/*.timer text eol=lf

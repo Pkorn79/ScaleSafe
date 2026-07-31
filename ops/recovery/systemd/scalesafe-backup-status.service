@@ -1,0 +1,33 @@
+[Unit]
+Description=Publish sanitized ScaleSafe backup status for Guardian
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=scalesafe-backup
+Group=scalesafe-backup
+WorkingDirectory=/opt/scalesafe-recovery
+ExecStart=/opt/scalesafe-recovery/publish-backup-status.sh /etc/scalesafe-recovery/backup.env observe
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/scalesafe-backup-status /var/lock
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,14 @@
 # Command Center Phase 3 Implementation And Certification
 
-**Status:** Prepared only. Implementation has not started.
+**Status:** Phase 3.0 and Phase 3.1 implementation are complete. Phase 3.2's
+deterministic Guardian runner and isolated OpenClaw handoff are implemented,
+installed disabled, and certified on the VPS. Guardian Protocol v1 is frozen
+after independent review. Phase 3.3's recovery-monitoring candidate is committed
+locally at `2263852`, independently reviewed with no remaining P0/P1 finding,
+and passes its exact-package Windows and isolated Linux gates. It remains
+uninstalled and has not performed its live read-only Backblaze certification.
+Migration 105 remains unapplied pending owner review. No production activation
+is authorized.
 
 **Phase:** 3 - Guardian and independent alerting
 
@@ -85,20 +93,27 @@ Stop Phase 3 immediately if:
 
 The following decisions remain owner-controlled.
 
-### 4.1 Independent alert provider
+### 4.1 Independent alert and investigation stack
 
-**Recommendation:** Better Stack Responder.
+**Approved controlled-beta stack:**
 
-Why:
+- Guardian performs deterministic checks on the existing VPS. OpenClaw command
+  cron may schedule those checks without starting a model.
+- Better Stack's free tier is used only for an external public monitor and the
+  Guardian dead-man heartbeat. It provides the independent failure signal when the
+  VPS itself cannot send an alert.
+- A dedicated GHL inbound workflow receives only sanitized urgent or critical
+  incident envelopes and sends SMS to the approved owner.
+- Guardian writes every incident to a local durable handoff queue. OpenClaw may
+  invoke an affordable model only after deterministic code has opened an incident.
+- Warning and informational incidents send email and enter the same handoff queue.
+  Email is notification, not an authorization channel.
+- No paid Better Stack responder, telemetry, or log-storage plan is required for
+  controlled beta.
 
-- Heartbeats create incidents when expected calls are missed.
-- Incoming webhooks support stable alert identifiers and create/acknowledge/resolve
-  rules.
-- Incidents can be acknowledged outside ScaleSafe.
-- The current Responder plan includes phone, SMS, push, and email alerting.
-
-Current published pricing is approximately $34 monthly or $29 per month when billed
-annually for one responder. Pricing must be rechecked at purchase time.
+AI never decides whether a check failed or recovered. It may inspect evidence,
+run allowlisted read-only diagnostics, summarize a probable cause, and prepare a
+tested branch or patch. It cannot approve its own production action.
 
 References:
 
@@ -106,9 +121,12 @@ References:
 - https://betterstack.com/docs/uptime/incoming-webhooks/
 - https://betterstack.com/docs/uptime/acknowledging-an-incident/
 - https://betterstack.com/pricing
+- https://docs.openclaw.ai/cli/cron
 
-**Owner decision:** Approve the provider, spend, destination phone number, email,
-and push-notification account.
+**Owner decision:** Approved by Philip on 2026-07-25. Use the zero-fixed-cost
+stack above. GHL SMS usage and model invocations are usage-based. The destination
+phone number, notification email, and AI handoff identity remain deployment-time
+secrets and are not stored in either repository.
 
 ### 4.2 Guardian host
 
@@ -129,8 +147,10 @@ Required controls:
 low-cost host so a single VPS-root compromise cannot reach both Guardian and the
 backup engine.
 
-**Owner decision:** Accept the co-resident root risk for controlled beta or provide
-a separate host now.
+**Owner decision:** Approved by Philip on 2026-07-25 for controlled beta. Use the
+existing VPS with the locked `scalesafe-guardian` account and preserve the
+separation controls above. A separate host remains required before broader
+reseller or general availability.
 
 ### 4.3 Repository boundary
 
@@ -155,27 +175,55 @@ dependencies and credentials outside the production application repository.
 The repositories share a versioned protocol document and fixed signed-message test
 vectors. They do not share secrets.
 
-**Owner decision:** Approve a separate private Guardian repository.
+**Owner decision:** Approved by Philip on 2026-07-25. Create a separate private
+Guardian repository.
 
 ### 4.4 Retention
 
-**Recommendation for controlled beta:**
+**Approved controlled-beta retention:**
 
-- Guardian runs and observations: 90 days.
-- Alert-delivery attempts and acknowledgement history: 90 days.
-- Recovery verification summaries: 365 days.
+- Raw Guardian runs and observations: 90 days.
+- Health summaries, alert delivery history, incidents, acknowledgements, and
+  recovery-verification summaries: 3 years.
 - Local detailed logs: 30 days.
 - Local unresolved incident and outbox state: until reconciled plus 90 days.
+- Merchant payment, enrollment, consent, evidence, refund, defense, and operator
+  audit history: 3 years under a separate ScaleSafe business-data policy.
+- Monthly merchant, location, reseller, and operator reporting aggregates:
+  3 years.
+- Before policy-based deletion, the merchant must be able to export the applicable
+  records. Legal holds suspend deletion for the affected records.
 
-**Owner decision:** Approve these retention periods.
+Raw operational observations are not the source for merchant performance reports.
+Long-range merchant reporting must use durable business facts and purpose-built
+aggregates so that raw monitoring volume does not grow without bound.
+
+**Owner decision:** Approved by Philip on 2026-07-25. Use 30-day detailed logs,
+90-day raw observations, and 3-year durable summaries and business history.
+
+### 4.5 Phase 3.0 baseline
+
+- ScaleSafe branch: `codex/beta-remediation`.
+- Phase 3 baseline SHA: `27704f032cc7088815333c0e54c5005e2c442e39`.
+- `origin/main` at baseline:
+  `67d9ea3f40d8882b0bbcd32163f0736261257597`.
+- Production reports schema version `102`.
+- Direct PostgREST checks confirm migrations 103, 104, and Guardian tables are not
+  present in production.
+- The isolated VPS Supabase workspace reports schema version `104`.
+- Migration `105` is available for Phase 3.1.
+- No production SQL, feature flag, deployment, merge, or push occurred during
+  Phase 3.0.
 
 ## 5. Target Topology
 
 ```mermaid
 flowchart LR
-  BS["Better Stack"]
+  BS["Better Stack free dead-man"]
   G["Guardian service"]
   GS["Guardian local durable state"]
+  OC["OpenClaw gated investigator"]
+  GHL["GHL critical alert workflow"]
   SS["ScaleSafe / Railway"]
   DB["Supabase"]
   BK["Backup status drop"]
@@ -187,9 +235,9 @@ flowchart LR
   SS -->|"global snapshot"| G
   SS --> DB
   G --> GS
-  G -->|"incident create/update"| BS
-  BS -->|"ack/resolve callback"| G
   G -->|"heartbeat"| BS
+  G -->|"sanitized critical envelope"| GHL
+  G -->|"durable incident handoff"| OC
   BK -->|"sanitized read only"| G
   G -->|"list/read encrypted metadata only"| B2
   G -->|"read-only CI metadata"| GH
@@ -202,8 +250,9 @@ There are three independent truths:
    and application metrics in Supabase.
 2. **Guardian external truth:** Reachability, freshness, deployment, CI, backup,
    restore-recency, and alert-delivery observations stored locally first.
-3. **Alert-provider truth:** Incident accepted, owner notified, acknowledged, and
-   resolved outside ScaleSafe.
+3. **External alert truth:** Better Stack records public/dead-man incidents
+   independently; GHL records critical SMS workflow delivery; Guardian records
+   durable AI handoff and owner-approved actions.
 
 No one source may silently overwrite another source's observation. A parent outage
 may suppress child notifications, but it must not delete child evidence.
@@ -213,9 +262,10 @@ may suppress child notifications, but it must not delete child evidence.
 ### 6.1 Guardian may possess
 
 - One Ed25519 private signing key.
-- A send-only Better Stack incoming-webhook URL.
 - A Better Stack heartbeat URL.
-- One secret callback header used only to validate Better Stack lifecycle callbacks.
+- One high-entropy GHL inbound-workflow URL restricted to sanitized operational
+  alerts.
+- A local OpenClaw handoff directory that contains no merchant data or secrets.
 - One Backblaze key restricted to the backup bucket and read-only capabilities.
 - Optional narrowly read-only GitHub credentials.
 - A sanitized local backup-status file.
@@ -398,26 +448,29 @@ Accepts signed, sanitized recovery proof:
 It cannot trigger a backup, download plaintext, decrypt, restore, delete, or rotate
 anything.
 
-### 8.4 Better Stack callback
+### 8.4 Alert and AI handoff boundary
 
-The Better Stack lifecycle callback terminates on Guardian, not ScaleSafe.
+Better Stack receives only public-monitor traffic and the Guardian dead-man
+heartbeat. No Better Stack callback is trusted as a ScaleSafe command.
 
-Protection:
+For urgent and critical incidents, Guardian sends a sanitized envelope to one
+dedicated GHL inbound-workflow URL. The envelope contains only:
 
-- HTTPS only.
-- One high-entropy unguessable path.
-- One separate high-entropy custom header.
-- Maximum 32 KiB body.
-- Strict JSON schema.
-- Stable provider incident identifier.
-- Durable local rate limit.
-- No control commands in callback data.
-- Provider acknowledgement and resolution are recorded locally before later
-  reconciliation to ScaleSafe.
+- Stable Guardian incident ID.
+- Check key.
+- Severity and state.
+- Opened or recovered timestamp.
+- Short allowlisted summary and runbook identifier.
 
-Better Stack documents custom outgoing webhooks but does not document a native
-cryptographic signature for this callback. The callback secret therefore authorizes
-only recording provider lifecycle state; it grants no ScaleSafe authority.
+It contains no location, merchant, client, payment, dispute, evidence, secret,
+raw error, or arbitrary instruction. GHL may send SMS and email from this envelope,
+but a reply or workflow execution cannot authorize an operational action.
+
+Guardian also writes an immutable incident package to the local OpenClaw handoff
+queue. OpenClaw may run read-only diagnostics automatically. Any restart, deploy,
+merge, SQL, environment, secret, production configuration, external-system
+mutation, or data mutation requires explicit owner approval recorded outside the
+incident payload.
 
 ## 9. Migration Plan
 
@@ -455,7 +508,9 @@ Migration-owned allowlist:
 - Default severity.
 - Parent check.
 - Whether recovery requires stable observations.
-- Allowed metric keys.
+- Allowlisted summary and failure codes.
+- A separate migration-owned metric catalog defining every permitted metric key,
+  value type, integer range, token pattern, or enum.
 - Active status.
 
 There is no merchant UI or general mutation API for this catalog.
@@ -475,11 +530,17 @@ Immutable receipt ledger:
 - Endpoint and method.
 - Request timestamp and receive timestamp.
 - Raw-body SHA-256.
-- Result: `accepted`, `duplicate`, `rejected`.
-- Sanitized rejection code.
-- Run or recovery-verification reference.
+- Mutation result: newly created or logical duplicate.
+- Optional link from a logical-duplicate receipt to its original receipt.
 
 Unique boundary: `(guardian_credential_id, sequence)`.
+
+An exact same-sequence retry returns the existing receipt and writes nothing.
+Expected rejections return a sanitized API result and application metric; they do
+not rewrite an accepted receipt. Reusing a logical run or verification ID under a
+new sequence with identical raw content creates a no-op receipt linked to the
+original and advances the sequence. Changed content under the same logical ID is
+rejected.
 
 ### 9.5 `guardian_runs`
 
@@ -504,7 +565,7 @@ Append-only observations:
 - Observed time.
 - Valid-until time.
 - Allowlisted summary code.
-- Sanitized numeric/string metrics.
+- Catalog-validated safe integers, booleans, and constrained token metrics.
 - Evidence hash.
 - Parent/suppression relationship.
 
@@ -588,8 +649,9 @@ Expected modules:
 
 Implementation requirements:
 
-- Reuse the existing raw-body capture. Verify that the exact raw body is preserved
-  before JSON parsing.
+- Mount a Guardian-specific raw parser before the existing application-wide JSON
+  parser. Enforce 65,536 bytes, preserve the exact bytes, authenticate, and parse
+  JSON exactly once.
 - Register Guardian routes before the final `/internal/*` fail-closed handler.
 - Do not use merchant API limiters or operator browser authentication.
 - Add a dedicated durable Guardian limiter.
@@ -703,7 +765,7 @@ Initial checks are global only.
 | `recovery.backup.status` | Status drop | 30m | none | Latest backup and timer health |
 | `recovery.backup.object` | B2 read only | weekly | `recovery.backup.status` | Encrypted object/marker presence |
 | `recovery.restore.recency` | Status drop | daily | none | Human restore proof recency |
-| `guardian.deadman` | Better Stack | 2m | none | Guardian/VPS liveness |
+| `guardian.deadman` | Better Stack free | 2m | none | Guardian/VPS liveness |
 | `network.dns` | Guardian | 15m | none | DNS resolution |
 | `network.tls` | Guardian | 15m | `network.dns` | TLS validity and expiry |
 
@@ -717,18 +779,21 @@ its aggregate freshness and outcome.
 1. Guardian records the failed observation locally.
 2. Parent suppression is evaluated.
 3. If notification is required, Guardian creates a durable alert outbox item.
-4. Guardian sends the item to Better Stack with a stable alert ID.
-5. Provider acceptance is recorded locally.
-6. Signed ingestion to ScaleSafe is attempted independently.
+4. Urgent and critical items are delivered to the dedicated GHL workflow with a
+   stable alert ID.
+5. Every item is written to the local OpenClaw handoff queue.
+6. Delivery acceptance is recorded locally.
+7. Signed ingestion to ScaleSafe is attempted independently.
 
 An alert is not considered delivered merely because it was queued.
 
 ### 13.2 Acknowledge
 
-1. Owner acknowledges through Better Stack phone, SMS/push app, email, or dashboard.
-2. Better Stack sends its lifecycle callback to Guardian.
-3. Guardian validates the callback path/header/schema.
-4. Guardian records acknowledgement locally.
+1. Better Stack public/dead-man incidents are acknowledged in Better Stack.
+2. GHL SMS and email are notifications only and do not acknowledge or authorize.
+3. Owner approval for an action is recorded through an authenticated operator or
+   coding-agent control channel.
+4. Guardian records the approved action reference locally.
 5. When ScaleSafe is reachable, Guardian reconciles the acknowledgement exactly
    once.
 
@@ -736,9 +801,11 @@ An alert is not considered delivered merely because it was queued.
 
 1. The check must satisfy its stable-recovery threshold.
 2. Guardian records a local recovery observation.
-3. Better Stack receives the matching stable alert ID and resolution state.
-4. Guardian records provider resolution.
-5. ScaleSafe receives the signed recovery and delivery history when available.
+3. Guardian sends a matching recovered envelope to any channel that received the
+   open incident.
+4. Better Stack resolves its public/dead-man incident independently.
+5. Guardian records channel resolution.
+6. ScaleSafe receives the signed recovery and delivery history when available.
 
 ### 13.4 Parent suppression
 
@@ -786,8 +853,9 @@ Forbidden fields:
 
 Filesystem boundary:
 
-- Drop directory owned by `scalesafe-backup:scalesafe-guardian`.
-- Directory mode `0750`.
+- Drop directory owned by
+  `scalesafe-backup:scalesafe-guardian-recovery`.
+- Directory mode `2750`.
 - Status file mode `0640`.
 - Write to a temporary file, `fsync`, validate with `jq`, then atomic rename.
 - Guardian receives read access only to this directory.
@@ -819,6 +887,12 @@ Guardian may list completed snapshot markers, inspect encrypted object metadata,
 validate expected file presence/size/hash metadata, and inspect retention. It cannot
 decrypt the archive because the `age` private identity remains offline.
 
+The network-facing verifier runs as the locked `scalesafe-guardian-b2` account,
+not the Guardian signing identity. Its systemd service receives the shared
+recovery group only for that process. It cannot read Guardian signing material,
+Guardian/OpenClaw state, the backup configuration, rclone write credentials,
+database or Storage credentials, the decryption identity, or restore scripts.
+
 ### 14.3 Restore recency
 
 Full restore remains a human-run isolated scratch drill. The restore process emits
@@ -835,15 +909,42 @@ a sanitized proof document containing:
 - Proof SHA-256.
 
 Guardian checks only that a valid proof exists and is no older than 35 days. It
-cannot launch a restore or access the scratch credentials.
+cannot launch a restore or access the scratch credentials. The proof lives in a
+separate root-owned, Guardian-readable directory; the backup service cannot
+read, replace, or generate it.
+
+- Restore-proof directory owner/group: `root:scalesafe-guardian-recovery`.
+- Restore-proof directory mode: `2750`.
+- Restore-proof file owner/group and mode:
+  `root:scalesafe-guardian-recovery`, `0640`.
 
 ## 15. External Provider Access
 
-### Better Stack
+### Better Stack free
 
-Prefer secret URLs and narrowly scoped integration secrets over a broad API token.
-If an API token is unavoidable, document its exact permissions and prove it cannot
-modify unrelated account resources.
+Use only a public HTTPS monitor and one heartbeat URL. Guardian receives no broad
+Better Stack API token. The owner acknowledges external incidents in Better Stack.
+
+### GHL operational alerts
+
+Use one dedicated inbound-workflow URL. Guardian receives no GHL OAuth token,
+location access token, agency token, or merchant-scoped credentials. The workflow
+accepts only the strict sanitized envelope in Section 8.4.
+
+### OpenClaw
+
+OpenClaw reads only the Guardian handoff directory and a sanitized, read-only
+diagnostic workspace. It receives no production database, payment, deployment,
+backup-write, or merchant credentials. The `guardian` agent is advisory only:
+it has no channel binding, no heartbeat, no skills, and only the harmless
+`session_status` tool. It classifies sanitized incident envelopes and cannot
+inspect the host, create a patch, send a message, or mutate a system. A separate
+coding-agent handoff may be designed later, but it must remain behind explicit
+owner approval.
+
+The controlled-beta runtime is OpenClaw `2026.7.1-2` on Node `22.23.1`, using
+`openrouter/openai/gpt-5.4-nano` with low reasoning. Deterministic checks make no
+model request. The model runs only for an anomaly or approved digest.
 
 ### GitHub
 
@@ -863,10 +964,13 @@ build SHA from ScaleSafe's signed snapshot and confirms reachability externally.
 ScaleSafe additions:
 
 - `GUARDIAN_INGESTION_ENABLED=false`
+- `GUARDIAN_HOST=guardian.scalesafe.app`
 - `GUARDIAN_MAX_BODY_BYTES=65536`
 - `GUARDIAN_TIMESTAMP_TOLERANCE_SECONDS=300`
-- `GUARDIAN_RATE_LIMIT_PER_MINUTE`
 - `GUARDIAN_BUILD_SHA_ENV=RAILWAY_GIT_COMMIT_SHA`
+
+The v1 snapshot TTL is fixed at 300 seconds. Endpoint rate limits are owned by
+migration 105 and cannot be widened through Railway configuration.
 
 Production startup rules:
 
@@ -884,9 +988,10 @@ Guardian host additions:
 - Ed25519 private-key path.
 - Credential key ID.
 - Guardian instance ID.
-- Better Stack send-only URL.
 - Better Stack heartbeat URL.
-- Better Stack callback path/header secrets.
+- GHL operational-alert workflow URL.
+- OpenClaw handoff-directory path.
+- Allowlisted notification email.
 - Restricted B2 read-only credentials.
 - Optional GitHub read-only credentials.
 - Backup status-drop path.
@@ -927,10 +1032,30 @@ Gate:
 
 - Cryptographic and database tests pass.
 - Exact duplicate retry is a no-op.
+- Logical-ID retry with identical content advances the sequence without creating
+  another run, observation, or recovery record.
+- Logical-ID reuse with changed content fails.
 - Forged, altered, stale, gapped, unknown, oversized, and merchant-scoped requests
   fail.
 - Operator/GHL/API/public-action/processor secrets cannot satisfy Guardian auth.
 - Disabled production-shaped app returns `404` for every Guardian route.
+
+Current proof:
+
+- 67 focused Guardian, readiness, schema, and configuration tests pass.
+- The complete backend suite passes: 196 suites and 1,607 tests.
+- TypeScript typecheck passes.
+- The production application and UI build passes.
+- The generated vectors execute against the real HTTP middleware and route
+  stack, including exact raw-body signatures and semantic response validation.
+- The same checked-in vector file drives every database-reaching case through
+  the real `claim_guardian_request` RPC. All 10 cases validate decision,
+  rejection, receipt, domain-row, and sequence effects.
+- Migration 105 and its behavioral verifier pass inside a rollback-only
+  transaction against the isolated schema-104 Supabase container.
+- The isolated database reports schema 104 after rollback.
+- Final independent review reports no remaining P0 or P1 finding.
+- No production SQL, flag, endpoint, merge, push, or deployment has occurred.
 
 ### Phase 3.2 - Guardian local agent
 
@@ -950,6 +1075,36 @@ Gate:
 - Service-account access audit proves the forbidden credential list is unreadable.
 - No production endpoints are targeted.
 
+Current status:
+
+- The private VPS repository exists at `/home/clawuser/scalesafe-guardian`.
+- The reviewed deterministic runner, state/outbox, signer, clients, isolated
+  OpenClaw handoff, packaging, and systemd units are committed at
+  `79028e4da6c946e6203516ccd99507630b2dc327`.
+- All 37 Guardian repository tests pass on the VPS.
+- The disabled installer created locked `scalesafe-guardian` and
+  `scalesafe-openclaw` identities with only the dedicated handoff group shared
+  between them.
+- The installed Guardian release and the Node `22.23.1` / OpenClaw
+  `2026.7.1-2` runtime are root-owned and version-pinned.
+- Both Guardian services and both timers are loaded, disabled, and inactive.
+- The pre-existing general OpenClaw gateway remains active and unchanged.
+- The dedicated OpenRouter credential is encrypted with the VPS host key, stored
+  root-only, and excluded from environment files and shell history.
+- The root-run disabled-install audit passed: both service accounts are denied
+  access to the backup account, recovery configuration, general OpenClaw state,
+  and Docker socket; Guardian can write only its state and handoff spool; the
+  OpenClaw identity can read but cannot write the handoff spool.
+- The isolated live invocation passed with provider `openrouter`, model
+  `openai/gpt-5.4-nano`, and 3,650 total tokens. The certification also proved
+  exact deduplication without a second model call.
+- Machine-readable proof is preserved at
+  `/var/lib/scalesafe-guardian-openclaw/certification/openclaw-live-98536794-db91-4fa5-8452-c0a4397cd6f6.json`.
+- After certification, the OpenClaw service and both Guardian timers were
+  independently rechecked as inactive and disabled with no running process.
+- The Phase 3.2 gate is complete. No production endpoint was configured or
+  targeted.
+
 ### Phase 3.3 - Backup bridge and recovery checks
 
 Work:
@@ -960,6 +1115,27 @@ Work:
 - Add weekly encrypted-object verification.
 - Add restore-proof recency check.
 
+Current implementation state, 2026-07-30:
+
+- Sanitized backup and restore-proof writers are implemented without changing
+  `backup.sh` or `restore-scratch.sh`.
+- Strict hashed status readers, stale/failure incident handling, and recovery
+  lifecycle tests are implemented.
+- The B2 verifier requires one bucket and exactly `listFiles`, `readFiles`, and
+  `readFileRetentions`; it streams and hashes only encrypted archives.
+- The B2 verifier has its own locked identity and cannot reach Guardian signing
+  material or recovery credentials.
+- The exact candidate passes all 50 Guardian tests on Windows and Linux, Bash
+  syntax, the recovery bridge functional test, and temporary systemd validation.
+  The B2 verifier's offline systemd hardening score is `2.9 OK`.
+- Independent review found two P1 fail-closed gaps: invalid verifier output
+  could return success, and enabled-but-inactive units could be discovered only
+  after installer writes. Both were corrected, regression-tested, and
+  independently rechecked; no P0/P1 finding remains.
+- Nothing from this subphase has been installed, started, enabled, or connected
+  to Backblaze. The gate remains open until disabled installation and live
+  read-only certification are explicitly approved and proven.
+
 Gate:
 
 - Guardian cannot read `backup.env`, rclone write config, database URL, Storage
@@ -969,25 +1145,27 @@ Gate:
   Guardian incident.
 - Guardian cannot write, delete, change retention, decrypt, or restore.
 
-### Phase 3.4 - Independent provider
+### Phase 3.4 - Independent notification and AI handoff
 
 Work:
 
-- Create Better Stack account/integrations after owner approval.
-- Configure external ScaleSafe HTTPS monitor.
-- Configure Guardian heartbeat.
-- Configure incoming incident webhook.
-- Configure phone/email/push escalation.
-- Configure lifecycle callback to Guardian.
+- Configure Better Stack free external ScaleSafe HTTPS monitor.
+- Configure the free Guardian dead-man heartbeat.
+- Configure a dedicated GHL workflow for critical SMS and incident email.
+- Configure the local OpenClaw handoff queue and read-only diagnostic policy.
+- Configure the three-level action-approval gate.
 - Run an alert-delivery test.
 
 Gate:
 
-- A test incident reaches every owner-approved channel.
-- Owner acknowledges it outside ScaleSafe.
-- Guardian records provider acceptance and acknowledgement locally.
+- A test incident reaches every owner-approved channel without merchant data.
+- Better Stack external incidents can be acknowledged outside ScaleSafe.
+- GHL acceptance is not mislabeled as SMS delivery.
+- OpenClaw automatically performs only the allowlisted read-only diagnostics.
+- A proposed production action remains blocked until explicit owner approval.
+- Guardian records channel acceptance and approved-action references locally.
 - Missed Guardian heartbeat creates an incident.
-- Callback replay creates no duplicate state.
+- Repeated notification delivery creates no duplicate incident state.
 
 ### Phase 3.5 - Fault certification
 
@@ -1000,12 +1178,14 @@ Run in an isolated environment:
 5. ScaleSafe and Supabase stopped together.
 6. Guardian process killed and restarted.
 7. Guardian network temporarily blocked.
-8. Better Stack send temporarily fails.
-9. ScaleSafe ingestion accepts request but response is lost.
-10. Forged/replayed/stale/gapped/oversized/unknown-key requests.
-11. Backup status missing, stale, failed, malformed, and recovered.
-12. B2 marker/object missing and restored.
-13. Restore proof stale and refreshed.
+8. Better Stack heartbeat temporarily fails.
+9. GHL operational-alert delivery temporarily fails.
+10. OpenClaw or its selected model is unavailable.
+11. ScaleSafe ingestion accepts request but response is lost.
+12. Forged/replayed/stale/gapped/oversized/unknown-key requests.
+13. Backup status missing, stale, failed, malformed, and recovered.
+14. B2 marker/object missing and restored.
+15. Restore proof stale and refreshed.
 
 Gate:
 
@@ -1075,13 +1255,14 @@ Gate:
 - Crash before provider request.
 - Crash after provider acceptance but before local acknowledgement.
 - Crash after ScaleSafe acceptance but before response processing.
-- Callback duplicate and out-of-order lifecycle events.
+- Duplicate and out-of-order alert reconciliation events.
 - Reconciliation after one-hour ScaleSafe/Supabase outage.
 - Outbox disk-full and permission-failure behavior.
 
 ### Alerting
 
-- Critical alert reaches phone, email, and push as approved.
+- Critical alert reaches the approved GHL SMS/email route and the durable OpenClaw
+  handoff queue.
 - Provider failure is itself observable.
 - Acknowledgement works while ScaleSafe is down.
 - Resolution waits for stable recovery.
@@ -1124,7 +1305,9 @@ The Phase 3 acceptance report must contain:
 - Service-account permission audit.
 - Systemd unit and hardening verification.
 - Check catalog and cadence results.
-- Better Stack monitor, heartbeat, alert, acknowledgement, and resolution proof.
+- Better Stack free monitor, heartbeat, acknowledgement, and resolution proof.
+- GHL critical workflow acceptance plus independently observed SMS/email proof.
+- OpenClaw handoff, read-only diagnostic, and blocked-mutation proof.
 - Isolated outage timeline.
 - ScaleSafe/Supabase-down local-state proof.
 - Reconciliation and idempotency proof.
@@ -1151,7 +1334,7 @@ Guardian rollback:
 
 1. Stop and disable the Guardian systemd service.
 2. Preserve local state and logs.
-3. Keep Better Stack's independent public monitor active.
+3. Keep Better Stack's free independent public monitor active.
 4. Do not delete or reset sequence state.
 5. Diagnose and redeploy only after regression tests pass.
 
@@ -1169,11 +1352,15 @@ Phase 3 passes only when every statement below is true:
 
 - Phase 2 was certified first.
 - The Guardian detects an intentionally unavailable endpoint.
-- Better Stack independently detects public ScaleSafe failure.
-- Better Stack detects a missed Guardian heartbeat.
+- Better Stack free independently detects public ScaleSafe failure.
+- Better Stack free detects a missed Guardian heartbeat.
 - A critical alert reaches the approved channels.
 - The owner acknowledges it outside ScaleSafe.
 - Alert and acknowledgement work while ScaleSafe and Supabase are unavailable.
+- OpenClaw can investigate from the sanitized handoff without production mutation
+  credentials.
+- Restart, deploy, merge, SQL, configuration, secret, external-system, payment,
+  evidence-submission, and data-deletion actions remain approval-gated.
 - Recovery state reconciles exactly once.
 - Dependent checks become `unknown`, never stale-healthy.
 - Every unauthorized signature and scope case fails.
@@ -1216,7 +1403,8 @@ This cross-check was completed while Phase 2 remained in its isolated soak.
 - No current endpoint exposes the sanitized global snapshot.
 - The existing recovery verifier directly sources `backup.env`; Guardian must not
   invoke it. The backup service must publish the separate status drop.
-- No independent alert provider or Guardian dead-man monitor is configured.
+- No free external monitor, Guardian dead-man, GHL operational-alert workflow, or
+  gated OpenClaw handoff is configured.
 - No current service account enforces the Guardian permission boundary.
 - No current immutable protocol test vectors span the ScaleSafe and Guardian
   repositories.

@@ -2,7 +2,7 @@
 
 **Purpose:** One repository-owned source of truth for what ScaleSafe contains, what is live-certified, what still needs proof, what is planned, and which documents are authoritative.
 
-**Last reconciled:** July 22, 2026
+**Last reconciled:** July 30, 2026
 
 **Code baseline:** `008b3bf`
 
@@ -198,7 +198,7 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | Named evidence adapters for course, agency, community, support, file, checkout, and reporting systems | **Planned in waves** | [Connector Automation Plan](UNIVERSAL_EVIDENCE_CONNECTOR_AUTOMATION_PLAN.md) |
 | Outcome analytics by reason, offer, processor, evidence, refund timing, and alerts | **Planned** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
 | Recovery/legal/collections partner referral handoff | **Planned, legal review required** | Private research notes plus [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
-| Command Center, Guardian, and reseller account dashboard | **Phase 1 isolated staging gate passed; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 1 Certification](COMMAND_CENTER_PHASE_1_IMPLEMENTATION_AND_CERTIFICATION.md), [Verified Fable Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Operator identity/isolation remains default-off on `codex/beta-remediation`; no production SQL, deploy, DNS, bootstrap, or flag change has occurred. |
+| Command Center, Guardian, and reseller account dashboard | **Phase 3.2 certified disabled; Phase 3.3 implementation gate passed; live certification pending; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Verified Fable Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Guardian Protocol v1, the deterministic runner, and the isolated OpenClaw advisory handoff are certified disabled on the VPS. Recovery monitoring is committed locally at `2263852`, passes 50 Windows/Linux tests plus shell, bridge, systemd, and independent P0/P1 review gates, but is not installed or connected to Backblaze. Migration 105 remains unapplied; no production deploy or timer activation is authorized. |
 | NMI billing portal and Stripe-shaped merchant API | **Deferred post-beta** | [Project Decisions](PROJECT_DECISIONS.md) |
 | FanBasis checkout and lifecycle certification | **Deferred pending provider approval** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) |
 | Gated limited free Marketplace plan | **Planned after approval** | This index |
