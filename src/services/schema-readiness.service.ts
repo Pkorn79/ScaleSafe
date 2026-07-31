@@ -3,8 +3,10 @@ import { config } from '../config';
 
 export const BASE_REQUIRED_SCHEMA_VERSION = 103;
 export const COMMAND_CENTER_HEALTH_SCHEMA_VERSION = 104;
+export const GUARDIAN_SCHEMA_VERSION = 105;
 
 function requiredSchemaVersion(): number {
+  if (config.guardian.enabled) return GUARDIAN_SCHEMA_VERSION;
   return config.operator.healthEnabled
     ? COMMAND_CENTER_HEALTH_SCHEMA_VERSION
     : BASE_REQUIRED_SCHEMA_VERSION;

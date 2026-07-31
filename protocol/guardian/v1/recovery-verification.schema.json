@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scalesafe.app/protocol/guardian/v1/recovery-verification.schema.json",
+  "title": "ScaleSafe Guardian Recovery Verification v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "instance_id",
+    "verification_id",
+    "verification_type",
+    "verified_at",
+    "snapshot_id",
+    "schema_version",
+    "object_count",
+    "encrypted_bytes",
+    "result",
+    "failure_code",
+    "proof_sha256"
+  ],
+  "properties": {
+    "protocol_version": {
+      "const": 1
+    },
+    "instance_id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "verification_id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "verification_type": {
+      "enum": [
+        "backup_status",
+        "backup_object",
+        "restore_recency"
+      ]
+    },
+    "verified_at": {
+      "$ref": "#/$defs/utcTimestamp"
+    },
+    "snapshot_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "schema_version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "object_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "encrypted_bytes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "result": {
+      "enum": [
+        "healthy",
+        "failed",
+        "unknown"
+      ]
+    },
+    "failure_code": {
+      "enum": [
+        null,
+        "BACKUP_COMMAND_FAILED",
+        "BACKUP_STALE",
+        "BACKUP_STATUS_MISSING",
+        "BACKUP_OBJECT_MISSING",
+        "BACKUP_OBJECT_MISMATCH",
+        "RESTORE_OVERDUE",
+        "RESTORE_PROOF_MISSING",
+        "STATUS_UNAVAILABLE",
+        "VERIFICATION_TIMEOUT"
+      ]
+    },
+    "proof_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "healthy"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "failure_code": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    }
+  }
+}

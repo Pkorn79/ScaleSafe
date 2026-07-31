@@ -13,11 +13,13 @@ import { moneyReconciliationWorker } from './services/money-reconciliation-worke
 import { triggerDeliveryWorker } from './services/trigger-delivery-worker';
 import { schemaReadinessService } from './services/schema-readiness.service';
 import { commandCenterRuntime } from './services/command-center-runtime.service';
+import { guardianReadinessService } from './services/guardian-readiness.service';
 
 const app = createApp();
 
 async function start(): Promise<void> {
   await schemaReadinessService.assertReady();
+  await guardianReadinessService.assertReady();
   app.listen(config.port, () => {
     logger.info({ port: config.port, env: config.nodeEnv }, 'ScaleSafe server started');
 

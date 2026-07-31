@@ -8,6 +8,7 @@ import { securityHeaders } from './middleware/securityHeaders';
 import routes from './routes';
 import { config } from './config';
 import { applicationMetrics } from './middleware/applicationMetrics';
+import guardianRoutes from './routes/guardian.routes';
 
 export function createApp(): express.Application {
   const app = express();
@@ -39,6 +40,15 @@ export function createApp(): express.Application {
     allowedHeaders: ['Content-Type'],
     credentials: false,
   }));
+
+  // Guardian signatures cover exact raw bytes. This isolated namespace must be
+  // handled before the application-wide JSON parser.
+  app.use(
+    '/internal/guardian',
+    requestLogger,
+    applicationMetrics,
+    guardianRoutes,
+  );
 
   // Parse JSON with raw body capture for webhook signature verification
   app.use(express.json({ verify: captureRawBody as any }));

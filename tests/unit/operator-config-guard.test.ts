@@ -67,4 +67,62 @@ describe('operator configuration startup guard', () => {
 
     expect(loaded.config.operator.healthEnabled).toBe(false);
   });
+
+  it('keeps Guardian ingestion disabled by default', () => {
+    jest.resetModules();
+    delete process.env.GUARDIAN_INGESTION_ENABLED;
+    const loaded = require('../../src/config');
+
+    expect(loaded.config.guardian.enabled).toBe(false);
+  });
+
+  it('rejects Guardian without the complete Phase 2 command center', () => {
+    jest.resetModules();
+    process.env.GUARDIAN_INGESTION_ENABLED = 'true';
+    process.env.OPERATOR_COMMAND_CENTER_ENABLED = 'true';
+    process.env.OPERATOR_AUTH_ENABLED = 'false';
+    process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED = 'true';
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+
+    expect(() => require('../../src/config')).toThrow('EXIT_1');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it('rejects a Guardian host that shares the operator identity plane', () => {
+    jest.resetModules();
+    process.env.GUARDIAN_INGESTION_ENABLED = 'true';
+    process.env.OPERATOR_COMMAND_CENTER_ENABLED = 'true';
+    process.env.OPERATOR_AUTH_ENABLED = 'true';
+    process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED = 'true';
+    process.env.OPERATOR_HOST = 'ops.scalesafe.app';
+    process.env.GUARDIAN_HOST = 'ops.scalesafe.app';
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+
+    expect(() => require('../../src/config')).toThrow('EXIT_1');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it('accepts the frozen Guardian v1 limits on a dedicated host', () => {
+    jest.resetModules();
+    process.env.GUARDIAN_INGESTION_ENABLED = 'true';
+    process.env.OPERATOR_COMMAND_CENTER_ENABLED = 'true';
+    process.env.OPERATOR_AUTH_ENABLED = 'true';
+    process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED = 'true';
+    process.env.OPERATOR_HOST = 'ops.scalesafe.app';
+    process.env.GUARDIAN_HOST = 'guardian.scalesafe.app';
+    process.env.GUARDIAN_MAX_BODY_BYTES = '65536';
+    process.env.GUARDIAN_TIMESTAMP_TOLERANCE_SECONDS = '300';
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+
+    const loaded = require('../../src/config');
+    expect(loaded.config.guardian.enabled).toBe(true);
+    expect(loaded.config.guardian.host).toBe('guardian.scalesafe.app');
+    expect(exit).not.toHaveBeenCalled();
+  });
 });

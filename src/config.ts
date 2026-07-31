@@ -45,6 +45,20 @@ const operatorHealthIncidentsEnabled = process.env.OPERATOR_HEALTH_INCIDENTS_ENA
 const operatorHost = optional('OPERATOR_HOST', 'ops.scalesafe.app').toLowerCase();
 const operatorTrustProxyHops = explicitPositiveInteger('OPERATOR_TRUST_PROXY_HOPS');
 const operatorTokenEncryptionKey = process.env.OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY || '';
+const guardianIngestionEnabled = process.env.GUARDIAN_INGESTION_ENABLED === 'true';
+const guardianHost = optional('GUARDIAN_HOST', 'guardian.scalesafe.app').toLowerCase();
+const guardianMaxBodyBytes = explicitPositiveInteger('GUARDIAN_MAX_BODY_BYTES') || 65_536;
+const guardianTimestampToleranceSeconds =
+  explicitPositiveInteger('GUARDIAN_TIMESTAMP_TOLERANCE_SECONDS') || 300;
+const guardianBuildShaEnvironment = optional(
+  'GUARDIAN_BUILD_SHA_ENV',
+  'RAILWAY_GIT_COMMIT_SHA',
+);
+const guardianBuildShaCandidate = process.env[guardianBuildShaEnvironment] || '';
+const guardianBuildSha = /^[A-Fa-f0-9]{7,64}$/.test(guardianBuildShaCandidate)
+  ? guardianBuildShaCandidate
+  : null;
+const guardianApplicationVersion = optional('APP_VERSION', '1.0.0');
 
 function deriveGhlAppId(clientId: string): string {
   const explicit = process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '';
@@ -79,6 +93,52 @@ if (operatorAuthEnabled && !operatorCommandCenterEnabled) {
 if (operatorHealthIncidentsEnabled && !operatorCommandCenterEnabled) {
   console.error('FATAL: OPERATOR_HEALTH_INCIDENTS_ENABLED requires OPERATOR_COMMAND_CENTER_ENABLED=true');
   process.exit(1);
+}
+
+if (
+  guardianIngestionEnabled
+  && (
+    !operatorCommandCenterEnabled
+    || !operatorAuthEnabled
+    || !operatorHealthIncidentsEnabled
+  )
+) {
+  console.error(
+    'FATAL: GUARDIAN_INGESTION_ENABLED requires the complete Phase 2 Command Center',
+  );
+  process.exit(1);
+}
+
+if (guardianIngestionEnabled) {
+  const validGuardianHost = /^(?=.{1,253}$)(?!-)[a-z0-9.-]+(?<!-)$/.test(guardianHost)
+    && !guardianHost.includes('/')
+    && guardianHost.includes('.')
+    && guardianHost !== operatorHost;
+  if (!validGuardianHost) {
+    console.error('FATAL: GUARDIAN_HOST must be one exact non-operator hostname');
+    process.exit(1);
+  }
+  if (guardianMaxBodyBytes !== 65_536) {
+    console.error('FATAL: GUARDIAN_MAX_BODY_BYTES must equal the frozen v1 limit 65536');
+    process.exit(1);
+  }
+  if (guardianTimestampToleranceSeconds !== 300) {
+    console.error(
+      'FATAL: GUARDIAN_TIMESTAMP_TOLERANCE_SECONDS must equal the frozen v1 tolerance 300',
+    );
+    process.exit(1);
+  }
+  if (
+    !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(guardianBuildShaEnvironment)
+    || (isProd && !guardianBuildSha)
+  ) {
+    console.error('FATAL: Guardian requires an allowlisted deployment build SHA');
+    process.exit(1);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+/-]{0,63}$/.test(guardianApplicationVersion)) {
+    console.error('FATAL: APP_VERSION is invalid for the Guardian protocol');
+    process.exit(1);
+  }
 }
 
 if (operatorCommandCenterEnabled && isProd) {
@@ -180,6 +240,19 @@ export const config = {
     sessionIdleMinutes: optionalPositiveInteger('OPERATOR_SESSION_IDLE_MINUTES', 30),
     sessionAbsoluteMinutes: optionalPositiveInteger('OPERATOR_SESSION_ABSOLUTE_MINUTES', 720),
     invitationHours: optionalPositiveInteger('OPERATOR_INVITATION_HOURS', 72),
+  },
+
+  // Independent, signed platform monitoring. This remains disabled until
+  // migration 105, an active public credential, and the dedicated host exist.
+  guardian: {
+    enabled: guardianIngestionEnabled,
+    host: guardianHost,
+    maxBodyBytes: guardianMaxBodyBytes,
+    timestampToleranceSeconds: guardianTimestampToleranceSeconds,
+    snapshotTtlSeconds: 300,
+    buildShaEnvironment: guardianBuildShaEnvironment,
+    buildSha: guardianBuildSha,
+    applicationVersion: guardianApplicationVersion,
   },
 
   // Global emergency switch. Per-provider and per-location rollout is stored

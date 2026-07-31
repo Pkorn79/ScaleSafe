@@ -848,7 +848,13 @@ Owner-controlled channel configuration reference. Secrets remain encrypted outsi
 
 #### `alert_deliveries`
 
-Incident, channel, attempt, status, provider reference, and sanitized error.
+Append-only, hash-only terminal delivery transitions. Each row stores the
+Guardian delivery and alert IDs, incident, check key, severity, event type,
+provider, attempt number, `accepted`/`notified`/`failed` state, occurred time,
+expected notification channels, an allowlisted failure code, provider-reference
+SHA-256 when proof exists, envelope SHA-256, and immutable ingestion receipt.
+Raw provider IDs, message content, addresses, phone numbers, merchant data, and
+tenant selectors are forbidden.
 
 #### `guardian_credentials`
 
@@ -925,9 +931,10 @@ Actions are selected from a server-owned registry. Arbitrary route names, SQL, J
 
 ### 13.5 Guardian Ingestion
 
+- `GET /internal/guardian/v1/snapshot`
 - `POST /internal/guardian/v1/runs`
-- `POST /internal/guardian/v1/observations`
 - `POST /internal/guardian/v1/recovery-verifications`
+- `POST /internal/guardian/v1/alert-deliveries`
 
 Guardian routes use a separate signed credential with timestamp, monotonic sequence replay protection, payload limits, and rate limits. They do not accept operator browser sessions.
 
@@ -957,7 +964,8 @@ Initial technical proposal:
 - Incident and incident-event history: retained according to the platform audit policy.
 - Operator audit and assignment history: retained according to the platform audit policy.
 - Guardian run details: 90 days.
-- Alert delivery attempts: 90 days.
+- Central alert delivery transitions: 3 years.
+- Reconciled local Guardian delivery files: 90 days.
 - Job runs: 90 days unless operational volume justifies a shorter owner-approved window.
 
 Retention jobs must be bounded, observable, and incapable of deleting payment, enrollment, evidence, defense, or recovery archives.

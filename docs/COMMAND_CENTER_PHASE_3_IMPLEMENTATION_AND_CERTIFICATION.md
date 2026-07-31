@@ -7,8 +7,11 @@ after independent review. Phase 3.3's sanitized recovery bridge at `d593820`
 and Guardian release `8a4f1256cfaa9378764c730555608bd55e3c221d` are
 installed disabled and passed live read-only recovery certification on the VPS.
 The machine-readable proof is preserved under the locked Guardian account.
-Migration 105 remains unapplied pending owner review. Phase 3.4 has not begun,
-and no production activation is authorized.
+Migration 105 remains unapplied pending owner review. Phase 3.4 local preparation
+is implemented on isolated feature branches and passes its local code gates.
+External provider configuration, live alert certification, recurring timers,
+production ingestion, deployment, and production activation have not begun and
+are not authorized.
 
 **Phase:** 3 - Guardian and independent alerting
 
@@ -102,8 +105,9 @@ The following decisions remain owner-controlled.
 - Better Stack's free tier is used only for an external public monitor and the
   Guardian dead-man heartbeat. It provides the independent failure signal when the
   VPS itself cannot send an alert.
-- A dedicated GHL inbound workflow receives only sanitized urgent or critical
-  incident envelopes and sends SMS to the approved owner.
+- A dedicated GHL inbound workflow receives only sanitized incident envelopes.
+  It sends email for all routed incidents and adds SMS only for urgent or critical
+  incidents.
 - Guardian writes every incident to a local durable handoff queue. OpenClaw may
   invoke an affordable model only after deterministic code has opened an incident.
 - Warning and informational incidents send email and enter the same handoff queue.
@@ -111,9 +115,12 @@ The following decisions remain owner-controlled.
 - No paid Better Stack responder, telemetry, or log-storage plan is required for
   controlled beta.
 
-AI never decides whether a check failed or recovered. It may inspect evidence,
-run allowlisted read-only diagnostics, summarize a probable cause, and prepare a
-tested branch or patch. It cannot approve its own production action.
+AI never decides whether a check failed or recovered. In Phase 3.4, OpenClaw
+receives only the sanitized incident handoff, summarizes a probable cause, and
+recommends the next check. It has no filesystem, browser, shell, provider, repair,
+or patch tool. Deterministic Guardian code performs the read-only checks. A later
+coding-agent control plane would require its own design and certification and
+could not approve its own production action.
 
 References:
 
@@ -223,7 +230,7 @@ flowchart LR
   G["Guardian service"]
   GS["Guardian local durable state"]
   OC["OpenClaw gated investigator"]
-  GHL["GHL critical alert workflow"]
+  GHL["GHL operational alert workflow"]
   SS["ScaleSafe / Railway"]
   DB["Supabase"]
   BK["Backup status drop"]
@@ -236,7 +243,7 @@ flowchart LR
   SS --> DB
   G --> GS
   G -->|"heartbeat"| BS
-  G -->|"sanitized critical envelope"| GHL
+  G -->|"sanitized incident envelope"| GHL
   G -->|"durable incident handoff"| OC
   BK -->|"sanitized read only"| G
   G -->|"list/read encrypted metadata only"| B2
@@ -251,8 +258,9 @@ There are three independent truths:
 2. **Guardian external truth:** Reachability, freshness, deployment, CI, backup,
    restore-recency, and alert-delivery observations stored locally first.
 3. **External alert truth:** Better Stack records public/dead-man incidents
-   independently; GHL records critical SMS workflow delivery; Guardian records
-   durable AI handoff and owner-approved actions.
+   independently; GHL records app-event acceptance; Guardian records durable
+   delivery transitions, independently observed notification proof, AI handoff,
+   and owner-approval references.
 
 No one source may silently overwrite another source's observation. A parent outage
 may suppress child notifications, but it must not delete child evidence.
@@ -453,8 +461,9 @@ anything.
 Better Stack receives only public-monitor traffic and the Guardian dead-man
 heartbeat. No Better Stack callback is trusted as a ScaleSafe command.
 
-For urgent and critical incidents, Guardian sends a sanitized envelope to one
-dedicated GHL inbound-workflow URL. The envelope contains only:
+Guardian sends a sanitized envelope to one dedicated GHL inbound-workflow URL.
+Warning and informational incidents request email; urgent and critical incidents
+request both email and SMS. The envelope contains only:
 
 - Stable Guardian incident ID.
 - Check key.
@@ -463,14 +472,40 @@ dedicated GHL inbound-workflow URL. The envelope contains only:
 - Short allowlisted summary and runbook identifier.
 
 It contains no location, merchant, client, payment, dispute, evidence, secret,
-raw error, or arbitrary instruction. GHL may send SMS and email from this envelope,
-but a reply or workflow execution cannot authorize an operational action.
+raw error, or arbitrary instruction. A GHL `2xx` proves only app-event acceptance.
+It does not prove that a workflow ran or that email or SMS was sent. Notification
+proof is recorded separately from an independently observed provider reference,
+which Guardian stores only as SHA-256. A reply or workflow execution cannot
+authorize an operational action.
 
 Guardian also writes an immutable incident package to the local OpenClaw handoff
-queue. OpenClaw may run read-only diagnostics automatically. Any restart, deploy,
-merge, SQL, environment, secret, production configuration, external-system
-mutation, or data mutation requires explicit owner approval recorded outside the
-incident payload.
+queue. OpenClaw can only summarize that package and recommend the next check; it
+has no diagnostic or mutation tools. Deterministic Guardian code performs the
+read-only checks. Any later restart, deploy, merge, SQL, environment, secret,
+production configuration, external-system mutation, or data mutation requires a
+separately certified control plane and explicit owner approval recorded outside
+the incident payload.
+
+### 8.5 `POST /internal/guardian/v1/alert-deliveries`
+
+Accepts one signed, sanitized, immutable terminal delivery transition:
+
+- Guardian delivery, alert, and incident IDs.
+- Provider fixed to `ghl`.
+- Incident event type, check key, and severity.
+- Attempt number and state: `accepted`, `notified`, or `failed`.
+- Occurred timestamp.
+- Completed notification channels.
+- Allowlisted failure code.
+- Provider-reference SHA-256 when independently observed.
+- Alert-envelope SHA-256.
+
+`accepted` has no completed channels. `notified` requires email for warning or
+informational incidents and both email and SMS for urgent or critical incidents.
+`failed` contains no provider hash or completed channels. The payload cannot
+carry message content, raw provider IDs, addresses, phone numbers, merchant data,
+or tenant selectors. Each transition is idempotent by Guardian instance and
+delivery ID and reconciles through the signed monotonic-sequence receipt ledger.
 
 ## 9. Migration Plan
 
@@ -594,14 +629,20 @@ Provider tokens and secret webhook URLs remain on Guardian.
 
 Sanitized reconciliation copy:
 
-- Guardian incident ID.
-- Provider.
-- Provider reference hash or safe identifier.
+- Guardian delivery, alert, instance, and incident IDs.
+- Provider fixed to `ghl`.
+- Event type, check key, and severity.
+- Provider-reference SHA-256 only; no raw provider identifier.
 - Attempt number.
-- State: `queued`, `accepted`, `notified`, `acknowledged`, `resolved`, `failed`.
-- Attempt, acknowledgement, and resolution times.
-- Allowlisted failure code.
-- Reconciliation receipt.
+- State: `accepted`, `notified`, or `failed`.
+- Occurred timestamp and completed notification channels.
+- Allowlisted failure code and alert-envelope SHA-256.
+- Immutable ingestion receipt.
+
+The unique boundary is `(guardian_instance_id, source_delivery_id)`. Queued and
+retrying state remains local to Guardian and is not written as central delivery
+truth. GHL acceptance is never converted to `notified` without independent
+channel proof.
 
 ### 9.10 `recovery_verifications`
 
@@ -779,13 +820,15 @@ its aggregate freshness and outcome.
 1. Guardian records the failed observation locally.
 2. Parent suppression is evaluated.
 3. If notification is required, Guardian creates a durable alert outbox item.
-4. Urgent and critical items are delivered to the dedicated GHL workflow with a
-   stable alert ID.
+4. Routed items are sent to the dedicated GHL workflow with a stable alert ID.
+   Warning/informational items request email; urgent/critical items request email
+   and SMS.
 5. Every item is written to the local OpenClaw handoff queue.
 6. Delivery acceptance is recorded locally.
 7. Signed ingestion to ScaleSafe is attempted independently.
 
-An alert is not considered delivered merely because it was queued.
+An alert is not considered notified merely because it was queued or accepted by
+GHL.
 
 ### 13.2 Acknowledge
 
@@ -1167,11 +1210,67 @@ Gate:
 
 ### Phase 3.4 - Independent notification and AI handoff
 
+External steps are frozen in
+`docs/COMMAND_CENTER_PHASE_3_4_EXTERNAL_CERTIFICATION_RUNBOOK.md` and require a
+separate approval before execution.
+
+Local preparation status as of 2026-07-31:
+
+- Guardian alert routing, immutable delivery transitions, manual channel-proof
+  recording, signed reconciliation, OpenClaw isolation, and three-level action
+  policy are implemented with alerting disabled by default.
+- ScaleSafe's strict signed `alert-deliveries` route, shared protocol vectors,
+  append-only storage contract, and migration 105 changes are prepared.
+- Guardian passes 94 of 94 tests and JavaScript syntax validation.
+- ScaleSafe passes 74 of 74 focused Guardian tests, 1,614 of 1,614 full tests,
+  TypeScript typecheck, and the production build.
+- An independent read-only Fable review reported no P0 or P1 finding and returned
+  **READY FOR EXTERNAL CERTIFICATION**. Its two P2 and three P3 findings were
+  traced, accepted, and remediated locally. The disposition is preserved in
+  `docs/COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md`.
+- A final read-only Fable follow-up returned **CLOSED (code-side)** with no new
+  reachable P0 or P1 finding. Its last two P3 hardening notes were also resolved,
+  and Guardian remained 94 of 94 afterward.
+- One local audit finding was fixed: a previously recorded notification-channel
+  proof is now exactly idempotent and a conflicting replacement is rejected.
+- A second local audit finding was fixed before migration 105 was applied:
+  recovery observations now authorize every specific backup and B2 failure code
+  the Guardian recovery checker can emit. A signed shared protocol vector and
+  the rollback-only SQL verifier both submit a real `BACKUP_ATTEMPT_FAILED`
+  observation; the SQL verifier requires all three observations in its run to
+  persist.
+- Both repositories pass `git diff --check` apart from informational Windows
+  line-ending warnings.
+- Every frozen protocol-v1 file is byte-identical across the two repositories.
+  Filename-only secret scans found no live credential; reviewed matches were
+  placeholders or test fixtures. The production dependency audit reports zero
+  vulnerabilities after pinning patched PostCSS `8.5.25`.
+- Migration 105 has not been applied or executed against PostgreSQL. The
+  rollback-only isolated database verifier remains an external certification
+  prerequisite.
+- Better Stack and GHL have not been configured, no synthetic owner alert has
+  been sent, and no Guardian timer or production flag has been enabled.
+- Live-provider tests use Guardian `certification` mode: ScaleSafe and Supabase
+  remain loopback-only while Better Stack and GHL are restricted to their
+  provider-owned HTTPS endpoints. Certification therefore does not require
+  production ingestion.
+
+Open gates before any recurring or production activation:
+
+- GHL outbound notification proof is an operator-recorded certification control,
+  not an automatic production message-status integration.
+- GHL provider failure is durable in local state and exits the one-shot service
+  with attention, but independent owner escalation for that failure must be
+  proven in Phase 3.5 before activation.
+- The approval-reference structure is inert. There is no repair executor and no
+  owner-authentication control plane for repair approval in Phase 3.4.
+- Migration 105 still requires the disposable PostgreSQL execution gate.
+
 Work:
 
 - Configure Better Stack free external ScaleSafe HTTPS monitor.
 - Configure the free Guardian dead-man heartbeat.
-- Configure a dedicated GHL workflow for critical SMS and incident email.
+- Configure a dedicated GHL workflow for incident email and urgent/critical SMS.
 - Configure the local OpenClaw handoff queue and read-only diagnostic policy.
 - Configure the three-level action-approval gate.
 - Run an alert-delivery test.
@@ -1181,9 +1280,16 @@ Gate:
 - A test incident reaches every owner-approved channel without merchant data.
 - Better Stack external incidents can be acknowledged outside ScaleSafe.
 - GHL acceptance is not mislabeled as SMS delivery.
-- OpenClaw automatically performs only the allowlisted read-only diagnostics.
-- A proposed production action remains blocked until explicit owner approval.
+- Warning notification is proven by email only; urgent/critical notification is
+  proven by independently observed email and SMS references.
+- Deterministic Guardian checks are read-only. OpenClaw has no execution tools
+  and only summarizes the sanitized incident handoff.
+- Repair actions remain blocked even with a valid owner-approval reference until
+  a separate repair executor is designed and certified. Owner-only high-risk
+  actions are unavailable to Guardian.
 - Guardian records channel acceptance and approved-action references locally.
+- Every immutable terminal delivery transition reconciles exactly once through
+  the signed Guardian outbox.
 - Missed Guardian heartbeat creates an incident.
 - Repeated notification delivery creates no duplicate incident state.
 
@@ -1281,8 +1387,8 @@ Gate:
 
 ### Alerting
 
-- Critical alert reaches the approved GHL SMS/email route and the durable OpenClaw
-  handoff queue.
+- Warning alert reaches the approved GHL email route; critical alert reaches the
+  approved GHL email/SMS route; both reach the durable OpenClaw handoff queue.
 - Provider failure is itself observable.
 - Acknowledgement works while ScaleSafe is down.
 - Resolution waits for stable recovery.
@@ -1326,8 +1432,9 @@ The Phase 3 acceptance report must contain:
 - Systemd unit and hardening verification.
 - Check catalog and cadence results.
 - Better Stack free monitor, heartbeat, acknowledgement, and resolution proof.
-- GHL critical workflow acceptance plus independently observed SMS/email proof.
-- OpenClaw handoff, read-only diagnostic, and blocked-mutation proof.
+- GHL operational workflow acceptance plus independently observed email proof for
+  warning and email/SMS proof for critical severity.
+- OpenClaw sanitized handoff, no-execution-tool, and blocked-mutation proof.
 - Isolated outage timeline.
 - ScaleSafe/Supabase-down local-state proof.
 - Reconciliation and idempotency proof.

@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "jest",
+    "test:guardian-db-vectors": "node scripts/verify-guardian-db-vectors.js",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
@@ -38,6 +39,9 @@
     "sanitize-html": "2.13.1",
     "stripe": "^22.0.0",
     "vue": "^3.3.4"
+  },
+  "overrides": {
+    "postcss": "8.5.25"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

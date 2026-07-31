@@ -1,0 +1,1847 @@
+{
+  "protocol_version": 1,
+  "test_key": {
+    "source": "RFC 8032 test vector 1",
+    "key_id": "00000000-0000-4000-8000-000000000001",
+    "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+    "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+  },
+  "constants": {
+    "timestamp_tolerance_seconds": 300,
+    "maximum_body_bytes": 65536,
+    "maximum_sequence": "9223372036854775807",
+    "empty_body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "vectors": [
+    {
+      "name": "accept_snapshot",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "fibov0KjFiVOBFdC24YbrnrNdMbSPtitx4TkVqdBBBonAJjnXs0vHwW3KJprVlQSGackJIKxf4N29nLTteCBDw",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 200,
+        "status": "snapshot",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "accept_run",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 201,
+        "status": "accepted",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 3
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "accept_recovery_failure_run",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "4a9f73fb98d92d5ce7ec3ee39de3a04f2e92662eefedd7abb2a7b3c6cfe98d11",
+          "x-scalesafe-guardian-signature": "LrKSNCk5V_CDmURbURs1XPGYMd5_UksaCcyrpmwXQgWZM-eH_H8qKC4TJRClqUzGS4k_xdePptHC-nZdSMEGDw",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMiIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6InBhcnRpYWwiLCJvYnNlcnZhdGlvbl9jb3VudCI6MSwib2JzZXJ2YXRpb25zIjpbeyJjaGVja19rZXkiOiJyZWNvdmVyeS5iYWNrdXAuc3RhdHVzIiwib2JzZXJ2ZWRfYXQiOiIyMDI2LTA3LTI1VDE2OjU5OjU5LjkwMFoiLCJzdGF0ZSI6InVuaGVhbHRoeSIsInNldmVyaXR5IjoiY3JpdGljYWwiLCJmYWlsdXJlX2NvZGUiOiJCQUNLVVBfQVRURU1QVF9GQUlMRUQiLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19VTkhFQUxUSFkiLCJkdXJhdGlvbl9tcyI6MCwiZmFjdHMiOnsic25hcHNob3RfYWdlX2hvdXJzIjo0MH19XX0",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n4a9f73fb98d92d5ce7ec3ee39de3a04f2e92662eefedd7abb2a7b3c6cfe98d11"
+      },
+      "expected": {
+        "http_status": 201,
+        "status": "accepted",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 2
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "accept_recovery_verification",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/recovery-verifications",
+        "signed_path": "/internal/guardian/v1/recovery-verifications",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "45e213b2d2392305525ca2e754bfeecde9a61d8757c063df26be61a63b651802",
+          "x-scalesafe-guardian-signature": "E4suLiy1F4njjpqnAoYRZgR_DmZNPMPAV9WFi_nt-yR-Om8-mZTKDJEKCsGkYY3vnItgo_UYBpzFZzRuziU0Ag",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInZlcmlmaWNhdGlvbl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMzAwMSIsInZlcmlmaWNhdGlvbl90eXBlIjoiYmFja3VwX3N0YXR1cyIsInZlcmlmaWVkX2F0IjoiMjAyNi0wNy0yNVQxNzowMDowMC4wMDBaIiwic25hcHNob3RfaWQiOiIyMDI2MDcyNVQxNzAwMDBaIiwic2NoZW1hX3ZlcnNpb24iOjEwNCwib2JqZWN0X2NvdW50IjoxMDUsImVuY3J5cHRlZF9ieXRlcyI6MjEwMTEwMzQsInJlc3VsdCI6ImhlYWx0aHkiLCJmYWlsdXJlX2NvZGUiOm51bGwsInByb29mX3NoYTI1NiI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEifQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/recovery-verifications\n1784998800\n40\n45e213b2d2392305525ca2e754bfeecde9a61d8757c063df26be61a63b651802"
+      },
+      "expected": {
+        "http_status": 201,
+        "status": "accepted",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 1
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "accept_alert_delivery",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/alert-deliveries",
+        "signed_path": "/internal/guardian/v1/alert-deliveries",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "92bb153644fdb282d5bbaafe1d9200ef780d55e849c6f5086b3f96aa6f9a78d1",
+          "x-scalesafe-guardian-signature": "iF1yuo9cT26RdYSgshq_3nAnv6fYyu7IFDyL2mqGfayXZY0evrJe9Za52zV167vLES7bSVH3hZUwq046HEQ9DQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsImRlbGl2ZXJ5X2lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA0MDAxIiwiYWxlcnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDQxMDEiLCJpbmNpZGVudF9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNDIwMSIsInByb3ZpZGVyX25hbWUiOiJnaGwiLCJldmVudF90eXBlIjoib3BlbmVkIiwiY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJzZXZlcml0eSI6ImNyaXRpY2FsIiwiYXR0ZW1wdF9udW1iZXIiOjEsInN0YXRlIjoiYWNjZXB0ZWQiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInByb3ZpZGVyX3JlZmVyZW5jZV9zaGEyNTYiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwibm90aWZpY2F0aW9uX2NoYW5uZWxzIjpbXSwiZmFpbHVyZV9jb2RlIjpudWxsLCJlbnZlbG9wZV9zaGEyNTYiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIn0",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/alert-deliveries\n1784998800\n40\n92bb153644fdb282d5bbaafe1d9200ef780d55e849c6f5086b3f96aa6f9a78d1"
+      },
+      "expected": {
+        "http_status": 201,
+        "status": "accepted",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 1
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "accept_alert_notification_proof",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/alert-deliveries",
+        "signed_path": "/internal/guardian/v1/alert-deliveries",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "cbe60c713476bdb357ec685ead45ab596c49905dc9082dafeafe353b74e78bac",
+          "x-scalesafe-guardian-signature": "CJc6zSnAcEcT3vtIqppDYhaAQNFNRe0FGXyeXHlMscRCTY9DUYeAKhVhBy98kVH8Mm8iYRVGBJXfAFt8r9xfDg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsImRlbGl2ZXJ5X2lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA0MDAyIiwiYWxlcnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDQxMDEiLCJpbmNpZGVudF9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNDIwMSIsInByb3ZpZGVyX25hbWUiOiJnaGwiLCJldmVudF90eXBlIjoib3BlbmVkIiwiY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJzZXZlcml0eSI6ImNyaXRpY2FsIiwiYXR0ZW1wdF9udW1iZXIiOjEsInN0YXRlIjoibm90aWZpZWQiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDEuMDAwWiIsInByb3ZpZGVyX3JlZmVyZW5jZV9zaGEyNTYiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwibm90aWZpY2F0aW9uX2NoYW5uZWxzIjpbImVtYWlsIiwic21zIl0sImZhaWx1cmVfY29kZSI6bnVsbCwiZW52ZWxvcGVfc2hhMjU2IjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/alert-deliveries\n1784998800\n40\ncbe60c713476bdb357ec685ead45ab596c49905dc9082dafeafe353b74e78bac"
+      },
+      "expected": {
+        "http_status": 201,
+        "status": "accepted",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 1
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "partial_critical_notification_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/alert-deliveries",
+        "signed_path": "/internal/guardian/v1/alert-deliveries",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e1b9d7b0ef9c47bd4fdff52fa8b1e71bc8191afa5760f18adfb53d8ef650bda1",
+          "x-scalesafe-guardian-signature": "oTkOBcy_zJ5qGkS-ZS0y4uoDq4sWbCnx2LS3qnRAro5YcQHpCDQi5SKqv-Aq7ALzYPBErbshG4n-_Z5UK_WMDg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsImRlbGl2ZXJ5X2lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA0MDAzIiwiYWxlcnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDQxMDEiLCJpbmNpZGVudF9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNDIwMSIsInByb3ZpZGVyX25hbWUiOiJnaGwiLCJldmVudF90eXBlIjoib3BlbmVkIiwiY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJzZXZlcml0eSI6ImNyaXRpY2FsIiwiYXR0ZW1wdF9udW1iZXIiOjEsInN0YXRlIjoibm90aWZpZWQiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDEuMDAwWiIsInByb3ZpZGVyX3JlZmVyZW5jZV9zaGEyNTYiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwibm90aWZpY2F0aW9uX2NoYW5uZWxzIjpbImVtYWlsIl0sImZhaWx1cmVfY29kZSI6bnVsbCwiZW52ZWxvcGVfc2hhMjU2IjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/alert-deliveries\n1784998800\n40\ne1b9d7b0ef9c47bd4fdff52fa8b1e71bc8191afa5760f18adfb53d8ef650bda1"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "INVALID_ALERT_DELIVERY"
+      }
+    },
+    {
+      "name": "alert_tenant_selector_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/alert-deliveries",
+        "signed_path": "/internal/guardian/v1/alert-deliveries",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "b15f51bc59c922f5fcc16f58ca4e6ec15c6cd11bfca53e1448aa3a80c738d46e",
+          "x-scalesafe-guardian-signature": "ZzZ57QVfRp7OVAj4Dso_sk3s_crlWnpG4vYzC2FtGc4oaUIShNBe-IwmXaczqeJH5I7Noo_VorM2cz-4XKrRDg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsImRlbGl2ZXJ5X2lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA0MDA0IiwiYWxlcnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDQxMDEiLCJpbmNpZGVudF9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNDIwMSIsInByb3ZpZGVyX25hbWUiOiJnaGwiLCJldmVudF90eXBlIjoib3BlbmVkIiwiY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJzZXZlcml0eSI6ImNyaXRpY2FsIiwiYXR0ZW1wdF9udW1iZXIiOjEsInN0YXRlIjoiYWNjZXB0ZWQiLCJvY2N1cnJlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInByb3ZpZGVyX3JlZmVyZW5jZV9zaGEyNTYiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwibm90aWZpY2F0aW9uX2NoYW5uZWxzIjpbXSwiZmFpbHVyZV9jb2RlIjpudWxsLCJlbnZlbG9wZV9zaGEyNTYiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwibG9jYXRpb25faWQiOiJmb3JiaWRkZW4ifQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/alert-deliveries\n1784998800\n40\nb15f51bc59c922f5fcc16f58ca4e6ec15c6cd11bfca53e1448aa3a80c738d46e"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "INVALID_ALERT_DELIVERY"
+      }
+    },
+    {
+      "name": "unknown_alert_failure_code_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/alert-deliveries",
+        "signed_path": "/internal/guardian/v1/alert-deliveries",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "b10d4604f873fcffe2de78d13d59963653a742949884d99a38c71faa244a7be5",
+          "x-scalesafe-guardian-signature": "TqGiaMcNsWq5lDAgoXYmKgHQEQZpPBhqBpBkLsgF5m_T7ZV0wW5N_33HROJ1Jh_WM09Lsa8xW8umFYR0wWK8AA",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsImRlbGl2ZXJ5X2lkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDA0MDA1IiwiYWxlcnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDQxMDEiLCJpbmNpZGVudF9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwNDIwMSIsInByb3ZpZGVyX25hbWUiOiJnaGwiLCJldmVudF90eXBlIjoib3BlbmVkIiwiY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJzZXZlcml0eSI6ImNyaXRpY2FsIiwiYXR0ZW1wdF9udW1iZXIiOjEsInN0YXRlIjoiZmFpbGVkIiwib2NjdXJyZWRfYXQiOiIyMDI2LTA3LTI1VDE3OjAwOjAwLjAwMFoiLCJwcm92aWRlcl9yZWZlcmVuY2Vfc2hhMjU2IjpudWxsLCJub3RpZmljYXRpb25fY2hhbm5lbHMiOltdLCJmYWlsdXJlX2NvZGUiOiJBUkJJVFJBUllfRkFJTFVSRV9URVhUIiwiZW52ZWxvcGVfc2hhMjU2IjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/alert-deliveries\n1784998800\n40\nb10d4604f873fcffe2de78d13d59963653a742949884d99a38c71faa244a7be5"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "INVALID_ALERT_DELIVERY"
+      }
+    },
+    {
+      "name": "accept_bigint_sequence_boundary",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "9223372036854775806",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "9223372036854775807",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "1g3w5R_WnxnRwA5Sm7eYGuWKvgZLdYIosnP8VuUrZ-VX6JFf4eFMmExy0YPkpG3X2kwIXJ11ptXKVVSxmgzJAA",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n9223372036854775807\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 200,
+        "status": "snapshot",
+        "error_code": null,
+        "resulting_last_sequence": "9223372036854775807",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "accepted",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "exact_retry_returns_original_receipt",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "40",
+        "accepted_receipts": [
+          {
+            "sequence": "40",
+            "method": "POST",
+            "path": "/internal/guardian/v1/runs",
+            "body_sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+            "receipt_id": "00000000-0000-4000-8000-000000009001",
+            "record_id": "00000000-0000-4000-8000-000000009002",
+            "observation_count": 2
+          }
+        ],
+        "logical_records": [
+          {
+            "kind": "run",
+            "logical_id": "00000000-0000-4000-8000-000000002001",
+            "body_sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+            "receipt_id": "00000000-0000-4000-8000-000000009001",
+            "record_id": "00000000-0000-4000-8000-000000009002",
+            "observation_count": 2
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 200,
+        "status": "duplicate",
+        "error_code": null,
+        "resulting_last_sequence": "40",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "duplicate",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "logical_duplicate_consumes_new_sequence_without_domain_mutation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "40",
+        "accepted_receipts": [
+          {
+            "sequence": "40",
+            "method": "POST",
+            "path": "/internal/guardian/v1/runs",
+            "body_sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+            "receipt_id": "00000000-0000-4000-8000-000000009001",
+            "record_id": "00000000-0000-4000-8000-000000009002",
+            "observation_count": 2
+          }
+        ],
+        "logical_records": [
+          {
+            "kind": "run",
+            "logical_id": "00000000-0000-4000-8000-000000002001",
+            "body_sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+            "receipt_id": "00000000-0000-4000-8000-000000009001",
+            "record_id": "00000000-0000-4000-8000-000000009002",
+            "observation_count": 2
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "41",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "s4m-R7k5fXc58Zk7A49jYWJM2Ht2B7eQbvUcuK6UziGOMR92dMVsku4jypjW-WmfsaZ6BUeozHXTt7aWraVUBg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n41\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 200,
+        "status": "logical_duplicate",
+        "error_code": null,
+        "resulting_last_sequence": "41",
+        "receipt_delta": 1,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "logical_duplicate",
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "altered_body_fails_authentication",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dIA",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "altered_valid_path_fails_signature",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/recovery-verifications",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "query_string_is_not_found",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot?probe=1",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "fibov0KjFiVOBFdC24YbrnrNdMbSPtitx4TkVqdBBBonAJjnXs0vHwW3KJprVlQSGackJIKxf4N29nLTteCBDw",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 404,
+        "status": null,
+        "error_code": "NOT_FOUND",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "stale_timestamp_fails_authentication",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998400",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "TmaCFkv0ptvqnQcWGcGZmKSxC35nEOpxyxiheZrT5i3aIrLb81a5_KQKLjfToLobhlbR4we56XPS8LwnIPnDCg",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998400\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "bad_signature_fails_authentication",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "fibov0KjFiVOBFdC24YbrnrNdMbSPtitx4TkVqdBBBonAJjnXs0vHwW3KJprVlQSGackJIKxf4N29nLTteCBDA",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "revoked_credential_fails_authentication",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "revoked",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "fibov0KjFiVOBFdC24YbrnrNdMbSPtitx4TkVqdBBBonAJjnXs0vHwW3KJprVlQSGackJIKxf4N29nLTteCBDw",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "post_without_json_content_type_is_rejected",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 415,
+        "status": null,
+        "error_code": "UNSUPPORTED_MEDIA_TYPE",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "durable_rate_limit_is_enforced",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": [],
+        "rate_limit_buckets": [
+          {
+            "endpoint_path": "/internal/guardian/v1/runs",
+            "window_started_at": "2026-07-25T16:59:30.000Z",
+            "request_count": 30
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+          "x-scalesafe-guardian-signature": "OB08oVd9kDRkCYLCKKKuacuPJwLBxBgSb9lvWvq4ULLlKUy5DBnvBDao9fXnDYpiSBCSbzkIWwp5S14Q-sEDBQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50"
+      },
+      "expected": {
+        "http_status": 429,
+        "status": null,
+        "error_code": "RATE_LIMITED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "RATE_LIMITED"
+      }
+    },
+    {
+      "name": "sequence_gap_is_conflict",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "41",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "5w4sH27wzPCA0lqj7C9BVOonTEqDTgMJbSHgcEENT20Q5n6jD-TP97WprDqYY7y-7xR8xdPimqKjPvLrk0fJDg",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n41\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 409,
+        "status": null,
+        "error_code": "SEQUENCE_CONFLICT",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "SEQUENCE_GAP"
+      }
+    },
+    {
+      "name": "stale_sequence_is_conflict",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "40",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "39",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "IriiJY3x7U0OSuVr5FzXsloUMtbshofs45xVYvM66eQBl5_J07WuOvaXIbyJywpH0OpvTA5GeJSlydOq4SH9Bw",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n39\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 409,
+        "status": null,
+        "error_code": "SEQUENCE_CONFLICT",
+        "resulting_last_sequence": "40",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "STALE_SEQUENCE"
+      }
+    },
+    {
+      "name": "logical_id_changed_content_is_conflict",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "40",
+        "accepted_receipts": [],
+        "logical_records": [
+          {
+            "kind": "run",
+            "logical_id": "00000000-0000-4000-8000-000000002001",
+            "body_sha256": "39569f5bbc2456dede91e0dd76d3df01fda1932771a284b046d426004ebdda50",
+            "receipt_id": "00000000-0000-4000-8000-000000009001",
+            "record_id": "00000000-0000-4000-8000-000000009002",
+            "observation_count": 2
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "41",
+          "x-scalesafe-guardian-body-sha256": "fb5d82e4174a024b69c3e9331fe4570723d9a2d4289b45bbc0f6a6fcb3911bb6",
+          "x-scalesafe-guardian-signature": "RaXy69AfjUUdXsyZ6YmlUwIG7ObUqYE3OH5C8I1SuJpHQ01SSN6-toO1c7QKt1ntCj8iaFgYFbJnTyvOFRCTBw",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4xIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n41\nfb5d82e4174a024b69c3e9331fe4570723d9a2d4289b45bbc0f6a6fcb3911bb6"
+      },
+      "expected": {
+        "http_status": 409,
+        "status": null,
+        "error_code": "LOGICAL_ID_CONFLICT",
+        "resulting_last_sequence": "40",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": true,
+        "decision": "rejected",
+        "rejection_code": "LOGICAL_ID_CONFLICT"
+      }
+    },
+    {
+      "name": "unknown_property_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "fd47b43c94f1f8075fcaf7ea26841ebe4fe4f77a6a9a19ce74da5c516a3da695",
+          "x-scalesafe-guardian-signature": "SfunzN3T8mXE4eR1YBBWBfvgscMMB6c7KSU73bHZGHg9xOHd30uWFAx49jDmyZKKvOGfVdgG3JJYOreVqlAwAA",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dLCJ1bmV4cGVjdGVkIjp0cnVlfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\nfd47b43c94f1f8075fcaf7ea26841ebe4fe4f77a6a9a19ce74da5c516a3da695"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "tenant_selector_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "f2d212284c0163ebf6060dd1a84a118b2cf82c38f0f6298ae6f1407b813ef756",
+          "x-scalesafe-guardian-signature": "-oh2GDz5AqbYGNSlKjFvV8NgIOLzuCQVChATJmniQEMClxrJVsb7FiVnZedsFBNWuQLnyC6d8Bab8JVPnoSvCQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dLCJsb2NhdGlvbl9pZCI6ImZvcmJpZGRlbiJ9",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\nf2d212284c0163ebf6060dd1a84a118b2cf82c38f0f6298ae6f1407b813ef756"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "oversized_body_is_rejected_before_parse",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "76c002eec0c9da854ca2ee5dae9fb0069a622274b6638ab712fcb70384304899",
+          "x-scalesafe-guardian-signature": "m-oDQCHOJwIl4hVwpvbas6YvGm1PhPoW68-YBoSMc4jGKwKPt4DoHqDqdZhAXgEzZcor3xqnWYlp8Yc9-wMoAg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n76c002eec0c9da854ca2ee5dae9fb0069a622274b6638ab712fcb70384304899"
+      },
+      "expected": {
+        "http_status": 413,
+        "status": null,
+        "error_code": "PAYLOAD_TOO_LARGE",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "unsafe_integer_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "eaaa4694d58c39a8f1a0a2adbd2442dff5c0bd09ad42ad15438d2772d4d632cd",
+          "x-scalesafe-guardian-signature": "ByMiZMJA7sCVI0LBBJyRqJpihp9Mm8sGS7X0MuVYmTwbGk7NlPCLt8sZ4leMzKYJ2lZwHryNA7FgildMrY38Cw",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6OTAwNzE5OTI1NDc0MDk5M319LHsiY2hlY2tfa2V5IjoibmV0d29yay50bHMiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNzUwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6ODEsImZhY3RzIjp7ImRheXNfcmVtYWluaW5nIjo3M319XX0",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\neaaa4694d58c39a8f1a0a2adbd2442dff5c0bd09ad42ad15438d2772d4d632cd"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "nonfinite_number_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "84c25ec06ff3b7709f41d34ee3d86267d41595ec0f142a3a7fcd8b4c043d1a5f",
+          "x-scalesafe-guardian-signature": "8WKShQ3zxxLv2VRz-_THLw3PDMiRKUs051XYv-HDxKU6OnI6JYQVu0wyBAtKp-w9SsVPsjftN3uKY-wp6OCJDA",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MWU0MDB9fSx7ImNoZWNrX2tleSI6Im5ldHdvcmsudGxzIiwib2JzZXJ2ZWRfYXQiOiIyMDI2LTA3LTI1VDE2OjU5OjU5Ljc1MFoiLCJzdGF0ZSI6ImhlYWx0aHkiLCJzZXZlcml0eSI6ImluZm8iLCJmYWlsdXJlX2NvZGUiOm51bGwsInN1bW1hcnlfY29kZSI6IkNIRUNLX09LIiwiZHVyYXRpb25fbXMiOjgxLCJmYWN0cyI6eyJkYXlzX3JlbWFpbmluZyI6NzN9fV19",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n84c25ec06ff3b7709f41d34ee3d86267d41595ec0f142a3a7fcd8b4c043d1a5f"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "observation_count_mismatch_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "a1cbe7adda1d43a7434af09c0b821bbfaabc493847bfe3981d9c92553ed2eafd",
+          "x-scalesafe-guardian-signature": "PTQphUaiHKQvuWXwMJwGMYko8Y88cRXLAB9YB8Q-Xt9RogiZD5R7yOPGiEnAmeYQGSb42EiY3lFjbl_h6QxSCw",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjEsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\na1cbe7adda1d43a7434af09c0b821bbfaabc493847bfe3981d9c92553ed2eafd"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "completion_before_start_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "50bb16631ddc4375a0276e7ca50cf2e55832948fe9acd752cc8a4327d2913a87",
+          "x-scalesafe-guardian-signature": "qPEKzfcK5JAqR380HneGRGRJB5Bx1A34ZxlEC5kY8QH3obyjubEFHcObZ1vSberFM-fZj5rg8jeFF0Dos8gqDQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTcuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n50bb16631ddc4375a0276e7ca50cf2e55832948fe9acd752cc8a4327d2913a87"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "invalid_uuid_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "17ac7d475943478b01dff181d92e89eb29da9fecb77202233dfd711200ba0864",
+          "x-scalesafe-guardian-signature": "KqTlZIL0DXkVxin1sYOGRRbV9QXb3wc3fEiiN3YBxEAjRqRuMlgZKv3j4Vg5HB2yPsBK0kr4NexcUjWkpM87AQ",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6Im5vdC1hLXV1aWQiLCJhZ2VudF92ZXJzaW9uIjoiZ3VhcmRpYW4tdGVzdC8xLjAuMCIsInN0YXJ0ZWRfYXQiOiIyMDI2LTA3LTI1VDE2OjU5OjU4LjAwMFoiLCJjb21wbGV0ZWRfYXQiOiIyMDI2LTA3LTI1VDE3OjAwOjAwLjAwMFoiLCJzdGF0dXMiOiJjb21wbGV0ZSIsIm9ic2VydmF0aW9uX2NvdW50IjoyLCJvYnNlcnZhdGlvbnMiOlt7ImNoZWNrX2tleSI6InB1YmxpYy5hcGkucmVhY2hhYmlsaXR5Iiwib2JzZXJ2ZWRfYXQiOiIyMDI2LTA3LTI1VDE2OjU5OjU5LjUwMFoiLCJzdGF0ZSI6ImhlYWx0aHkiLCJzZXZlcml0eSI6ImluZm8iLCJmYWlsdXJlX2NvZGUiOm51bGwsInN1bW1hcnlfY29kZSI6IkNIRUNLX09LIiwiZHVyYXRpb25fbXMiOjE0MywiZmFjdHMiOnsiaHR0cF9zdGF0dXMiOjIwMH19LHsiY2hlY2tfa2V5IjoibmV0d29yay50bHMiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNzUwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6ODEsImZhY3RzIjp7ImRheXNfcmVtYWluaW5nIjo3M319XX0",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n17ac7d475943478b01dff181d92e89eb29da9fecb77202233dfd711200ba0864"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "non_utc_timestamp_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "825816121481f448cb85fb9cabb8cae7b1edcd895c14d018def6e268723e8a1a",
+          "x-scalesafe-guardian-signature": "mUhH-q68QpmlFKkKGpkJUg34aNGAKHcb5c0ATnhdHLdSX3pPL-YTSJrBSp1j5Uy5LEhQAhMdpKGJ1VQxHyL0Cg",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDctMjVUMTE6NTk6NTguMDAwLTA1OjAwIiwiY29tcGxldGVkX2F0IjoiMjAyNi0wNy0yNVQxNzowMDowMC4wMDBaIiwic3RhdHVzIjoiY29tcGxldGUiLCJvYnNlcnZhdGlvbl9jb3VudCI6Miwib2JzZXJ2YXRpb25zIjpbeyJjaGVja19rZXkiOiJwdWJsaWMuYXBpLnJlYWNoYWJpbGl0eSIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS41MDBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjoxNDMsImZhY3RzIjp7Imh0dHBfc3RhdHVzIjoyMDB9fSx7ImNoZWNrX2tleSI6Im5ldHdvcmsudGxzIiwib2JzZXJ2ZWRfYXQiOiIyMDI2LTA3LTI1VDE2OjU5OjU5Ljc1MFoiLCJzdGF0ZSI6ImhlYWx0aHkiLCJzZXZlcml0eSI6ImluZm8iLCJmYWlsdXJlX2NvZGUiOm51bGwsInN1bW1hcnlfY29kZSI6IkNIRUNLX09LIiwiZHVyYXRpb25fbXMiOjgxLCJmYWN0cyI6eyJkYXlzX3JlbWFpbmluZyI6NzN9fV19",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n825816121481f448cb85fb9cabb8cae7b1edcd895c14d018def6e268723e8a1a"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
+      "name": "impossible_calendar_date_fails_validation",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": []
+      },
+      "request": {
+        "method": "POST",
+        "request_path": "/internal/guardian/v1/runs",
+        "signed_path": "/internal/guardian/v1/runs",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000001",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "5ee25817843c7bfb5d6ea83fd85e9878105a40f14bf522b47748657540165a23",
+          "x-scalesafe-guardian-signature": "steSjiJSUG0CIAy4VB9i3nGHtsYpxGVF_riudiMRnj3SL9UWRzCZqqfV9msDjymA83oqLaaW8An9tnGOpiaLDA",
+          "x-scalesafe-guardian-protocol": "1",
+          "content-type": "application/json"
+        },
+        "raw_body_base64url": "eyJwcm90b2NvbF92ZXJzaW9uIjoxLCJpbnN0YW5jZV9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMTAwMSIsInJ1bl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMjAwMSIsImFnZW50X3ZlcnNpb24iOiJndWFyZGlhbi10ZXN0LzEuMC4wIiwic3RhcnRlZF9hdCI6IjIwMjYtMDItMzFUMTY6NTk6NTguMDAwWiIsImNvbXBsZXRlZF9hdCI6IjIwMjYtMDctMjVUMTc6MDA6MDAuMDAwWiIsInN0YXR1cyI6ImNvbXBsZXRlIiwib2JzZXJ2YXRpb25fY291bnQiOjIsIm9ic2VydmF0aW9ucyI6W3siY2hlY2tfa2V5IjoicHVibGljLmFwaS5yZWFjaGFiaWxpdHkiLCJvYnNlcnZlZF9hdCI6IjIwMjYtMDctMjVUMTY6NTk6NTkuNTAwWiIsInN0YXRlIjoiaGVhbHRoeSIsInNldmVyaXR5IjoiaW5mbyIsImZhaWx1cmVfY29kZSI6bnVsbCwic3VtbWFyeV9jb2RlIjoiQ0hFQ0tfT0siLCJkdXJhdGlvbl9tcyI6MTQzLCJmYWN0cyI6eyJodHRwX3N0YXR1cyI6MjAwfX0seyJjaGVja19rZXkiOiJuZXR3b3JrLnRscyIsIm9ic2VydmVkX2F0IjoiMjAyNi0wNy0yNVQxNjo1OTo1OS43NTBaIiwic3RhdGUiOiJoZWFsdGh5Iiwic2V2ZXJpdHkiOiJpbmZvIiwiZmFpbHVyZV9jb2RlIjpudWxsLCJzdW1tYXJ5X2NvZGUiOiJDSEVDS19PSyIsImR1cmF0aW9uX21zIjo4MSwiZmFjdHMiOnsiZGF5c19yZW1haW5pbmciOjczfX1dfQ",
+        "signing_input_utf8": "v1\nPOST\n/internal/guardian/v1/runs\n1784998800\n40\n5ee25817843c7bfb5d6ea83fd85e9878105a40f14bf522b47748657540165a23"
+      },
+      "expected": {
+        "http_status": 422,
+        "status": null,
+        "error_code": "VALIDATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    }
+  ],
+  "response_vectors": [
+    {
+      "name": "accepted_run_response",
+      "http_status": 201,
+      "schema": "ingestion-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "status": "accepted",
+        "receipt_id": "00000000-0000-4000-8000-000000009101",
+        "original_receipt_id": null,
+        "accepted_sequence": "40",
+        "accepted_observation_count": 2,
+        "record_id": "00000000-0000-4000-8000-000000009102",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "exact_duplicate_response",
+      "http_status": 200,
+      "schema": "ingestion-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "status": "duplicate",
+        "receipt_id": "00000000-0000-4000-8000-000000009101",
+        "original_receipt_id": null,
+        "accepted_sequence": "40",
+        "accepted_observation_count": 2,
+        "record_id": "00000000-0000-4000-8000-000000009102",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "logical_duplicate_response",
+      "http_status": 200,
+      "schema": "ingestion-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "status": "logical_duplicate",
+        "receipt_id": "00000000-0000-4000-8000-000000009103",
+        "original_receipt_id": "00000000-0000-4000-8000-000000009101",
+        "accepted_sequence": "41",
+        "accepted_observation_count": 2,
+        "record_id": "00000000-0000-4000-8000-000000009102",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "logical_duplicate_without_original_receipt",
+      "http_status": 200,
+      "schema": "ingestion-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "status": "logical_duplicate",
+        "receipt_id": "00000000-0000-4000-8000-000000009103",
+        "original_receipt_id": null,
+        "accepted_sequence": "41",
+        "accepted_observation_count": 2,
+        "record_id": "00000000-0000-4000-8000-000000009102",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "ingestion_sequence_overflow",
+      "http_status": 200,
+      "schema": "ingestion-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "status": "duplicate",
+        "receipt_id": "00000000-0000-4000-8000-000000009101",
+        "original_receipt_id": null,
+        "accepted_sequence": "9223372036854775808",
+        "accepted_observation_count": 2,
+        "record_id": "00000000-0000-4000-8000-000000009102",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "snapshot_response",
+      "http_status": 200,
+      "schema": "snapshot.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "request_sequence": "40",
+        "generated_at": "2026-07-25T17:00:00.000Z",
+        "expires_at": "2026-07-25T17:05:00.000Z",
+        "build_sha": "67d9ea3f40d8882b0bbcd32163f0736261257597",
+        "application_version": "1.0.0",
+        "schema_version": 105,
+        "checks": [],
+        "open_incidents": {
+          "info": 0,
+          "warning": 0,
+          "urgent": 0,
+          "critical": 0
+        }
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "snapshot_too_many_metrics",
+      "http_status": 200,
+      "schema": "snapshot.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "request_sequence": "40",
+        "generated_at": "2026-07-25T17:00:00.000Z",
+        "expires_at": "2026-07-25T17:05:00.000Z",
+        "build_sha": null,
+        "application_version": "1.0.0",
+        "schema_version": 105,
+        "checks": [
+          {
+            "check_key": "public.api.reachability",
+            "state": "healthy",
+            "severity": "info",
+            "observed_at": "2026-07-25T17:00:00.000Z",
+            "failure_code": null,
+            "metrics": {
+              "metric_00": 0,
+              "metric_01": 1,
+              "metric_02": 2,
+              "metric_03": 3,
+              "metric_04": 4,
+              "metric_05": 5,
+              "metric_06": 6,
+              "metric_07": 7,
+              "metric_08": 8,
+              "metric_09": 9,
+              "metric_10": 10,
+              "metric_11": 11,
+              "metric_12": 12,
+              "metric_13": 13,
+              "metric_14": 14,
+              "metric_15": 15,
+              "metric_16": 16
+            }
+          }
+        ],
+        "open_incidents": {
+          "info": 0,
+          "warning": 0,
+          "urgent": 0,
+          "critical": 0
+        }
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "snapshot_expiry_before_generation",
+      "http_status": 200,
+      "schema": "snapshot.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "request_sequence": "40",
+        "generated_at": "2026-07-25T17:00:00.000Z",
+        "expires_at": "2026-07-25T16:59:59.000Z",
+        "build_sha": null,
+        "application_version": "1.0.0",
+        "schema_version": 105,
+        "checks": [],
+        "open_incidents": {
+          "info": 0,
+          "warning": 0,
+          "urgent": 0,
+          "critical": 0
+        }
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "snapshot_impossible_calendar_date",
+      "http_status": 200,
+      "schema": "snapshot.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "request_sequence": "40",
+        "generated_at": "2026-02-31T17:00:00.000Z",
+        "expires_at": "2026-03-03T17:05:00.000Z",
+        "build_sha": null,
+        "application_version": "1.0.0",
+        "schema_version": 105,
+        "checks": [],
+        "open_incidents": {
+          "info": 0,
+          "warning": 0,
+          "urgent": 0,
+          "critical": 0
+        }
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "snapshot_sequence_overflow",
+      "http_status": 200,
+      "schema": "snapshot.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "request_sequence": "9223372036854775808",
+        "generated_at": "2026-07-25T17:00:00.000Z",
+        "expires_at": "2026-07-25T17:05:00.000Z",
+        "build_sha": null,
+        "application_version": "1.0.0",
+        "schema_version": 105,
+        "checks": [],
+        "open_incidents": {
+          "info": 0,
+          "warning": 0,
+          "urgent": 0,
+          "critical": 0
+        }
+      },
+      "expected_valid": false,
+      "expected_error_code": "SEMANTIC_VALIDATION_FAILED"
+    },
+    {
+      "name": "error_response_not_found",
+      "http_status": 404,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "NOT_FOUND",
+        "request_id": "00000000-0000-4000-8000-000000009200",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_authentication_failed",
+      "http_status": 401,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "AUTHENTICATION_FAILED",
+        "request_id": "00000000-0000-4000-8000-000000009201",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_payload_too_large",
+      "http_status": 413,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "PAYLOAD_TOO_LARGE",
+        "request_id": "00000000-0000-4000-8000-000000009202",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_unsupported_media_type",
+      "http_status": 415,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "UNSUPPORTED_MEDIA_TYPE",
+        "request_id": "00000000-0000-4000-8000-000000009203",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_validation_failed",
+      "http_status": 422,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "VALIDATION_FAILED",
+        "request_id": "00000000-0000-4000-8000-000000009204",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_rate_limited",
+      "http_status": 429,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "RATE_LIMITED",
+        "request_id": "00000000-0000-4000-8000-000000009205",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_sequence_conflict",
+      "http_status": 409,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "SEQUENCE_CONFLICT",
+        "request_id": "00000000-0000-4000-8000-000000009206",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_logical_id_conflict",
+      "http_status": 409,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "LOGICAL_ID_CONFLICT",
+        "request_id": "00000000-0000-4000-8000-000000009207",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "error_response_internal_error",
+      "http_status": 500,
+      "schema": "error-response.schema.json",
+      "body": {
+        "protocol_version": 1,
+        "error_code": "INTERNAL_ERROR",
+        "request_id": "00000000-0000-4000-8000-000000009208",
+        "server_time": "2026-07-25T17:00:00.000Z"
+      },
+      "expected_valid": true
+    }
+  ]
+}
