@@ -498,7 +498,7 @@ BEGIN
     repeat('f', 64),
     'created',
     '00000000-0000-4000-8000-000000002098',
-    0
+    1
   );
 
   PERFORM run_guardian_retention(5000);

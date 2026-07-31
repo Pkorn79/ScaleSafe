@@ -374,5 +374,8 @@ describe('migration 105 Guardian persistence contract', () => {
     expect(migrationVerifier).toContain(
       'Retention failed to delete an eligible old receipt',
     );
+    expect(migrationVerifier).toMatch(
+      /'00000000-0000-4000-8000-000000002098',\s*1\s*\);/,
+    );
   });
 });
