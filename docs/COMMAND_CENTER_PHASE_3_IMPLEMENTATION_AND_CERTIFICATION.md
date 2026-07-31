@@ -3,12 +3,12 @@
 **Status:** Phase 3.0 and Phase 3.1 implementation are complete. Phase 3.2's
 deterministic Guardian runner and isolated OpenClaw handoff are implemented,
 installed disabled, and certified on the VPS. Guardian Protocol v1 is frozen
-after independent review. Phase 3.3's recovery-monitoring candidate is committed
-locally at `2263852`, independently reviewed with no remaining P0/P1 finding,
-and passes its exact-package Windows and isolated Linux gates. It remains
-uninstalled and has not performed its live read-only Backblaze certification.
-Migration 105 remains unapplied pending owner review. No production activation
-is authorized.
+after independent review. Phase 3.3's sanitized recovery bridge at `d593820`
+and Guardian release `8a4f1256cfaa9378764c730555608bd55e3c221d` are
+installed disabled and passed live read-only recovery certification on the VPS.
+The machine-readable proof is preserved under the locked Guardian account.
+Migration 105 remains unapplied pending owner review. Phase 3.4 has not begun,
+and no production activation is authorized.
 
 **Phase:** 3 - Guardian and independent alerting
 
@@ -1115,26 +1115,46 @@ Work:
 - Add weekly encrypted-object verification.
 - Add restore-proof recency check.
 
-Current implementation state, 2026-07-30:
+Certified implementation state, 2026-07-31:
 
 - Sanitized backup and restore-proof writers are implemented without changing
   `backup.sh` or `restore-scratch.sh`.
 - Strict hashed status readers, stale/failure incident handling, and recovery
   lifecycle tests are implemented.
-- The B2 verifier requires one bucket and exactly `listFiles`, `readFiles`, and
-  `readFileRetentions`; it streams and hashes only encrypted archives.
+- The B2 verifier requires one expected bucket plus `listFiles`, `readFiles`,
+  and `readFileRetentions`. It accepts only Backblaze's documented
+  bucket-scoped read-only metadata capabilities and rejects write, delete,
+  retention-change, key-administration, and all-bucket visibility capabilities.
+  It streams and hashes only encrypted archives.
 - The B2 verifier has its own locked identity and cannot reach Guardian signing
   material or recovery credentials.
-- The exact candidate passes all 50 Guardian tests on Windows and Linux, Bash
+- The exact candidate passes all 60 Guardian tests on Windows and Linux, Bash
   syntax, the recovery bridge functional test, and temporary systemd validation.
   The B2 verifier's offline systemd hardening score is `2.9 OK`.
 - Independent review found two P1 fail-closed gaps: invalid verifier output
   could return success, and enabled-but-inactive units could be discovered only
   after installer writes. Both were corrected, regression-tested, and
-  independently rechecked; no P0/P1 finding remains.
-- Nothing from this subphase has been installed, started, enabled, or connected
-  to Backblaze. The gate remains open until disabled installation and live
-  read-only certification are explicitly approved and proven.
+  independently rechecked. A follow-up capability-boundary review found no
+  remaining P0, P1, or P2 finding.
+- The recovery bridge and Guardian release are installed disabled. The existing
+  production backup service and daily timer were not replaced or changed.
+- A separate Backblaze application key is restricted to
+  `scalesafe-recovery-pk-2026`, uses the console's Read Only mode, cannot list
+  all bucket names, and is stored only as two encrypted systemd credentials.
+- The first live certification correctly failed closed when the sanitized
+  backup-status document reported a 34-hour-old snapshot against the 30-hour
+  maximum. The daily backup itself had completed successfully at 03:31 UTC;
+  republishing the sanitized status against that backup restored health.
+- The second certification passed at `2026-07-31T15:46:05Z`. It verified all
+  four encrypted B2 objects, active Object Lock metadata, both archive hashes,
+  the current backup status, and the owner-attested isolated restore proof.
+- Machine-readable proof is preserved at
+  `/var/lib/scalesafe-guardian/certification/recovery-live-20260731T154605Z-bfc37049-19ca-4081-88d1-660f02da0ff4.json`.
+- `scalesafe-guardian.timer`, `scalesafe-guardian-openclaw.timer`, and
+  `scalesafe-guardian-backup-object.timer` remained disabled. No recurring
+  Guardian service was activated.
+- The Phase 3.3 gate is complete. Phase 3.4 and production activation require
+  separate explicit owner approval.
 
 Gate:
 
