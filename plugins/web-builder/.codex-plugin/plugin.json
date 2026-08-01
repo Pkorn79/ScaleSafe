@@ -1,0 +1,34 @@
+{
+  "name": "web-builder",
+  "version": "0.1.0",
+  "description": "Build, improve, verify, and publish polished business websites through a guided AI workflow.",
+  "author": {
+    "name": "ScaleSafe"
+  },
+  "homepage": "https://scalesafe.app/downloads/",
+  "keywords": [
+    "website",
+    "landing page",
+    "Astro",
+    "Cloudflare Pages",
+    "responsive design"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Web Builder",
+    "shortDescription": "Build and publish polished business websites",
+    "longDescription": "Create or improve responsive business websites, landing pages, download hubs, product sites, and support resources. Web Builder follows the existing brand and stack, validates desktop and mobile layouts, tests critical interactions, and publishes only with explicit approval.",
+    "developerName": "ScaleSafe",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://scalesafe.app/downloads/",
+    "defaultPrompt": [
+      "Build a polished one-page website for my business.",
+      "Turn these files into a responsive website.",
+      "Improve my existing site and verify it on mobile."
+    ]
+  }
+}
