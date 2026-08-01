@@ -1,0 +1,213 @@
+---
+import {
+  ArrowRight,
+  CircleCheck,
+  Copy,
+  Download,
+  MessageSquareText,
+  ShieldCheck,
+  Terminal,
+} from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const starterPrompt = `Use the HighLevel + ScaleSafe operator skill. Keep replies short and ask one question at a time. First check my HighLevel and browser connections, then help me choose the next safe step. Do not change anything until I approve the exact action.`;
+
+const downloads = [
+  {
+    platform: "Claude",
+    format: "Skill ZIP",
+    icon: MessageSquareText,
+    description: "For Claude on the web and Claude Cowork. Use Cowork when the task needs supervised browser control.",
+    href: "/downloads/operate-highlevel-scalesafe-claude.zip",
+    size: "70 KB",
+    checksum: "18D24289504ECB75752894033946FD26173ED66BB5F3EA33B42469EAFF3A030B",
+    steps: [
+      "Open Claude, then go to Customize and Skills.",
+      "Upload the ZIP without extracting it.",
+      "For browser work, open Cowork and enable Claude in Chrome or Control Chrome.",
+    ],
+  },
+  {
+    platform: "OpenAI Codex",
+    format: "Plugin ZIP",
+    icon: Terminal,
+    description: "For Codex desktop. The package includes the operator skill and its HighLevel connection requirement.",
+    href: "/downloads/operate-highlevel-scalesafe-codex.zip",
+    size: "73 KB",
+    checksum: "ECF821E078B2564AA2E1779B3DE190BEFD74F0B6647BA82D029A1B16A100A06E",
+    steps: [
+      "Download and extract the ZIP to a folder you control.",
+      "Open that folder in Codex and install HighLevel + ScaleSafe Operator from Plugins.",
+      "Connect your HighLevel account and enable Control Chrome or the in-app Browser when needed.",
+    ],
+  },
+];
+---
+
+<BaseLayout
+  title="AI operator downloads"
+  description="Download the ScaleSafe HighLevel operator skill for Claude or the plugin for OpenAI Codex."
+  noindex
+>
+  <section class="download-hero">
+    <div class="shell download-hero__inner">
+      <div class="download-hero__copy">
+        <p class="eyebrow">ScaleSafe beta operator kit</p>
+        <h1>Run HighLevel and ScaleSafe from Claude or Codex.</h1>
+        <p>Choose your workspace, install one package, and use plain-language commands to audit, build, and improve your systems with approval before every change.</p>
+      </div>
+      <div class="hero-proof" aria-label="Package safeguards">
+        <span><CircleCheck size={18} /> One combined skill</span>
+        <span><CircleCheck size={18} /> No credentials included</span>
+        <span><CircleCheck size={18} /> Read-only first</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="download-section" aria-labelledby="choose-platform">
+    <div class="shell">
+      <div class="section-heading compact-heading">
+        <p class="eyebrow">Choose your workspace</p>
+        <h2 id="choose-platform">Download the right package.</h2>
+        <p>Both packages use the same operating playbook. Install only the version for the AI workspace you plan to use.</p>
+      </div>
+
+      <div class="download-grid">
+        {downloads.map((item) => {
+          const Icon = item.icon;
+          return (
+            <article class="download-option">
+              <div class="download-option__top">
+                <span class="platform-icon" aria-hidden="true"><Icon size={26} stroke-width={1.8} /></span>
+                <div>
+                  <p class="file-type">{item.format}</p>
+                  <h3>{item.platform}</h3>
+                </div>
+              </div>
+              <p class="download-description">{item.description}</p>
+              <ol class="install-steps">
+                {item.steps.map((step) => <li>{step}</li>)}
+              </ol>
+              <a class="button download-button" href={item.href} download>
+                <Download size={18} /> Download for {item.platform}
+              </a>
+              <div class="file-details">
+                <span>ZIP · {item.size}</span>
+                <details>
+                  <summary>Verify file</summary>
+                  <p><strong>SHA-256</strong><code>{item.checksum}</code></p>
+                </details>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+
+  <section class="start-section" aria-labelledby="start-title">
+    <div class="shell start-grid">
+      <div>
+        <p class="eyebrow">Your first message</p>
+        <h2 id="start-title">Start simple.</h2>
+        <p>Paste this after the skill or plugin is installed. It tells the operator to check its tools, stay concise, and wait for approval before changing anything.</p>
+      </div>
+      <div class="prompt-panel">
+        <p id="starter-prompt">{starterPrompt}</p>
+        <button class="copy-button" type="button" data-copy-prompt aria-describedby="copy-status">
+          <Copy size={18} /> Copy starter prompt
+        </button>
+        <span class="copy-status" id="copy-status" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="before-section" aria-labelledby="before-title">
+    <div class="shell">
+      <div class="section-heading compact-heading">
+        <p class="eyebrow">Before the first run</p>
+        <h2 id="before-title">Three things must be connected.</h2>
+      </div>
+      <div class="readiness-grid">
+        <div>
+          <span class="step-number">01</span>
+          <h3>Your AI workspace</h3>
+          <p>Use Claude Cowork or Codex desktop for work that needs supervised browser access.</p>
+        </div>
+        <div>
+          <span class="step-number">02</span>
+          <h3>Your HighLevel account</h3>
+          <p>Authorize the official HighLevel connection for the exact sub-account you want to operate.</p>
+        </div>
+        <div>
+          <span class="step-number">03</span>
+          <h3>Browser control</h3>
+          <p>Enable Claude in Chrome, Control Chrome, or the Codex in-app Browser before asking it to use visual builders.</p>
+        </div>
+      </div>
+      <div class="connection-note">
+        <ShieldCheck size={22} />
+        <p><strong>The download does not sign in for you.</strong> Each customer connects their own HighLevel account and confirms the exact sub-account before the operator reads or changes anything.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="support-band">
+    <div class="shell support-band__inner">
+      <div>
+        <p class="eyebrow">ScaleSafe private beta</p>
+        <h2>Need access or personal setup help?</h2>
+        <p>The operator kit is included for beta participants. Personalized installation and troubleshooting are available separately.</p>
+      </div>
+      <a class="button" href="/beta">Request access <ArrowRight size={18} /></a>
+    </div>
+  </section>
+
+  <script is:inline>
+    const copyButton = document.querySelector("[data-copy-prompt]");
+    const prompt = document.querySelector("#starter-prompt");
+    const status = document.querySelector("#copy-status");
+
+    copyButton?.addEventListener("click", async () => {
+      if (!prompt || !status) return;
+      try {
+        await navigator.clipboard.writeText(prompt.textContent?.trim() || "");
+        status.textContent = "Copied";
+        window.setTimeout(() => { status.textContent = ""; }, 1800);
+      } catch {
+        status.textContent = "Select the prompt and copy it manually.";
+      }
+    });
+  </script>
+</BaseLayout>
+
+<style>
+  .download-hero{padding:82px 0 72px;color:var(--white);background:var(--ink)}
+  .download-hero__inner{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.5fr);gap:72px;align-items:end}
+  .download-hero__copy{max-width:840px}.download-hero h1{max-width:900px;margin-bottom:24px;font-size:clamp(3rem,5.5vw,5.2rem)}
+  .download-hero__copy>p:last-child{max-width:710px;margin-bottom:0;color:#c6d5df;font-size:1.15rem}
+  .download-hero .eyebrow,.support-band .eyebrow{color:var(--mint)}
+  .hero-proof{display:grid;gap:0;border-top:1px solid rgba(255,255,255,.18)}
+  .hero-proof span{display:flex;align-items:center;gap:9px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.18);font-weight:600}
+  .hero-proof svg{color:var(--mint);flex:0 0 auto}
+
+  .download-section{padding:100px 0;background:var(--mist)}.compact-heading{margin-bottom:38px}.compact-heading h2{font-size:clamp(2.3rem,4vw,3.6rem)}
+  .download-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+  .download-option{display:flex;min-width:0;flex-direction:column;padding:32px;border:1px solid var(--line);border-radius:var(--radius);background:var(--white);box-shadow:0 14px 36px rgba(7,25,45,.08)}
+  .download-option__top{display:flex;align-items:center;gap:14px;margin-bottom:20px}.platform-icon{display:grid;width:52px;height:52px;flex:0 0 52px;place-items:center;border-radius:6px;color:var(--white);background:var(--blue)}
+  .file-type{margin:0 0 2px;color:var(--teal);font-size:.76rem;font-weight:700;text-transform:uppercase}.download-option h3{margin:0;font-size:1.8rem}.download-description{min-height:78px;color:var(--slate)}
+  .install-steps{margin:8px 0 26px;padding:0;list-style:none;counter-reset:steps}.install-steps li{position:relative;min-height:46px;padding:10px 0 10px 38px;border-top:1px solid var(--line);counter-increment:steps}
+  .install-steps li::before{content:counter(steps);position:absolute;left:0;top:10px;display:grid;width:24px;height:24px;place-items:center;border-radius:50%;color:var(--ink);background:var(--warm);font-size:.72rem;font-weight:800}
+  .download-button{width:100%;margin-top:auto}.file-details{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:15px;color:var(--slate);font-size:.78rem}.file-details details{text-align:right}.file-details summary{cursor:pointer;font-weight:700}.file-details p{position:absolute;z-index:2;width:min(440px,calc(100vw - 40px));margin:8px 0 0;right:max(20px,calc((100vw - min(calc(100vw - 40px),1200px))/2));padding:12px;border:1px solid var(--line);border-radius:6px;text-align:left;background:var(--white);box-shadow:var(--shadow)}.file-details code{display:block;overflow-wrap:anywhere;margin-top:4px;color:var(--ink);font-size:.72rem}
+
+  .start-section{padding:96px 0;background:var(--white)}.start-grid{display:grid;grid-template-columns:.7fr 1.3fr;gap:72px;align-items:center}.start-section h2{font-size:clamp(2.3rem,4vw,3.6rem)}.start-section>div>div:first-child>p:last-child{max-width:500px;color:var(--slate)}
+  .prompt-panel{padding:28px;border-left:5px solid var(--warm);background:var(--ink)}.prompt-panel>p{margin-bottom:24px;color:var(--white);font-size:1.08rem}.copy-button{display:inline-flex;min-height:44px;align-items:center;gap:8px;padding:0 15px;border:1px solid var(--mint);border-radius:6px;color:var(--ink);background:var(--mint);font-weight:700;cursor:pointer}.copy-button:hover{background:#36c8ac}.copy-status{margin-left:10px;color:#c6d5df;font-size:.82rem}
+
+  .before-section{padding:96px 0;background:#eaf1f3}.readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid #c5d3d9}.readiness-grid>div{padding:30px 30px 30px 0}.readiness-grid>div+div{padding-left:30px;border-left:1px solid #c5d3d9}.step-number{display:block;margin-bottom:20px;color:var(--attention);font-family:var(--font-display);font-size:.86rem;font-weight:800}.readiness-grid h3{margin-bottom:10px}.readiness-grid p{margin:0;color:var(--slate)}
+  .connection-note{display:flex;align-items:flex-start;gap:12px;margin-top:28px;padding:18px 20px;border:1px solid #e5c1b8;border-radius:var(--radius);background:var(--attention-bg)}.connection-note svg{flex:0 0 auto;color:var(--attention)}.connection-note p{margin:0}
+
+  .support-band{padding:76px 0;color:var(--white);background:var(--blue)}.support-band__inner{display:flex;align-items:center;justify-content:space-between;gap:60px}.support-band h2{max-width:750px;margin-bottom:16px;font-size:clamp(2.2rem,4vw,3.5rem)}.support-band p:last-child{max-width:740px;margin:0;color:#c9d7e1}.support-band .button{flex:0 0 auto}
+
+  @media(max-width:900px){.download-hero__inner,.start-grid{grid-template-columns:1fr;gap:42px}.download-grid{grid-template-columns:1fr}.download-description{min-height:0}.file-details p{right:20px}.readiness-grid{grid-template-columns:1fr;border-block:0}.readiness-grid>div{padding:24px 0;border-top:1px solid #c5d3d9}.readiness-grid>div+div{padding-left:0;border-left:0}.readiness-grid>div:last-child{border-bottom:1px solid #c5d3d9}.support-band__inner{align-items:flex-start;flex-direction:column;gap:28px}}
+  @media(max-width:560px){.download-hero{padding:58px 0}.download-hero h1{font-size:2.75rem}.download-section,.start-section,.before-section{padding:76px 0}.download-option{padding:24px 20px}.file-details{align-items:flex-start;flex-direction:column}.file-details details{text-align:left}.file-details p{left:20px;right:auto}.support-band{padding:66px 0}.copy-status{display:block;margin:10px 0 0}}
+</style>
