@@ -164,10 +164,3 @@ Evidence Connections currently shows native GHL Fulfillment, Zoom, the universal
 Live regression on July 15 confirmed that connector event history loads with source state, matching method, and client/program target. Zoom is connected but remains uncertified for attendance until one real non-host participant event publishes to the correct enrollment.
 
 Settings changes, credentials, webhook secrets, processor tests, and cleanup actions should be performed only by an authorized operator.
-
-## Screenshot Policy
-
-- Working screenshots may use designated test clients.
-- Public website screenshots must use sanitized test fixtures.
-- Never show full card details, bank details, API keys, webhook secrets, or access tokens.
-- Replace screenshots after material UI changes.
