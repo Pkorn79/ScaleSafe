@@ -1,0 +1,15 @@
+interface:
+  display_name: "HighLevel + ScaleSafe Operator"
+  short_description: "Operate HighLevel and ScaleSafe safely"
+  default_prompt: "Use $operate-highlevel-scalesafe to check my tools and guide the next safe HighLevel or ScaleSafe action."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "highlevel"
+      description: "Official HighLevel MCP connection for the customer's selected sub-account"
+      transport: "streamable_http"
+      url: "https://services.leadconnectorhq.com/mcp/"
+
+policy:
+  allow_implicit_invocation: true

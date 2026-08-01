@@ -1,0 +1,33 @@
+{
+  "name": "operate-highlevel-scalesafe",
+  "version": "0.1.0",
+  "description": "Operate one GoHighLevel sub-account and its ScaleSafe sold-client process with supervised approvals.",
+  "author": {
+    "name": "ScaleSafe"
+  },
+  "keywords": [
+    "GoHighLevel",
+    "HighLevel",
+    "ScaleSafe",
+    "CRM",
+    "workflows",
+    "funnels"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "HighLevel + ScaleSafe Operator",
+    "shortDescription": "Operate HighLevel and ScaleSafe with safeguards",
+    "longDescription": "Discover, audit, build, operate, and improve one HighLevel sub-account, then carry sold clients through ScaleSafe enrollment, consent, payment, milestones, pulse checks, and fulfillment evidence. Includes tenant verification, action-time approvals, test-mode discipline, browser routing, and cost awareness.",
+    "developerName": "ScaleSafe",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Check my HighLevel and browser connections before accessing account data.",
+      "Audit my confirmed HighLevel sub-account and report what is unverified.",
+      "Discover the three highest-value workflows for my business."
+    ]
+  }
+}
