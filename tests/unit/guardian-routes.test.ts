@@ -169,15 +169,19 @@ describe('Guardian route protocol vectors', () => {
       receiptDelta: 0,
       domainMutationDelta: 0,
     };
-    mockGetCredentialByKeyId.mockResolvedValue({
-      id: '00000000-0000-4000-8000-000000009900',
-      keyId: state.key_id,
-      instanceId: state.instance_id,
-      publicKey,
-      status: state.status,
-      validFrom: state.valid_from,
-      validUntil: state.valid_until,
-    });
+    mockGetCredentialByKeyId.mockResolvedValue(
+      state.credential_exists === false
+        ? null
+        : {
+          id: '00000000-0000-4000-8000-000000009900',
+          keyId: state.key_id,
+          instanceId: state.instance_id,
+          publicKey,
+          status: state.status,
+          validFrom: state.valid_from,
+          validUntil: state.valid_until,
+        },
+    );
     mockClaimRequest.mockImplementation(claimEvaluator(vector, counters));
 
     const target = request(createApp());

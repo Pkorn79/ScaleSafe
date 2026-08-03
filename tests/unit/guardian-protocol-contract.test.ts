@@ -33,6 +33,7 @@ const migrationVerifier = fs.readFileSync(
 describe('Guardian protocol v1 contract', () => {
   it('keeps every protocol artifact valid JSON', () => {
     [
+      'check-catalog.json',
       'run.schema.json',
       'recovery-verification.schema.json',
       'alert-delivery.schema.json',
@@ -45,6 +46,30 @@ describe('Guardian protocol v1 contract', () => {
         fs.readFileSync(path.join(protocolDir, file), 'utf8'),
       )).not.toThrow();
     });
+  });
+
+  it('keeps migration 105 check dependencies identical to the shared catalog', () => {
+    const catalog = JSON.parse(fs.readFileSync(
+      path.join(protocolDir, 'check-catalog.json'),
+      'utf8',
+    ));
+    const valuesBlock = migration
+      .split('INSERT INTO guardian_check_catalog (')[1]
+      .split('ON CONFLICT (check_key)')[0];
+    const rowPattern = /\(\s*'([^']+)',\s*'[^']+',\s*'[^']+',\s*'([^']+)',\s*\d+,\s*\d+,\s*'([^']+)',\s*(NULL|'[^']+'),\s*\d+,\s*true\s*\)/g;
+    const migrationChecks = Array.from(valuesBlock.matchAll(rowPattern)).map(
+      (match) => ({
+        check_key: match[1],
+        authorized_source: match[2],
+        default_severity: match[3],
+        parent_check_key: match[4] === 'NULL'
+          ? null
+          : match[4].slice(1, -1),
+      }),
+    );
+
+    expect(catalog.protocol_version).toBe(1);
+    expect(migrationChecks).toEqual(catalog.checks);
   });
 
   it('reconstructs canonical input from actual request bytes and path', () => {
@@ -164,6 +189,7 @@ describe('Guardian protocol v1 contract', () => {
       'altered_valid_path_fails_signature',
       'query_string_is_not_found',
       'stale_timestamp_fails_authentication',
+      'unknown_credential_key_fails_authentication',
       'bad_signature_fails_authentication',
       'revoked_credential_fails_authentication',
       'post_without_json_content_type_is_rejected',

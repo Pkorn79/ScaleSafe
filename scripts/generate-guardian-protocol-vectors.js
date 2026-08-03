@@ -595,6 +595,24 @@ vectors.push(vector(
   }),
 ));
 
+const unknownCredentialRequest = signedRequest({
+  method: 'GET',
+  signedPath: '/internal/guardian/v1/snapshot',
+  sequence: '40',
+});
+unknownCredentialRequest.headers['x-scalesafe-guardian-key-id'] =
+  '00000000-0000-4000-8000-000000000099';
+vectors.push(vector(
+  'unknown_credential_key_fails_authentication',
+  unknownCredentialRequest,
+  credentialState('39', { credential_exists: false }),
+  expected({
+    httpStatus: 401,
+    errorCode: 'AUTHENTICATION_FAILED',
+    lastSequence: '39',
+  }),
+));
+
 const badSignatureRequest = signedRequest({
   method: 'GET',
   signedPath: '/internal/guardian/v1/snapshot',

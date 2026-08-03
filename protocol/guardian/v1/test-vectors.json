@@ -752,6 +752,50 @@
       }
     },
     {
+      "name": "unknown_credential_key_fails_authentication",
+      "verification_clock_unix": "1784998800",
+      "verification_time_utc": "2026-07-25T17:00:00.000Z",
+      "database_state": {
+        "key_id": "00000000-0000-4000-8000-000000000001",
+        "instance_id": "00000000-0000-4000-8000-000000001001",
+        "status": "active",
+        "valid_from": "2026-07-25T16:00:00.000Z",
+        "valid_until": "2026-07-26T16:00:00.000Z",
+        "last_sequence": "39",
+        "accepted_receipts": [],
+        "logical_records": [],
+        "credential_exists": false
+      },
+      "request": {
+        "method": "GET",
+        "request_path": "/internal/guardian/v1/snapshot",
+        "signed_path": "/internal/guardian/v1/snapshot",
+        "headers": {
+          "x-scalesafe-guardian-key-id": "00000000-0000-4000-8000-000000000099",
+          "x-scalesafe-guardian-timestamp": "1784998800",
+          "x-scalesafe-guardian-sequence": "40",
+          "x-scalesafe-guardian-body-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "x-scalesafe-guardian-signature": "fibov0KjFiVOBFdC24YbrnrNdMbSPtitx4TkVqdBBBonAJjnXs0vHwW3KJprVlQSGackJIKxf4N29nLTteCBDw",
+          "x-scalesafe-guardian-protocol": "1"
+        },
+        "raw_body_base64url": "",
+        "signing_input_utf8": "v1\nGET\n/internal/guardian/v1/snapshot\n1784998800\n40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expected": {
+        "http_status": 401,
+        "status": null,
+        "error_code": "AUTHENTICATION_FAILED",
+        "resulting_last_sequence": "39",
+        "receipt_delta": 0,
+        "domain_mutation_delta": 0
+      },
+      "database_expectation": {
+        "reaches_rpc": false,
+        "decision": null,
+        "rejection_code": null
+      }
+    },
+    {
       "name": "bad_signature_fails_authentication",
       "verification_clock_unix": "1784998800",
       "verification_time_utc": "2026-07-25T17:00:00.000Z",
