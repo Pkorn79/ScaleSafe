@@ -1,7 +1,7 @@
 {
-  "name": "personal",
+  "name": "scalesafe",
   "interface": {
-    "displayName": "Personal"
+    "displayName": "ScaleSafe"
   },
   "plugins": [
     {
@@ -9,6 +9,18 @@
       "source": {
         "source": "local",
         "path": "./plugins/operate-highlevel-scalesafe"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "web-builder",
+      "source": {
+        "source": "local",
+        "path": "./plugins/web-builder"
       },
       "policy": {
         "installation": "AVAILABLE",
