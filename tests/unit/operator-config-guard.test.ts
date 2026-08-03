@@ -76,6 +76,28 @@ describe('operator configuration startup guard', () => {
     expect(loaded.config.guardian.enabled).toBe(false);
   });
 
+  it('keeps the platform listener behavior unchanged by default', () => {
+    jest.resetModules();
+    delete process.env.SERVER_BIND_HOST;
+    const loaded = require('../../src/config');
+
+    expect(loaded.config.bindHost).toBeNull();
+  });
+
+  it('accepts explicit loopback binding and rejects arbitrary hostnames', () => {
+    jest.resetModules();
+    process.env.SERVER_BIND_HOST = '127.0.0.1';
+    expect(require('../../src/config').config.bindHost).toBe('127.0.0.1');
+
+    jest.resetModules();
+    process.env.SERVER_BIND_HOST = 'phase35.example.com';
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+    expect(() => require('../../src/config')).toThrow('EXIT_1');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   it('rejects Guardian without the complete Phase 2 command center', () => {
     jest.resetModules();
     process.env.GUARDIAN_INGESTION_ENABLED = 'true';

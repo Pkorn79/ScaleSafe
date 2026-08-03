@@ -38,6 +38,7 @@ function decodeAes256Key(value: string): Buffer | null {
 
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
+const serverBindHost = String(process.env.SERVER_BIND_HOST || '').trim();
 const ghlClientId = required('GHL_APP_CLIENT_ID');
 const operatorCommandCenterEnabled = process.env.OPERATOR_COMMAND_CENTER_ENABLED === 'true';
 const operatorAuthEnabled = process.env.OPERATOR_AUTH_ENABLED === 'true';
@@ -79,6 +80,14 @@ failIfProductionFlagEnabled('ALLOW_DEV_LOCATION_AUTH');
 failIfProductionFlagEnabled('ALLOW_UNSIGNED_GHL_WEBHOOKS');
 failIfProductionFlagEnabled('ALLOW_UNSIGNED_STRIPE_STATE');
 failIfProductionFlagEnabled('ALLOW_LEGACY_PUBLIC_ACTION_LINKS');
+
+if (
+  serverBindHost
+  && !['127.0.0.1', '::1', '0.0.0.0'].includes(serverBindHost)
+) {
+  console.error('FATAL: SERVER_BIND_HOST must be an explicit loopback or wildcard address');
+  process.exit(1);
+}
 
 if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
   console.error('FATAL: Missing required environment variable: PUBLIC_ACTION_TOKEN_SECRET');
@@ -266,6 +275,7 @@ export const config = {
 
   // Server
   port: parseInt(optional('PORT', '3000'), 10),
+  bindHost: serverBindHost || null,
   nodeEnv,
   logLevel: optional('LOG_LEVEL', 'debug'),
 

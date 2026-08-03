@@ -20,8 +20,11 @@ const app = createApp();
 async function start(): Promise<void> {
   await schemaReadinessService.assertReady();
   await guardianReadinessService.assertReady();
-  app.listen(config.port, () => {
-    logger.info({ port: config.port, env: config.nodeEnv }, 'ScaleSafe server started');
+  const onListening = (): void => {
+    logger.info(
+      { port: config.port, bindHost: config.bindHost || 'default', env: config.nodeEnv },
+      'ScaleSafe server started',
+    );
 
     // Ensure split storage exists: public assets stay public, evidence files stay private.
     (async () => {
@@ -70,7 +73,12 @@ async function start(): Promise<void> {
         );
       }, 15 * 1000);
     }
-  });
+  };
+  if (config.bindHost) {
+    app.listen(config.port, config.bindHost, onListening);
+  } else {
+    app.listen(config.port, onListening);
+  }
 }
 
 start().catch((err: any) => {
