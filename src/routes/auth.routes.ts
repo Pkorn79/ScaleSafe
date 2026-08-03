@@ -60,6 +60,91 @@ function installTargets(locationId: string, installedLocations: InstalledLocatio
   return targets;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderInstallCompletePage(params: {
+  partial: boolean;
+  installedTargets: string[];
+  failedTargets: Array<{ locationId: string; error: string }>;
+  provisioningStarted: boolean;
+}): string {
+  const statusLabel = params.partial ? 'Partially installed' : 'Installed';
+  const title = params.partial ? 'ScaleSafe needs attention' : 'ScaleSafe is installed';
+  const subtitle = params.partial
+    ? 'ScaleSafe connected to at least one selected sub-account, but one or more sub-accounts need a retry.'
+    : 'Your ScaleSafe account is connected. Provisioning is running in the background when setup is not already complete.';
+  const accountLabel = params.installedTargets.length === 1 ? 'Connected sub-account' : 'Connected sub-accounts';
+  const accountItems = params.installedTargets
+    .map((locationId) => `<li><code>${escapeHtml(locationId)}</code></li>`)
+    .join('');
+  const failedItems = params.failedTargets
+    .map((failure) => `<li><code>${escapeHtml(failure.locationId)}</code><span>${escapeHtml(failure.error)}</span></li>`)
+    .join('');
+  const provisioningCopy = params.provisioningStarted
+    ? 'ScaleSafe is finishing the initial field and workflow setup. This usually takes a minute or two.'
+    : 'This sub-account was already provisioned, so you can open ScaleSafe now.';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>
+    :root { color-scheme: light; --bg: #f6f8fb; --panel: #ffffff; --ink: #102033; --muted: #5a6b80; --line: #d9e1ea; --accent: #136f63; --warn: #8a4b09; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(680px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 32px; box-shadow: 0 18px 45px rgba(16, 32, 51, 0.08); }
+    .badge { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; background: ${params.partial ? '#fff4df' : '#e8f6f3'}; color: ${params.partial ? 'var(--warn)' : 'var(--accent)'}; font-size: 13px; font-weight: 700; }
+    h1 { margin: 18px 0 10px; font-size: 32px; line-height: 1.15; letter-spacing: 0; }
+    p { margin: 0 0 18px; color: var(--muted); font-size: 16px; line-height: 1.6; }
+    section { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0; }
+    ol, ul { margin: 0; padding-left: 22px; color: var(--ink); line-height: 1.7; }
+    li + li { margin-top: 6px; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef3f8; color: #24384f; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; }
+    .failed li { display: grid; gap: 4px; margin-bottom: 10px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+    a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border-radius: 6px; background: var(--accent); color: #ffffff; }
+    .secondary { background: #eef3f8; color: #24384f; }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="badge">${statusLabel}</span>
+    <h1>${title}</h1>
+    <p>${subtitle}</p>
+    <p>${provisioningCopy}</p>
+    <section>
+      <h2>Next step</h2>
+      <ol>
+        <li>Return to GoHighLevel and switch into the sub-account where you installed ScaleSafe.</li>
+        <li>Open ScaleSafe from the left navigation or from the installed apps area.</li>
+        <li>If the first launch says installation is still finishing, wait a minute and reopen ScaleSafe.</li>
+      </ol>
+    </section>
+    <section>
+      <h2>${accountLabel}</h2>
+      <ul>${accountItems}</ul>
+    </section>
+    ${params.partial ? `<section><h2>Needs retry</h2><ul class="failed">${failedItems}</ul></section>` : ''}
+    <div class="actions">
+      <a class="button" href="https://app.gohighlevel.com/">Open GoHighLevel</a>
+      <a class="button secondary" href="${escapeHtml(config.appUrl)}">Open ScaleSafe</a>
+    </div>
+  </main>
+</body>
+</html>`;
+}
+
 async function persistOAuthTarget(
   target: InstalledLocation,
   token: TokenResponse,
@@ -192,16 +277,15 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       }
 
       const partial = failedTargets.length > 0;
-      res.status(partial ? 207 : 200).json({
-        success: !partial,
-        message: failedTargets.length
-          ? 'ScaleSafe installed for some sub-accounts; others failed — see failed list'
-          : 'ScaleSafe installed successfully for connected sub-accounts',
-        locationId: installedTargets[0],
-        locations: installedTargets,
-        provisioning: provisionTargets.length ? 'started' : 'already_installed',
-        ...(partial ? { failed: failedTargets.map((failure) => failure.locationId) } : {}),
-      });
+      res
+        .status(partial ? 207 : 200)
+        .type('html')
+        .send(renderInstallCompletePage({
+          partial,
+          installedTargets,
+          failedTargets,
+          provisioningStarted: provisionTargets.length > 0,
+        }));
       return;
     }
 
