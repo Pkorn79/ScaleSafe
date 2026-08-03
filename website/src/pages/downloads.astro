@@ -183,6 +183,42 @@ const products = [
     );
   })}
 
+  <section class="codex-install-section" aria-labelledby="codex-install-title">
+    <div class="shell">
+      <div class="section-heading compact-heading">
+        <p class="eyebrow">OpenAI Codex setup</p>
+        <h2 id="codex-install-title">Install once. Load a plugin in every new task.</h2>
+        <p>The Codex toolkit contains both plugins. Install either one or both from the same ScaleSafe marketplace.</p>
+      </div>
+
+      <div class="codex-install-layout">
+        <ol class="codex-install-steps">
+          <li><strong>Download and extract the toolkit.</strong><span>Keep the extracted folder somewhere permanent.</span></li>
+          <li><strong>Open that folder in Codex.</strong><span>Use Open Folder and select the top-level extracted folder.</span></li>
+          <li><strong>Fully close and reopen Codex.</strong><span>This refreshes local plugin marketplaces.</span></li>
+          <li><strong>Open Plugins, then choose ScaleSafe.</strong><span>Click + on HighLevel + ScaleSafe Operator, Web Builder, or both.</span></li>
+          <li><strong>Start a new task.</strong><span>Newly installed plugins are loaded when the new task starts.</span></li>
+          <li><strong>Type @ in the prompt box.</strong><span>Select the plugin, write the result you want, and send the request.</span></li>
+        </ol>
+
+        <div class="invoke-panel">
+          <p class="eyebrow">Inside a new task</p>
+          <h3>Choose the plugin with @</h3>
+          <p>After selecting <strong>HighLevel + ScaleSafe Operator</strong>, try:</p>
+          <blockquote>Audit my ScaleSafe test account. Keep this read-only and keep your answers short.</blockquote>
+          <p>After selecting <strong>Web Builder</strong>, try:</p>
+          <blockquote>Build a simple website for my business. Ask one question at a time.</blockquote>
+        </div>
+      </div>
+
+      <details class="codex-fallback">
+        <summary>ScaleSafe does not appear under Plugins</summary>
+        <p>Open a terminal in Codex, register the extracted toolkit folder, restart Codex, and check Plugins again:</p>
+        <code>codex plugin marketplace add "&lt;full path to the extracted toolkit folder&gt;"</code>
+      </details>
+    </div>
+  </section>
+
   <section class="before-section" aria-labelledby="before-title">
     <div class="shell">
       <div class="section-heading compact-heading">
@@ -193,7 +229,7 @@ const products = [
         <div>
           <span class="step-number">01</span>
           <h3>Install one package</h3>
-          <p>Choose the Claude skill or Codex plugin for the workspace you plan to use.</p>
+          <p>Choose the Claude skill or the combined Codex toolkit for the workspace you plan to use.</p>
         </div>
         <div>
           <span class="step-number">02</span>
@@ -269,10 +305,14 @@ const products = [
   .prompt-panel{padding:24px;border-left:5px solid var(--warm);background:var(--ink)}.prompt-panel>p{margin-bottom:20px;color:var(--white);font-size:1rem}.copy-button{display:inline-flex;min-height:44px;align-items:center;gap:8px;padding:0 15px;border:1px solid var(--mint);border-radius:6px;color:var(--ink);background:var(--mint);font-weight:700;cursor:pointer}.copy-button:hover{background:#36c8ac}.copy-status{margin-left:10px;color:#c6d5df;font-size:.82rem}
 
   .compact-heading{margin-bottom:38px}.compact-heading h2{font-size:clamp(2.3rem,4vw,3.6rem)}
+  .codex-install-section{padding:96px 0;color:var(--white);background:var(--ink)}.codex-install-section .compact-heading{max-width:840px}.codex-install-section .compact-heading .eyebrow{color:var(--mint)}.codex-install-section .compact-heading>p:last-child{max-width:720px;margin-bottom:0;color:#c6d5df;font-size:1.08rem}
+  .codex-install-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:64px;align-items:start}.codex-install-steps{margin:0;padding:0;list-style:none;counter-reset:codex-steps}.codex-install-steps li{position:relative;min-height:76px;padding:18px 0 18px 54px;border-top:1px solid rgba(255,255,255,.18);counter-increment:codex-steps}.codex-install-steps li:last-child{border-bottom:1px solid rgba(255,255,255,.18)}.codex-install-steps li::before{content:counter(codex-steps);position:absolute;left:0;top:18px;display:grid;width:32px;height:32px;place-items:center;border-radius:50%;color:var(--ink);background:var(--mint);font-size:.78rem;font-weight:800}.codex-install-steps strong,.codex-install-steps span{display:block}.codex-install-steps span{margin-top:4px;color:#c6d5df}
+  .invoke-panel{padding:28px;border-left:5px solid var(--warm);background:#102c46}.invoke-panel .eyebrow{margin-bottom:8px;color:var(--warm)}.invoke-panel h3{margin-bottom:20px;font-size:1.65rem}.invoke-panel p{margin:18px 0 8px;color:#d6e0e7}.invoke-panel blockquote{margin:0;padding:14px 16px;border-left:3px solid var(--mint);color:var(--white);background:rgba(0,0,0,.2)}
+  .codex-fallback{margin-top:32px;padding-top:22px;border-top:1px solid rgba(255,255,255,.18)}.codex-fallback summary{cursor:pointer;font-weight:700}.codex-fallback p{max-width:760px;margin:14px 0 10px;color:#c6d5df}.codex-fallback code{display:block;max-width:100%;overflow-wrap:anywhere;padding:14px 16px;color:var(--ink);background:var(--warm);font-size:.82rem}
   .before-section{padding:96px 0;background:#eaf1f3}.readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid #c5d3d9}.readiness-grid>div{padding:30px 30px 30px 0}.readiness-grid>div+div{padding-left:30px;border-left:1px solid #c5d3d9}.step-number{display:block;margin-bottom:20px;color:var(--attention);font-family:var(--font-display);font-size:.86rem;font-weight:800}.readiness-grid h3{margin-bottom:10px}.readiness-grid p{margin:0;color:var(--slate)}
   .connection-note{display:flex;align-items:flex-start;gap:12px;margin-top:28px;padding:18px 20px;border:1px solid #e5c1b8;border-radius:var(--radius);background:var(--attention-bg)}.connection-note svg{flex:0 0 auto;color:var(--attention)}.connection-note p{margin:0}
   .support-band{padding:76px 0;color:var(--white);background:var(--blue)}.support-band__inner{display:flex;align-items:center;justify-content:space-between;gap:60px}.support-band h2{max-width:750px;margin-bottom:16px;font-size:clamp(2.2rem,4vw,3.5rem)}.support-band p:last-child{max-width:760px;margin:0;color:#c9d7e1}.support-band .button{flex:0 0 auto}
 
-  @media(max-width:900px){.download-hero__inner{grid-template-columns:1fr;gap:42px}.download-grid{grid-template-columns:1fr}.download-description{min-height:0}.file-details p{right:20px}.prompt-row{grid-template-columns:1fr;gap:20px}.readiness-grid{grid-template-columns:1fr;border-block:0}.readiness-grid>div{padding:24px 0;border-top:1px solid #c5d3d9}.readiness-grid>div+div{padding-left:0;border-left:0}.readiness-grid>div:last-child{border-bottom:1px solid #c5d3d9}.support-band__inner{align-items:flex-start;flex-direction:column;gap:28px}}
-  @media(max-width:560px){.download-hero{padding:58px 0}.download-hero h1{font-size:2.75rem}.product-section,.before-section{padding:76px 0}.product-heading{grid-template-columns:1fr;gap:16px}.built-here{margin:0 0 28px}.download-option{padding:24px 20px}.file-details{align-items:flex-start;flex-direction:column}.file-details details{position:relative;width:100%;text-align:left}.file-details p{left:0;right:auto;width:100%}.copy-status{display:block;margin:10px 0 0}.support-band{padding:66px 0}}
+  @media(max-width:900px){.download-hero__inner{grid-template-columns:1fr;gap:42px}.download-grid{grid-template-columns:1fr}.download-description{min-height:0}.file-details p{right:20px}.prompt-row,.codex-install-layout{grid-template-columns:1fr;gap:32px}.readiness-grid{grid-template-columns:1fr;border-block:0}.readiness-grid>div{padding:24px 0;border-top:1px solid #c5d3d9}.readiness-grid>div+div{padding-left:0;border-left:0}.readiness-grid>div:last-child{border-bottom:1px solid #c5d3d9}.support-band__inner{align-items:flex-start;flex-direction:column;gap:28px}}
+  @media(max-width:560px){.download-hero{padding:58px 0}.download-hero h1{font-size:2.75rem}.product-section,.codex-install-section,.before-section{padding:76px 0}.product-heading{grid-template-columns:1fr;gap:16px}.built-here{margin:0 0 28px}.download-option{padding:24px 20px}.file-details{align-items:flex-start;flex-direction:column}.file-details details{position:relative;width:100%;text-align:left}.file-details p{left:0;right:auto;width:100%}.invoke-panel{padding:24px 20px}.codex-install-steps li{padding-left:48px}.copy-status{display:block;margin:10px 0 0}.support-band{padding:66px 0}}
 </style>
