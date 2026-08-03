@@ -116,14 +116,22 @@ export const guardianRepository = {
 
     const row = firstRow<any>(data);
     if (!row) throw new Error('Guardian claim returned no decision');
+    const decision = String(row.decision);
+    const acceptedSequence = [
+      'accepted',
+      'duplicate',
+      'logical_duplicate',
+    ].includes(decision)
+      ? authentication.sequence
+      : null;
     return {
       decision: row.decision,
       receiptId: row.receipt_id || null,
       originalReceiptId: row.original_receipt_id || null,
-      acceptedSequence:
-        row.accepted_sequence === null || row.accepted_sequence === undefined
-          ? null
-          : String(row.accepted_sequence),
+      // PostgREST serializes BIGINT values as JSON numbers. Use the exact
+      // authenticated sequence for successful claims so values above
+      // Number.MAX_SAFE_INTEGER cannot be rounded in transit.
+      acceptedSequence,
       acceptedObservationCount: Number(row.accepted_observation_count || 0),
       recordId: row.record_id || null,
       rejectionCode: row.rejection_code || null,
