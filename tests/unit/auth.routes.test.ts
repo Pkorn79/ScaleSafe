@@ -148,8 +148,11 @@ describe('GET /auth/callback', () => {
     const res = await request(app).get('/auth/callback?code=test-code');
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.locationId).toBe('loc-abc');
+    expect(res.headers['content-type']).toMatch(/html/);
+    expect(res.text).toContain('ScaleSafe is installed');
+    expect(res.text).toContain('Next step');
+    expect(res.text).toContain('loc-abc');
+    expect(res.text).not.toContain('ScaleSafe installed successfully for connected sub-accounts');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-abc',
       marketplace_plan_id: '6a5aaf8e77d47a4f4f207bcb',
@@ -170,7 +173,7 @@ describe('GET /auth/callback', () => {
     const res = await request(app).get(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.text).toContain('ScaleSafe is installed');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(
       expect.objectContaining({ location_id: 'loc-abc' }),
     );
@@ -195,7 +198,8 @@ describe('GET /auth/callback', () => {
     const res = await request(app).get('/auth/callback?code=reinstall-code');
 
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.text).toContain('ScaleSafe is installed');
+    expect(res.text).toContain('This sub-account was already provisioned');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-abc',
       ghl_access_token: 'at-123',
@@ -240,7 +244,9 @@ describe('GET /auth/callback', () => {
     const res = await request(app).get('/auth/callback?code=agency-code');
 
     expect(res.status).toBe(200);
-    expect(res.body.locations).toEqual(['loc-new', 'loc-existing']);
+    expect(res.text).toContain('Connected sub-accounts');
+    expect(res.text).toContain('loc-new');
+    expect(res.text).toContain('loc-existing');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(
       expect.objectContaining({
         location_id: 'loc-new',
@@ -276,9 +282,10 @@ describe('GET /auth/callback', () => {
     const res = await request(app).get('/auth/callback?code=agency-code');
 
     expect(res.status).toBe(207);
-    expect(res.body.success).toBe(false);
-    expect(res.body.locations).toEqual(['loc-good']);
-    expect(res.body.failed).toEqual(['loc-bad']);
+    expect(res.text).toContain('ScaleSafe needs attention');
+    expect(res.text).toContain('loc-good');
+    expect(res.text).toContain('loc-bad');
+    expect(res.text).toContain('Needs retry');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledTimes(2);
   });
 
