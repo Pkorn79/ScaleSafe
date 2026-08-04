@@ -1,0 +1,93 @@
+---
+import {
+  ArrowRight,
+  Download,
+  MessageSquareText,
+  PanelsTopLeft,
+  Terminal,
+  Workflow,
+} from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+
+const packages = [
+  {
+    eyebrow: "Claude Skill ZIP",
+    title: "HighLevel + ScaleSafe Operator",
+    description: "Run HighLevel and continue sold-client work through ScaleSafe from Claude or Cowork.",
+    href: "/downloads/operate-highlevel-scalesafe-claude.zip",
+    size: "70 KB",
+    icon: Workflow,
+  },
+  {
+    eyebrow: "Claude Skill ZIP",
+    title: "Web Builder",
+    description: "Build, verify, and publish a polished business website from Claude, Cowork, or Claude Code.",
+    href: "/downloads/web-builder-claude.zip",
+    size: "11 KB",
+    icon: PanelsTopLeft,
+  },
+  {
+    eyebrow: "OpenAI Codex Toolkit ZIP",
+    title: "ScaleSafe AI Toolkit",
+    description: "Install the HighLevel + ScaleSafe Operator, Web Builder, or both as Codex plugins.",
+    href: "/downloads/scalesafe-ai-toolkit-codex.zip",
+    size: "85 KB",
+    icon: Terminal,
+  },
+];
+---
+
+<BaseLayout
+  title="Your AI toolkit downloads"
+  description="Download the ScaleSafe AI toolkits for Claude and OpenAI Codex."
+  noindex
+>
+  <main class="access-page">
+    <div class="shell">
+      <div class="access-heading">
+        <p class="eyebrow">Access ready</p>
+        <h1>Your AI toolkit downloads</h1>
+        <p>Choose the package for your workspace. You can return to this page if you need another version later.</p>
+      </div>
+
+      <div class="package-grid">
+        {packages.map((item) => {
+          const PackageIcon = item.icon;
+          return (
+            <article class="package-card">
+              <span class="package-icon" aria-hidden="true"><PackageIcon size={26} stroke-width={1.8} /></span>
+              <p class="file-type">{item.eyebrow}</p>
+              <h2>{item.title}</h2>
+              <p>{item.description}</p>
+              <a class="button" href={item.href} download>
+                <Download size={18} /> Download ZIP
+              </a>
+              <span class="file-size">{item.size}</span>
+            </article>
+          );
+        })}
+      </div>
+
+      <div class="next-step">
+        <MessageSquareText size={24} />
+        <div>
+          <h2>Install it in the matching workspace.</h2>
+          <p>Claude ZIPs upload under Customize and Skills. The Codex toolkit is extracted, opened as a folder, and installed from the ScaleSafe plugin marketplace.</p>
+        </div>
+        <a href="/downloads/">Read the setup guide <ArrowRight size={17} /></a>
+      </div>
+    </div>
+  </main>
+
+  <script is:inline>
+    if (window.self !== window.top) window.top.location.href = window.location.href;
+  </script>
+</BaseLayout>
+
+<style>
+  .access-page{min-height:calc(100vh - 80px);padding:96px 0;background:var(--mist)}.access-heading{max-width:850px;margin-bottom:46px}.access-heading h1{margin-bottom:20px;font-size:clamp(3rem,5vw,5rem)}.access-heading>p:last-child{max-width:700px;margin:0;color:var(--slate);font-size:1.1rem}
+  .package-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}.package-card{display:flex;min-width:0;flex-direction:column;padding:30px;border:1px solid var(--line);border-radius:var(--radius);background:var(--white);box-shadow:0 14px 36px rgba(7,25,45,.08)}.package-icon{display:grid;width:52px;height:52px;place-items:center;margin-bottom:26px;border-radius:6px;color:var(--white);background:var(--blue)}.file-type{margin:0 0 8px;color:var(--teal);font-size:.76rem;font-weight:800;text-transform:uppercase}.package-card h2{margin-bottom:14px;font-size:1.65rem}.package-card>p:not(.file-type){min-height:98px;color:var(--slate)}.package-card .button{width:100%;margin-top:auto}.file-size{display:block;margin-top:12px;color:var(--slate);font-size:.78rem;text-align:center}
+  .next-step{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:18px;align-items:center;margin-top:34px;padding:26px 28px;border-left:5px solid var(--mint);color:var(--white);background:var(--ink)}.next-step>svg{color:var(--mint)}.next-step h2{margin:0 0 5px;font-size:1.35rem}.next-step p{margin:0;color:#c6d5df}.next-step a{display:inline-flex;align-items:center;gap:7px;color:var(--mint);font-weight:800;white-space:nowrap}
+  @media(max-width:900px){.package-grid{grid-template-columns:1fr}.package-card>p:not(.file-type){min-height:0}.next-step{grid-template-columns:auto 1fr}.next-step a{grid-column:2}}
+  @media(max-width:560px){.access-page{padding:72px 0}.access-heading h1{font-size:2.8rem}.package-card{padding:25px 21px}.next-step{grid-template-columns:1fr;padding:24px 20px}.next-step a{grid-column:1;white-space:normal}}
+</style>
