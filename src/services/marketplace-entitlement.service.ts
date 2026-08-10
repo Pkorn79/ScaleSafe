@@ -4,10 +4,12 @@ import { MarketplaceEntitlementError, NotFoundError, ValidationError } from '../
 import { logger } from '../utils/logger';
 import { MerchantRecord, merchantRepository } from '../repositories/merchant.repository';
 
-export type MarketplacePlanKey = 'legacy' | 'standard' | 'wholepay' | 'unknown';
+export type MarketplacePlanKey = 'legacy' | 'test' | 'standard' | 'wholepay' | 'unknown';
 export type MarketplaceBillingStatus = 'unknown' | 'pending' | 'complete' | 'failed';
 export type EntitledProcessor = 'stripe' | 'nmi' | 'whop';
 
+const TEST_PLAN_ID = process.env.GHL_MARKETPLACE_TEST_PLAN_ID
+  || '6a79e1a07f2a3778d481f0ad';
 const STANDARD_PLAN_ID = process.env.GHL_MARKETPLACE_STANDARD_PLAN_ID
   || '6a5aaf8e77d47a4f4f207bcb';
 const WHOLEPAY_PLAN_ID = process.env.GHL_MARKETPLACE_WHOLEPAY_PLAN_ID
@@ -33,6 +35,7 @@ function normalizedPlanId(value: unknown): string {
 export function marketplacePlanKey(planId: unknown): MarketplacePlanKey {
   const normalized = normalizedPlanId(planId);
   if (!normalized) return 'unknown';
+  if (normalized === TEST_PLAN_ID) return 'test';
   if (normalized === STANDARD_PLAN_ID) return 'standard';
   if (normalized === WHOLEPAY_PLAN_ID) return 'wholepay';
   return 'unknown';
@@ -48,7 +51,7 @@ export function normalizeMarketplaceBillingStatus(value: unknown): MarketplaceBi
 
 function merchantPlanKey(merchant: Partial<MerchantRecord>): MarketplacePlanKey {
   const stored = String(merchant.marketplace_plan_key || '').toLowerCase();
-  if (stored === 'legacy' || stored === 'standard' || stored === 'wholepay' || stored === 'unknown') {
+  if (stored === 'legacy' || stored === 'test' || stored === 'standard' || stored === 'wholepay' || stored === 'unknown') {
     return stored;
   }
   return merchant.marketplace_plan_id ? marketplacePlanKey(merchant.marketplace_plan_id) : 'legacy';
@@ -75,7 +78,7 @@ export function marketplaceEntitlementForMerchant(
     wholepayApprovedAt: merchant.wholepay_approved_at || null,
   };
 
-  if (billingStatus === 'failed') {
+  if (billingStatus === 'failed' && planKey !== 'test') {
     return {
       ...base,
       planLabel: planKey === 'wholepay' ? 'WholePay Approved Merchant' : 'ScaleSafe Standard',
@@ -93,6 +96,17 @@ export function marketplaceEntitlementForMerchant(
       accessAllowed: true,
       accessState: 'active',
       message: 'This installation predates Marketplace billing and remains fully enabled.',
+      processors: { stripe: true, nmi: true, whop: true },
+    };
+  }
+
+  if (planKey === 'test') {
+    return {
+      ...base,
+      planLabel: 'ScaleSafe Test Access',
+      accessAllowed: true,
+      accessState: 'active',
+      message: 'Full ScaleSafe access is enabled for Marketplace review and approved beta testing.',
       processors: { stripe: true, nmi: true, whop: true },
     };
   }
@@ -268,6 +282,7 @@ export async function setWholepayApproval(input: {
 }
 
 export const marketplacePlanIds = {
+  test: TEST_PLAN_ID,
   standard: STANDARD_PLAN_ID,
   wholepay: WHOLEPAY_PLAN_ID,
 };

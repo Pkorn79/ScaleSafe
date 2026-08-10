@@ -3,7 +3,7 @@ import { toast } from './useToast';
 
 export interface MarketplaceEntitlement {
   planId: string | null;
-  planKey: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  planKey: 'legacy' | 'test' | 'standard' | 'wholepay' | 'unknown';
   planLabel: string;
   billingStatus: 'unknown' | 'pending' | 'complete' | 'failed';
   accessAllowed: boolean;

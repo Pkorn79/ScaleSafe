@@ -43,7 +43,7 @@ export interface MerchantRecord {
   installed_at: string;
   updated_at: string;
   marketplace_plan_id: string | null;
-  marketplace_plan_key: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  marketplace_plan_key: 'legacy' | 'test' | 'standard' | 'wholepay' | 'unknown';
   marketplace_billing_status: 'unknown' | 'pending' | 'complete' | 'failed';
   marketplace_plan_updated_at: string | null;
   marketplace_billing_updated_at: string | null;
@@ -70,7 +70,7 @@ interface OAuthInstallRecord {
   business_name?: string;
   config?: Record<string, unknown>;
   marketplace_plan_id?: string;
-  marketplace_plan_key?: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+  marketplace_plan_key?: 'legacy' | 'test' | 'standard' | 'wholepay' | 'unknown';
   marketplace_plan_updated_at?: string;
 }
 
@@ -166,7 +166,7 @@ export const merchantRepository = {
     support_email?: string;
     config?: Record<string, unknown>;
     marketplace_plan_id?: string;
-    marketplace_plan_key?: 'legacy' | 'standard' | 'wholepay' | 'unknown';
+    marketplace_plan_key?: 'legacy' | 'test' | 'standard' | 'wholepay' | 'unknown';
   }): Promise<MerchantRecord> {
     const insertData = this.encryptTokenUpdates(data);
     let { data: merchant, error } = await getSupabase()

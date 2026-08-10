@@ -47,10 +47,35 @@ describe('Marketplace entitlements', () => {
     expect(result.processors).toEqual({ stripe: true, nmi: true, whop: true });
   });
 
-  test('maps the two configured HighLevel plans exactly', () => {
+  test('maps the three configured HighLevel plans exactly', () => {
+    expect(marketplacePlanKey(marketplacePlanIds.test)).toBe('test');
     expect(marketplacePlanKey(marketplacePlanIds.standard)).toBe('standard');
     expect(marketplacePlanKey(marketplacePlanIds.wholepay)).toBe('wholepay');
     expect(marketplacePlanKey('unknown_plan')).toBe('unknown');
+  });
+
+  test('gives the free test plan full access for Marketplace review', () => {
+    const result = marketplaceEntitlementForMerchant(merchant({
+      marketplace_plan_id: marketplacePlanIds.test,
+      marketplace_plan_key: 'test',
+      marketplace_billing_status: 'complete',
+    }));
+    expect(result).toMatchObject({
+      planLabel: 'ScaleSafe Test Access',
+      accessAllowed: true,
+      accessState: 'active',
+      processors: { stripe: true, nmi: true, whop: true },
+    });
+  });
+
+  test('does not lock the no-cost test plan when no paid billing status exists', () => {
+    const result = marketplaceEntitlementForMerchant(merchant({
+      marketplace_plan_id: marketplacePlanIds.test,
+      marketplace_plan_key: 'test',
+      marketplace_billing_status: 'failed',
+    }));
+    expect(result.accessAllowed).toBe(true);
+    expect(result.accessState).toBe('active');
   });
 
   test('allows Stripe and Whop but not NMI on the standard plan', async () => {

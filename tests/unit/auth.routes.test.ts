@@ -165,6 +165,23 @@ describe('GET /auth/callback', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it('records the free test plan on a reviewer install', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue({
+      ...BASE_TOKEN_RESPONSE,
+      planId: '6a79e1a07f2a3778d481f0ad',
+    });
+    mockFindByLocationId.mockResolvedValue(null);
+
+    const res = await request(app).get('/auth/callback?code=test-code');
+
+    expect(res.status).toBe(200);
+    expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc-abc',
+      marketplace_plan_id: '6a79e1a07f2a3778d481f0ad',
+      marketplace_plan_key: 'test',
+    }));
+  });
+
   it('accepts valid signed state when GHL returns it', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
     mockFindByLocationId.mockResolvedValue(null);

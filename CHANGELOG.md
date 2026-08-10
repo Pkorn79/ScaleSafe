@@ -3,6 +3,14 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Marketplace test access (2026-08-10)
+
+### Added
+- A no-cost, full-featured Marketplace plan for HighLevel review and approved beta testing, with backend recognition of the exact HighLevel plan ID.
+
+### Security
+- Unknown plans still fail closed, paid-plan billing failures remain locked, and the test plan cannot be selected through an untrusted browser payload.
+
 ## Unreleased - Repository Master Index (2026-07-20)
 
 ### Added
