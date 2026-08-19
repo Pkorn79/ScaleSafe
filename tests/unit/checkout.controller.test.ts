@@ -66,7 +66,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: '', publishableKey: 'pk_test_xxx', clientId: '', webhookSecret: '' },
+    stripe: { secretKey: '', publishableKey: 'pk_test_xxx', clientId: '', webhookSecret: '', liveMode: false },
     appUrl: 'https://app.scalesafe.com',
     logLevel: 'silent',
     isDev: true,

@@ -58,7 +58,7 @@ jest.mock('../../src/services/recurring-payment.service', () => ({
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test', webhookSecret: 'whsec_global' },
+    stripe: { secretKey: 'sk_test', webhookSecret: 'whsec_global', liveMode: false },
     logLevel: 'silent',
   },
 }));
@@ -96,6 +96,7 @@ function tableMock(table: string) {
           location_id: 'loc_1',
           stripe_user_id: 'acct_1',
           stripe_webhook_secret_encrypted: 'enc:whsec_loc',
+          stripe_livemode: false,
         },
         error: null,
       }),
@@ -169,6 +170,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_1',
       type: 'unhandled.event',
       account: 'acct_1',
+      livemode: false,
       data: { object: { id: 'obj_1' } },
     });
   });
@@ -195,6 +197,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_charge',
       type: 'charge.succeeded',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: {
           id: 'ch_1',
@@ -236,6 +239,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_pi',
       type: 'payment_intent.succeeded',
       account: 'acct_1',
+      livemode: false,
       data: { object: { id: 'pi_2', latest_charge: 'ch_2', created: 1780000000, metadata: {} } },
     });
 
@@ -256,6 +260,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_1',
       type: 'unhandled.event',
       account: 'acct_other',
+      livemode: false,
       data: { object: { id: 'obj_1' } },
     });
 
@@ -272,6 +277,27 @@ describe('handleStripeWebhook', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Stripe account mismatch' });
   });
 
+  it('rejects a signed webhook from the wrong Stripe mode', async () => {
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_live',
+      type: 'unhandled.event',
+      account: 'acct_1',
+      livemode: true,
+      data: { object: { id: 'obj_1' } },
+    });
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+
+    await handleStripeWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Stripe webhook mode mismatch' });
+  });
+
   it('auto-PREPARES a defense packet on charge.dispute.created and never auto-submits', async () => {
     const { stripeDisputeService } = require('../../src/services/stripe-dispute.service');
     (stripeDisputeService.triageDispute as jest.Mock).mockResolvedValue({ score: 85 });
@@ -281,6 +307,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_2',
       type: 'charge.dispute.created',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: {
           id: 'dp_1',
@@ -325,6 +352,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_5',
       type: 'charge.dispute.created',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: {
           id: 'dp_ce3', charge: 'ch_5', payment_intent: 'pi_5', reason: 'fraudulent',
@@ -364,6 +392,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_6',
       type: 'charge.dispute.created',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: { id: 'dp_6', charge: 'ch_6', reason: 'general', status: 'needs_response', amount: 100, currency: 'usd' },
       },
@@ -390,6 +419,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_4',
       type: 'charge.dispute.created',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: { id: 'dp_3', charge: 'ch_3', reason: 'fraudulent', status: 'charge_refunded', amount: 2500, currency: 'usd' },
       },
@@ -417,6 +447,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_3',
       type: 'charge.dispute.created',
       account: 'acct_1',
+      livemode: false,
       data: {
         object: { id: 'dp_2', charge: 'ch_2', reason: 'general', status: 'needs_response', amount: 100, currency: 'usd' },
       },
@@ -440,6 +471,7 @@ describe('handleStripeWebhook', () => {
       id: 'evt_closed',
       type: 'charge.dispute.closed',
       account: 'acct_1',
+      livemode: false,
       data: { object: { id, charge: 'ch_9', reason: 'fraudulent', status, amount: 5000, currency: 'usd' } },
     };
   }

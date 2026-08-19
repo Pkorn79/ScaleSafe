@@ -23,6 +23,7 @@ import {
   marketplaceEntitlementForMerchant,
   marketplacePlanIds,
   marketplacePlanKey,
+  setTestAccessApproval,
   setWholepayApproval,
 } from '../../src/services/marketplace-entitlement.service';
 
@@ -32,6 +33,8 @@ function merchant(overrides: Record<string, any> = {}) {
     marketplace_plan_id: null,
     marketplace_plan_key: 'legacy',
     marketplace_billing_status: 'unknown',
+    test_access_approved_at: null,
+    test_access_revoked_at: null,
     wholepay_approved_at: null,
     wholepay_approval_revoked_at: null,
     ...overrides,
@@ -54,13 +57,26 @@ describe('Marketplace entitlements', () => {
     expect(marketplacePlanKey('unknown_plan')).toBe('unknown');
   });
 
-  test('gives the free test plan full access for Marketplace review', () => {
-    const result = marketplaceEntitlementForMerchant(merchant({
+  test('locks a new free test-plan install until HQ approves the exact location', () => {
+    const pending = marketplaceEntitlementForMerchant(merchant({
       marketplace_plan_id: marketplacePlanIds.test,
       marketplace_plan_key: 'test',
       marketplace_billing_status: 'complete',
     }));
-    expect(result).toMatchObject({
+    expect(pending).toMatchObject({
+      planLabel: 'ScaleSafe Test Access',
+      accessAllowed: false,
+      accessState: 'needs_test_access_approval',
+      processors: { stripe: false, nmi: false, whop: false },
+    });
+
+    const approved = marketplaceEntitlementForMerchant(merchant({
+      marketplace_plan_id: marketplacePlanIds.test,
+      marketplace_plan_key: 'test',
+      marketplace_billing_status: 'complete',
+      test_access_approved_at: '2026-08-18T12:00:00.000Z',
+    }));
+    expect(approved).toMatchObject({
       planLabel: 'ScaleSafe Test Access',
       accessAllowed: true,
       accessState: 'active',
@@ -73,6 +89,7 @@ describe('Marketplace entitlements', () => {
       marketplace_plan_id: marketplacePlanIds.test,
       marketplace_plan_key: 'test',
       marketplace_billing_status: 'failed',
+      test_access_approved_at: '2026-08-18T12:00:00.000Z',
     }));
     expect(result.accessAllowed).toBe(true);
     expect(result.accessState).toBe('active');
@@ -155,5 +172,48 @@ describe('Marketplace entitlements', () => {
       wholepay_merchant_reference: 'mid_123',
     }));
     expect(result.accessAllowed).toBe(true);
+  });
+
+  test('HQ test access approval is exact-plan, revocable, and location scoped', async () => {
+    mockGetByLocationId.mockResolvedValue(merchant({ marketplace_plan_key: 'standard' }));
+    await expect(setTestAccessApproval({
+      locationId: 'loc_1',
+      approved: true,
+      approvedBy: 'operator',
+    })).rejects.toThrow(/only for a merchant on the ScaleSafe Test Access plan/i);
+
+    const pending = merchant({
+      marketplace_plan_id: marketplacePlanIds.test,
+      marketplace_plan_key: 'test',
+    });
+    mockGetByLocationId.mockResolvedValue(pending);
+    mockUpdate.mockResolvedValue({
+      ...pending,
+      test_access_approved_at: '2026-08-18T12:00:00.000Z',
+      test_access_approved_by: 'operator',
+      test_access_note: 'promised beta seat',
+    });
+    const approved = await setTestAccessApproval({
+      locationId: 'loc_1',
+      approved: true,
+      approvedBy: 'operator',
+      note: 'promised beta seat',
+    });
+    expect(mockUpdate).toHaveBeenCalledWith('loc_1', expect.objectContaining({
+      test_access_approved_by: 'operator',
+      test_access_note: 'promised beta seat',
+      test_access_revoked_at: null,
+    }));
+    expect(approved.accessAllowed).toBe(true);
+
+    const revoked = marketplaceEntitlementForMerchant({
+      ...pending,
+      test_access_approved_at: '2026-08-18T12:00:00.000Z',
+      test_access_revoked_at: '2026-08-18T13:00:00.000Z',
+    });
+    expect(revoked).toMatchObject({
+      accessAllowed: false,
+      accessState: 'needs_test_access_approval',
+    });
   });
 });

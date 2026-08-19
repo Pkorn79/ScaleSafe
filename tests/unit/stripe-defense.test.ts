@@ -21,7 +21,7 @@ jest.mock('stripe', () => jest.fn(() => ({})));
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test', publishableKey: 'pk_test', clientId: '', webhookSecret: 'whsec_test' },
+    stripe: { secretKey: 'sk_test', publishableKey: 'pk_test', clientId: '', webhookSecret: 'whsec_test', liveMode: false },
     appUrl: 'https://app.scalesafe.com',
     logLevel: 'silent', isDev: true, nodeEnv: 'test',
   },

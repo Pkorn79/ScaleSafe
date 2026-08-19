@@ -40,6 +40,30 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-08-18: Stripe Live Cutover Guardrails + Gated Test Access (Codex)
+
+Summary:
+
+- Added migration 106 for exact-location approval of the no-cost Marketplace plan and persisted Stripe connection mode.
+- Added HQ controls to approve or revoke no-cost access without exposing a public code or browser-controlled bypass.
+- Added a required backend-only `STRIPE_LIVE_MODE` guard. Stripe OAuth, payment actions, disputes, refunds, evidence uploads, risk operations, and webhooks reject missing or mismatched connection modes.
+- Merchant settings use a generic `Reconnect Required` state for stale Stripe connections; there is no merchant-facing test/live selector or badge.
+- Audited Stripe's external configuration read-only. The live connected-account destination had 13 events and the sandbox destination had 14, while current ScaleSafe code requires 17. The live destination was missing `payment_intent.processing`, `payment_intent.payment_failed`, `setup_intent.succeeded`, `setup_intent.setup_failed`, and `charge.refunded`. The live OAuth redirect still used the retired Railway hostname. No external setting was changed during the audit.
+- Strengthened webhook registration coverage to assert the exact 17-event contract.
+
+Verification:
+
+- Full backend suite passed: 168 suites, 1,385 tests.
+- Stripe connection contract test passed: 13 tests.
+- `npm.cmd run typecheck`, UI production build, asset copy, and `git diff --check` passed.
+
+Deployment gate:
+
+- Migration 106 must be reviewed and applied before the new code deploys.
+- Deploy first with the existing Stripe test values and `STRIPE_LIVE_MODE=false`.
+- Before the live cutover, replace the live OAuth redirect with `https://dashboard.scalesafe.app/auth/stripe/callback` and align the live connected-account webhook destination to the 17-event code contract.
+- Switch the four Railway Stripe credentials and `STRIPE_LIVE_MODE=true` together. Existing sandbox connections must reconnect; never copy their account IDs or webhook secrets into live mode.
+
 ### 2026-05-13: Trigger Wiring Audit + Health Visibility (Codex)
 
 Files changed:

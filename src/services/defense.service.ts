@@ -16,6 +16,7 @@ import { AppError, ValidationError, ConflictError, ExternalServiceError } from '
 import { SS_CONTACT_FIELDS, WORKFLOW_DEFENSE_CONTACT_FIELDS } from '../constants/ghl-fields';
 import type { DefenseProcessor } from './defense-input-validation.service';
 import { evaluateDefenseDraftClaims } from './defense-claim-guard.service';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 // Reason-code → network/category/deadline resolution lives in the registry.
 // An unknown code maps to the 'general' category (generic evidence presentation)
@@ -1327,9 +1328,8 @@ FORMATTING:
     }
 
     const merchant = await merchantRepository.getByLocationId(packet.location_id);
-    if (!(merchant as any)?.stripe_user_id) {
-      throw new ValidationError('No connected Stripe account for this merchant.');
-    }
+    const stripeConnection = await requireActiveStripeConnection(merchant.id, packet.location_id);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     // Baseline: vault-assembled evidence for this dispute (non-fatal if unavailable)
     let evidence: Record<string, any> = {};
@@ -1389,7 +1389,7 @@ FORMATTING:
           pdfAttachError = `Packet PDF is ${(buffer.length / 1024 / 1024).toFixed(1)}MB — over Stripe's ~4.5MB evidence limit; submitted without the PDF attachment. Reduce the exhibit count and rebundle.`;
         } else {
           const fileId = await stripeDisputeService.uploadDefensePacketFile({
-            merchantStripeAccountId: (merchant as any).stripe_user_id,
+            merchantStripeAccountId: stripeAccountId,
             buffer,
             filename: `scalesafe-defense-packet-${packet.id}.pdf`,
           });

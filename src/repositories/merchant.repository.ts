@@ -47,6 +47,10 @@ export interface MerchantRecord {
   marketplace_billing_status: 'unknown' | 'pending' | 'complete' | 'failed';
   marketplace_plan_updated_at: string | null;
   marketplace_billing_updated_at: string | null;
+  test_access_approved_at: string | null;
+  test_access_approved_by: string | null;
+  test_access_revoked_at: string | null;
+  test_access_note: string | null;
   wholepay_approved_at: string | null;
   wholepay_approved_by: string | null;
   wholepay_approval_revoked_at: string | null;

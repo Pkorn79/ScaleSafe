@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 import { EvidenceScoreInput } from '../types/stripe-defense.types';
 import { logger } from '../utils/logger';
 
@@ -283,6 +284,8 @@ export const stripeEvidenceVaultService = {
     pricing: { type: string; amount: number; installments?: number };
   }): Promise<string | null> {
     if (!params.stripeUserId) return null;
+    const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     const pdfBuffer = await this.generateOfferTermsPdf(params);
     const stripe = new Stripe(config.stripe.secretKey);
@@ -290,7 +293,7 @@ export const stripeEvidenceVaultService = {
     const file = await stripe.files.create({
       purpose: 'dispute_evidence',
       file: { data: pdfBuffer, name: `offer_terms_${params.offerId}.pdf`, type: 'application/pdf' },
-    }, { stripeAccount: params.stripeUserId });
+    }, { stripeAccount: stripeAccountId });
 
     await getSupabase()
       .from('offers_mirror')
@@ -325,6 +328,8 @@ export const stripeEvidenceVaultService = {
     fileName: string;
   }): Promise<string | null> {
     if (!params.stripeUserId) return null;
+    const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
     if (!stripeCustomerId) {
@@ -336,7 +341,7 @@ export const stripeEvidenceVaultService = {
     const file = await stripe.files.create({
       purpose: 'dispute_evidence',
       file: { data: params.fileBuffer, name: params.fileName, type: 'application/pdf' },
-    }, { stripeAccount: params.stripeUserId });
+    }, { stripeAccount: stripeAccountId });
 
     const { data: updated, error } = await getSupabase()
       .from('stripe_evidence_vault')
@@ -363,6 +368,8 @@ export const stripeEvidenceVaultService = {
     durationMinutes?: number;
   }): Promise<string | null> {
     if (!params.stripeUserId) return null;
+    const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     const pdfBuffer = await this.generateSessionLogPdf(params);
     const stripe = new Stripe(config.stripe.secretKey);
@@ -370,7 +377,7 @@ export const stripeEvidenceVaultService = {
     const file = await stripe.files.create({
       purpose: 'dispute_evidence',
       file: { data: pdfBuffer, name: `session_log_${params.sessionDate}.pdf`, type: 'application/pdf' },
-    }, { stripeAccount: params.stripeUserId });
+    }, { stripeAccount: stripeAccountId });
 
     const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
     if (!stripeCustomerId) {
@@ -398,6 +405,8 @@ export const stripeEvidenceVaultService = {
     messages: Array<{ date: string; from: string; to: string; content: string }>;
   }): Promise<string | null> {
     if (!params.stripeUserId) return null;
+    const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     const pdfBuffer = await this.generateCommunicationPdf(params);
     const stripe = new Stripe(config.stripe.secretKey);
@@ -405,7 +414,7 @@ export const stripeEvidenceVaultService = {
     const file = await stripe.files.create({
       purpose: 'dispute_evidence',
       file: { data: pdfBuffer, name: `communication_trail_${params.clientContactId}.pdf`, type: 'application/pdf' },
-    }, { stripeAccount: params.stripeUserId });
+    }, { stripeAccount: stripeAccountId });
 
     const stripeCustomerId = await this.resolveStripeCustomerId(params.merchantId, params.clientContactId);
     if (!stripeCustomerId) {

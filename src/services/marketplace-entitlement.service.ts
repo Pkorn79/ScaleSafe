@@ -21,8 +21,10 @@ export interface MarketplaceEntitlement {
   planLabel: string;
   billingStatus: MarketplaceBillingStatus;
   accessAllowed: boolean;
-  accessState: 'active' | 'needs_wholepay_approval' | 'payment_failed' | 'unknown_plan';
+  accessState: 'active' | 'needs_test_access_approval' | 'needs_wholepay_approval' | 'payment_failed' | 'unknown_plan';
   message: string;
+  testAccessApproved: boolean;
+  testAccessApprovedAt: string | null;
   wholepayApproved: boolean;
   wholepayApprovedAt: string | null;
   processors: Record<EntitledProcessor, boolean>;
@@ -64,16 +66,26 @@ function wholepayApprovalIsActive(merchant: Partial<MerchantRecord>): boolean {
     > new Date(merchant.wholepay_approval_revoked_at).getTime();
 }
 
+function testAccessApprovalIsActive(merchant: Partial<MerchantRecord>): boolean {
+  if (!merchant.test_access_approved_at) return false;
+  if (!merchant.test_access_revoked_at) return true;
+  return new Date(merchant.test_access_approved_at).getTime()
+    > new Date(merchant.test_access_revoked_at).getTime();
+}
+
 export function marketplaceEntitlementForMerchant(
   merchant: Partial<MerchantRecord>,
 ): MarketplaceEntitlement {
   const planKey = merchantPlanKey(merchant);
   const billingStatus = normalizeMarketplaceBillingStatus(merchant.marketplace_billing_status);
+  const testAccessApproved = testAccessApprovalIsActive(merchant);
   const wholepayApproved = wholepayApprovalIsActive(merchant);
   const base = {
     planId: merchant.marketplace_plan_id || null,
     planKey,
     billingStatus,
+    testAccessApproved,
+    testAccessApprovedAt: merchant.test_access_approved_at || null,
     wholepayApproved,
     wholepayApprovedAt: merchant.wholepay_approved_at || null,
   };
@@ -100,7 +112,7 @@ export function marketplaceEntitlementForMerchant(
     };
   }
 
-  if (planKey === 'test') {
+  if (planKey === 'test' && testAccessApproved) {
     return {
       ...base,
       planLabel: 'ScaleSafe Test Access',
@@ -108,6 +120,17 @@ export function marketplaceEntitlementForMerchant(
       accessState: 'active',
       message: 'Full ScaleSafe access is enabled for Marketplace review and approved beta testing.',
       processors: { stripe: true, nmi: true, whop: true },
+    };
+  }
+
+  if (planKey === 'test') {
+    return {
+      ...base,
+      planLabel: 'ScaleSafe Test Access',
+      accessAllowed: false,
+      accessState: 'needs_test_access_approval',
+      message: 'This no-cost installation must be approved for this exact sub-account by ScaleSafe HQ.',
+      processors: { stripe: false, nmi: false, whop: false },
     };
   }
 
@@ -277,6 +300,28 @@ export async function setWholepayApproval(input: {
     wholepay_merchant_reference: String(input.merchantReference || '').trim() || merchant.wholepay_merchant_reference || null,
   } : {
     wholepay_approval_revoked_at: now,
+  });
+  return marketplaceEntitlementForMerchant(updated);
+}
+
+export async function setTestAccessApproval(input: {
+  locationId: string;
+  approved: boolean;
+  approvedBy: string;
+  note?: string;
+}): Promise<MarketplaceEntitlement> {
+  const merchant = await merchantRepository.getByLocationId(input.locationId);
+  if (merchantPlanKey(merchant) !== 'test') {
+    throw new ValidationError('Test access can be changed only for a merchant on the ScaleSafe Test Access plan.');
+  }
+  const now = new Date().toISOString();
+  const updated = await merchantRepository.update(input.locationId, input.approved ? {
+    test_access_approved_at: now,
+    test_access_approved_by: input.approvedBy,
+    test_access_revoked_at: null,
+    test_access_note: String(input.note || '').trim() || merchant.test_access_note || null,
+  } : {
+    test_access_revoked_at: now,
   });
   return marketplaceEntitlementForMerchant(updated);
 }

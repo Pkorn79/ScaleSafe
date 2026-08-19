@@ -95,7 +95,7 @@ jest.mock('stripe', () => {
 // Mock config
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test_fake', publishableKey: 'pk_test_fake', webhookSecret: 'whsec_fake', clientId: '' },
+    stripe: { secretKey: 'sk_test_fake', publishableKey: 'pk_test_fake', webhookSecret: 'whsec_fake', clientId: '', liveMode: false },
     appUrl: 'http://localhost:3000',
     processorEncryptionKey: 'a'.repeat(64),
     logLevel: 'silent',
@@ -329,6 +329,7 @@ describe('Payment Flow Integration', () => {
           is_active: true,
           is_default: true,
           stripe_user_id: 'acct_test',
+          stripe_livemode: false,
         },
       ];
 
@@ -339,6 +340,27 @@ describe('Payment Flow Integration', () => {
       );
 
       expect(processorType).toBe('stripe');
+    });
+
+    it('rejects a Stripe config saved in the wrong platform mode', async () => {
+      mockSupabaseData['merchants'] = [
+        { id: 'merchant_1', default_processor: 'stripe' },
+      ];
+      mockSupabaseData['processor_configs'] = [
+        {
+          id: 'config_stripe_live',
+          merchant_id: 'merchant_1',
+          location_id: 'loc_1',
+          processor_type: 'stripe',
+          is_active: true,
+          is_default: true,
+          stripe_user_id: 'acct_live',
+          stripe_livemode: true,
+        },
+      ];
+
+      await expect(resolveProcessor('merchant_1', 'loc_1'))
+        .rejects.toMatchObject({ code: 'STRIPE_CONNECTION_MODE_MISMATCH' });
     });
 
     it('should fall back to merchant default when offer has no override', async () => {

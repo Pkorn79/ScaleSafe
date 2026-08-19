@@ -245,11 +245,17 @@
       <div class="card">
         <div class="flex-between mb-4">
           <h3 class="section-title" style="margin-bottom:0">Stripe</h3>
-          <span v-if="stripeConnected" class="badge badge-green">Connected</span>
-          <span v-else class="badge badge-gray">Not Connected</span>
+          <div class="flex gap-2">
+            <span v-if="stripeConnected" class="badge badge-green">Connected</span>
+            <span v-else-if="stripeAccountId && !stripeModeMatches" class="badge badge-red">Reconnect Required</span>
+            <span v-else class="badge badge-gray">Not Connected</span>
+          </div>
         </div>
 
         <div v-if="!stripeConnected">
+          <p v-if="stripeAccountId && !stripeModeMatches" class="text-sm mb-4" style="color:#b91c1c">
+            This saved Stripe connection is no longer valid for payments. Reconnect Stripe before accepting payments.
+          </p>
           <p class="text-sm text-muted mb-4">Connect your existing Stripe account to enable payment processing and dispute defense.</p>
           <p class="text-sm mb-4" style="color: var(--ss-primary-700)">Connecting Stripe gives you instant access to your risk profile and defense tools.</p>
           <div class="stripe-ach-setup mb-4">
@@ -450,6 +456,7 @@ const nmiConnected = ref(false);
 const stripeConnected = ref(false);
 const defaultProcessor = ref('');
 const stripeAccountId = ref('');
+const stripeModeMatches = ref(false);
 const nmiProcessorId = ref('');
 const nmiConfigs = ref<Array<{
   id: string;
@@ -537,6 +544,7 @@ async function loadProcessorStatus() {
     const data = await api.get<any>('/api/merchants/config');
     stripeConnected.value = data.stripeConnected || false;
     stripeAccountId.value = data.stripeUserId || '';
+    stripeModeMatches.value = !!data.stripeModeMatches;
     nmiConnected.value = data.nmiConnected || false;
     nmiProcessorId.value = data.nmiProcessorId || '';
     nmiConfigs.value = Array.isArray(data.nmiConfigs)
@@ -938,6 +946,8 @@ async function disconnectStripe() {
   try {
     await api.post('/api/stripe/disconnect');
     stripeConnected.value = false;
+    stripeAccountId.value = '';
+    stripeModeMatches.value = false;
     riskAudit.value = null;
   } catch (err: any) {
     loadError.value = err.message || 'Failed to disconnect Stripe';

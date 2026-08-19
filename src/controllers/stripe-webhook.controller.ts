@@ -8,6 +8,10 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { decrypt } from '../services/processor-config.service';
 import { stripeAchService } from '../services/stripe-ach.service';
+import {
+  assertStripeProcessorConfigMode,
+  expectedStripeLiveMode,
+} from '../services/stripe-connection-mode.service';
 
 const Stripe = require('stripe');
 
@@ -21,6 +25,7 @@ type StripeProcessorConfig = {
   location_id: string;
   stripe_user_id: string | null;
   stripe_webhook_secret_encrypted: string | null;
+  stripe_livemode: boolean | null;
 };
 
 async function resolveStripeWebhookConfig(req: Request): Promise<{
@@ -40,7 +45,7 @@ async function resolveStripeWebhookConfig(req: Request): Promise<{
 
   const { data, error } = await getSupabase()
     .from('processor_configs')
-    .select('id, merchant_id, location_id, stripe_user_id, stripe_webhook_secret_encrypted')
+    .select('id, merchant_id, location_id, stripe_user_id, stripe_webhook_secret_encrypted, stripe_livemode')
     .eq('location_id', locationId)
     .eq('processor_type', 'stripe')
     .eq('is_active', true)
@@ -53,6 +58,12 @@ async function resolveStripeWebhookConfig(req: Request): Promise<{
 
   if (!data) {
     return { secret: null, processorConfig: null, error: 'Stripe webhook config not found' };
+  }
+
+  try {
+    assertStripeProcessorConfigMode(data);
+  } catch (err: any) {
+    return { secret: null, processorConfig: data, error: err.message || 'Stripe connection mode mismatch' };
   }
 
   if (!data.stripe_webhook_secret_encrypted) {
@@ -99,6 +110,12 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   } catch (err: any) {
     logger.error({ err: err.message }, 'Webhook signature verification failed');
     res.status(400).json({ error: 'Webhook signature verification failed' });
+    return;
+  }
+
+  if (typeof event.livemode !== 'boolean' || event.livemode !== expectedStripeLiveMode()) {
+    logger.warn({ eventLivemode: event.livemode }, 'Stripe webhook mode mismatch');
+    res.status(400).json({ error: 'Stripe webhook mode mismatch' });
     return;
   }
 

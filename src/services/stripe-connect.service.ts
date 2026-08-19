@@ -6,6 +6,7 @@ import { config } from '../config';
 import { ProcessorError } from '../errors/processor.error';
 import { logger } from '../utils/logger';
 import { encrypt } from './processor-config.service';
+import { expectedStripeLiveMode } from './stripe-connection-mode.service';
 
 const WEBHOOK_EVENTS: string[] = [
   // Dispute lifecycle
@@ -66,6 +67,14 @@ export const stripeConnectService = {
    * Merchant clicks this to start the OAuth flow.
    */
   generateAuthUrl(locationId: string, merchantEmail?: string): string {
+    expectedStripeLiveMode();
+    if (!config.stripe.secretKey || !config.stripe.clientId) {
+      throw new ProcessorError(
+        'Stripe Connect is not fully configured. Contact ScaleSafe support.',
+        'stripe',
+        'STRIPE_CONNECT_NOT_CONFIGURED',
+      );
+    }
     const state = generateSignedState(locationId);
     const params = new URLSearchParams({
       client_id: config.stripe.clientId,
@@ -149,15 +158,25 @@ export const stripeConnectService = {
       );
     }
 
+    const livemode = response.livemode ?? false;
+    const expectedLivemode = expectedStripeLiveMode();
+    if (livemode !== expectedLivemode) {
+      throw new ProcessorError(
+        `Stripe returned a ${livemode ? 'live' : 'test'} connection while ScaleSafe is running in ${expectedLivemode ? 'live' : 'test'} mode. Start the connection again from ScaleSafe.`,
+        'stripe',
+        'OAUTH_MODE_MISMATCH',
+      );
+    }
+
     logger.info(
-      { locationId: state, stripeUserId: response.stripe_user_id },
+      { locationId: state, stripeUserId: response.stripe_user_id, livemode },
       'Stripe Connect OAuth completed',
     );
 
     return {
       stripeUserId: response.stripe_user_id,
       scope: response.scope || 'read_write',
-      livemode: response.livemode ?? false,
+      livemode,
     };
   },
 
@@ -199,6 +218,7 @@ export const stripeConnectService = {
     merchantId: string,
     locationId: string,
     stripeUserId: string,
+    livemode: boolean,
     webhookEndpointId?: string,
     webhookSigningSecret?: string,
   ): Promise<void> {
@@ -216,6 +236,7 @@ export const stripeConnectService = {
       const updates: Record<string, any> = {
         location_id: locationId,
         stripe_user_id: stripeUserId,
+        stripe_livemode: livemode,
         stripe_webhook_endpoint_id: webhookEndpointId || null,
         is_active: true,
         is_default: true,
@@ -247,6 +268,7 @@ export const stripeConnectService = {
           processor_type: 'stripe',
           label: 'Stripe Connect',
           stripe_user_id: stripeUserId,
+          stripe_livemode: livemode,
           stripe_webhook_endpoint_id: webhookEndpointId || null,
           stripe_webhook_secret_encrypted: webhookSigningSecret ? encrypt(webhookSigningSecret) : null,
           is_active: true,

@@ -27,7 +27,7 @@ jest.mock('stripe', () => jest.fn(() => ({
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test', publishableKey: 'pk_test', clientId: '', webhookSecret: 'whsec_test' },
+    stripe: { secretKey: 'sk_test', publishableKey: 'pk_test', clientId: '', webhookSecret: 'whsec_test', liveMode: false },
     appUrl: 'https://app.scalesafe.com',
     logLevel: 'silent', isDev: true, nodeEnv: 'test',
   },
@@ -35,6 +35,11 @@ jest.mock('../../src/config', () => ({
 
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+const mockRequireActiveStripeConnection = jest.fn();
+jest.mock('../../src/services/stripe-connection-mode.service', () => ({
+  requireActiveStripeConnection: (...args: any[]) => mockRequireActiveStripeConnection(...args),
 }));
 
 // ─── Imports ────────────────────────────────────────────────────────
@@ -91,6 +96,10 @@ function makeDispute(overrides: Record<string, any> = {}): any {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockRequireActiveStripeConnection.mockResolvedValue({
+    stripe_user_id: 'acct_test123',
+    stripe_livemode: false,
+  });
   // Default mock: from() returns chainable update
   mockFrom.mockReturnValue({
     update: jest.fn().mockReturnValue({
@@ -526,31 +535,16 @@ describe('Dispute Triage Service', () => {
     });
 
     it('throws when merchant has no Stripe account', async () => {
-      mockFrom.mockImplementation((table: string) => {
-        if (table === 'merchants') {
-          return {
-            select: jest.fn().mockReturnValue({
-              eq: jest.fn().mockReturnValue({
-                single: jest.fn().mockResolvedValue({ data: { stripe_user_id: null } }),
-              }),
-            }),
-          };
-        }
-        return {
-          update: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              eq: jest.fn().mockResolvedValue({ error: null }),
-            }),
-          }),
-        };
-      });
+      mockRequireActiveStripeConnection.mockRejectedValueOnce(
+        new Error('No active Stripe connection was found for this merchant.'),
+      );
 
       await expect(stripeDisputeService.submitEvidence({
         stripeDisputeId: 'dp_test',
         merchantId: 'merchant-1',
         evidence: {},
         autoSubmit: true,
-      })).rejects.toThrow('Merchant has no Stripe account connected');
+      })).rejects.toThrow('No active Stripe connection');
     });
   });
 });

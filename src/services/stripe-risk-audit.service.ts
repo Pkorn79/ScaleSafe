@@ -2,6 +2,7 @@ import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
 import type { ModuleRecommendation, RiskAuditResult } from '../types/stripe-defense.types';
 import { logger } from '../utils/logger';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 const Stripe = require('stripe');
 
@@ -58,19 +59,9 @@ export const stripeRiskAuditService = {
   async runAudit(merchantId: string): Promise<RiskAuditResult> {
     const supabase = getSupabase();
 
-    // Get merchant's stripe_user_id
-    const { data: merchant } = await supabase
-      .from('merchants')
-      .select('stripe_user_id')
-      .eq('id', merchantId)
-      .single();
-
-    if (!merchant?.stripe_user_id) {
-      throw new Error('Merchant has no Stripe account connected');
-    }
-
+    const stripeConnection = await requireActiveStripeConnection(merchantId);
     const stripe = new Stripe(config.stripe.secretKey);
-    const stripeAccount = merchant.stripe_user_id;
+    const stripeAccount = stripeConnection.stripe_user_id as string;
     const ninetyDaysAgo = Math.floor(Date.now() / 1000) - (90 * 24 * 60 * 60);
     const now = new Date();
 

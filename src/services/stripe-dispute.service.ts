@@ -8,6 +8,7 @@ import {
   EvidencePacket,
 } from '../types/stripe-defense.types';
 import { logger } from '../utils/logger';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 const Stripe = require('stripe');
 
@@ -500,16 +501,8 @@ export const stripeDisputeService = {
   }): Promise<{ success: boolean; staged: boolean }> {
     const supabase = getSupabase();
 
-    // Get merchant's Stripe account
-    const { data: merchant } = await supabase
-      .from('merchants')
-      .select('stripe_user_id')
-      .eq('id', params.merchantId)
-      .single();
-
-    if (!merchant?.stripe_user_id) {
-      throw new Error('Merchant has no Stripe account connected');
-    }
+    const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+    const stripeAccountId = stripeConnection.stripe_user_id as string;
 
     const stripe = getStripe();
     await stripe.disputes.update(
@@ -519,7 +512,7 @@ export const stripeDisputeService = {
         submit: params.autoSubmit,
       },
       {
-        stripeAccount: merchant.stripe_user_id,
+        stripeAccount: stripeAccountId,
         ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
       },
     );

@@ -39,7 +39,7 @@ jest.mock('../../src/config', () => ({
   config: {
     ghl: { clientId: '', clientSecret: '', ssoKey: '', apiDomain: '' },
     supabase: { url: 'http://localhost', serviceKey: 'test' },
-    stripe: { secretKey: '', publishableKey: '', clientId: '', webhookSecret: '' },
+    stripe: { secretKey: '', publishableKey: '', clientId: '', webhookSecret: '', liveMode: false },
     appUrl: 'http://localhost:3000',
     logLevel: 'silent',
     isDev: true,

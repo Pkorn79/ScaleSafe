@@ -35,6 +35,7 @@ const connectionMessage = computed(() => {
 });
 
 const entitlementTitle = computed(() => {
+  if (ssoSession.entitlement.accessState === 'needs_test_access_approval') return 'Test Access Approval Needed';
   if (ssoSession.entitlement.accessState === 'needs_wholepay_approval') return 'WholePay Approval Needed';
   if (ssoSession.entitlement.accessState === 'payment_failed') return 'Marketplace Billing Needs Attention';
   return 'Marketplace Plan Needs Attention';
@@ -119,6 +120,12 @@ const entitlementTitle = computed(() => {
           The $59 WholePay plan is reserved for merchants with an active NMI merchant
           account established through WholePay. ScaleSafe HQ will enable the account
           after the merchant account is verified.
+        </p>
+      </div>
+      <div v-else-if="ssoSession.entitlement.accessState === 'needs_test_access_approval'" class="text-left bg-slate-50 rounded-lg p-4 mb-5 text-sm text-slate-700">
+        <p>
+          Free access is granted only to approved Marketplace reviewers, beta users,
+          and invited accounts. Approval is tied to this exact GHL sub-account.
         </p>
       </div>
       <p class="text-xs text-slate-400">

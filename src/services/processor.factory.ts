@@ -5,6 +5,7 @@ import { ProcessorInterface } from '../interfaces/processor.interface';
 import { ProcessorType, ProcessorConfig } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
 import { processorConfigService } from './processor-config.service';
+import { assertStripeProcessorConfigMode } from './stripe-connection-mode.service';
 
 interface OfferProcessorHint {
   processor_override: ProcessorType | null;
@@ -76,6 +77,9 @@ export async function resolveProcessor(
 
     if (activeConfigs.length === 1) {
       const onlyConfig = activeConfigs[0] as ProcessorConfig;
+      if (onlyConfig.processor_type === 'stripe') {
+        assertStripeProcessorConfigMode(onlyConfig);
+      }
       return { processorType: onlyConfig.processor_type, config: onlyConfig };
     }
 
@@ -122,6 +126,10 @@ export async function resolveProcessor(
     );
   }
 
+  if (targetType === 'stripe') {
+    assertStripeProcessorConfigMode(configRow as ProcessorConfig);
+  }
+
   return { processorType: targetType, config: configRow as ProcessorConfig };
 }
 
@@ -140,6 +148,7 @@ export function createProcessorClient(config: ProcessorConfig): ProcessorInterfa
     }
 
     case 'stripe': {
+      assertStripeProcessorConfigMode(config);
       if (!config.stripe_user_id) {
         throw new ProcessorError(
           'Stripe config missing stripe_user_id',

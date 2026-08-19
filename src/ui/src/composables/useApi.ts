@@ -7,8 +7,10 @@ export interface MarketplaceEntitlement {
   planLabel: string;
   billingStatus: 'unknown' | 'pending' | 'complete' | 'failed';
   accessAllowed: boolean;
-  accessState: 'active' | 'needs_wholepay_approval' | 'payment_failed' | 'unknown_plan';
+  accessState: 'active' | 'needs_test_access_approval' | 'needs_wholepay_approval' | 'payment_failed' | 'unknown_plan';
   message: string;
+  testAccessApproved: boolean;
+  testAccessApprovedAt: string | null;
   wholepayApproved: boolean;
   wholepayApprovedAt: string | null;
   processors: { stripe: boolean; nmi: boolean; whop: boolean };
@@ -69,6 +71,8 @@ const ssoSession = reactive<SsoSession>({
     accessAllowed: true,
     accessState: 'active',
     message: '',
+    testAccessApproved: false,
+    testAccessApprovedAt: null,
     wholepayApproved: false,
     wholepayApprovedAt: null,
     processors: { stripe: true, nmi: true, whop: true },

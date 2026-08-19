@@ -3,6 +3,7 @@ import { config } from '../config';
 import { stripeEvidenceVaultService } from './stripe-evidence-vault.service';
 import { EfwRecommendation } from '../types/stripe-defense.types';
 import { logger } from '../utils/logger';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 const Stripe = require('stripe');
 
@@ -136,19 +137,12 @@ export const stripeEfwService = {
     if (!efwEvent) throw new Error('EFW not found');
 
     if (params.action === 'refund' && efwEvent.stripe_charge_id) {
-      const { data: merchant } = await supabase
-        .from('merchants')
-        .select('stripe_user_id')
-        .eq('id', params.merchantId)
-        .single();
-
-      if (merchant?.stripe_user_id) {
-        const stripe = getStripe();
-        await stripe.refunds.create(
-          { charge: efwEvent.stripe_charge_id },
-          { stripeAccount: merchant.stripe_user_id },
-        );
-      }
+      const stripeConnection = await requireActiveStripeConnection(params.merchantId);
+      const stripe = getStripe();
+      await stripe.refunds.create(
+        { charge: efwEvent.stripe_charge_id },
+        { stripeAccount: stripeConnection.stripe_user_id as string },
+      );
     }
 
     await supabase

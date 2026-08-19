@@ -10,6 +10,7 @@ const Stripe = require('stripe');
 import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { DescriptorAnalysis } from '../types/stripe-defense.types';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 let _stripe: any = null;
 function getStripe() {
@@ -78,12 +79,20 @@ export class StripeDescriptorService {
       .eq('location_id', locationId)
       .single();
 
-    if (!merchant?.stripe_user_id) {
+    if (!merchant) {
       return { score: 0, currentPrefix: '', recommendation: 'Connect Stripe to analyze descriptors' };
     }
 
+    let stripeAccountId: string;
     try {
-      const account = await getStripe().accounts.retrieve(merchant.stripe_user_id);
+      const connection = await requireActiveStripeConnection(merchantId, locationId);
+      stripeAccountId = connection.stripe_user_id as string;
+    } catch {
+      return { score: 0, currentPrefix: '', recommendation: 'Reconnect Stripe to analyze descriptors' };
+    }
+
+    try {
+      const account = await getStripe().accounts.retrieve(stripeAccountId);
 
       const descriptor = account.settings?.payments?.statement_descriptor || '';
       const descriptorShort = account.settings?.payments?.statement_descriptor_prefix || '';

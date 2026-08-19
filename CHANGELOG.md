@@ -3,6 +3,20 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Stripe live cutover and gated test access (2026-08-18)
+
+### Added
+- Exact-location ScaleSafe HQ approval and revocation for the no-cost Marketplace plan.
+- Explicit Stripe platform mode configuration and per-connection mode storage.
+
+### Security
+- Stripe OAuth, checkout, webhooks, refunds, disputes, evidence uploads, and risk operations now fail closed when a saved connection does not match the platform's configured mode.
+- New Stripe OAuth connections persist their authorization mode, and webhook events must match both the trusted connected account and the configured platform mode.
+
+### Changed
+- Stale Stripe connections are shown as requiring reconnection without exposing a merchant-facing test/live selector.
+- Automated connected-account webhook registration is regression-locked to the complete 17-event ScaleSafe event contract.
+
 ## Unreleased - Marketplace test access (2026-08-10)
 
 ### Added

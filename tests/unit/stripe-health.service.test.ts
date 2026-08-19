@@ -28,6 +28,13 @@ jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+jest.mock('../../src/services/stripe-connection-mode.service', () => ({
+  requireActiveStripeConnection: jest.fn().mockResolvedValue({
+    stripe_user_id: 'acct_123',
+    stripe_livemode: false,
+  }),
+}));
+
 import { StripeHealthService } from '../../src/services/stripe-health.service';
 
 function tableQuery(table: string) {

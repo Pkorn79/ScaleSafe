@@ -166,6 +166,14 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
   },
 }));
 
+const mockRequireActiveStripeConnection = jest.fn().mockResolvedValue({
+  stripe_user_id: 'acct_1',
+  stripe_livemode: false,
+});
+jest.mock('../../src/services/stripe-connection-mode.service', () => ({
+  requireActiveStripeConnection: (...args: any[]) => mockRequireActiveStripeConnection(...args),
+}));
+
 jest.mock('../../src/services/payment.service', () => ({
   paymentService: {
     getUndisputedPayments: jest.fn().mockResolvedValue([

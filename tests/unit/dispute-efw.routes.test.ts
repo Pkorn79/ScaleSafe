@@ -80,7 +80,7 @@ jest.mock('stripe', () => jest.fn(() => ({
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test' },
+    stripe: { secretKey: 'sk_test', liveMode: false },
   },
 }));
 

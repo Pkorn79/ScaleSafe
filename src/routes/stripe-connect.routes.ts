@@ -121,6 +121,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
         merchant.id,
         locationId,
         result.stripeUserId,
+        result.livemode,
         webhookEndpointId,
         webhookSigningSecret,
       );
@@ -131,7 +132,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     }
 
     logger.info(
-      { locationId, stripeUserId: result.stripeUserId },
+      { locationId, stripeUserId: result.stripeUserId, livemode: result.livemode },
       'Stripe Connect fully provisioned',
     );
 

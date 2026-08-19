@@ -16,6 +16,7 @@ import {
   getPulseCadenceDiagnostics,
   PulseCadenceDiagnosticReport,
 } from '../jobs/pulse-cadence-check';
+import { expectedStripeLiveMode, stripeConnectionModeMatches } from './stripe-connection-mode.service';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -44,6 +45,9 @@ export interface MerchantFullConfig {
 
   stripeConnected: boolean;
   stripeUserId: string;
+  stripeLivemode: boolean | null;
+  stripeModeMatches: boolean;
+  stripeExpectedLivemode: boolean | null;
 
   nmiConnected: boolean;
   nmiProcessorId: string;
@@ -987,6 +991,11 @@ export const merchantService = {
     let nmiConnected = false;
     let nmiProcessorId = '';
     let nmiConfigs: Array<{ id: string; label: string; nmiProcessorId: string; isDefault: boolean }> = [];
+    let stripeConnected = false;
+    let stripeUserId = merchant.stripe_user_id || '';
+    let stripeLivemode: boolean | null = null;
+    let stripeModeMatches = false;
+    let stripeExpectedLivemode: boolean | null = null;
     try {
       const supabase = getSupabase();
       const { data: nmiCfgs } = await supabase
@@ -1008,8 +1017,25 @@ export const merchantService = {
         nmiConnected = true;
         nmiProcessorId = (defaultNmi as any).nmi_processor_id || '';
       }
+
+      const { data: stripeCfg } = await supabase
+        .from('processor_configs')
+        .select('stripe_user_id, stripe_livemode')
+        .eq('merchant_id', merchant.id)
+        .eq('processor_type', 'stripe')
+        .eq('is_active', true)
+        .maybeSingle();
+      stripeExpectedLivemode = expectedStripeLiveMode();
+      if (stripeCfg?.stripe_user_id) {
+        stripeUserId = stripeCfg.stripe_user_id;
+        stripeLivemode = typeof stripeCfg.stripe_livemode === 'boolean'
+          ? stripeCfg.stripe_livemode
+          : null;
+        stripeModeMatches = stripeConnectionModeMatches(stripeLivemode);
+        stripeConnected = stripeModeMatches;
+      }
     } catch (err) {
-      logger.warn({ err, locationId }, 'Failed to look up NMI processor config — defaulting to disconnected');
+      logger.warn({ err, locationId }, 'Failed to verify payment processor connections; unavailable processors will appear disconnected');
     }
 
     // Build standard clause toggle map
@@ -1040,8 +1066,11 @@ export const merchantService = {
       enrollmentFunnelUrl: gv('WEBSITE_BASE_URL') || (cfg as any).enrollment_funnel_url || '',
       pulseFormUrl: (cfg as any).pulse_form_url || gv('PULSE_FORM_URL') || '',
 
-      stripeConnected: merchant.stripe_connected || false,
-      stripeUserId: merchant.stripe_user_id || '',
+      stripeConnected,
+      stripeUserId,
+      stripeLivemode,
+      stripeModeMatches,
+      stripeExpectedLivemode,
 
       nmiConnected,
       nmiProcessorId,

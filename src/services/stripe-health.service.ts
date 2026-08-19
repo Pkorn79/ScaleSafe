@@ -10,6 +10,7 @@ const Stripe = require('stripe');
 import { getSupabase } from '../clients/supabase.client';
 import { logger } from '../utils/logger';
 import type { AccountHealthSnapshot } from '../types/stripe-defense.types';
+import { requireActiveStripeConnection } from './stripe-connection-mode.service';
 
 // Upper bound on paginated Stripe list fetches (50 pages of 100). Rates for a
 // merchant beyond this volume use a capped denominator and log a warning.
@@ -44,11 +45,8 @@ export class StripeHealthService {
     if (merchantErr || !merchant) {
       throw new Error(`Merchant not found: ${merchantId}`);
     }
-    if (!merchant.stripe_user_id) {
-      throw new Error('Merchant has no Stripe account connected');
-    }
-
-    const stripeAccount = merchant.stripe_user_id;
+    const stripeConnection = await requireActiveStripeConnection(merchantId, locationId);
+    const stripeAccount = stripeConnection.stripe_user_id as string;
     const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
 
     // Pull data from Stripe (parallel, paginated). A single unpaginated page

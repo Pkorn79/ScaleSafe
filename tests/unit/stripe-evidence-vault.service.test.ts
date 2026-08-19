@@ -6,7 +6,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
 
 jest.mock('../../src/config', () => ({
   config: {
-    stripe: { secretKey: 'sk_test' },
+    stripe: { secretKey: 'sk_test', liveMode: false },
     logLevel: 'silent',
   },
 }));

@@ -19,9 +19,57 @@ function optionalPositiveInteger(key: string, fallback: number, minimum = 1): nu
   return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
 }
 
+function optionalBoolean(key: string): boolean | null {
+  const value = String(process.env[key] || '').trim().toLowerCase();
+  if (!value) return null;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  console.error(`FATAL: ${key} must be true or false`);
+  process.exit(1);
+}
+
 const nodeEnv = optional('NODE_ENV', 'development');
 const isProd = nodeEnv === 'production';
 const ghlClientId = required('GHL_APP_CLIENT_ID');
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+const stripePublishableKey = process.env.STRIPE_PUBLISHABLE_KEY || '';
+const stripeClientId = process.env.STRIPE_CLIENT_ID || '';
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+const stripeVariables = {
+  STRIPE_SECRET_KEY: stripeSecretKey,
+  STRIPE_PUBLISHABLE_KEY: stripePublishableKey,
+  STRIPE_CLIENT_ID: stripeClientId,
+  STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
+};
+const stripeConfigured = Object.values(stripeVariables).some(Boolean);
+const stripeLiveMode = optionalBoolean('STRIPE_LIVE_MODE');
+
+if (isProd && stripeConfigured) {
+  const missing = Object.entries(stripeVariables)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    console.error(`FATAL: Incomplete Stripe platform configuration. Missing: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  if (stripeLiveMode === null) {
+    console.error('FATAL: STRIPE_LIVE_MODE must be explicitly set when Stripe is configured in production');
+    process.exit(1);
+  }
+}
+
+if (stripeLiveMode !== null) {
+  const expectedSecretPrefix = stripeLiveMode ? 'sk_live_' : 'sk_test_';
+  const expectedPublishablePrefix = stripeLiveMode ? 'pk_live_' : 'pk_test_';
+  if (stripeSecretKey && !stripeSecretKey.startsWith(expectedSecretPrefix)) {
+    console.error(`FATAL: STRIPE_SECRET_KEY does not match STRIPE_LIVE_MODE=${stripeLiveMode}`);
+    process.exit(1);
+  }
+  if (stripePublishableKey && !stripePublishableKey.startsWith(expectedPublishablePrefix)) {
+    console.error(`FATAL: STRIPE_PUBLISHABLE_KEY does not match STRIPE_LIVE_MODE=${stripeLiveMode}`);
+    process.exit(1);
+  }
+}
 
 function deriveGhlAppId(clientId: string): string {
   const explicit = process.env.GHL_APP_ID || process.env.GHL_MARKETPLACE_APP_ID || '';
@@ -67,10 +115,11 @@ export const config = {
 
   // Stripe Connect (platform keys)
   stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
-    clientId: process.env.STRIPE_CLIENT_ID || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    secretKey: stripeSecretKey,
+    publishableKey: stripePublishableKey,
+    clientId: stripeClientId,
+    webhookSecret: stripeWebhookSecret,
+    liveMode: stripeLiveMode,
   },
 
   // Zoom General App credentials. These belong to ScaleSafe's Zoom app;

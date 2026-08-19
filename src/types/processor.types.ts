@@ -217,6 +217,7 @@ export interface ProcessorConfig {
   stripe_token_expires_at: string | null;
   stripe_webhook_endpoint_id: string | null;
   stripe_webhook_secret_encrypted: string | null;
+  stripe_livemode: boolean | null;
 
   is_active: boolean;
   is_default: boolean;
