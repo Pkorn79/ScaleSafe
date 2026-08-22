@@ -13,6 +13,8 @@ import {
   WalletCards,
 } from "@lucide/astro";
 import BaseLayout from "@layouts/BaseLayout.astro";
+import VideoPlayer from "@components/VideoPlayer.astro";
+import { explainerVideo, walkthroughVideo } from "../data/videoAssets";
 
 const record = [
   [ClipboardCheck, "What they agreed to", "The offer, payment choice, responsibilities, refund terms, clickwrap acceptance, and signature."],
@@ -48,7 +50,7 @@ const paymentChannels = [
       <p class="hero-lead">ScaleSafe keeps the agreement, payment, progress, messages, and delivery records for each client program in one place. If a chargeback happens, the evidence is already organized around the right transaction.</p>
       <div class="hero-actions">
         <a class="button" href="/beta">Request private beta access <ArrowRight size={18} /></a>
-        <a class="text-action" href="#how-it-works">See how it works</a>
+        <a class="text-action" href="#video-overview">See how it works</a>
       </div>
       <ul class="hero-facts" aria-label="ScaleSafe product facts">
         <li><Check size={17} /> Runs inside GoHighLevel</li>
@@ -62,6 +64,18 @@ const paymentChannels = [
       </div>
       <figcaption class="image-caption">Open disputes, evidence volume, and a client follow-up request are visible from the dashboard.</figcaption>
     </figure>
+  </section>
+
+  <section class="video-overview-section" id="video-overview">
+    <div class="shell video-overview-grid">
+      <div>
+        <p class="eyebrow">ScaleSafe in 77 seconds</p>
+        <h2>See the complete client record take shape.</h2>
+        <p>Start with the short overview, then continue into the full product walkthrough below.</p>
+        <a class="inline-link" href="/watch">Open the focused video walkthrough <ArrowRight size={17} /></a>
+      </div>
+      <VideoPlayer {...explainerVideo} />
+    </div>
   </section>
 
   <section class="record-section" id="how-it-works">
@@ -89,6 +103,10 @@ const paymentChannels = [
         <p class="eyebrow">How it works</p>
         <h2>The record grows with the relationship.</h2>
         <p>ScaleSafe is useful before a dispute because it helps you run a clearer client process while the program is active.</p>
+      </div>
+      <div class="homepage-walkthrough">
+        <p>Watch the two-minute product walkthrough.</p>
+        <VideoPlayer {...walkthroughVideo} />
       </div>
       <ol class="lifecycle-list">
         {lifecycle.map(([number, title, body]) => (
@@ -237,10 +255,11 @@ const paymentChannels = [
   .hero-facts { display:flex; flex-wrap:wrap; gap:12px 26px; margin:30px 0 0; padding:0; list-style:none; color:var(--slate); font-size:.9rem; }
   .hero-facts li { display:flex; align-items:center; gap:8px; }.hero-facts svg{color:var(--mint-dark)}
   .hero-product { margin-bottom:-84px; }.hero-product .product-frame{aspect-ratio:1.9}.home-hero:has(.hero-product){margin-bottom:84px}
-  .record-section,.lifecycle-section,.program-section,.attention-section,.defense-section,.payments-section,.connections-section,.pricing-section{padding:110px 0}
+  .video-overview-section,.record-section,.lifecycle-section,.program-section,.attention-section,.defense-section,.payments-section,.connections-section,.pricing-section{padding:110px 0}
+  .video-overview-section{background:var(--white)}.video-overview-grid{display:grid;grid-template-columns:.7fr 1.3fr;gap:72px;align-items:center}.video-overview-grid>div>p:not(.eyebrow){color:var(--slate);font-size:1.08rem}.video-overview-grid .inline-link{display:inline-flex;align-items:center;gap:8px;margin-top:24px;color:var(--teal);font-weight:700}
   .record-grid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
   .record-grid article{min-height:290px;padding:30px 24px;border-right:1px solid var(--line)}.record-grid article:last-child{border-right:0}.record-grid svg{margin-bottom:46px;color:var(--teal)}.record-grid p{color:var(--slate)}
-  .lifecycle-section{background:var(--mist)}.lifecycle-list{display:grid;grid-template-columns:repeat(4,1fr);margin:0;padding:0;list-style:none}.lifecycle-list li{padding:28px 28px 10px 0;border-top:1px solid var(--line)}.lifecycle-list li+li{padding-left:28px;border-left:1px solid var(--line)}.lifecycle-list span{color:var(--mint-dark);font-family:var(--font-display);font-size:2rem;font-weight:800}.lifecycle-list h3{margin-top:28px}.lifecycle-list p{color:var(--slate)}
+  .lifecycle-section{background:var(--mist)}.homepage-walkthrough{max-width:980px;margin:0 auto 54px}.homepage-walkthrough>p{margin:0 0 16px;color:var(--teal);font-weight:700}.lifecycle-list{display:grid;grid-template-columns:repeat(4,1fr);margin:0;padding:0;list-style:none}.lifecycle-list li{padding:28px 28px 10px 0;border-top:1px solid var(--line)}.lifecycle-list li+li{padding-left:28px;border-left:1px solid var(--line)}.lifecycle-list span{color:var(--mint-dark);font-family:var(--font-display);font-size:2rem;font-weight:800}.lifecycle-list h3{margin-top:28px}.lifecycle-list p{color:var(--slate)}
   .split-grid{display:grid;grid-template-columns:.86fr 1.14fr;gap:72px;align-items:center}.split-grid--reverse{grid-template-columns:1.14fr .86fr}.split-grid>figure{margin:0}.split-grid h2{margin-bottom:24px}.split-grid>div>p:not(.eyebrow){color:var(--slate);font-size:1.08rem}.split-grid .inline-link{display:inline-flex;align-items:center;gap:8px;margin-top:28px;color:var(--teal);font-weight:700}
   .program-section{background:var(--white)}.program-image{aspect-ratio:1.65}.pulse-image{aspect-ratio:1.7}
   .attention-section{background:#fff8ef}.attention-section .product-frame{box-shadow:0 22px 60px rgba(102,69,24,.12)}
@@ -249,6 +268,6 @@ const paymentChannels = [
   .connections-section{background:var(--ink-2)}
   .pricing-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.price-card{padding:38px;border:1px solid var(--line);border-radius:var(--radius);background:var(--mist)}.price-card--featured{color:var(--white);background:var(--blue);border-color:var(--blue)}.plan-name{font-weight:700}.price{display:flex;align-items:baseline;gap:7px}.price strong{font-family:var(--font-display);font-size:3.8rem;line-height:1}.price span,.price-card>p:nth-child(3){color:var(--slate)}.price-card--featured .price span,.price-card--featured>p:nth-child(3){color:#c7d4dc}.price-card ul{margin:28px 0 0;padding:0;list-style:none}.price-card li{display:flex;gap:9px;padding:10px 0;border-top:1px solid var(--line)}.price-card--featured li{border-color:rgba(255,255,255,.15)}.price-card li svg{flex:0 0 auto;color:var(--mint-dark)}.price-card--featured li svg{color:var(--mint)}.pricing-note{color:var(--slate);font-size:.9rem}.pricing-actions{display:flex;align-items:center;justify-content:center;gap:24px;margin-top:34px}
   .final-cta{padding:92px 0;color:var(--white);background:var(--blue)}.final-cta__grid{display:grid;grid-template-columns:1.2fr .8fr;gap:80px;align-items:end}.final-cta h2{margin:0}.final-cta__grid>div:last-child>p{color:#d6e1e8;font-size:1.08rem}
-  @media(max-width:960px){.record-grid,.lifecycle-list{grid-template-columns:1fr 1fr}.record-grid article:nth-child(2),.lifecycle-list li:nth-child(2){border-right:0}.record-grid article{border-bottom:1px solid var(--line)}.split-grid,.split-grid--reverse{grid-template-columns:1fr;gap:46px}.payment-grid{grid-template-columns:1fr}.payment-grid article,.payment-grid article+article{min-height:0;padding:26px 0;border-right:0;border-bottom:1px solid var(--line)}.final-cta__grid{gap:44px}}
-  @media(max-width:680px){.home-hero{padding-top:68px}.home-hero h1{font-size:4.2rem}.hero-promise{font-size:2rem}.hero-lead{font-size:1.06rem}.hero-actions{align-items:stretch;flex-direction:column}.hero-actions .text-action{text-align:center}.hero-facts{display:none}.hero-product{width:calc(100% - 14px);margin-bottom:-34px}.hero-product .product-frame{aspect-ratio:1.25}.home-hero:has(.hero-product){margin-bottom:34px}.record-section,.lifecycle-section,.program-section,.attention-section,.defense-section,.payments-section,.connections-section,.pricing-section{padding:82px 0}.record-grid,.lifecycle-list,.pricing-grid,.final-cta__grid{grid-template-columns:1fr}.record-grid article,.record-grid article:nth-child(2){min-height:0;border-right:0}.record-grid svg{margin-bottom:25px}.lifecycle-list li,.lifecycle-list li+li{padding:26px 0;border-left:0}.pricing-actions{align-items:stretch;flex-direction:column}.pricing-actions .text-action{text-align:center}}
+  @media(max-width:960px){.video-overview-grid{grid-template-columns:1fr;gap:42px}.record-grid,.lifecycle-list{grid-template-columns:1fr 1fr}.record-grid article:nth-child(2),.lifecycle-list li:nth-child(2){border-right:0}.record-grid article{border-bottom:1px solid var(--line)}.split-grid,.split-grid--reverse{grid-template-columns:1fr;gap:46px}.payment-grid{grid-template-columns:1fr}.payment-grid article,.payment-grid article+article{min-height:0;padding:26px 0;border-right:0;border-bottom:1px solid var(--line)}.final-cta__grid{gap:44px}}
+  @media(max-width:680px){.home-hero{padding-top:68px}.home-hero h1{font-size:4.2rem}.hero-promise{font-size:2rem}.hero-lead{font-size:1.06rem}.hero-actions{align-items:stretch;flex-direction:column}.hero-actions .text-action{text-align:center}.hero-facts{display:none}.hero-product{width:calc(100% - 14px);margin-bottom:-34px}.hero-product .product-frame{aspect-ratio:1.25}.home-hero:has(.hero-product){margin-bottom:34px}.video-overview-section,.record-section,.lifecycle-section,.program-section,.attention-section,.defense-section,.payments-section,.connections-section,.pricing-section{padding:82px 0}.record-grid,.lifecycle-list,.pricing-grid,.final-cta__grid{grid-template-columns:1fr}.record-grid article,.record-grid article:nth-child(2){min-height:0;border-right:0}.record-grid svg{margin-bottom:25px}.lifecycle-list li,.lifecycle-list li+li{padding:26px 0;border-left:0}.pricing-actions{align-items:stretch;flex-direction:column}.pricing-actions .text-action{text-align:center}}
 </style>

@@ -1,0 +1,36 @@
+---
+interface Props {
+  src: string;
+  poster: string;
+  label: string;
+  class?: string;
+}
+
+const { src, poster, label, class: className } = Astro.props;
+---
+
+<figure class:list={["video-player", className]}>
+  <video controls playsinline preload="none" poster={poster} aria-label={label}>
+    <source src={src} type="video/mp4" />
+    <p>Your browser cannot play this video. <a href={src}>Open the video directly.</a></p>
+  </video>
+</figure>
+
+<style>
+  .video-player {
+    width: 100%;
+    margin: 0;
+  }
+
+  .video-player video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius);
+    background: var(--ink);
+    box-shadow: var(--shadow);
+    object-fit: cover;
+  }
+</style>
