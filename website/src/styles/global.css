@@ -164,6 +164,12 @@ h3 {
   color: var(--teal);
 }
 
+.desktop-nav .nav-demo,
+.mobile-menu nav .nav-demo {
+  color: var(--teal);
+  font-weight: 800;
+}
+
 .header-actions {
   display: flex;
   align-items: center;
