@@ -3,16 +3,16 @@ layout: ../layouts/ArticleLayout.astro
 title: ScaleSafe User Guide
 description: A practical guide to configuring and operating ScaleSafe across offers, clients, payments, evidence, defense, Stripe Risk Health, and integrations.
 eyebrow: Product resources
-updated: July 17, 2026
+updated: September 3, 2026
 ---
 
 This guide is written for ScaleSafe merchants and operators. It follows the product in the order a merchant normally uses it and documents behavior that has been observed or tested in the beta application.
 
 ## Getting Started
 
-ScaleSafe opens inside the merchant's GoHighLevel sub-account. The ScaleSafe navigation includes Dashboard, Offers, Clients, Payments, Defense, Stripe Risk Health, Roadmap, Settings, and Evidence Connections.
+ScaleSafe opens inside the merchant's GoHighLevel sub-account. Start with [Getting Started](/getting-started) to install the app, complete the account setup, configure the first offer, and run one checkout.
 
-ScaleSafe onboarding uses a location-bound Marketplace install, Merchant Setup, processor connection, Provisioning Health review, and controlled smoke test. Processor credentials, secrets, and production values are never shown in this public guide. Contact [ScaleSafe support](/support) for installation help.
+Before the first client enrolls, review [What ScaleSafe Sends Automatically](/automations) with the person who manages the account's HighLevel workflows. Return here for the day-to-day product workflow.
 
 ## Dashboard
 
@@ -53,7 +53,7 @@ The verified list view includes:
 - Enrollment or checkout link.
 - Copy, Send, Edit, Clone, and Archive actions.
 
-The offer builder includes program identity, delivery method and duration, pricing, payment type, dual pricing, checkout add-ons, refund policy, full-enrollment or quick-checkout experience, bot protection, pulse cadence, clickwrap clauses, checkout channel, processor routing, connected delivery, and up to eight milestones.
+The offer builder includes program identity, delivery method and duration, pricing, payment type, dual pricing, checkout add-ons, refund policy, full-enrollment or quick-checkout experience, bot protection, pulse cadence, clickwrap clauses, checkout channel, processor routing, connected delivery, and up to eight milestones. Use the [consent clause guide](/automations#consent-clauses) when deciding which acknowledgements fit the offer.
 
 Use **Clone** when a merchant wants a materially different version of a live offer. Existing enrollments keep the terms and payment structure captured when they were created; changing an offer does not rewrite a client's signed history.
 

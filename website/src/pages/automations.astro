@@ -1,0 +1,217 @@
+---
+import {
+  BellRing,
+  Check,
+  ChevronDown,
+  ClipboardCheck,
+  CreditCard,
+  MessageSquareText,
+  ShieldCheck,
+} from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+
+const workflowGroups = [
+  {
+    Icon: ClipboardCheck,
+    title: "Enrollment",
+    body: "Offer links, payment receipts, enrollment packets, and the welcome message after Full Enrollment is completed.",
+  },
+  {
+    Icon: CreditCard,
+    title: "Payments",
+    body: "Upcoming payment reminders, recurring receipts, failed-payment notices, refunds, and pause or resume confirmations.",
+  },
+  {
+    Icon: MessageSquareText,
+    title: "Delivery and engagement",
+    body: "Milestone sign-offs, pulse check-ins, session follow-up, no-show follow-up, module completion, and re-engagement.",
+  },
+  {
+    Icon: BellRing,
+    title: "Merchant alerts",
+    body: "Chargeback alerts, defense-ready notices, and optional chargeback-ratio warnings for the business team.",
+  },
+];
+
+const workflows = [
+  "SS - Cancellation Acknowledgment",
+  "SS - Chargeback Alert",
+  "SS - Chargeback Ratio Critical",
+  "SS - Chargeback Ratio Warning",
+  "SS - Client Re-Engage",
+  "SS - Defense Ready",
+  "SS - Enrollment Packet Workflow",
+  "SS - Enrollment Payment Receipt",
+  "SS - Evidence Milestone Celebration",
+  "SS - Milestone Sign-Off Confirmation",
+  "SS - Milestone Sign-Off Request",
+  "SS - Module Completion",
+  "SS - No-Show Follow-Up",
+  "SS - Payment Failed - Escalation",
+  "SS - Payment Failed - First Attempt",
+  "SS - Program Completion",
+  "SS - Re-Engagement Outreach",
+  "SS - Recurring Payment Reciept",
+  "SS - Refund Processed",
+  "SS - Send Enrollment Link Delivery",
+  "SS - Session Follow-Up",
+  "SS - Subscription Paused",
+  "SS - Subscription Resumed",
+  "SS - Welcome Sequence",
+  "SS- Payment Reminder",
+  "SS--Pulse-Check-Cadence",
+];
+
+const clauses = [
+  ["Purchase Summary", "Use for every offer. It confirms the program, total, and payment terms shown at checkout."],
+  ["Cardholder Authorization", "Use for every offer. It confirms that the buyer is authorized to use the selected payment method."],
+  ["Program Scope", "Use when the services, deliverables, or program boundaries should be stated clearly."],
+  ["Refund & Cancellation", "Use when the offer includes refund or cancellation terms, including a stated no-refund policy."],
+  ["Digital Access", "Use when the client receives immediate access to content, a portal, community, or other digital materials."],
+  ["Participation Responsibility", "Use for coaching, consulting, or programs that require attendance and client participation."],
+  ["No Guaranteed Results", "Use when results depend on the client's actions, market conditions, or other factors outside the merchant's control."],
+  ["Installment Billing", "Use for payment plans and subscriptions."],
+  ["Feedback & Check-In", "Use when pulse check-ins are enabled for the offer."],
+  ["Custom clauses", "Use the two custom fields for terms specific to the business, such as community rules, intellectual property, or confidentiality."],
+];
+---
+
+<BaseLayout
+  title="What ScaleSafe Sends Automatically"
+  description="A practical reference for the HighLevel workflows ScaleSafe installs, when they run, and how to adapt them safely."
+>
+  <PageHero
+    compact
+    eyebrow="For account builders"
+    title="Know what sends before the first client enrolls."
+    lead="ScaleSafe fires verified events into HighLevel. Workflows in the ScaleSafe folder turn those events into receipts, reminders, check-ins, and merchant alerts."
+  />
+
+  <section class="snapshot-section">
+    <div class="shell snapshot-grid">
+      <div>
+        <p class="eyebrow">The installed Snapshot</p>
+        <h2>One folder. One funnel. One place to review.</h2>
+        <p>The Snapshot installs 26 published workflows, five evidence forms, and the Client Onboarding funnel. ScaleSafe leaves existing workflows, tags, and pipelines in place.</p>
+      </div>
+      <ul>
+        <li><Check size={18} />Open Automations and find the ScaleSafe folder</li>
+        <li><Check size={18} />Review the messages that overlap with existing automations</li>
+        <li><Check size={18} />Keep required workflows and their triggers published</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="groups-section">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">What it covers</p>
+        <h2>Client communication across the program.</h2>
+      </div>
+      <div class="workflow-groups">
+        {workflowGroups.map(({ Icon, title, body }) => (
+          <article>
+            <Icon size={24} stroke-width={1.8} />
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="reference-section">
+    <div class="shell reference-layout">
+      <aside>
+        <p class="eyebrow">Before launch</p>
+        <h2>Change the message, not the event.</h2>
+        <p>Edit the email or text copy to match the business. Keep workflow names, triggers, filters, and required status intact so ScaleSafe can continue routing the correct event.</p>
+        <div class="safety-note"><ShieldCheck size={22} /><p>If an existing automation sends at the same moment, review the specific ScaleSafe workflow before turning anything off. Required workflows must stay published.</p></div>
+      </aside>
+
+      <div class="reference-panels">
+        <details open>
+          <summary><span>Checkout and payment timing</span><ChevronDown size={20} /></summary>
+          <div class="details-body">
+            <dl>
+              <div><dt>Full Enrollment</dt><dd>Payment receipt after payment, then the welcome message when enrollment is completed.</dd></div>
+              <div><dt>Quick Checkout</dt><dd>Payment receipt after payment.</dd></div>
+              <div><dt>Quick Manual Sale</dt><dd>Payment receipt immediately, an enrollment packet link when an offer is selected, then the welcome message after the client signs.</dd></div>
+              <div><dt>Recurring payment</dt><dd>A receipt after each successful recurring payment.</dd></div>
+            </dl>
+          </div>
+        </details>
+
+        <details>
+          <summary><span>Reminders, retries, pulse, and milestones</span><ChevronDown size={20} /></summary>
+          <div class="details-body">
+            <ul>
+              <li>Payment reminders run about three days and one day before a scheduled payment.</li>
+              <li>Dunning settings control failed-payment retry and escalation. Soft declines can retry on the configured schedule; hard declines notify the merchant for action.</li>
+              <li>Pulse check-ins are configured per offer. Available cadences include weekly, every two weeks, monthly, every 60 days, and quarterly. Daily cadence is for testing.</li>
+              <li>Each offer can include up to eight milestones. Marking one complete sends the client a sign-off request.</li>
+              <li>Engagement thresholds and evidence modules are controlled in ScaleSafe Settings.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details id="consent-clauses">
+          <summary><span>Consent clauses by offer type</span><ChevronDown size={20} /></summary>
+          <div class="details-body">
+            <p>Purchase Summary and Cardholder Authorization are enabled by default. Add only the clauses that fit the offer.</p>
+            <dl class="clause-list">
+              {clauses.map(([name, guidance]) => <div><dt>{name}</dt><dd>{guidance}</dd></div>)}
+            </dl>
+            <div class="offer-examples">
+              <p><strong>High-ticket coaching:</strong> Program Scope, Refund & Cancellation, Participation Responsibility, No Guaranteed Results, Installment Billing when applicable, and Feedback & Check-In when pulse is enabled.</p>
+              <p><strong>Course or digital access:</strong> Digital Access, Refund & Cancellation, and Installment Billing when applicable.</p>
+              <p><strong>Done-for-you service:</strong> Program Scope, Refund & Cancellation, and any custom deliverable or intellectual-property terms.</p>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary><span>Exact published workflow inventory</span><ChevronDown size={20} /></summary>
+          <div class="details-body inventory-grid">
+            {workflows.map((workflow, index) => <p><span>{String(index + 1).padStart(2, "0")}</span>{workflow}</p>)}
+            <p class="draft-note"><strong>Installed as drafts:</strong> SS - Defense Deadline Reminder (3 days), SS - Post Payment Actions, and SS - Session Reminder. These are not active.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="help-section">
+    <div class="shell help-grid">
+      <div>
+        <p class="eyebrow">Ready to configure</p>
+        <h2>Start with the account setup checklist.</h2>
+      </div>
+      <div>
+        <a class="button" href="/getting-started">Open Getting Started</a>
+        <a href="mailto:support@scalesafe.app?subject=ScaleSafe%20automation%20review">Ask for an automation review</a>
+      </div>
+    </div>
+  </section>
+
+  <script is:inline>
+    const openLinkedSection = () => {
+      if (!window.location.hash) return;
+      const section = document.querySelector(window.location.hash);
+      if (section instanceof HTMLDetailsElement) section.open = true;
+    };
+
+    openLinkedSection();
+    window.addEventListener("hashchange", openLinkedSection);
+  </script>
+</BaseLayout>
+
+<style>
+  .snapshot-section,.groups-section,.reference-section,.help-section{padding:96px 0}.snapshot-section{color:var(--white);background:var(--blue)}.snapshot-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:90px;align-items:start}.snapshot-grid .eyebrow,.help-section .eyebrow{color:var(--mint)}.snapshot-grid h2{max-width:640px}.snapshot-grid>div>p:last-child{max-width:670px;margin-bottom:0;color:#d2dee6;font-size:1.08rem}.snapshot-grid ul{margin:8px 0 0;padding:0;list-style:none}.snapshot-grid li{display:grid;grid-template-columns:24px 1fr;gap:10px;padding:15px 0;border-top:1px solid rgba(255,255,255,.18);color:#dbe5eb}.snapshot-grid li:last-child{border-bottom:1px solid rgba(255,255,255,.18)}.snapshot-grid li svg{margin-top:4px;color:var(--mint)}
+  .groups-section{background:var(--mist)}.workflow-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-block:1px solid var(--line)}.workflow-groups article{min-width:0;padding:30px 25px}.workflow-groups article+article{border-left:1px solid var(--line)}.workflow-groups svg{margin-bottom:34px;color:var(--teal)}.workflow-groups h3{font-size:1.35rem}.workflow-groups p{margin:0;color:var(--slate)}
+  .reference-section{background:var(--white)}.reference-layout{display:grid;grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr);gap:80px;align-items:start}.reference-layout aside{position:sticky;top:112px}.reference-layout aside h2{font-size:clamp(2.35rem,4vw,3.5rem)}.reference-layout aside>p:last-of-type{color:var(--slate);font-size:1.06rem}.safety-note{display:flex;align-items:flex-start;gap:12px;margin-top:28px;padding:18px 20px;border-left:4px solid var(--mint);background:var(--mist)}.safety-note svg{flex:0 0 auto;color:var(--teal)}.safety-note p{margin:0;color:var(--slate)}.reference-panels{border-top:1px solid var(--line)}.reference-panels details{scroll-margin-top:100px;border-bottom:1px solid var(--line)}.reference-panels summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:24px 0;list-style:none;color:var(--ink);font-family:var(--font-display);font-size:1.2rem;font-weight:750;cursor:pointer}.reference-panels summary::-webkit-details-marker{display:none}.reference-panels summary svg{flex:0 0 auto;color:var(--teal);transition:transform .18s ease}.reference-panels details[open] summary svg{transform:rotate(180deg)}.details-body{padding:0 0 28px}.details-body>p,.details-body li,.details-body dd{color:var(--slate)}.details-body ul{margin:0;padding-left:1.2rem}.details-body li+li{margin-top:9px}.details-body dl{margin:0}.details-body dl>div{display:grid;grid-template-columns:165px minmax(0,1fr);gap:20px;padding:15px 0;border-top:1px solid var(--line)}.details-body dt{font-weight:700}.details-body dd{margin:0}.clause-list>div{grid-template-columns:190px minmax(0,1fr)!important}.offer-examples{margin-top:24px;padding:18px 20px;background:var(--mist)}.offer-examples p{margin:0;color:var(--slate)}.offer-examples p+p{margin-top:12px}.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 30px}.inventory-grid>p{display:grid;grid-template-columns:30px 1fr;gap:8px;margin:0;padding:9px 0;border-top:1px solid var(--line);color:var(--slate);font-size:.91rem}.inventory-grid>p span{color:var(--teal);font-size:.72rem;font-weight:800}.inventory-grid .draft-note{display:block;grid-column:1/-1;margin-top:18px;padding:16px;border:0;background:var(--mist)}
+  .help-section{color:var(--white);background:var(--ink)}.help-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:70px;align-items:end}.help-grid h2{margin:0}.help-grid>div:last-child{display:flex;align-items:stretch;flex-direction:column;gap:18px}.help-grid>div:last-child>a:not(.button){align-self:center;color:var(--white);font-weight:700}
+  @media(max-width:920px){.snapshot-grid,.reference-layout,.help-grid{grid-template-columns:1fr;gap:44px}.workflow-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.workflow-groups article:nth-child(3){border-left:0;border-top:1px solid var(--line)}.workflow-groups article:nth-child(4){border-top:1px solid var(--line)}.reference-layout aside{position:static}}
+  @media(max-width:560px){.snapshot-section,.groups-section,.reference-section,.help-section{padding:76px 0}.workflow-groups{grid-template-columns:1fr}.workflow-groups article+article{border-top:1px solid var(--line);border-left:0}.details-body dl>div,.clause-list>div{grid-template-columns:1fr!important;gap:5px}.inventory-grid{grid-template-columns:1fr}.inventory-grid .draft-note{grid-column:1}.reference-panels summary{font-size:1.08rem}}
+</style>

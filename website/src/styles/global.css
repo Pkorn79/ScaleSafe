@@ -126,10 +126,11 @@ h3 {
 }
 
 .site-header__inner {
+  width: min(calc(100% - 32px), 1380px);
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 20px;
 }
 
 .brand-link {
@@ -147,7 +148,7 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 22px;
   margin-inline: auto;
 }
 
@@ -173,7 +174,7 @@ h3 {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
 }
 
 .button {
@@ -413,7 +414,7 @@ h3 {
   margin-bottom: 0;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1320px) {
   .desktop-nav,
   .desktop-only {
     display: none;

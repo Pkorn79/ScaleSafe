@@ -3,7 +3,7 @@ layout: ../layouts/ArticleLayout.astro
 title: Frequently Asked Questions
 description: Clear answers about ScaleSafe installation, payments, evidence, defense, pulse, fulfillment, integrations, and security.
 eyebrow: Product resources
-updated: July 17, 2026
+updated: September 3, 2026
 ---
 
 ## General
@@ -33,6 +33,44 @@ Yes. Each installation remains independently tenant-bound even when several sub-
 ### What happens during onboarding?
 
 Onboarding covers the Marketplace installation, merchant settings, branding, subdomain, processor connection, workflow setup, provisioning health, offer configuration, and a controlled test checkout.
+
+### Who can install ScaleSafe?
+
+An authorized HighLevel agency user installs ScaleSafe in the correct sub-account. If the business receives HighLevel through an agency, that agency must complete the installation. A funnel builder or VA can finish the remaining setup with the right permissions.
+
+### I installed ScaleSafe and see Approval Needed. What should I do?
+
+Send the business and exact HighLevel sub-account name to [ScaleSafe support](/support). We will verify the installation and approved access for that sub-account.
+
+### Do I need a domain?
+
+Full Enrollment uses a subdomain connected to the installed Client Onboarding funnel. Quick Checkout creates its own hosted link. See [Getting Started](/getting-started) for the setup sequence.
+
+### What is the difference between Full Enrollment and Quick Checkout?
+
+Full Enrollment guides the client through information, offer review, consent, and payment. Quick Checkout provides a shorter hosted checkout when the complete enrollment experience is not needed.
+
+### Can my GHL agency or funnel builder complete the setup?
+
+Yes. The agency or builder can install the Snapshot, connect the domain, review workflows, and configure the offer. The business owner connects the payment account and approves the offer terms. Share [Getting Started](/getting-started) with everyone involved.
+
+### Should I uninstall and reinstall if setup fails?
+
+No. Record the exact sub-account, page, action, date, time, timezone, and visible error, then contact [ScaleSafe support](/support). Reinstalling rarely fixes a configuration problem and can complicate installation and entitlement records.
+
+## Automations
+
+### What does ScaleSafe send automatically?
+
+Depending on the offer and account settings, ScaleSafe can send enrollment links, receipts, welcome messages, payment reminders, failed-payment notices, milestone sign-offs, pulse check-ins, re-engagement messages, and merchant alerts. See [What ScaleSafe Sends Automatically](/automations) for the complete reference.
+
+### Can I edit or turn off the ScaleSafe workflows?
+
+You can edit client-facing message copy. Keep workflow names, triggers, filters, and required workflows intact. Review the specific workflow before disabling it, especially when an existing automation sends at the same moment.
+
+### Will ScaleSafe replace my existing HighLevel automations?
+
+No. The installed ScaleSafe workflows remain separate from the automations already in the sub-account. Review both sets before launch so the client receives one message at each moment.
 
 ## Payments
 

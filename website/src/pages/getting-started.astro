@@ -1,0 +1,132 @@
+---
+import {
+  ArrowRight,
+  Check,
+  CreditCard,
+  Rocket,
+  Settings2,
+  Store,
+  Workflow,
+} from "@lucide/astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import PageHero from "@components/PageHero.astro";
+
+const setupSteps = [
+  {
+    Icon: Store,
+    title: "Install ScaleSafe",
+    body: "Open the correct HighLevel sub-account and install ScaleSafe from the App Marketplace. Choose the plan from your onboarding instructions and type confirm when HighLevel asks you to approve the Snapshot.",
+    note: "If the business uses HighLevel through an agency, the agency must complete the installation. If ScaleSafe shows Approval Needed afterward, send the business and sub-account name to support@scalesafe.app.",
+  },
+  {
+    Icon: Settings2,
+    title: "Complete the account setup",
+    body: "Open ScaleSafe from the left-hand menu. Add the business information, support email, and logo under Settings. Then have the business owner connect Stripe under Settings, then Payments.",
+    note: "Using Full Enrollment? Connect a subdomain to the installed Client Onboarding funnel and save it as the Enrollment Funnel URL. Quick Checkout creates its own hosted link.",
+  },
+  {
+    Icon: CreditCard,
+    title: "Configure the first offer checkout",
+    body: "Create the offer with its client-facing name, price, payment structure, terms, milestones, and pulse cadence. Turn on only the consent clauses that apply to the program.",
+    choices: [
+      ["Full Enrollment", "A guided information, offer review, consent, and payment experience for programs that need the complete enrollment record."],
+      ["Quick Checkout", "A shorter ScaleSafe-hosted checkout when the full enrollment experience is not needed."],
+    ],
+  },
+  {
+    Icon: Workflow,
+    title: "Review what sends automatically",
+    body: "The ScaleSafe Snapshot adds a folder of HighLevel workflows for receipts, enrollment messages, payment reminders, milestones, pulse check-ins, and other client moments. Review the message copy and check for overlap with automations already in the account.",
+    note: "Keep required workflows published and leave their triggers and filters unchanged. Use the Automations guide before disabling anything.",
+  },
+  {
+    Icon: Rocket,
+    title: "Complete one checkout and go live",
+    body: "Open the offer link and complete one enrollment. Confirm the business name, logo, price, terms, payment, expected messages, client record, and evidence entries. Once those are correct, the offer is ready to share.",
+    note: "After the first offer is working, connect Zoom or other evidence sources the business uses. If anything looks wrong, send support a screenshot and the sub-account name. Do not uninstall and reinstall.",
+  },
+];
+---
+
+<BaseLayout
+  title="Getting Started"
+  description="Install ScaleSafe, connect the business account, configure the first offer, and complete one launch check."
+>
+  <PageHero
+    compact
+    eyebrow="ScaleSafe setup"
+    title="From installation to your first working offer."
+    lead="Use this short setup path whether the business owner, their HighLevel agency, or a setup specialist is doing the work."
+  />
+
+  <section class="ready-section">
+    <div class="shell ready-grid">
+      <div>
+        <p class="eyebrow">Before you begin</p>
+        <h2>Start in the right sub-account.</h2>
+      </div>
+      <ul>
+        <li><Check size={18} />Access to the exact HighLevel sub-account</li>
+        <li><Check size={18} />The business name, support email, logo, and offer terms</li>
+        <li><Check size={18} />The owner of the Stripe account being connected</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="steps-section">
+    <div class="shell">
+      <div class="section-heading">
+        <p class="eyebrow">Five steps</p>
+        <h2>Set up the essentials first.</h2>
+        <p>ScaleSafe creates the correct checkout link for each offer. You only need to finish the account, offer, and launch checks below.</p>
+      </div>
+
+      <div class="steps-list">
+        {setupSteps.map(({ Icon, title, body, note, choices }, index) => (
+          <article class="setup-step">
+            <div class="step-marker" aria-hidden="true">
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <Icon size={22} stroke-width={1.8} />
+            </div>
+            <div class="step-copy">
+              <h3>{title}</h3>
+              <p>{body}</p>
+              {choices && (
+                <div class="checkout-options">
+                  {choices.map(([name, detail]) => (
+                    <div><strong>{name}</strong><span>{detail}</span></div>
+                  ))}
+                </div>
+              )}
+              {index === 2 && <p class="inline-link">See the <a href="/automations#consent-clauses">consent clause guide</a> for common offer types.</p>}
+              {index === 3 && <p class="inline-link"><a href="/automations">See what ScaleSafe sends and when.</a></p>}
+              {note && <p class="step-note">{note}</p>}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="next-section">
+    <div class="shell next-grid">
+      <div>
+        <p class="eyebrow">After setup</p>
+        <h2>Run ScaleSafe with an AI operator.</h2>
+        <p>Use the ScaleSafe operator kit with Claude or OpenAI Codex to work through account setup and everyday operations in a supervised conversation.</p>
+      </div>
+      <div class="next-actions">
+        <a class="button" href="/downloads#operator">Get the AI operator kit <ArrowRight size={18} /></a>
+        <a href="mailto:support@scalesafe.app?subject=ScaleSafe%20setup%20help">Ask for setup help</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .ready-section,.steps-section,.next-section{padding:96px 0}.ready-section{color:var(--white);background:var(--blue)}.ready-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:90px;align-items:start}.ready-grid h2{margin:0;max-width:520px}.ready-grid .eyebrow,.next-section .eyebrow{color:var(--mint)}.ready-grid ul{margin:0;padding:0;list-style:none}.ready-grid li{display:grid;grid-template-columns:24px 1fr;gap:11px;padding:15px 0;border-top:1px solid rgba(255,255,255,.18);color:#d6e1e8}.ready-grid li:last-child{border-bottom:1px solid rgba(255,255,255,.18)}.ready-grid li svg{margin-top:4px;color:var(--mint)}
+  .steps-section{background:var(--mist)}.steps-list{border-top:1px solid var(--line)}.setup-step{display:grid;grid-template-columns:120px minmax(0,1fr);gap:48px;padding:50px 0;border-bottom:1px solid var(--line)}.step-marker{display:flex;align-items:center;justify-content:space-between;align-self:start;padding:11px 0;color:var(--teal);border-top:2px solid var(--teal)}.step-marker span{font-family:var(--font-display);font-size:1rem;font-weight:800}.step-copy{max-width:850px}.step-copy h3{margin-bottom:14px;font-size:2rem}.step-copy>p{color:var(--slate);font-size:1.06rem}.step-note{margin:24px 0 0;padding:17px 19px;border-left:4px solid var(--mint);background:var(--white)}.inline-link{margin:20px 0 0}.inline-link a{color:var(--teal);font-weight:700}.checkout-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:26px;border-block:1px solid var(--line)}.checkout-options>div{padding:22px 24px 22px 0}.checkout-options>div+div{padding-left:24px;border-left:1px solid var(--line)}.checkout-options strong,.checkout-options span{display:block}.checkout-options strong{margin-bottom:7px;color:var(--ink)}.checkout-options span{color:var(--slate);font-size:.95rem}
+  .next-section{color:var(--white);background:var(--ink)}.next-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:80px;align-items:end}.next-grid h2{max-width:760px}.next-grid p:last-child{max-width:720px;margin:0;color:#c8d5de;font-size:1.08rem}.next-actions{display:flex;align-items:stretch;flex-direction:column;gap:18px}.next-actions>a:not(.button){align-self:center;color:var(--white);font-weight:700}
+  @media(max-width:800px){.ready-grid,.next-grid{grid-template-columns:1fr;gap:42px}.setup-step{grid-template-columns:92px;gap:30px}.checkout-options{grid-template-columns:1fr}.checkout-options>div{padding:20px 0}.checkout-options>div+div{padding-left:0;border-top:1px solid var(--line);border-left:0}}
+  @media(max-width:560px){.ready-section,.steps-section,.next-section{padding:76px 0}.setup-step{grid-template-columns:1fr;gap:20px;padding:40px 0}.step-marker{width:88px}.step-copy h3{font-size:1.65rem}.step-copy>p{font-size:1rem}}
+</style>
