@@ -1198,8 +1198,19 @@ export const paymentLifecycleService = {
    * Cancel a subscription. Logs both subscription change + cancellation evidence.
    */
   async cancelSubscription(params: SubscriptionParams): Promise<void> {
+    const processorSubscriptionId = params.processorSubscriptionId;
+    const shouldCancelProcessor = Boolean(processorSubscriptionId)
+      && params.processorCancellationRequired !== false;
+    const cancelledEnrollmentUpdates = {
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      next_billing_date: null,
+      pulse_cadence_enabled: false,
+      next_pulse_due_at: null,
+    };
+
     // Cancel via processor if we have a subscription ID
-    if (isWhopProcessor(params.processorType)) {
+    if (isWhopProcessor(params.processorType) && shouldCancelProcessor) {
       const membershipId = requireWhopMembershipId(params, 'cancel');
       const result = await whopService.cancelMembership(params.locationId, membershipId);
       await updateEnrollmentForLifecycleAction({
@@ -1211,17 +1222,19 @@ export const paymentLifecycleService = {
           status: 'cancelled',
           cancelled_at: result.canceledAt || new Date().toISOString(),
           next_billing_date: null,
+          pulse_cadence_enabled: false,
+          next_pulse_due_at: null,
         },
         action: 'cancel',
       });
-    } else if (params.processorSubscriptionId) {
+    } else if (shouldCancelProcessor && processorSubscriptionId) {
       try {
         const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
           processor_override: params.processorType || null,
           nmi_processor_id: null,
         });
         const processor = createProcessorClient(procConfig);
-        const result = await processor.cancelSubscription(params.processorSubscriptionId);
+        const result = await processor.cancelSubscription(processorSubscriptionId);
         assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
       } catch (err: any) {
         logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
@@ -1232,18 +1245,19 @@ export const paymentLifecycleService = {
         locationId: params.locationId,
         enrollmentId: params.enrollmentId,
         contactId: params.contactId,
-        processorSubscriptionId: params.processorSubscriptionId,
-        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), processor_subscription_id: null, next_billing_date: null },
+        processorSubscriptionId,
+        updates: { ...cancelledEnrollmentUpdates, processor_subscription_id: null },
         action: 'cancel',
       });
     } else {
-      // No processor subscription - still mark the enrollment as cancelled
+      // No future processor billing remains, so close the ScaleSafe enrollment
+      // without calling a disconnected or historical processor account.
       await updateEnrollmentForLifecycleAction({
         locationId: params.locationId,
         enrollmentId: params.enrollmentId,
         contactId: params.contactId,
         fallbackStatuses: ['enrolled', 'active', 'paused'],
-        updates: { status: 'cancelled', cancelled_at: new Date().toISOString(), next_billing_date: null },
+        updates: cancelledEnrollmentUpdates,
         action: 'cancel',
       });
     }

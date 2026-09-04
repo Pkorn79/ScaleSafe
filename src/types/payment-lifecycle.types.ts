@@ -25,6 +25,9 @@ export interface SubscriptionParams {
   enrollmentId?: string;
   processorSubscriptionId?: string;
   processorType?: ProcessorType;
+  // False only when the tenant-scoped enrollment proves there is no future
+  // processor billing to stop (for example, a completed finite payment plan).
+  processorCancellationRequired?: boolean;
 }
 
 export interface CardManagementParams {

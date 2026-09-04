@@ -93,6 +93,11 @@ const ENROLLMENT = {
   processor_subscription_id: 'sub-1',
   processor_type: 'nmi',
   status: 'active',
+  payment_type: 'subscription',
+  payments_made: 1,
+  payments_total: null,
+  billing_completed_at: null,
+  next_billing_date: '2026-09-30T00:00:00.000Z',
 };
 
 beforeEach(() => {
@@ -227,11 +232,36 @@ describe('POST /lifecycle/enrollment/status', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, action: 'cancel' });
     expect(lastQuery.filters.location_id).toBe('loc-1');
+    expect(lastQuery.filters.contact_id).toBe('contact-1');
     expect(mockCancelSubscription).toHaveBeenCalledWith(expect.objectContaining({
       merchantId: 'merch-1',
       locationId: 'loc-1',
       contactId: 'contact-1',
       enrollmentId: 'enr-1',
+    }));
+  });
+
+  it('does not require a processor cancellation for a fully paid finite plan', async () => {
+    nextEnrollmentResult = {
+      data: {
+        ...ENROLLMENT,
+        payment_type: 'installment',
+        payments_made: 2,
+        payments_total: 2,
+        billing_completed_at: null,
+        next_billing_date: null,
+      },
+    };
+
+    const res = await request(app)
+      .post('/lifecycle/enrollment/status')
+      .send({ enrollmentId: 'enr-1', contactId: 'contact-1', action: 'cancel' });
+
+    expect(res.status).toBe(200);
+    expect(mockCancelSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr-1',
+      processorSubscriptionId: 'sub-1',
+      processorCancellationRequired: false,
     }));
   });
 

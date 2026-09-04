@@ -250,6 +250,30 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       status: 'cancelled',
       cancelled_at: '2026-07-14T00:30:00Z',
       next_billing_date: null,
+      pulse_cadence_enabled: false,
+      next_pulse_due_at: null,
+    }));
+  });
+
+  it('closes a fully paid finite enrollment locally without calling its historical processor', async () => {
+    await paymentLifecycleService.cancelSubscription({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub_historical',
+      processorCancellationRequired: false,
+    });
+
+    expect(mockResolveProcessor).not.toHaveBeenCalled();
+    expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+    expect(mockCancelWhop).not.toHaveBeenCalled();
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'cancelled',
+      next_billing_date: null,
+      pulse_cadence_enabled: false,
+      next_pulse_due_at: null,
+    }));
+    expect(mockEnrollmentUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+      processor_subscription_id: null,
     }));
     expect(mockGhlPut).toHaveBeenCalledWith('/contacts/contact-1', expect.objectContaining({
       customField: expect.objectContaining({

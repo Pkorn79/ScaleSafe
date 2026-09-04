@@ -10,6 +10,29 @@ const router = Router();
 
 router.use(ssoAuth, requireTenant);
 
+const ENROLLMENT_LIFECYCLE_COLUMNS = 'id, contact_id, offer_id, processor_subscription_id, whop_membership_id, processor_type, status, payment_type, payments_made, payments_total, billing_completed_at, next_billing_date' as const;
+
+function processorCancellationRequired(enrollment: any): boolean {
+  const processorReference = enrollment.processor_subscription_id || enrollment.whop_membership_id;
+  if (!processorReference) return false;
+
+  // A Whop membership also controls access, so cancelling the enrollment must
+  // continue through Whop even after its payment schedule has finished.
+  if (String(enrollment.processor_type || '').toLowerCase() === 'whop') return true;
+
+  const paymentType = String(enrollment.payment_type || '').toLowerCase();
+  const paymentsMade = Number(enrollment.payments_made);
+  const paymentsTotal = Number(enrollment.payments_total);
+  const finitePlanPaid = paymentType !== 'subscription'
+    && Number.isFinite(paymentsMade)
+    && Number.isFinite(paymentsTotal)
+    && paymentsTotal > 0
+    && paymentsMade >= paymentsTotal
+    && !enrollment.next_billing_date;
+
+  return !(enrollment.billing_completed_at || finitePlanPaid);
+}
+
 async function getEnrollmentForLifecycleAction(
   locationId: string,
   enrollmentId: string,
@@ -18,7 +41,7 @@ async function getEnrollmentForLifecycleAction(
 ) {
   let query = getSupabase()
     .from('enrollments')
-    .select('id, contact_id, offer_id, processor_subscription_id, whop_membership_id, processor_type, status')
+    .select(ENROLLMENT_LIFECYCLE_COLUMNS)
     .eq('id', enrollmentId)
     .eq('location_id', locationId);
 
@@ -92,6 +115,7 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
       enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorCancellationRequired: processorCancellationRequired(enrollment),
     });
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -109,25 +133,28 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
 
     const supabase = (await import('../clients/supabase.client')).getSupabase();
 
-    // Look up enrollment for processor subscription ID and offer ID
-    const { data: enrollment } = await supabase
+    // Resolve the exact tenant/contact enrollment instead of trusting body fields.
+    const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, processor_subscription_id, whop_membership_id, processor_type, offer_id, status')
+      .select(ENROLLMENT_LIFECYCLE_COLUMNS)
       .eq('id', enrollmentId)
       .eq('location_id', locationId)
-      .single();
+      .eq('contact_id', contactId)
+      .maybeSingle();
 
+    if (enrollmentError) throw enrollmentError;
     if (!enrollment) throw new ValidationError('Enrollment not found');
 
     const serviceParams = {
       merchantId: merchant.id,
       locationId,
-      contactId,
+      contactId: enrollment.contact_id,
       offerId: enrollment.offer_id || '',
       reason: reason || `Merchant-initiated ${action}`,
       enrollmentId,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorCancellationRequired: processorCancellationRequired(enrollment),
     };
 
     switch (action) {
