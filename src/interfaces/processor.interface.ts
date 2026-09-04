@@ -6,6 +6,15 @@ import {
   VerifyResult, SubscriptionTransaction,
 } from '../types/processor.types';
 
+export interface InvoicePaymentResult {
+  success: boolean;
+  outcome: 'succeeded' | 'failed' | 'unknown';
+  transactionId?: string;
+  invoicePaymentId?: string | null;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
 /**
  * ProcessorInterface — implemented by both NMI and Stripe clients.
  * All amounts are in CENTS (integer). Convert to dollars only at display layer.
@@ -35,6 +44,17 @@ export interface ProcessorInterface {
   resumeSubscription(request: ResumeSubscriptionRequest): Promise<SubscriptionResult>;
 
   cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }>;
+
+  /**
+   * Stripe only: settle an open subscription invoice with a saved payment
+   * method. Dunning retries for invoice-originated failures must pay the
+   * invoice itself so the processor's own retry schedule stops.
+   */
+  payInvoice?(invoiceId: string, opts: {
+    idempotencyKey: string;
+    stripeAccountId: string;
+    paymentMethodId?: string;
+  }): Promise<InvoicePaymentResult>;
 
   verifyTransaction(transactionId: string): Promise<VerifyResult>;
 

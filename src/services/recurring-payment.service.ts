@@ -67,6 +67,7 @@ interface RecurringFailureParams {
   errorMessage: string;
   errorCode?: string;
   source: string;
+  rawPayload?: Record<string, unknown> | null;
 }
 function formatMoney(value: unknown): string {
   const amount = Number(value || 0);
@@ -326,10 +327,30 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
  */
 export async function handleRecurringPaymentFailure(params: RecurringFailureParams): Promise<{
   paymentEventId: string | null;
+  duplicate: boolean;
 }> {
   const { enrollment: enr, processorType, transactionId, amountCents, errorMessage, errorCode, source } = params;
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
+
+  if (transactionId) {
+    const { data: existingFailure, error: existingFailureError } = await supabase
+      .from('payment_events')
+      .select('id')
+      .eq('merchant_id', enr.merchant_id)
+      .eq('location_id', enr.location_id)
+      .eq('processor', processorType)
+      .eq('processor_transaction_id', transactionId)
+      .maybeSingle();
+    if (existingFailureError) throw existingFailureError;
+    if (existingFailure) {
+      logger.info(
+        { enrollmentId: enr.id, transactionId, source },
+        'Recurring failure already recorded for this processor object - not duplicating dunning',
+      );
+      return { paymentEventId: existingFailure.id, duplicate: true };
+    }
+  }
 
   const { data: failedEvent, error: failedInsertError } = await supabase
     .from('payment_events')
@@ -347,6 +368,7 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
       failure_reason: errorMessage || 'Unknown failure',
       source,
       is_recurring: true,
+      raw_webhook_payload: params.rawPayload ?? null,
     })
     .select('id')
     .single();
@@ -361,28 +383,39 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
       processor: processorType,
       amountCents,
       source,
-    }, 'Recurring failure: payment_events insert failed — dunning will not initiate');
+    }, 'Recurring failure: payment_events insert failed - dunning will not initiate');
+
+    if (failedInsertError.code === '23505' && transactionId) {
+      const { data: duplicate, error: duplicateError } = await supabase
+        .from('payment_events')
+        .select('id')
+        .eq('merchant_id', enr.merchant_id)
+        .eq('location_id', enr.location_id)
+        .eq('processor', processorType)
+        .eq('processor_transaction_id', transactionId)
+        .maybeSingle();
+      if (duplicateError) throw duplicateError;
+      if (duplicate) return { paymentEventId: duplicate.id, duplicate: true };
+    }
+
+    throw failedInsertError;
   }
 
-  // #6: initiate dunning even when the ledger insert failed. A transient DB blip must not
-  // cost the customer-facing recovery sequence (past_due workflow, card-update link,
-  // ss_payment_failed trigger). With a null paymentEventId, initiateDunning fires the comms
-  // but cannot schedule the saved-card auto-retry (which needs the event row).
-  try {
-    await paymentLifecycleService.initiateDunning({
-      merchantId: enr.merchant_id,
-      locationId: enr.location_id,
-      contactId: enr.contact_id,
-      offerId: enr.offer_id || '',
-      paymentEventId: failedEvent?.id || null,
-      failureReason: errorMessage || 'Recurring charge failed',
-      failureCode: errorCode,
-      amountCents,
-      attemptCount: 0,
-    });
-  } catch (dunErr: any) {
-    logger.error({ err: dunErr.message, enrollmentId: enr.id }, 'Recurring payment: initiateDunning threw');
+  if (!failedEvent?.id) {
+    throw new Error(`Failed payment insert returned no row for enrollment ${enr.id}`);
   }
 
-  return { paymentEventId: failedEvent?.id || null };
+  await paymentLifecycleService.initiateDunning({
+    merchantId: enr.merchant_id,
+    locationId: enr.location_id,
+    contactId: enr.contact_id,
+    offerId: enr.offer_id || '',
+    paymentEventId: failedEvent.id,
+    failureReason: errorMessage || 'Recurring charge failed',
+    failureCode: errorCode,
+    amountCents,
+    attemptCount: 0,
+  });
+
+  return { paymentEventId: failedEvent.id, duplicate: false };
 }

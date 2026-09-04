@@ -16,6 +16,7 @@ import {
 } from '../constants/ghl-fields';
 import type { DunningParams, SubscriptionParams, CardManagementParams } from '../types/payment-lifecycle.types';
 import type { StoredCard } from '../types/processor.types';
+import type { InvoicePaymentResult } from '../interfaces/processor.interface';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { ExternalServiceError, ValidationError } from '../utils/errors';
 import { whopService } from './whop.service';
@@ -309,7 +310,11 @@ export const paymentLifecycleService = {
    * Retry a failed payment during dunning.
    * Fetches the saved card and attempts to charge again.
    */
-  async retryPayment(merchantId: string, locationId: string, contactId: string, paymentEventId: string): Promise<{ success: boolean; error?: string }> {
+  async retryPayment(merchantId: string, locationId: string, contactId: string, paymentEventId: string): Promise<{
+    success: boolean;
+    error?: string;
+    reconciliationRequired?: boolean;
+  }> {
     const supabase = getSupabase();
     let preserveRetryClaim = false;
 
@@ -318,6 +323,7 @@ export const paymentLifecycleService = {
       .from('payment_events')
       .select('*')
       .eq('id', paymentEventId)
+      .eq('merchant_id', merchantId)
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
       .single();
@@ -325,18 +331,52 @@ export const paymentLifecycleService = {
     if (!originalEvent) {
       return { success: false, error: 'Payment event not found' };
     }
+    if (originalEvent.event_type !== 'payment_failed') {
+      return { success: false, error: 'Only a failed payment event can be retried' };
+    }
 
-    // Get saved payment method
-    const { data: method } = await supabase
-      .from('payment_methods')
-      .select('*')
-      .eq('location_id', locationId)
-      .eq('contact_id', contactId)
-      .eq('is_default', true)
-      .limit(1)
-      .maybeSingle();
+    const originalProcessor = String(originalEvent.processor || '').toLowerCase();
+    if (originalProcessor !== 'stripe' && originalProcessor !== 'nmi') {
+      return { success: false, error: 'The failed payment does not have a supported original processor' };
+    }
 
-    if (!method) {
+    const rawContext = originalEvent.raw_webhook_payload
+      && typeof originalEvent.raw_webhook_payload === 'object'
+      ? originalEvent.raw_webhook_payload as Record<string, unknown>
+      : {};
+    const stripeInvoiceId = originalProcessor === 'stripe'
+      ? String(rawContext.stripe_invoice_id || '').trim()
+      : '';
+    const stripeAccountId = originalProcessor === 'stripe'
+      ? String(rawContext.stripe_account_id || '').trim()
+      : '';
+
+    if (originalProcessor === 'stripe') {
+      if (!stripeInvoiceId.startsWith('in_') || stripeInvoiceId !== originalEvent.processor_transaction_id) {
+        return { success: false, error: 'Stripe retry requires the exact stored failed invoice' };
+      }
+      if (!stripeAccountId.startsWith('acct_')) {
+        return { success: false, error: 'Stripe retry requires the exact stored connected account' };
+      }
+    }
+
+    // Stripe retries the invoice's own payment method. NMI requires a saved
+    // method from the same processor as the original failed event.
+    let method: any = null;
+    if (originalProcessor === 'nmi') {
+      const { data } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
+        .eq('processor_type', originalProcessor)
+        .eq('is_default', true)
+        .limit(1)
+        .maybeSingle();
+      method = data;
+    }
+
+    if (originalProcessor === 'nmi' && !method) {
       return { success: false, error: 'No saved payment method found' };
     }
 
@@ -350,6 +390,9 @@ export const paymentLifecycleService = {
         .from('payment_events')
         .update({ dunning_status: 'retrying', dunning_started_at: new Date().toISOString() })
         .eq('id', paymentEventId)
+        .eq('merchant_id', merchantId)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId)
         .eq('dunning_status', 'active')
         .select('id');
       if (!Array.isArray(claimedRows) || claimedRows.length === 0) {
@@ -358,12 +401,21 @@ export const paymentLifecycleService = {
       }
 
       const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
-        processor_override: method.processor_type || null,
-        nmi_processor_id: null,
+        processor_override: originalProcessor,
+        nmi_processor_id: originalProcessor === 'nmi'
+          ? String(rawContext.nmi_processor_id || '').trim() || null
+          : null,
+        stripe_account_id: originalProcessor === 'stripe' ? stripeAccountId : null,
       });
+      if (procConfig.processor_type !== originalProcessor) {
+        throw new Error('Resolved processor does not match the failed payment processor');
+      }
+      if (originalProcessor === 'stripe' && procConfig.stripe_user_id !== stripeAccountId) {
+        throw new Error('Resolved Stripe account does not match the failed invoice account');
+      }
       const processor = createProcessorClient(procConfig);
-      const token = method.nmi_customer_vault_id || method.stripe_payment_method_id || '';
-      const customerId = method.nmi_customer_vault_id || method.stripe_customer_id || '';
+      const token = method?.nmi_customer_vault_id || '';
+      const customerId = method?.nmi_customer_vault_id || '';
 
       const amountCents = Math.round(Number(originalEvent.amount) * 100);
       const retryAttempt = Number(originalEvent.dunning_retry_count || 0) + 1;
@@ -376,10 +428,12 @@ export const paymentLifecycleService = {
           paymentEventId,
           contactId,
           enrollmentId: originalEvent.enrollment_id || null,
-          paymentMethodId: method.id,
+          paymentMethodId: method?.id || null,
           amountCents,
           currency: originalEvent.currency || 'usd',
-          processorType: procConfig.processor_type,
+          processorType: originalProcessor,
+          stripeInvoiceId: stripeInvoiceId || null,
+          stripeAccountId: stripeAccountId || null,
           retryAttempt,
         },
       });
@@ -392,19 +446,28 @@ export const paymentLifecycleService = {
       }
 
       let result;
+      const providerIdempotencyKey = `dunning-${paymentEventId}-${retryAttempt}`;
+      await moneyOperationService.markProviderStarted({
+        id: operation.operation.id,
+        locationId,
+        processorType: procConfig.processor_type,
+      });
       try {
-        await moneyOperationService.markProviderStarted({
-          id: operation.operation.id,
-          locationId,
-          processorType: procConfig.processor_type,
-        });
-        result = await processor.chargeStoredCard(customerId, token, {
-        amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
-        currency: originalEvent.currency || 'usd',
-        paymentToken: token,
-        description: 'Dunning retry payment',
-        idempotencyKey: `dunning-${paymentEventId}-${retryAttempt}`,
-        });
+        if (originalProcessor === 'stripe' && typeof processor.payInvoice !== 'function') {
+          throw new Error('Stripe invoice retry is unavailable');
+        }
+        result = originalProcessor === 'stripe'
+          ? await processor.payInvoice!(stripeInvoiceId, {
+            stripeAccountId,
+            idempotencyKey: providerIdempotencyKey,
+          })
+          : await processor.chargeStoredCard(customerId, token, {
+            amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
+            currency: originalEvent.currency || 'usd',
+            paymentToken: token,
+            description: 'Dunning retry payment',
+            idempotencyKey: providerIdempotencyKey,
+          });
       } catch (chargeErr: any) {
         preserveRetryClaim = true;
         await moneyOperationService.markUnknown({
@@ -413,18 +476,62 @@ export const paymentLifecycleService = {
           processorType: procConfig.processor_type,
           error: chargeErr.message || 'Processor result is unknown',
         });
-        throw chargeErr;
+        return {
+          success: false,
+          error: chargeErr.message || 'Processor result is unknown',
+          reconciliationRequired: true,
+        };
+      }
+
+      const stripeInvoiceResult = originalProcessor === 'stripe'
+        ? result as InvoicePaymentResult
+        : null;
+      if (stripeInvoiceResult?.outcome === 'unknown') {
+        preserveRetryClaim = true;
+        await moneyOperationService.markUnknown({
+          id: operation.operation.id,
+          locationId,
+          processorType: originalProcessor,
+          error: stripeInvoiceResult.errorMessage || 'Stripe invoice result is unknown',
+        });
+        return {
+          success: false,
+          error: stripeInvoiceResult.errorMessage || 'Stripe invoice result is unknown',
+          reconciliationRequired: true,
+        };
       }
 
       if (result.success) {
         preserveRetryClaim = true;
+        const recoveredTransactionId = String(result.transactionId || '').trim();
+        if (!recoveredTransactionId || recoveredTransactionId === originalEvent.processor_transaction_id) {
+          await moneyOperationService.markUnknown({
+            id: operation.operation.id,
+            locationId,
+            processorType: originalProcessor,
+            error: 'Processor success did not include a distinct successful payment reference',
+          });
+          return {
+            success: false,
+            error: 'Processor success requires reconciliation before dunning can be resolved',
+            reconciliationRequired: true,
+          };
+        }
         await moneyOperationService.markProviderAccepted({
           id: operation.operation.id,
           locationId,
-          processorType: procConfig.processor_type,
-          processorReference: result.transactionId,
-          response: { success: true, transactionId: result.transactionId },
-          reconciliationPayload: { transactionId: result.transactionId },
+          processorType: originalProcessor,
+          processorReference: recoveredTransactionId,
+          response: { success: true, transactionId: recoveredTransactionId },
+          reconciliationPayload: {
+            transactionId: recoveredTransactionId,
+            paymentEventId,
+            enrollmentId: originalEvent.enrollment_id || null,
+            contactId,
+            stripeInvoiceId: stripeInvoiceId || null,
+            stripeAccountId: stripeAccountId || null,
+            invoicePaymentId: stripeInvoiceResult?.invoicePaymentId || null,
+          },
         });
         // #5: record the recovered installment atomically — insert the ledger row, increment
         // payments_made, and advance next_billing_date — so the recurring schedule reflects the
@@ -440,52 +547,103 @@ export const paymentLifecycleService = {
               if (ofr?.installment_frequency) interval = ofr.installment_frequency;
             }
           } catch { /* default monthly for the schedule estimate */ }
-          const { error: recordErr } = await supabase.rpc('record_recurring_payment', {
+          const { data: recordData, error: recordErr } = await supabase.rpc('record_recurring_payment', {
             p_enrollment_id: originalEvent.enrollment_id,
             p_location_id: locationId,
-            p_processor: procConfig.processor_type,
-            p_transaction_id: result.transactionId,
+            p_processor: originalProcessor,
+            p_transaction_id: recoveredTransactionId,
             p_amount: originalEvent.amount,
             p_next_billing_date: null,
             p_next_billing_source: 'estimated',
             p_interval: interval,
             p_source: 'dunning_retry',
-            p_raw_payload: { dunning_retry: true, original_payment_event_id: paymentEventId },
+            p_raw_payload: {
+              dunning_retry: true,
+              original_payment_event_id: paymentEventId,
+              stripe_invoice_id: stripeInvoiceId || null,
+              stripe_account_id: stripeAccountId || null,
+              stripe_invoice_payment_id: stripeInvoiceResult?.invoicePaymentId || null,
+            },
           });
           if (recordErr) {
             logger.error({ err: recordErr.message, enrollmentId: originalEvent.enrollment_id, paymentEventId }, 'Dunning retry: record_recurring_payment failed');
             throw new Error(`Dunning recovery ledger write failed: ${recordErr.message}`);
           }
+          const recordRow = Array.isArray(recordData) ? recordData[0] : recordData;
+          let successfulPaymentEventId = recordRow?.is_duplicate ? null : recordRow?.payment_event_id;
+          if (!successfulPaymentEventId) {
+            const { data: existingSale, error: existingSaleError } = await supabase
+              .from('payment_events')
+              .select('id')
+              .eq('location_id', locationId)
+              .eq('contact_id', contactId)
+              .eq('enrollment_id', originalEvent.enrollment_id)
+              .eq('processor', originalProcessor)
+              .eq('event_type', 'sale')
+              .eq('processor_transaction_id', recoveredTransactionId)
+              .maybeSingle();
+            if (existingSaleError) {
+              throw new Error(`Dunning recovery ledger verification failed: ${existingSaleError.message}`);
+            }
+            successfulPaymentEventId = existingSale?.id || null;
+          }
+          if (!successfulPaymentEventId || successfulPaymentEventId === paymentEventId) {
+            throw new Error('Dunning recovery ledger did not contain a distinct successful payment record');
+          }
         } else {
           // No enrollment link — record the standalone recovered sale (legacy behaviour).
-          const { error: insertError } = await supabase.from('payment_events').insert({
+          const { data: successfulSale, error: insertError } = await supabase.from('payment_events').insert({
             merchant_id: merchantId,
             location_id: locationId,
             contact_id: contactId,
             event_type: 'sale',
-            processor: procConfig.processor_type,
-            processor_transaction_id: result.transactionId,
+            processor: originalProcessor,
+            processor_transaction_id: recoveredTransactionId,
             amount: originalEvent.amount,
             currency: originalEvent.currency || 'usd',
             source: 'dunning_retry',
             is_recurring: true,
-          });
+          }).select('id').single();
           if (insertError) throw new Error(`Dunning recovery ledger write failed: ${insertError.message}`);
+          if (!successfulSale?.id || successfulSale.id === paymentEventId) {
+            throw new Error('Dunning recovery ledger did not contain a distinct successful payment record');
+          }
         }
 
         // Resolve dunning
-        const { error: resolveError } = await supabase.from('payment_events').update({
+        const { data: resolvedRows, error: resolveError } = await supabase.from('payment_events').update({
           dunning_status: 'resolved',
           dunning_resolved_at: new Date().toISOString(),
-        }).eq('id', paymentEventId);
+        })
+          .eq('id', paymentEventId)
+          .eq('merchant_id', merchantId)
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .eq('dunning_status', 'retrying')
+          .select('id');
         if (resolveError) throw new Error(`Dunning recovery status write failed: ${resolveError.message}`);
+        if (!Array.isArray(resolvedRows) || resolvedRows.length !== 1) {
+          const { data: currentDunning, error: currentDunningError } = await supabase
+            .from('payment_events')
+            .select('id, dunning_status')
+            .eq('id', paymentEventId)
+            .eq('merchant_id', merchantId)
+            .eq('location_id', locationId)
+            .eq('contact_id', contactId)
+            .maybeSingle();
+          if (currentDunningError || currentDunning?.dunning_status !== 'resolved') {
+            throw new Error(currentDunningError
+              ? `Dunning recovery status verification failed: ${currentDunningError.message}`
+              : 'Dunning recovery status was not resolved');
+          }
+        }
 
         await moneyOperationService.markRecorded({
           id: operation.operation.id,
           locationId,
           response: { success: true },
-          processorType: procConfig.processor_type,
-          processorReference: result.transactionId,
+          processorType: originalProcessor,
+          processorReference: recoveredTransactionId,
           providerCalled: true,
         });
 
@@ -496,11 +654,11 @@ export const paymentLifecycleService = {
             {
             amount: originalEvent.amount,
             payment_date: new Date().toISOString(),
-            ghl_transaction_id: result.transactionId,
+            ghl_transaction_id: recoveredTransactionId,
             payment_event_id: paymentEventId,
             raw_payload: { originalEvent, result },
             ...buildDefenseEvidenceFields({
-              summary: `Dunning retry recovered payment of $${Number(originalEvent.amount || 0).toFixed(2)}. Transaction: ${result.transactionId || 'n/a'}.`,
+              summary: `Dunning retry recovered payment of $${Number(originalEvent.amount || 0).toFixed(2)}. Transaction: ${recoveredTransactionId}.`,
               title: 'Dunning Recovery Payment',
               proofRole: 'payment_history',
               relevance: { tags: ['credit_not_processed', 'cancelled_recurring'], priority: 'high', confidence: 'strong' },
@@ -509,8 +667,8 @@ export const paymentLifecycleService = {
                 actor: 'processor',
                 transaction: {
                   paymentEventId,
-                  processor: procConfig.processor_type,
-                  transactionId: result.transactionId,
+                  processor: originalProcessor,
+                  transactionId: recoveredTransactionId,
                   amount: originalEvent.amount,
                   currency: originalEvent.currency || 'usd',
                 },
@@ -538,8 +696,8 @@ export const paymentLifecycleService = {
             amount: originalEvent.amount,
             amount_display: formatMoney(originalEvent.amount),
             amountDisplay: formatMoney(originalEvent.amount),
-            transaction_id: result.transactionId,
-            transactionId: result.transactionId,
+            transaction_id: recoveredTransactionId,
+            transactionId: recoveredTransactionId,
             action: 'dunning_resolved',
             payment_kind: 'dunning_recovery',
             paymentKind: 'dunning_recovery',
@@ -564,7 +722,7 @@ export const paymentLifecycleService = {
           });
         } catch { /* non-blocking */ }
 
-        logger.info({ contactId, paymentEventId, transactionId: result.transactionId }, 'Dunning retry succeeded');
+        logger.info({ contactId, paymentEventId, transactionId: recoveredTransactionId }, 'Dunning retry succeeded');
         return { success: true };
       }
 
@@ -579,13 +737,17 @@ export const paymentLifecycleService = {
         dunning_status: 'active', // release the claim so scheduled retries can run
         dunning_retry_count: retryCount,
         dunning_next_retry: nextRetry,
-      }).eq('id', paymentEventId);
+      })
+        .eq('id', paymentEventId)
+        .eq('merchant_id', merchantId)
+        .eq('location_id', locationId)
+        .eq('contact_id', contactId);
 
       await moneyOperationService.markRecorded({
         id: operation.operation.id,
         locationId,
         response: { success: false, error: result.errorMessage || 'Charge declined' },
-        processorType: procConfig.processor_type,
+        processorType: originalProcessor,
         processorReference: result.transactionId || null,
         providerCalled: true,
       });
@@ -599,11 +761,19 @@ export const paymentLifecycleService = {
       // Never reopen eligibility after the processor may have accepted the charge.
       if (!preserveRetryClaim) {
         try {
-          await supabase.from('payment_events').update({ dunning_status: 'active' }).eq('id', paymentEventId);
+          await supabase.from('payment_events').update({ dunning_status: 'active' })
+            .eq('id', paymentEventId)
+            .eq('merchant_id', merchantId)
+            .eq('location_id', locationId)
+            .eq('contact_id', contactId);
         } catch { /* best effort */ }
       }
       logger.error({ err: err.message, contactId, paymentEventId }, 'Dunning retry charge failed');
-      return { success: false, error: err.message };
+      return {
+        success: false,
+        error: err.message,
+        ...(preserveRetryClaim ? { reconciliationRequired: true } : {}),
+      };
     }
   },
 
@@ -1240,13 +1410,13 @@ export const paymentLifecycleService = {
         logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
         throw err;
       }
-      // Clear processor_subscription_id and mark cancelled
+      // Keep the processor subscription reference as historical billing evidence.
       await updateEnrollmentForLifecycleAction({
         locationId: params.locationId,
         enrollmentId: params.enrollmentId,
         contactId: params.contactId,
         processorSubscriptionId,
-        updates: { ...cancelledEnrollmentUpdates, processor_subscription_id: null },
+        updates: cancelledEnrollmentUpdates,
         action: 'cancel',
       });
     } else {
@@ -1491,12 +1661,12 @@ export const paymentLifecycleService = {
       if (params.enrollmentId) {
         await supabase.from('enrollments').update({
           status: 'completed', completed_at: completedAt,
-          next_billing_date: null, processor_subscription_id: null,
+          next_billing_date: null,
         }).eq('id', params.enrollmentId);
       } else if (params.processorSubscriptionId) {
         await supabase.from('enrollments').update({
           status: 'completed', completed_at: completedAt,
-          next_billing_date: null, processor_subscription_id: null,
+          next_billing_date: null,
         }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
          .eq('processor_subscription_id', params.processorSubscriptionId);
       } else {

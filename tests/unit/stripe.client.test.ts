@@ -21,6 +21,8 @@ jest.mock('stripe', () => {
       cancel: jest.fn(),
       update: jest.fn(),
     },
+    invoices: { pay: jest.fn() },
+    invoicePayments: { list: jest.fn() },
     accounts: { retrieve: jest.fn() },
   };
 
@@ -236,6 +238,89 @@ describe('StripeClient', () => {
         undefined,
         { stripeAccount: 'acct_test123' },
       );
+    });
+  });
+
+  describe('payInvoice', () => {
+    it('uses the connected account and stable idempotency key and returns the Basil PaymentIntent', async () => {
+      mockStripe.invoices.pay.mockResolvedValue({
+        id: 'in_retry',
+        status: 'paid',
+        payments: {
+          data: [
+            {
+              id: 'inpay_older',
+              status: 'paid',
+              amount_paid: 1000,
+              status_transitions: { paid_at: 100 },
+              payment: { type: 'payment_intent', payment_intent: 'pi_older' },
+            },
+            {
+              id: 'inpay_retry',
+              status: 'paid',
+              amount_paid: 5000,
+              status_transitions: { paid_at: 200 },
+              payment: { type: 'payment_intent', payment_intent: { id: 'pi_retry' } },
+            },
+          ],
+        },
+      });
+
+      const result = await client.payInvoice('in_retry', {
+        stripeAccountId: 'acct_test123',
+        idempotencyKey: 'dunning-pe-1-1',
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        success: true,
+        outcome: 'succeeded',
+        transactionId: 'pi_retry',
+        invoicePaymentId: 'inpay_retry',
+      }));
+      expect(mockStripe.invoices.pay).toHaveBeenCalledWith(
+        'in_retry',
+        expect.objectContaining({ expand: ['payments.data.payment.payment_intent'] }),
+        { stripeAccount: 'acct_test123', idempotencyKey: 'dunning-pe-1-1' },
+      );
+    });
+
+    it.each([
+      ['StripeConnectionError', undefined],
+      ['StripeAPIError', 503],
+    ])('treats %s as an unknown result requiring reconciliation', async (type, statusCode) => {
+      const error = new Error('response lost');
+      (error as any).type = type;
+      (error as any).statusCode = statusCode;
+      mockStripe.invoices.pay.mockRejectedValue(error);
+
+      const result = await client.payInvoice('in_retry', {
+        stripeAccountId: 'acct_test123',
+        idempotencyKey: 'dunning-pe-1-1',
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        success: false,
+        outcome: 'unknown',
+        errorCode: 'STRIPE_INVOICE_RESULT_UNKNOWN',
+      }));
+    });
+
+    it('returns a definitive failure for a Stripe card decline', async () => {
+      const error = new Error('card declined');
+      (error as any).type = 'StripeCardError';
+      (error as any).code = 'card_declined';
+      mockStripe.invoices.pay.mockRejectedValue(error);
+
+      const result = await client.payInvoice('in_retry', {
+        stripeAccountId: 'acct_test123',
+        idempotencyKey: 'dunning-pe-1-1',
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        success: false,
+        outcome: 'failed',
+        errorCode: 'card_declined',
+      }));
     });
   });
 

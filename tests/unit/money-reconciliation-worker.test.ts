@@ -6,6 +6,7 @@ const mockClaimRefunds = jest.fn();
 const mockMarkRefundRecorded = jest.fn().mockResolvedValue(undefined);
 const mockScheduleRefundRetry = jest.fn().mockResolvedValue(undefined);
 const mockNotifyRefundProcessed = jest.fn().mockResolvedValue(undefined);
+const mockRpc = jest.fn();
 
 function chain(result: { data: any; error: any }) {
   const builder: any = {};
@@ -23,7 +24,7 @@ const mockFrom = jest.fn((table: string) => {
 });
 
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({ from: mockFrom, rpc: jest.fn() }),
+  getSupabase: () => ({ from: mockFrom, rpc: (...args: any[]) => mockRpc(...args) }),
 }));
 
 jest.mock('../../src/services/money-operation.service', () => ({
@@ -74,6 +75,7 @@ beforeEach(() => {
   mockMarkRefundRecorded.mockResolvedValue(undefined);
   mockScheduleRefundRetry.mockResolvedValue(undefined);
   mockNotifyRefundProcessed.mockResolvedValue(undefined);
+  mockRpc.mockReset();
   for (const key of Object.keys(tableQueues)) delete tableQueues[key];
 });
 
@@ -195,6 +197,67 @@ test('keeps a recovered recurring payment visible for subscription reconciliatio
     next_billing_date: null,
   }));
   expect(mockMarkRecorded).toHaveBeenCalledWith(expect.objectContaining({ id: 'op_sub_unknown' }));
+});
+
+test('resolves reconciled dunning only after a distinct sale is durably recorded', async () => {
+  mockClaim.mockResolvedValue([{
+    id: 'op_dunning', location_id: 'loc_1', merchant_id: 'merch_1',
+    operation_type: 'dunning_retry', status: 'provider_accepted', provider_called: true,
+    processor_type: 'stripe', processor_reference: 'pi_retry', reconciliation_attempts: 1,
+    request_payload: { paymentEventId: 'pe_failed', contactId: 'contact_1', enrollmentId: 'enr_1' },
+    response_payload: { success: true, transactionId: 'pi_retry' }, reconciliation_payload: {},
+  }]);
+  const dunningUpdate = jest.fn(() => chain({ data: null, error: null }));
+  tableQueues.payment_events = [
+    queuedSelect({
+      id: 'pe_failed', enrollment_id: 'enr_1', amount: 50, currency: 'usd', contact_id: 'contact_1',
+      processor: 'stripe', processor_transaction_id: 'in_failed',
+    }),
+    { update: dunningUpdate },
+  ];
+  tableQueues.enrollments = [queuedSelect({ offer_id: 'offer_1' })];
+  tableQueues.offers_mirror = [queuedSelect({ installment_frequency: 'monthly' })];
+  mockRpc.mockResolvedValue({
+    data: [{ is_duplicate: false, payment_event_id: 'pe_success' }],
+    error: null,
+  });
+
+  await moneyReconciliationWorker.runOnce();
+
+  expect(dunningUpdate).toHaveBeenCalledWith(expect.objectContaining({ dunning_status: 'resolved' }));
+  expect(mockMarkRecorded).toHaveBeenCalledWith(expect.objectContaining({ id: 'op_dunning' }));
+  expect(mockScheduleRetry).not.toHaveBeenCalled();
+});
+
+test('keeps reconciled dunning open when a duplicate cannot be verified as a sale', async () => {
+  mockClaim.mockResolvedValue([{
+    id: 'op_dunning', location_id: 'loc_1', merchant_id: 'merch_1',
+    operation_type: 'dunning_retry', status: 'provider_accepted', provider_called: true,
+    processor_type: 'stripe', processor_reference: 'pi_retry', reconciliation_attempts: 1,
+    request_payload: { paymentEventId: 'pe_failed', contactId: 'contact_1', enrollmentId: 'enr_1' },
+    response_payload: { success: true, transactionId: 'pi_retry' }, reconciliation_payload: {},
+  }]);
+  tableQueues.payment_events = [
+    queuedSelect({
+      id: 'pe_failed', enrollment_id: 'enr_1', amount: 50, currency: 'usd', contact_id: 'contact_1',
+      processor: 'stripe', processor_transaction_id: 'in_failed',
+    }),
+    queuedSelect(null),
+  ];
+  tableQueues.enrollments = [queuedSelect({ offer_id: 'offer_1' })];
+  tableQueues.offers_mirror = [queuedSelect({ installment_frequency: 'monthly' })];
+  mockRpc.mockResolvedValue({
+    data: [{ is_duplicate: true, payment_event_id: null }],
+    error: null,
+  });
+
+  await moneyReconciliationWorker.runOnce();
+
+  expect(mockMarkRecorded).not.toHaveBeenCalled();
+  expect(mockScheduleRetry).toHaveBeenCalledWith(expect.objectContaining({
+    id: 'op_dunning',
+    error: 'Dunning recovery is not backed by a distinct successful payment record',
+  }));
 });
 
 test('repairs a provider-accepted refund without calling the processor again', async () => {

@@ -1,7 +1,9 @@
 const mockFrom = jest.fn();
 const mockInitiateDunning = jest.fn();
+const mockInsert = jest.fn();
 
 let insertResult: any = { data: { id: 'pe_fail' }, error: null };
+let existingFailureResult: any = { data: null, error: null };
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -31,6 +33,7 @@ function callFailure() {
     amountCents: 5000,
     errorMessage: 'card_declined',
     source: 'stripe_webhook',
+    rawPayload: { stripe_invoice_id: 'in_1', stripe_account_id: 'acct_1' },
   });
 }
 
@@ -38,23 +41,47 @@ describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     insertResult = { data: { id: 'pe_fail' }, error: null };
-    mockFrom.mockImplementation(() => ({
-      insert: () => ({ select: () => ({ single: () => Promise.resolve(insertResult) }) }),
-    }));
+    existingFailureResult = { data: null, error: null };
+    mockFrom.mockImplementation(() => {
+      const selectChain: any = {
+        eq: jest.fn(() => selectChain),
+        maybeSingle: jest.fn(() => Promise.resolve(existingFailureResult)),
+      };
+      return {
+        insert: (...args: any[]) => {
+          mockInsert(...args);
+          return { select: () => ({ single: () => Promise.resolve(insertResult) }) };
+        },
+        select: jest.fn(() => selectChain),
+      };
+    });
     mockInitiateDunning.mockResolvedValue(undefined);
+  });
+
+  test('does not duplicate dunning for the same processor object', async () => {
+    existingFailureResult = { data: { id: 'pe_previous' }, error: null };
+
+    await expect(callFailure()).resolves.toEqual({
+      paymentEventId: 'pe_previous',
+      duplicate: true,
+    });
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInitiateDunning).not.toHaveBeenCalled();
   });
 
   test('initiates dunning with the ledger event id on a normal insert', async () => {
     await callFailure();
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      raw_webhook_payload: { stripe_invoice_id: 'in_1', stripe_account_id: 'acct_1' },
+    }));
     expect(mockInitiateDunning).toHaveBeenCalledWith(expect.objectContaining({ paymentEventId: 'pe_fail' }));
   });
 
-  test('still initiates dunning when the failed-payment ledger insert fails', async () => {
+  test('fails closed without dunning when the failed-payment ledger insert fails', async () => {
     insertResult = { data: null, error: { message: 'DB down', code: '08006' } };
 
-    await callFailure();
+    await expect(callFailure()).rejects.toMatchObject({ message: 'DB down' });
 
-    expect(mockInitiateDunning).toHaveBeenCalledTimes(1);
-    expect(mockInitiateDunning).toHaveBeenCalledWith(expect.objectContaining({ paymentEventId: null }));
+    expect(mockInitiateDunning).not.toHaveBeenCalled();
   });
 });

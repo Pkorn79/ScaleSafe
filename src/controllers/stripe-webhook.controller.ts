@@ -9,6 +9,10 @@ import { logger } from '../utils/logger';
 import { decrypt } from '../services/processor-config.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import {
+  stripeInvoicePaymentReference,
+  stripeInvoiceSubscriptionId,
+} from '../utils/stripe-invoice-payment';
+import {
   assertStripeProcessorConfigMode,
   expectedStripeLiveMode,
 } from '../services/stripe-connection-mode.service';
@@ -16,7 +20,7 @@ import {
 const Stripe = require('stripe');
 
 function getStripe(): any {
-  return new Stripe(config.stripe.secretKey);
+  return new Stripe(config.stripe.secretKey, { apiVersion: '2025-03-31.basil' });
 }
 
 type StripeProcessorConfig = {
@@ -632,13 +636,13 @@ export function stripeInvoiceNextBillingDate(invoice: any): string | null {
  * first payment is handled as a one-off charge in checkout.
  */
 async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise<void> {
-  const invoice = event.data.object;
+  let invoice = event.data.object;
   if (invoice.billing_reason !== 'subscription_cycle') {
     logger.debug({ invoiceId: invoice.id, reason: invoice.billing_reason }, 'Skipping non-cycle invoice');
     return;
   }
 
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = stripeInvoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const supabase = getSupabase();
@@ -656,19 +660,33 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     return;
   }
 
-  // Idempotency: check if we already logged this charge
-  const chargeId = invoice.charge;
-  if (chargeId) {
-    const { data: existing } = await supabase
-      .from('payment_events')
-      .select('id')
-      .eq('location_id', merchant.location_id)
-      .eq('processor_transaction_id', chargeId)
-      .maybeSingle();
-    if (existing) {
-      logger.debug({ chargeId }, 'Invoice charge already processed — skipping duplicate');
-      return;
-    }
+  let invoicePayment = stripeInvoicePaymentReference(invoice);
+  if (!invoicePayment && merchant.stripe_user_id) {
+    invoice = await getStripe().invoices.retrieve(
+      invoice.id,
+      { expand: ['payments.data.payment.payment_intent'] },
+      { stripeAccount: merchant.stripe_user_id },
+    );
+    invoicePayment = stripeInvoicePaymentReference(invoice);
+  }
+  if (!invoicePayment) {
+    throw new Error(`Stripe invoice ${invoice.id} is paid without a distinct paid InvoicePayment reference`);
+  }
+
+  // Idempotency: the PaymentIntent/InvoicePayment reference is distinct from
+  // the invoice id stored on the earlier payment_failed event.
+  const transactionId = invoicePayment.transactionId;
+  const { data: existing } = await supabase
+    .from('payment_events')
+    .select('id')
+    .eq('location_id', merchant.location_id)
+    .eq('processor', 'stripe')
+    .eq('event_type', 'sale')
+    .eq('processor_transaction_id', transactionId)
+    .maybeSingle();
+  if (existing) {
+    logger.debug({ transactionId }, 'Invoice payment already processed — skipping duplicate');
+    return;
   }
 
   // Resolve offer for installment details
@@ -687,25 +705,31 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     }
   }
 
-  const amountCents = invoice.amount_paid || 0;
+  const amountCents = invoicePayment.amountPaidCents ?? invoice.amount_paid ?? 0;
 
   const result = await handleRecurringPaymentSuccess({
     enrollment,
     processorType: 'stripe',
-    transactionId: chargeId || invoice.id,
+    transactionId,
     amountCents,
     offerName,
     installmentFrequency,
     source: 'stripe_webhook',
     // Processor truth: the cycle end on the invoice is the next billing date.
     nextBillingDate: stripeInvoiceNextBillingDate(invoice),
-    rawPayload: { invoiceId: invoice.id, subscriptionId, chargeId },
+    rawPayload: {
+      invoiceId: invoice.id,
+      subscriptionId,
+      invoicePaymentId: invoicePayment.invoicePaymentId,
+      transactionId,
+      stripeAccountId: event.account || merchant.stripe_user_id || null,
+    },
   });
 
   logger.info({
     enrollmentId: enrollment.id,
     subscriptionId,
-    chargeId,
+    transactionId,
     amountCents,
     newPaymentsMade: result.newPaymentsMade,
     isFinal: result.isFinal,
@@ -717,7 +741,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
  */
 async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<void> {
   const invoice = event.data.object;
-  const subscriptionId = invoice.subscription;
+  const subscriptionId = stripeInvoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
   const supabase = getSupabase();
@@ -739,9 +763,18 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
   await handleRecurringPaymentFailure({
     enrollment,
     processorType: 'stripe',
+    // Smart Retries emit repeated failures for the same invoice. Persisting
+    // that invoice id gives the ledger and manual retry one stable identity.
+    transactionId: invoice.id,
     amountCents,
     errorMessage,
     source: 'stripe_webhook',
+    rawPayload: {
+      stripe_invoice_id: invoice.id,
+      stripe_account_id: event.account || merchant.stripe_user_id || null,
+      stripe_event_id: event.id,
+      stripe_subscription_id: subscriptionId,
+    },
   });
 
   logger.warn({ enrollmentId: enrollment.id, subscriptionId, amountCents }, 'Stripe subscription payment failed — dunning initiated');

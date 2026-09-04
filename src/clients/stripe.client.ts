@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { ProcessorInterface } from '../interfaces/processor.interface';
+import { InvoicePaymentResult, ProcessorInterface } from '../interfaces/processor.interface';
 import {
   ChargeRequest, ChargeResult,
   RefundRequest, RefundResult,
@@ -10,6 +10,7 @@ import {
 import { ProcessorError } from '../errors/processor.error';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { stripeInvoicePaymentReference } from '../utils/stripe-invoice-payment';
 
 // Stripe v22 default export is a constructor function, not a class.
 // Use require() for clean instantiation — types come from inference.
@@ -440,6 +441,84 @@ export class StripeClient implements ProcessorInterface {
     } catch (err) {
       const procErr = this.toProcessorError(err);
       return { success: false, errorMessage: procErr.message };
+    }
+  }
+
+  // ─── payInvoice ─────────────────────────────────────────────
+
+  /**
+   * Pay an open subscription invoice with the saved default (or supplied)
+   * payment method. Used by dunning retries: paying the invoice itself stops
+   * Stripe Smart Retries from collecting the same installment again later.
+   */
+  async payInvoice(invoiceId: string, opts: {
+    idempotencyKey: string;
+    stripeAccountId: string;
+    paymentMethodId?: string;
+  }): Promise<InvoicePaymentResult> {
+    if (opts.stripeAccountId !== this.stripeAccountId) {
+      return {
+        success: false,
+        outcome: 'failed',
+        errorMessage: 'Stripe connected account does not match the failed invoice.',
+        errorCode: 'STRIPE_ACCOUNT_MISMATCH',
+      };
+    }
+
+    let invoiceResponseReceived = false;
+    try {
+      const invoice = await this.stripe.invoices.pay(
+        invoiceId,
+        {
+          ...(opts.paymentMethodId ? { payment_method: opts.paymentMethodId } : {}),
+          expand: ['payments.data.payment.payment_intent'],
+        },
+        { ...this.acct, idempotencyKey: opts.idempotencyKey },
+      );
+      invoiceResponseReceived = true;
+
+      let payment = stripeInvoicePaymentReference(invoice);
+      if (!payment && invoice.status === 'paid' && this.stripe.invoicePayments?.list) {
+        const listed = await this.stripe.invoicePayments.list(
+          { invoice: invoiceId, limit: 100 },
+          this.acct,
+        );
+        payment = stripeInvoicePaymentReference({ id: invoiceId, payments: listed });
+      }
+
+      if (invoice.status === 'paid' && payment) {
+        return {
+          success: true,
+          outcome: 'succeeded',
+          transactionId: payment.transactionId,
+          invoicePaymentId: payment.invoicePaymentId,
+        };
+      }
+
+      return {
+        success: false,
+        outcome: 'unknown',
+        errorMessage: invoice.status === 'paid'
+          ? 'Stripe marked the invoice paid but did not return a distinct paid InvoicePayment.'
+          : `Stripe returned invoice status ${invoice.status || 'unknown'} without a definitive payment result.`,
+        errorCode: 'STRIPE_INVOICE_RESULT_UNKNOWN',
+      };
+    } catch (err) {
+      const procErr = this.toProcessorError(err);
+      if (invoiceResponseReceived || !this.isDefinitiveSubscriptionError(err) || Number((err as any)?.statusCode || 0) >= 500) {
+        return {
+          success: false,
+          outcome: 'unknown',
+          errorMessage: procErr.message,
+          errorCode: 'STRIPE_INVOICE_RESULT_UNKNOWN',
+        };
+      }
+      return {
+        success: false,
+        outcome: 'failed',
+        errorMessage: procErr.message,
+        errorCode: procErr.code,
+      };
     }
   }
 

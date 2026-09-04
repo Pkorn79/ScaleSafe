@@ -221,14 +221,21 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
   if (!transactionId) throw new Error('Dunning transaction reference is missing');
   const { data: original, error: originalError } = await getSupabase()
     .from('payment_events')
-    .select('id, enrollment_id, amount, currency, contact_id')
+    .select('id, enrollment_id, amount, currency, contact_id, processor, processor_transaction_id')
     .eq('id', payload.paymentEventId)
     .eq('location_id', operation.location_id)
     .eq('contact_id', payload.contactId)
     .maybeSingle();
   if (originalError) throw originalError;
   if (!original) throw new Error('Original dunning payment event is missing');
+  if (operation.processor_type !== original.processor) {
+    throw new Error('Dunning reconciliation processor does not match the original failed payment');
+  }
+  if (transactionId === original.processor_transaction_id) {
+    throw new Error('Dunning reconciliation requires a distinct successful payment reference');
+  }
 
+  let successfulPaymentEventId: string | null = null;
   if (original.enrollment_id) {
     let interval = 'monthly';
     const { data: enrollment } = await getSupabase()
@@ -246,7 +253,7 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
         .maybeSingle();
       if (offer?.installment_frequency) interval = offer.installment_frequency;
     }
-    const { error } = await getSupabase().rpc('record_recurring_payment', {
+    const { data, error } = await getSupabase().rpc('record_recurring_payment', {
       p_enrollment_id: original.enrollment_id,
       p_location_id: operation.location_id,
       p_processor: operation.processor_type,
@@ -259,8 +266,27 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
       p_raw_payload: { dunning_retry: true, original_payment_event_id: original.id, money_operation_id: operation.id },
     });
     if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    successfulPaymentEventId = row?.is_duplicate ? null : row?.payment_event_id || null;
   } else {
     await ensurePaymentLedger(operation);
+  }
+
+  if (!successfulPaymentEventId) {
+    const { data: successfulPayment, error: successError } = await getSupabase()
+      .from('payment_events')
+      .select('id')
+      .eq('location_id', operation.location_id)
+      .eq('contact_id', original.contact_id)
+      .eq('processor', original.processor)
+      .eq('event_type', 'sale')
+      .eq('processor_transaction_id', transactionId)
+      .maybeSingle();
+    if (successError) throw successError;
+    successfulPaymentEventId = successfulPayment?.id || null;
+  }
+  if (!successfulPaymentEventId || successfulPaymentEventId === original.id) {
+    throw new Error('Dunning recovery is not backed by a distinct successful payment record');
   }
 
   const { error: resolveError } = await getSupabase()
