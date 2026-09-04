@@ -125,6 +125,31 @@ function requireWhopMembershipId(params: SubscriptionParams, action: string): st
   return membershipId;
 }
 
+/**
+ * True when the enrollment's billing already finished (final installment
+ * collected, or billing explicitly marked complete). Cancelling such an
+ * enrollment must not require a live processor call — the processor-side
+ * subscription is already finished/deleted (2026-09-03 PMG incident).
+ */
+async function isEnrollmentFullyBilled(params: { locationId: string; enrollmentId?: string }): Promise<boolean> {
+  if (!params.enrollmentId) return false;
+  try {
+    const { data } = await getSupabase()
+      .from('enrollments')
+      .select('payments_made, payments_total, payment_type, billing_completed_at')
+      .eq('id', params.enrollmentId)
+      .eq('location_id', params.locationId)
+      .maybeSingle();
+    if (!data) return false;
+    if (data.billing_completed_at) return true;
+    return data.payment_type !== 'subscription'
+      && data.payments_total != null
+      && Number(data.payments_made || 0) >= Number(data.payments_total);
+  } catch {
+    return false;
+  }
+}
+
 async function updateEnrollmentForLifecycleAction(params: {
   locationId: string;
   enrollmentId?: string;
@@ -1170,17 +1195,32 @@ export const paymentLifecycleService = {
         action: 'cancel',
       });
     } else if (params.processorSubscriptionId) {
-      try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
-          processor_override: params.processorType || null,
-          nmi_processor_id: null,
-        });
-        const processor = createProcessorClient(procConfig);
-        const result = await processor.cancelSubscription(params.processorSubscriptionId);
-        assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
-      } catch (err: any) {
-        logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
-        throw err;
+      const fullyBilled = await isEnrollmentFullyBilled(params);
+      if (fullyBilled) {
+        logger.info(
+          { enrollmentId: params.enrollmentId, subscriptionId: params.processorSubscriptionId },
+          'Skipping processor cancel: enrollment billing already completed',
+        );
+      } else {
+        try {
+          const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
+            processor_override: params.processorType || null,
+            nmi_processor_id: null,
+          });
+          const processor = createProcessorClient(procConfig);
+          const result = await processor.cancelSubscription(params.processorSubscriptionId);
+          if (result && result.success === false && result.notFound) {
+            logger.info(
+              { enrollmentId: params.enrollmentId, subscriptionId: params.processorSubscriptionId },
+              'Processor subscription already gone; treating cancel as complete',
+            );
+          } else {
+            assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
+          }
+        } catch (err: any) {
+          logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
+          throw err;
+        }
       }
       // Clear processor_subscription_id and mark cancelled
       await updateEnrollmentForLifecycleAction({

@@ -309,8 +309,22 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     }
   }
 
-  // 5. Final-installment billing marker
+  // 5. Final-installment billing marker. Clear the processor subscription id:
+  // the processor-side subscription is finished (Stripe auto-deletes it, NMI
+  // self-terminates), so later cancel/complete actions must not try to cancel
+  // it at the processor (2026-09-03 PMG incident).
   if (isFinal) {
+    const { error: clearError } = await supabase
+      .from('enrollments')
+      .update({ processor_subscription_id: null })
+      .eq('id', enr.id)
+      .eq('location_id', enr.location_id);
+    if (clearError) {
+      logger.warn(
+        { err: clearError.message, enrollmentId: enr.id },
+        'Failed to clear processor subscription id after final installment (non-fatal)',
+      );
+    }
     logger.info({ enrollmentId: enr.id, totalPayments: newPaymentsMade }, 'Recurring payment: final installment collected; billing marked complete');
   }
 

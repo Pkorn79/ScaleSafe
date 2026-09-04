@@ -3,6 +3,16 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Lifecycle cancellation correctness (2026-09-04)
+
+### Fixed
+- Fully billed installment enrollments can now be cancelled: the lifecycle cancel skips the processor call when billing is already complete, and treats a processor "subscription not found" response as an already-finished cancel instead of failing (2026-09-03 PMG incident).
+- The final recurring installment now clears the enrollment's stored processor subscription id, so later cancel/complete actions never target a finished processor subscription.
+- Processor/configuration errors (for example STRIPE_CONNECTION_MODE_MISMATCH) now surface their real merchant-actionable message and code as a 502 instead of a generic 500 "An unexpected error occurred".
+
+### Security
+- POST /api/payments/lifecycle/enrollment/status now enforces per-action allowed statuses (a cancelled or completed enrollment can no longer be re-transitioned), scopes the enrollment lookup by the caller-supplied contactId, and passes the enrollment's stored contact to lifecycle services instead of the raw body value.
+
 ## Unreleased - Stripe live cutover and gated test access (2026-08-18)
 
 ### Added

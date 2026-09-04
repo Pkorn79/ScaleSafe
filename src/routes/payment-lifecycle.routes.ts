@@ -99,6 +99,16 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
 
 // ─── Manual Enrollment Status Change ────────────────────────────
 
+// Statuses each action may legally start from. The lookup filters on these so
+// a cancelled/completed enrollment can never be re-transitioned (and a
+// mismatched contactId can never act on another contact's enrollment).
+const LIFECYCLE_ACTION_STATUSES: Record<string, string[]> = {
+  pause: ['enrolled', 'active'],
+  resume: ['paused'],
+  cancel: ['enrolled', 'active', 'paused', 'past_due', 'delinquent', 'consent_captured', 'device_captured'],
+  complete: ['enrolled', 'active', 'paused', 'past_due', 'delinquent'],
+};
+
 router.post('/enrollment/status', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const locationId = resolveLocationId(req);
@@ -107,25 +117,18 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
     const { enrollmentId, contactId, action, reason } = req.body;
     if (!enrollmentId || !contactId || !action) throw new ValidationError('enrollmentId, contactId, and action required');
 
-    const supabase = (await import('../clients/supabase.client')).getSupabase();
+    const allowedStatuses = LIFECYCLE_ACTION_STATUSES[action];
+    if (!allowedStatuses) throw new ValidationError(`Invalid action: ${action}. Must be pause, resume, cancel, or complete`);
 
-    // Look up enrollment for processor subscription ID and offer ID
-    const { data: enrollment } = await supabase
-      .from('enrollments')
-      .select('id, processor_subscription_id, whop_membership_id, processor_type, offer_id, status')
-      .eq('id', enrollmentId)
-      .eq('location_id', locationId)
-      .single();
-
-    if (!enrollment) throw new ValidationError('Enrollment not found');
+    const enrollment = await getEnrollmentForLifecycleAction(locationId, enrollmentId, contactId, allowedStatuses);
 
     const serviceParams = {
       merchantId: merchant.id,
       locationId,
-      contactId,
+      contactId: enrollment.contact_id,
       offerId: enrollment.offer_id || '',
       reason: reason || `Merchant-initiated ${action}`,
-      enrollmentId,
+      enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
     };
@@ -143,8 +146,6 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
       case 'complete':
         await paymentLifecycleService.completeEnrollment(serviceParams);
         break;
-      default:
-        throw new ValidationError(`Invalid action: ${action}. Must be pause, resume, cancel, or complete`);
     }
 
     res.json({ success: true, action });

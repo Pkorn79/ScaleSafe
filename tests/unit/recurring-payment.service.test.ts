@@ -1,5 +1,6 @@
 const mockFrom = jest.fn();
 const mockRpc = jest.fn();
+const enrollmentWrites: any[] = [];
 const mockGhlPut = jest.fn();
 const mockFireTrigger = jest.fn();
 const mockLogEvidence = jest.fn();
@@ -57,8 +58,10 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
       next_billing_source: 'processor',
     };
 
-    // The service should perform NO direct table writes for the ledger/enrollment —
-    // the RPC is authoritative. Only the merchants lookup remains.
+    // The RPC is authoritative for the ledger and billing counters. The ONLY
+    // permitted direct enrollment write is the final-installment cleanup that
+    // clears processor_subscription_id (captured below); anything else throws.
+    enrollmentWrites.length = 0;
     mockFrom.mockImplementation((table: string) => {
       if (table === 'merchants') {
         return {
@@ -73,6 +76,16 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
             }),
           }),
         };
+      }
+      if (table === 'enrollments') {
+        const write: any = { update: null, filters: [] };
+        enrollmentWrites.push(write);
+        const chain: any = {
+          update: (payload: any) => { write.update = payload; return chain; },
+          eq: (col: string, val: any) => { write.filters.push([col, val]); return chain; },
+          then: (onF: any, onR: any) => Promise.resolve({ error: null }).then(onF, onR),
+        };
+        return chain;
       }
       throw new Error(`Unexpected table write in handleRecurringPaymentSuccess: ${table}`);
     });
@@ -214,6 +227,30 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
     expect(result.isFinal).toBe(true);
     expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
+
+    // Final installment: the stale processor subscription id must be cleared so
+    // later cancel/complete actions never call the processor for a finished plan
+    // (2026-09-03 PMG incident).
+    expect(enrollmentWrites).toHaveLength(1);
+    expect(enrollmentWrites[0].update).toEqual({ processor_subscription_id: null });
+    expect(enrollmentWrites[0].filters).toEqual(expect.arrayContaining([
+      ['id', 'enr_1'],
+      ['location_id', 'loc_1'],
+    ]));
+  });
+
+  it('does not touch the enrollment row on a non-final payment', async () => {
+    await handleRecurringPaymentSuccess({
+      enrollment: baseEnrollment,
+      processorType: 'stripe',
+      transactionId: 'ch_2',
+      amountCents: 5000,
+      offerName: 'Test Offer',
+      installmentFrequency: 'weekly',
+      source: 'stripe_webhook',
+    });
+
+    expect(enrollmentWrites).toHaveLength(0);
   });
 
   it('does not fire a customer receipt for NMI history-sync imports', async () => {

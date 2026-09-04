@@ -390,7 +390,7 @@ export class NmiClient implements ProcessorInterface {
 
   // ─── cancelSubscription ────────────────────────────────────
 
-  async cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {
+  async cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string; notFound?: boolean }> {
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('recurring', 'delete_subscription');
@@ -398,9 +398,14 @@ export class NmiClient implements ProcessorInterface {
 
     const nmi = await this.postTransact(params);
 
+    const success = nmi.response === '1';
+    // NMI deletes finished finite plans itself; "No recurring subscriptions
+    // found" on delete means there is nothing left to cancel.
+    const notFound = !success && /no recurring subscriptions?/i.test(String(nmi.responsetext || ''));
     return {
-      success: nmi.response === '1',
-      errorMessage: nmi.response !== '1' ? nmi.responsetext : undefined,
+      success,
+      errorMessage: !success ? nmi.responsetext : undefined,
+      notFound,
     };
   }
 
