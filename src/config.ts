@@ -118,6 +118,13 @@ function deriveGhlAppId(clientId: string): string {
   return /^[a-f0-9]{24}$/i.test(prefix) ? prefix : '';
 }
 
+const ghlAppId = deriveGhlAppId(ghlClientId);
+
+if (isProd && !ghlAppId) {
+  console.error('FATAL: GHL_APP_ID must identify the Marketplace app in production');
+  process.exit(1);
+}
+
 function failIfProductionFlagEnabled(key: string): void {
   if (isProd && process.env[key] === 'true') {
     console.error(`FATAL: ${key}=true is not allowed in production`);
@@ -236,7 +243,7 @@ export const config = {
     clientId: ghlClientId,
     clientSecret: required('GHL_APP_CLIENT_SECRET'),
     ssoKey: required('GHL_APP_SSO_KEY'),
-    appId: deriveGhlAppId(ghlClientId),
+    appId: ghlAppId,
     apiDomain: optional('GHL_API_DOMAIN', 'https://services.leadconnectorhq.com'),
   },
 

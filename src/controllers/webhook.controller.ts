@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { config } from '../config';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
@@ -122,6 +123,42 @@ function isGhlActivityWebhook(type: string, body: Record<string, any>): boolean 
   );
 }
 
+function ghlLifecycleEventTime(raw: unknown): { ms: number; iso: string } | null {
+  if (raw == null || raw === '') return null;
+  const parsed = typeof raw === 'number' && Number.isFinite(raw)
+    ? (raw > 1e12 ? raw : raw * 1000)
+    : Date.parse(String(raw));
+  if (!Number.isFinite(parsed)) return null;
+  return { ms: parsed, iso: new Date(parsed).toISOString() };
+}
+
+function storedGhlLifecycleEventTimeMs(merchant: any): number | null {
+  const merchantConfig = merchant?.config || {};
+  const candidates = [
+    merchantConfig.ghl_lifecycle_event_at,
+    merchantConfig.ghl_install_event_at,
+    merchantConfig.ghl_uninstalled_at,
+  ]
+    .map(ghlLifecycleEventTime)
+    .filter((value): value is { ms: number; iso: string } => Boolean(value));
+  if (candidates.length === 0) return null;
+  return Math.max(...candidates.map((value) => value.ms));
+}
+
+function isOlderGhlLifecycleEvent(merchant: any, eventTimeMs: number | null): boolean {
+  if (eventTimeMs === null) return false;
+  const storedTimeMs = storedGhlLifecycleEventTimeMs(merchant);
+  return storedTimeMs !== null && eventTimeMs < storedTimeMs;
+}
+
+function isDuplicateGhlLifecycleEvent(merchant: any, webhookId: string): boolean {
+  return Boolean(
+    webhookId
+    && merchant?.config?.ghl_lifecycle_webhook_id
+    && merchant.config.ghl_lifecycle_webhook_id === webhookId,
+  );
+}
+
 export const webhookController = {
   /**
    * GHL Marketplace app lifecycle events (INSTALL / UNINSTALL).
@@ -139,15 +176,59 @@ export const webhookController = {
     const companyId = String(body.companyId || '').trim();
     const installPlanId = String(body.planId || body.plan_id || '').trim();
 
+    // GHL's signature authenticates the sender, while appId binds the event to
+    // this Marketplace app. Require both before changing tenant lifecycle state.
+    const eventAppId = String(body.appId || body.app_id || '').trim();
+    if (!config.ghl.appId) {
+      logger.error({ type, locationId }, 'GHL lifecycle app binding is not configured');
+      res.status(503).json({ received: false, retry: true });
+      return;
+    }
+    if (!eventAppId) {
+      logger.warn({ type, locationId }, 'GHL lifecycle webhook missing appId');
+      res.status(400).json({ received: false, error: 'app_id_required' });
+      return;
+    }
+    if (eventAppId !== config.ghl.appId) {
+      logger.warn({ eventAppId, type, locationId }, 'GHL lifecycle webhook for another app — ignored');
+      res.json({ received: true, ignored: 'app_mismatch' });
+      return;
+    }
+    const eventTime = ghlLifecycleEventTime(body.timestamp);
+    const webhookId = String(body.webhookId || body.webhook_id || '').trim();
+    const dedupeScope = locationId || companyId || 'platform';
+
     try {
+      if (webhookId && await idempotencyRepository.exists(`ghl-lifecycle:${webhookId}`, 'ghl_lifecycle', dedupeScope)) {
+        logger.info({ type, locationId, webhookId }, 'Duplicate GHL lifecycle webhook — dropped');
+        res.json({ received: true, duplicate: true });
+        return;
+      }
       if (type === 'INSTALL') {
         if (!locationId) {
           logger.info({ companyId }, 'GHL app INSTALL (company-level) received; per-location events follow');
+          if (webhookId) {
+            await idempotencyRepository.record(`ghl-lifecycle:${webhookId}`, 'ghl_lifecycle', dedupeScope, { type });
+          }
           res.json({ received: true });
           return;
         }
         const lifecycleTimestamp = new Date().toISOString();
         let existing = await merchantRepository.findByLocationId(locationId);
+        if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
+          res.json({ received: true, duplicate: true });
+          return;
+        }
+        if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
+          logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
+          res.json({ received: true, ignored: 'older_event' });
+          return;
+        }
+        const lifecycleEventMetadata = {
+          ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
+          ghl_lifecycle_event_type: type,
+          ghl_lifecycle_webhook_id: webhookId || null,
+        };
         if (existing) {
           const reinstalling = existing.status === 'uninstalled';
           existing = await merchantRepository.update(locationId, {
@@ -162,6 +243,7 @@ export const webhookController = {
               ...(existing.config || {}),
               ghl_install_event_at: lifecycleTimestamp,
               ghl_uninstalled_at: null,
+              ...lifecycleEventMetadata,
               ...(reinstalling ? {
                 // Never reactivate credentials retained from a prior install.
                 // OAuth (or a current same-company bulk authorization) must bind
@@ -196,6 +278,7 @@ export const webhookController = {
             config: {
               ghl_install_event_at: lifecycleTimestamp,
               ghl_uninstalled_at: null,
+              ...lifecycleEventMetadata,
             },
             ...(installPlanId ? {
               marketplace_plan_id: installPlanId,
@@ -225,6 +308,15 @@ export const webhookController = {
       } else if (type === 'UNINSTALL' && locationId) {
         const existing = await merchantRepository.findByLocationId(locationId);
         if (existing) {
+          if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
+            res.json({ received: true, duplicate: true });
+            return;
+          }
+          if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
+            logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
+            res.json({ received: true, ignored: 'older_event' });
+            return;
+          }
           const lifecycleTimestamp = new Date().toISOString();
           await merchantRepository.update(locationId, {
             status: 'uninstalled',
@@ -237,6 +329,9 @@ export const webhookController = {
               ...(existing.config || {}),
               ghl_install_event_at: null,
               ghl_uninstalled_at: lifecycleTimestamp,
+              ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
+              ghl_lifecycle_event_type: type,
+              ghl_lifecycle_webhook_id: webhookId || null,
               ghl_token_scope: null,
               ghl_token_company_id: null,
               ghl_token_location_id: null,
@@ -278,6 +373,10 @@ export const webhookController = {
           body,
           eventType: 'APP_PAYMENT_STATUS',
         });
+      }
+      // Record AFTER successful processing so a 503'd event stays retryable.
+      if (webhookId) {
+        await idempotencyRepository.record(`ghl-lifecycle:${webhookId}`, 'ghl_lifecycle', dedupeScope, { type });
       }
       res.json({ received: true });
     } catch (err: any) {

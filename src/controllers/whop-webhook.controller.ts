@@ -855,6 +855,20 @@ async function handleMembership(payload: any, locationId: string, active: boolea
 }
 
 export async function handleWhopWebhook(req: Request, res: Response): Promise<void> {
+  // Containment wrapper: tenant/secret resolution and the idempotency check
+  // run before the processing try below. Express 4 does not catch async
+  // rejections, so an uncaught throw here would crash the shared process.
+  try {
+    await processWhopWebhook(req, res);
+  } catch (err: any) {
+    logger.error({ err: err?.message || String(err) }, 'Whop webhook failed before processing');
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Whop webhook processing failed' });
+    }
+  }
+}
+
+async function processWhopWebhook(req: Request, res: Response): Promise<void> {
   const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
   const payload = req.body || {};
   const meta = metadata(payload);

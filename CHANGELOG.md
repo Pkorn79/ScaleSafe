@@ -26,6 +26,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Fresh isolated baseline replay, the exact schema 106-to-110 upgrade, and rollback-only Guardian/operator SQL checks pass. A 10,002-merchant page query completed in 89.141 ms against the 5,000 ms budget.
 - Real isolated Supabase owner bootstrap, first-time TOTP enrollment, returning MFA login, logout and session revocation pass. Production TLS/cookie, live schema, job continuity, and owner access checks remain gated behind deployment approval.
 
+## Unreleased - Webhook and public-surface hardening (2026-09-04)
+
+### Security
+- GHL Marketplace lifecycle webhooks now require ScaleSafe's exact app id before changing tenant state. A late retry is accepted unless a newer location lifecycle event already superseded it.
+- The public payment-update / milestone-signoff / pulse-check widget APIs and the external evidence intake API are now rate limited.
+- The unsigned Stripe Connect OAuth state escape hatch (`ALLOW_UNSIGNED_STRIPE_STATE`) is disabled in production.
+
+### Fixed
+- Stripe and Whop webhook handlers now contain failures during tenant or secret resolution with a retryable 500 instead of letting an async rejection escape the request handler.
+
+### Operational note
+- Proxy trust remains explicitly configured through the Command Center operator setting. Public rate limiting must not infer Railway's proxy depth until the production request path is verified.
+
 ## Unreleased - Lifecycle cancellation correctness (2026-09-04)
 
 ### Fixed

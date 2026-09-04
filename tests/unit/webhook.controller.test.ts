@@ -16,6 +16,7 @@ const mockEnsureLegacyConnection = jest.fn();
 const mockIngestLegacyEvidence = jest.fn();
 const mockApplyMarketplacePlan = jest.fn();
 const mockApplyMarketplaceBillingStatus = jest.fn();
+const SCALESAFE_APP_ID = 'test_ghl_app_id_789';
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({
@@ -23,9 +24,13 @@ jest.mock('../../src/clients/supabase.client', () => ({
   }),
 }));
 
+const mockIdempotencyExists = jest.fn().mockResolvedValue(false);
+const mockIdempotencyRecord = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../src/repositories/idempotency.repository', () => ({
   idempotencyRepository: {
     isDuplicate: (...args: any[]) => mockIdempotencyIsDuplicate(...args),
+    exists: (...args: any[]) => mockIdempotencyExists(...args),
+    record: (...args: any[]) => mockIdempotencyRecord(...args),
   },
 }));
 
@@ -165,6 +170,8 @@ function makeEnrollmentListBuilder(data: any[]) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockIdempotencyIsDuplicate.mockResolvedValue(false);
+  mockIdempotencyExists.mockResolvedValue(false);
+  mockIdempotencyRecord.mockResolvedValue(undefined);
   mockPaymentEventFindByTxn.mockResolvedValue(null);
   mockPaymentEventCreate.mockResolvedValue({ id: 'pe_1' });
   mockOfferListByLocation.mockResolvedValue([]);
@@ -415,7 +422,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockMerchantCreate.mockResolvedValue({});
     const { req, res, next } = mockReqRes({
       type: 'INSTALL',
-      appId: 'app_1',
+      appId: SCALESAFE_APP_ID,
       installType: 'Location',
       locationId: 'loc_new',
       companyId: 'comp_1',
@@ -446,7 +453,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
       config: { ghl_token_scope: 'company' },
     });
     const { req, res, next } = mockReqRes({
-      type: 'INSTALL', locationId: 'loc_future', companyId: 'comp_1',
+      type: 'INSTALL', appId: SCALESAFE_APP_ID, locationId: 'loc_future', companyId: 'comp_1',
     });
 
     await webhookController.ghlUnified(req, res, next);
@@ -468,6 +475,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockMerchantUpdate.mockResolvedValue({ location_id: 'loc_new', company_id: 'comp_1', status: 'active' });
     const { req, res, next } = mockReqRes({
       type: 'INSTALL',
+      appId: SCALESAFE_APP_ID,
       locationId: 'loc_new',
       companyId: 'comp_1',
     });
@@ -493,6 +501,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
   test('company-level INSTALL (no locationId) is acknowledged without creating rows', async () => {
     const { req, res, next } = mockReqRes({
       type: 'INSTALL',
+      appId: SCALESAFE_APP_ID,
       installType: 'Company',
       companyId: 'comp_1',
     });
@@ -504,6 +513,110 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     expect(res.json).toHaveBeenCalledWith({ received: true });
   });
 
+  // GHL signs marketplace webhooks with a platform-wide key: a valid signature
+  // proves GHL sent the payload, not that it was sent for THIS app. These
+  // guards bind lifecycle events to our app id and order retries against the
+  // latest accepted location lifecycle event.
+  test('rejects a lifecycle event with no app id', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      locationId: 'loc_gone',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ received: false, error: 'app_id_required' });
+  });
+
+  test('ignores a lifecycle event carrying another app\'s id', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: 'some_other_marketplace_app',
+      locationId: 'loc_gone',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ received: true, ignored: 'app_mismatch' }));
+  });
+
+  test('processes a late lifecycle retry when no newer location event supersedes it', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
+      locationId: 'loc_gone',
+      timestamp: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_gone', expect.objectContaining({ status: 'uninstalled' }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('ignores an older uninstall retry after a newer install event', async () => {
+    const newerInstall = new Date().toISOString();
+    mockMerchantFindByLocationId.mockResolvedValue({
+      location_id: 'loc_gone',
+      status: 'active',
+      config: { ghl_lifecycle_event_at: newerInstall, ghl_lifecycle_event_type: 'INSTALL' },
+    });
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
+      locationId: 'loc_gone',
+      timestamp: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+      webhookId: 'wh_old_uninstall',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true, ignored: 'older_event' });
+  });
+
+  test('drops a duplicate lifecycle delivery by webhookId', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    mockIdempotencyExists.mockResolvedValueOnce(true);
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
+      locationId: 'loc_gone',
+      webhookId: 'wh_123',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ received: true, duplicate: true }));
+  });
+
+  test('processes a fresh event for our own app and records its webhookId', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
+      locationId: 'loc_gone',
+      timestamp: new Date().toISOString(),
+      webhookId: 'wh_fresh',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_gone', expect.objectContaining({ status: 'uninstalled' }));
+    expect(mockIdempotencyRecord).toHaveBeenCalledWith(
+      'ghl-lifecycle:wh_fresh', 'ghl_lifecycle', 'loc_gone', expect.anything(),
+    );
+  });
+
   test('UNINSTALL marks the merchant uninstalled', async () => {
     mockMerchantFindByLocationId.mockResolvedValue({
       location_id: 'loc_gone',
@@ -513,6 +626,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockMerchantUpdate.mockResolvedValue({});
     const { req, res, next } = mockReqRes({
       type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
       locationId: 'loc_gone',
     });
 
@@ -536,6 +650,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockMerchantCreate.mockRejectedValue(new Error('db down'));
     const { req, res, next } = mockReqRes({
       type: 'INSTALL',
+      appId: SCALESAFE_APP_ID,
       locationId: 'loc_new',
       companyId: 'comp_1',
     });
@@ -551,6 +666,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockApplyMarketplacePlan.mockResolvedValue({});
     const { req, res, next } = mockReqRes({
       type: 'PLAN_CHANGE',
+      appId: SCALESAFE_APP_ID,
       locationId: 'loc_1',
       currentPlanId: 'plan_old',
       newPlanId: 'plan_standard',
@@ -571,6 +687,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockApplyMarketplaceBillingStatus.mockResolvedValue({});
     const { req, res, next } = mockReqRes({
       type: 'APP_PAYMENT_STATUS',
+      appId: SCALESAFE_APP_ID,
       locationId: 'loc_1',
       previousStatus: 'COMPLETE',
       newStatus: 'FAILED',

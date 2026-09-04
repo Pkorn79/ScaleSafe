@@ -552,3 +552,26 @@ describe('handleStripeWebhook', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });
+
+describe('pre-routing failure containment', () => {
+  it('returns 500 instead of crashing when the platform payment mode is unconfigured', async () => {
+    // Pre-fix, expectedStripeLiveMode() threw past the handler as an unhandled
+    // promise rejection, killing the shared multi-tenant process.
+    const { config } = require('../../src/config');
+    const original = config.stripe.liveMode;
+    config.stripe.liveMode = undefined;
+    try {
+      mockConstructEvent.mockReturnValue({
+        id: 'evt_guard', type: 'unhandled.event', account: 'acct_1', livemode: false, data: { object: {} },
+      });
+      const req: any = { params: {}, headers: { 'stripe-signature': 'sig' }, body: Buffer.from('{}'), rawBody: Buffer.from('{}') };
+      const res = mockResponse();
+
+      await expect(handleStripeWebhook(req, res)).resolves.toBeUndefined();
+
+      expect(res.statusCode).toBe(500);
+    } finally {
+      config.stripe.liveMode = original;
+    }
+  });
+});
