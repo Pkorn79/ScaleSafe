@@ -1,7 +1,22 @@
 const mockFrom = jest.fn();
+const mockMarkMerchantHealthDirty = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: (...args: any[]) => mockFrom(...args) }),
+}));
+
+jest.mock('../../src/config', () => ({
+  config: {
+    nodeEnv: 'test',
+    logLevel: 'silent',
+    operator: { healthEnabled: true },
+  },
+}));
+
+jest.mock('../../src/repositories/command-center-health.repository', () => ({
+  commandCenterHealthRepository: {
+    markMerchantHealthDirty: (...args: unknown[]) => mockMarkMerchantHealthDirty(...args),
+  },
 }));
 
 import { moneyOperationService } from '../../src/services/money-operation.service';
@@ -40,7 +55,10 @@ const baseInput = {
 };
 
 describe('moneyOperationService', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMarkMerchantHealthDirty.mockResolvedValue(undefined);
+  });
 
   it('creates a durable operation for the first request', async () => {
     const operation = {
@@ -176,6 +194,28 @@ describe('moneyOperationService', () => {
 
     await expect(moneyOperationService.begin(baseInput)).rejects.toThrow(
       'Apply migration 098 before processing payments',
+    );
+  });
+
+  it('records money state even when the health write fails', async () => {
+    mockFrom.mockReturnValueOnce(updateBuilder({ data: { id: 'op-1' } }));
+    mockMarkMerchantHealthDirty.mockRejectedValueOnce(
+      new Error('health table unavailable'),
+    );
+
+    await expect(moneyOperationService.markRecorded({
+      id: 'op-1',
+      locationId: 'loc-1',
+      response: { success: true, transactionId: 'txn-1' },
+      processorType: 'stripe',
+      processorReference: 'txn-1',
+      providerCalled: true,
+    })).resolves.toBeUndefined();
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockMarkMerchantHealthDirty).toHaveBeenCalledWith(
+      'loc-1',
+      'money_operation_changed',
     );
   });
 });

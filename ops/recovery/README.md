@@ -186,14 +186,32 @@ Record the snapshot ID, source schema version, target project reference, start/e
 
 ## Guardian Integration
 
-Hermes or OpenClaw may call `verify-latest.sh`, read systemd status, and notify the owner. It must not become the backup engine or receive the offline age identity. The future Guardian may:
+Guardian never calls `verify-latest.sh` and never reads `backup.env`. The
+`scalesafe-backup` identity runs the verifier and publishes a strict, hashed,
+sanitized document into `/var/lib/scalesafe-backup-status`. Guardian receives
+group read access only.
 
-- Report latest snapshot ID and age.
-- Report failed systemd jobs.
-- Report the last restore drill date.
-- Alert when storage approaches `BACKUP_MAX_LOCAL_GB`.
+Human restore proof is written separately to the root-owned
+`/var/lib/scalesafe-restore-proof` drop. The backup identity cannot read,
+replace, or fabricate that proof.
 
-It may not restore production, delete snapshots, rotate credentials, or change retention without owner approval.
+`install-guardian-status-bridge-disabled.sh` copies the status writers and
+disabled status units without changing the active backup service or timer.
+It refuses an existing enabled unit before its first installation write.
+`audit-guardian-status-bridge-disabled.sh` verifies that the active service
+still invokes the original `backup.sh`, the status units remain disabled, and
+Guardian cannot access recovery credentials or tooling.
+An unhealthy or rejected backup verification publishes a failed status and
+returns nonzero to the backup wrapper.
+
+The network-facing Backblaze check runs separately as
+`scalesafe-guardian-b2`. It uses a key restricted to the single recovery bucket
+with exactly `listFiles`, `readFiles`, and `readFileRetentions`; downloads and
+hashes only encrypted archives; and cannot decrypt, write, delete, or alter
+retention.
+
+OpenClaw receives only sanitized incident envelopes after deterministic
+Guardian checks fail. It cannot invoke backup or restore tooling.
 
 ## Incident Choice
 

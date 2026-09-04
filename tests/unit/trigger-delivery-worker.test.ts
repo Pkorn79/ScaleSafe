@@ -2,6 +2,8 @@ const mockRpc = jest.fn();
 const mockFrom = jest.fn();
 const mockGhlPut = jest.fn();
 const mockFireTrigger = jest.fn();
+const mockMarkMerchantHealthDirty = jest.fn().mockResolvedValue(undefined);
+const mockRecordWorkerHeartbeat = jest.fn().mockResolvedValue(undefined);
 
 function updateBuilder(onUpdate: jest.Mock) {
   const builder: any = {
@@ -32,6 +34,20 @@ jest.mock('../../src/services/trigger.service', () => ({
   },
 }));
 
+jest.mock('../../src/config', () => ({
+  config: {
+    nodeEnv: 'test',
+    operator: { healthEnabled: true },
+  },
+}));
+
+jest.mock('../../src/repositories/command-center-health.repository', () => ({
+  commandCenterHealthRepository: {
+    markMerchantHealthDirty: (...args: unknown[]) => mockMarkMerchantHealthDirty(...args),
+    recordWorkerHeartbeat: (...args: unknown[]) => mockRecordWorkerHeartbeat(...args),
+  },
+}));
+
 jest.mock('../../src/utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -58,6 +74,8 @@ const baseJob = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMarkMerchantHealthDirty.mockResolvedValue(undefined);
+  mockRecordWorkerHeartbeat.mockResolvedValue(undefined);
 });
 
 afterAll(() => triggerDeliveryWorker.stop());
@@ -108,4 +126,27 @@ test('marks an ambiguous provider exception unknown instead of replaying it', as
     status: 'unknown',
     error_message: expect.stringContaining('manual review'),
   }));
+});
+
+test('finishes trigger delivery when health tables reject both writes', async () => {
+  const update = jest.fn();
+  mockRpc.mockResolvedValue({ data: [baseJob], error: null });
+  mockFrom.mockReturnValue(updateBuilder(update));
+  mockGhlPut.mockResolvedValue({ status: 200 });
+  mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+  mockMarkMerchantHealthDirty.mockRejectedValueOnce(
+    new Error('health dirty table unavailable'),
+  );
+  mockRecordWorkerHeartbeat.mockRejectedValueOnce(
+    new Error('health heartbeat table unavailable'),
+  );
+
+  await expect(triggerDeliveryWorker.runOnce()).resolves.toBeUndefined();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({
+    status: 'succeeded',
+    trigger_result: { sent: 1, failed: 0 },
+  }));
+  expect(mockFireTrigger).toHaveBeenCalledTimes(1);
 });

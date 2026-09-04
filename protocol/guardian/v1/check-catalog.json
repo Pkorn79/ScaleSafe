@@ -1,0 +1,107 @@
+{
+  "protocol_version": 1,
+  "checks": [
+    {
+      "check_key": "public.api.reachability",
+      "authorized_source": "guardian_probe",
+      "default_severity": "critical",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "public.operator.reachability",
+      "authorized_source": "guardian_probe",
+      "default_severity": "urgent",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "platform.snapshot.freshness",
+      "authorized_source": "guardian_probe",
+      "default_severity": "urgent",
+      "parent_check_key": "public.api.reachability"
+    },
+    {
+      "check_key": "platform.database.aggregate",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "critical",
+      "parent_check_key": "platform.snapshot.freshness"
+    },
+    {
+      "check_key": "platform.workers.aggregate",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "urgent",
+      "parent_check_key": "platform.database.aggregate"
+    },
+    {
+      "check_key": "platform.queues.aggregate",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "urgent",
+      "parent_check_key": "platform.database.aggregate"
+    },
+    {
+      "check_key": "platform.jobs.aggregate",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "urgent",
+      "parent_check_key": "platform.database.aggregate"
+    },
+    {
+      "check_key": "platform.http.aggregate",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "urgent",
+      "parent_check_key": "platform.snapshot.freshness"
+    },
+    {
+      "check_key": "platform.deployment.build",
+      "authorized_source": "guardian_probe",
+      "default_severity": "warning",
+      "parent_check_key": "public.api.reachability"
+    },
+    {
+      "check_key": "platform.ci.main",
+      "authorized_source": "guardian_probe",
+      "default_severity": "urgent",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "platform.security.flags",
+      "authorized_source": "scalesafe_snapshot",
+      "default_severity": "critical",
+      "parent_check_key": "platform.snapshot.freshness"
+    },
+    {
+      "check_key": "recovery.backup.status",
+      "authorized_source": "backup_status_drop",
+      "default_severity": "critical",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "recovery.backup.object",
+      "authorized_source": "guardian_probe",
+      "default_severity": "urgent",
+      "parent_check_key": "recovery.backup.status"
+    },
+    {
+      "check_key": "recovery.restore.recency",
+      "authorized_source": "backup_status_drop",
+      "default_severity": "critical",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "guardian.deadman",
+      "authorized_source": "external_deadman",
+      "default_severity": "critical",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "network.dns",
+      "authorized_source": "guardian_probe",
+      "default_severity": "urgent",
+      "parent_check_key": null
+    },
+    {
+      "check_key": "network.tls",
+      "authorized_source": "guardian_probe",
+      "default_severity": "critical",
+      "parent_check_key": "network.dns"
+    }
+  ]
+}

@@ -2,9 +2,9 @@
 
 **Purpose:** One repository-owned source of truth for what ScaleSafe contains, what is live-certified, what still needs proof, what is planned, and which documents are authoritative.
 
-**Last reconciled:** July 20, 2026
+**Last reconciled:** July 30, 2026
 
-**Code baseline:** `e75989d`
+**Code baseline:** `008b3bf`
 
 **Latest migration:** `102_marketplace_entitlements.sql`
 
@@ -56,11 +56,11 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Clean V2 Snapshot | **Certified** | `ScaleSafe V2 Clean Certified 2` passed a scratch installation on July 19, 2026. Attach and use only the certified package. |
 | Marketplace scopes | **Certified configuration** | Final 20-scope list is saved; the separate explanation video has been recorded. Reauthorize the reviewer install if GHL requires it. |
 | Marketplace billing | **Shipped** | Standard is $99 for Stripe/Whop. WholePay is $59 for Stripe/Whop/NMI and requires HQ approval. A limited gated free plan is planned after Marketplace approval. |
-| Marketplace submission | **Owner action** | Walkthrough and scope videos exist and reviewer credentials were prepared outside the repo. Final form submission/approval remains external. |
-| Public website | **Shipped source, deployment proof required** | Astro and static help/legal sources exist. Verify every Marketplace URL serves its own current page after final deployment. |
+| Marketplace submission | **Submitted - under GHL review** | Marketplace currently shows `v1.0.0 review`. The July 21 resubmission removed the unusable shared GHL login and states the correct access model: reviewers install into their own HighLevel review sub-account and open ScaleSafe through GHL SSO. Walkthrough, workflow, scope, notes, pricing, and certified Snapshot remain submitted. |
+| Public website | **Deployed and verified** | Privacy, terms, support, guide, FAQ, and troubleshooting pages returned `200` with distinct titles/content on July 21, 2026; legacy `.html` Marketplace URLs redirect correctly. |
 | Production schema | **Shipped through migration 102** | Apply later migrations before dependent code and record the new schema version here. |
 | Production health | **Previously certified soak** | Reopen if Supabase resource warnings, timeouts, worker pressure, or recurring 4xx/5xx responses return. |
-| Independent recovery | **Open launch gate** | Recovery scripts exist, but one encrypted off-platform backup and isolated scratch restore still need proof. |
+| Independent recovery | **Certified** | Encrypted snapshot `20260721T175646Z` passed completion/hash checks and an isolated schema-102 scratch restore with all 105 Storage objects and readable private PDFs. See [Recovery Drill](RECOVERY_DRILL_2026-07-21.md). |
 | Release governance | **Open owner decision** | Protect `main`/require green CI or record a controlled-beta exception; practice one Railway rollback. |
 
 ## Product Capability Index
@@ -161,28 +161,26 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Tenant isolation and webhook authentication | **Shipped core** | auth/webhook middleware and connector services | Payloads cannot select their own tenant. |
 | Trigger delivery durability | **Shipped** | migration 099, trigger delivery worker | GHL app-event acceptance is not mislabeled as customer communication delivery. |
 | Background money reconciliation | **Shipped** | migration 098, money reconciliation worker | Multi-instance claims/leases prevent duplicate work. |
-| Recovery toolkit | **Shipped tooling, not certified recovery** | [Recovery Toolkit](../ops/recovery/README.md), [Recovery Checklist](RECOVERY_OPERATOR_CHECKLIST.md) | Launch gate closes only after encrypted backup and scratch restore proof. |
+| Recovery toolkit | **Shipped and restore-certified** | [Recovery Toolkit](../ops/recovery/README.md), [Recovery Checklist](RECOVERY_OPERATOR_CHECKLIST.md), [Recovery Drill](RECOVERY_DRILL_2026-07-21.md) | Daily encrypted B2 backup is scheduled; the July 21 scratch restore passed. |
 | AI operator skill and account SOP | **Shipped** | [AI Operator Setup](user-guide/AI_OPERATOR_SETUP.md), [Operator Skill](../.agents/skills/operate-scalesafe/SKILL.md) | Guides or operates one authorized tenant with approval gates and logs-first troubleshooting. |
 
 ## Open Controlled-Beta Work
 
 ### Stop-Ship
 
-1. Complete and verify one encrypted off-platform database/Storage backup.
-2. Restore that exact snapshot into an isolated scratch project and verify counts and sample-file hashes.
+No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the encrypted backup and isolated restore drill on July 21, 2026.
 
 ### Publication And Owner Actions
 
-1. Submit the completed Marketplace package and track GHL review status.
-2. Verify all public privacy, terms, support, guide, FAQ, and troubleshooting URLs after final deployment.
-3. Confirm the reviewer install uses the certified clean V2 Snapshot and current entitlement.
-4. Disable daily test billing before live merchant billing.
-5. Decide repository visibility and production branch protection; practice one Railway rollback.
+1. Monitor the submitted `v1.0.0` Marketplace review and respond only if GHL requests changes.
+2. Confirm the reviewer install uses the certified clean V2 Snapshot and current entitlement.
+3. Disable daily test billing before live merchant billing.
+4. Decide repository visibility and production branch protection; practice one Railway rollback.
 
 ### Remaining Feature Proof
 
 1. Certify NMI official callback and fresh masked saved-method identity for every NMI setup offered.
-2. Verify pause/resume/cancel workflow messages use scalar program fields.
+2. Deploy the completed exact-enrollment lifecycle field sync, then verify pause/resume/cancel workflow messages render the selected program and no `[object Object]` values.
 3. Publish one real non-host Zoom attendance event to the correct enrollment and defense packet.
 4. Send one harmless enrollment-linked direct message and verify the GHL echo remains on that enrollment.
 
@@ -200,7 +198,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Named evidence adapters for course, agency, community, support, file, checkout, and reporting systems | **Planned in waves** | [Connector Automation Plan](UNIVERSAL_EVIDENCE_CONNECTOR_AUTOMATION_PLAN.md) |
 | Outcome analytics by reason, offer, processor, evidence, refund timing, and alerts | **Planned** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
 | Recovery/legal/collections partner referral handoff | **Planned, legal review required** | Private research notes plus [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
-| Guardian backup/security verification service | **Planned after deterministic recovery proof** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
+| Command Center, Guardian, and reseller account dashboard | **Phase 3.2 and Phase 3.3 certified disabled; Phase 3.4 code-side review closed and ready for external certification; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md), [Phase 3.4 External Certification](COMMAND_CENTER_PHASE_3_4_EXTERNAL_CERTIFICATION_RUNBOOK.md), [Prior Fable Architecture Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Fable's final independent follow-up returned CLOSED (code-side) with no new reachable P0/P1 issue. All accepted P2/P3 findings were remediated and regression-tested locally. Guardian passes 94 tests; ScaleSafe passes 74 focused and 1,614 full tests, typecheck, build, protocol identity, secret scan, and a zero-vulnerability production dependency audit. The installed VPS release `8a4f1256cfaa9378764c730555608bd55e3c221d` remains disabled and unchanged. Migration 105 remains unapplied, all Guardian timers remain disabled, and no provider setup, production deploy, merge, push, or recurring activation is authorized. |
 | NMI billing portal and Stripe-shaped merchant API | **Deferred post-beta** | [Project Decisions](PROJECT_DECISIONS.md) |
 | FanBasis checkout and lifecycle certification | **Deferred pending provider approval** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) |
 | Gated limited free Marketplace plan | **Planned after approval** | This index |

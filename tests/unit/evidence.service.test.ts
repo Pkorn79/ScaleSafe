@@ -9,6 +9,7 @@ const mockFrom = jest.fn().mockReturnValue({ insert: mockInsert });
 const mockGetTimeline = jest.fn();
 const mockGetCounts = jest.fn();
 const mockGetLastDate = jest.fn();
+const mockMarkMerchantHealthDirty = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -30,15 +31,59 @@ jest.mock('../../src/clients/ghl.client', () => ({
   }),
 }));
 
+jest.mock('../../src/config', () => ({
+  config: {
+    nodeEnv: 'test',
+    logLevel: 'silent',
+    operator: { healthEnabled: true },
+  },
+}));
+
+jest.mock('../../src/repositories/command-center-health.repository', () => ({
+  commandCenterHealthRepository: {
+    markMerchantHealthDirty: (...args: unknown[]) => mockMarkMerchantHealthDirty(...args),
+  },
+}));
+
 import { evidenceService } from '../../src/services/evidence.service';
 import { evidenceRepository } from '../../src/repositories/evidence.repository';
 import { EVIDENCE_TYPES } from '../../src/constants/evidence-types';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMarkMerchantHealthDirty.mockResolvedValue(undefined);
 });
 
 describe('Evidence Service - Form Handling', () => {
+  test('materializes evidence even when the health write fails', async () => {
+    mockMarkMerchantHealthDirty.mockRejectedValueOnce(
+      new Error('health table unavailable'),
+    );
+    mockGetCounts.mockResolvedValue({});
+    mockGetLastDate.mockResolvedValue(null);
+
+    await expect(evidenceService.logEvidence(
+      EVIDENCE_TYPES.SESSION_DELIVERY,
+      'loc_1',
+      'contact_1',
+      'test',
+      { session_date: '2026-07-23' },
+    )).resolves.toBeUndefined();
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(evidenceRepository.insert).toHaveBeenCalledWith(
+      EVIDENCE_TYPES.SESSION_DELIVERY,
+      expect.objectContaining({
+        location_id: 'loc_1',
+        contact_id: 'contact_1',
+      }),
+    );
+    expect(mockMarkMerchantHealthDirty).toHaveBeenCalledWith(
+      'loc_1',
+      'evidence_changed',
+    );
+  });
+
   test('SYS2-07 maps to session_delivery', async () => {
     const result = await evidenceService.handleFormSubmission(
       'SYS2-07', 'loc_1', 'contact_1',

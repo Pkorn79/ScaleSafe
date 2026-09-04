@@ -79,7 +79,7 @@ These remain roadmap items. They are not represented as available beta functiona
 - Create or approve the separate off-site storage account and immutable retention policy.
 - Generate and physically retain the offline age private identity.
 - Generate production and scratch Supabase S3 credentials when prompted.
-- Supply the GHL reviewer login and approve what reviewers may access.
+- Confirm reviewers install ScaleSafe in their own HighLevel test sub-account and enter through GHL SSO; do not supply shared GHL credentials.
 - Record the Marketplace installation/end-to-end video and scope-justification video.
 - Submit the Marketplace publication request.
 - Decide when Stripe moves from reviewer sandbox operation to live merchant onboarding.

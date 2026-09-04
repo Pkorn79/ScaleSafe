@@ -8,6 +8,7 @@ import {
   type RefundReconciliationClaim,
 } from './refund-reconciliation.service';
 import { AdaptivePoller } from '../utils/adaptive-poller';
+import { commandCenterHealthService } from './command-center-health.service';
 
 const workerId = `money_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 let running = false;
@@ -487,6 +488,9 @@ async function processRefundClaim(claim: RefundReconciliationClaim): Promise<voi
 async function tick(): Promise<number> {
   if (running) return 0;
   running = true;
+  const startedAt = new Date();
+  let workCount = 0;
+  let tickError: unknown;
   try {
     const [operations, refundClaims] = await Promise.all([
       moneyOperationService.claimReconciliation(workerId, 20),
@@ -496,16 +500,36 @@ async function tick(): Promise<number> {
       ...operations.map(processOperation),
       ...refundClaims.map(processRefundClaim),
     ]);
-    return operations.length + refundClaims.length;
+    workCount = operations.length + refundClaims.length;
+    return workCount;
   } catch (err: any) {
+    tickError = err;
     logger.error({ err: err.message }, 'Money reconciliation worker tick failed');
     return 0;
   } finally {
     running = false;
+    commandCenterHealthService.recordWorkerTick({
+      workerKey: 'worker.money_reconciliation',
+      instanceId: workerId,
+      startedAt,
+      workCount,
+      error: tickError,
+    });
   }
 }
 
-const poller = new AdaptivePoller({ task: tick });
+const poller = new AdaptivePoller({
+  task: tick,
+  taskTimeoutMs: commandCenterHealthService.workerTimeoutMs('worker.money_reconciliation'),
+  onTimeout: ({ startedAt, timedOutAt }) => commandCenterHealthService.recordWorkerTick({
+    workerKey: 'worker.money_reconciliation',
+    instanceId: workerId,
+    startedAt,
+    completedAt: timedOutAt,
+    workCount: 0,
+    timedOut: true,
+  }),
+});
 
 export const moneyReconciliationWorker = {
   start(): void {

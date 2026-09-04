@@ -1,6 +1,6 @@
 # Reviewer Screenshot Manifest
 
-Status: Sanitized screenshot pass completed July 17, 2026.
+Status: Initial sanitized screenshot pass completed July 17, 2026. The expanded fictional demo set listed below remains open.
 
 Use only screenshots marked **Public Safe** in public pages or the GoHighLevel Marketplace submission. Every image was captured from the dedicated ScaleSafe reviewer sub-account or a public reviewer funnel and checked at full resolution.
 

@@ -2,29 +2,29 @@
 
 > Current status rollup: `docs/MASTER_INDEX.md`. This checklist preserves detailed launch gates, but its reconciliation header may predate later certified work.
 
-Reconciled: 2026-07-16 CDT
-Deployed SHA: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
-Production schema: `101`
+Reconciled: 2026-07-21 CDT
+Current release SHA: `67d9ea3f40d8882b0bbcd32163f0736261257597`
+Production schema: `102`
 Detailed current status: `docs/user-guide/OPEN_REMEDIATION_REGISTER.md`
 
 This checklist is for the first controlled beta merchant and the GoHighLevel Marketplace review package. Historical findings remain in the certification ledger; fixed items are not repeated as open work here.
 
 ## 1. Hard Launch Gates
 
-- [ ] **Encrypted recovery is proven.** Create one off-platform encrypted database and private-Storage snapshot, verify its completion marker and hashes, and complete one isolated scratch restore. Supabase managed backups alone do not satisfy this gate.
+- [x] **Encrypted recovery is proven.** Snapshot `20260721T175646Z` restored successfully into an isolated scratch project with schema 102, matching critical counts, all 105 Storage objects, and readable enrollment/defense PDFs. See `docs/RECOVERY_DRILL_2026-07-21.md`.
 - [x] **Production health soak is complete.** From 2026-07-15 4:46:45 PM through 5:47:42 PM CDT, Railway recorded 134 HTTP requests, zero 4xx/5xx, zero requests over three seconds, a 1.536-second maximum, and zero application warning/error lines. Ten closing `/health` probes all reported app/Supabase/schema `ok`.
-- [ ] **Reviewer Snapshot is clean.** Certify the approved V2 asset allowlist in the dedicated `ScaleSafe` GHL sub-account; obsolete SYS2/model-specific/duplicate assets are absent or explicitly removed from the submitted Snapshot.
+- [x] **Reviewer Snapshot is clean.** `ScaleSafe V2 Clean Certified 2` passed the July 19 scratch installation and is the approved reviewer package.
 
 ## 2. Marketplace Submission Package
 
-- [ ] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
-- [ ] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
-- [ ] Provide reviewer GHL credentials through the Marketplace form, never the repository.
-- [ ] Confirm the reviewer user can access all beta-review features without agency-owner privileges that a normal merchant would not have.
-- [ ] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
+- [x] Record the end-to-end video: install, connect, create/use an offer, client enrollment, payment, evidence, and defense review.
+- [x] Record the scope video: show each retained GHL scope in actual use and explain the data boundary.
+- [x] State in the Marketplace form that ScaleSafe has no separate credentials: reviewers install it in their own HighLevel review sub-account and enter through HighLevel SSO. Do not supply a shared GHL user that depends on email OTP.
+- [x] Reviewer access uses the review team's own HighLevel test sub-account and GHL SSO; no shared agency-owner or OTP-dependent reviewer user is supplied.
+- [x] Paste the reviewer notes and exact test script from `docs/user-guide/REVIEWER_TEST_SCRIPT.md`.
 - [x] Export and save the final least-privilege Marketplace scope list and explanations. The July 18 draft has 20 scopes; nine unused permissions and eight unused webhook events were removed.
-- [ ] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
-- [ ] Deploy the prepared public help/legal pages and confirm privacy, terms, support, guide, FAQ, and troubleshooting URLs serve their own content without authentication. Current live paths return `200` but fall back to the generic landing page.
+- [x] Confirm the attached Snapshot is the certified V2 Snapshot, not a PMG development snapshot.
+- [x] Public privacy, terms, support, guide, FAQ, and troubleshooting pages return `200` with distinct page titles/content. Legacy `.html` privacy, terms, and support URLs redirect to the corresponding live pages.
 
 ## 3. Production Environment And Schema
 
@@ -32,10 +32,10 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] `PROCESSOR_ENCRYPTION_KEY`, `PUBLIC_ACTION_TOKEN_SECRET`, Stripe secrets, Supabase service key, GHL app credentials, and Turnstile keys are present in Railway.
 - [x] `ALLOW_LEGACY_PUBLIC_ACTION_LINKS` is absent/false.
 - [x] Supabase is on Pro and managed daily backups are enabled with seven-day retention.
-- [x] Production schema RPC reports version `101`.
+- [x] Production schema RPC reports version `102`.
 - [x] `/health` currently reports app, Supabase, and schema `ok`.
 - [ ] Confirm `VITE_ENABLE_DAILY_TEST_BILLING` is disabled before live merchant billing begins. It may remain enabled only while the documented daily test cycle is intentionally running.
-- [ ] Confirm Stripe is in the intended environment for the reviewer account and live processing is not accidentally enabled for review tests.
+- [x] Reviewer Stripe is connected to the intended WholePay sandbox/test account. The successful July 16 reviewer test-card enrollment proves the review path is not using live Stripe processing.
 
 ## 4. Processor And Money Safety
 
@@ -57,9 +57,9 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Enrollment link, payment receipt, welcome, upcoming payment reminder, pulse, milestone, and milestone-signoff paths have live proof.
 - [x] Deleted GHL trigger subscriptions are automatically deactivated after a terminal GHL response.
 - [x] Pulse app-event delivery, workflow execution, URL/interval fields, client submission, evidence, and dashboard follow-up state have been observed.
-- [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`.
-- [ ] Run Provisioning Health in the final reviewer Snapshot and save sanitized proof.
-- [ ] Confirm exactly one app-event pulse workflow and no competing tag/timer cadence workflow.
+- [ ] Confirm pause/resume/cancel email templates render scalar program and lifecycle fields, never `[object Object]`. The app-side exact-enrollment sync now covers all three paths; rendered GHL proof remains.
+- [x] Final reviewer Snapshot Provisioning Health passed on July 21: merchant/OAuth/webhook health is good, all 90 beta contact fields and 21 custom values are present, and 24 active workflow subscriptions are mapped. Thirty cleanup candidates were advisory only and were left untouched.
+- [x] Reviewer workflow inspection confirmed one published pulse workflow, `SS--Pulse-Check-Cadence`, using `ScaleSafe App Event` with `Event Type = Pulse Check Due`. The second App Event subscription is the published `SS- Payment Reminder` workflow filtered to `Upcoming Payment Reminder`; no competing tag/timer pulse path was found.
 - [ ] Complete one harmless enrollment-linked direct message after the current fix and verify the GHL echo remains on the selected enrollment.
 
 ## 6. Evidence, Connectors, And Defense
@@ -82,7 +82,7 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 - [x] Workflow reference exists at `docs/user-guide/WORKFLOW_REFERENCE.md`.
 - [x] Deep test protocol exists at `docs/user-guide/DEEP_DIVE_TEST_PLAN.md`.
 - [x] Reviewer test script, installation guide, and troubleshooting guide are complete.
-- [ ] Complete the sanitized screenshot set using `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`; PMG engineering captures are not submission assets.
+- [ ] Complete the expanded fictional-demo screenshot set listed in `docs/user-guide/REVIEWER_ASSET_MANIFEST.md`. The initial public-safe reviewer captures are complete; PMG engineering captures are not submission assets.
 - [ ] Ensure screenshots contain no real client PII, card/bank data, processor secrets, webhook secrets, access tokens, or signed private-file URLs.
 - [x] Public claims use “reduce chargebacks” and “organize evidence,” not guaranteed prevention or guaranteed wins.
 
@@ -109,4 +109,4 @@ This checklist is for the first controlled beta merchant and the GoHighLevel Mar
 
 ## Launch Decision
 
-ScaleSafe is a **NO-GO for the first real beta merchant** while any item in Section 1 remains open. Marketplace submission also requires Sections 2 and 7. Other unchecked items require completion or a written owner-approved controlled-beta exception before launch.
+ScaleSafe has no remaining Section 1 stop-ship gate. Marketplace submission is complete and under GHL review. Remaining unchecked items require live proof, owner configuration, or a written controlled-beta exception before the affected capability is offered.

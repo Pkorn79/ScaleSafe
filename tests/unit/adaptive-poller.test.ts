@@ -37,9 +37,42 @@ test('scheduled work never overlaps and returns to active cadence after work', a
   release?.();
   await Promise.resolve();
   await Promise.resolve();
-  jest.advanceTimersByTime(19);
+  await jest.advanceTimersByTimeAsync(19);
   expect(task).toHaveBeenCalledTimes(1);
-  jest.advanceTimersByTime(1);
+  await jest.advanceTimersByTimeAsync(1);
+  expect(task).toHaveBeenCalledTimes(2);
+  poller.stop();
+});
+
+test('a timed-out task is quarantined until its original promise settles', async () => {
+  jest.useFakeTimers();
+  let release: (() => void) | undefined;
+  const onTimeout = jest.fn();
+  const task = jest.fn(() => new Promise<number>((resolve) => {
+    release = () => resolve(1);
+  }));
+  const poller = new AdaptivePoller({
+    task,
+    initialDelayMs: 10,
+    activeDelayMs: 20,
+    settlementProbeMs: 25,
+    taskTimeoutMs: 50,
+    random: () => 0.5,
+    onTimeout,
+  });
+
+  poller.start();
+  await jest.advanceTimersByTimeAsync(60);
+  expect(onTimeout).toHaveBeenCalledTimes(1);
+  expect(task).toHaveBeenCalledTimes(1);
+
+  await jest.advanceTimersByTimeAsync(200);
+  expect(task).toHaveBeenCalledTimes(1);
+
+  release?.();
+  await Promise.resolve();
+  await Promise.resolve();
+  await jest.advanceTimersByTimeAsync(20);
   expect(task).toHaveBeenCalledTimes(2);
   poller.stop();
 });

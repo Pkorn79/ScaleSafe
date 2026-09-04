@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getSupabase } from '../clients/supabase.client';
+import { commandCenterHealthService } from './command-center-health.service';
 import { ConflictError } from '../utils/errors';
 
 export type MoneyOperationType =
@@ -184,6 +185,7 @@ export const moneyOperationService = {
       .eq('id', input.id)
       .eq('location_id', input.locationId);
     if (error) throw operationUnavailable(error);
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_operation_changed');
   },
 
   /**
@@ -213,6 +215,7 @@ export const moneyOperationService = {
       .maybeSingle();
     if (error) throw operationUnavailable(error);
     if (!data) throw new ConflictError('Payment operation is no longer available for processor execution.');
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_operation_changed');
   },
 
   async markRecorded(input: {
@@ -241,6 +244,7 @@ export const moneyOperationService = {
       .eq('id', input.id)
       .eq('location_id', input.locationId);
     if (error) throw operationUnavailable(error);
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_operation_changed');
   },
 
   async markUnknown(input: {
@@ -260,6 +264,7 @@ export const moneyOperationService = {
       .eq('id', input.id)
       .eq('location_id', input.locationId);
     if (error) throw operationUnavailable(error);
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_operation_changed');
   },
 
   async markFailedBeforeProvider(input: {
@@ -274,6 +279,7 @@ export const moneyOperationService = {
       .eq('location_id', input.locationId)
       .eq('provider_called', false);
     if (error) throw operationUnavailable(error);
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_operation_changed');
   },
 
   async claimReconciliation(workerId: string, limit = 20): Promise<MoneyOperationRecord[]> {
@@ -307,5 +313,6 @@ export const moneyOperationService = {
       .eq('status', 'provider_accepted')
       .eq('reconciliation_lease_owner', input.workerId);
     if (error) throw operationUnavailable(error);
+    commandCenterHealthService.markMerchantDirty(input.locationId, 'money_reconciliation_retry');
   },
 };

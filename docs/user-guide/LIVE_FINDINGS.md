@@ -35,7 +35,7 @@ The later certification created isolated test offers, payments, evidence, a clie
 | FIND-065 | Client-action success refresh | P2 | Live confirmed | Small/medium |
 | FIND-066 | Manual communication enrollment binding | P1 | Live and code confirmed | Medium |
 | FIND-067 | Production database capacity collapse | P1 | Supabase, Railway, browser, and code confirmed | Immediate operations plus code hardening |
-| FIND-068 | Production database has no recoverable backup | P1 | Supabase project confirmed | Immediate operations |
+| FIND-068 | Production database has no recoverable backup | P1 | **Resolved 2026-07-21:** managed backup plus encrypted off-platform backup and scratch restore proven | Closed |
 | FIND-069 | Database outage mislabeled as broken GHL install | P2 | Reviewer UI, Railway, and code confirmed | Small/medium |
 | FIND-070 | Railway and Supabase are deployed in distant regions | P2 | Railway deployment metadata and Supabase project confirmed | Operations change plus latency retest |
 | FIND-071 | Suggested local database-password file was not ignored | P2 | Current tree and Git ignore rules confirmed | Fixed locally |
@@ -704,6 +704,8 @@ The later certification created isolated test offers, payments, evidence, a clie
 - Screenshots: `assets/OPS-SUPABASE-001_project-unhealthy_2026-07-14.png`, `assets/OPS-SUPABASE-002_database-health_2026-07-14.png`.
 
 ### FIND-068 - Production Supabase has no recoverable backup
+
+- Resolution: **Closed 2026-07-21.** Snapshot `20260721T175646Z` passed encrypted archive and off-platform verification, then restored into an isolated schema-102 scratch project with matching critical counts, all 105 Storage objects, and readable enrollment/defense PDFs. See `docs/RECOVERY_DRILL_2026-07-21.md`.
 
 - Area: Disaster recovery and evidence durability.
 - Live proof: the ScaleSafe Supabase project is on the Free plan and its overview reports `LAST BACKUP: No backups`.

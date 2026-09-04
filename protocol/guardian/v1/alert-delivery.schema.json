@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scalesafe.app/protocol/guardian/v1/alert-delivery.schema.json",
+  "title": "ScaleSafe Guardian Alert Delivery v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "instance_id",
+    "delivery_id",
+    "alert_id",
+    "incident_id",
+    "provider_name",
+    "event_type",
+    "check_key",
+    "severity",
+    "attempt_number",
+    "state",
+    "occurred_at",
+    "provider_reference_sha256",
+    "notification_channels",
+    "failure_code",
+    "envelope_sha256"
+  ],
+  "properties": {
+    "protocol_version": { "const": 1 },
+    "instance_id": { "$ref": "#/$defs/uuid" },
+    "delivery_id": { "$ref": "#/$defs/uuid" },
+    "alert_id": { "$ref": "#/$defs/uuid" },
+    "incident_id": { "$ref": "#/$defs/uuid" },
+    "provider_name": { "const": "ghl" },
+    "event_type": { "enum": ["opened", "escalated", "resolved"] },
+    "check_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{2,95}$"
+    },
+    "severity": { "enum": ["info", "warning", "urgent", "critical"] },
+    "attempt_number": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "state": { "enum": ["accepted", "notified", "failed"] },
+    "occurred_at": { "$ref": "#/$defs/utcTimestamp" },
+    "provider_reference_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "notification_channels": {
+      "type": "array",
+      "items": { "enum": ["email", "sms"] },
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "failure_code": {
+      "enum": [
+        null,
+        "GHL_ACCEPTANCE_UNKNOWN",
+        "GHL_ALERT_UNAVAILABLE",
+        "GHL_PROVIDER_ERROR",
+        "GHL_RATE_LIMITED",
+        "GHL_REJECTED",
+        "GHL_UNREACHABLE",
+        "PROCESS_INTERRUPTED_AFTER_SEND"
+      ]
+    },
+    "envelope_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "accepted" } } },
+      "then": {
+        "properties": {
+          "notification_channels": { "maxItems": 0 },
+          "failure_code": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "notified" } } },
+      "then": {
+        "properties": {
+          "notification_channels": { "minItems": 1 },
+          "provider_reference_sha256": { "type": "string" },
+          "failure_code": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "notified" },
+          "severity": { "enum": ["urgent", "critical"] }
+        },
+        "required": ["state", "severity"]
+      },
+      "then": {
+        "properties": {
+          "notification_channels": { "const": ["email", "sms"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "notified" },
+          "severity": { "enum": ["info", "warning"] }
+        },
+        "required": ["state", "severity"]
+      },
+      "then": {
+        "properties": {
+          "notification_channels": { "const": ["email"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "failed" } } },
+      "then": {
+        "properties": {
+          "notification_channels": { "maxItems": 0 },
+          "provider_reference_sha256": { "type": "null" },
+          "failure_code": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    }
+  }
+}

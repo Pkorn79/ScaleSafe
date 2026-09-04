@@ -109,10 +109,21 @@ supabase db dump --db-url "$SUPABASE_DB_URL" -f "${control_dir}/data.sql" \
   --use-copy --data-only \
   -x "storage.buckets_vectors" \
   -x "storage.vector_indexes"
-supabase db dump --db-url "$SUPABASE_DB_URL" -f "${control_dir}/history_schema.sql" \
-  --schema supabase_migrations
-supabase db dump --db-url "$SUPABASE_DB_URL" -f "${control_dir}/history_data.sql" \
-  --use-copy --data-only --schema supabase_migrations
+migration_schema_exists="$(
+  psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regnamespace('supabase_migrations') IS NOT NULL;"
+)"
+if [[ "$migration_schema_exists" == "t" ]]; then
+  supabase db dump --db-url "$SUPABASE_DB_URL" -f "${control_dir}/history_schema.sql" \
+    --schema supabase_migrations
+  supabase db dump --db-url "$SUPABASE_DB_URL" -f "${control_dir}/history_data.sql" \
+    --use-copy --data-only --schema supabase_migrations
+else
+  printf '%s\n' '-- Source project has no supabase_migrations schema.' \
+    > "${control_dir}/history_schema.sql"
+  printf '%s\n' '-- No Supabase migration history data was present in the source project.' \
+    > "${control_dir}/history_data.sql"
+fi
 
 psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -At \
   -f "${SCRIPT_DIR}/critical-counts.sql" > "${control_dir}/critical-counts.json"

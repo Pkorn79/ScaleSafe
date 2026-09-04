@@ -22,6 +22,8 @@ const defaults: Record<string, string> = {
   STRIPE_WEBHOOK_SECRET: 'whsec_test_scalesafe',
   STRIPE_LIVE_MODE: 'false',
   PROCESSOR_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  SUPABASE_ANON_KEY: 'test_supabase_anon_key_1234567890',
+  OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
   ZOOM_CLIENT_ID: 'zoom_test_client_id',
   ZOOM_CLIENT_SECRET: 'zoom_test_client_secret',
   ZOOM_WEBHOOK_SECRET_TOKEN: 'zoom_test_webhook_secret',

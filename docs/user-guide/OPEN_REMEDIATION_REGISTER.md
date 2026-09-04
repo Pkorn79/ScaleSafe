@@ -2,19 +2,16 @@
 
 > Current status rollup: `docs/MASTER_INDEX.md`. This register preserves detailed finding history; use the Master Index when this file's older baseline conflicts with later proof.
 
-Reconciled: 2026-07-16 CDT
-Deployed code baseline: `5c27a6eb90ec279453d0d1fe348d6b75563a20d7`
-Production schema: `101`
+Reconciled: 2026-07-21 CDT
+Current release baseline: `67d9ea3f40d8882b0bbcd32163f0736261257597`
+Production schema: `102`
 Working branch: `codex/beta-remediation`
 
 This is the current open-work list. `LIVE_FINDINGS.md` and `LIVE_CERTIFICATION_2026-07-13.md` remain historical audit records and intentionally retain the original findings.
 
 ## Stop-Ship Before The First Real Beta Merchant
 
-| Gate | Current truth | Required proof to close | Owner |
-| --- | --- | --- | --- |
-| Recovery proof (FIND-068) | Supabase Pro now provides managed daily backups. The off-platform encrypted database/Storage toolkit exists and its shell syntax passes, but no real encrypted snapshot or scratch restore has been completed. | One complete encrypted off-platform snapshot, private Storage inventory/archive, `COMPLETE.json`, successful `verify-latest.sh`, and one isolated scratch restore with count and sample-file verification. | Philip plus recovery operator |
-| Clean reviewer package (FIND-073) | The dedicated `ScaleSafe` GHL sub-account opens and is tenant-isolated, but the attached Snapshot inventory still contains legacy/duplicate assets documented in `REVIEWER_SNAPSHOT_INVENTORY.md`. | Install or certify the approved V2 allowlist, remove obsolete packaged assets, run Provisioning Health, and preserve sanitized proof. | Philip with Codex verification |
+No open stop-ship gate remains. FIND-068 closed with the July 21 encrypted backup/restore drill. FIND-073 closed when `ScaleSafe V2 Clean Certified 2` passed the July 19 scratch installation and became the approved reviewer package.
 
 ## Publication And Owner-Configuration Gates
 
@@ -22,11 +19,8 @@ These are not unresolved application-code defects, but GHL review or processor l
 
 | Gate | Required action |
 | --- | --- |
-| Marketplace submission package | Record the installation/connection/end-to-end video, the scope-justification video, provide reviewer credentials outside the repository, and paste the reviewer notes. |
-| Public review URLs | Deploy the prepared `marketing/` package. The current privacy, terms, support, guide, FAQ, and troubleshooting paths return HTTP 200 but all resolve to the generic landing-page fallback rather than their own content. Verify unique page titles/content after deployment. |
-| Marketplace scope video | The final 20-scope least-privilege list is saved and documented in `docs/GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md`. Record the separate scope-justification video and reauthorize the clean reviewer install against the reduced grant. |
 | NMI official webhook (FIND-007) | Certify a signed/verified live callback for each NMI configuration offered during beta. Do not infer webhook readiness from successful dashboard charges. |
-| GHL lifecycle templates (FIND-035) | Confirm pause/resume/cancel templates use the documented scalar contact fields and produce one correctly named program message. Disable any unverified workflow rather than shipping `[object Object]`. |
+| GHL lifecycle templates (FIND-035) | App-side pause/resume/cancel sync now refreshes the exact enrollment's scalar program fields before delivery and suppresses the customer trigger if refresh fails. Deploy, confirm the GHL templates use the documented contact fields, and capture one correctly named message for each action. |
 | Production release control (FIND-072) | Protect `main` with green CI/owner review or record a controlled-beta exception and practice one Railway rollback. |
 | Repository visibility | Confirm the public GitHub repository is intentional; otherwise make it private after checking Railway access. |
 
@@ -43,6 +37,10 @@ These do not block the base product when described accurately, but they must not
 
 ## Closed By Deployed Code And Current Live Proof
 
+- FIND-068: Supabase Pro managed backups are active; encrypted snapshot `20260721T175646Z` passed off-platform verification and a complete isolated restore. See `docs/RECOVERY_DRILL_2026-07-21.md`.
+- FIND-073: `ScaleSafe V2 Clean Certified 2` passed the scratch-install allowlist certification and replaced the legacy reviewer package.
+- Marketplace submission package: the end-to-end and scope videos, SSO-based reviewer access instructions, reviewer notes, final 20-scope explanation, and certified Snapshot were submitted for GHL review. ScaleSafe has no separate login, and shared GHL credentials are not used because HighLevel enforces email OTP.
+- Public review URLs: privacy, terms, support, guide, FAQ, and troubleshooting returned `200` with distinct page titles/content on July 21, 2026. Legacy `.html` Marketplace URLs redirect to the corresponding live pages.
 - FIND-044: dashboard reads are bounded, read-only, and currently respond below the three-second observation threshold.
 - FIND-045: milestone state is durable and trigger delivery is queued/observable.
 - FIND-048: defense regeneration returns `202` and completes in the durable background path.
@@ -59,6 +57,8 @@ These do not block the base product when described accurately, but they must not
 - FIND-036/037: the fresh Stripe finite plan charged `$1` first installment plus a one-time `$1` add-on, then one final `$1` installment; it completed at 2/2 with no next billing date. `ss_payment_received` was delivered once for payment 2 with the exact enrollment and program name.
 - Dual-option Quick Checkout: a live `$1.50` Stripe paid-in-full selection on the installment-capable certification offer created one client-linked PIF enrollment and payment, no next billing, no saved recurring method, no recurring-plan display, and no processor subscription. Railway logged the exact enrollment as `paymentType: pif` with `nextBilling: null` and no warning/error response.
 - Reviewer full enrollment: the dedicated `ScaleSafe` location produced one linked Stripe sandbox payment, enrollment, consent record, enrollment-payment record, and private packet. Receipt and welcome messages were received. Public enrollment and checkout surfaces now use the DBA/brand, customer maps retain the public program name, and packet clause acceptance reflects the semantic IDs recorded at signature time.
+- Reviewer final health: the July 21 Provisioning Health check passed with all 90 beta fields, 21 custom values, and 24 active workflow subscriptions. The one pulse-specific workflow uses the filtered ScaleSafe App Event path, and the other App Event subscription is the separate upcoming-payment reminder. No GHL repair or cleanup action was taken.
+- FIND-035 code portion: cancellation now matches pause/resume by refreshing the exact enrollment's program, business, support, refund-policy, and terms fields before firing. Obsolete workflow field lookups were corrected to use `refund_window_text`, the offer terms URL, and the merchant config fallback. Full Jest, typecheck, and production build passed; live rendered GHL proof remains open.
 
 ## Accepted Controlled-Beta Limitations
 

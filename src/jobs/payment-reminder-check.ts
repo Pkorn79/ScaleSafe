@@ -40,7 +40,7 @@ export async function runPaymentReminderCheck(): Promise<{
     return summary;
   } catch (err: any) {
     logger.error({ err: err.message }, 'Payment reminder check failed');
-    return { total: 0, sent: 0, skipped: 0, reminders: [] };
+    throw err;
   }
 }
 

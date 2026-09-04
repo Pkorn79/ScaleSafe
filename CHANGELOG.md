@@ -25,6 +25,51 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Security
 - Unknown plans still fail closed, paid-plan billing failures remain locked, and the test plan cannot be selected through an untrusted browser payload.
 
+## Unreleased - Command Center Phase 1 identity foundation (2026-07-22)
+
+### Added
+- A default-off, dedicated-host operator identity plane using server-side Supabase Auth, mandatory TOTP MFA, app-owned opaque sessions, host-only cookies, exact-origin CSRF protection, and live authorization checks.
+- Migration 103 for operator organizations, users, memberships, reseller assignments, time-limited support grants, invitations, authentication attempts, sessions, append-only audit events, and database-backed rate limits.
+- Atomic database functions for reseller assignment transfer, support-grant decisions, invitation acceptance, session creation/revocation, and the one-time platform-owner bootstrap.
+- Isolated operator routes and a minimal authentication surface under `/internal/operator`; unmatched internal paths can no longer fall through to the merchant SPA.
+- Focused tests for feature flags, host isolation, mixed merchant/operator identity rejection, cookies, CSRF, MFA, invitations, live assignment enforcement, startup key separation, RLS migration requirements, and fail-closed audit behavior.
+- Clean-replay regression coverage for historical migration interactions in migrations 031, 086, and 095.
+
+### Fixed
+- Fresh databases can now replay all migrations through schema 103 without manual SQL shims.
+- Duplicate reseller external references now return a clear `409 CONFLICT` instead of an unhandled `500`.
+
+### Safety
+- All operator flags default off. Migration 103 is not applied to production, and no production deployment, DNS, provider configuration, bootstrap, or feature enablement is part of this change.
+- Production remains on schema 102 until Philip separately approves production timing.
+
+### Verified
+- Isolated staging certification: 62/62 requirements passed after reconciling one obsolete harness label.
+- Disposable clean database replay: 103/103 migrations applied without shims; schema version 103 verified and the project deleted.
+- Focused replay/admin suite: 2 suites and 11 tests passed.
+- Full repository suite: 178 suites and 1,442 tests passed.
+- TypeScript typecheck and the production backend/UI build passed.
+
+## Unreleased - Whop lifecycle capability display (2026-07-21)
+
+### Fixed
+- Client Programs and Payment Management now use the same Whop lifecycle capability check.
+- Older Whop enrollments without a membership ID no longer show Pause, Resume, or Cancel controls that the Whop API cannot perform; the program card explains why those controls are unavailable.
+
+### Verified
+- Focused capability tests, TypeScript typecheck, and the production backend/UI build passed.
+
+## Unreleased - Exact lifecycle workflow fields (2026-07-21)
+
+### Fixed
+- Cancellation now refreshes the selected enrollment's program, business, support, refund-policy, and terms fields before firing the GHL customer workflow, matching the existing pause/resume safety pattern.
+- Cancellation workflow delivery is suppressed when the exact enrollment or prerequisite GHL field update cannot be verified, preventing a multi-enrollment contact from receiving a message for the wrong program.
+- Enrollment field writers now read the current `refund_window_text` and per-offer/merchant terms URL instead of obsolete property names that could leave cancellation copy blank.
+
+### Verified
+- Full Jest suite: 168 suites and 1,377 tests passed.
+- TypeScript typecheck and the production backend/UI build passed.
+
 ## Unreleased - Repository Master Index (2026-07-20)
 
 ### Added
