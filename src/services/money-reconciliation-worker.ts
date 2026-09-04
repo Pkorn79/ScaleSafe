@@ -9,6 +9,12 @@ import {
 } from './refund-reconciliation.service';
 import { AdaptivePoller } from '../utils/adaptive-poller';
 import { commandCenterHealthService } from './command-center-health.service';
+import { triggerDeliveryJobService } from './trigger-delivery-job.service';
+import { evidenceService } from './evidence.service';
+import { EVIDENCE_TYPES } from '../constants/evidence-types';
+import { SS_CONTACT_FIELDS, WORKFLOW_PAYMENT_CONTACT_FIELDS } from '../constants/ghl-fields';
+import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
+import { formatMoney } from '../utils/offer-display';
 
 const workerId = `money_${process.pid}_${crypto.randomBytes(6).toString('hex')}`;
 let running = false;
@@ -215,16 +221,189 @@ async function reconcileAchIntent(operation: MoneyOperationRecord): Promise<Reco
   return recovery.clientResponse;
 }
 
+async function ensureDunningRecoveryEvidence(params: {
+  operation: MoneyOperationRecord;
+  original: any;
+  successfulPayment: any;
+  offerId: string | null;
+  paymentNumber: number;
+  paymentsRemaining: number | null;
+  runningTotal: number;
+}): Promise<void> {
+  const { operation, original, successfulPayment } = params;
+  const supabase = getSupabase();
+  const findExisting = async (): Promise<any | null> => {
+    const { data, error } = await supabase
+      .from('evidence_payment_confirmation')
+      .select('id')
+      .eq('location_id', operation.location_id)
+      .eq('contact_id', original.contact_id)
+      .eq('payment_event_id', successfulPayment.id)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  };
+
+  if (await findExisting()) return;
+
+  const amount = Number(successfulPayment.amount ?? original.amount ?? 0);
+  const currency = String(successfulPayment.currency || original.currency || 'usd').toUpperCase();
+  try {
+    await evidenceService.logEvidence(
+      EVIDENCE_TYPES.PAYMENT_CONFIRMATION,
+      operation.location_id,
+      original.contact_id,
+      'dunning_retry_reconciliation',
+      {
+        amount,
+        currency,
+        payment_date: new Date().toISOString(),
+        ghl_transaction_id: successfulPayment.processor_transaction_id,
+        payment_event_id: successfulPayment.id,
+        payment_number: params.paymentNumber,
+        payments_remaining: params.paymentsRemaining,
+        running_total: params.runningTotal,
+        processor: successfulPayment.processor,
+        enrollment_id: original.enrollment_id || null,
+        raw_payload: {
+          dunning_retry: true,
+          original_payment_event_id: original.id,
+          successful_payment_event_id: successfulPayment.id,
+          money_operation_id: operation.id,
+        },
+        ...buildDefenseEvidenceFields({
+          summary: `Dunning retry recovered payment of ${formatMoney(amount)}. Transaction: ${successfulPayment.processor_transaction_id}.`,
+          title: 'Dunning Recovery Payment',
+          proofRole: 'payment_history',
+          relevance: {
+            tags: ['credit_not_processed', 'cancelled_recurring'],
+            priority: 'high',
+            confidence: 'strong',
+          },
+          enrollmentId: original.enrollment_id || null,
+          paymentEventId: successfulPayment.id,
+          metadata: {
+            actor: 'processor',
+            service: {
+              enrollmentId: original.enrollment_id || null,
+              offerId: params.offerId,
+            },
+            transaction: {
+              paymentEventId: successfulPayment.id,
+              processor: successfulPayment.processor,
+              transactionId: successfulPayment.processor_transaction_id,
+              amount,
+              currency,
+              paymentSequence: params.paymentNumber,
+            },
+            source: {
+              system: 'dunning_retry_reconciliation',
+              recordId: successfulPayment.processor_transaction_id,
+              rawEventType: 'dunning_resolved',
+            },
+          },
+        }),
+      },
+    );
+  } catch (error: any) {
+    if (error?.code !== '23505' || !(await findExisting())) throw error;
+  }
+}
+
+async function queueDunningRecoveryDelivery(params: {
+  operation: MoneyOperationRecord;
+  original: any;
+  successfulPayment: any;
+  enrollment: any | null;
+  offerId: string | null;
+  paymentNumber: number;
+  paymentsTotal: number | null;
+  paymentsRemaining: number | null;
+  runningTotal: number;
+}): Promise<void> {
+  const { operation, original, successfulPayment, enrollment } = params;
+  const amount = Number(successfulPayment.amount ?? original.amount ?? 0);
+  const isFinal = enrollment?.payment_type !== 'subscription'
+    && params.paymentsTotal !== null
+    && params.paymentNumber >= params.paymentsTotal;
+  const enrollmentStatus = String(enrollment?.status || '').toLowerCase();
+  const restoreEnrollmentStatus = !enrollment
+    || ['active', 'enrolled', 'past_due', 'delinquent'].includes(enrollmentStatus);
+  const contactFieldUpdates: Record<string, unknown> = {
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENT_STATUS]: isFinal ? 'Completed' : 'Current',
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_AMOUNT]: formatMoney(amount),
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.LAST_PAYMENT_DATE]: new Date().toISOString().slice(0, 10),
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_MADE]: params.paymentNumber,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.PAYMENTS_REMAINING]: params.paymentsRemaining,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.SUCCESSFUL_PAYMENT_COUNT]: params.paymentNumber,
+    [WORKFLOW_PAYMENT_CONTACT_FIELDS.TOTAL_PAID]: formatMoney(params.runningTotal),
+    ...(restoreEnrollmentStatus ? { [SS_CONTACT_FIELDS.ENROLLMENT_STATUS]: 'enrolled' } : {}),
+  };
+
+  const { job } = await triggerDeliveryJobService.enqueue({
+    locationId: operation.location_id,
+    triggerKey: 'ss_payment_received',
+    idempotencyKey: `dunning-recovery:${successfulPayment.id}`,
+    contactId: original.contact_id,
+    contactFieldUpdates,
+    payload: {
+      event_type: 'payment_received',
+      location_id: operation.location_id,
+      locationId: operation.location_id,
+      contact_id: original.contact_id,
+      contactId: original.contact_id,
+      enrollment_id: original.enrollment_id || '',
+      enrollmentId: original.enrollment_id || '',
+      offer_id: params.offerId || '',
+      offerId: params.offerId || '',
+      processor: successfulPayment.processor,
+      amount,
+      amount_display: formatMoney(amount),
+      amountDisplay: formatMoney(amount),
+      transaction_id: successfulPayment.processor_transaction_id,
+      transactionId: successfulPayment.processor_transaction_id,
+      payment_number: params.paymentNumber,
+      paymentNumber: params.paymentNumber,
+      payments_total: params.paymentsTotal,
+      paymentsTotal: params.paymentsTotal,
+      payments_remaining: params.paymentsRemaining,
+      paymentsRemaining: params.paymentsRemaining,
+      running_total: params.runningTotal,
+      runningTotal: params.runningTotal,
+      running_total_display: formatMoney(params.runningTotal),
+      runningTotalDisplay: formatMoney(params.runningTotal),
+      action: 'dunning_resolved',
+      payment_kind: 'dunning_recovery',
+      paymentKind: 'dunning_recovery',
+      payment_source: 'dunning_retry_reconciliation',
+      paymentSource: 'dunning_retry_reconciliation',
+      payment_timing: 'dunning_recovery',
+      paymentTiming: 'dunning_recovery',
+      receipt_only: true,
+      receiptOnly: true,
+      send_receipt: true,
+      sendReceipt: true,
+      send_welcome: false,
+      sendWelcome: false,
+    },
+  });
+  if (!job?.id) throw new Error('Dunning recovery trigger delivery was not durably queued');
+}
+
 async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record<string, unknown>> {
   const payload = request(operation);
   const transactionId = operation.processor_reference;
   if (!transactionId) throw new Error('Dunning transaction reference is missing');
+  const paymentEventId = String(payload.paymentEventId || '');
+  const contactId = String(payload.contactId || '');
+  if (!paymentEventId || !contactId) throw new Error('Dunning reconciliation identity is incomplete');
   const { data: original, error: originalError } = await getSupabase()
     .from('payment_events')
-    .select('id, enrollment_id, amount, currency, contact_id, processor, processor_transaction_id')
-    .eq('id', payload.paymentEventId)
+    .select('id, merchant_id, enrollment_id, offer_id, amount, currency, contact_id, processor, processor_transaction_id, dunning_status')
+    .eq('id', paymentEventId)
+    .eq('merchant_id', operation.merchant_id)
     .eq('location_id', operation.location_id)
-    .eq('contact_id', payload.contactId)
+    .eq('contact_id', contactId)
     .maybeSingle();
   if (originalError) throw originalError;
   if (!original) throw new Error('Original dunning payment event is missing');
@@ -235,15 +414,21 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
     throw new Error('Dunning reconciliation requires a distinct successful payment reference');
   }
 
-  let successfulPaymentEventId: string | null = null;
+  let enrollment: any | null = null;
+  let recurringResult: any | null = null;
   if (original.enrollment_id) {
     let interval = 'monthly';
-    const { data: enrollment } = await getSupabase()
+    const { data, error: enrollmentError } = await getSupabase()
       .from('enrollments')
-      .select('offer_id')
+      .select('id, merchant_id, location_id, contact_id, offer_id, status, payment_type, payments_made, payments_total')
       .eq('id', original.enrollment_id)
+      .eq('merchant_id', operation.merchant_id)
       .eq('location_id', operation.location_id)
+      .eq('contact_id', original.contact_id)
       .maybeSingle();
+    if (enrollmentError) throw enrollmentError;
+    enrollment = data || null;
+    if (!enrollment) throw new Error('Dunning enrollment is missing from the reconciled tenant');
     if (enrollment?.offer_id) {
       const { data: offer } = await getSupabase()
         .from('offers_mirror')
@@ -253,7 +438,7 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
         .maybeSingle();
       if (offer?.installment_frequency) interval = offer.installment_frequency;
     }
-    const { data, error } = await getSupabase().rpc('record_recurring_payment', {
+    const { data: rpcData, error } = await getSupabase().rpc('record_recurring_payment', {
       p_enrollment_id: original.enrollment_id,
       p_location_id: operation.location_id,
       p_processor: operation.processor_type,
@@ -266,36 +451,96 @@ async function reconcileDunning(operation: MoneyOperationRecord): Promise<Record
       p_raw_payload: { dunning_retry: true, original_payment_event_id: original.id, money_operation_id: operation.id },
     });
     if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    successfulPaymentEventId = row?.is_duplicate ? null : row?.payment_event_id || null;
+    recurringResult = Array.isArray(rpcData) ? rpcData[0] : rpcData;
   } else {
     await ensurePaymentLedger(operation);
   }
 
-  if (!successfulPaymentEventId) {
-    const { data: successfulPayment, error: successError } = await getSupabase()
-      .from('payment_events')
-      .select('id')
-      .eq('location_id', operation.location_id)
-      .eq('contact_id', original.contact_id)
-      .eq('processor', original.processor)
-      .eq('event_type', 'sale')
-      .eq('processor_transaction_id', transactionId)
-      .maybeSingle();
-    if (successError) throw successError;
-    successfulPaymentEventId = successfulPayment?.id || null;
-  }
-  if (!successfulPaymentEventId || successfulPaymentEventId === original.id) {
+  const { data: successfulPayment, error: successError } = await getSupabase()
+    .from('payment_events')
+    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, amount, currency, payment_number, payments_total')
+    .eq('merchant_id', operation.merchant_id)
+    .eq('location_id', operation.location_id)
+    .eq('contact_id', original.contact_id)
+    .eq('processor', original.processor)
+    .eq('event_type', 'sale')
+    .eq('processor_transaction_id', transactionId)
+    .maybeSingle();
+  if (successError) throw successError;
+  if (!successfulPayment?.id || successfulPayment.id === original.id) {
     throw new Error('Dunning recovery is not backed by a distinct successful payment record');
   }
 
-  const { error: resolveError } = await getSupabase()
-    .from('payment_events')
-    .update({ dunning_status: 'resolved', dunning_resolved_at: new Date().toISOString() })
-    .eq('id', original.id)
-    .eq('location_id', operation.location_id)
-    .eq('contact_id', original.contact_id);
-  if (resolveError) throw resolveError;
+  if (enrollment && ['past_due', 'delinquent'].includes(String(enrollment.status || '').toLowerCase())) {
+    const { data: restoredRows, error: restoreError } = await getSupabase()
+      .from('enrollments')
+      .update({ status: 'enrolled' })
+      .eq('id', enrollment.id)
+      .eq('merchant_id', operation.merchant_id)
+      .eq('location_id', operation.location_id)
+      .eq('contact_id', original.contact_id)
+      .in('status', ['past_due', 'delinquent'])
+      .select('id');
+    if (restoreError) throw restoreError;
+    if (Array.isArray(restoredRows) && restoredRows.length > 0) enrollment.status = 'enrolled';
+  }
+
+  const paymentNumber = Number(successfulPayment.payment_number || recurringResult?.payments_made || enrollment?.payments_made || 1);
+  const rawPaymentsTotal = successfulPayment.payments_total ?? recurringResult?.payments_total ?? enrollment?.payments_total;
+  const paymentsTotal = rawPaymentsTotal === null || rawPaymentsTotal === undefined
+    ? null
+    : Number(rawPaymentsTotal);
+  const paymentsRemaining = paymentsTotal === null ? null : Math.max(0, paymentsTotal - paymentNumber);
+  const runningTotal = Number(successfulPayment.amount ?? original.amount ?? 0) * paymentNumber;
+  const offerId = successfulPayment.offer_id || original.offer_id || enrollment?.offer_id || null;
+
+  await ensureDunningRecoveryEvidence({
+    operation,
+    original,
+    successfulPayment,
+    offerId,
+    paymentNumber,
+    paymentsRemaining,
+    runningTotal,
+  });
+  await queueDunningRecoveryDelivery({
+    operation,
+    original,
+    successfulPayment,
+    enrollment,
+    offerId,
+    paymentNumber,
+    paymentsTotal,
+    paymentsRemaining,
+    runningTotal,
+  });
+
+  if (original.dunning_status !== 'resolved') {
+    const { data: resolvedRows, error: resolveError } = await getSupabase()
+      .from('payment_events')
+      .update({ dunning_status: 'resolved', dunning_resolved_at: new Date().toISOString() })
+      .eq('id', original.id)
+      .eq('merchant_id', operation.merchant_id)
+      .eq('location_id', operation.location_id)
+      .eq('contact_id', original.contact_id)
+      .in('dunning_status', ['active', 'retrying', 'escalated'])
+      .select('id');
+    if (resolveError) throw resolveError;
+    if (!Array.isArray(resolvedRows) || resolvedRows.length !== 1) {
+      const { data: current, error: currentError } = await getSupabase()
+        .from('payment_events')
+        .select('id, dunning_status')
+        .eq('id', original.id)
+        .eq('merchant_id', operation.merchant_id)
+        .eq('location_id', operation.location_id)
+        .eq('contact_id', original.contact_id)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      if (current?.dunning_status !== 'resolved') {
+        throw new Error('Dunning recovery status was not resolved');
+      }
+    }
+  }
   return { success: true };
 }
 
