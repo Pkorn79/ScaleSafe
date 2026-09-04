@@ -84,6 +84,19 @@ describe('operator configuration startup guard', () => {
     expect(loaded.config.bindHost).toBeNull();
   });
 
+  it('requires an explicit proxy depth in production', () => {
+    jest.resetModules();
+    process.env.NODE_ENV = 'production';
+    delete process.env.APP_TRUST_PROXY_HOPS;
+    delete process.env.OPERATOR_TRUST_PROXY_HOPS;
+    const exit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as never);
+
+    expect(() => require('../../src/config')).toThrow('EXIT_1');
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   it('accepts explicit loopback binding and rejects arbitrary hostnames', () => {
     jest.resetModules();
     process.env.SERVER_BIND_HOST = '127.0.0.1';

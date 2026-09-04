@@ -14,9 +14,8 @@ import { operatorHostBoundary } from './middleware/operatorAuth';
 export function createApp(): express.Application {
   const app = express();
 
-  const operator = (config as any).operator;
-  if (operator?.enabled && operator.trustProxyHops > 0) {
-    app.set('trust proxy', operator.trustProxyHops);
+  if (config.trustProxyHops > 0) {
+    app.set('trust proxy', config.trustProxyHops);
   }
 
   app.disable('x-powered-by');

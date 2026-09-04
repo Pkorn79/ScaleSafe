@@ -30,6 +30,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Security
 - GHL Marketplace lifecycle webhooks now require ScaleSafe's exact app id before changing tenant state. A late retry is accepted unless a newer location lifecycle event already superseded it.
+- Production now requires an explicit verified proxy depth so client-IP rate limits do not collapse all proxied traffic into one shared bucket.
 - The public payment-update / milestone-signoff / pulse-check widget APIs and the external evidence intake API are now rate limited.
 - The unsigned Stripe Connect OAuth state escape hatch (`ALLOW_UNSIGNED_STRIPE_STATE`) is disabled in production.
 
@@ -37,7 +38,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Stripe and Whop webhook handlers now contain failures during tenant or secret resolution with a retryable 500 instead of letting an async rejection escape the request handler.
 
 ### Operational note
-- Proxy trust remains explicitly configured through the Command Center operator setting. Public rate limiting must not infer Railway's proxy depth until the production request path is verified.
+- Configure `APP_TRUST_PROXY_HOPS` only after verifying the Railway and Cloudflare request path. The former operator-specific variable remains a compatibility alias.
 
 ## Unreleased - Lifecycle cancellation correctness (2026-09-04)
 

@@ -16,6 +16,7 @@ const defaults: Record<string, string> = {
   GHL_APP_SSO_KEY: 'test_ghl_app_sso_key_789',
   GHL_TRIGGER_SUBSCRIPTION_SECRET: 'test_trigger_subscription_secret_1234567890',
   PUBLIC_ACTION_TOKEN_SECRET: 'test_public_action_secret_1234567890',
+  APP_TRUST_PROXY_HOPS: '1',
   STRIPE_SECRET_KEY: 'sk_test_51MockedScaleSafeStripeKey1234567890',
   STRIPE_PUBLISHABLE_KEY: 'pk_test_51MockedScaleSafeStripeKey1234567890',
   STRIPE_CLIENT_ID: 'ca_test_scalesafe',

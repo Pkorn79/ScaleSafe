@@ -94,6 +94,7 @@ const operatorAuthEnabled = process.env.OPERATOR_AUTH_ENABLED === 'true';
 const operatorHealthIncidentsEnabled = process.env.OPERATOR_HEALTH_INCIDENTS_ENABLED === 'true';
 const operatorHost = optional('OPERATOR_HOST', 'ops.scalesafe.app').toLowerCase();
 const operatorTrustProxyHops = explicitPositiveInteger('OPERATOR_TRUST_PROXY_HOPS');
+const appTrustProxyHops = explicitPositiveInteger('APP_TRUST_PROXY_HOPS') || operatorTrustProxyHops;
 const operatorTokenEncryptionKey = process.env.OPERATOR_AUTH_TOKEN_ENCRYPTION_KEY || '';
 const guardianIngestionEnabled = process.env.GUARDIAN_INGESTION_ENABLED === 'true';
 const guardianHost = optional('GUARDIAN_HOST', 'guardian.scalesafe.app').toLowerCase();
@@ -147,6 +148,11 @@ if (
 
 if (isProd && !process.env.PUBLIC_ACTION_TOKEN_SECRET) {
   console.error('FATAL: Missing required environment variable: PUBLIC_ACTION_TOKEN_SECRET');
+  process.exit(1);
+}
+
+if (isProd && !appTrustProxyHops) {
+  console.error('FATAL: APP_TRUST_PROXY_HOPS must match the verified production proxy path');
   process.exit(1);
 }
 
@@ -214,8 +220,8 @@ if (operatorCommandCenterEnabled && isProd) {
     console.error('FATAL: OPERATOR_HOST must be one exact hostname');
     process.exit(1);
   }
-  if (!operatorTrustProxyHops) {
-    console.error('FATAL: OPERATOR_TRUST_PROXY_HOPS must be an explicit positive integer');
+  if (!appTrustProxyHops) {
+    console.error('FATAL: Command Center requires an explicit verified proxy hop count');
     process.exit(1);
   }
 }
@@ -299,7 +305,7 @@ export const config = {
     healthEnabled: operatorHealthIncidentsEnabled,
     host: operatorHost,
     origin: `https://${operatorHost}`,
-    trustProxyHops: operatorTrustProxyHops || 0,
+    trustProxyHops: appTrustProxyHops || 0,
     supabaseAuthKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
     tokenEncryptionKey: operatorTokenEncryptionKey,
     authAttemptMinutes: optionalPositiveInteger('OPERATOR_AUTH_ATTEMPT_MINUTES', 10),
@@ -333,6 +339,7 @@ export const config = {
   // Server
   port: parseInt(optional('PORT', '3000'), 10),
   bindHost: serverBindHost || null,
+  trustProxyHops: appTrustProxyHops || 0,
   nodeEnv,
   logLevel: optional('LOG_LEVEL', 'debug'),
 
