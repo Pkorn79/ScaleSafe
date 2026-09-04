@@ -26,6 +26,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Fresh isolated baseline replay, the exact schema 106-to-110 upgrade, and rollback-only Guardian/operator SQL checks pass. A 10,002-merchant page query completed in 89.141 ms against the 5,000 ms budget.
 - Real isolated Supabase owner bootstrap, first-time TOTP enrollment, returning MFA login, logout and session revocation pass. Production TLS/cookie, live schema, job continuity, and owner access checks remain gated behind deployment approval.
 
+## Unreleased - Lifecycle cancellation correctness (2026-09-04)
+
+### Fixed
+- Fully billed finite installment enrollments can be cancelled without calling a disconnected processor, while Whop access cancellation and unfinished billing still require an authoritative provider result.
+- Cancelling disables future pulse scheduling and preserves historical processor references when no provider call is required.
+- Approved processor connection/configuration errors now return a safe merchant-actionable message instead of a generic unexpected error.
+
+### Security
+- POST /api/payments/lifecycle/enrollment/status now enforces per-action allowed statuses (a cancelled or completed enrollment can no longer be re-transitioned), scopes the enrollment lookup by the caller-supplied contactId, and passes the enrollment's stored contact to lifecycle services instead of the raw body value.
+
 ## Unreleased - Stripe live cutover and gated test access (2026-08-18)
 
 ### Added

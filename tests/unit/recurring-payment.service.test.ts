@@ -57,7 +57,7 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
       next_billing_source: 'processor',
     };
 
-    // The service should perform NO direct table writes for the ledger/enrollment —
+    // The service should perform NO direct table writes for the ledger/enrollment -
     // the RPC is authoritative. Only the merchants lookup remains.
     mockFrom.mockImplementation((table: string) => {
       if (table === 'merchants') {
@@ -214,6 +214,7 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
     expect(result.isFinal).toBe(true);
     expect(mockFireTrigger).toHaveBeenCalledWith('loc_1', 'ss_payment_received', expect.anything());
     expect(mockFireTrigger).not.toHaveBeenCalledWith('loc_1', 'ss_program_completed', expect.anything());
+
   });
 
   it('does not fire a customer receipt for NMI history-sync imports', async () => {

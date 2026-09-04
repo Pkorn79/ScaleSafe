@@ -309,7 +309,9 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     }
   }
 
-  // 5. Final-installment billing marker
+  // 5. Final-installment billing marker. Keep the processor subscription id as
+  // historical evidence; lifecycle cancellation uses the billing state to
+  // decide whether a live processor call remains necessary.
   if (isFinal) {
     logger.info({ enrollmentId: enr.id, totalPayments: newPaymentsMade }, 'Recurring payment: final installment collected; billing marked complete');
   }

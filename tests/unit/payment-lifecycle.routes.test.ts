@@ -278,4 +278,40 @@ describe('POST /lifecycle/enrollment/status', () => {
     expect(mockCancelSubscription).not.toHaveBeenCalled();
     expect(mockCompleteEnrollment).not.toHaveBeenCalled();
   });
+
+  it('applies per-action status scoping (cancel cannot target a completed enrollment)', async () => {
+    nextEnrollmentResult = { data: { ...ENROLLMENT } };
+    await request(app)
+      .post('/lifecycle/enrollment/status')
+      .send({ enrollmentId: 'enr-1', contactId: 'contact-1', action: 'cancel' });
+
+    expect(lastQuery.statuses).toEqual(
+      ['enrolled', 'active', 'paused', 'past_due', 'delinquent', 'consent_captured', 'device_captured'],
+    );
+  });
+
+  it('applies per-action status scoping for complete', async () => {
+    nextEnrollmentResult = { data: { ...ENROLLMENT } };
+    await request(app)
+      .post('/lifecycle/enrollment/status')
+      .send({ enrollmentId: 'enr-1', contactId: 'contact-1', action: 'complete' });
+
+    expect(lastQuery.statuses).toEqual(['enrolled', 'active', 'paused', 'past_due', 'delinquent']);
+    expect(mockCompleteEnrollment).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes the lookup by contactId and passes the enrollment-stored contact to the service', async () => {
+    nextEnrollmentResult = { data: { ...ENROLLMENT, contact_id: 'contact-real' } };
+    const res = await request(app)
+      .post('/lifecycle/enrollment/status')
+      .send({ enrollmentId: 'enr-1', contactId: 'contact-mismatch', action: 'cancel' });
+
+    expect(res.status).toBe(200);
+    // the query must filter on the caller-supplied contact (tenant + contact scoping)…
+    expect(lastQuery.filters.contact_id).toBe('contact-mismatch');
+    // …and the service must receive the enrollment's stored contact, never the raw body value
+    expect(mockCancelSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      contactId: 'contact-real',
+    }));
+  });
 });
