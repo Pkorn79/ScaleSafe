@@ -6,7 +6,7 @@ jest.mock('../../src/clients/supabase.client', () => ({
   setSupabaseRequestObserver: jest.fn(),
   getSupabase: () => ({
     from: () => ({ select: () => ({ limit: async () => ({ error: null }) }) }),
-    rpc: async () => ({ data: 110, error: null }),
+    rpc: async () => ({ data: 111, error: null }),
   }),
 }));
 
