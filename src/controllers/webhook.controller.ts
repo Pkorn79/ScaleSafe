@@ -134,15 +134,17 @@ function ghlLifecycleEventTime(raw: unknown): { ms: number; iso: string } | null
 
 function storedGhlLifecycleEventTimeMs(merchant: any): number | null {
   const merchantConfig = merchant?.config || {};
-  const candidates = [
-    merchantConfig.ghl_lifecycle_event_at,
+  const explicitEventTime = ghlLifecycleEventTime(merchantConfig.ghl_lifecycle_event_at);
+  if (explicitEventTime) return explicitEventTime.ms;
+
+  const legacyCandidates = [
     merchantConfig.ghl_install_event_at,
     merchantConfig.ghl_uninstalled_at,
   ]
     .map(ghlLifecycleEventTime)
     .filter((value): value is { ms: number; iso: string } => Boolean(value));
-  if (candidates.length === 0) return null;
-  return Math.max(...candidates.map((value) => value.ms));
+  if (legacyCandidates.length === 0) return null;
+  return Math.max(...legacyCandidates.map((value) => value.ms));
 }
 
 function isOlderGhlLifecycleEvent(merchant: any, eventTimeMs: number | null): boolean {

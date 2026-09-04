@@ -582,6 +582,33 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     expect(res.json).toHaveBeenCalledWith({ received: true, ignored: 'older_event' });
   });
 
+  test('orders against the prior provider event time rather than local processing time', async () => {
+    const priorProviderEvent = new Date(Date.now() - 60_000).toISOString();
+    const laterProviderEvent = new Date(Date.now() - 30_000).toISOString();
+    mockMerchantFindByLocationId.mockResolvedValue({
+      location_id: 'loc_gone',
+      status: 'active',
+      config: {
+        ghl_lifecycle_event_at: priorProviderEvent,
+        ghl_install_event_at: new Date().toISOString(),
+        ghl_lifecycle_event_type: 'INSTALL',
+      },
+    });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: SCALESAFE_APP_ID,
+      locationId: 'loc_gone',
+      timestamp: laterProviderEvent,
+      webhookId: 'wh_later_uninstall',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_gone', expect.objectContaining({ status: 'uninstalled' }));
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
   test('drops a duplicate lifecycle delivery by webhookId', async () => {
     mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
     mockIdempotencyExists.mockResolvedValueOnce(true);
