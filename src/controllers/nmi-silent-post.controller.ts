@@ -98,50 +98,6 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       amount: amountStr,
     }, 'NMI Silent Post received');
 
-    const { data: enrollment } = await supabase
-      .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
-      .eq('processor_subscription_id', subscriptionId)
-      .single();
-
-    if (!enrollment) {
-      logger.warn({ subscriptionId }, 'NMI Silent Post: unknown subscription - ignoring');
-      await updateDiagnosticLog(supabase, diagnosticLogId, {
-        matched: false,
-        action: 'ignored_unknown_subscription',
-        error_message: `No enrollment matched processor_subscription_id ${subscriptionId}`,
-      });
-      res.status(200).json({ received: true });
-      return;
-    }
-
-    await updateDiagnosticLog(supabase, diagnosticLogId, {
-      merchant_id: enrollment.merchant_id,
-      location_id: enrollment.location_id,
-      enrollment_id: enrollment.id,
-      matched: true,
-    });
-
-    if (transactionId) {
-      const { data: existing } = await supabase
-        .from('payment_events')
-        .select('id')
-        .eq('processor_transaction_id', transactionId)
-        .eq('location_id', enrollment.location_id)
-        .maybeSingle();
-      if (existing) {
-        logger.debug({ transactionId }, 'NMI Silent Post: transaction already processed - skipping');
-        await updateDiagnosticLog(supabase, diagnosticLogId, {
-          duplicate: true,
-          verification_status: 'skipped',
-          action: 'duplicate_transaction',
-          payment_event_id: existing.id,
-        });
-        res.status(200).json({ received: true });
-        return;
-      }
-    }
-
     if (!transactionId) {
       logger.warn({ subscriptionId, response: nmiResponse }, 'NMI Silent Post: post missing transaction id - ignoring');
       await updateDiagnosticLog(supabase, diagnosticLogId, {
@@ -153,66 +109,151 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       return;
     }
 
-    let installmentFrequency = 'monthly';
-    let offerName = '';
-    let offerNmiProcessorId: string | null = null;
-    if (enrollment.offer_id) {
-      const { data: offer } = await supabase
-        .from('offers_mirror')
-        .select('offer_name, installment_frequency, nmi_processor_id')
-        .eq('id', enrollment.offer_id)
-        .single();
-      if (offer) {
-        installmentFrequency = offer.installment_frequency || 'monthly';
-        offerName = offer.offer_name || '';
-        offerNmiProcessorId = offer.nmi_processor_id || null;
-      }
-    }
+    // NMI subscription ids are gateway-sequential and can collide across
+    // merchants (see nmi-recurring-sync #18). A candidate only claims the post
+    // when the transaction verifies under its own gateway credentials, so
+    // verification doubles as tenant disambiguation.
+    const { data: candidateRows } = await supabase
+      .from('enrollments')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .eq('processor_subscription_id', subscriptionId)
+      .limit(5);
+    const candidates = (candidateRows || []).filter(Boolean);
 
-    try {
-      const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
-        processor_override: 'nmi',
-        nmi_processor_id: offerNmiProcessorId,
-      });
-      const processor = createProcessorClient(procConfig);
-      const verification = await processor.verifyTransaction(transactionId);
-      if (!verification.success) {
-        logger.warn({ transactionId, subscriptionId }, 'NMI Silent Post: transaction verification failed - ignoring');
-        await updateDiagnosticLog(supabase, diagnosticLogId, {
-          verification_status: 'failed',
-          action: 'ignored_verification_failed',
-          error_message: 'NMI transaction verification returned unsuccessful',
-        });
-        res.status(200).json({ received: true });
-        return;
-      }
-      if (verification.subscriptionId && verification.subscriptionId !== subscriptionId) {
-        logger.warn({ transactionId, subscriptionId, verifiedSubscriptionId: verification.subscriptionId }, 'NMI Silent Post: transaction subscription mismatch - ignoring');
-        await updateDiagnosticLog(supabase, diagnosticLogId, {
-          verification_status: 'failed',
-          action: 'ignored_subscription_mismatch',
-          error_message: 'Verified NMI transaction did not belong to the posted subscription id',
-        });
-        res.status(200).json({ received: true });
-        return;
-      }
+    if (candidates.length === 0) {
+      logger.warn({ subscriptionId }, 'NMI Silent Post: unknown subscription - ignoring');
       await updateDiagnosticLog(supabase, diagnosticLogId, {
-        verification_status: 'verified',
-      });
-    } catch (verifyErr: any) {
-      logger.warn({ err: verifyErr.message, transactionId, subscriptionId }, 'NMI Silent Post: verification threw - ignoring transaction-bearing post');
-      await updateDiagnosticLog(supabase, diagnosticLogId, {
-        verification_status: 'error',
-        action: 'ignored_verification_error',
-        error_message: verifyErr.message || 'NMI verification threw',
+        matched: false,
+        action: 'ignored_unknown_subscription',
+        error_message: `No enrollment matched processor_subscription_id ${subscriptionId}`,
       });
       res.status(200).json({ received: true });
       return;
     }
 
-    const amountCents = Math.round(safeAmount * 100);
+    let enrollment: any = null;
+    let verification: any = null;
+    let installmentFrequency = 'monthly';
+    let offerName = '';
+    let lastVerifyOutcome = {
+      status: 'failed',
+      action: 'ignored_verification_failed',
+      message: 'NMI transaction verification returned unsuccessful',
+    };
+
+    for (const candidate of candidates) {
+      let candidateFrequency = 'monthly';
+      let candidateOfferName = '';
+      let offerNmiProcessorId: string | null = null;
+      if (candidate.offer_id) {
+        const { data: offer } = await supabase
+          .from('offers_mirror')
+          .select('offer_name, installment_frequency, nmi_processor_id')
+          .eq('id', candidate.offer_id)
+          .eq('location_id', candidate.location_id)
+          .single();
+        if (offer) {
+          candidateFrequency = offer.installment_frequency || 'monthly';
+          candidateOfferName = offer.offer_name || '';
+          offerNmiProcessorId = offer.nmi_processor_id || null;
+        }
+      }
+
+      try {
+        const { config: procConfig } = await resolveProcessor(candidate.merchant_id, candidate.location_id, {
+          processor_override: 'nmi',
+          nmi_processor_id: offerNmiProcessorId,
+        });
+        const processor = createProcessorClient(procConfig);
+        const result = await processor.verifyTransaction(transactionId);
+        if (!result.success) {
+          lastVerifyOutcome = {
+            status: 'failed',
+            action: 'ignored_verification_failed',
+            message: 'NMI transaction verification returned unsuccessful',
+          };
+          continue;
+        }
+        if (result.subscriptionId && result.subscriptionId !== subscriptionId) {
+          lastVerifyOutcome = {
+            status: 'failed',
+            action: 'ignored_subscription_mismatch',
+            message: 'Verified NMI transaction did not belong to the posted subscription id',
+          };
+          continue;
+        }
+        enrollment = candidate;
+        verification = result;
+        installmentFrequency = candidateFrequency;
+        offerName = candidateOfferName;
+        break;
+      } catch (verifyErr: any) {
+        logger.warn(
+          { err: verifyErr.message, transactionId, subscriptionId, candidateLocation: candidate.location_id },
+          'NMI Silent Post: verification threw for candidate',
+        );
+        lastVerifyOutcome = {
+          status: 'error',
+          action: 'ignored_verification_error',
+          message: verifyErr.message || 'NMI verification threw',
+        };
+      }
+    }
+
+    if (!enrollment || !verification) {
+      logger.warn({ transactionId, subscriptionId, candidates: candidates.length }, 'NMI Silent Post: no candidate verified the transaction - ignoring');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        verification_status: lastVerifyOutcome.status,
+        action: lastVerifyOutcome.action,
+        error_message: lastVerifyOutcome.message,
+      });
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    await updateDiagnosticLog(supabase, diagnosticLogId, {
+      merchant_id: enrollment.merchant_id,
+      location_id: enrollment.location_id,
+      enrollment_id: enrollment.id,
+      matched: true,
+      verification_status: 'verified',
+    });
+
+    const { data: existing } = await supabase
+      .from('payment_events')
+      .select('id')
+      .eq('processor_transaction_id', transactionId)
+      .eq('location_id', enrollment.location_id)
+      .maybeSingle();
+    if (existing) {
+      logger.debug({ transactionId }, 'NMI Silent Post: transaction already processed - skipping');
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        duplicate: true,
+        verification_status: 'skipped',
+        action: 'duplicate_transaction',
+        payment_event_id: existing.id,
+      });
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    // Processor truth for money values: the verified amount (already cents)
+    // wins over the attacker-controllable posted amount.
+    const amountCents = Number.isFinite(verification.amount) && verification.amount > 0
+      ? Math.round(verification.amount)
+      : Math.round(safeAmount * 100);
+    const verifiedSucceeded = verification.status === 'settled' || verification.status === 'pending';
 
     if (nmiResponse === '1') {
+      if (!verifiedSucceeded) {
+        logger.warn({ transactionId, subscriptionId, verifiedStatus: verification.status }, 'NMI Silent Post: approved post but verified transaction did not succeed - ignoring');
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          action: 'ignored_success_condition_mismatch',
+          error_message: `Post claimed approval but NMI reports the transaction as ${verification.status}`,
+        });
+        res.status(200).json({ received: true });
+        return;
+      }
       const result = await handleRecurringPaymentSuccess({
         enrollment,
         processorType: 'nmi',
@@ -239,6 +280,15 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         payment_event_id: result.paymentEventId,
       });
     } else {
+      if (verifiedSucceeded) {
+        logger.warn({ transactionId, subscriptionId, verifiedStatus: verification.status }, 'NMI Silent Post: failure post but verified transaction succeeded - ignoring forged decline');
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          action: 'ignored_failure_condition_mismatch',
+          error_message: `Post claimed failure but NMI reports the transaction as ${verification.status}`,
+        });
+        res.status(200).json({ received: true });
+        return;
+      }
       const failed = await handleRecurringPaymentFailure({
         enrollment,
         processorType: 'nmi',

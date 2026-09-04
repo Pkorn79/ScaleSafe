@@ -32,17 +32,17 @@ function createReqRes(body: Record<string, unknown>) {
 }
 
 function queryBuilder(data: any) {
-  const terminal = {
-    single: jest.fn().mockResolvedValue({ data }),
-    maybeSingle: jest.fn().mockResolvedValue({ data }),
-  };
+  const first = Array.isArray(data) ? (data[0] ?? null) : data;
+  const list = Array.isArray(data) ? data : (data ? [data] : []);
   const builder: any = {
     select: jest.fn(() => builder),
     insert: jest.fn(() => builder),
     update: jest.fn(() => builder),
     eq: jest.fn(() => builder),
-    maybeSingle: terminal.maybeSingle,
-    single: terminal.single,
+    limit: jest.fn(() => builder),
+    maybeSingle: jest.fn().mockResolvedValue({ data: first }),
+    single: jest.fn().mockResolvedValue({ data: first }),
+    then: (onF: any, onR: any) => Promise.resolve({ data: list, error: null }).then(onF, onR),
   };
   return builder;
 }
@@ -186,5 +186,124 @@ describe('NMI Silent Post webhook', () => {
     expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
     expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+});
+
+describe('NMI Silent Post — tenant scoping and processor-verified values', () => {
+  const ENR_A = {
+    id: 'enr_a', merchant_id: 'merch_a', location_id: 'loc_a', contact_id: 'c_a',
+    offer_id: null, payments_made: 1, payments_total: 3, payment_type: 'installment',
+  };
+  const ENR_B = {
+    id: 'enr_b', merchant_id: 'merch_b', location_id: 'loc_b', contact_id: 'c_b',
+    offer_id: null, payments_made: 1, payments_total: 3, payment_type: 'installment',
+  };
+
+  function primeEnrollments(rows: any) {
+    mockSupabaseFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') return queryBuilder(rows);
+      if (table === 'payment_events') return queryBuilder(null);
+      if (table === 'offers_mirror') return queryBuilder(null);
+      return queryBuilder(null);
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockHandleRecurringPaymentSuccess.mockResolvedValue({ newPaymentsMade: 2, isFinal: false });
+    mockHandleRecurringPaymentFailure.mockResolvedValue(undefined);
+    mockResolveProcessor.mockImplementation(async (merchantId: string) => ({
+      config: { processor_type: 'nmi', merchant_id: merchantId },
+    }));
+  });
+
+  it('attributes a colliding subscription id to the tenant whose gateway verifies the transaction', async () => {
+    // NMI subscription ids are gateway-sequential: two merchants can share
+    // '123456'. The post must land on the tenant that can verify the txn.
+    primeEnrollments([ENR_A, ENR_B]);
+    mockCreateProcessorClient.mockImplementation((cfg: any) => ({
+      verifyTransaction: jest.fn().mockResolvedValue(
+        cfg.merchant_id === 'merch_b'
+          ? { success: true, status: 'settled', amount: 5000, transactionId: 'txn_1' }
+          : { success: false, status: 'failed', amount: 0, transactionId: 'txn_1' },
+      ),
+    }));
+
+    const { req, res } = createReqRes({
+      subscription_id: '123456', response: '1', transactionid: 'txn_1', amount: '50.00',
+    });
+    await handleNmiSilentPost(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledTimes(1);
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment: expect.objectContaining({ id: 'enr_b', location_id: 'loc_b' }),
+      amountCents: 5000,
+    }));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('records the processor-verified amount, not the posted amount', async () => {
+    primeEnrollments(ENR_A);
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'settled', amount: 5000, transactionId: 'txn_1' }),
+    });
+
+    const { req, res } = createReqRes({
+      subscription_id: 'sub_1', response: '1', transactionid: 'txn_1', amount: '999999.00',
+    });
+    await handleNmiSilentPost(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      amountCents: 5000,
+    }));
+  });
+
+  it('ignores a failure post whose transaction actually settled (forged decline)', async () => {
+    primeEnrollments(ENR_A);
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'settled', amount: 1000, transactionId: 'txn_ok' }),
+    });
+
+    const { req, res } = createReqRes({
+      subscription_id: 'sub_1', response: '3', responsetext: 'DECLINED', transactionid: 'txn_ok', amount: '10.00',
+    });
+    await handleNmiSilentPost(req, res);
+
+    expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('still initiates dunning for a genuinely failed transaction', async () => {
+    primeEnrollments(ENR_A);
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'failed', amount: 1000, transactionId: 'txn_bad' }),
+    });
+
+    const { req, res } = createReqRes({
+      subscription_id: 'sub_1', response: '2', responsetext: 'Declined', transactionid: 'txn_bad', amount: '10.00',
+    });
+    await handleNmiSilentPost(req, res);
+
+    expect(mockHandleRecurringPaymentFailure).toHaveBeenCalledWith(expect.objectContaining({
+      enrollment: expect.objectContaining({ id: 'enr_a' }),
+      amountCents: 1000,
+    }));
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+  });
+
+  it('ignores a success post whose transaction did not actually succeed', async () => {
+    primeEnrollments(ENR_A);
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'failed', amount: 1000, transactionId: 'txn_bad' }),
+    });
+
+    const { req, res } = createReqRes({
+      subscription_id: 'sub_1', response: '1', transactionid: 'txn_bad', amount: '10.00',
+    });
+    await handleNmiSilentPost(req, res);
+
+    expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
+    expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
   });
 });

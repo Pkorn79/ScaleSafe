@@ -3,6 +3,13 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - NMI Silent Post integrity (2026-09-04)
+
+### Security
+- NMI Silent Post now resolves colliding subscription ids across tenants by requiring the transaction to verify under a candidate merchant's own gateway credentials (NMI subscription ids are gateway-sequential and are not globally unique).
+- Recorded amounts now come from NMI's verified transaction data instead of the unauthenticated POST body.
+- Forged outcome posts are rejected: a "failure" post whose transaction actually settled no longer initiates dunning, and a "success" post whose transaction did not succeed is not recorded.
+
 ## Unreleased - Webhook and public-surface hardening (2026-09-04)
 
 ### Security
