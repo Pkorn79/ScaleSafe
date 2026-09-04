@@ -40,6 +40,29 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-09-04: Fable Payment/Security Reconciliation + Schema 112 Certification (Codex)
+
+Summary:
+
+- Reproduced and reconciled the confirmed Fable payment, webhook, dunning, and lifecycle findings into `codex/command-center-release-candidate`.
+- Added migration 112 so enrollments, payment events, and stored payment methods retain an immutable exact processor configuration. Backfill occurs only when ownership is unambiguous; active ambiguous recurring records block rollout.
+- Propagated exact processor configuration identity through checkout, pay-first enrollment, Stripe ACH, Stripe and NMI callbacks, payment-method storage, recurring reconciliation, dunning, and pause/resume/cancel/complete actions.
+- Corrected Stripe partial-invoice counting and recurring PaymentIntent behavior, restored complete dunning-recovery side effects, hardened NMI pending-settlement and stale-failure handling, and kept Whop cancellation provider-backed.
+- Added a read-only aggregate production preflight and rollback-only migration verifier. Neither returns customer data or mutates production.
+
+Verification:
+
+- Focused payment and migration coverage: 16 suites, 180 tests passed.
+- Full backend suite: 210 suites, 1,768 tests passed.
+- TypeScript, Vite production build, UI asset copy, and `git diff --check` passed.
+- Fresh isolated schema 111 preflight returned `ready`; migration 112, the rollback-only verifier, and the schema 112 Command Center catalog gate passed on the loopback-only VPS database.
+
+Release boundary:
+
+- Implementation commit: `adff345`.
+- No production SQL, deployment, external configuration, `main` merge, or `main` push occurred.
+- Next step is a separately approved read-only production preflight against the exact Supabase project referenced by Railway, followed by a bounded migration and default-off deployment approval only if every gate passes.
+
 ### 2026-08-18: Stripe Live Cutover Guardrails + Gated Test Access (Codex)
 
 Summary:

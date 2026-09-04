@@ -2,29 +2,33 @@
 
 **Recorded:** 2026-09-04
 **Scope:** Isolated release preparation, not production authorization
-**Branch:** `codex/command-center-phase4`
-**Integration base:** `40f17e8`, including `origin/main` at `821c1c5`
+**Branch:** `codex/command-center-release-candidate`
+**Integrated payment-security SHA:** `adff345`
 **Release instructions:** [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md)
 
 ## Completed Gates
 
 | Gate | Result | Evidence / limitation |
 | --- | --- | --- |
-| Fresh baseline replay | Passed | Disposable Supabase reset through schema 106, no production credentials or customer data |
-| Exact upgrade 106 to 110 | Passed | Migrations 107, 108, 109, 110 applied in order; pre/post catalog checks passed |
-| Catalog access boundaries | Passed | 32 tables require forced RLS; 50 named routines checked for expected role access and unambiguous definitions |
+| Fresh baseline replay | Passed | Disposable Supabase reset through schema 111, no production credentials or customer data |
+| Command Center upgrade 106 to 110 | Passed | Migrations 107, 108, 109, 110 applied in order during the original Phase 4 certification; pre/post catalog checks passed |
+| Payment integrity upgrade 111 to 112 | Passed | Aggregate preflight returned `ready`; migration 112 and its rollback-only adversarial verifier passed on the fresh isolated database |
+| Catalog access boundaries | Passed | 32 tables require forced RLS; 51 named routines checked for expected role access and unambiguous definitions at schema 112 |
+| Exact processor ownership | Passed | Three immutable binding triggers, three restrictive foreign keys, configuration-aware deduplication, tenant/processor rejection, ambiguous recurring fail-closed behavior, and exact dunning settlement passed |
 | Guardian database behavior | Passed | `verify_migration_109.sql`, transaction rolled back at schema 110 |
 | Operator read models | Passed | `verify_migration_110.sql`, poison-data/tenant boundaries, allowlisted projections and counts; transaction rolled back |
 | Portfolio query performance | Passed | 10,002 synthetic merchants, measured page query 89.141 ms, 5,000 ms limit; this is isolated query performance, not live load capacity |
 | Owner Auth and TOTP | Passed in isolation | Bootstrap, first login/enrollment, page reload, logout, returning MFA login, logout; two sessions, none unrevoked after final logout |
 | Browser layout | Passed in isolation | Populated fixture desktop views and 390x844 mobile; filters, incident detail, runbooks, menu/table scrolling; no console errors observed |
 | Operator-host routing | Passed | Root redirects only with center/auth enabled; other merchant paths blocked on the operator host; forwarded-host spoof rejected; merchant health remains reachable |
-| Backend regression suite | Passed | 201 suites, 1,679 tests |
+| Backend regression suite | Passed | 210 suites, 1,768 tests |
 | TypeScript | Passed | `npm run typecheck` |
-| Backend and UI build | Passed | `npm run build`; UI assets copied into `dist`; optional WASM peer-dependency warning recorded in build log |
+| Backend and UI build | Passed | TypeScript build, Vite production build, and UI asset copy passed; optional WASM peer-dependency warning remains recorded in the original build log |
 | Credential pattern check | Passed within stated scope | 49 changed/new candidate files scanned, no high-confidence matches or test-fixture matches; not a full-history secret audit |
 
 The final September 4 disposable reset removed the scratch owner and earlier synthetic rows. No production user was created. The real Auth test used a localhost HTTP reverse proxy because the browser rejected the self-signed HTTPS certificate. Production HTTPS, secure cookies, exact-origin requests, and client-IP handling still require live-domain acceptance. The UI fixture check and the real Auth check are separate evidence, not proof that live customer totals are correct.
+
+The Fable payment/security findings were reproduced and reconciled into the release candidate. The final implementation goes beyond the one-active-config assumption by carrying an immutable `processor_config_id` through enrollment, payment, dunning, webhook, and lifecycle paths. The isolated database had no customer rows and returned zero ambiguous or unmatched bindings before migration 112.
 
 ## Permission Hardening
 
@@ -56,15 +60,19 @@ Local evidence directory:
 
 Isolated VPS workspace: `/tmp/scalesafe-phase4-110-20260903b`, dedicated Docker network `scalesafe-phase4-loopback-20260903`. Actual published ports were verified as `127.0.0.1:55321` and `127.0.0.1:55322`, not public interfaces. Preserve migration hashes with the release bundle; do not reuse the earlier archive hash after the migration 108 grant fix.
 
+Processor-binding replay workspace: `/tmp/scalesafe-phase4-111-replay-20260904b`, PostgreSQL on loopback `127.0.0.1:55522`. The observed sequence was schema `111` aggregate preflight `ready`, migration 112 applied with `ON_ERROR_STOP`, `MIGRATION 112 IMMUTABLE PROCESSOR CONFIG BINDING PASSED`, then `COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED` at schema `112`. The reset's supporting Storage container had a transient Docker DNS `EAI_AGAIN` after PostgreSQL had completed the full 001-through-111 replay; PostgreSQL remained healthy and all 112 database gates passed. This was not a production service failure.
+
+The schema 112 stack was stopped after final proof with its local Docker volume preserved. No production, recovery, backup, or Guardian service was stopped or reconfigured.
+
 The isolated stack was stopped after final SQL proof, using Supabase's default volume-preserving shutdown. Production, backup, and Guardian services were not stopped or reconfigured.
 
 ## Remaining Production Gates
 
-1. Review the candidate and dependency exceptions, coordinate any Fable fixes, and record the exact integrated release SHA. Rerun certification after relevant integration changes.
-2. Confirm the production ScaleSafe Supabase project from the existing Railway service's project reference, check schema 106 and live drift, and verify a fresh encrypted backup.
+1. Review the candidate and dependency exceptions and record the final release SHA. Fable's confirmed payment/security findings are reconciled through `adff345`; rerun certification after any additional integration change.
+2. Confirm the production ScaleSafe Supabase project from the existing Railway service's project reference, read the actual schema version and live drift, run the aggregate migration 112 preflight at schema 111, and verify a fresh encrypted backup. Repository records must not substitute for this live read.
 3. Obtain explicit approval before production SQL, deployment, main push/merge, domain/config changes, or operator user creation.
-4. Apply only 107-110, deploy default-off code, establish the real operator domain and private credentials, then complete owner MFA login acceptance.
+4. Apply only the missing migrations from 107 through 112 in order, deploy default-off code, establish the real operator domain and private credentials, then complete owner MFA login acceptance.
 5. In the approved activation window, verify scheduled-job continuity, no duplicate execution, correct live tenant totals, audit attribution, and rollback readiness.
 6. Certify Guardian ingestion and current alert routing separately before changing its live services or timers. The owner's dashboard login does not imply Guardian or reseller onboarding is fully activated.
 
-The cancellation fix at `45a878a` is a separate, undeployed branch. No PMG enrollment was changed as part of this certification.
+The exact-enrollment cancellation fix is integrated into the candidate and covered by the full suite. No PMG enrollment or other production record was changed as part of this certification.

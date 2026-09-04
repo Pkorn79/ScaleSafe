@@ -2,13 +2,13 @@
 
 **Purpose:** One repository-owned source of truth for what ScaleSafe contains, what is live-certified, what still needs proof, what is planned, and which documents are authoritative.
 
-**Last reconciled:** July 30, 2026
+**Last reconciled:** September 4, 2026
 
-**Code baseline:** `008b3bf`
+**Code baseline:** release candidate `adff345`; production deployment SHA must be verified before rollout
 
-**Latest migration:** `102_marketplace_entitlements.sql`
+**Latest release-candidate migration:** `112_immutable_processor_config_binding.sql`
 
-**Release stage:** Controlled-beta and GoHighLevel Marketplace publication preparation
+**Release stage:** Marketplace-approved controlled beta; Command Center production rollout preparation
 
 ## How To Use This Index
 
@@ -55,10 +55,10 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | GHL installation and tenant isolation | **Certified** | Every new location must still pass trusted location-bound SSO and show no account chooser or cross-tenant data. |
 | Clean V2 Snapshot | **Certified** | `ScaleSafe V2 Clean Certified 2` passed a scratch installation on July 19, 2026. Attach and use only the certified package. |
 | Marketplace scopes | **Certified configuration** | Final 20-scope list is saved; the separate explanation video has been recorded. Reauthorize the reviewer install if GHL requires it. |
-| Marketplace billing | **Shipped** | Standard is $99 for Stripe/Whop. WholePay is $59 for Stripe/Whop/NMI and requires HQ approval. A limited gated free plan is planned after Marketplace approval. |
-| Marketplace submission | **Submitted - under GHL review** | Marketplace currently shows `v1.0.0 review`. The July 21 resubmission removed the unusable shared GHL login and states the correct access model: reviewers install into their own HighLevel review sub-account and open ScaleSafe through GHL SSO. Walkthrough, workflow, scope, notes, pricing, and certified Snapshot remain submitted. |
+| Marketplace billing | **Shipped** | Standard paid access and exact-location, HQ-approved no-cost beta access are enforced by backend entitlement records. Browser input cannot grant free access. |
+| Marketplace submission | **Approved** | ScaleSafe is approved in the GoHighLevel Marketplace. New beta installs still require exact-location entitlement and onboarding verification. |
 | Public website | **Deployed and verified** | Privacy, terms, support, guide, FAQ, and troubleshooting pages returned `200` with distinct titles/content on July 21, 2026; legacy `.html` Marketplace URLs redirect correctly. |
-| Production schema | **Shipped through migration 102** | Apply later migrations before dependent code and record the new schema version here. |
+| Production schema | **Owner verification required** | Repository records disagree on the last live version. Confirm the exact ScaleSafe project from Railway and query it read-only before applying any migration. Candidate schema 112 is certified only in isolation. |
 | Production health | **Previously certified soak** | Reopen if Supabase resource warnings, timeouts, worker pressure, or recurring 4xx/5xx responses return. |
 | Independent recovery | **Certified** | Encrypted snapshot `20260721T175646Z` passed completion/hash checks and an isolated schema-102 scratch restore with all 105 Storage objects and readable private PDFs. See [Recovery Drill](RECOVERY_DRILL_2026-07-21.md). |
 | Release governance | **Open owner decision** | Protect `main`/require green CI or record a controlled-beta exception; practice one Railway rollback. |
@@ -76,7 +76,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Provisioning Health and repairs | **Shipped** | [Installation Guide](user-guide/INSTALLATION_GUIDE.md) | Run after merchant fields, domains, branding, and processor setup. |
 | Standard subdomain and sending-domain setup | **Operating standard** | [Operator Onboarding](../.agents/skills/operate-scalesafe/references/onboarding.md) | Default pattern is `<merchant-slug>.scalesafe.app` and `mail-<merchant-slug>.scalesafe.app`. |
 | Marketplace entitlement enforcement | **Shipped** | [Billing And Entitlements](MARKETPLACE_BILLING_AND_ENTITLEMENTS.md), `src/services/marketplace-entitlement.service.ts` | Browser input cannot unlock a plan or NMI capability. |
-| Gated limited free plan | **Planned** | This index | Add after Marketplace approval for previously promised limited accounts. |
+| Gated no-cost beta plan | **Shipped** | [Billing And Entitlements](MARKETPLACE_BILLING_AND_ENTITLEMENTS.md) | Full-feature access is activated for an exact approved location by HQ; installing or selecting the plan cannot self-authorize it. |
 
 ### Offers, Enrollment, And Checkout
 
@@ -107,7 +107,7 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 | Whop hosted checkout, PIF/installments, add-ons, QMS | **Certified core** | `src/services/whop.service.ts` | Hosted membership channel, not a Stripe/NMI gateway clone. |
 | Whop refund, pause, resume, cancel | **Certified core** | `src/services/whop.service.ts` | Requires actual `pay_` and `mem_` identifiers; unsupported actions stay unavailable. |
 | FanBasis checkout channel | **Deferred** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) | Foundation exists, but checkout/webhooks remain disabled pending provider approval and certification. |
-| Payment ledger, reconciliation, durable idempotency | **Shipped** | payment ledger/reconciliation/money-operation services, migrations 083/098 | Processor truth precedes local lifecycle mutations. |
+| Payment ledger, reconciliation, durable idempotency | **Release candidate certified in isolation** | payment ledger/reconciliation/money-operation services, migrations 083/098/112 | Processor truth precedes local lifecycle mutations. Candidate schema 112 binds each record and retry to the exact processor configuration and makes deduplication configuration-aware. |
 | Refund concurrency protection | **Shipped** | migration 083, `src/services/refund-reconciliation.service.ts` | Prevents parallel refunds from exceeding refundable balance. |
 | Daily test billing flag | **Owner action before live billing** | [Launch Checklist](LAUNCH_READINESS_CHECKLIST.md) | Disable `VITE_ENABLE_DAILY_TEST_BILLING` when intentional daily testing ends. |
 
@@ -198,10 +198,10 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | Named evidence adapters for course, agency, community, support, file, checkout, and reporting systems | **Planned in waves** | [Connector Automation Plan](UNIVERSAL_EVIDENCE_CONNECTOR_AUTOMATION_PLAN.md) |
 | Outcome analytics by reason, offer, processor, evidence, refund timing, and alerts | **Planned** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
 | Recovery/legal/collections partner referral handoff | **Planned, legal review required** | Private research notes plus [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
-| Command Center, Guardian, and reseller account dashboard | **Phase 4 isolated upgrade, tenant boundaries, scale query, and owner MFA passed; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md), [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md), [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md), [Prior Fable Architecture Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Read-only merchant/payment views, audited incident acknowledgement/suppression, dedicated-host Supabase Auth and TOTP MFA are implemented. Exact 106-to-110 isolated upgrade, role/poison-data checks, 10,002-merchant query (89.141 ms), real owner MFA, and 1,679 tests passed. Production project/schema/backup checks, release approval, real-domain TLS/login, and scheduled-job continuity remain. Guardian activation and reseller onboarding have separate acceptance gates. New flags remain default-off; the owner-only legacy HQ approval surface remains for beta actions. |
+| Command Center, Guardian, and reseller account dashboard | **Phase 4 integrated release candidate certified in isolation; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md), [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md), [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md), [Prior Fable Architecture Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Read-only merchant/payment views, audited incident acknowledgement/suppression, dedicated-host Supabase Auth and TOTP MFA are implemented. The 106-to-110 Command Center upgrade, fresh replay through 111, exact 111-to-112 processor-binding upgrade, tenant/poison-data checks, 10,002-merchant query (89.141 ms), real owner MFA, and 1,768 backend tests passed. Production project/schema/backup checks, release approval, real-domain TLS/login, and scheduled-job continuity remain. Guardian activation and reseller onboarding have separate gates. All new flags remain default-off. |
 | NMI billing portal and Stripe-shaped merchant API | **Deferred post-beta** | [Project Decisions](PROJECT_DECISIONS.md) |
 | FanBasis checkout and lifecycle certification | **Deferred pending provider approval** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) |
-| Gated limited free Marketplace plan | **Planned after approval** | This index |
+| Gated no-cost Marketplace beta plan | **Shipped** | [Billing And Entitlements](MARKETPLACE_BILLING_AND_ENTITLEMENTS.md) |
 | Stripe commercial pricing negotiation | **Deferred until threshold** | [Stripe Outreach](STRIPE_CONNECT_PRICING_OUTREACH.md): five paying Stripe merchants and $100,000 combined monthly Stripe volume for two consecutive months. |
 
 ## Canonical Document Map
@@ -241,8 +241,8 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md) | Phased security, monitoring, operator, and reseller design | Primary architecture source |
 | [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md) | Guardian and health implementation record | Current implementation history |
 | [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md) | Independent Guardian review and disposition | Closed code-review record |
-| [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md) | Migration, owner login, production enablement, acceptance, and rollback | Current release gate |
-| [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md) | Isolated migration, permission, scale, MFA, regression proof and dependency exceptions | September 4 preparation evidence; not a production sign-off |
+| [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md) | Migrations 107-112, owner login, production enablement, acceptance, and rollback | Current release gate |
+| [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md) | Isolated migration, processor binding, permission, scale, MFA, regression proof, and dependency exceptions | September 4 integrated preparation evidence; not a production sign-off |
 
 ### GHL Workflows And Fields
 

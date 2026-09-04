@@ -1,9 +1,9 @@
 # Command Center Phase 4 Rollout
 
-**Status:** Isolated database upgrade and owner MFA login passed; production rollout pending
+**Status:** Integrated schema 112 release candidate and owner MFA login passed in isolation; production rollout pending
 **Production authorization:** Not granted
-**Production schema assumed by this branch:** 106; verify before any migration
-**Phase 4 migrations:** 107 through 110
+**Last documented production schema:** 106; verify the real project and version before any migration
+**Release migrations:** 107 through 112
 **Operator hostname:** `ops.scalesafe.app`
 
 ## Outcome
@@ -32,36 +32,38 @@ This is a temporary compatibility surface, not the Command Center authentication
 
 ## Release Units
 
-### A. Historical Enrollment Cancellation Fix
+### A. Enrollment Lifecycle And Processor-Binding Fixes
 
-Proposed separate release: the tested cancellation fix at `45a878a` on `codex/enrollment-cancellation-disconnected-stripe`. It has no migration and is not yet included in this Command Center branch. Neither release is authorized for production by this document.
+The historical cancellation fix and the independently reproduced Fable payment/security findings are integrated into the release candidate through `adff345`. They are tested but not authorized for production by this document.
 
-- Cancelling a fully paid finite installment enrollment with no future billing sets its ScaleSafe status to cancelled without requiring a disconnected processor.
+- Cancelling a fully paid finite installment enrollment with no future billing records the requested cancellation and stops ScaleSafe activity without requiring an impossible call to a disconnected processor.
 - Cancellation clears the next billing date and disables future pulse scheduling.
 - Historical processor references remain intact.
 - Active recurring Stripe enrollments still require an authoritative processor cancellation.
 - Whop remains processor-backed because membership access is provider controlled.
+- Enrollments, payment events, payment methods, webhooks, retries, and lifecycle actions remain bound to the exact Stripe or NMI configuration that created them.
+- Ambiguous active recurring records fail closed instead of selecting an arbitrary active processor configuration.
 
 After an approved deployment and approval of the account action, cancel only the three confirmed PMG enrollments for Phil Kay and verify that no future pulse is due. Do not call the disconnected Stripe account for those three fully paid historical records.
 
-### B. Read-Only Command Center
+### B. Read-Only Command Center And Database Integrity
 
-Deploy migrations 107 through 110 before enabling Command Center code paths. All flags remain false during the code deploy.
+Deploy only the missing migrations from 107 through 112 before enabling Command Center code paths. Migration 111 adds Stripe EFW integrity; migration 112 adds immutable processor ownership and configuration-aware payment idempotency. All flags remain false during the code deploy.
 
 ## Required Preflight
 
-1. Reconcile any newly shipped Fable fixes, record the exact integrated release SHA and current production deployment SHA, and rerun the gates on that integrated SHA. Do not assume this preparation checkpoint is the final production commit.
-2. Identify the real ScaleSafe project by matching the existing production Railway service's `SUPABASE_URL` project reference, not a dashboard display name. Record the reference without credentials. Confirm schema version 106, compare the live schema with the expected baseline, and run `supabase/security/check_command_center_rollout.sql` for the pre-migration catalog gate. Stop on drift, existing operator objects, or a different version.
+1. Record the final release SHA and current production deployment SHA. Fable's confirmed payment/security findings are reconciled through `adff345`; rerun every gate after any later integration change.
+2. Identify the real ScaleSafe project by matching the existing production Railway service's `SUPABASE_URL` project reference, not a dashboard display name. Record the reference without credentials. Read the actual schema version, compare the live schema with the expected baseline, and run `supabase/security/check_command_center_rollout.sql` at the supported pre-migration version. Stop on drift, pre-existing conflicting objects, or any unexpected version.
 3. Confirm the latest encrypted off-platform backup is healthy.
 4. Run the full backend tests, typecheck, application build, UI build, secret scan, and production dependency audit.
-5. Apply migrations 107 through 110 to a fresh isolated database restored from the current migration chain.
+5. Replay the full chain through 111 in a fresh isolated database, run `supabase/security/preflight_migration_112.sql`, apply migration 112, and run `verify_migration_112.sql` plus the post-migration catalog gate.
 6. Prove anon and authenticated database roles cannot read operator or Guardian tables or invoke service-only functions.
 7. Prove all operator functions return tenant-safe allowlisted data.
 8. Seed at least 10,000 merchant rollup rows and certify the worst supported filters against the approved latency target.
 9. Complete poison-data, cross-reseller, expired-grant, revoked-session, cursor, filter, and exact-count tests.
 10. Complete desktop and mobile browser checks with no console errors. See [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md) for completed isolated evidence and remaining live checks.
 
-The isolated 106-to-110 upgrade, role boundaries, poison-data checks, and 10,002-merchant performance test passed on September 4. Only migrations 107-110 go to production. Historical migration repairs, including consolidation of duplicate 055, are for fresh/recovery replay; do not replay 001-106 against the live database.
+The isolated 106-to-110 upgrade, role boundaries, poison-data checks, and 10,002-merchant performance test passed on September 4. A separate fresh replay through schema 111, aggregate preflight, exact 111-to-112 upgrade, rollback-only verifier, and schema 112 catalog gate also passed. Only missing migrations 107-112 go to production. Historical migration repairs, including consolidation of duplicate 055, are for fresh/recovery replay; do not replay 001-106 against the live database.
 
 Any failed preflight item stops the rollout.
 
@@ -78,7 +80,7 @@ These are owner-visible launch exceptions, not claims of a zero-finding audit. R
 
 Obtain explicit approval for the bounded production change window before starting. Preparation approval is not deployment approval. Stop at any failed gate without advancing or broadening the authorized scope.
 
-1. Complete the live preflight above, then apply only migrations 107, 108, 109, and 110 in order. Confirm `scalesafe_schema_version()` returns 110 and the post-migration catalog gate passes. The behavioral SQL fixtures belong only in the disposable database, never production.
+1. Complete the live preflight above. Apply only the missing migrations from 107, 108, 109, 110, 111, and 112 in order. Migration 112 may run only after its aggregate preflight at schema 111 reports `ready` or an explicitly reviewed safe backfill condition. Confirm `scalesafe_schema_version()` returns 112 and the post-migration catalog gate passes. The behavioral SQL fixtures belong only in the disposable database, never production.
 2. Deploy the approved release with every new flag false.
 3. Add `ops.scalesafe.app` to the existing application service and verify DNS, TLS, exact host routing, and a disabled-route `404`.
 4. Verify the actual Railway/Cloudflare proxy chain, then set `APP_TRUST_PROXY_HOPS` before deploying the candidate. This changes global Express client-IP handling and is required for safe per-client rate limiting. Check both origin and proxied access; do not guess a hop count. Add the documented operator variables and a new 32-byte operator encryption key. The operator key must differ from the processor encryption key. Use the publishable/anon Auth key from the same confirmed ScaleSafe project.
@@ -114,9 +116,9 @@ Rollback is feature-first and non-destructive:
 4. Set `OPERATOR_COMMAND_CENTER_ENABLED=false`.
 5. Verify every `/internal/*` route and the operator hostname return the expected disabled response.
 6. Revoke active operator sessions if identity compromise is suspected.
-7. Roll application code back only when the prior release is compatible with schema 110. Keep the new flags false, verify merchant health/checkout/GHL SSO, and confirm the original scheduled jobs resume without overlap.
+7. Roll application code back only when the prior release is compatible with schema 112. Keep the new flags false, verify merchant health/checkout/GHL SSO, and confirm the original scheduled jobs resume without overlap.
 
-Do not reverse migrations 107 through 110 during an incident. They are service-role-only, feature-gated additions and remain inert while the flags are false.
+Do not reverse migrations 107 through 112 during an incident. The Command Center additions remain service-role-only and feature-gated while their flags are false; processor bindings are additive integrity data used by the approved candidate.
 
 ## Release Evidence
 
@@ -132,14 +134,13 @@ Preserve:
 - PMG enrollment cancellation result and pulse-disabled verification.
 - Rollback verification.
 
-## Parallel Bug-Fix Coordination
+## Fable Reconciliation
 
-- Fable should reproduce and test each reported defect before changing it, using a separate worktree/branch.
-- Do not duplicate the historical cancellation fix at `45a878a`.
-- Command Center ownership includes operator routes/auth/UI, health runtime, Guardian integration, and migrations 107-110. Agree on any overlapping edits before either branch changes them.
-- Coordinate new migration numbers after 110 against the latest main and all pending releases. A separate branch does not prevent migration-number collisions.
-- Merge/rebase only in the release-integration branch after review, then rerun the full suite, migration replay, role checks, and build on the exact integrated candidate.
-- Neither agent may push main, deploy, or change the production database without explicit approval. The Fable report is a remediation list, not evidence that every finding has been reproduced or fixed.
+- Fable reproduced the reported payment and public-surface defects on `fable/audit-remediation`; Codex reviewed and reconciled the confirmed behaviors into this release candidate.
+- The integrated implementation does not assume one active processor account per merchant. It carries exact processor configuration identity through all money and lifecycle paths and enforces that ownership in migration 112.
+- Focused payment/migration coverage, the full 1,768-test backend suite, typecheck, UI build, isolated migration verifier, and schema 112 catalog gate passed on the integrated candidate.
+- Any later Fable or Codex change must land in a release-integration branch and repeat the full suite, migration replay, role checks, and build.
+- No agent may push `main`, deploy, or change the production database without explicit approval.
 
 ## Stop Conditions
 

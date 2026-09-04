@@ -3,6 +3,28 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Exact processor binding and payment-security reconciliation (2026-09-04)
+
+### Added
+- Migration 112 binds enrollments, payment events, and stored payment methods to the exact processor configuration that created them. Existing rows are backfilled only when ownership is unambiguous.
+- A read-only production preflight reports aggregate binding readiness without returning customer data, plus a rollback-only migration verifier for tenant, immutability, deduplication, and dunning behavior.
+
+### Fixed
+- Stripe and NMI webhook, recurring-payment, dunning, ACH, payment-method, checkout, and lifecycle paths now retain and resolve the exact processor configuration instead of selecting any active configuration for a merchant.
+- Stripe partial invoices no longer count as paid installments, recurring PaymentIntents no longer overwrite initial-payment truth, and owner reconciliation resets the exact failed dunning row.
+- NMI pending-settlement and recurring callbacks require authoritative provider success, suppress stale failure callbacks, and preserve the bound enrollment configuration.
+- Reconciled dunning sales now perform the same ledger, enrollment, evidence, and workflow side effects as the original successful charge path.
+- Cancelling, pausing, resuming, or completing an enrollment fails closed when future provider billing cannot be controlled. Whop cancellation uses the membership reference and still revokes provider access after a paid schedule finishes.
+
+### Security
+- Processor bindings are immutable after assignment, tenant and processor identity are enforced by database triggers, and configuration foreign keys use `ON DELETE RESTRICT`.
+- Transaction deduplication is configuration-aware, preventing matching provider identifiers from colliding across separate merchant processor accounts.
+
+### Verified
+- Focused payment and migration coverage: 16 suites, 180 tests passed.
+- Full backend suite: 210 suites, 1,768 tests passed. TypeScript, Vite production build, asset copy, and diff checks passed.
+- A fresh isolated schema 111 database passed the aggregate preflight, migration 112, rollback-only adversarial verifier, and schema 112 Command Center catalog gate. Production was not accessed or changed.
+
 ## Unreleased - Stripe Early Fraud Warning integrity (2026-09-04)
 
 ### Fixed
