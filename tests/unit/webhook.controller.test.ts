@@ -23,9 +23,13 @@ jest.mock('../../src/clients/supabase.client', () => ({
   }),
 }));
 
+const mockIdempotencyExists = jest.fn().mockResolvedValue(false);
+const mockIdempotencyRecord = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../src/repositories/idempotency.repository', () => ({
   idempotencyRepository: {
     isDuplicate: (...args: any[]) => mockIdempotencyIsDuplicate(...args),
+    exists: (...args: any[]) => mockIdempotencyExists(...args),
+    record: (...args: any[]) => mockIdempotencyRecord(...args),
   },
 }));
 
@@ -415,7 +419,7 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     mockMerchantCreate.mockResolvedValue({});
     const { req, res, next } = mockReqRes({
       type: 'INSTALL',
-      appId: 'app_1',
+      appId: 'test_ghl_app_id_789', // must match GHL_APP_ID from tests/setup-env.ts
       installType: 'Location',
       locationId: 'loc_new',
       companyId: 'comp_1',
@@ -502,6 +506,74 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
     expect(mockMerchantCreate).not.toHaveBeenCalled();
     expect(mockMerchantUpdate).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  // GHL signs marketplace webhooks with a platform-wide key: a valid signature
+  // proves GHL sent the payload, not that it was sent for THIS app. These
+  // guards bind lifecycle events to our app id and reject stale/replayed
+  // deliveries before anything destructive (token wipe) runs.
+  test('ignores a lifecycle event carrying another app\'s id', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: 'some_other_marketplace_app',
+      locationId: 'loc_gone',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ received: true, ignored: 'app_mismatch' }));
+  });
+
+  test('ignores a stale lifecycle event replayed more than 24h after it was signed', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: 'test_ghl_app_id_789',
+      locationId: 'loc_gone',
+      timestamp: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ received: true, ignored: 'stale_event' }));
+  });
+
+  test('drops a duplicate lifecycle delivery by webhookId', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    mockIdempotencyExists.mockResolvedValueOnce(true);
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: 'test_ghl_app_id_789',
+      locationId: 'loc_gone',
+      webhookId: 'wh_123',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ received: true, duplicate: true }));
+  });
+
+  test('processes a fresh event for our own app and records its webhookId', async () => {
+    mockMerchantFindByLocationId.mockResolvedValue({ location_id: 'loc_gone', status: 'active', config: {} });
+    mockMerchantUpdate.mockResolvedValue({});
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL',
+      appId: 'test_ghl_app_id_789',
+      locationId: 'loc_gone',
+      timestamp: new Date().toISOString(),
+      webhookId: 'wh_fresh',
+    });
+
+    await webhookController.ghlUnified(req, res, next);
+
+    expect(mockMerchantUpdate).toHaveBeenCalledWith('loc_gone', expect.objectContaining({ status: 'uninstalled' }));
+    expect(mockIdempotencyRecord).toHaveBeenCalledWith(
+      'ghl-lifecycle:wh_fresh', 'ghl_lifecycle', 'loc_gone', expect.anything(),
+    );
   });
 
   test('UNINSTALL marks the merchant uninstalled', async () => {

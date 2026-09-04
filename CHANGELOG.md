@@ -3,6 +3,17 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Webhook and public-surface hardening (2026-09-04)
+
+### Security
+- GHL Marketplace lifecycle webhooks are now bound to ScaleSafe's app id and reject stale (>24h) or replayed (duplicate webhookId) deliveries before acting — a validly GHL-signed payload for another app can no longer uninstall a merchant or wipe OAuth tokens.
+- The app now trusts the Railway edge proxy (`trust proxy`), so rate limiting keys on the real client IP instead of one shared proxy bucket for every merchant's customers.
+- The public payment-update / milestone-signoff / pulse-check widget APIs and the external evidence intake API are now rate limited.
+- The unsigned Stripe Connect OAuth state escape hatch (`ALLOW_UNSIGNED_STRIPE_STATE`) is disabled in production.
+
+### Fixed
+- Stripe and Whop webhook handlers now contain failures during tenant/secret resolution with a retryable 500 instead of letting an async rejection escape; a process-level unhandledRejection backstop logs instead of exiting, so one bad webhook can no longer crash the shared multi-tenant process.
+
 ## Unreleased - Lifecycle cancellation correctness (2026-09-04)
 
 ### Fixed

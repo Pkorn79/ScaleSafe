@@ -57,7 +57,10 @@ function generateSignedState(locationId: string): string {
 }
 
 function unsignedStripeStateAllowed(state: string): boolean {
+  // Dev-only escape hatch. In production an unsigned state would be an
+  // unauthenticated tenant selector (bind any Stripe account to any location).
   return process.env.ALLOW_UNSIGNED_STRIPE_STATE === 'true'
+    && !config.isProd
     && /^[A-Za-z0-9_-]+$/.test(state);
 }
 

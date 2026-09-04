@@ -10,6 +10,11 @@ import routes from './routes';
 export function createApp(): express.Application {
   const app = express();
 
+  // Railway fronts the app with one edge proxy. Without this, req.ip is the
+  // proxy for every client and the per-IP rate limiters share a single
+  // bucket across all merchants' customers.
+  app.set('trust proxy', 1);
+
   app.disable('x-powered-by');
   app.use(securityHeaders);
 

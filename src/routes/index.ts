@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { apiLimiter, webhookLimiter, checkoutLimiter } from '../middleware/rateLimiter';
+import { apiLimiter, webhookLimiter, checkoutLimiter, enrollmentPublicLimiter } from '../middleware/rateLimiter';
 import healthRoutes from './health.routes';
 import authRoutes from './auth.routes';
 import merchantRoutes from './merchant.routes';
@@ -74,9 +74,13 @@ router.use('/api/stripe', apiLimiter, stripeConnectRoutes);
 router.use('/api/stripe', apiLimiter, stripeDefenseRoutes);
 
 // Provider-neutral external evidence API (uses tenant-derived connector credentials).
-router.use('/api/v1/evidence', evidenceConnectorPublicRoutes);
+router.use('/api/v1/evidence', webhookLimiter, evidenceConnectorPublicRoutes);
 
-// Payment update widget (public, rate limited — client-facing)
+// Payment update widget (public, rate limited — client-facing). The router
+// registers absolute paths, so throttle its public API prefixes here.
+router.use('/api/payment-update', enrollmentPublicLimiter);
+router.use('/api/milestone-signoff', enrollmentPublicLimiter);
+router.use('/api/pulse-check', enrollmentPublicLimiter);
 router.use(paymentUpdateRoutes);
 
 // Payment lifecycle (SSO-gated — subscription mgmt, card mgmt, dunning)

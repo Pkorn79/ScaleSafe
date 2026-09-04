@@ -862,3 +862,18 @@ describe('handleWhopWebhook', () => {
     );
   });
 });
+
+describe('tenant resolution failure containment', () => {
+  it('returns 500 instead of crashing the process when the config lookup throws', async () => {
+    // Pre-fix, a rejected whopConfigService.get escaped the handler as an
+    // unhandled promise rejection, killing the shared multi-tenant process.
+    mockWhopConfigGet.mockRejectedValue(new Error('supabase timeout'));
+    const payload = { type: 'payment.succeeded', data: { metadata: { location_id: 'loc_1' } } };
+    const req: any = { rawBody: Buffer.from(JSON.stringify(payload)), body: payload, headers: {} };
+    const res: any = { status: jest.fn(() => res), json: jest.fn() };
+
+    await expect(handleWhopWebhook(req, res)).resolves.toBeUndefined();
+
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+});

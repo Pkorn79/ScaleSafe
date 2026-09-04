@@ -13,6 +13,17 @@ import { moneyReconciliationWorker } from './services/money-reconciliation-worke
 import { triggerDeliveryWorker } from './services/trigger-delivery-worker';
 import { schemaReadinessService } from './services/schema-readiness.service';
 
+// Backstop: Express 4 does not forward async handler rejections, and Node's
+// default on an unhandled rejection is process exit — one bad webhook payload
+// would take down every tenant. Log loudly and keep the process alive;
+// handlers own their own error replies.
+process.on('unhandledRejection', (reason: any) => {
+  logger.error(
+    { err: reason?.message || String(reason), stack: reason?.stack },
+    'Unhandled promise rejection (backstop) — investigate the offending handler',
+  );
+});
+
 const app = createApp();
 
 async function start(): Promise<void> {

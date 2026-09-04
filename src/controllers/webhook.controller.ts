@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { config } from '../config';
 import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { enrollmentRepository } from '../repositories/enrollment.repository';
 import { paymentEventRepository } from '../repositories/paymentEvent.repository';
@@ -122,6 +123,18 @@ function isGhlActivityWebhook(type: string, body: Record<string, any>): boolean 
   );
 }
 
+// Lifecycle events older than this are treated as replays, not retries.
+const GHL_LIFECYCLE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function ghlLifecycleEventTimeMs(raw: unknown): number | null {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw > 1e12 ? raw : raw * 1000;
+  }
+  const parsed = Date.parse(String(raw));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export const webhookController = {
   /**
    * GHL Marketplace app lifecycle events (INSTALL / UNINSTALL).
@@ -139,7 +152,32 @@ export const webhookController = {
     const companyId = String(body.companyId || '').trim();
     const installPlanId = String(body.planId || body.plan_id || '').trim();
 
+    // GHL signs marketplace webhooks with a PLATFORM-wide key: the signature
+    // proves GHL sent the bytes, not that they were sent for THIS app. Bind
+    // destructive lifecycle events to our app id and reject stale/replayed
+    // deliveries before acting (any field an attacker strips breaks the
+    // signature, so present-but-foreign values are the only case to handle).
+    const eventAppId = String(body.appId || body.app_id || '').trim();
+    if (eventAppId && config.ghl.appId && eventAppId !== config.ghl.appId) {
+      logger.warn({ eventAppId, type, locationId }, 'GHL lifecycle webhook for another app — ignored');
+      res.json({ received: true, ignored: 'app_mismatch' });
+      return;
+    }
+    const eventTimeMs = ghlLifecycleEventTimeMs(body.timestamp);
+    if (eventTimeMs !== null && Date.now() - eventTimeMs > GHL_LIFECYCLE_MAX_AGE_MS) {
+      logger.warn({ type, locationId, eventTimestamp: body.timestamp }, 'Stale GHL lifecycle webhook — ignored');
+      res.json({ received: true, ignored: 'stale_event' });
+      return;
+    }
+    const webhookId = String(body.webhookId || body.webhook_id || '').trim();
+    const dedupeScope = locationId || companyId || 'platform';
+
     try {
+      if (webhookId && await idempotencyRepository.exists(`ghl-lifecycle:${webhookId}`, 'ghl_lifecycle', dedupeScope)) {
+        logger.info({ type, locationId, webhookId }, 'Duplicate GHL lifecycle webhook — dropped');
+        res.json({ received: true, duplicate: true });
+        return;
+      }
       if (type === 'INSTALL') {
         if (!locationId) {
           logger.info({ companyId }, 'GHL app INSTALL (company-level) received; per-location events follow');
@@ -278,6 +316,10 @@ export const webhookController = {
           body,
           eventType: 'APP_PAYMENT_STATUS',
         });
+      }
+      // Record AFTER successful processing so a 503'd event stays retryable.
+      if (webhookId) {
+        await idempotencyRepository.record(`ghl-lifecycle:${webhookId}`, 'ghl_lifecycle', dedupeScope, { type });
       }
       res.json({ received: true });
     } catch (err: any) {

@@ -87,6 +87,20 @@ async function resolveStripeWebhookConfig(req: Request): Promise<{
  * Uses express.raw() — req.body is a Buffer, not parsed JSON.
  */
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
+  // Containment wrapper: config resolution and mode checks can throw before
+  // the routing try below. Express 4 does not catch async rejections, so an
+  // uncaught throw here would crash the shared process. 500 → Stripe retries.
+  try {
+    await processStripeWebhook(req, res);
+  } catch (err: any) {
+    logger.error({ err: err?.message || String(err) }, 'Stripe webhook failed before event routing');
+    if (!res.headersSent) {
+      res.status(500).json({ received: false, error: 'webhook_processing_failed' });
+    }
+  }
+}
+
+async function processStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers['stripe-signature'] as string;
 
   if (!sig) {
