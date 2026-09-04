@@ -69,7 +69,7 @@ The isolated stack was stopped after final SQL proof, using Supabase's default v
 ## Remaining Production Gates
 
 1. Review the candidate and dependency exceptions and record the final release SHA. Fable's confirmed payment/security findings are reconciled through `adff345`; rerun certification after any additional integration change.
-2. Confirm the production ScaleSafe Supabase project from the existing Railway service's project reference, read the actual schema version and live drift, run the aggregate migration 112 preflight at schema 111, and verify a fresh encrypted backup. Repository records must not substitute for this live read.
+2. Complete the prepared forced-read-only PostgreSQL catalog gate. Railway project/service/deployment identity, Supabase project `zddyagfotdtfbcdursqu`, schema 106, API-visible drift, public health, sampled Railway logs, and backup/status timer success were verified read-only on September 4. Direct catalog access still requires one interactive VPS sudo-password entry.
 3. Obtain explicit approval before production SQL, deployment, main push/merge, domain/config changes, or operator user creation.
 4. Apply only the missing migrations from 107 through 112 in order, deploy default-off code, establish the real operator domain and private credentials, then complete owner MFA login acceptance.
 5. In the approved activation window, verify scheduled-job continuity, no duplicate execution, correct live tenant totals, audit attribution, and rollback readiness.

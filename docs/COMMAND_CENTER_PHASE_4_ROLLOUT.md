@@ -67,6 +67,21 @@ The isolated 106-to-110 upgrade, role boundaries, poison-data checks, and 10,002
 
 Any failed preflight item stops the rollout.
 
+## Read-Only Production Preflight Snapshot
+
+Recorded September 4, 2026 without changing production:
+
+- Railway project `pure-renewal`, production service `ScaleSafe`, is online at `https://dashboard.scalesafe.app`.
+- Current successful deployment is `c3b9a20c-c221-456c-ab96-424eba36de1a` from `main` commit `821c1c57a920216c8b79617f7a9722d0f457e199`.
+- Railway's production `SUPABASE_URL` identifies project `zddyagfotdtfbcdursqu`, matching the repository's linked project reference.
+- The service-only `scalesafe_schema_version()` RPC returned `106` using a server-identifying request. No secret value was printed or written.
+- Read-only PostgREST OpenAPI metadata shows the migration 106 merchant-access and Stripe-mode columns, no Command Center tables or routines, and no migration 112 processor-binding columns. This rules out an API-visible partial rollout, but does not replace the direct PostgreSQL catalog gate.
+- `/health` returned healthy with app, Supabase, and schema checks all `ok`.
+- Railway reported no error-level application logs during the sampled 24-hour window. It reported two HTTP 500 responses on `/api/payments/lifecycle/enrollment/status`; both correlate to the known test-Stripe connection/live-platform mismatch during the three historical cancellation attempts. The candidate contains the tested fully paid historical cancellation correction.
+- `scalesafe-backup.timer` and `scalesafe-backup-status.timer` are active and waiting; their latest services report `Result=success` and `ExecMainStatus=0`. The status publisher's successful run proves its internal latest-snapshot verification returned healthy.
+
+Remaining preflight item: run the checksum-verified, forced-read-only catalog checker through the existing VPS backup database connection. The prepared wrapper is `/home/clawuser/run-command-center-production-preflight.sh`; it refuses any project other than `zddyagfotdtfbcdursqu` and cannot write because `default_transaction_read_only=on` is enforced. It requires one interactive VPS sudo-password entry. Do not apply migrations after this check without separate approval.
+
 ## Dependency Audit Disposition
 
 The release lockfile pins patched `qs`, `ip-address`, and Nano ID versions. Two upstream areas remain explicit, bounded exceptions:
@@ -80,7 +95,7 @@ These are owner-visible launch exceptions, not claims of a zero-finding audit. R
 
 Obtain explicit approval for the bounded production change window before starting. Preparation approval is not deployment approval. Stop at any failed gate without advancing or broadening the authorized scope.
 
-1. Complete the live preflight above. Apply only the missing migrations from 107, 108, 109, 110, 111, and 112 in order. Migration 112 may run only after its aggregate preflight at schema 111 reports `ready` or an explicitly reviewed safe backfill condition. Confirm `scalesafe_schema_version()` returns 112 and the post-migration catalog gate passes. The behavioral SQL fixtures belong only in the disposable database, never production.
+1. Complete the remaining direct SQL catalog preflight above. Apply only the missing migrations from 107, 108, 109, 110, 111, and 112 in order. Migration 112 may run only after its aggregate preflight at schema 111 reports `ready` or an explicitly reviewed safe backfill condition. Confirm `scalesafe_schema_version()` returns 112 and the post-migration catalog gate passes. The behavioral SQL fixtures belong only in the disposable database, never production.
 2. Deploy the approved release with every new flag false.
 3. Add `ops.scalesafe.app` to the existing application service and verify DNS, TLS, exact host routing, and a disabled-route `404`.
 4. Verify the actual Railway/Cloudflare proxy chain, then set `APP_TRUST_PROXY_HOPS` before deploying the candidate. This changes global Express client-IP handling and is required for safe per-client rate limiting. Check both origin and proxied access; do not guess a hop count. Add the documented operator variables and a new 32-byte operator encryption key. The operator key must differ from the processor encryption key. Use the publishable/anon Auth key from the same confirmed ScaleSafe project.
