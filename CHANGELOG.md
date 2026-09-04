@@ -3,6 +3,11 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Stripe Early Fraud Warning integrity (2026-09-04)
+
+### Fixed
+- Stripe EFW ingestion now uses a tenant-scoped database uniqueness boundary and fails retryably when persistence fails instead of acknowledging an unrecorded warning.
+
 ## Unreleased - Command Center Phase 4 read-only platform dashboard (2026-09-03)
 
 ### Added

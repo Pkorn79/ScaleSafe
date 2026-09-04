@@ -30,7 +30,7 @@ export const stripeEfwService = {
 
     // 4. Store the EFW with recommendation
     const supabase = getSupabase();
-    await supabase
+    const { error: upsertError } = await supabase
       .from('efw_events')
       .upsert({
         merchant_id: merchant.id,
@@ -45,7 +45,17 @@ export const stripeEfwService = {
         recommendation_reason: recommendation.reason,
         response_deadline: new Date(Date.now() + (72 * 60 * 60 * 1000)).toISOString(),
         raw_efw_object: efw,
-      }, { onConflict: 'stripe_efw_id' });
+      }, { onConflict: 'merchant_id,stripe_efw_id' });
+
+    if (upsertError) {
+      logger.error({
+        err: upsertError.message,
+        code: upsertError.code,
+        merchantId: merchant.id,
+        efwId: efw.id,
+      }, 'Failed to persist Stripe EFW');
+      throw upsertError;
+    }
 
     logger.info({
       event: 'efw_processed',
