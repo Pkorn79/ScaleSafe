@@ -35,6 +35,7 @@ const baseEnrollment = {
   payments_made: 1,
   payments_total: 2,
   payment_type: 'installment',
+  processor_config_id: 'pc_1',
   processor_subscription_id: 'sub_1',
   next_billing_date: '2026-06-01',
 };
@@ -100,6 +101,7 @@ describe('recurring payment lifecycle (atomic record_recurring_payment)', () => 
       p_enrollment_id: 'enr_1',
       p_location_id: 'loc_1',
       p_processor: 'stripe',
+      p_processor_config_id: 'pc_1',
       p_transaction_id: 'ch_2',
       p_amount: 50,
       p_source: 'stripe_webhook',

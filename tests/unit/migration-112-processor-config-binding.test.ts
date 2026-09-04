@@ -26,7 +26,7 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(migrationSql).toMatch(/SELECT 112;/);
   });
 
-  it('adds nullable processor configuration foreign keys with deletion set to null', () => {
+  it('adds nullable processor configuration foreign keys that preserve financial bindings', () => {
     expect(migrationSql).toMatch(
       /ALTER TABLE public\.enrollments[\s\S]*ADD COLUMN IF NOT EXISTS processor_config_id UUID/,
     );
@@ -36,29 +36,25 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(migrationSql).toMatch(
       /ALTER TABLE public\.payment_methods[\s\S]*ADD COLUMN IF NOT EXISTS processor_config_id UUID/,
     );
-    expect(migrationSql.match(/REFERENCES public\.processor_configs\s*\(id\)[\s\S]{0,80}ON DELETE SET NULL/g)).toHaveLength(3);
+    expect(migrationSql.match(/REFERENCES public\.processor_configs\s*\(id\)[\s\S]{0,80}ON DELETE RESTRICT/g)).toHaveLength(3);
     expect(migrationSql).not.toMatch(/processor_config_id UUID NOT NULL/);
   });
 
-  it('backfills NMI enrollments only from an exact offer MID or one tenant config', () => {
-    expect(migrationSql).toMatch(/e\.processor_type = 'nmi'/);
+  it('backfills NMI and Stripe enrollments only when one tenant config exists', () => {
+    expect(migrationSql).toMatch(/e\.processor_type IN \('nmi', 'stripe'\)/);
     expect(migrationSql).toMatch(/c\.merchant_id = e\.merchant_id/);
     expect(migrationSql).toMatch(/c\.location_id = e\.location_id/);
-    expect(migrationSql).toMatch(/c\.processor_type = 'nmi'/);
-    expect(migrationSql).toMatch(/o\.id = e\.offer_id/);
-    expect(migrationSql).toMatch(/o\.location_id = e\.location_id/);
-    expect(migrationSql).toMatch(/c\.nmi_processor_id = BTRIM\(o\.nmi_processor_id\)/i);
+    expect(migrationSql).toMatch(/c\.processor_type = e\.processor_type/);
     expect(migrationSql).toMatch(/candidate_count = 1/);
-    expect(migrationSql).toContain('explicit_offer_processor_id');
-    expect(migrationSql).toContain('single_tenant_nmi_config');
+    expect(migrationSql).not.toMatch(/offers_mirror[\s\S]*resolved_enrollment_bindings/);
   });
 
-  it('copies a resolved enrollment binding to its matching NMI payment events', () => {
+  it('copies a resolved enrollment binding to matching processor payment events', () => {
     expect(migrationSql).toMatch(
       /UPDATE public\.payment_events AS pe[\s\S]*SET processor_config_id = e\.processor_config_id[\s\S]*FROM public\.enrollments AS e/,
     );
     expect(migrationSql).toMatch(/pe\.enrollment_id = e\.id/);
-    expect(migrationSql).toMatch(/pe\.processor = 'nmi'/);
+    expect(migrationSql).toMatch(/pe\.processor = e\.processor_type/);
     expect(migrationSql).toMatch(/pe\.location_id = e\.location_id/);
     expect(migrationSql).toMatch(/pe\.merchant_id IS NULL OR pe\.merchant_id = e\.merchant_id/);
   });
@@ -83,6 +79,14 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(migrationSql).toMatch(/config\.merchant_id IS DISTINCT FROM e\.merchant_id/);
     expect(migrationSql).toMatch(/config\.merchant_id IS DISTINCT FROM pm\.merchant_id/);
     expect(migrationSql).toMatch(/config\.processor_type IS DISTINCT FROM pe\.processor/);
+  });
+
+  it('enforces immutable tenant-scoped bindings at write time', () => {
+    expect(migrationSql).toContain('validate_immutable_processor_config_binding');
+    expect(migrationSql).toContain('processor configuration binding is immutable once set');
+    expect(migrationSql).toContain('processor configuration binding does not belong to this tenant and processor');
+    expect(migrationSql.match(/CREATE TRIGGER \w+_validate_processor_config_binding/g)).toHaveLength(3);
+    expect(migrationSql).toContain('FROM PUBLIC, anon, authenticated');
   });
 
   it('prechecks sentinel and transaction collisions before replacing the dedupe index', () => {
@@ -119,7 +123,8 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(verificationSql).toContain('RPC processor configuration binding was not persisted');
     expect(verificationSql).toContain('Processor-scoped transaction identities collided');
     expect(verificationSql).toContain('NULL processor configuration did not remain one identity');
-    expect(verificationSql).toContain('ON DELETE SET NULL behavior failed');
+    expect(verificationSql).toContain('Processor configuration deletion was not restricted');
+    expect(verificationSql).toContain('Immutable enrollment binding accepted a different configuration');
     expect(verificationSql).toContain('A deterministically resolvable payment method was not backfilled');
     expect(verificationSql).toContain('Processor configuration supporting indexes are missing or malformed');
   });

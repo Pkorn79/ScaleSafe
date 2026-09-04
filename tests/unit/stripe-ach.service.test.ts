@@ -64,7 +64,7 @@ describe('Stripe ACH recurring settlement setup', () => {
       installment_frequency: 'monthly',
     });
     mockQuoteOffer.mockResolvedValue({ selectedAmountCents: 5000 });
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
+    mockResolveProcessor.mockResolvedValue({ config: { id: 'pc_1', processor_type: 'stripe' } });
   });
 
   it('creates one subscription for concurrent settlement handlers', async () => {
@@ -74,6 +74,7 @@ describe('Stripe ACH recurring settlement setup', () => {
       payment_type: 'installment',
       payments_total: 3,
       processor_subscription_id: null,
+      processor_config_id: 'pc_1',
       billing_setup_status: 'pending',
       next_billing_date: '2026-08-12',
     };
@@ -124,7 +125,7 @@ describe('Stripe ACH recurring settlement setup', () => {
     mockGetSupabase.mockReturnValue(supabase);
 
     const params = {
-      merchant: { id: 'merchant_1', location_id: 'loc_1' },
+      merchant: { id: 'merchant_1', location_id: 'loc_1', processor_config_id: 'pc_1' },
       enrollment,
       offerId: 'offer_1',
       paymentType: 'installment',

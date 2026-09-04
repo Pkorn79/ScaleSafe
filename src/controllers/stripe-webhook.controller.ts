@@ -177,8 +177,27 @@ async function processStripeWebhook(req: Request, res: Response): Promise<void> 
     return;
   }
 
+  let processorConfig = resolved.processorConfig;
+  if (!processorConfig) {
+    const { data: matchingConfigs, error: matchingConfigError } = await supabase
+      .from('processor_configs')
+      .select('id, merchant_id, location_id, stripe_user_id, stripe_webhook_secret_encrypted, stripe_livemode')
+      .eq('merchant_id', merchant.id)
+      .eq('location_id', merchant.location_id)
+      .eq('processor_type', 'stripe')
+      .eq('stripe_user_id', stripeAccountId)
+      .eq('is_active', true)
+      .limit(2);
+    if (matchingConfigError) throw matchingConfigError;
+    if (!Array.isArray(matchingConfigs) || matchingConfigs.length !== 1) {
+      throw new Error('Stripe webhook could not resolve one exact active processor configuration');
+    }
+    processorConfig = matchingConfigs[0] as StripeProcessorConfig;
+    assertStripeProcessorConfigMode(processorConfig);
+  }
+
   try {
-    await routeWebhookEvent(event, merchant);
+    await routeWebhookEvent(event, { ...merchant, processor_config_id: processorConfig.id });
   } catch (err: any) {
     // #4: return 5xx so Stripe retries instead of silently losing a failed write (a missed
     // recurring increment or an unpersisted dispute). Safe to retry — recurring recording is
@@ -679,9 +698,10 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
   // Look up enrollment by processor_subscription_id
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+    .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
     .eq('processor_subscription_id', subscriptionId)
     .eq('location_id', merchant.location_id)
+    .eq('processor_config_id', merchant.processor_config_id)
     .single();
 
   if (!enrollment) {
@@ -702,6 +722,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     .select('id')
     .eq('location_id', merchant.location_id)
     .eq('processor', 'stripe')
+    .eq('processor_config_id', merchant.processor_config_id)
     .eq('event_type', 'sale')
     .eq('processor_transaction_id', transactionId)
     .maybeSingle();
@@ -739,6 +760,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     offerName,
     installmentFrequency,
     source: 'stripe_webhook',
+    processorConfigId: merchant.processor_config_id,
     // Processor truth: the cycle end on the invoice is the next billing date.
     nextBillingDate: stripeInvoiceNextBillingDate(invoice),
     rawPayload: {
@@ -747,6 +769,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
       invoicePaymentId: invoicePayment.invoicePaymentId,
       transactionId,
       stripeAccountId: connectedAccountId,
+      stripeProcessorConfigId: merchant.processor_config_id,
       invoiceStatus: invoice.status,
       invoiceAmountPaidCents: amountCents,
       invoiceAmountRemainingCents: invoice.amount_remaining,
@@ -774,9 +797,10 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
   const supabase = getSupabase();
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, processor_subscription_id')
+    .select('id, merchant_id, location_id, contact_id, offer_id, processor_subscription_id, processor_config_id')
     .eq('processor_subscription_id', subscriptionId)
     .eq('location_id', merchant.location_id)
+    .eq('processor_config_id', merchant.processor_config_id)
     .single();
 
   if (!enrollment) {
@@ -796,11 +820,13 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
     amountCents,
     errorMessage,
     source: 'stripe_webhook',
+    processorConfigId: merchant.processor_config_id,
     rawPayload: {
       stripe_invoice_id: invoice.id,
       stripe_account_id: event.account || merchant.stripe_user_id || null,
       stripe_event_id: event.id,
       stripe_subscription_id: subscriptionId,
+      stripe_processor_config_id: merchant.processor_config_id,
     },
   });
 

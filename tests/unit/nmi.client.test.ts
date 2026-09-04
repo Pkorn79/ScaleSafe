@@ -707,6 +707,7 @@ describe('NmiClient', () => {
       expect(result).toEqual([{
         transactionId: '12061861902',
         status: 'settled',
+        providerStatus: 'complete',
         amount: 33,
         occurredAt: '20260514035531',
         responseText: 'APPROVAL 327580',

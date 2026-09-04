@@ -9,6 +9,7 @@ export interface PaymentEventRecord {
   processor: string;
   processor_transaction_id: string | null;
   processor_subscription_id: string | null;
+  processor_config_id: string | null;
   amount: number;
   currency: string;
   payment_number: number | null;
@@ -33,6 +34,7 @@ export interface PaymentEventInsert {
   processor?: string;
   processor_transaction_id?: string;
   processor_subscription_id?: string | null;
+  processor_config_id?: string | null;
   amount: number;
   currency?: string;
   payment_number?: number;
@@ -123,6 +125,7 @@ export const paymentEventRepository = {
       data.processor || 'ghl',
       data.processor_transaction_id,
       data.location_id,
+      data.processor_config_id,
     );
 
     if (existing?.id) {
@@ -133,6 +136,7 @@ export const paymentEventRepository = {
         'enrollment_id',
         'offer_id',
         'processor_subscription_id',
+        'processor_config_id',
         'payment_number',
         'payments_total',
         'source',
@@ -179,6 +183,7 @@ export const paymentEventRepository = {
         data.processor || 'ghl',
         data.processor_transaction_id,
         data.location_id,
+        data.processor_config_id,
       );
       if (duplicate) return duplicate;
       throw err;
@@ -200,6 +205,7 @@ export const paymentEventRepository = {
     processor: string,
     transactionId: string,
     locationId?: string,
+    processorConfigId?: string | null,
   ): Promise<PaymentEventRecord | null> {
     let query = getSupabase()
       .from('payment_events')
@@ -209,6 +215,7 @@ export const paymentEventRepository = {
       .limit(1);
 
     if (locationId) query = query.eq('location_id', locationId);
+    if (processorConfigId) query = query.eq('processor_config_id', processorConfigId);
 
     const { data, error } = await query.single();
 

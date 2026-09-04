@@ -89,6 +89,7 @@ describe('cancelSubscriptionPublic', () => {
         offer_id: 'offer_1',
         processor_type: 'nmi',
         processor_subscription_id: 'sub_123',
+        processor_config_id: 'pc_nmi_1',
       },
       error: null,
     }, 'enrollments');
@@ -125,6 +126,8 @@ describe('cancelSubscriptionPublic', () => {
       offerId: 'offer_1',
       processorType: 'nmi',
       processorSubscriptionId: 'sub_123',
+      processorConfigId: 'pc_nmi_1',
+      processorCancellationRequired: true,
       reason: 'Client-initiated: No longer need this program',
     }));
     expect(evidenceBuilder.payload).toEqual(expect.objectContaining({
@@ -132,6 +135,55 @@ describe('cancelSubscriptionPublic', () => {
       contact_id: 'contact_1',
       enrollment_id: 'enr_exact',
       evidence_type: 'cancellation',
+    }));
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('cancels a Whop membership through its enrollment membership reference', async () => {
+    const token = createPublicActionToken({
+      action: 'subscription_cancel',
+      locationId: 'loc_1',
+      contactId: 'contact_1',
+      enrollmentId: 'enr_whop',
+    });
+    const enrollmentBuilder = makeBuilder({
+      data: {
+        id: 'enr_whop',
+        offer_id: 'offer_whop',
+        processor_type: 'whop',
+        processor_subscription_id: null,
+        processor_config_id: null,
+        whop_membership_id: 'mem_whop_123',
+        payment_type: 'installment',
+        payments_made: 2,
+        payments_total: 2,
+        billing_completed_at: '2026-09-01T00:00:00Z',
+        next_billing_date: null,
+      },
+      error: null,
+    }, 'enrollments');
+    const evidenceBuilder = makeBuilder({ error: null }, 'evidence');
+    queueBuilders({
+      enrollments: [enrollmentBuilder],
+      evidence: [evidenceBuilder],
+    });
+
+    const req: any = {
+      query: { actionToken: token },
+      body: { reason: 'Finished' },
+      headers: {},
+      socket: {},
+    };
+    const res: any = mockResponse();
+    const next = jest.fn();
+
+    await cancelSubscriptionPublic(req, res, next);
+
+    expect(mockCancelSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      enrollmentId: 'enr_whop',
+      processorType: 'whop',
+      processorSubscriptionId: 'mem_whop_123',
+      processorCancellationRequired: true,
     }));
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });

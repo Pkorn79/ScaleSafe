@@ -471,6 +471,8 @@ export class NmiClient implements ProcessorInterface {
         ? Math.round(Number.parseFloat(tx.amount) * 100)
         : 0,
       settledAt: tx.condition === 'complete' ? tx.date : undefined,
+      ...(tx.date ? { occurredAt: tx.date } : {}),
+      ...(tx.condition ? { providerStatus: tx.condition } : {}),
       ...(tx.source ? { source: tx.source } : {}),
       ...(tx.action ? { action: tx.action } : {}),
       actionSucceeded: tx.success,
@@ -496,7 +498,7 @@ export class NmiClient implements ProcessorInterface {
 
   async listSubscriptionTransactions(
     subscriptionId: string,
-    opts: { startDate?: string; endDate?: string; limit?: number } = {},
+    opts: { startDate?: string; endDate?: string; limit?: number; order?: 'standard' | 'reverse' } = {},
   ): Promise<SubscriptionTransaction[]> {
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
@@ -504,6 +506,7 @@ export class NmiClient implements ProcessorInterface {
     params.set('source', 'recurring');
     this.addProcessorId(params);
     params.set('result_limit', String(Math.min(100, Math.max(1, opts.limit || 50))));
+    params.set('result_order', opts.order || 'standard');
     if (opts.startDate) params.set('start_date', formatNmiQueryDate(opts.startDate));
     if (opts.endDate) params.set('end_date', formatNmiQueryDate(opts.endDate));
 
@@ -515,6 +518,7 @@ export class NmiClient implements ProcessorInterface {
         return {
           transactionId: tx.transactionId,
           status,
+          providerStatus: tx.condition || undefined,
           amount: Math.round(parseFloat(tx.amount || '0') * 100),
           occurredAt: tx.date || undefined,
           responseText: tx.responseText || undefined,

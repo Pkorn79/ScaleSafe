@@ -21,6 +21,7 @@ import { handleRecurringPaymentFailure } from '../../src/services/recurring-paym
 const enrollment = {
   id: 'enr_1', merchant_id: 'm_1', location_id: 'loc_1', contact_id: 'c_1',
   offer_id: 'offer_1', processor_subscription_id: 'sub_1',
+  processor_config_id: 'pc_1',
 };
 
 function callFailure() {
@@ -31,6 +32,7 @@ function callFailure() {
     amountCents: 5000,
     errorMessage: 'card_declined',
     source: 'stripe_webhook',
+    processorConfigId: 'pc_1',
     rawPayload: { stripe_invoice_id: 'in_1', stripe_account_id: 'acct_1' },
   });
 }
@@ -68,7 +70,7 @@ describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
   test('does not duplicate the dunning sequence when the same processor object already failed', async () => {
     // Stripe Smart Retries fire invoice.payment_failed per attempt for ONE
     // invoice — each must not spawn its own independently retryable dunning row.
-    existingFailureResult = { data: { id: 'pe_prev' }, error: null };
+    existingFailureResult = { data: { id: 'pe_prev', dunning_status: 'active' }, error: null };
 
     const result = await callFailure();
 
@@ -81,9 +83,22 @@ describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
     const result = await callFailure();
     expect(result).toEqual({ paymentEventId: 'pe_fail', duplicate: false });
     expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      processor_config_id: 'pc_1',
       raw_webhook_payload: { stripe_invoice_id: 'in_1', stripe_account_id: 'acct_1' },
     }));
     expect(mockInitiateDunning).toHaveBeenCalledWith(expect.objectContaining({ paymentEventId: 'pe_fail' }));
+  });
+
+  test('repairs a duplicate failed-payment row whose dunning setup never completed', async () => {
+    existingFailureResult = { data: { id: 'pe_incomplete', dunning_status: null }, error: null };
+
+    const result = await callFailure();
+
+    expect(result).toEqual({ paymentEventId: 'pe_incomplete', duplicate: true });
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInitiateDunning).toHaveBeenCalledWith(expect.objectContaining({
+      paymentEventId: 'pe_incomplete',
+    }));
   });
 
   test('fails without dunning when the failed-payment ledger insert fails', async () => {
@@ -105,7 +120,7 @@ describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
 
   test('resolves a unique-insert race to the existing row without starting dunning twice', async () => {
     insertResult = { data: null, error: { message: 'duplicate key', code: '23505' } };
-    duplicateAfterInsertResult = { data: { id: 'pe_race_winner' }, error: null };
+    duplicateAfterInsertResult = { data: { id: 'pe_race_winner', dunning_status: 'active' }, error: null };
 
     const result = await callFailure();
 

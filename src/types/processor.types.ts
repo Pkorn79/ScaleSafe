@@ -147,6 +147,8 @@ export interface VerifyResult {
   status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded' | 'unknown';
   amount: number;
   settledAt?: string;
+  occurredAt?: string;
+  providerStatus?: string;
   source?: string;
   action?: string;
   actionSucceeded?: boolean | null;
@@ -175,6 +177,7 @@ export interface VerifyTransactionOptions {
 export interface SubscriptionTransaction {
   transactionId: string;
   status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded';
+  providerStatus?: string;
   amount: number;
   occurredAt?: string;
   responseText?: string;

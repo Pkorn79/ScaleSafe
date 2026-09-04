@@ -68,6 +68,7 @@ const enrollment = {
   payments_total: 3,
   payment_type: 'installment',
   processor_subscription_id: '12060786864',
+  processor_config_id: 'config_1',
   processor_type: 'nmi',
   billing_completed_at: null,
   enrolled_at: '2026-05-13T22:27:06.000Z',
@@ -93,7 +94,9 @@ describe('nmiRecurringSyncService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     setupSupabase();
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'config_1', processor_type: 'nmi', nmi_processor_id: 'nmi_mid_1' },
+    });
     mockCreateProcessorClient.mockReturnValue({
       listSubscriptionTransactions: jest.fn().mockResolvedValue([]),
     });
@@ -127,7 +130,8 @@ describe('nmiRecurringSyncService', () => {
     expect(result.failedRecorded).toBe(0);
     expect(mockResolveProcessor).toHaveBeenCalledWith('merch_1', 'loc_1', {
       processor_override: 'nmi',
-      nmi_processor_id: 'nmi_mid_1',
+      nmi_processor_id: null,
+      processor_config_id: 'config_1',
     });
     expect(mockHandleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
       enrollment: expect.objectContaining({ id: 'enr_1' }),
@@ -137,6 +141,7 @@ describe('nmiRecurringSyncService', () => {
       offerName: 'Beta Tester 2',
       installmentFrequency: 'daily',
       source: 'nmi_history_sync',
+      processorConfigId: 'config_1',
     }));
     expect(mockDiagnosticCreate).toHaveBeenCalledWith(expect.objectContaining({
       action: 'history_imported_success',
@@ -193,6 +198,7 @@ describe('nmiRecurringSyncService', () => {
       amountCents: 33,
       errorMessage: 'DECLINE',
       source: 'nmi_history_sync',
+      processorConfigId: 'config_1',
     }));
     expect(mockDiagnosticCreate).toHaveBeenCalledWith(expect.objectContaining({
       action: 'history_imported_failure',

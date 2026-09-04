@@ -380,16 +380,15 @@ async function loadActiveNmiConfigs(supabase: SupabaseClient): Promise<Processor
 }
 
 async function loadConfigForEnrollment(supabase: SupabaseClient, enrollment: any): Promise<ProcessorConfig | null> {
-  if (!enrollment?.merchant_id || !enrollment?.location_id) return null;
+  if (!enrollment?.merchant_id || !enrollment?.location_id || !enrollment?.processor_config_id) return null;
   const { data } = await supabase
     .from('processor_configs')
     .select('*')
+    .eq('id', enrollment.processor_config_id)
     .eq('merchant_id', enrollment.merchant_id)
     .eq('location_id', enrollment.location_id)
     .eq('processor_type', 'nmi')
     .eq('is_active', true)
-    .order('is_default', { ascending: false })
-    .limit(1)
     .single();
 
   return (data || null) as ProcessorConfig | null;
@@ -400,7 +399,7 @@ async function findEnrollmentWithoutConfig(supabase: SupabaseClient, payload: an
   if (enrollmentId) {
     const { data } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
       .eq('id', enrollmentId)
       .single();
     if (data) return data;
@@ -410,10 +409,11 @@ async function findEnrollmentWithoutConfig(supabase: SupabaseClient, payload: an
   if (subscriptionId) {
     const { data } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
       .eq('processor_subscription_id', subscriptionId)
-      .single();
-    if (data) return data;
+      .eq('processor_type', 'nmi')
+      .limit(2);
+    if (Array.isArray(data) && data.length === 1) return data[0];
   }
 
   return null;
@@ -525,9 +525,10 @@ async function findEnrollment(supabase: SupabaseClient, config: ProcessorConfig,
   if (enrollmentId) {
     const { data } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
       .eq('id', enrollmentId)
       .eq('location_id', config.location_id)
+      .eq('processor_config_id', config.id)
       .single();
     if (data) return data;
   }
@@ -536,9 +537,10 @@ async function findEnrollment(supabase: SupabaseClient, config: ProcessorConfig,
   if (subscriptionId) {
     const { data } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
       .eq('processor_subscription_id', subscriptionId)
       .eq('location_id', config.location_id)
+      .eq('processor_config_id', config.id)
       .single();
     if (data) return data;
   }
@@ -710,12 +712,15 @@ export async function setupNmiAchRecurringAfterSettlement(
 ): Promise<RecurringSetupState> {
   const { data: enrollment } = await supabase
     .from('enrollments')
-    .select('id, merchant_id, location_id, contact_id, offer_id, payment_type, payments_made, payments_total, processor_subscription_id, next_billing_date, billing_setup_status')
+    .select('id, merchant_id, location_id, contact_id, offer_id, payment_type, payments_made, payments_total, processor_subscription_id, processor_config_id, next_billing_date, billing_setup_status')
     .eq('id', enrollmentId)
     .eq('location_id', config.location_id)
     .maybeSingle();
 
   if (!enrollment || !isRecurringPaymentType(enrollment.payment_type)) return 'ready';
+  if (enrollment.processor_config_id && enrollment.processor_config_id !== config.id) {
+    throw new Error('NMI ACH enrollment is bound to a different processor configuration');
+  }
   if (enrollment.processor_subscription_id) return 'ready';
 
   const paymentType = normalizePaymentType(enrollment.payment_type);
@@ -783,7 +788,8 @@ export async function setupNmiAchRecurringAfterSettlement(
 
   const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, config.location_id, {
     processor_override: 'nmi',
-    nmi_processor_id: offer.nmi_processor_id || config.nmi_processor_id || null,
+    processor_config_id: config.id,
+    nmi_processor_id: null,
   });
   const processor = createProcessorClient(procConfig);
   const startDate = enrollment.next_billing_date || computeNextBillingDate(offer.installment_frequency);
@@ -841,6 +847,7 @@ export async function setupNmiAchRecurringAfterSettlement(
   const { error: saveError } = await supabase.from('enrollments').update({
     processor_subscription_id: subResult.subscriptionId,
     processor_type: 'nmi',
+    processor_config_id: procConfig.id,
     billing_setup_status: 'ok',
     billing_setup_error: null,
     next_billing_date_source: 'processor',
@@ -885,6 +892,7 @@ async function processMatchedReversalEvent(
     .select('id')
     .eq('location_id', config.location_id)
     .eq('processor', 'nmi')
+    .eq('processor_config_id', config.id)
     .eq('processor_transaction_id', transactionId)
     .maybeSingle();
   if (duplicate) {
@@ -908,9 +916,10 @@ async function processMatchedReversalEvent(
 
   const { data: originalPayment } = await supabase
     .from('payment_events')
-    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor_subscription_id, amount, currency, event_type, is_recurring')
+    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor_subscription_id, processor_config_id, amount, currency, event_type, is_recurring')
     .eq('location_id', config.location_id)
     .eq('processor', 'nmi')
+    .eq('processor_config_id', config.id)
     .eq('processor_transaction_id', originalTransactionId)
     .in('event_type', ['sale', 'subscription_payment', 'capture'])
     .order('created_at', { ascending: false })
@@ -938,6 +947,7 @@ async function processMatchedReversalEvent(
       offer_id: originalPayment.offer_id || null,
       event_type: reversalType,
       processor: 'nmi',
+      processor_config_id: config.id,
       processor_transaction_id: transactionId,
       processor_subscription_id: originalPayment.processor_subscription_id || getSubscriptionId(payload) || null,
       amount,
@@ -992,9 +1002,10 @@ async function processAchStatusEvent(
 
   const { data: payment } = await supabase
     .from('payment_events')
-    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, amount, currency, customer_email, payment_status, source, raw_webhook_payload')
+    .select('id, merchant_id, location_id, contact_id, enrollment_id, offer_id, processor, processor_transaction_id, processor_config_id, amount, currency, customer_email, payment_status, source, raw_webhook_payload')
     .eq('location_id', config.location_id)
     .eq('processor', 'nmi')
+    .eq('processor_config_id', config.id)
     .eq('processor_transaction_id', transactionId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -1026,7 +1037,9 @@ async function processAchStatusEvent(
   const { error: updateErr } = await supabase
     .from('payment_events')
     .update(updatePayload)
-    .eq('id', payment.id);
+    .eq('id', payment.id)
+    .eq('location_id', config.location_id)
+    .eq('processor_config_id', config.id);
   if (updateErr) {
     await updateDiagnosticLog(logId, {
       action: 'ach_status_payment_update_failed',
@@ -1272,6 +1285,7 @@ async function processTransactionEvent(
         verification_status: 'error',
         error_message: err.message || 'NMI transaction lookup threw while matching webhook',
       });
+      throw err;
     }
   }
 
@@ -1300,11 +1314,11 @@ async function processTransactionEvent(
     location_id: enrollment.location_id,
   });
 
-  if (eventType === TRANSACTION_SUCCESS && !transactionId) {
+  if ([TRANSACTION_SUCCESS, TRANSACTION_FAILURE].includes(eventType) && !transactionId) {
     await updateDiagnosticLog(logId, {
       action: 'ignored_missing_transaction_id',
       verification_status: 'failed',
-      error_message: 'Approved NMI sale event did not include a transaction id',
+      error_message: 'NMI recurring sale event did not include a transaction id',
     });
     return;
   }
@@ -1315,6 +1329,8 @@ async function processTransactionEvent(
       .select('id')
       .eq('processor_transaction_id', transactionId)
       .eq('location_id', enrollment.location_id)
+      .eq('processor', 'nmi')
+      .eq('processor_config_id', config.id)
       .maybeSingle();
 
     if (existing) {
@@ -1328,47 +1344,114 @@ async function processTransactionEvent(
     }
   }
 
-  const amountCents = Math.round(getAmount(effectivePayload) * 100);
+  if (![TRANSACTION_SUCCESS, TRANSACTION_FAILURE].includes(eventType)) {
+    await updateDiagnosticLog(logId, {
+      action: 'logged_unknown_sale_result',
+      verification_status: 'unknown',
+      error_message: `NMI sale result ${eventType || 'unknown'} was not actionable`,
+    });
+    return;
+  }
+
+  if (!verification) {
+    try {
+      verification = await createProcessorClient(config).verifyTransaction(transactionId!, {
+        subscriptionId: enrollment.processor_subscription_id || getSubscriptionId(effectivePayload) || undefined,
+        source: 'recurring',
+        action: 'sale',
+      });
+    } catch (err: any) {
+      await updateDiagnosticLog(logId, {
+        action: 'verification_error',
+        verification_status: 'error',
+        error_message: err.message || 'NMI query verification threw',
+      });
+      throw err;
+    }
+  }
+
+  const verifiedSource = String(verification.source || '').toLowerCase();
+  const verifiedAction = String(verification.action || '').toLowerCase();
+  const verifiedSubscriptionId = String(verification.subscriptionId || '').trim();
+  const approvedPendingSettlement = verification.status === 'pending'
+    && String(verification.providerStatus || '').toLowerCase() === 'pendingsettlement'
+    && verification.actionSucceeded === true;
+  const approvedSale = verification.status === 'settled' || approvedPendingSettlement;
+  const failedSale = verification.status === 'failed' && verification.actionSucceeded === false;
+  const enrollmentSubscriptionId = String(enrollment.processor_subscription_id || '').trim();
+
+  if (!verification.success
+    || (verification.processorId && verification.processorId !== config.nmi_processor_id)
+    || (verifiedSource && verifiedSource !== 'recurring')
+    || (verifiedAction && verifiedAction !== 'sale')
+    || (verifiedSubscriptionId && enrollmentSubscriptionId && verifiedSubscriptionId !== enrollmentSubscriptionId)
+    || (eventType === TRANSACTION_SUCCESS && !approvedSale)
+    || (eventType === TRANSACTION_FAILURE && !failedSale)) {
+    await updateDiagnosticLog(logId, {
+      action: 'ignored_inconsistent_provider_result',
+      verification_status: 'failed',
+      error_message: 'NMI query result did not confirm the signed event against its bound enrollment and processor',
+    });
+    return;
+  }
+
+  const amountCents = verification.amount;
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    throw new Error('NMI query returned an invalid recurring payment amount');
+  }
+  await updateDiagnosticLog(logId, { verification_status: 'verified' });
   const { offerName, installmentFrequency } = await offerDetails(supabase, enrollment.offer_id);
 
   if (eventType === TRANSACTION_SUCCESS) {
-    if (transactionId && !verification) {
-      try {
-        const processor = createProcessorClient(config);
-        verification = await processor.verifyTransaction(transactionId);
-        if (!verification.success) {
-          await updateDiagnosticLog(logId, {
-            action: 'ignored_verification_failed',
-            verification_status: 'failed',
-            error_message: 'NMI query verification did not confirm the transaction',
-          });
-          return;
-        }
-        await updateDiagnosticLog(logId, { verification_status: 'verified' });
-      } catch (err: any) {
-        await updateDiagnosticLog(logId, {
-          action: 'ignored_verification_error',
-          verification_status: 'error',
-          error_message: err.message || 'NMI query verification threw',
-        });
-        return;
-      }
-    }
-
     const result = await handleRecurringPaymentSuccess({
       enrollment,
       processorType: 'nmi',
       transactionId: transactionId || `nmi_event_${Date.now()}`,
-      amountCents: amountCents || verification?.amount || 0,
+      amountCents,
       offerName,
       installmentFrequency,
       source: 'nmi_webhook_event',
+      processorConfigId: config.id,
+      rawPayload: {
+        nmi_transaction_id: transactionId,
+        nmi_subscription_id: getSubscriptionId(effectivePayload) || null,
+        nmi_processor_id: config.nmi_processor_id || null,
+        nmi_processor_config_id: config.id,
+        nmi_provider_status: verification?.providerStatus || null,
+        nmi_occurred_at: verification?.occurredAt || null,
+      },
     });
 
     await updateDiagnosticLog(logId, {
       action: result.paymentEventId ? 'processed_success' : 'processed_success_payment_event_missing',
       error_message: result.paymentEventId ? null : 'Recurring payment handler did not return a payment_event id',
       payment_event_id: result.paymentEventId,
+    });
+    return;
+  }
+
+  const processor = createProcessorClient(config);
+  if (!processor.listSubscriptionTransactions) {
+    throw new Error('NMI subscription history lookup is unavailable for failure ordering');
+  }
+  const history = await processor.listSubscriptionTransactions(enrollmentSubscriptionId, {
+    limit: 100,
+    order: 'reverse',
+  });
+  const currentIndex = history.findIndex((tx) => tx.transactionId === transactionId);
+  if (currentIndex < 0) {
+    throw new Error('NMI subscription history did not contain the verified failed transaction');
+  }
+  const laterApproved = history.slice(0, currentIndex).some((tx) => {
+    const pendingSettlement = tx.status === 'pending'
+      && String(tx.providerStatus || '').toLowerCase() === 'pendingsettlement';
+    return tx.amount > 0 && tx.success && (tx.status === 'settled' || pendingSettlement);
+  });
+  if (laterApproved) {
+    await updateDiagnosticLog(logId, {
+      action: 'ignored_superseded_failure',
+      verification_status: 'verified',
+      error_message: 'A later approved recurring payment superseded this failed transaction',
     });
     return;
   }
@@ -1381,6 +1464,16 @@ async function processTransactionEvent(
     errorMessage: getResponseText(effectivePayload) || `NMI event: ${eventType}`,
     errorCode: getResponseCode(effectivePayload) || eventType,
     source: 'nmi_webhook_event',
+    processorConfigId: config.id,
+    rawPayload: {
+      nmi_transaction_id: transactionId,
+      nmi_subscription_id: getSubscriptionId(effectivePayload) || null,
+      nmi_processor_id: config.nmi_processor_id || null,
+      nmi_processor_config_id: config.id,
+      nmi_response_code: getResponseCode(effectivePayload) || null,
+      nmi_provider_status: verification?.providerStatus || null,
+      nmi_occurred_at: verification?.occurredAt || null,
+    },
   });
 
   await updateDiagnosticLog(logId, {
@@ -1413,6 +1506,7 @@ async function processSubscriptionEvent(
   if (subscriptionId && !enrollment.processor_subscription_id) {
     updates.processor_subscription_id = subscriptionId;
     updates.processor_type = 'nmi';
+    updates.processor_config_id = config.id;
   }
 
   if (Object.keys(updates).length > 0) {
@@ -1572,13 +1666,17 @@ export async function processNmiOfficialWebhookRequest(
         .eq('event_id', eventId)
         .maybeSingle();
       if (existing) {
-        logger.info({ eventId, eventType: getEventType(payload) }, 'NMI official webhook duplicate event skipped');
-        res.status(200).json({ received: true, duplicate: true });
-        return;
+        if (existing.action === 'handler_error') {
+          logId = existing.id;
+        } else {
+          logger.info({ eventId, eventType: getEventType(payload) }, 'NMI official webhook duplicate event skipped');
+          res.status(200).json({ received: true, duplicate: true });
+          return;
+        }
       }
     }
 
-    logId = await createDiagnosticLog(config, payload);
+    if (!logId) logId = await createDiagnosticLog(config, payload);
     if (resolved.signatureVerified === true) {
       await updateDiagnosticLog(logId, { signature_verified: true });
       await updateWebhookStatus(supabase, config.id, 'verified', null);
@@ -1614,7 +1712,7 @@ export async function processNmiOfficialWebhookRequest(
       });
       await updateWebhookStatus(supabase, config.id, 'error', err.message || 'NMI official webhook handler error');
     }
-    res.status(200).json({ received: true });
+    res.status(503).json({ received: false, retry: true });
   }
 }
 

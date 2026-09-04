@@ -30,7 +30,7 @@ export const nmiRecurringRepairService = {
     const supabase = getSupabase();
     const { data: enrollment, error: enrollmentError } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at')
       .eq('location_id', params.locationId)
       .eq('processor_subscription_id', subscriptionId)
       .single();
@@ -38,12 +38,16 @@ export const nmiRecurringRepairService = {
     if (enrollmentError || !enrollment) {
       throw new Error(`No ScaleSafe enrollment found for NMI subscription ${subscriptionId}`);
     }
+    if (!enrollment.processor_config_id) {
+      throw new Error('Enrollment has no immutable NMI processor configuration binding');
+    }
 
     const { data: existing } = await supabase
       .from('payment_events')
       .select('id')
       .eq('location_id', params.locationId)
       .eq('processor', 'nmi')
+      .eq('processor_config_id', enrollment.processor_config_id)
       .eq('processor_transaction_id', transactionId)
       .limit(1)
       .maybeSingle();
@@ -63,25 +67,32 @@ export const nmiRecurringRepairService = {
 
     let offerName = '';
     let installmentFrequency = 'monthly';
-    let offerNmiProcessorId: string | null = null;
     if (enrollment.offer_id) {
       const { data: offer } = await supabase
         .from('offers_mirror')
-        .select('offer_name, installment_frequency, nmi_processor_id')
+        .select('offer_name, installment_frequency')
         .eq('id', enrollment.offer_id)
         .single();
       offerName = offer?.offer_name || '';
       installmentFrequency = offer?.installment_frequency || 'monthly';
-      offerNmiProcessorId = offer?.nmi_processor_id || null;
     }
 
     const { config } = await resolveProcessor(enrollment.merchant_id || params.merchantId, params.locationId, {
       processor_override: 'nmi',
-      nmi_processor_id: offerNmiProcessorId,
+      processor_config_id: enrollment.processor_config_id,
+      nmi_processor_id: null,
     });
     const processor = createProcessorClient(config);
     const verification = await processor.verifyTransaction(transactionId);
-    if (!verification.success || verification.amount <= 0) {
+    const approved = verification.status === 'settled'
+      || (verification.status === 'pending'
+        && String(verification.providerStatus || '').toLowerCase() === 'pendingsettlement');
+    if (!verification.success
+      || verification.actionSucceeded !== true
+      || !approved
+      || verification.amount <= 0
+      || (verification.processorId && verification.processorId !== config.nmi_processor_id)
+      || (verification.subscriptionId && verification.subscriptionId !== subscriptionId)) {
       throw new Error(`NMI transaction ${transactionId} could not be verified`);
     }
 
@@ -93,6 +104,15 @@ export const nmiRecurringRepairService = {
       offerName,
       installmentFrequency,
       source: 'nmi_repair',
+      processorConfigId: config.id,
+      rawPayload: {
+        nmi_transaction_id: transactionId,
+        nmi_subscription_id: subscriptionId,
+        nmi_processor_id: config.nmi_processor_id || null,
+        nmi_processor_config_id: config.id,
+        nmi_provider_status: verification.providerStatus || null,
+        nmi_occurred_at: verification.occurredAt || null,
+      },
     });
 
     try {

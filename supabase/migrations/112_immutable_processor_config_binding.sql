@@ -1,6 +1,6 @@
 -- 112_immutable_processor_config_binding.sql
 -- Bind enrollments and their payment ledger rows to the processor configuration
--- that originated them. Existing ambiguous NMI records remain unbound.
+-- that originated them. Existing ambiguous NMI and Stripe records remain unbound.
 
 DO $$
 BEGIN
@@ -66,7 +66,7 @@ BEGIN
       AND (
         contype <> 'f'
         OR confrelid <> 'public.processor_configs'::regclass
-        OR confdeltype <> 'n'
+        OR confdeltype <> 'r'
       )
   ) THEN
     RAISE EXCEPTION 'Migration 112 found an unexpected enrollment processor configuration foreign key';
@@ -82,7 +82,7 @@ BEGIN
       ADD CONSTRAINT enrollments_processor_config_id_fkey
       FOREIGN KEY (processor_config_id)
       REFERENCES public.processor_configs (id)
-      ON DELETE SET NULL
+      ON DELETE RESTRICT
       NOT VALID;
   END IF;
 
@@ -94,7 +94,7 @@ BEGIN
       AND (
         contype <> 'f'
         OR confrelid <> 'public.processor_configs'::regclass
-        OR confdeltype <> 'n'
+        OR confdeltype <> 'r'
       )
   ) THEN
     RAISE EXCEPTION 'Migration 112 found an unexpected payment event processor configuration foreign key';
@@ -110,7 +110,7 @@ BEGIN
       ADD CONSTRAINT payment_events_processor_config_id_fkey
       FOREIGN KEY (processor_config_id)
       REFERENCES public.processor_configs (id)
-      ON DELETE SET NULL
+      ON DELETE RESTRICT
       NOT VALID;
   END IF;
 
@@ -122,7 +122,7 @@ BEGIN
       AND (
         contype <> 'f'
         OR confrelid <> 'public.processor_configs'::regclass
-        OR confdeltype <> 'n'
+        OR confdeltype <> 'r'
       )
   ) THEN
     RAISE EXCEPTION 'Migration 112 found an unexpected payment method processor configuration foreign key';
@@ -138,7 +138,7 @@ BEGIN
       ADD CONSTRAINT payment_methods_processor_config_id_fkey
       FOREIGN KEY (processor_config_id)
       REFERENCES public.processor_configs (id)
-      ON DELETE SET NULL
+      ON DELETE RESTRICT
       NOT VALID;
   END IF;
 END;
@@ -205,44 +205,30 @@ BEGIN
 END;
 $$;
 
--- Prefer an offer's explicit NMI processor ID. Only when the offer has no
--- explicit ID may a sole tenant/location NMI configuration be inferred.
-WITH nmi_candidates AS (
+-- Historical offers are mutable and cannot prove which processor configuration
+-- originated an enrollment. Backfill only when the tenant, location, and
+-- processor have exactly one possible configuration.
+WITH enrollment_candidates AS (
   SELECT
     e.id AS enrollment_id,
     c.id AS processor_config_id,
-    CASE
-      WHEN NULLIF(BTRIM(o.nmi_processor_id), '') IS NOT NULL
-        THEN 'explicit_offer_processor_id'
-      ELSE 'single_tenant_nmi_config'
-    END AS resolution_source,
     count(*) OVER (PARTITION BY e.id) AS candidate_count
   FROM public.enrollments AS e
-  LEFT JOIN public.offers_mirror AS o
-    ON o.id = e.offer_id
-   AND o.location_id = e.location_id
   JOIN public.processor_configs AS c
     ON c.merchant_id = e.merchant_id
    AND c.location_id = e.location_id
-   AND c.processor_type = 'nmi'
-   AND (
-     (
-       NULLIF(BTRIM(o.nmi_processor_id), '') IS NOT NULL
-       AND c.nmi_processor_id = BTRIM(o.nmi_processor_id)
-     )
-     OR NULLIF(BTRIM(o.nmi_processor_id), '') IS NULL
-   )
+   AND c.processor_type = e.processor_type
   WHERE e.processor_config_id IS NULL
-    AND e.processor_type = 'nmi'
-), resolved_nmi_bindings AS (
-  SELECT enrollment_id, processor_config_id, resolution_source
-  FROM nmi_candidates
+    AND e.processor_type IN ('nmi', 'stripe')
+), resolved_enrollment_bindings AS (
+  SELECT enrollment_id, processor_config_id
+  FROM enrollment_candidates
   WHERE candidate_count = 1
 )
 UPDATE public.enrollments AS e
 SET processor_config_id = resolved.processor_config_id,
     updated_at = now()
-FROM resolved_nmi_bindings AS resolved
+FROM resolved_enrollment_bindings AS resolved
 WHERE e.id = resolved.enrollment_id
   AND e.processor_config_id IS NULL;
 
@@ -277,8 +263,8 @@ BEGIN
     SELECT 1
     FROM public.payment_events AS pe
     JOIN public.enrollments AS e ON e.id = pe.enrollment_id
-    WHERE pe.processor = 'nmi'
-      AND e.processor_config_id IS NOT NULL
+    WHERE e.processor_config_id IS NOT NULL
+      AND pe.processor = e.processor_type
       AND (
         pe.location_id IS DISTINCT FROM e.location_id
         OR (
@@ -294,8 +280,8 @@ BEGIN
     SELECT 1
     FROM public.payment_events AS pe
     JOIN public.enrollments AS e ON e.id = pe.enrollment_id
-    WHERE pe.processor = 'nmi'
-      AND e.processor_config_id IS NOT NULL
+    WHERE e.processor_config_id IS NOT NULL
+      AND pe.processor = e.processor_type
       AND pe.processor_config_id IS NOT NULL
       AND pe.processor_config_id <> e.processor_config_id
   ) THEN
@@ -308,11 +294,88 @@ UPDATE public.payment_events AS pe
 SET processor_config_id = e.processor_config_id
 FROM public.enrollments AS e
 WHERE pe.enrollment_id = e.id
-  AND pe.processor = 'nmi'
+  AND pe.processor = e.processor_type
   AND pe.processor_config_id IS NULL
   AND e.processor_config_id IS NOT NULL
   AND pe.location_id = e.location_id
   AND (pe.merchant_id IS NULL OR pe.merchant_id = e.merchant_id);
+
+-- Once a financial record is bound, that ownership cannot be changed or
+-- erased. The same trigger also rejects cross-tenant and cross-processor binds.
+CREATE OR REPLACE FUNCTION public.validate_immutable_processor_config_binding()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_config public.processor_configs%ROWTYPE;
+  v_record_processor text;
+BEGIN
+  IF TG_OP = 'UPDATE'
+    AND OLD.processor_config_id IS NOT NULL
+    AND NEW.processor_config_id IS DISTINCT FROM OLD.processor_config_id
+  THEN
+    RAISE EXCEPTION 'processor configuration binding is immutable once set';
+  END IF;
+
+  IF NEW.processor_config_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT * INTO v_config
+  FROM public.processor_configs
+  WHERE id = NEW.processor_config_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'processor configuration binding does not exist';
+  END IF;
+
+  v_record_processor := COALESCE(
+    to_jsonb(NEW)->>'processor',
+    to_jsonb(NEW)->>'processor_type'
+  );
+
+  IF v_config.location_id IS DISTINCT FROM NEW.location_id
+    OR v_config.processor_type IS DISTINCT FROM v_record_processor
+    OR (
+      NEW.merchant_id IS NOT NULL
+      AND v_config.merchant_id IS DISTINCT FROM NEW.merchant_id
+    )
+  THEN
+    RAISE EXCEPTION 'processor configuration binding does not belong to this tenant and processor';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.validate_immutable_processor_config_binding()
+  FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS enrollments_validate_processor_config_binding
+  ON public.enrollments;
+CREATE TRIGGER enrollments_validate_processor_config_binding
+BEFORE INSERT OR UPDATE OF processor_config_id, merchant_id, location_id, processor_type
+ON public.enrollments
+FOR EACH ROW
+EXECUTE FUNCTION public.validate_immutable_processor_config_binding();
+
+DROP TRIGGER IF EXISTS payment_events_validate_processor_config_binding
+  ON public.payment_events;
+CREATE TRIGGER payment_events_validate_processor_config_binding
+BEFORE INSERT OR UPDATE OF processor_config_id, merchant_id, location_id, processor
+ON public.payment_events
+FOR EACH ROW
+EXECUTE FUNCTION public.validate_immutable_processor_config_binding();
+
+DROP TRIGGER IF EXISTS payment_methods_validate_processor_config_binding
+  ON public.payment_methods;
+CREATE TRIGGER payment_methods_validate_processor_config_binding
+BEFORE INSERT OR UPDATE OF processor_config_id, merchant_id, location_id, processor_type
+ON public.payment_methods
+FOR EACH ROW
+EXECUTE FUNCTION public.validate_immutable_processor_config_binding();
 
 -- NULL is a valid compatibility identity during the staged application
 -- rollout. Reserve the zero UUID exclusively as its index representation.
@@ -481,6 +544,12 @@ BEGIN
     RAISE EXCEPTION 'enrollment % not found for location %', p_enrollment_id, p_location_id;
   END IF;
 
+  IF v_enr.processor_type IS DISTINCT FROM p_processor THEN
+    RAISE EXCEPTION 'processor % does not match enrollment processor %',
+      p_processor,
+      v_enr.processor_type;
+  END IF;
+
   IF p_processor_config_id IS NOT NULL
     AND NOT EXISTS (
       SELECT 1
@@ -505,6 +574,10 @@ BEGIN
   END IF;
 
   v_processor_config_id := COALESCE(v_enr.processor_config_id, p_processor_config_id);
+
+  IF p_processor IN ('nmi', 'stripe') AND v_processor_config_id IS NULL THEN
+    RAISE EXCEPTION 'processor configuration binding is required for % recurring payment', p_processor;
+  END IF;
 
   IF v_processor_config_id IS NOT NULL
     AND NOT EXISTS (
@@ -592,6 +665,17 @@ BEGIN
     RETURN;
   END IF;
 
+  UPDATE public.payment_events AS failed
+  SET dunning_status = 'resolved',
+      dunning_next_retry = NULL,
+      dunning_resolved_at = COALESCE(failed.dunning_resolved_at, now())
+  WHERE failed.enrollment_id = p_enrollment_id
+    AND failed.location_id = p_location_id
+    AND failed.processor = p_processor
+    AND failed.processor_config_id IS NOT DISTINCT FROM v_processor_config_id
+    AND failed.event_type = 'payment_failed'
+    AND failed.dunning_status IN ('active', 'retrying', 'escalated');
+
   v_new_made := COALESCE(v_enr.payments_made, 0) + 1;
   v_is_final := v_is_finite AND v_new_made >= v_enr.payments_total;
 
@@ -640,6 +724,23 @@ BEGIN
     v_completed,
     v_next,
     v_source;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.enrollments AS e
+    WHERE e.processor_type IN ('nmi', 'stripe')
+      AND e.processor_config_id IS NULL
+      AND e.processor_subscription_id IS NOT NULL
+      AND e.payment_type IN ('installment', 'installments', 'subscription')
+      AND e.billing_completed_at IS NULL
+      AND e.status IN ('enrolled', 'active', 'paused', 'past_due')
+  ) THEN
+    RAISE EXCEPTION 'Migration 112 found active recurring enrollments with ambiguous processor configuration ownership';
+  END IF;
 END;
 $$;
 

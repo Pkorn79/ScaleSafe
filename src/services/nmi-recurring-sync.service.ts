@@ -65,7 +65,9 @@ function displayName(enrollment: any): string {
 }
 
 function isApprovedRecurring(tx: SubscriptionTransaction): boolean {
-  return tx.amount > 0 && tx.success && ['settled', 'pending'].includes(tx.status);
+  const pendingSettlement = tx.status === 'pending'
+    && String(tx.providerStatus || '').toLowerCase() === 'pendingsettlement';
+  return tx.amount > 0 && tx.success && (tx.status === 'settled' || pendingSettlement);
 }
 
 function isFailedRecurring(tx: SubscriptionTransaction): boolean {
@@ -115,7 +117,7 @@ export const nmiRecurringSyncService = {
     const supabase = getSupabase();
     const { data: enrollment, error } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at, enrolled_at, created_at')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at, enrolled_at, created_at')
       .eq('location_id', locationId)
       .eq('id', enrollmentId)
       .single();
@@ -124,24 +126,24 @@ export const nmiRecurringSyncService = {
     const subscriptionId = String(enrollment.processor_subscription_id || '').trim();
     if (!subscriptionId) throw new Error('Enrollment has no NMI subscription ID');
     if (String(enrollment.processor_type || '').toLowerCase() !== 'nmi') throw new Error('Enrollment is not using NMI');
+    if (!enrollment.processor_config_id) throw new Error('Enrollment has no immutable NMI processor configuration binding');
 
     let offerName = '';
     let installmentFrequency = 'monthly';
-    let offerNmiProcessorId: string | null = null;
     if (enrollment.offer_id) {
       const { data: offer } = await supabase
         .from('offers_mirror')
-        .select('offer_name, installment_frequency, nmi_processor_id')
+        .select('offer_name, installment_frequency')
         .eq('id', enrollment.offer_id)
         .single();
       offerName = offer?.offer_name || '';
       installmentFrequency = offer?.installment_frequency || 'monthly';
-      offerNmiProcessorId = offer?.nmi_processor_id || null;
     }
 
     const { config } = await resolveProcessor(enrollment.merchant_id, locationId, {
       processor_override: 'nmi',
-      nmi_processor_id: offerNmiProcessorId,
+      processor_config_id: enrollment.processor_config_id,
+      nmi_processor_id: null,
     });
     const processor = createProcessorClient(config);
     if (!processor.listSubscriptionTransactions) {
@@ -160,6 +162,8 @@ export const nmiRecurringSyncService = {
         .from('payment_events')
         .select('id, processor_transaction_id')
         .eq('location_id', locationId)
+        .eq('processor', 'nmi')
+        .eq('processor_config_id', config.id)
         .in('processor_transaction_id', transactionIds);
       existingIds = new Map((existing || []).map((row: any) => [row.processor_transaction_id, row.id]));
     }
@@ -177,7 +181,8 @@ export const nmiRecurringSyncService = {
     };
 
     const workingEnrollment = { ...enrollment };
-    for (const tx of transactions) {
+    for (let transactionIndex = 0; transactionIndex < transactions.length; transactionIndex += 1) {
+      const tx = transactions[transactionIndex];
       if (existingIds.has(tx.transactionId)) {
         result.duplicates += 1;
         await nmiDiagnosticLogService.create({
@@ -209,6 +214,15 @@ export const nmiRecurringSyncService = {
             offerName,
             installmentFrequency,
             source: 'nmi_history_sync',
+            processorConfigId: config.id,
+            rawPayload: {
+              nmi_transaction_id: tx.transactionId,
+              nmi_subscription_id: subscriptionId,
+              nmi_processor_id: config.nmi_processor_id || null,
+              nmi_processor_config_id: config.id,
+              nmi_provider_status: tx.status,
+              nmi_occurred_at: tx.occurredAt || null,
+            },
           });
           workingEnrollment.payments_made = payment.newPaymentsMade;
           result.imported += 1;
@@ -255,6 +269,9 @@ export const nmiRecurringSyncService = {
 
       if (isFailedRecurring(tx)) {
         try {
+          const supersededByLaterApproval = transactions
+            .slice(transactionIndex + 1)
+            .some(isApprovedRecurring);
           const failed = await handleRecurringPaymentFailure({
             enrollment: workingEnrollment,
             processorType: 'nmi',
@@ -262,6 +279,17 @@ export const nmiRecurringSyncService = {
             amountCents: tx.amount,
             errorMessage: tx.responseText || 'NMI recurring payment failed',
             source: 'nmi_history_sync',
+            processorConfigId: config.id,
+            suppressDunning: supersededByLaterApproval,
+            rawPayload: {
+              nmi_transaction_id: tx.transactionId,
+              nmi_subscription_id: subscriptionId,
+              nmi_processor_id: config.nmi_processor_id || null,
+              nmi_processor_config_id: config.id,
+              nmi_provider_status: tx.status,
+              nmi_occurred_at: tx.occurredAt || null,
+              superseded_by_later_approval: supersededByLaterApproval,
+            },
           });
           result.failedRecorded += 1;
           if (failed.paymentEventId) result.paymentEventIds.push(failed.paymentEventId);

@@ -91,6 +91,7 @@ const ENROLLMENT = {
   contact_id: 'contact-1',
   offer_id: 'offer-1',
   processor_subscription_id: 'sub-1',
+  processor_config_id: 'processor-config-1',
   processor_type: 'nmi',
   status: 'active',
   payment_type: 'subscription',
@@ -143,6 +144,7 @@ describe('POST /lifecycle/subscription/pause', () => {
       reason: 'on vacation',
       processorSubscriptionId: 'sub-1',
       processorType: 'nmi',
+      processorConfigId: 'processor-config-1',
     }));
   });
 
@@ -196,6 +198,7 @@ describe('POST /lifecycle/subscription/cancel', () => {
       locationId: 'loc-1',
       enrollmentId: 'enr-1',
       reason: 'customer request',
+      processorConfigId: 'processor-config-1',
     }));
   });
 
@@ -238,6 +241,7 @@ describe('POST /lifecycle/enrollment/status', () => {
       locationId: 'loc-1',
       contactId: 'contact-1',
       enrollmentId: 'enr-1',
+      processorConfigId: 'processor-config-1',
     }));
   });
 

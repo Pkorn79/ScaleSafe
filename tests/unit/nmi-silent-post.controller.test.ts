@@ -51,6 +51,7 @@ const enrollment = {
   payments_total: 3,
   payment_type: 'installment',
   processor_subscription_id: 'sub_1',
+  processor_config_id: 'config_1',
   processor_type: 'nmi',
   billing_completed_at: null,
   status: 'active',
@@ -137,11 +138,18 @@ describe('NMI legacy Silent Post containment', () => {
     });
     mockDiagnosticCreate.mockResolvedValue('diag_1');
     mockDiagnosticUpdate.mockResolvedValue(undefined);
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'config_1', processor_type: 'nmi', nmi_processor_id: null },
+    });
     verifyTransaction = jest.fn().mockImplementation(async (transactionId: string) => (
       verifiedSale({ transactionId })
     ));
-    mockCreateProcessorClient.mockReturnValue({ verifyTransaction });
+    mockCreateProcessorClient.mockReturnValue({
+      verifyTransaction,
+      listSubscriptionTransactions: jest.fn().mockResolvedValue([{
+        transactionId: 'txn_1', status: 'failed', amount: 5000, success: false,
+      }]),
+    });
     mockHandleRecurringPaymentSuccess.mockResolvedValue({
       paymentEventId: 'pe_1', newPaymentsMade: 2, isFinal: false, duplicate: false,
     });
@@ -161,6 +169,7 @@ describe('NMI legacy Silent Post containment', () => {
       enrollment: expect.objectContaining({ id: 'enr_1', location_id: 'loc_1' }),
       transactionId: 'txn_1',
       amountCents: 5000,
+      processorConfigId: 'config_1',
     }));
     expect(mockHandleRecurringPaymentFailure).not.toHaveBeenCalled();
     expect(mockDiagnosticUpdate).toHaveBeenCalledWith('diag_1', expect.objectContaining({
@@ -276,6 +285,7 @@ describe('NMI legacy Silent Post containment', () => {
       amountCents: 2300,
       errorMessage: 'DECLINED',
       errorCode: '05',
+      processorConfigId: 'config_1',
     }));
     expect(mockHandleRecurringPaymentSuccess).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);

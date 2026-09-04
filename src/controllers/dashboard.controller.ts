@@ -2195,7 +2195,7 @@ export const dashboardController = {
       }
 
       const result = await stripeAchService.recordPaymentIntentState({
-        merchant,
+        merchant: { ...merchant, processor_config_id: procConfig.id },
         paymentIntent,
         source: 'stripe_ach_manual_sale',
       });

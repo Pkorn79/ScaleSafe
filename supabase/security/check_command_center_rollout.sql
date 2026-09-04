@@ -1,4 +1,4 @@
--- Read-only catalog gate for the proposed 106 -> 111 rollout.
+-- Read-only catalog gate for the proposed 106 -> 112 rollout.
 -- Run on the confirmed ScaleSafe database, before and after migration.
 -- This does not apply SQL changes, inspect customer rows, or replace the live-schema comparison.
 BEGIN READ ONLY;
@@ -46,12 +46,13 @@ DECLARE
     'get_command_center_platform_overview', 'list_command_center_incidents_page',
     'validate_command_center_tenant_binding', 'prevent_command_center_history_mutation',
     'validate_guardian_credential', 'prevent_guardian_history_mutation',
+    'validate_immutable_processor_config_binding',
     'claim_guardian_request', 'run_guardian_retention', 'list_operator_merchants_page',
     'get_operator_platform_summary', 'get_operator_merchant_detail',
     'list_operator_resellers_page'
   ];
 BEGIN
-  IF v_version NOT IN (106, 111) OR v_version IS NULL THEN
+  IF v_version NOT IN (106, 112) OR v_version IS NULL THEN
     RAISE EXCEPTION 'Unexpected schema version %. Stop and reconcile the release bundle.', v_version;
   END IF;
 
@@ -123,6 +124,6 @@ $check$;
 SELECT public.scalesafe_schema_version() AS schema_version,
   CASE public.scalesafe_schema_version()
     WHEN 106 THEN 'COMMAND_CENTER_PRE_MIGRATION_CATALOG_PASSED'
-    WHEN 111 THEN 'COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED'
+    WHEN 112 THEN 'COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED'
   END AS result;
 ROLLBACK;

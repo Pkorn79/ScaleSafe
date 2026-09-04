@@ -39,10 +39,10 @@ BEGIN
      AND constraint_row.conname = expected.conname
     WHERE constraint_row.confrelid = 'public.processor_configs'::regclass
       AND constraint_row.contype = 'f'
-      AND constraint_row.confdeltype = 'n'
+      AND constraint_row.confdeltype = 'r'
       AND constraint_row.convalidated
   ) <> 3 THEN
-    RAISE EXCEPTION 'Processor configuration foreign keys are missing, invalid, or do not use ON DELETE SET NULL';
+    RAISE EXCEPTION 'Processor configuration foreign keys are missing, invalid, or do not preserve bindings';
   END IF;
 
   IF (
@@ -127,51 +127,55 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'record_recurring_payment processor configuration argument/default is incorrect';
   END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_trigger
+    WHERE tgrelid IN (
+      'public.enrollments'::regclass,
+      'public.payment_events'::regclass,
+      'public.payment_methods'::regclass
+    )
+      AND tgname LIKE '%_validate_processor_config_binding'
+      AND NOT tgisinternal
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Immutable processor configuration binding triggers are missing';
+  END IF;
 END;
 $$;
 
--- Every deterministically resolvable pre-migration NMI enrollment must now be
--- bound. Ambiguous and unmatched rows are intentionally allowed to stay NULL.
+-- Every deterministically resolvable pre-migration NMI or Stripe enrollment
+-- must now be bound. Ambiguous and unmatched rows intentionally stay NULL.
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1
     FROM public.enrollments AS e
-    LEFT JOIN public.offers_mirror AS o
-      ON o.id = e.offer_id
-     AND o.location_id = e.location_id
     JOIN LATERAL (
       SELECT count(*) AS candidate_count
       FROM public.processor_configs AS c
       WHERE c.merchant_id = e.merchant_id
         AND c.location_id = e.location_id
-        AND c.processor_type = 'nmi'
-        AND (
-          (
-            NULLIF(BTRIM(o.nmi_processor_id), '') IS NOT NULL
-            AND c.nmi_processor_id = BTRIM(o.nmi_processor_id)
-          )
-          OR NULLIF(BTRIM(o.nmi_processor_id), '') IS NULL
-        )
+        AND c.processor_type = e.processor_type
     ) AS candidates ON true
-    WHERE e.processor_type = 'nmi'
+    WHERE e.processor_type IN ('nmi', 'stripe')
       AND e.processor_config_id IS NULL
       AND candidates.candidate_count = 1
   ) THEN
-    RAISE EXCEPTION 'A deterministically resolvable NMI enrollment was not backfilled';
+    RAISE EXCEPTION 'A deterministically resolvable processor enrollment was not backfilled';
   END IF;
 
   IF EXISTS (
     SELECT 1
     FROM public.payment_events AS pe
     JOIN public.enrollments AS e ON e.id = pe.enrollment_id
-    WHERE pe.processor = 'nmi'
+    WHERE pe.processor = e.processor_type
       AND pe.processor_config_id IS NULL
       AND e.processor_config_id IS NOT NULL
       AND pe.location_id = e.location_id
       AND (pe.merchant_id IS NULL OR pe.merchant_id = e.merchant_id)
   ) THEN
-    RAISE EXCEPTION 'An eligible NMI payment event was not backfilled from its enrollment';
+    RAISE EXCEPTION 'An eligible payment event was not backfilled from its enrollment';
   END IF;
 
   IF EXISTS (
@@ -266,7 +270,7 @@ VALUES
     'migration-112-location',
     'migration-112-contact-null-a',
     '11200000-0000-4000-8000-000000000001',
-    'nmi',
+    'ghl',
     'subscription',
     0
   ),
@@ -275,7 +279,7 @@ VALUES
     'migration-112-location',
     'migration-112-contact-null-b',
     '11200000-0000-4000-8000-000000000001',
-    'nmi',
+    'ghl',
     'subscription',
     0
   ),
@@ -388,7 +392,7 @@ $$;
 SELECT * FROM public.record_recurring_payment(
   p_enrollment_id := '11200000-0000-4000-8000-000000000103',
   p_location_id := 'migration-112-location',
-  p_processor := 'nmi',
+  p_processor := 'ghl',
   p_transaction_id := 'migration-112-null-identity',
   p_amount := 1.00
 );
@@ -396,7 +400,7 @@ SELECT * FROM public.record_recurring_payment(
 SELECT * FROM public.record_recurring_payment(
   p_enrollment_id := '11200000-0000-4000-8000-000000000104',
   p_location_id := 'migration-112-location',
-  p_processor := 'nmi',
+  p_processor := 'ghl',
   p_transaction_id := 'migration-112-null-identity',
   p_amount := 1.00
 );
@@ -407,7 +411,7 @@ BEGIN
     SELECT count(*)
     FROM public.payment_events
     WHERE location_id = 'migration-112-location'
-      AND processor = 'nmi'
+      AND processor = 'ghl'
       AND processor_config_id IS NULL
       AND processor_transaction_id = 'migration-112-null-identity'
   ) <> 1 THEN
@@ -444,28 +448,57 @@ VALUES (
   'migration-112-vault-delete'
 );
 
-DELETE FROM public.processor_configs
-WHERE id = '11200000-0000-4000-8000-000000000013';
-
 DO $$
+DECLARE
+  v_delete_blocked boolean := false;
+  v_update_blocked boolean := false;
 BEGIN
-  IF EXISTS (
+  BEGIN
+    DELETE FROM public.processor_configs
+    WHERE id = '11200000-0000-4000-8000-000000000013';
+  EXCEPTION
+    WHEN foreign_key_violation THEN
+      v_delete_blocked := true;
+  END;
+
+  IF NOT v_delete_blocked THEN
+    RAISE EXCEPTION 'Processor configuration deletion was not restricted';
+  END IF;
+
+  BEGIN
+    UPDATE public.enrollments
+    SET processor_config_id = '11200000-0000-4000-8000-000000000012'
+    WHERE id = '11200000-0000-4000-8000-000000000105';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM LIKE '%immutable once set%' THEN
+        v_update_blocked := true;
+      ELSE
+        RAISE;
+      END IF;
+  END;
+
+  IF NOT v_update_blocked THEN
+    RAISE EXCEPTION 'Immutable enrollment binding accepted a different configuration';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1
     FROM public.enrollments
     WHERE id = '11200000-0000-4000-8000-000000000105'
-      AND processor_config_id IS NOT NULL
-  ) OR EXISTS (
+      AND processor_config_id = '11200000-0000-4000-8000-000000000013'
+  ) OR NOT EXISTS (
     SELECT 1
     FROM public.payment_events
     WHERE enrollment_id = '11200000-0000-4000-8000-000000000105'
-      AND processor_config_id IS NOT NULL
-  ) OR EXISTS (
+      AND processor_config_id = '11200000-0000-4000-8000-000000000013'
+  ) OR NOT EXISTS (
     SELECT 1
     FROM public.payment_methods
     WHERE id = '11200000-0000-4000-8000-000000000201'
-      AND processor_config_id IS NOT NULL
+      AND processor_config_id = '11200000-0000-4000-8000-000000000013'
   ) THEN
-    RAISE EXCEPTION 'ON DELETE SET NULL behavior failed';
+    RAISE EXCEPTION 'Restricted deletion did not preserve processor configuration bindings';
   END IF;
 END;
 $$;

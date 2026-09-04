@@ -6,7 +6,7 @@ const gate = fs.readFileSync(path.join(root, 'security', 'check_command_center_r
 const guardianVerifier = fs.readFileSync(path.join(root, 'security', 'verify_migration_109.sql'), 'utf8');
 const dashboardVerifier = fs.readFileSync(path.join(root, 'security', 'verify_migration_110.sql'), 'utf8');
 const migrationNames = fs.readdirSync(path.join(root, 'migrations'))
-  .filter(name => /^(107|108|109|110|111)_.*\.sql$/.test(name));
+  .filter(name => /^(107|108|109|110|111|112)_.*\.sql$/.test(name));
 const ddl = migrationNames.map(name => fs.readFileSync(path.join(root, 'migrations', name), 'utf8')).join('\n');
 
 describe('Command Center rollout catalog gate', () => {
@@ -18,8 +18,8 @@ describe('Command Center rollout catalog gate', () => {
     expect(gate).not.toMatch(/^\s*(INSERT INTO|UPDATE\s+\w+\s+SET|DELETE FROM|CREATE TABLE|ALTER TABLE|DROP\s+\w+)/im);
   });
 
-  it('covers every new table and routine in release migrations 107 through 111', () => {
-    expect(migrationNames).toHaveLength(5);
+  it('covers every new table and routine in release migrations 107 through 112', () => {
+    expect(migrationNames).toHaveLength(6);
     for (const match of ddl.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
       expect(gate).toContain(`'${match[1]}'`);
     }
@@ -29,7 +29,7 @@ describe('Command Center rollout catalog gate', () => {
   });
 
   it('refuses partial migrations and checks both table and function access', () => {
-    expect(gate).toContain('v_version NOT IN (106, 111)');
+    expect(gate).toContain('v_version NOT IN (106, 112)');
     expect(gate).toContain('relrowsecurity AND relforcerowsecurity');
     expect(gate).toContain("has_table_privilege('anon'");
     expect(gate).toContain("has_table_privilege('authenticated'");

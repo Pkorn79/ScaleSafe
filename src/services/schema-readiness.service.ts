@@ -1,15 +1,15 @@
 import { getSupabase } from '../clients/supabase.client';
 import { config } from '../config';
 
-// Migration 111 is a core Stripe webhook integrity dependency and is not
-// feature-gated. The candidate must never run before the full 106 -> 111
+// Migration 112 is a core payment ownership dependency and is not
+// feature-gated. The candidate must never run before the full 106 -> 112
 // migration-first rollout has completed.
-export const BASE_REQUIRED_SCHEMA_VERSION = 111;
+export const BASE_REQUIRED_SCHEMA_VERSION = 112;
 export const OPERATOR_IDENTITY_SCHEMA_VERSION = 107;
 export const COMMAND_CENTER_HEALTH_SCHEMA_VERSION = 108;
 export const GUARDIAN_SCHEMA_VERSION = 109;
 export const OPERATOR_DASHBOARD_SCHEMA_VERSION = 110;
-export const CURRENT_RELEASE_SCHEMA_VERSION = 111;
+export const CURRENT_RELEASE_SCHEMA_VERSION = 112;
 
 function requiredSchemaVersion(): number {
   if (config.operator.enabled) return Math.max(BASE_REQUIRED_SCHEMA_VERSION, OPERATOR_DASHBOARD_SCHEMA_VERSION);

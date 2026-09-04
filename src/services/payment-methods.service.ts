@@ -8,6 +8,7 @@ interface SavePaymentMethodParams {
   locationId: string;
   contactId: string;
   processorType: ProcessorType;
+  processorConfigId?: string | null;
   paymentMethodKind?: 'card' | 'ach';
   customerId: string;
   paymentMethodId: string;
@@ -171,22 +172,31 @@ export async function saveOrReusePaymentMethod(params: SavePaymentMethodParams):
   const column = tokenColumn(params.processorType);
 
   if (!token) throw new Error('Payment method token is required');
+  if (['nmi', 'stripe'].includes(params.processorType) && !params.processorConfigId) {
+    throw new Error(`${params.processorType.toUpperCase()} payment method is missing its processor configuration binding`);
+  }
 
   if (makeDefault) {
     await supabase.from('payment_methods')
       .update({ is_default: false })
       .eq('location_id', params.locationId)
       .eq('contact_id', params.contactId)
+      .eq('processor_type', params.processorType)
+      .eq('processor_config_id', params.processorConfigId)
       .eq('is_default', true);
   }
 
-  const { data: existing, error: existingError } = await supabase
+  let existingQuery = supabase
     .from('payment_methods')
     .select('*')
     .eq('location_id', params.locationId)
     .eq('contact_id', params.contactId)
     .eq('processor_type', params.processorType)
-    .eq(column, token)
+    .eq(column, token);
+  if (params.processorConfigId) {
+    existingQuery = existingQuery.eq('processor_config_id', params.processorConfigId);
+  }
+  const { data: existing, error: existingError } = await existingQuery
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -195,6 +205,7 @@ export async function saveOrReusePaymentMethod(params: SavePaymentMethodParams):
 
   const payload: Record<string, unknown> = {
     processor_type: params.processorType,
+    processor_config_id: params.processorConfigId || null,
     payment_method_kind: params.paymentMethodKind || 'card',
     nmi_customer_vault_id: params.processorType === 'nmi' ? params.customerId : null,
     stripe_customer_id: params.processorType === 'stripe' ? params.customerId : null,

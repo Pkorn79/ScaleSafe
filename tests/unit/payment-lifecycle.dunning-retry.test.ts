@@ -7,7 +7,7 @@ function builder(table: string) {
   const ops: any = { table, chain: [] };
   fromCalls.push(ops);
   const b: any = {};
-  ['select', 'insert', 'update', 'eq', 'in', 'limit', 'order'].forEach((m) => {
+  ['select', 'insert', 'update', 'eq', 'in', 'is', 'limit', 'order'].forEach((m) => {
     b[m] = (...args: any[]) => { ops.chain.push([m, args]); return b; };
   });
   b.single = () => Promise.resolve(singleQueue.shift() ?? { data: null, error: null });
@@ -66,7 +66,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     mockMoneyMarkProviderAccepted.mockResolvedValue(undefined);
     mockMoneyMarkRecorded.mockResolvedValue(undefined);
     mockMoneyMarkUnknown.mockResolvedValue(undefined);
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockResolveProcessor.mockResolvedValue({ config: { id: 'pc_nmi', processor_type: 'nmi' } });
     mockCreateProcessorClient.mockReturnValue({
       chargeStoredCard: (...args: any[]) => mockChargeStoredCard(...args),
     });
@@ -76,7 +76,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
   // claim + resolve awaited updates; record_recurring_payment via rpc.
   function primeSuccess(amount: number) {
     singleQueue.push(
-      { data: { id: 'pe1', merchant_id: 'm1', amount, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed', dunning_retry_count: 0, processor: 'nmi', processor_transaction_id: 'txn_failed' } },
+      { data: { id: 'pe1', merchant_id: 'm1', amount, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed', dunning_retry_count: 0, processor: 'nmi', processor_config_id: 'pc_nmi', processor_transaction_id: 'txn_failed' } },
       { data: { offer_id: 'offer_1' } },
       { data: { installment_frequency: 'monthly' } },
     );
@@ -118,7 +118,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
       transactionId: 'pi_from_invoice',
       invoicePaymentId: 'inpay_123',
     });
-    mockResolveProcessor.mockResolvedValueOnce({ config: { processor_type: 'stripe', stripe_user_id: 'acct_original' } });
+    mockResolveProcessor.mockResolvedValueOnce({ config: { id: 'pc_stripe', processor_type: 'stripe', stripe_user_id: 'acct_original' } });
     mockCreateProcessorClient.mockReturnValueOnce({
       chargeStoredCard: (...a: any[]) => mockChargeStoredCard(...a),
       payInvoice: (...a: any[]) => mockPayInvoice(...a),
@@ -127,6 +127,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
       { data: {
         id: 'pe1', merchant_id: 'm1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed',
         dunning_retry_count: 0, processor: 'stripe', processor_transaction_id: 'in_123',
+        processor_config_id: 'pc_stripe',
         raw_webhook_payload: { stripe_invoice_id: 'in_123', stripe_account_id: 'acct_original' },
       } },
       { data: { offer_id: 'offer_1' } },
@@ -140,6 +141,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     expect(result.success).toBe(true);
     expect(mockResolveProcessor).toHaveBeenCalledWith('m1', 'loc_1', {
       processor_override: 'stripe',
+      processor_config_id: 'pc_stripe',
       nmi_processor_id: null,
       stripe_account_id: 'acct_original',
     });
@@ -157,6 +159,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     singleQueue.push({ data: {
       id: 'pe1', merchant_id: 'm1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed',
       dunning_retry_count: 0, processor: 'nmi', processor_transaction_id: 'txn_failed',
+      processor_config_id: 'pc_nmi',
     } });
     maybeSingleQueue.push({ data: { processor_type: 'nmi', nmi_customer_vault_id: 'vault1' } });
     // claim returns 0 rows -> another request already claimed / already resolved
@@ -206,10 +209,11 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     singleQueue.push({ data: {
       id: 'pe1', merchant_id: 'm1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed',
       dunning_retry_count: 0, processor: 'stripe', processor_transaction_id: 'in_123',
+      processor_config_id: 'pc_stripe',
       raw_webhook_payload: { stripe_invoice_id: 'in_123', stripe_account_id: 'acct_original' },
     } });
     thenQueue.push({ data: [{ id: 'pe1' }], error: null });
-    mockResolveProcessor.mockResolvedValueOnce({ config: { processor_type: 'stripe', stripe_user_id: 'acct_original' } });
+    mockResolveProcessor.mockResolvedValueOnce({ config: { id: 'pc_stripe', processor_type: 'stripe', stripe_user_id: 'acct_original' } });
     mockPayInvoice.mockResolvedValueOnce({
       success: false,
       outcome: 'unknown',
@@ -236,6 +240,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     singleQueue.push({ data: {
       id: 'pe1', merchant_id: 'm1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed',
       dunning_retry_count: 0, processor: 'stripe', processor_transaction_id: 'in_123',
+      processor_config_id: 'pc_stripe',
       raw_webhook_payload: { stripe_invoice_id: 'in_123' },
     } });
 
@@ -252,6 +257,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
       { data: {
         id: 'pe1', merchant_id: 'm1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', event_type: 'payment_failed',
         dunning_retry_count: 0, processor: 'stripe', processor_transaction_id: 'in_123',
+        processor_config_id: 'pc_stripe',
         raw_webhook_payload: { stripe_invoice_id: 'in_123', stripe_account_id: 'acct_original' },
       } },
       { data: { offer_id: 'offer_1' } },
@@ -259,7 +265,7 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     );
     thenQueue.push({ data: [{ id: 'pe1' }], error: null });
     maybeSingleQueue.push({ data: null, error: null });
-    mockResolveProcessor.mockResolvedValueOnce({ config: { processor_type: 'stripe', stripe_user_id: 'acct_original' } });
+    mockResolveProcessor.mockResolvedValueOnce({ config: { id: 'pc_stripe', processor_type: 'stripe', stripe_user_id: 'acct_original' } });
     mockPayInvoice.mockResolvedValueOnce({
       success: true,
       outcome: 'succeeded',

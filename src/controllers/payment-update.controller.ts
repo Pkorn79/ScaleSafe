@@ -293,6 +293,7 @@ export async function updatePaymentMethod(req: Request, res: Response, next: Nex
       locationId,
       contactId,
       processorType: procConfig.processor_type,
+      processorConfigId: procConfig.id,
       customerId: result.customerId,
       paymentMethodId: result.paymentMethodId,
       cardLastFour: result.cardLastFour,
@@ -403,7 +404,7 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
     // Verify the token points to an exact enrollment for this contact and location.
     const { data: enrollment } = await supabase
       .from('enrollments')
-      .select('id, status, offer_id, processor_type, processor_subscription_id')
+      .select('id, status, offer_id, processor_type, processor_subscription_id, processor_config_id, whop_membership_id, payment_type, payments_made, payments_total, billing_completed_at, next_billing_date')
       .eq('id', enrollmentId)
       .eq('location_id', locationId)
       .eq('contact_id', contactId)
@@ -417,6 +418,10 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
 
     // Use the lifecycle service to cancel with full evidence logging
     const { paymentLifecycleService } = require('../services/payment-lifecycle.service');
+    const processorReference = enrollment.processor_subscription_id
+      || enrollment.whop_membership_id
+      || undefined;
+    const isWhop = String(enrollment.processor_type || '').toLowerCase() === 'whop';
     await paymentLifecycleService.cancelSubscription({
       merchantId: merchant.id,
       locationId,
@@ -424,7 +429,14 @@ export async function cancelSubscriptionPublic(req: Request, res: Response, next
       enrollmentId: enrollment.id,
       offerId: enrollment.offer_id || '',
       processorType: enrollment.processor_type || undefined,
-      processorSubscriptionId: enrollment.processor_subscription_id || undefined,
+      processorSubscriptionId: processorReference,
+      processorConfigId: enrollment.processor_config_id || undefined,
+      processorCancellationRequired: Boolean(processorReference)
+        && (isWhop || !(enrollment.billing_completed_at
+          || (String(enrollment.payment_type || '').toLowerCase() !== 'subscription'
+            && Number(enrollment.payments_total) > 0
+            && Number(enrollment.payments_made) >= Number(enrollment.payments_total)
+            && !enrollment.next_billing_date))),
       reason: `Client-initiated: ${reason}`,
     });
 

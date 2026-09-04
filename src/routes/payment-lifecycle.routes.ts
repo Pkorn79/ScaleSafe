@@ -10,7 +10,7 @@ const router = Router();
 
 router.use(ssoAuth, requireTenant);
 
-const ENROLLMENT_LIFECYCLE_COLUMNS = 'id, contact_id, offer_id, processor_subscription_id, whop_membership_id, processor_type, status, payment_type, payments_made, payments_total, billing_completed_at, next_billing_date' as const;
+const ENROLLMENT_LIFECYCLE_COLUMNS = 'id, contact_id, offer_id, processor_subscription_id, processor_config_id, whop_membership_id, processor_type, status, payment_type, payments_made, payments_total, billing_completed_at, next_billing_date' as const;
 
 function processorCancellationRequired(enrollment: any): boolean {
   const processorReference = enrollment.processor_subscription_id || enrollment.whop_membership_id;
@@ -75,6 +75,7 @@ router.post('/subscription/pause', async (req: Request, res: Response, next: Nex
       enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorConfigId: enrollment.processor_config_id || undefined,
     });
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -95,6 +96,7 @@ router.post('/subscription/resume', async (req: Request, res: Response, next: Ne
       enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorConfigId: enrollment.processor_config_id || undefined,
     });
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -115,6 +117,7 @@ router.post('/subscription/cancel', async (req: Request, res: Response, next: Ne
       enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorConfigId: enrollment.processor_config_id || undefined,
       processorCancellationRequired: processorCancellationRequired(enrollment),
     });
     res.json({ success: true });
@@ -155,6 +158,7 @@ router.post('/enrollment/status', async (req: Request, res: Response, next: Next
       enrollmentId: enrollment.id,
       processorSubscriptionId: enrollment.processor_subscription_id || enrollment.whop_membership_id || undefined,
       processorType: enrollment.processor_type || undefined,
+      processorConfigId: enrollment.processor_config_id || undefined,
       processorCancellationRequired: processorCancellationRequired(enrollment),
     };
 

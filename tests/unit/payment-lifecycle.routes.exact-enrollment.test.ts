@@ -93,6 +93,7 @@ describe('payment lifecycle legacy subscription routes', () => {
         contact_id: 'contact_1',
         offer_id: 'offer_1',
         processor_subscription_id: 'sub_1',
+        processor_config_id: 'pc_1',
         processor_type: 'stripe',
         status: 'enrolled',
       },
@@ -118,6 +119,7 @@ describe('payment lifecycle legacy subscription routes', () => {
       enrollmentId: 'enr_1',
       offerId: 'offer_1',
       processorSubscriptionId: 'sub_1',
+      processorConfigId: 'pc_1',
       processorType: 'stripe',
       reason: 'Pause this',
     }));
@@ -131,6 +133,7 @@ describe('payment lifecycle legacy subscription routes', () => {
         contact_id: 'contact_2',
         offer_id: 'offer_2',
         processor_subscription_id: 'sub_2',
+        processor_config_id: 'pc_2',
         processor_type: 'nmi',
         status: 'active',
       },
@@ -149,6 +152,7 @@ describe('payment lifecycle legacy subscription routes', () => {
       enrollmentId: 'enr_2',
       offerId: 'offer_2',
       processorSubscriptionId: 'sub_2',
+      processorConfigId: 'pc_2',
       processorType: 'nmi',
       reason: 'Cancel this',
     }));
@@ -162,6 +166,7 @@ describe('payment lifecycle legacy subscription routes', () => {
         contact_id: 'contact_3',
         offer_id: 'offer_3',
         processor_subscription_id: null,
+        processor_config_id: 'pc_3',
         processor_type: 'stripe',
         status: 'paused',
       },
@@ -179,6 +184,7 @@ describe('payment lifecycle legacy subscription routes', () => {
       contactId: 'contact_3',
       enrollmentId: 'enr_3',
       offerId: 'offer_3',
+      processorConfigId: 'pc_3',
       processorType: 'stripe',
       reason: 'Merchant-initiated resume',
     }));

@@ -60,7 +60,7 @@ export interface ProcessorInterface {
 
   listSubscriptionTransactions?(
     subscriptionId: string,
-    opts?: { startDate?: string; endDate?: string; limit?: number },
+    opts?: { startDate?: string; endDate?: string; limit?: number; order?: 'standard' | 'reverse' },
   ): Promise<SubscriptionTransaction[]>;
 
   testConnection(): Promise<{ success: boolean; message: string }>;

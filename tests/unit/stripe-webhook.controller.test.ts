@@ -90,20 +90,23 @@ function mockResponse(): any {
 
 function tableMock(table: string) {
   if (table === 'processor_configs') {
+    const configRow = {
+      id: 'pc_1',
+      merchant_id: 'merch_1',
+      location_id: 'loc_1',
+      stripe_user_id: 'acct_1',
+      stripe_webhook_secret_encrypted: 'enc:whsec_loc',
+      stripe_livemode: false,
+    };
     const chain: any = {
       select: jest.fn(() => chain),
       eq: jest.fn(() => chain),
+      limit: jest.fn(() => chain),
       maybeSingle: jest.fn().mockResolvedValue({
-        data: {
-          id: 'pc_1',
-          merchant_id: 'merch_1',
-          location_id: 'loc_1',
-          stripe_user_id: 'acct_1',
-          stripe_webhook_secret_encrypted: 'enc:whsec_loc',
-          stripe_livemode: false,
-        },
+        data: configRow,
         error: null,
       }),
+      then: (resolve: any, reject: any) => Promise.resolve({ data: [configRow], error: null }).then(resolve, reject),
     };
     return chain;
   }
@@ -657,6 +660,7 @@ describe('invoice.payment_failed dunning identity', () => {
             data: {
               id: 'enr_1', merchant_id: 'merch_1', location_id: 'loc_1',
               contact_id: 'c_1', offer_id: 'offer_1', processor_subscription_id: 'sub_1',
+              processor_config_id: 'pc_1',
             },
             error: null,
           }),
@@ -716,6 +720,7 @@ describe('invoice.payment_failed dunning identity', () => {
               id: 'enr_1', merchant_id: 'merch_1', location_id: 'loc_1', contact_id: 'c_1',
               offer_id: null, program_name_snapshot: 'Program', payments_made: 1, payments_total: 4,
               payment_type: 'installment', processor_subscription_id: 'sub_1', processor_type: 'stripe',
+              processor_config_id: 'pc_1',
               billing_completed_at: null,
             },
             error: null,
@@ -789,6 +794,7 @@ describe('invoice.payment_failed dunning identity', () => {
               id: 'enr_1', merchant_id: 'merch_1', location_id: 'loc_1', contact_id: 'c_1',
               offer_id: null, program_name_snapshot: 'Program', payments_made: 1, payments_total: 4,
               payment_type: 'installment', processor_subscription_id: 'sub_1', processor_type: 'stripe',
+              processor_config_id: 'pc_1',
               billing_completed_at: null,
             },
             error: null,

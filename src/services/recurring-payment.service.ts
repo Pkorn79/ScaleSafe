@@ -37,6 +37,7 @@ interface RecurringPaymentParams {
     payments_made: number;
     payments_total: number | null;
     payment_type: string;
+    processor_config_id?: string | null;
     processor_subscription_id?: string | null;
     next_billing_date?: string | null;
   };
@@ -49,6 +50,7 @@ interface RecurringPaymentParams {
   // Processor-resolved next billing date (event payload or subscription API lookup).
   // When omitted, the RPC anchors an estimate and marks the schedule 'estimated'.
   nextBillingDate?: string | null;
+  processorConfigId?: string | null;
   rawPayload?: any;
 }
 
@@ -59,6 +61,7 @@ interface RecurringFailureParams {
     location_id: string;
     contact_id: string;
     offer_id: string | null;
+    processor_config_id?: string | null;
     processor_subscription_id?: string | null;
   };
   processorType: 'nmi' | 'stripe' | 'whop';
@@ -67,6 +70,8 @@ interface RecurringFailureParams {
   errorMessage: string;
   errorCode?: string;
   source: string;
+  processorConfigId?: string | null;
+  suppressDunning?: boolean;
   rawPayload?: Record<string, unknown> | null;
 }
 function formatMoney(value: unknown): string {
@@ -114,6 +119,13 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
   const offerName = resolveProgramName(enr, { offer_name: params.offerName }, params.offerName);
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
+  const processorConfigId = String(params.processorConfigId || enr.processor_config_id || '').trim();
+  if (params.processorConfigId && enr.processor_config_id && params.processorConfigId !== enr.processor_config_id) {
+    throw new Error(`${processorType.toUpperCase()} recurring payment processor configuration mismatch`);
+  }
+  if (['nmi', 'stripe'].includes(processorType) && !processorConfigId) {
+    throw new Error(`${processorType.toUpperCase()} recurring payment is missing its processor configuration binding`);
+  }
   const isNmiHistorySync = source === 'nmi_history_sync';
   const suppressCustomerReceipt = isNmiHistorySync;
   const isFiniteInstallment = enr.payment_type !== 'subscription' && enr.payments_total != null;
@@ -135,6 +147,7 @@ export async function handleRecurringPaymentSuccess(params: RecurringPaymentPara
     p_interval: installmentFrequency || 'monthly',
     p_source: source,
     p_raw_payload: params.rawPayload ?? null,
+    p_processor_config_id: processorConfigId || null,
   });
   if (rpcError) throw rpcError;
 
@@ -332,22 +345,45 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
   const { enrollment: enr, processorType, transactionId, amountCents, errorMessage, errorCode, source } = params;
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
+  const processorConfigId = String(params.processorConfigId || enr.processor_config_id || '').trim();
+  if (params.processorConfigId && enr.processor_config_id && params.processorConfigId !== enr.processor_config_id) {
+    throw new Error(`${processorType.toUpperCase()} recurring failure processor configuration mismatch`);
+  }
+  if (['nmi', 'stripe'].includes(processorType) && !processorConfigId) {
+    throw new Error(`${processorType.toUpperCase()} recurring failure is missing its processor configuration binding`);
+  }
 
   if (transactionId) {
-    const { data: existingFailure, error: existingFailureError } = await supabase
+    let existingFailureQuery = supabase
       .from('payment_events')
-      .select('id')
+      .select('id, dunning_status')
       .eq('merchant_id', enr.merchant_id)
       .eq('location_id', enr.location_id)
       .eq('processor', processorType)
-      .eq('processor_transaction_id', transactionId)
-      .maybeSingle();
+      .eq('processor_transaction_id', transactionId);
+    existingFailureQuery = processorConfigId
+      ? existingFailureQuery.eq('processor_config_id', processorConfigId)
+      : existingFailureQuery.is('processor_config_id', null);
+    const { data: existingFailure, error: existingFailureError } = await existingFailureQuery.maybeSingle();
     if (existingFailureError) throw existingFailureError;
     if (existingFailure) {
       logger.info(
         { enrollmentId: enr.id, transactionId, source },
         'Recurring failure already recorded for this processor object - not duplicating dunning',
       );
+      if (!params.suppressDunning && !existingFailure.dunning_status) {
+        await paymentLifecycleService.initiateDunning({
+          merchantId: enr.merchant_id,
+          locationId: enr.location_id,
+          contactId: enr.contact_id,
+          offerId: enr.offer_id || '',
+          paymentEventId: existingFailure.id,
+          failureReason: errorMessage || 'Recurring charge failed',
+          failureCode: errorCode,
+          amountCents,
+          attemptCount: 0,
+        });
+      }
       return { paymentEventId: existingFailure.id, duplicate: true };
     }
   }
@@ -363,6 +399,7 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
       processor: processorType,
       processor_transaction_id: transactionId || null,
       processor_subscription_id: enr.processor_subscription_id || null,
+      processor_config_id: processorConfigId || null,
       amount: amountDollars,
       currency: 'usd',
       failure_reason: errorMessage || 'Unknown failure',
@@ -386,16 +423,34 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
     }, 'Recurring failure: payment_events insert failed - dunning will not initiate');
 
     if (failedInsertError.code === '23505' && transactionId) {
-      const { data: duplicate, error: duplicateError } = await supabase
+      let duplicateQuery = supabase
         .from('payment_events')
-        .select('id')
+        .select('id, dunning_status')
         .eq('merchant_id', enr.merchant_id)
         .eq('location_id', enr.location_id)
         .eq('processor', processorType)
-        .eq('processor_transaction_id', transactionId)
-        .maybeSingle();
+        .eq('processor_transaction_id', transactionId);
+      duplicateQuery = processorConfigId
+        ? duplicateQuery.eq('processor_config_id', processorConfigId)
+        : duplicateQuery.is('processor_config_id', null);
+      const { data: duplicate, error: duplicateError } = await duplicateQuery.maybeSingle();
       if (duplicateError) throw duplicateError;
-      if (duplicate) return { paymentEventId: duplicate.id, duplicate: true };
+      if (duplicate) {
+        if (!params.suppressDunning && !duplicate.dunning_status) {
+          await paymentLifecycleService.initiateDunning({
+            merchantId: enr.merchant_id,
+            locationId: enr.location_id,
+            contactId: enr.contact_id,
+            offerId: enr.offer_id || '',
+            paymentEventId: duplicate.id,
+            failureReason: errorMessage || 'Recurring charge failed',
+            failureCode: errorCode,
+            amountCents,
+            attemptCount: 0,
+          });
+        }
+        return { paymentEventId: duplicate.id, duplicate: true };
+      }
     }
 
     throw failedInsertError;
@@ -405,17 +460,19 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
     throw new Error(`Failed payment insert returned no row for enrollment ${enr.id}`);
   }
 
-  await paymentLifecycleService.initiateDunning({
-    merchantId: enr.merchant_id,
-    locationId: enr.location_id,
-    contactId: enr.contact_id,
-    offerId: enr.offer_id || '',
-    paymentEventId: failedEvent.id,
-    failureReason: errorMessage || 'Recurring charge failed',
-    failureCode: errorCode,
-    amountCents,
-    attemptCount: 0,
-  });
+  if (!params.suppressDunning) {
+    await paymentLifecycleService.initiateDunning({
+      merchantId: enr.merchant_id,
+      locationId: enr.location_id,
+      contactId: enr.contact_id,
+      offerId: enr.offer_id || '',
+      paymentEventId: failedEvent.id,
+      failureReason: errorMessage || 'Recurring charge failed',
+      failureCode: errorCode,
+      amountCents,
+      attemptCount: 0,
+    });
+  }
 
   return { paymentEventId: failedEvent.id, duplicate: false };
 }

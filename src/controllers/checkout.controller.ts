@@ -366,6 +366,7 @@ export async function createStripeAchPaymentIntent(req: Request, res: Response):
         checkout_mode: String(checkoutMode || 'checkout'),
         location_id: offer.location_id,
         merchant_id: merchantRow.id,
+        processor_config_id: procConfig.id,
         offer_id: offer.id,
         scalesafe_offer_id: offer.id,
         selected_addon_ids: cartSelectedAddonIds.join(','),
@@ -495,7 +496,7 @@ export async function finalizeStripeAchPayment(req: Request, res: Response): Pro
     }
 
     const result = await stripeAchService.recordPaymentIntentState({
-      merchant: merchantRow,
+      merchant: { ...merchantRow, processor_config_id: procConfig.id },
       paymentIntent,
       source: 'stripe_ach_checkout',
     });
@@ -1117,6 +1118,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
       offer_id: enrollmentLookup?.data?.offer_id || offerId || null,
       event_type: result.success ? 'sale' : 'payment_failed',
       processor: procConfig.processor_type,
+      processor_config_id: procConfig.id,
       processor_transaction_id: result.transactionId,
       processor_charge_id: result.chargeId || null,
       amount: amount / 100, // store in dollars in DB
@@ -1178,6 +1180,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             payment_type: normalizePaymentType(boundPaymentChoice),
             payment_transaction_id: result.transactionId || result.chargeId || '',
             processor_type: procConfig.processor_type,
+            processor_config_id: procConfig.id,
             initial_payment_status: 'processing',
             initial_payment_method: paymentMethod,
             billing_setup_status: isRecurringPaymentType ? 'pending' : 'ok',
@@ -1435,6 +1438,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     payment_type: contextPaymentType,
                     payment_transaction_id: result.transactionId,
                     processor_type: procConfig.processor_type,
+                    processor_config_id: procConfig.id,
                     initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
                     initial_payment_method: paymentMethod,
                     payments_made: paymentProcessing ? 0 : 1,
@@ -1487,6 +1491,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                     payment_type: selectedQuickPayType,
                     payment_transaction_id: result.transactionId,
                     processor_type: procConfig.processor_type,
+                    processor_config_id: procConfig.id,
                     initial_payment_status: paymentProcessing ? 'processing' : 'succeeded',
                     initial_payment_method: paymentMethod,
                     payments_made: paymentProcessing ? 0 : 1,
@@ -1652,6 +1657,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             locationId: merchant.locationId,
             contactId: finalContactId,
             processorType: procConfig.processor_type,
+            processorConfigId: procConfig.id,
             paymentMethodKind: paymentMethod,
             customerId: saveResult.customerId,
             paymentMethodId: saveResult.paymentMethodId,
@@ -1743,7 +1749,11 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                       recurringNextBillingDate = subResult.nextPaymentDate?.split('T')[0]
                         || String(enrForSub.next_billing_date || '');
                       const { error: subSaveErr } = await supabase.from('enrollments')
-                        .update({ processor_subscription_id: subResult.subscriptionId, processor_type: procConfig.processor_type })
+                        .update({
+                          processor_subscription_id: subResult.subscriptionId,
+                          processor_type: procConfig.processor_type,
+                          processor_config_id: procConfig.id,
+                        })
                         .eq('id', finalEnrollmentId);
                       if (subSaveErr) {
                         billingSetupIssue = {
@@ -2120,6 +2130,7 @@ export async function saveCard(req: Request, res: Response): Promise<void> {
       locationId: merchant.locationId,
       contactId,
       processorType: procConfig.processor_type,
+      processorConfigId: procConfig.id,
       customerId: result.customerId,
       paymentMethodId: result.paymentMethodId,
       cardLastFour: result.cardLastFour,

@@ -14,9 +14,13 @@ const mockMoneyMarkProviderAccepted = jest.fn();
 const mockMoneyMarkRecorded = jest.fn();
 const mockMoneyMarkUnknown = jest.fn();
 const mockProcessorResume = jest.fn();
+const mockProcessorCancel = jest.fn();
 const mockEnrollmentUpdate = jest.fn();
 const mockMerchantGet = jest.fn();
 let enrollmentNextBillingDate: string | null = '2026-07-01';
+let enrollmentProcessorType = 'whop';
+let enrollmentProcessorSubscriptionId = 'mem_123';
+let enrollmentProcessorConfigId: string | null = null;
 
 jest.mock('../../src/services/processor.factory', () => ({
   resolveProcessor: (...args: any[]) => mockResolveProcessor(...args),
@@ -109,8 +113,9 @@ function builder(table: string) {
           payments_made: 1,
           payments_total: 5,
           status: 'paused',
-          processor_type: 'whop',
-          processor_subscription_id: 'mem_123',
+          processor_type: enrollmentProcessorType,
+          processor_subscription_id: enrollmentProcessorSubscriptionId,
+          processor_config_id: enrollmentProcessorConfigId,
           next_billing_date: enrollmentNextBillingDate,
           enrolled_at: '2026-06-01T00:00:00Z',
           first_name: 'Client',
@@ -145,6 +150,9 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     enrollmentNextBillingDate = '2026-07-01';
+    enrollmentProcessorType = 'whop';
+    enrollmentProcessorSubscriptionId = 'mem_123';
+    enrollmentProcessorConfigId = null;
     mockPauseWhop.mockResolvedValue({ success: true, paymentCollectionPaused: true });
     mockResumeWhop.mockResolvedValue({
       success: true,
@@ -176,6 +184,7 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       subscriptionId: 'sub-replacement',
       nextPaymentDate: '2026-07-08T00:00:00Z',
     });
+    mockProcessorCancel.mockResolvedValue({ success: true });
   });
 
   it('pauses Whop membership through Whop without creating a generic processor client', async () => {
@@ -308,7 +317,10 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
   });
 
   it('recovers an accepted NMI resume without creating a second subscription', async () => {
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    enrollmentProcessorType = 'nmi';
+    enrollmentProcessorSubscriptionId = 'sub-old';
+    enrollmentProcessorConfigId = 'pc-nmi';
+    mockResolveProcessor.mockResolvedValue({ config: { id: 'pc-nmi', processor_type: 'nmi' } });
     mockCreateProcessorClient.mockReturnValue({ resumeSubscription: mockProcessorResume });
     mockMoneyBegin.mockResolvedValue({
       action: 'blocked',
@@ -326,6 +338,7 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       ...whopParams,
       processorType: 'nmi',
       processorSubscriptionId: 'sub-old',
+      processorConfigId: 'pc-nmi',
     });
 
     expect(mockProcessorResume).not.toHaveBeenCalled();
@@ -334,5 +347,72 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
       id: 'money-op-accepted',
       processorReference: 'sub-already-created',
     }));
+  });
+
+  it('blocks a processor lifecycle call when the enrollment has no immutable configuration binding', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = 'sub-unbound';
+    enrollmentProcessorConfigId = null;
+
+    await expect(paymentLifecycleService.pauseSubscription({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub-unbound',
+      processorConfigId: undefined,
+    })).rejects.toThrow(/processor configuration binding is missing/i);
+
+    expect(mockResolveProcessor).not.toHaveBeenCalled();
+    expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+    expect(mockEnrollmentUpdate).not.toHaveBeenCalled();
+  });
+
+  it('uses the enrollment exact processor configuration when cancelling future billing', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = 'sub-exact';
+    enrollmentProcessorConfigId = 'pc-stripe-exact';
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'pc-stripe-exact', processor_type: 'stripe' },
+    });
+    mockCreateProcessorClient.mockReturnValue({ cancelSubscription: mockProcessorCancel });
+
+    await paymentLifecycleService.cancelSubscription({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub-exact',
+      processorConfigId: 'pc-stripe-exact',
+    });
+
+    expect(mockResolveProcessor).toHaveBeenCalledWith('merchant-1', 'loc-1', {
+      processor_override: 'stripe',
+      processor_config_id: 'pc-stripe-exact',
+      nmi_processor_id: null,
+    });
+    expect(mockProcessorCancel).toHaveBeenCalledWith('sub-exact');
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'cancelled',
+      next_billing_date: null,
+    }));
+  });
+
+  it('does not complete an enrollment when future processor billing cannot be stopped', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = 'sub-still-live';
+    enrollmentProcessorConfigId = 'pc-stripe-exact';
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'pc-stripe-exact', processor_type: 'stripe' },
+    });
+    mockProcessorCancel.mockRejectedValue(new Error('Stripe unavailable'));
+    mockCreateProcessorClient.mockReturnValue({ cancelSubscription: mockProcessorCancel });
+
+    await expect(paymentLifecycleService.completeEnrollment({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub-still-live',
+      processorConfigId: 'pc-stripe-exact',
+    })).rejects.toThrow('Stripe unavailable');
+
+    expect(mockProcessorCancel).toHaveBeenCalledWith('sub-still-live');
+    expect(mockEnrollmentUpdate).not.toHaveBeenCalled();
+    expect(mockLogEvidence).not.toHaveBeenCalled();
   });
 });

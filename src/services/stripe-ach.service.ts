@@ -15,6 +15,7 @@ import { config as appConfig } from '../config';
 type MerchantLike = {
   id: string;
   location_id: string;
+  processor_config_id?: string | null;
 };
 
 type AchAccessPolicy = 'after_settlement' | 'after_submission';
@@ -105,6 +106,7 @@ async function saveStripeAchMethod(params: {
     locationId: params.merchant.location_id,
     contactId: params.contactId,
     processorType: 'stripe',
+    processorConfigId: params.merchant.processor_config_id || null,
     paymentMethodKind: 'ach',
     customerId: cusId,
     paymentMethodId: pmId,
@@ -199,10 +201,20 @@ export async function setupRecurringAfterSettlement(params: {
 
   const nextBillingDate = params.enrollment.next_billing_date
     || computeNextBillingDate(offer.installment_frequency);
+  const processorConfigId = String(
+    params.enrollment.processor_config_id || params.merchant.processor_config_id || '',
+  ).trim();
+  if (!processorConfigId) {
+    throw new Error('Stripe ACH recurring setup is missing its processor configuration binding');
+  }
   const { config } = await resolveProcessor(params.merchant.id, params.merchant.location_id, {
     processor_override: 'stripe',
+    processor_config_id: processorConfigId,
     nmi_processor_id: null,
   });
+  if (config.id !== processorConfigId) {
+    throw new Error('Stripe ACH recurring setup resolved a different processor configuration');
+  }
   const processor = createProcessorClient(config);
   const claimed = await claimRecurringSetup({
     enrollmentId: params.enrollment.id,
@@ -236,6 +248,7 @@ export async function setupRecurringAfterSettlement(params: {
         location_id: params.merchant.location_id,
         payment_type: paymentType,
         payment_method_type: 'ach',
+        processor_config_id: processorConfigId,
       },
       idempotencyKey: `stripe-ach-recurring-${params.enrollment.id}-${params.paymentIntent.id}`,
     });
@@ -261,6 +274,7 @@ export async function setupRecurringAfterSettlement(params: {
   const { error: subSaveError } = await getSupabase().from('enrollments').update({
     processor_subscription_id: subResult.subscriptionId,
     processor_type: 'stripe',
+    processor_config_id: processorConfigId,
     billing_setup_status: 'ok',
     billing_setup_error: null,
     next_billing_date_source: 'processor',
@@ -408,6 +422,14 @@ export const stripeAchService = {
     if (!locationId || locationId !== merchant.location_id) {
       throw new Error('Stripe ACH location mismatch');
     }
+    const processorConfigId = String(
+      merchant.processor_config_id || metadata.processor_config_id || '',
+    ).trim();
+    if (!processorConfigId) throw new Error('Stripe ACH payment is missing its processor configuration binding');
+    if (metadata.processor_config_id && metadata.processor_config_id !== processorConfigId) {
+      throw new Error('Stripe ACH processor configuration mismatch');
+    }
+    merchant.processor_config_id = processorConfigId;
 
     const transactionId = String(paymentIntent.id || '');
     if (!transactionId) throw new Error('Stripe ACH payment_intent missing id');
@@ -429,11 +451,14 @@ export const stripeAchService = {
     if (consentToken && !enrollmentId) {
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('id, contact_id, email, payment_type')
+        .select('id, contact_id, email, payment_type, processor_config_id')
         .eq('location_id', locationId)
         .eq('consent_token', consentToken)
         .maybeSingle();
       if (enrollment) {
+        if (enrollment.processor_config_id && enrollment.processor_config_id !== processorConfigId) {
+          throw new Error('Stripe ACH consent enrollment is bound to a different processor configuration');
+        }
         enrollmentId = enrollment.id;
         contactId = contactId || enrollment.contact_id || null;
         customerEmail = customerEmail || enrollment.email || null;
@@ -446,6 +471,7 @@ export const stripeAchService = {
       .select('id, enrollment_id, contact_id')
       .eq('location_id', locationId)
       .eq('processor', 'stripe')
+      .eq('processor_config_id', processorConfigId)
       .eq('processor_transaction_id', transactionId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -467,7 +493,9 @@ export const stripeAchService = {
       const { error } = await supabase
         .from('payment_events')
         .update(updatePayload)
-        .eq('id', paymentEventId);
+        .eq('id', paymentEventId)
+        .eq('location_id', locationId)
+        .eq('processor_config_id', processorConfigId);
       if (error) throw error;
       enrollmentId = enrollmentId || existing?.enrollment_id || null;
       contactId = contactId || existing?.contact_id || null;
@@ -482,6 +510,7 @@ export const stripeAchService = {
           offer_id: offerId,
           event_type: paymentStatus === 'failed' ? 'payment_failed' : 'sale',
           processor: 'stripe',
+          processor_config_id: processorConfigId,
           processor_transaction_id: transactionId,
           amount,
           currency: String(paymentIntent.currency || 'usd').toLowerCase(),
@@ -509,12 +538,15 @@ export const stripeAchService = {
     if (enrollmentId) {
       const { data: enrollment } = await supabase
         .from('enrollments')
-        .select('id, location_id, contact_id, email, status, payment_type, payments_total, offer_id, processor_subscription_id, next_billing_date')
+        .select('id, location_id, contact_id, email, status, payment_type, payments_total, offer_id, processor_subscription_id, processor_config_id, next_billing_date')
         .eq('id', enrollmentId)
         .eq('location_id', locationId)
         .maybeSingle();
 
       if (enrollment) {
+        if (enrollment.processor_config_id && enrollment.processor_config_id !== processorConfigId) {
+          throw new Error('Stripe ACH enrollment is bound to a different processor configuration');
+        }
         const checkoutMode = String(metadata.checkout_mode || '');
         const enrollmentStatus = String(enrollment.status || '');
         const paymentTypeForEnrollment = normalizePaymentType(enrollment.payment_type || paymentType);
@@ -529,6 +561,8 @@ export const stripeAchService = {
         await supabase.from('enrollments').update({
           initial_payment_status: paymentStatus,
           initial_payment_method: 'ach',
+          processor_type: 'stripe',
+          processor_config_id: processorConfigId,
           initial_payment_settled_at: paymentStatus === 'settled' ? now : null,
           initial_payment_returned_at: paymentStatus === 'failed' ? now : null,
           initial_payment_return_reason: paymentStatus === 'failed'
@@ -539,7 +573,6 @@ export const stripeAchService = {
             payment_amount: amount,
             payment_type: paymentType,
             payment_transaction_id: transactionId,
-            processor_type: 'stripe',
             ...(recurringEnrollment ? { next_billing_date: null } : {}),
           } : {}),
           ...(paymentStatus === 'failed' ? { status: 'payment_returned' } : {}),

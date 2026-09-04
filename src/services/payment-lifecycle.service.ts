@@ -171,6 +171,63 @@ function requireWhopMembershipId(params: SubscriptionParams, action: string): st
   return membershipId;
 }
 
+async function requireProcessorActionBinding(
+  params: SubscriptionParams,
+  action: string,
+): Promise<string> {
+  const processorType = String(params.processorType || '').toLowerCase();
+  if (!['nmi', 'stripe'].includes(processorType)) {
+    throw new ValidationError(`Unable to ${action} subscription: unsupported processor`);
+  }
+  if (!params.enrollmentId) {
+    throw new ValidationError(`Unable to ${action} subscription: exact enrollment is required`);
+  }
+
+  const { data: enrollment, error } = await getSupabase()
+    .from('enrollments')
+    .select('id, merchant_id, processor_type, processor_subscription_id, processor_config_id')
+    .eq('id', params.enrollmentId)
+    .eq('merchant_id', params.merchantId)
+    .eq('location_id', params.locationId)
+    .eq('contact_id', params.contactId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!enrollment) {
+    throw new ValidationError(`Unable to ${action} subscription: enrollment was not found`);
+  }
+  if (String(enrollment.processor_type || '').toLowerCase() !== processorType) {
+    throw new ValidationError(`Unable to ${action} subscription: processor does not match enrollment`);
+  }
+  if (String(enrollment.processor_subscription_id || '') !== String(params.processorSubscriptionId || '')) {
+    throw new ValidationError(`Unable to ${action} subscription: subscription does not match enrollment`);
+  }
+
+  const processorConfigId = String(enrollment.processor_config_id || '').trim();
+  if (!processorConfigId) {
+    throw new ValidationError(`Unable to ${action} subscription: processor configuration binding is missing`);
+  }
+  if (params.processorConfigId && params.processorConfigId !== processorConfigId) {
+    throw new ValidationError(`Unable to ${action} subscription: processor configuration does not match enrollment`);
+  }
+  return processorConfigId;
+}
+
+async function resolveBoundProcessorForAction(
+  params: SubscriptionParams,
+  action: string,
+) {
+  const processorConfigId = await requireProcessorActionBinding(params, action);
+  const resolved = await resolveProcessor(params.merchantId, params.locationId, {
+    processor_override: params.processorType || null,
+    processor_config_id: processorConfigId,
+    nmi_processor_id: null,
+  });
+  if (resolved.config.id !== processorConfigId) {
+    throw new ValidationError(`Unable to ${action} subscription: resolved processor configuration mismatch`);
+  }
+  return resolved;
+}
+
 async function updateEnrollmentForLifecycleAction(params: {
   locationId: string;
   enrollmentId?: string;
@@ -240,12 +297,24 @@ export const paymentLifecycleService = {
     // Update payment event with dunning metadata. Skipped when the ledger insert failed (#6):
     // the customer-facing recovery comms below still fire, but auto-retry can't be scheduled.
     if (params.paymentEventId) {
-      await supabase.from('payment_events').update({
-        dunning_status: 'active',
-        dunning_retry_count: 0,
-        dunning_next_retry: nextRetryDate,
-        dunning_started_at: new Date().toISOString(),
-      }).eq('id', params.paymentEventId);
+      const { data: dunningEvent, error: dunningError } = await supabase
+        .from('payment_events')
+        .update({
+          dunning_status: 'active',
+          dunning_retry_count: 0,
+          dunning_next_retry: nextRetryDate,
+          dunning_started_at: new Date().toISOString(),
+        })
+        .eq('id', params.paymentEventId)
+        .eq('merchant_id', params.merchantId)
+        .eq('location_id', params.locationId)
+        .eq('contact_id', params.contactId)
+        .select('id')
+        .maybeSingle();
+      if (dunningError) throw dunningError;
+      if (!dunningEvent) {
+        throw new ValidationError('Dunning payment event was not updated for the expected tenant');
+      }
     } else {
       logger.warn({ locationId: params.locationId, contactId: params.contactId }, 'Dunning initiated without a payment_events row — comms only, no auto-retry scheduled');
     }
@@ -274,6 +343,8 @@ export const paymentLifecycleService = {
         locationId: params.locationId,
         contact_id: params.contactId,
         contactId: params.contactId,
+        payment_event_id: params.paymentEventId || '',
+        paymentEventId: params.paymentEventId || '',
         amount: params.amountCents / 100,
         amount_display: formatMoney(params.amountCents / 100),
         amountDisplay: formatMoney(params.amountCents / 100),
@@ -350,6 +421,12 @@ export const paymentLifecycleService = {
     const stripeAccountId = originalProcessor === 'stripe'
       ? String(rawContext.stripe_account_id || '').trim()
       : '';
+    const processorConfigId = String(
+      originalEvent.processor_config_id
+        || rawContext.nmi_processor_config_id
+        || rawContext.stripe_processor_config_id
+        || '',
+    ).trim();
 
     if (originalProcessor === 'stripe') {
       if (!stripeInvoiceId.startsWith('in_') || stripeInvoiceId !== originalEvent.processor_transaction_id) {
@@ -358,6 +435,9 @@ export const paymentLifecycleService = {
       if (!stripeAccountId.startsWith('acct_')) {
         return { success: false, error: 'Stripe retry requires the exact stored connected account' };
       }
+    }
+    if (!processorConfigId) {
+      return { success: false, error: 'Payment retry requires the exact stored processor configuration' };
     }
 
     // Stripe retries the invoice's own payment method. NMI requires a saved
@@ -370,6 +450,7 @@ export const paymentLifecycleService = {
         .eq('location_id', locationId)
         .eq('contact_id', contactId)
         .eq('processor_type', originalProcessor)
+        .eq('processor_config_id', processorConfigId)
         .eq('is_default', true)
         .limit(1)
         .maybeSingle();
@@ -402,6 +483,7 @@ export const paymentLifecycleService = {
 
       const { config: procConfig } = await resolveProcessor(merchantId, locationId, {
         processor_override: originalProcessor,
+        processor_config_id: processorConfigId || null,
         nmi_processor_id: originalProcessor === 'nmi'
           ? String(rawContext.nmi_processor_id || '').trim() || null
           : null,
@@ -409,6 +491,9 @@ export const paymentLifecycleService = {
       });
       if (procConfig.processor_type !== originalProcessor) {
         throw new Error('Resolved processor does not match the failed payment processor');
+      }
+      if (processorConfigId && procConfig.id !== processorConfigId) {
+        throw new Error('Resolved processor configuration does not match the failed payment');
       }
       if (originalProcessor === 'stripe' && procConfig.stripe_user_id !== stripeAccountId) {
         throw new Error('Resolved Stripe account does not match the failed invoice account');
@@ -432,6 +517,7 @@ export const paymentLifecycleService = {
           amountCents,
           currency: originalEvent.currency || 'usd',
           processorType: originalProcessor,
+          processorConfigId: processorConfigId || null,
           stripeInvoiceId: stripeInvoiceId || null,
           stripeAccountId: stripeAccountId || null,
           retryAttempt,
@@ -551,6 +637,7 @@ export const paymentLifecycleService = {
             p_enrollment_id: originalEvent.enrollment_id,
             p_location_id: locationId,
             p_processor: originalProcessor,
+            p_processor_config_id: processorConfigId || null,
             p_transaction_id: recoveredTransactionId,
             p_amount: originalEvent.amount,
             p_next_billing_date: null,
@@ -579,6 +666,7 @@ export const paymentLifecycleService = {
               .eq('contact_id', contactId)
               .eq('enrollment_id', originalEvent.enrollment_id)
               .eq('processor', originalProcessor)
+              .eq('processor_config_id', processorConfigId)
               .eq('event_type', 'sale')
               .eq('processor_transaction_id', recoveredTransactionId)
               .maybeSingle();
@@ -598,6 +686,7 @@ export const paymentLifecycleService = {
             contact_id: contactId,
             event_type: 'sale',
             processor: originalProcessor,
+            processor_config_id: processorConfigId || null,
             processor_transaction_id: recoveredTransactionId,
             amount: originalEvent.amount,
             currency: originalEvent.currency || 'usd',
@@ -886,10 +975,7 @@ export const paymentLifecycleService = {
       await whopService.pauseMembership(params.locationId, membershipId);
     } else if (params.processorSubscriptionId) {
       try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
-          processor_override: params.processorType || null,
-          nmi_processor_id: null,
-        });
+        const { config: procConfig } = await resolveBoundProcessorForAction(params, 'pause');
         const processor = createProcessorClient(procConfig);
         const result = await processor.pauseSubscription(params.processorSubscriptionId);
         assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'pause');
@@ -1040,15 +1126,10 @@ export const paymentLifecycleService = {
     } else if (params.processorSubscriptionId) {
       try {
         const supabase = getSupabase();
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
-          processor_override: params.processorType || null,
-          nmi_processor_id: null,
-        });
-        const processor = createProcessorClient(procConfig);
 
         // Fetch enrollment + offer for remaining payments and frequency
         let enrollmentQuery = supabase.from('enrollments')
-          .select('id, offer_id, payments_made, payments_total, status')
+          .select('id, offer_id, payments_made, payments_total, status, processor_config_id')
           .eq('location_id', params.locationId)
           .eq('contact_id', params.contactId)
           .eq('processor_subscription_id', params.processorSubscriptionId);
@@ -1062,6 +1143,8 @@ export const paymentLifecycleService = {
         if (enr.status !== 'paused') {
           throw new ValidationError('Only a paused subscription can be resumed');
         }
+        const { config: procConfig } = await resolveBoundProcessorForAction(params, 'resume');
+        const processor = createProcessorClient(procConfig);
 
         let interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' = 'monthly';
         let planAmount = 0;
@@ -1088,7 +1171,10 @@ export const paymentLifecycleService = {
         // Get payment method for customerId/paymentMethodId
         const { data: pm } = await supabase.from('payment_methods')
           .select('*').eq('location_id', params.locationId)
-          .eq('contact_id', params.contactId).eq('is_default', true).limit(1).maybeSingle();
+          .eq('contact_id', params.contactId)
+          .eq('processor_type', procConfig.processor_type)
+          .eq('processor_config_id', procConfig.id)
+          .eq('is_default', true).limit(1).maybeSingle();
 
         const customerId = pm?.nmi_customer_vault_id || pm?.stripe_customer_id || '';
         const paymentMethodId = pm?.stripe_payment_method_id || pm?.nmi_customer_vault_id || '';
@@ -1399,10 +1485,7 @@ export const paymentLifecycleService = {
       });
     } else if (shouldCancelProcessor && processorSubscriptionId) {
       try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
-          processor_override: params.processorType || null,
-          nmi_processor_id: null,
-        });
+        const { config: procConfig } = await resolveBoundProcessorForAction(params, 'cancel');
         const processor = createProcessorClient(procConfig);
         const result = await processor.cancelSubscription(processorSubscriptionId);
         assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
@@ -1641,41 +1724,30 @@ export const paymentLifecycleService = {
   async completeEnrollment(params: SubscriptionParams): Promise<void> {
     const supabase = getSupabase();
 
-    // Cancel processor subscription if one exists
-    if (params.processorSubscriptionId) {
-      try {
-        const { config: procConfig } = await resolveProcessor(params.merchantId, params.locationId, {
-          processor_override: params.processorType || null,
-          nmi_processor_id: null,
-        });
-        const processor = createProcessorClient(procConfig);
-        await processor.cancelSubscription(params.processorSubscriptionId);
-      } catch (err: any) {
-        logger.warn({ err: err.message }, 'Processor subscription cancel on complete failed — completing anyway');
-      }
+    // A completed enrollment must not leave future processor billing active.
+    const shouldCancelProcessor = Boolean(params.processorSubscriptionId)
+      && params.processorCancellationRequired !== false;
+    if (isWhopProcessor(params.processorType) && shouldCancelProcessor) {
+      const membershipId = requireWhopMembershipId(params, 'complete');
+      await whopService.cancelMembership(params.locationId, membershipId);
+    } else if (shouldCancelProcessor && params.processorSubscriptionId) {
+      const { config: procConfig } = await resolveBoundProcessorForAction(params, 'complete');
+      const processor = createProcessorClient(procConfig);
+      const result = await processor.cancelSubscription(params.processorSubscriptionId);
+      assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'complete');
     }
 
-    // Update enrollment status — scope to single enrollment when enrollmentId is provided
+    // Update enrollment status only after future processor billing is stopped.
     const completedAt = new Date().toISOString();
-    try {
-      if (params.enrollmentId) {
-        await supabase.from('enrollments').update({
-          status: 'completed', completed_at: completedAt,
-          next_billing_date: null,
-        }).eq('id', params.enrollmentId);
-      } else if (params.processorSubscriptionId) {
-        await supabase.from('enrollments').update({
-          status: 'completed', completed_at: completedAt,
-          next_billing_date: null,
-        }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
-         .eq('processor_subscription_id', params.processorSubscriptionId);
-      } else {
-        await supabase.from('enrollments').update({
-          status: 'completed', completed_at: completedAt, next_billing_date: null,
-        }).eq('location_id', params.locationId).eq('contact_id', params.contactId)
-         .in('status', ['enrolled', 'active', 'paused']);
-      }
-    } catch {}
+    await updateEnrollmentForLifecycleAction({
+      locationId: params.locationId,
+      enrollmentId: params.enrollmentId,
+      contactId: params.contactId,
+      processorSubscriptionId: params.processorSubscriptionId,
+      fallbackStatuses: ['enrolled', 'active', 'paused', 'past_due', 'delinquent'],
+      updates: { status: 'completed', completed_at: completedAt, next_billing_date: null },
+      action: 'complete',
+    });
 
     // Log evidence
     await evidenceService.logEvidence(

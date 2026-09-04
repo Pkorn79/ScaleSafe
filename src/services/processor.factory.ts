@@ -11,6 +11,7 @@ interface OfferProcessorHint {
   processor_override: ProcessorType | null;
   nmi_processor_id: string | null;
   stripe_account_id?: string | null;
+  processor_config_id?: string | null;
 }
 
 /**
@@ -107,7 +108,9 @@ export async function resolveProcessor(
     .eq('processor_type', targetType)
     .eq('is_active', true);
 
-  if (targetType === 'nmi' && offerHint?.nmi_processor_id) {
+  if (offerHint?.processor_config_id) {
+    query = query.eq('id', offerHint.processor_config_id);
+  } else if (targetType === 'nmi' && offerHint?.nmi_processor_id) {
     query = query.eq('nmi_processor_id', offerHint.nmi_processor_id);
   } else if (targetType === 'stripe' && offerHint?.stripe_account_id) {
     query = query.eq('stripe_user_id', offerHint.stripe_account_id);
@@ -119,13 +122,17 @@ export async function resolveProcessor(
 
   if (configError || !configRow) {
     throw new ProcessorError(
-      targetType === 'nmi' && offerHint?.nmi_processor_id
+      offerHint?.processor_config_id
+        ? `No active ${targetType} configuration found for the bound processor configuration.`
+        : targetType === 'nmi' && offerHint?.nmi_processor_id
         ? `No active NMI configuration found for processor ID ${offerHint.nmi_processor_id}.`
         : targetType === 'stripe' && offerHint?.stripe_account_id
           ? `No active Stripe configuration found for connected account ${offerHint.stripe_account_id}.`
           : `No default active ${targetType} configuration found for merchant ${merchantId}.`,
       targetType,
-      targetType === 'nmi' && offerHint?.nmi_processor_id
+      offerHint?.processor_config_id
+        ? 'CONFIG_NOT_FOUND'
+        : targetType === 'nmi' && offerHint?.nmi_processor_id
         ? 'CONFIG_NOT_FOUND'
         : targetType === 'stripe' && offerHint?.stripe_account_id
           ? 'CONFIG_NOT_FOUND'

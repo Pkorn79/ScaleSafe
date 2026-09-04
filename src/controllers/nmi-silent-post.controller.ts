@@ -123,7 +123,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
     // enrollment binding. It must never discover a tenant by trying credentials.
     const { data: candidateRows, error: candidateError } = await supabase
       .from('enrollments')
-      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_type, billing_completed_at, status')
+      .select('id, merchant_id, location_id, contact_id, offer_id, program_name_snapshot, payments_made, payments_total, payment_type, processor_subscription_id, processor_config_id, processor_type, billing_completed_at, status')
       .eq('processor_subscription_id', subscriptionId)
       .eq('processor_type', 'nmi')
       .limit(2);
@@ -158,7 +158,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
     const enrollment: any = candidates[0];
     const terminalEnrollment = Boolean(enrollment.billing_completed_at)
       || ['cancelled', 'canceled', 'completed'].includes(String(enrollment.status || '').toLowerCase());
-    if (!['installment', 'subscription'].includes(String(enrollment.payment_type || '').toLowerCase()) || terminalEnrollment) {
+    if (!['installment', 'installments', 'subscription'].includes(String(enrollment.payment_type || '').toLowerCase()) || terminalEnrollment) {
       logger.warn({ enrollmentId: enrollment.id, subscriptionId }, 'NMI Silent Post: inactive recurring binding - ignoring');
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         merchant_id: enrollment.merchant_id,
@@ -173,13 +173,25 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       return;
     }
 
+    if (!enrollment.processor_config_id) {
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        merchant_id: enrollment.merchant_id,
+        location_id: enrollment.location_id,
+        enrollment_id: enrollment.id,
+        matched: true,
+        verification_status: 'error',
+        action: 'unbound_processor_configuration',
+        error_message: 'Recurring enrollment is missing its immutable processor configuration binding',
+      });
+      throw new Error('NMI recurring enrollment is missing its processor configuration binding');
+    }
+
     let installmentFrequency = 'monthly';
     let offerName = enrollment.program_name_snapshot || '';
-    let offerNmiProcessorId: string | null = null;
     if (enrollment.offer_id) {
       const { data: offer, error: offerError } = await supabase
         .from('offers_mirror')
-        .select('offer_name, installment_frequency, nmi_processor_id')
+        .select('offer_name, installment_frequency')
         .eq('id', enrollment.offer_id)
         .eq('location_id', enrollment.location_id)
         .maybeSingle();
@@ -189,7 +201,6 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       if (offer) {
         installmentFrequency = offer.installment_frequency || 'monthly';
         offerName = offer.offer_name || offerName;
-        offerNmiProcessorId = offer.nmi_processor_id || null;
       }
     }
 
@@ -200,6 +211,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       .eq('processor_transaction_id', transactionId)
       .eq('location_id', enrollment.location_id)
       .eq('processor', 'nmi')
+      .eq('processor_config_id', enrollment.processor_config_id)
       .maybeSingle();
     if (existingError) {
       throw new Error(`NMI duplicate lookup failed: ${existingError.message}`);
@@ -218,7 +230,8 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
 
     const { config: procConfig } = await resolveProcessor(enrollment.merchant_id, enrollment.location_id, {
       processor_override: 'nmi',
-      nmi_processor_id: offerNmiProcessorId,
+      nmi_processor_id: null,
+      processor_config_id: enrollment.processor_config_id,
     });
 
     const processor = createProcessorClient(procConfig);
@@ -243,6 +256,15 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       res.status(200).json({ received: true });
       return;
     }
+    if (procConfig.nmi_processor_id && verification.processorId !== procConfig.nmi_processor_id) {
+      await updateDiagnosticLog(supabase, diagnosticLogId, {
+        action: 'ignored_processor_mismatch',
+        verification_status: 'failed',
+        error_message: 'Verified NMI transaction did not match the bound processor id',
+      });
+      res.status(200).json({ received: true });
+      return;
+    }
     if (verifiedSource !== 'recurring' || verifiedAction !== 'sale') {
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         action: 'ignored_non_recurring_sale',
@@ -259,10 +281,13 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
     if (!amountCents) {
       throw new Error('NMI returned an invalid verified amount');
     }
-    if (verification.status === 'pending' || verification.status === 'unknown') {
+    const approvedPendingSettlement = verification.status === 'pending'
+      && String(verification.providerStatus || '').toLowerCase() === 'pendingsettlement'
+      && verification.actionSucceeded === true;
+    if ((verification.status === 'pending' && !approvedPendingSettlement) || verification.status === 'unknown') {
       throw new Error(`NMI transaction is not final: ${verification.status}`);
     }
-    if (!['settled', 'failed'].includes(verification.status)) {
+    if (!['settled', 'failed'].includes(verification.status) && !approvedPendingSettlement) {
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         action: 'ignored_non_sale_result',
         verification_status: 'failed',
@@ -274,7 +299,8 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
     if (verification.actionSucceeded === null || verification.actionSucceeded === undefined) {
       throw new Error('NMI sale result did not include an authoritative success flag');
     }
-    if ((verification.status === 'settled') !== verification.actionSucceeded) {
+    const approvedSale = verification.status === 'settled' || approvedPendingSettlement;
+    if (approvedSale !== verification.actionSucceeded) {
       await updateDiagnosticLog(supabase, diagnosticLogId, {
         action: 'ignored_inconsistent_provider_result',
         verification_status: 'failed',
@@ -295,7 +321,7 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
       verification_status: 'verified',
     });
 
-    if (verification.status === 'settled') {
+    if (approvedSale) {
       const result = await handleRecurringPaymentSuccess({
         enrollment,
         processorType: 'nmi',
@@ -304,6 +330,15 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         offerName,
         installmentFrequency,
         source: 'nmi_silent_post',
+        processorConfigId: procConfig.id,
+        rawPayload: {
+          nmi_transaction_id: transactionId,
+          nmi_subscription_id: subscriptionId,
+          nmi_processor_id: procConfig.nmi_processor_id || null,
+          nmi_processor_config_id: procConfig.id,
+          nmi_provider_status: verification.providerStatus || null,
+          nmi_occurred_at: verification.occurredAt || null,
+        },
       });
       if (!result.duplicate && !result.paymentEventId) {
         throw new Error('Recurring payment handler did not return a committed payment event');
@@ -326,6 +361,32 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         payment_event_id: result.paymentEventId,
       });
     } else {
+      if (!processor.listSubscriptionTransactions) {
+        throw new Error('NMI subscription history lookup is unavailable for failure ordering');
+      }
+      const history = await processor.listSubscriptionTransactions(subscriptionId, {
+        limit: 100,
+        order: 'reverse',
+      });
+      const currentIndex = history.findIndex((tx) => tx.transactionId === transactionId);
+      if (currentIndex < 0) {
+        throw new Error('NMI subscription history did not contain the verified failed transaction');
+      }
+      const laterApproved = history.slice(0, currentIndex).some((tx) => {
+        const pendingSettlement = tx.status === 'pending'
+          && String(tx.providerStatus || '').toLowerCase() === 'pendingsettlement';
+        return tx.amount > 0 && tx.success && (tx.status === 'settled' || pendingSettlement);
+      });
+      if (laterApproved) {
+        await updateDiagnosticLog(supabase, diagnosticLogId, {
+          action: 'ignored_superseded_failure',
+          verification_status: 'verified',
+          error_message: 'A later approved recurring payment superseded this failed transaction',
+        });
+        res.status(200).json({ received: true });
+        return;
+      }
+
       const failed = await handleRecurringPaymentFailure({
         enrollment,
         processorType: 'nmi',
@@ -334,12 +395,16 @@ export async function handleNmiSilentPost(req: Request, res: Response): Promise<
         errorMessage: verification.responseText || 'NMI recurring sale failed',
         errorCode: verification.processorResponseCode || verification.responseCode,
         source: 'nmi_silent_post',
+        processorConfigId: procConfig.id,
         rawPayload: {
           nmi_transaction_id: transactionId,
           nmi_subscription_id: subscriptionId,
           nmi_processor_id: procConfig.nmi_processor_id || null,
+          nmi_processor_config_id: procConfig.id,
           nmi_response_code: verification.responseCode || null,
           nmi_processor_response_code: verification.processorResponseCode || null,
+          nmi_provider_status: verification.providerStatus || null,
+          nmi_occurred_at: verification.occurredAt || null,
         },
       });
 

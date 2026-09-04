@@ -73,6 +73,7 @@ const enrollment = {
   payments_total: 3,
   payment_type: 'installment',
   processor_subscription_id: 'sub_1',
+  processor_config_id: 'config_1',
   processor_type: 'nmi',
   billing_completed_at: null,
 };
@@ -155,9 +156,25 @@ describe('NMI official webhook events', () => {
     mockDiagnosticCreate.mockResolvedValue('log_1');
     mockDiagnosticUpdate.mockResolvedValue(undefined);
     mockCreateProcessorClient.mockReturnValue({
-      verifyTransaction: jest.fn().mockResolvedValue({ success: true, status: 'settled' }),
+      verifyTransaction: jest.fn().mockImplementation(async (transactionId: string) => {
+        const failed = transactionId === 'txn_fail';
+        return {
+          success: true,
+          transactionId,
+          status: failed ? 'failed' : 'settled',
+          providerStatus: failed ? 'failed' : 'complete',
+          amount: 33,
+          source: 'recurring',
+          action: 'sale',
+          actionSucceeded: !failed,
+          subscriptionId: 'sub_1',
+        };
+      }),
+      listSubscriptionTransactions: jest.fn().mockImplementation(async () => ([{
+        transactionId: 'txn_fail', status: 'failed', amount: 33, success: false,
+      }])),
     });
-    mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'nmi' } });
+    mockResolveProcessor.mockResolvedValue({ config: processorConfig });
     mockQuoteOffer.mockResolvedValue({ selectedAmountCents: 5000 });
     mockHandleRecurringPaymentSuccess.mockResolvedValue({ paymentEventId: 'pe_1', isFinal: false, newPaymentsMade: 2 });
     mockHandleRecurringPaymentFailure.mockResolvedValue({ paymentEventId: 'pe_fail' });
@@ -192,6 +209,7 @@ describe('NMI official webhook events', () => {
       transactionId: '12089230192',
       amountCents: 33,
       source: 'nmi_webhook_event',
+      processorConfigId: 'config_1',
     }));
     expect(mockDiagnosticUpdate).toHaveBeenCalledWith('log_1', expect.objectContaining({
       action: 'processed_success',
@@ -384,6 +402,7 @@ describe('NMI official webhook events', () => {
       amountCents: 33,
       errorMessage: 'Declined',
       source: 'nmi_webhook_event',
+      processorConfigId: 'config_1',
     }));
   });
 
@@ -498,7 +517,7 @@ describe('NMI official webhook events', () => {
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'processor_configs') return queryBuilder(processorConfig, { thenData: [processorConfig] });
       if (table === 'nmi_silent_post_logs') return queryBuilder(null);
-      if (table === 'enrollments') return queryBuilder(enrollment);
+      if (table === 'enrollments') return queryBuilder(enrollment, { thenData: [enrollment] });
       if (table === 'payment_events') return queryBuilder(null);
       if (table === 'offers_mirror') return queryBuilder({ offer_name: 'Beta Tester 2', installment_frequency: 'daily' });
       return queryBuilder(null);
