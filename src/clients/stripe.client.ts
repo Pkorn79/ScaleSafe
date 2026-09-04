@@ -446,6 +446,37 @@ export class StripeClient implements ProcessorInterface {
     }
   }
 
+  // ─── payInvoice ─────────────────────────────────────────────
+
+  /**
+   * Pay an open subscription invoice with the saved default (or supplied)
+   * payment method. Used by dunning retries: paying the invoice itself stops
+   * Stripe Smart Retries from collecting the same installment again later.
+   */
+  async payInvoice(invoiceId: string, opts?: { paymentMethodId?: string }): Promise<{ success: boolean; transactionId?: string; errorMessage?: string }> {
+    try {
+      const invoice = await this.stripe.invoices.pay(
+        invoiceId,
+        opts?.paymentMethodId ? { payment_method: opts.paymentMethodId } : {},
+        this.acct,
+      );
+      const chargeId = typeof (invoice as any).charge === 'string'
+        ? (invoice as any).charge
+        : (invoice as any).charge?.id;
+      if (invoice.status === 'paid') {
+        return { success: true, transactionId: chargeId || invoice.id };
+      }
+      return {
+        success: false,
+        transactionId: chargeId || invoice.id,
+        errorMessage: `Invoice not paid (status: ${invoice.status})`,
+      };
+    } catch (err) {
+      const procErr = this.toProcessorError(err);
+      return { success: false, errorMessage: procErr.message };
+    }
+  }
+
   // ─── pauseSubscription ──────────────────────────────────────
 
   async pauseSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {

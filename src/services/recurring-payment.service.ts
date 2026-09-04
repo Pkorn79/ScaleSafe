@@ -343,6 +343,26 @@ export async function handleRecurringPaymentFailure(params: RecurringFailurePara
   const supabase = getSupabase();
   const amountDollars = amountCents / 100;
 
+  // One dunning sequence per failed processor object: Stripe Smart Retries
+  // fire invoice.payment_failed for each attempt on the SAME invoice — each
+  // must not spawn its own independently retryable dunning row.
+  if (transactionId) {
+    const { data: existingFailure } = await supabase
+      .from('payment_events')
+      .select('id')
+      .eq('location_id', enr.location_id)
+      .eq('processor_transaction_id', transactionId)
+      .eq('event_type', 'payment_failed')
+      .maybeSingle();
+    if (existingFailure) {
+      logger.info(
+        { enrollmentId: enr.id, transactionId, source },
+        'Recurring failure already recorded for this processor object — not duplicating dunning',
+      );
+      return { paymentEventId: existingFailure.id };
+    }
+  }
+
   const { data: failedEvent, error: failedInsertError } = await supabase
     .from('payment_events')
     .insert({

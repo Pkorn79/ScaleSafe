@@ -575,3 +575,49 @@ describe('pre-routing failure containment', () => {
     }
   });
 });
+
+describe('invoice.payment_failed dunning identity', () => {
+  it('passes the invoice id as the failure transaction id so repeat attempts dedupe', async () => {
+    const recurring = require('../../src/services/recurring-payment.service');
+    (recurring.handleRecurringPaymentFailure as jest.Mock).mockResolvedValue({ paymentEventId: 'pe_f' });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        const chain: any = {
+          select: jest.fn(() => chain),
+          eq: jest.fn(() => chain),
+          single: jest.fn().mockResolvedValue({
+            data: {
+              id: 'enr_1', merchant_id: 'merch_1', location_id: 'loc_1',
+              contact_id: 'c_1', offer_id: 'offer_1', processor_subscription_id: 'sub_1',
+            },
+            error: null,
+          }),
+        };
+        return chain;
+      }
+      return tableMock(table);
+    });
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_inv_fail',
+      type: 'invoice.payment_failed',
+      account: 'acct_1',
+      livemode: false,
+      data: { object: { id: 'in_123', subscription: 'sub_1', amount_due: 5000 } },
+    });
+
+    const req: any = {
+      params: {},
+      headers: { 'stripe-signature': 'sig' },
+      body: Buffer.from('{}'),
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(recurring.handleRecurringPaymentFailure).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: 'in_123',
+      amountCents: 5000,
+    }));
+    expect(res.statusCode).toBe(200);
+  });
+});

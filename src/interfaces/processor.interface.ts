@@ -36,6 +36,13 @@ export interface ProcessorInterface {
 
   cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string; notFound?: boolean }>;
 
+  /**
+   * Stripe only: settle an open subscription invoice with a saved payment
+   * method. Dunning retries for invoice-originated failures must pay the
+   * invoice itself so the processor's own retry schedule stops.
+   */
+  payInvoice?(invoiceId: string, opts?: { paymentMethodId?: string }): Promise<{ success: boolean; transactionId?: string; errorMessage?: string }>;
+
   verifyTransaction(transactionId: string): Promise<VerifyResult>;
 
   listSubscriptionTransactions?(

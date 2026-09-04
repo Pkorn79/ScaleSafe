@@ -739,6 +739,10 @@ async function handleInvoicePaymentFailed(event: any, merchant: any): Promise<vo
   await handleRecurringPaymentFailure({
     enrollment,
     processorType: 'stripe',
+    // The invoice id identifies the failed billing attempt: Stripe Smart
+    // Retries re-fire invoice.payment_failed for the SAME invoice, and the
+    // failure handler dedupes dunning on this id.
+    transactionId: invoice.id,
     amountCents,
     errorMessage,
     source: 'stripe_webhook',

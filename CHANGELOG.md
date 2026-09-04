@@ -3,6 +3,12 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Stripe dunning double-charge prevention (2026-09-04)
+
+### Fixed
+- Dunning "Retry Now" for a failed Stripe subscription invoice now pays the open invoice itself instead of creating a separate charge — previously the invoice stayed open and Stripe Smart Retries could collect the same installment a second time.
+- Stripe `invoice.payment_failed` events now carry the invoice id into the failure ledger, and repeated failure attempts for the same invoice no longer spawn duplicate, independently retryable dunning rows.
+
 ## Unreleased - NMI Silent Post integrity (2026-09-04)
 
 ### Security

@@ -371,6 +371,16 @@ export const paymentLifecycleService = {
         return { success: false, error: 'Retry is awaiting processor reconciliation' };
       }
 
+      // Stripe subscription-invoice failures must be retried by PAYING the
+      // open invoice: a fresh out-of-band charge leaves the invoice open and
+      // Stripe Smart Retries later collect the same installment again.
+      const stripeInvoiceId = procConfig.processor_type === 'stripe'
+        && typeof processor.payInvoice === 'function'
+        && typeof originalEvent.processor_transaction_id === 'string'
+        && originalEvent.processor_transaction_id.startsWith('in_')
+        ? originalEvent.processor_transaction_id
+        : null;
+
       let result;
       try {
         await moneyOperationService.markProviderStarted({
@@ -378,13 +388,17 @@ export const paymentLifecycleService = {
           locationId,
           processorType: procConfig.processor_type,
         });
-        result = await processor.chargeStoredCard(customerId, token, {
-        amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
-        currency: originalEvent.currency || 'usd',
-        paymentToken: token,
-        description: 'Dunning retry payment',
-        idempotencyKey: `dunning-${paymentEventId}-${retryAttempt}`,
-        });
+        result = stripeInvoiceId
+          ? await processor.payInvoice!(stripeInvoiceId, {
+            paymentMethodId: method.stripe_payment_method_id || undefined,
+          })
+          : await processor.chargeStoredCard(customerId, token, {
+            amount: Math.round(Number(originalEvent.amount) * 100), // convert to cents (rounded — Stripe rejects non-integers)
+            currency: originalEvent.currency || 'usd',
+            paymentToken: token,
+            description: 'Dunning retry payment',
+            idempotencyKey: `dunning-${paymentEventId}-${retryAttempt}`,
+          });
       } catch (chargeErr: any) {
         preserveRetryClaim = true;
         await moneyOperationService.markUnknown({

@@ -34,14 +34,40 @@ function callFailure() {
   });
 }
 
+let existingFailureResult: any = { data: null, error: null };
+const mockInsert = jest.fn();
+
 describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     insertResult = { data: { id: 'pe_fail' }, error: null };
-    mockFrom.mockImplementation(() => ({
-      insert: () => ({ select: () => ({ single: () => Promise.resolve(insertResult) }) }),
-    }));
+    existingFailureResult = { data: null, error: null };
+    mockFrom.mockImplementation(() => {
+      const selectChain: any = {
+        eq: jest.fn(() => selectChain),
+        maybeSingle: jest.fn(() => Promise.resolve(existingFailureResult)),
+      };
+      return {
+        insert: (...args: any[]) => {
+          mockInsert(...args);
+          return { select: () => ({ single: () => Promise.resolve(insertResult) }) };
+        },
+        select: jest.fn(() => selectChain),
+      };
+    });
     mockInitiateDunning.mockResolvedValue(undefined);
+  });
+
+  test('does not duplicate the dunning sequence when the same processor object already failed', async () => {
+    // Stripe Smart Retries fire invoice.payment_failed per attempt for ONE
+    // invoice — each must not spawn its own independently retryable dunning row.
+    existingFailureResult = { data: { id: 'pe_prev' }, error: null };
+
+    const result = await callFailure();
+
+    expect(result).toEqual({ paymentEventId: 'pe_prev' });
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInitiateDunning).not.toHaveBeenCalled();
   });
 
   test('initiates dunning with the ledger event id on a normal insert', async () => {

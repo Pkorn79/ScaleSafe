@@ -101,6 +101,35 @@ describe('dunning retry (#2 idempotency, #14 rounding)', () => {
     }));
   });
 
+  it('pays the open Stripe invoice instead of creating a new charge for invoice-originated dunning', async () => {
+    // Charging outside the invoice leaves it open — Stripe Smart Retries later
+    // collect the same installment again (double charge).
+    const factory = require('../../src/services/processor.factory');
+    const mockPayInvoice = jest.fn().mockResolvedValue({ success: true, transactionId: 'ch_from_invoice' });
+    (factory.resolveProcessor as jest.Mock).mockResolvedValueOnce({ config: { processor_type: 'stripe' } });
+    (factory.createProcessorClient as jest.Mock).mockReturnValueOnce({
+      chargeStoredCard: (...a: any[]) => mockChargeStoredCard(...a),
+      payInvoice: (...a: any[]) => mockPayInvoice(...a),
+    });
+    singleQueue.push(
+      { data: { id: 'pe1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', dunning_retry_count: 0, processor: 'stripe', processor_transaction_id: 'in_123' } },
+      { data: { offer_id: 'offer_1' } },
+      { data: { installment_frequency: 'monthly' } },
+    );
+    maybeSingleQueue.push({ data: { processor_type: 'stripe', stripe_payment_method_id: 'pm_1', stripe_customer_id: 'cus_1' } });
+    thenQueue.push({ data: [{ id: 'pe1' }], error: null }, { data: null, error: null });
+    mockRpc.mockResolvedValue({ data: [{ is_duplicate: false, payments_made: 2 }], error: null });
+
+    const result = await paymentLifecycleService.retryPayment('m1', 'loc_1', 'contact_1', 'pe1');
+
+    expect(result.success).toBe(true);
+    expect(mockPayInvoice).toHaveBeenCalledWith('in_123', expect.anything());
+    expect(mockChargeStoredCard).not.toHaveBeenCalled();
+    expect(mockRpc).toHaveBeenCalledWith('record_recurring_payment', expect.objectContaining({
+      p_transaction_id: 'ch_from_invoice',
+    }));
+  });
+
   it('does not charge when the retry is already claimed by a concurrent request', async () => {
     singleQueue.push({ data: { id: 'pe1', amount: 50, currency: 'usd', enrollment_id: 'enr_1', dunning_retry_count: 0 } });
     maybeSingleQueue.push({ data: { processor_type: 'nmi', nmi_customer_vault_id: 'vault1' } });
