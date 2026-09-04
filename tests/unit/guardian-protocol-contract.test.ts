@@ -16,7 +16,7 @@ const migration = fs.readFileSync(
     process.cwd(),
     'supabase',
     'migrations',
-    '105_guardian_and_independent_alerting.sql',
+    '109_guardian_and_independent_alerting.sql',
   ),
   'utf8',
 );
@@ -25,7 +25,7 @@ const migrationVerifier = fs.readFileSync(
     process.cwd(),
     'supabase',
     'security',
-    'verify_migration_105.sql',
+    'verify_migration_109.sql',
   ),
   'utf8',
 );
@@ -48,7 +48,7 @@ describe('Guardian protocol v1 contract', () => {
     });
   });
 
-  it('keeps migration 105 check dependencies identical to the shared catalog', () => {
+  it('keeps migration 109 check dependencies identical to the shared catalog', () => {
     const catalog = JSON.parse(fs.readFileSync(
       path.join(protocolDir, 'check-catalog.json'),
       'utf8',
@@ -277,7 +277,7 @@ describe('Guardian protocol v1 contract', () => {
   });
 });
 
-describe('migration 105 Guardian persistence contract', () => {
+describe('migration 109 Guardian persistence contract', () => {
   const tables = [
     'guardian_credentials',
     'guardian_check_catalog',
@@ -394,7 +394,7 @@ describe('migration 105 Guardian persistence contract', () => {
       'WHERE credential.last_receipt_id = receipt.id',
     );
     expect(migration).toMatch(
-      /CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 105;/,
+      /CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 109;/,
     );
     expect(migrationVerifier).toContain('owner_role.rolbypassrls');
     expect(migrationVerifier).toContain(

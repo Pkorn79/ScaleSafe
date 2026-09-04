@@ -302,7 +302,7 @@ export const config = {
   },
 
   // Independent, signed platform monitoring. This remains disabled until
-  // migration 105, an active public credential, and the dedicated host exist.
+  // migration 109, an active public credential, and the dedicated host exist.
   guardian: {
     enabled: guardianIngestionEnabled,
     host: guardianHost,

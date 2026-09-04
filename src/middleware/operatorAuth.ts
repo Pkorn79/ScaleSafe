@@ -21,6 +21,30 @@ function rawHostname(req: Request): string {
   return host.split(':')[0];
 }
 
+export function operatorHostBoundary(req: Request, res: Response, next: NextFunction): void {
+  const operator = operatorConfig();
+  if (!operator || rawHostname(req) !== operator.host) {
+    next();
+    return;
+  }
+
+  if (req.path === '/internal/operator' || req.path.startsWith('/internal/operator/')) {
+    next();
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  if (
+    operator.enabled && operator.authEnabled && req.path === '/'
+    && (req.method === 'GET' || req.method === 'HEAD')
+  ) {
+    res.redirect(302, '/internal/operator/login');
+    return;
+  }
+
+  res.status(404).json({ error: 'NOT_FOUND', message: 'Not found' });
+}
+
 async function auditDenial(req: Request, input: {
   action: string;
   reason: string;
@@ -48,7 +72,7 @@ async function auditDenial(req: Request, input: {
   }
 }
 
-export function operatorFeatureAndHost(req: Request, res: Response, next: NextFunction): void {
+export async function operatorFeatureAndHost(req: Request, res: Response, next: NextFunction): Promise<void> {
   const operator = operatorConfig();
   if (!operator?.enabled || rawHostname(req) !== operator.host) {
     res.status(404).json({ error: 'NOT_FOUND', message: 'Not found' });
@@ -78,7 +102,7 @@ export function operatorFeatureAndHost(req: Request, res: Response, next: NextFu
     || req.query.ssoKey,
   );
   if (carriesMerchantIdentity) {
-    void auditDenial(req, { action: 'operator.identity_plane.mixed', reason: 'merchant_identity_present' });
+    await auditDenial(req, { action: 'operator.identity_plane.mixed', reason: 'merchant_identity_present' });
     res.status(400).json({ error: 'MIXED_IDENTITY_PLANES', message: 'Invalid authentication context' });
     return;
   }
@@ -102,11 +126,11 @@ export function requireOperatorHealthEnabled(_req: Request, res: Response, next:
   next();
 }
 
-export function requireOperatorOrigin(req: Request, res: Response, next: NextFunction): void {
+export async function requireOperatorOrigin(req: Request, res: Response, next: NextFunction): Promise<void> {
   const expected = operatorConfig()?.origin;
   const supplied = String(req.headers.origin || '');
   if (!expected || supplied !== expected) {
-    void auditDenial(req, { action: 'operator.origin.denied', reason: 'origin_mismatch' });
+    await auditDenial(req, { action: 'operator.origin.denied', reason: 'origin_mismatch' });
     res.status(403).json({ error: 'FORBIDDEN', message: 'Access denied' });
     return;
   }
@@ -141,7 +165,7 @@ export async function requireOperatorSession(req: Request, res: Response, next: 
   }
 }
 
-export function requireOperatorCsrf(req: Request, res: Response, next: NextFunction): void {
+export async function requireOperatorCsrf(req: Request, res: Response, next: NextFunction): Promise<void> {
   const context = req.operatorContext;
   const cookies = parseCookies(req);
   const cookieToken = cookies[OPERATOR_CSRF_COOKIE] || '';
@@ -150,7 +174,7 @@ export function requireOperatorCsrf(req: Request, res: Response, next: NextFunct
     && cookieToken.length > 0
     && crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken));
   if (!context || !samePresentedValue || !safeOperatorValueEqual(context.csrfTokenHash, headerToken)) {
-    void auditDenial(req, {
+    await auditDenial(req, {
       action: 'operator.csrf.denied',
       reason: 'csrf_mismatch',
       actor: context ? {

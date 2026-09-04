@@ -9,6 +9,7 @@ import routes from './routes';
 import { config } from './config';
 import { applicationMetrics } from './middleware/applicationMetrics';
 import guardianRoutes from './routes/guardian.routes';
+import { operatorHostBoundary } from './middleware/operatorAuth';
 
 export function createApp(): express.Application {
   const app = express();
@@ -20,6 +21,7 @@ export function createApp(): express.Application {
 
   app.disable('x-powered-by');
   app.use(securityHeaders);
+  app.use(operatorHostBoundary);
 
   // CORS for public endpoints (called from GHL iframes)
   app.use('/api/enrollment', cors({

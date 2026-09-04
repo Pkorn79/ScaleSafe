@@ -399,7 +399,7 @@ export const operatorRepository = {
   async listAuditEvents(limit = 100): Promise<any[]> {
     const { data, error } = await getSupabase()
       .from('operator_audit_events')
-      .select('id, correlation_id, actor_operator_user_id, actor_organization_id, actor_role, action, result, target_location_id, target_type, target_id, metadata, occurred_at')
+      .select('id, correlation_id, actor_operator_user_id, actor_organization_id, actor_role, action, result, target_location_id, target_type, target_id, occurred_at')
       .order('occurred_at', { ascending: false })
       .limit(Math.max(1, Math.min(limit, 200)));
     throwIfError(error, 'Operator audit event lookup failed');

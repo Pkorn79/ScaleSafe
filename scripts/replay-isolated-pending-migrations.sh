@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # ISOLATED DATABASE ONLY.
-# Supports the temporary replay layout used to work around the historical
-# duplicate migration number 055. The normal Supabase migration directory is
-# reset first; later migrations are then applied in filename order.
+# Replays an explicitly separated set of pending migrations after resetting the
+# normal Supabase migration directory. The historical duplicate migration 055
+# has been consolidated and no longer requires a special-case workaround.
 
 WORKSPACE="${1:-}"
 DB_URL="${2:-}"

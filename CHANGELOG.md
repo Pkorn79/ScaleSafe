@@ -3,6 +3,29 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Command Center Phase 4 read-only platform dashboard (2026-09-03)
+
+### Added
+- A dedicated owner Command Center with exact platform totals, merchant health and detail, incidents, payment and workflow summaries, recovery and deployment status, reseller summaries, audit history, and operational runbooks.
+- Service-role-only database projections for scalable tenant-safe operator views and exact filtered counts.
+- Deep-linked incident detail and runbooks with allowlisted, PII-minimized projection mappers.
+- A migration-first production rollout, owner MFA bootstrap, acceptance, rollback, and evidence-preservation runbook.
+- A bounded read-only catalog gate for the exact schema 106-to-110 upgrade, with isolated certification recorded separately from production acceptance.
+
+### Security
+- Platform portfolio access is limited to platform-owner and platform-operations roles in the platform organization; poisoned role or access-mode fields cannot expand access.
+- Merchant resource joins require both trusted `merchant_id` and `location_id`, and support users require current explicit grants.
+- New migrations remain service-role-only with RLS enabled, and all Command Center and Guardian features remain disabled by default.
+- The dedicated operator hostname redirects its enabled root to login and refuses merchant pages; migration 108 trigger helpers explicitly revoke public execution.
+- Patched `qs`, `ip-address`, and Nano ID versions are pinned; the bounded sanitizer and PDF browser-helper exceptions are recorded in the Phase 4 rollout document pending their compatibility releases.
+
+### Verified
+- Focused authorization, route, projection, migration-contract, and browser-page tests pass.
+- Full repository suite, TypeScript typecheck, backend build, and UI build pass locally.
+- Desktop and mobile browser review covers merchant filters, exact incident detail, and runbook deep links.
+- Fresh isolated baseline replay, the exact schema 106-to-110 upgrade, and rollback-only Guardian/operator SQL checks pass. A 10,002-merchant page query completed in 89.141 ms against the 5,000 ms budget.
+- Real isolated Supabase owner bootstrap, first-time TOTP enrollment, returning MFA login, logout and session revocation pass. Production TLS/cookie, live schema, job continuity, and owner access checks remain gated behind deployment approval.
+
 ## Unreleased - Stripe live cutover and gated test access (2026-08-18)
 
 ### Added

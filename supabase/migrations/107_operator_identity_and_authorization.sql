@@ -1,7 +1,15 @@
--- 103_operator_identity_and_authorization.sql
+-- 107_operator_identity_and_authorization.sql
 -- Phase 1 foundation for the isolated ScaleSafe operator command center.
 -- Browser access remains backend-only; PUBLIC, anon, and authenticated roles
 -- receive no table or function access from this migration.
+
+DO $$
+BEGIN
+  IF scalesafe_schema_version() <> 106 THEN
+    RAISE EXCEPTION 'Migration 107 requires ScaleSafe schema version 106';
+  END IF;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS operator_organizations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1427,7 +1435,7 @@ CREATE TRIGGER operator_auth_attempts_updated_at
 
 CREATE OR REPLACE FUNCTION scalesafe_schema_version()
 RETURNS INTEGER AS $$
-  SELECT 103;
+  SELECT 107;
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION scalesafe_schema_version() FROM PUBLIC;

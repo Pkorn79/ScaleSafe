@@ -78,7 +78,8 @@ export const commandCenterHealthRepository = {
   },
 
   async evaluateGlobalHealth(input: {
-    codeSchemaVersion: number;
+    requiredSchemaVersion: number;
+    maxSupportedSchemaVersion: number;
     runtimeEnvironment: string;
     dangerousFlags: string[];
   }): Promise<{
@@ -86,7 +87,8 @@ export const commandCenterHealthRepository = {
     databaseSchemaVersion: number;
   }> {
     const { data, error } = await executeCommandCenterRequest(() => getSupabase().rpc('evaluate_command_center_global_health', {
-      p_code_schema_version: input.codeSchemaVersion,
+      p_required_schema_version: input.requiredSchemaVersion,
+      p_max_supported_schema_version: input.maxSupportedSchemaVersion,
       p_runtime_environment: input.runtimeEnvironment,
       p_dangerous_flags: input.dangerousFlags,
     }));
@@ -165,6 +167,94 @@ export const commandCenterHealthRepository = {
     return {
       incidents: Array.isArray(page.incidents) ? page.incidents : [],
       next: page.next || null,
+    };
+  },
+
+  async getIncidentById(incidentId: string): Promise<any | null> {
+    const { data, error } = await executeCommandCenterRequest(() => getSupabase()
+      .from('platform_incidents')
+      .select('id, scope_type, scope_id, location_id, check_key, failure_class, severity, status, occurrence_count, first_seen_at, last_seen_at, recovery_candidate_at, acknowledged_at, suppressed_until, resolved_at, parent_incident_id, suppressible, runbook_key')
+      .eq('id', incidentId)
+      .maybeSingle());
+    if (error) throw error;
+    return data || null;
+  },
+
+  async listOperatorMerchantsPage(input: {
+    limit: number;
+    offset: number;
+    query?: string | null;
+    state?: string | null;
+    plan?: string | null;
+    processor?: string | null;
+    installation?: string | null;
+    reseller?: string | null;
+    incidentSeverity?: string | null;
+    component?: string | null;
+    componentState?: string | null;
+  }): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+    const { data, error } = await executeCommandCenterRequest(() => getSupabase().rpc(
+      'list_operator_merchants_page',
+      {
+        p_limit: Math.max(1, Math.min(input.limit, 200)),
+        p_offset: Math.max(0, input.offset),
+        p_query: input.query || null,
+        p_state: input.state || null,
+        p_plan: input.plan || null,
+        p_processor: input.processor || null,
+        p_installation: input.installation || null,
+        p_reseller: input.reseller || null,
+        p_incident_severity: input.incidentSeverity || null,
+        p_component: input.component || null,
+        p_component_state: input.componentState || null,
+      },
+    ));
+    if (error) throw error;
+    const page = firstRow<any>(data) || {};
+    return {
+      items: Array.isArray(page.items) ? page.items : [],
+      total: Number(page.total || 0),
+      limit: Number(page.limit || input.limit),
+      offset: Number(page.offset || input.offset),
+    };
+  },
+
+  async getOperatorPlatformSummary(includeMerchantAttention: boolean): Promise<any> {
+    const { data, error } = await executeCommandCenterRequest(() => getSupabase().rpc(
+      'get_operator_platform_summary',
+      { p_include_merchant_attention: includeMerchantAttention },
+    ));
+    if (error) throw error;
+    return firstRow<any>(data) || data || {};
+  },
+
+  async getOperatorMerchantDetail(locationId: string): Promise<any | null> {
+    const { data, error } = await executeCommandCenterRequest(() => getSupabase().rpc(
+      'get_operator_merchant_detail',
+      { p_location_id: locationId },
+    ));
+    if (error) throw error;
+    return firstRow<any>(data);
+  },
+
+  async listOperatorResellersPage(input: {
+    limit: number;
+    offset: number;
+  }): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+    const { data, error } = await executeCommandCenterRequest(() => getSupabase().rpc(
+      'list_operator_resellers_page',
+      {
+        p_limit: Math.max(1, Math.min(input.limit, 200)),
+        p_offset: Math.max(0, input.offset),
+      },
+    ));
+    if (error) throw error;
+    const page = firstRow<any>(data) || {};
+    return {
+      items: Array.isArray(page.items) ? page.items : [],
+      total: Number(page.total || 0),
+      limit: Number(page.limit || input.limit),
+      offset: Number(page.offset || input.offset),
     };
   },
 

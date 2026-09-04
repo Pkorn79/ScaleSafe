@@ -9,8 +9,8 @@ SET LOCAL statement_timeout = '60s';
 
 DO $$
 BEGIN
-  IF scalesafe_schema_version() <> 104 THEN
-    RAISE EXCEPTION 'Expected schema 104';
+  IF scalesafe_schema_version() <> 108 THEN
+    RAISE EXCEPTION 'Expected schema 108';
   END IF;
   IF EXISTS (SELECT 1 FROM merchants) THEN
     RAISE EXCEPTION 'Behavior verification requires an empty isolated merchant table';
@@ -657,7 +657,7 @@ BEGIN
   WHERE worker_key = 'worker.trigger_delivery';
 
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
 
   SELECT id INTO v_incident_id
   FROM platform_incidents
@@ -683,14 +683,14 @@ BEGIN
     NULL
   );
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
   UPDATE platform_incidents
   SET recovery_candidate_at = clock_timestamp() - interval '11 minutes'
   WHERE id = v_incident_id;
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
 
   SELECT status INTO v_incident_status
   FROM platform_incidents
@@ -793,7 +793,7 @@ BEGIN
   );
 
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
 
   FOR v_check_key IN
     SELECT unnest(ARRAY[
@@ -825,7 +825,7 @@ BEGIN
   );
 
   PERFORM *
-  FROM evaluate_command_center_global_health(104, 'production', ARRAY[]::TEXT[]);
+  FROM evaluate_command_center_global_health(108, 110, 'production', ARRAY[]::TEXT[]);
 
   FOR v_check_key IN
     SELECT unnest(ARRAY[

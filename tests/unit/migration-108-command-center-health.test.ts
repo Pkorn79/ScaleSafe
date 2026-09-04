@@ -2,11 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 const sql = fs.readFileSync(
-  path.join(process.cwd(), 'supabase', 'migrations', '104_command_center_health_and_incidents.sql'),
+  path.join(process.cwd(), 'supabase', 'migrations', '108_command_center_health_and_incidents.sql'),
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-describe('migration 104 command center health and incidents', () => {
+describe('migration 108 command center health and incidents', () => {
   const tables = [
     'health_check_definitions',
     'service_heartbeats',
@@ -263,7 +263,7 @@ describe('migration 104 command center health and incidents', () => {
 
   it('advances schema readiness without enabling browser access', () => {
     expect(sql).toMatch(
-      /CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 104;/,
+      /CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 108;/,
     );
     expect(sql).not.toContain('TO authenticated');
     expect(sql).not.toContain('TO anon');

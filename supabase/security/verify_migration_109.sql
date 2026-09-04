@@ -1,4 +1,4 @@
--- Run only against an isolated schema-104 database after migration 105.
+-- Run only against an isolated database at schema 109 or the certified successor 110.
 -- The caller owns the surrounding transaction and should roll it back.
 
 DO $verify$
@@ -534,12 +534,12 @@ BEGIN
       END IF;
   END;
 
-  IF scalesafe_schema_version() <> 105 THEN
-    RAISE EXCEPTION 'Schema version did not advance to 105';
+  IF scalesafe_schema_version() NOT IN (109, 110) THEN
+    RAISE EXCEPTION 'Guardian verifier requires certified schema 109 or 110';
   END IF;
 END;
 $verify$;
 
 SELECT
-  'MIGRATION_105_BEHAVIOR_VERIFIED' AS result,
+  'MIGRATION_109_BEHAVIOR_VERIFIED' AS result,
   scalesafe_schema_version() AS schema_version;

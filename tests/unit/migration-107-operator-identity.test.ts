@@ -2,11 +2,11 @@ import fs from 'fs';
 import path from 'path';
 
 const sql = fs.readFileSync(
-  path.join(__dirname, '../../supabase/migrations/103_operator_identity_and_authorization.sql'),
+  path.join(__dirname, '../../supabase/migrations/107_operator_identity_and_authorization.sql'),
   'utf8',
 );
 
-describe('migration 103 operator identity and authorization', () => {
+describe('migration 107 operator identity and authorization', () => {
   const tables = [
     'operator_organizations',
     'operator_users',
@@ -51,7 +51,7 @@ describe('migration 103 operator identity and authorization', () => {
   it('keeps audit append-only and advances schema readiness', () => {
     expect(sql).toContain("RAISE EXCEPTION 'operator_audit_events is append-only'");
     expect(sql).toContain('BEFORE UPDATE OR DELETE ON operator_audit_events');
-    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 103;/);
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION scalesafe_schema_version\(\)[\s\S]*SELECT 107;/);
   });
 
   it('requires distinct support-grant requester and approver', () => {

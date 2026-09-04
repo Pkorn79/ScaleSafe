@@ -19,12 +19,15 @@ const ROLE_PERMISSIONS: Record<OperatorRole, readonly OperatorPermission[]> = {
     'operator.assignments.manage',
     'operator.support_grants.manage',
     'platform.health.read',
+    'platform.merchants.read',
+    'platform.resellers.read',
     'platform.incidents.manage',
     'merchant.summary.read',
   ],
   platform_ops: [
     'operator.session.read',
     'platform.health.read',
+    'platform.merchants.read',
     'platform.incidents.manage',
     'merchant.summary.read',
   ],
@@ -48,6 +51,10 @@ export interface OperatorResolution {
 }
 
 function activeSessionContext(record: any): boolean {
+  const roleMatchesOrganization = record?.organization_type === 'platform'
+    ? ['platform_owner', 'platform_ops', 'platform_support', 'security_auditor'].includes(record?.membership_role)
+    : record?.organization_type === 'reseller'
+      && ['reseller_owner', 'reseller_operator', 'reseller_viewer'].includes(record?.membership_role);
   return Boolean(
     record?.user_id === record?.operator_user_id
     && record.user_status === 'active'
@@ -56,7 +63,8 @@ function activeSessionContext(record: any): boolean {
     && record.membership_status === 'active'
     && record.organization_status === 'active'
     && ['platform', 'reseller'].includes(record.organization_type)
-    && isOperatorRole(record.membership_role),
+    && isOperatorRole(record.membership_role)
+    && roleMatchesOrganization,
   );
 }
 
@@ -83,11 +91,13 @@ export const operatorAuthorizationService = {
       return { context: null, denialReason: 'operator_identity_inactive', actor };
     }
 
-    const mode = (
-      ['all', 'assigned', 'support_grants', 'none'].includes(session.location_access_mode)
-        ? session.location_access_mode
-        : 'none'
-    ) as OperatorContext['locationAccess']['mode'];
+    const mode: OperatorContext['locationAccess']['mode'] = role === 'platform_owner' || role === 'platform_ops'
+      ? 'all'
+      : role === 'platform_support'
+        ? 'support_grants'
+        : session.organization_type === 'reseller'
+          ? 'assigned'
+          : 'none';
     const locations = Array.isArray(session.location_ids)
       ? session.location_ids.map(String)
       : [];
@@ -127,7 +137,10 @@ export const operatorAuthorizationService = {
   },
 
   canAccessLocation(context: OperatorContext, locationId: string): boolean {
-    return context.locationAccess.mode === 'all' || context.locationAccess.locationIds.has(locationId);
+    const hasPlatformWideAccess = context.organizationType === 'platform'
+      && ['platform_owner', 'platform_ops'].includes(context.role)
+      && context.locationAccess.mode === 'all';
+    return hasPlatformWideAccess || context.locationAccess.locationIds.has(locationId);
   },
 
   hasPermission(context: OperatorContext, permission: OperatorPermission): boolean {

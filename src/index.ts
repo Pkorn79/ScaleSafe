@@ -36,7 +36,7 @@ async function start(): Promise<void> {
     })();
 
     if (config.operator.healthEnabled) {
-      // Migration 104-backed schedules run once across Railway instances.
+      // Migration 108-backed schedules run once across Railway instances.
       commandCenterRuntime.start();
     } else {
       // Preserve the production scheduler unchanged until the isolated Phase 2

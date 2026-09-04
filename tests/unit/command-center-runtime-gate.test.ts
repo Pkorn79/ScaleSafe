@@ -12,3 +12,13 @@ test('durable schedules replace legacy timers only behind the Phase 2 flag', () 
   expect(source).toContain('runPulseCadenceCheck()');
 });
 
+test('health evaluation reports the schema required by the enabled feature set', () => {
+  const runtime = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'services', 'command-center-runtime.service.ts'),
+    'utf8',
+  );
+
+  expect(runtime).toContain('requiredSchemaVersion: schemaReadinessService.requiredVersion()');
+  expect(runtime).toContain('maxSupportedSchemaVersion: schemaReadinessService.maximumSupportedVersion()');
+});
+

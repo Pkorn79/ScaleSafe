@@ -9,7 +9,7 @@ const migrationPath = path.join(
   root,
   'supabase',
   'migrations',
-  '105_guardian_and_independent_alerting.sql',
+  '109_guardian_and_independent_alerting.sql',
 );
 const vectorsPath = path.join(
   root,
@@ -273,7 +273,7 @@ async function main() {
   let began = false;
   try {
     const before = await client.query('SELECT scalesafe_schema_version() AS version');
-    assertEqual(before.rows[0].version, 104, 'isolated schema before verification');
+    assertEqual(before.rows[0].version, 108, 'isolated schema before verification');
 
     await client.query('BEGIN');
     began = true;
@@ -281,7 +281,7 @@ async function main() {
     const migrated = await client.query(
       'SELECT scalesafe_schema_version() AS version',
     );
-    assertEqual(migrated.rows[0].version, 105, 'schema inside verification');
+    assertEqual(migrated.rows[0].version, 109, 'schema inside verification');
 
     for (const vector of databaseVectors) {
       await verifyVector(
@@ -296,9 +296,9 @@ async function main() {
     await client.query('ROLLBACK');
     began = false;
     const after = await client.query('SELECT scalesafe_schema_version() AS version');
-    assertEqual(after.rows[0].version, 104, 'isolated schema after rollback');
+    assertEqual(after.rows[0].version, 108, 'isolated schema after rollback');
     process.stdout.write(
-      `GUARDIAN_DB_VECTORS_VERIFIED ${databaseVectors.length} schema=104\n`,
+      `GUARDIAN_DB_VECTORS_VERIFIED ${databaseVectors.length} schema=108\n`,
     );
   } catch (error) {
     if (began) {

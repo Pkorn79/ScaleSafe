@@ -1,4 +1,4 @@
--- 105_guardian_and_independent_alerting.sql
+-- 109_guardian_and_independent_alerting.sql
 -- Phase 3 foundation for independently signed Guardian observations, recovery
 -- verification, and sanitized alert reconciliation. Browser roles receive no
 -- direct access. Runtime activation remains behind GUARDIAN_INGESTION_ENABLED.
@@ -7,8 +7,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 DO $$
 BEGIN
-  IF scalesafe_schema_version() <> 104 THEN
-    RAISE EXCEPTION 'Migration 105 requires ScaleSafe schema version 104';
+  IF scalesafe_schema_version() <> 108 THEN
+    RAISE EXCEPTION 'Migration 109 requires ScaleSafe schema version 108';
   END IF;
 END;
 $$;
@@ -1915,7 +1915,7 @@ GRANT EXECUTE ON FUNCTION run_guardian_retention(INTEGER)
 
 CREATE OR REPLACE FUNCTION scalesafe_schema_version()
 RETURNS INTEGER AS $$
-  SELECT 105;
+  SELECT 109;
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION scalesafe_schema_version() FROM PUBLIC;

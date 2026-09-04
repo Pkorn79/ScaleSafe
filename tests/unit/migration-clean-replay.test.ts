@@ -9,6 +9,22 @@ function readMigration(fileName: string): string {
 }
 
 describe('clean migration replay safeguards', () => {
+  it('uses each Supabase migration version exactly once', () => {
+    const migrationFiles = fs
+      .readdirSync(path.join(process.cwd(), 'supabase', 'migrations'))
+      .filter((fileName) => fileName.endsWith('.sql'));
+    const versions = migrationFiles.map((fileName) => fileName.split('_', 1)[0]);
+
+    expect(new Set(versions).size).toBe(versions.length);
+  });
+
+  it('keeps both historical migration 055 changes in one replayable file', () => {
+    const sql = readMigration('055_engagement_enabled.sql');
+
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS engagement_enabled');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS trigger_delivery_logs');
+  });
+
   it('extends the migration 019 health table before migration 031 indexes newer columns', () => {
     const sql = readMigration('031_stripe_health_radar_tables.sql');
 

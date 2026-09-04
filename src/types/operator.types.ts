@@ -17,6 +17,8 @@ export type OperatorPermission =
   | 'operator.assignments.manage'
   | 'operator.support_grants.manage'
   | 'platform.health.read'
+  | 'platform.merchants.read'
+  | 'platform.resellers.read'
   | 'platform.incidents.manage'
   | 'merchant.summary.read';
 

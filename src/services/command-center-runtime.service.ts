@@ -4,7 +4,7 @@ import { runPifCompletionCheck } from '../jobs/pif-completion-check';
 import { runPulseCadenceCheck } from '../jobs/pulse-cadence-check';
 import { runProvisioningRecovery } from '../jobs/provisioning-recovery';
 import { commandCenterHealthRepository } from '../repositories/command-center-health.repository';
-import { COMMAND_CENTER_HEALTH_SCHEMA_VERSION } from './schema-readiness.service';
+import { schemaReadinessService } from './schema-readiness.service';
 import { DurableScheduledJob } from './durable-scheduled-job.service';
 import { applicationMetricsService } from './application-metrics.service';
 import { commandCenterHealthService } from './command-center-health.service';
@@ -109,7 +109,8 @@ const jobs = [
       };
       try {
         evaluation = await commandCenterHealthRepository.evaluateGlobalHealth({
-          codeSchemaVersion: COMMAND_CENTER_HEALTH_SCHEMA_VERSION,
+          requiredSchemaVersion: schemaReadinessService.requiredVersion(),
+          maxSupportedSchemaVersion: schemaReadinessService.maximumSupportedVersion(),
           ...commandCenterHealthService.productionSafetyPosture(),
         });
         applicationMetricsService.recordDatabaseCanary(

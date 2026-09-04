@@ -1,36 +1,54 @@
 import {
-  operatorAuthJs,
-  operatorHomeHtml,
-} from '../../src/operator-auth-page';
+  operatorCommandCenterCss,
+  operatorCommandCenterHtml,
+  operatorCommandCenterJs,
+} from '../../src/operator-command-center-page';
 
 describe('operator Command Center page', () => {
-  it('renders the health surfaces and incident controls', () => {
-    const html = operatorHomeHtml();
+  it('renders every Phase 4 read-only operations view', () => {
+    const html = operatorCommandCenterHtml();
 
-    expect(html).toContain('id="health-summary"');
-    expect(html).toContain('id="incident-rows"');
-    expect(html).toContain('id="merchant-rows"');
-    expect(html).toContain('id="check-rows"');
+    for (const view of [
+      'overview', 'merchants', 'incidents', 'money', 'fulfillment',
+      'recovery', 'resellers', 'audit', 'runbooks',
+    ]) {
+      expect(html).toContain(`data-panel="${view}"`);
+    }
+    expect(html).toContain('id="merchant-dialog"');
     expect(html).toContain('id="suppress-dialog"');
-    expect(html).toContain('id="more-incidents"');
-    expect(html).toContain('id="more-merchants"');
-    expect(html).toContain('id="more-checks"');
+    expect(html).toContain('id="freshness"');
+    expect(html).toContain('id="mobile-menu"');
   });
 
-  it('renders server data through textContent and restricts mutation controls by role', () => {
-    expect(operatorAuthJs).toContain('node.textContent = String(text)');
-    expect(operatorAuthJs).toContain(
-      "session.role === 'platform_owner' || session.role === 'platform_ops'",
-    );
-    expect(operatorAuthJs).not.toContain('.innerHTML');
-    expect(operatorAuthJs).not.toContain('insertAdjacentHTML');
-    expect(operatorAuthJs).toContain('healthCursors');
-    expect(operatorAuthJs).toContain('appendUnique');
+  it('renders server data only through safe DOM text APIs', () => {
+    expect(operatorCommandCenterJs).toContain('node.textContent = String(text)');
+    expect(operatorCommandCenterJs).not.toContain('.innerHTML');
+    expect(operatorCommandCenterJs).not.toContain('insertAdjacentHTML');
+    expect(operatorCommandCenterJs).not.toContain('document.write');
   });
 
-  it('sends incident mutations with the host-only CSRF cookie', () => {
-    expect(operatorAuthJs).toContain("cookie('__Host-scalesafe_ops_csrf')");
-    expect(operatorAuthJs).toContain('/acknowledge');
-    expect(operatorAuthJs).toContain('/suppress');
+  it('keeps business operations read-only while protecting incident state changes with CSRF', () => {
+    expect(operatorCommandCenterJs).toContain("cookie('__Host-scalesafe_ops_csrf')");
+    expect(operatorCommandCenterJs).toContain('/acknowledge');
+    expect(operatorCommandCenterJs).toContain('/suppress');
+    expect(operatorCommandCenterJs).not.toContain('/api/payments/charge');
+    expect(operatorCommandCenterJs).not.toContain('/api/refunds');
+    expect(operatorCommandCenterJs).not.toContain('/api/payments/void');
+    expect(operatorCommandCenterJs).not.toContain('cancelSubscription');
+  });
+
+  it('distinguishes stale data, unknown provider outcomes, and exhausted retries', () => {
+    expect(operatorCommandCenterJs).toContain('Freshness unknown');
+    expect(operatorCommandCenterJs).toContain('No trustworthy current result is available');
+    expect(operatorCommandCenterJs).toContain('Automatic retry budget is exhausted');
+    expect(operatorCommandCenterJs).toContain('provider outcome is not yet proven');
+  });
+
+  it('contains wide data tables without overflowing the mobile page', () => {
+    expect(operatorCommandCenterCss).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(operatorCommandCenterCss).toContain('.table-wrap { width: 100%; overflow-x: auto; }');
+    expect(operatorCommandCenterCss).toContain('.sidebar.menu-open nav');
+    expect(operatorCommandCenterJs).toContain("classList.toggle('menu-open')");
+    expect(operatorCommandCenterJs).toContain('window.scrollTo(0, 0)');
   });
 });

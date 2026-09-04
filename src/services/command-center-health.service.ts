@@ -44,7 +44,7 @@ export function classifyCommandCenterError(error: unknown): {
   if (name === 'SupabaseRequestTimeoutError' || /request exceeded \d+ms/i.test(message)) {
     return { errorClass: 'SUPABASE_TIMEOUT', safeMessage: 'The database request timed out.' };
   }
-  if (code === '42883' || /requires migration 104|record_service_heartbeat/i.test(message)) {
+  if (code === '42883' || /requires migration 108|record_service_heartbeat/i.test(message)) {
     return { errorClass: 'HEALTH_SCHEMA_NOT_READY', safeMessage: 'Command Center health schema is unavailable.' };
   }
   if (/fetch|network|socket|connection/i.test(`${name} ${message}`)) {

@@ -25,8 +25,12 @@ import { operatorAuthorizationService } from '../../src/services/operator-author
 
 test('Phase 2 permissions are limited to platform roles', () => {
   expect(operatorAuthorizationService.permissionsForRole('platform_owner').has('platform.health.read')).toBe(true);
+  expect(operatorAuthorizationService.permissionsForRole('platform_owner').has('platform.merchants.read')).toBe(true);
+  expect(operatorAuthorizationService.permissionsForRole('platform_owner').has('platform.resellers.read')).toBe(true);
   expect(operatorAuthorizationService.permissionsForRole('platform_owner').has('platform.incidents.manage')).toBe(true);
   expect(operatorAuthorizationService.permissionsForRole('platform_ops').has('platform.incidents.manage')).toBe(true);
+  expect(operatorAuthorizationService.permissionsForRole('platform_ops').has('platform.merchants.read')).toBe(true);
+  expect(operatorAuthorizationService.permissionsForRole('platform_ops').has('platform.resellers.read')).toBe(false);
   expect(operatorAuthorizationService.permissionsForRole('platform_support').has('platform.health.read')).toBe(true);
   expect(operatorAuthorizationService.permissionsForRole('platform_support').has('platform.incidents.manage')).toBe(false);
   expect(operatorAuthorizationService.permissionsForRole('security_auditor').has('platform.health.read')).toBe(true);
@@ -34,6 +38,8 @@ test('Phase 2 permissions are limited to platform roles', () => {
 
   for (const role of ['reseller_owner', 'reseller_operator', 'reseller_viewer'] as const) {
     expect(operatorAuthorizationService.permissionsForRole(role).has('platform.health.read')).toBe(false);
+    expect(operatorAuthorizationService.permissionsForRole(role).has('platform.merchants.read')).toBe(false);
+    expect(operatorAuthorizationService.permissionsForRole(role).has('platform.resellers.read')).toBe(false);
     expect(operatorAuthorizationService.permissionsForRole(role).has('platform.incidents.manage')).toBe(false);
   }
 });

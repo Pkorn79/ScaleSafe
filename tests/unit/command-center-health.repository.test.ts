@@ -21,21 +21,23 @@ describe('commandCenterHealthRepository', () => {
 
   it('passes code, runtime, and unsafe flag posture through one evaluator call', async () => {
     rpc.mockResolvedValue({
-      data: [{ evaluated_count: 32, database_schema_version: 104 }],
+      data: [{ evaluated_count: 32, database_schema_version: 108 }],
       error: null,
     });
 
     await expect(commandCenterHealthRepository.evaluateGlobalHealth({
-      codeSchemaVersion: 104,
+      requiredSchemaVersion: 108,
+      maxSupportedSchemaVersion: 110,
       runtimeEnvironment: 'production',
       dangerousFlags: ['ALLOW_UNSIGNED_GHL_WEBHOOKS'],
     })).resolves.toEqual({
       evaluatedCount: 32,
-      databaseSchemaVersion: 104,
+      databaseSchemaVersion: 108,
     });
 
     expect(rpc).toHaveBeenCalledWith('evaluate_command_center_global_health', {
-      p_code_schema_version: 104,
+      p_required_schema_version: 108,
+      p_max_supported_schema_version: 110,
       p_runtime_environment: 'production',
       p_dangerous_flags: ['ALLOW_UNSIGNED_GHL_WEBHOOKS'],
     });
@@ -50,7 +52,8 @@ describe('commandCenterHealthRepository', () => {
     });
 
     await expect(commandCenterHealthRepository.evaluateGlobalHealth({
-      codeSchemaVersion: 104,
+      requiredSchemaVersion: 108,
+      maxSupportedSchemaVersion: 110,
       runtimeEnvironment: 'production',
       dangerousFlags: [],
     })).rejects.toThrow('database unavailable');
@@ -147,6 +150,61 @@ describe('commandCenterHealthRepository', () => {
       p_include_resolved: true,
       p_before: '2026-07-22T23:00:00Z',
       p_before_id: '22222222-2222-4222-8222-222222222222',
+    });
+  });
+
+  it('loads a bounded filtered merchant page through the sanitized projection', async () => {
+    rpc.mockResolvedValue({
+      data: { items: [{ location_id: 'loc-1' }], total: 1, limit: 50, offset: 0 },
+      error: null,
+    });
+
+    await expect(commandCenterHealthRepository.listOperatorMerchantsPage({
+      limit: 500,
+      offset: 0,
+      query: 'PMG',
+      state: 'degraded',
+      processor: 'stripe',
+      plan: 'test',
+      installation: null,
+    })).resolves.toEqual({
+      items: [{ location_id: 'loc-1' }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('list_operator_merchants_page', {
+      p_limit: 200,
+      p_offset: 0,
+      p_query: 'PMG',
+      p_state: 'degraded',
+      p_plan: 'test',
+      p_processor: 'stripe',
+      p_installation: null,
+      p_reseller: null,
+      p_incident_severity: null,
+      p_component: null,
+      p_component_state: null,
+    });
+  });
+
+  it('loads one sanitized merchant detail and a reseller page', async () => {
+    rpc
+      .mockResolvedValueOnce({ data: { merchant: { location_id: 'loc-1' } }, error: null })
+      .mockResolvedValueOnce({ data: { items: [], total: 0, limit: 100, offset: 0 }, error: null });
+
+    await expect(commandCenterHealthRepository.getOperatorMerchantDetail('loc-1'))
+      .resolves.toEqual({ merchant: { location_id: 'loc-1' } });
+    await expect(commandCenterHealthRepository.listOperatorResellersPage({ limit: 100, offset: 0 }))
+      .resolves.toEqual({ items: [], total: 0, limit: 100, offset: 0 });
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'get_operator_merchant_detail', {
+      p_location_id: 'loc-1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'list_operator_resellers_page', {
+      p_limit: 100,
+      p_offset: 0,
     });
   });
 });

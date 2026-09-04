@@ -102,6 +102,32 @@ describe('operator authorization live inputs', () => {
     expect(operatorAuthorizationService.canAccessLocation(result.context!, 'loc-other')).toBe(false);
   });
 
+  it('rejects a platform role attached to a reseller organization', async () => {
+    mockResolveSessionContext.mockResolvedValue({
+      ...sessionContext('platform_owner', 'reseller'),
+      location_access_mode: 'all',
+    });
+
+    const result = await operatorAuthorizationService.resolveSessionToken('opaque-session');
+
+    expect(result.context).toBeNull();
+    expect(result.denialReason).toBe('operator_identity_inactive');
+  });
+
+  it('does not honor an all-locations mode for a reseller role', async () => {
+    mockResolveSessionContext.mockResolvedValue({
+      ...sessionContext('reseller_operator', 'reseller'),
+      location_access_mode: 'all',
+      location_ids: ['loc-assigned'],
+    });
+
+    const result = await operatorAuthorizationService.resolveSessionToken('opaque-session');
+
+    expect(result.context?.locationAccess.mode).toBe('assigned');
+    expect(operatorAuthorizationService.canAccessLocation(result.context!, 'loc-assigned')).toBe(true);
+    expect(operatorAuthorizationService.canAccessLocation(result.context!, 'loc-unassigned')).toBe(false);
+  });
+
   it.each([
     ['disabled user', { ...sessionContext('platform_owner'), user_status: 'disabled' }],
     ['removed membership', { ...sessionContext('platform_owner'), membership_status: 'revoked' }],

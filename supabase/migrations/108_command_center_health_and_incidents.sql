@@ -1,7 +1,15 @@
--- 104_command_center_health_and_incidents.sql
+-- 108_command_center_health_and_incidents.sql
 -- Phase 2 foundation for isolated Command Center health, durable scheduled
 -- jobs, merchant rollups, and incidents. Browser roles receive no direct
 -- access. Runtime activation remains controlled by a separate feature flag.
+
+DO $$
+BEGIN
+  IF scalesafe_schema_version() <> 107 THEN
+    RAISE EXCEPTION 'Migration 108 requires ScaleSafe schema version 107';
+  END IF;
+END;
+$$;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
@@ -1535,7 +1543,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE OR REPLACE FUNCTION evaluate_command_center_global_health(
-  p_code_schema_version INTEGER,
+  p_required_schema_version INTEGER,
+  p_max_supported_schema_version INTEGER,
   p_runtime_environment TEXT DEFAULT 'production',
   p_dangerous_flags TEXT[] DEFAULT ARRAY[]::TEXT[]
 )
@@ -1572,17 +1581,19 @@ DECLARE
   v_failure_class TEXT;
   v_summary TEXT;
 BEGIN
-  IF p_code_schema_version IS NULL OR p_code_schema_version < 1 THEN
-    RAISE EXCEPTION 'Code schema version is required';
+  IF p_required_schema_version IS NULL OR p_required_schema_version < 1
+     OR p_max_supported_schema_version IS NULL
+     OR p_max_supported_schema_version < p_required_schema_version THEN
+    RAISE EXCEPTION 'Valid required and maximum supported schema versions are required';
   END IF;
 
   SELECT scalesafe_schema_version() INTO v_database_version;
-  IF v_database_version < p_code_schema_version THEN
+  IF v_database_version < p_required_schema_version THEN
     v_state := 'unhealthy';
     v_severity := 'urgent';
     v_failure_class := 'DATABASE_SCHEMA_BEHIND_CODE';
     v_summary := 'The database schema is behind the running application code.';
-  ELSIF v_database_version > p_code_schema_version THEN
+  ELSIF v_database_version > p_max_supported_schema_version THEN
     v_state := 'degraded';
     v_severity := 'info';
     v_failure_class := 'DATABASE_SCHEMA_AHEAD_OF_CODE';
@@ -1591,7 +1602,7 @@ BEGIN
     v_state := 'healthy';
     v_severity := NULL;
     v_failure_class := NULL;
-    v_summary := 'The database schema matches the running application code.';
+    v_summary := 'The database schema is supported by the running application code.';
   END IF;
 
   PERFORM record_health_observation(
@@ -1599,7 +1610,8 @@ BEGIN
     v_state, v_severity, v_failure_class, v_summary,
     jsonb_build_object(
       'database_schema_version', v_database_version,
-      'code_schema_version', p_code_schema_version
+      'required_schema_version', p_required_schema_version,
+      'max_supported_schema_version', p_max_supported_schema_version
     ),
     v_now
   );
@@ -2980,21 +2992,6 @@ BEGIN
       last_reconciled_at = EXCLUDED.last_reconciled_at,
       source_version = EXCLUDED.source_version,
       updated_at = clock_timestamp()
-    WHERE merchant_health_rollups.merchant_id IS DISTINCT FROM EXCLUDED.merchant_id
-       OR merchant_health_rollups.merchant_name IS DISTINCT FROM EXCLUDED.merchant_name
-       OR merchant_health_rollups.overall_state IS DISTINCT FROM EXCLUDED.overall_state
-       OR merchant_health_rollups.highest_incident_severity IS DISTINCT FROM EXCLUDED.highest_incident_severity
-       OR merchant_health_rollups.installation_state IS DISTINCT FROM EXCLUDED.installation_state
-       OR merchant_health_rollups.processor_state IS DISTINCT FROM EXCLUDED.processor_state
-       OR merchant_health_rollups.workflow_state IS DISTINCT FROM EXCLUDED.workflow_state
-       OR merchant_health_rollups.evidence_state IS DISTINCT FROM EXCLUDED.evidence_state
-       OR merchant_health_rollups.defense_state IS DISTINCT FROM EXCLUDED.defense_state
-       OR merchant_health_rollups.billing_state IS DISTINCT FROM EXCLUDED.billing_state
-       OR merchant_health_rollups.open_critical_count IS DISTINCT FROM EXCLUDED.open_critical_count
-       OR merchant_health_rollups.open_urgent_count IS DISTINCT FROM EXCLUDED.open_urgent_count
-       OR merchant_health_rollups.open_warning_count IS DISTINCT FROM EXCLUDED.open_warning_count
-       OR merchant_health_rollups.needs_attention_count IS DISTINCT FROM EXCLUDED.needs_attention_count
-       OR merchant_health_rollups.source_version IS DISTINCT FROM EXCLUDED.source_version
     RETURNING 1
   )
   SELECT count(*)::integer INTO v_reconciled FROM upserted;
@@ -3658,7 +3655,7 @@ REVOKE ALL ON FUNCTION claim_scheduled_job_run(TEXT, TIMESTAMPTZ, TIMESTAMPTZ, T
 REVOKE ALL ON FUNCTION complete_scheduled_job_run(UUID, TEXT, TEXT, INTEGER, INTEGER, INTEGER, TEXT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION settle_timed_out_scheduled_job_run(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION record_health_observation(TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION evaluate_command_center_global_health(INTEGER, TEXT, TEXT[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION evaluate_command_center_global_health(INTEGER, INTEGER, TEXT, TEXT[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION acknowledge_platform_incident(UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION suppress_platform_incident(UUID, UUID, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION mark_health_dirty(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
@@ -3674,13 +3671,15 @@ REVOKE ALL ON FUNCTION run_command_center_retention(INTEGER) FROM PUBLIC, anon, 
 REVOKE ALL ON FUNCTION resolve_operator_session_context(TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION get_command_center_platform_overview(INTEGER, TIMESTAMPTZ, UUID, TIMESTAMPTZ, UUID, INTEGER, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION list_command_center_incidents_page(INTEGER, BOOLEAN, TIMESTAMPTZ, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION validate_command_center_tenant_binding() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION prevent_command_center_history_mutation() FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION record_service_heartbeat(TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, INTEGER, INTEGER, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION claim_scheduled_job_run(TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, INTEGER, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION complete_scheduled_job_run(UUID, TEXT, TEXT, INTEGER, INTEGER, INTEGER, TEXT, TEXT, JSONB) TO service_role;
 GRANT EXECUTE ON FUNCTION settle_timed_out_scheduled_job_run(UUID, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION record_health_observation(TEXT, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ) TO service_role;
-GRANT EXECUTE ON FUNCTION evaluate_command_center_global_health(INTEGER, TEXT, TEXT[]) TO service_role;
+GRANT EXECUTE ON FUNCTION evaluate_command_center_global_health(INTEGER, INTEGER, TEXT, TEXT[]) TO service_role;
 GRANT EXECUTE ON FUNCTION acknowledge_platform_incident(UUID, UUID, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION suppress_platform_incident(UUID, UUID, TEXT, TIMESTAMPTZ) TO service_role;
 GRANT EXECUTE ON FUNCTION mark_health_dirty(TEXT, TEXT) TO service_role;
@@ -3699,5 +3698,10 @@ GRANT EXECUTE ON FUNCTION list_command_center_incidents_page(INTEGER, BOOLEAN, T
 
 CREATE OR REPLACE FUNCTION scalesafe_schema_version()
 RETURNS INTEGER AS $$
-  SELECT 104;
-$$ LANGUAGE SQL IMMUTABLE;
+  SELECT 108;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION scalesafe_schema_version() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION scalesafe_schema_version() TO service_role;
+
+NOTIFY pgrst, 'reload schema';

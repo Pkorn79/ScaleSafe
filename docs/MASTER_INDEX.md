@@ -198,7 +198,7 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | Named evidence adapters for course, agency, community, support, file, checkout, and reporting systems | **Planned in waves** | [Connector Automation Plan](UNIVERSAL_EVIDENCE_CONNECTOR_AUTOMATION_PLAN.md) |
 | Outcome analytics by reason, offer, processor, evidence, refund timing, and alerts | **Planned** | [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
 | Recovery/legal/collections partner referral handoff | **Planned, legal review required** | Private research notes plus [Chargeback Roadmap](CHARGEBACK_REDUCTION_POSITIONING_AND_ROADMAP.md) |
-| Command Center, Guardian, and reseller account dashboard | **Phase 3.2 and Phase 3.3 certified disabled; Phase 3.4 code-side review closed and ready for external certification; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md), [Phase 3.4 External Certification](COMMAND_CENTER_PHASE_3_4_EXTERNAL_CERTIFICATION_RUNBOOK.md), [Prior Fable Architecture Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Fable's final independent follow-up returned CLOSED (code-side) with no new reachable P0/P1 issue. All accepted P2/P3 findings were remediated and regression-tested locally. Guardian passes 94 tests; ScaleSafe passes 74 focused and 1,614 full tests, typecheck, build, protocol identity, secret scan, and a zero-vulnerability production dependency audit. The installed VPS release `8a4f1256cfaa9378764c730555608bd55e3c221d` remains disabled and unchanged. Migration 105 remains unapplied, all Guardian timers remain disabled, and no provider setup, production deploy, merge, push, or recurring activation is authorized. |
+| Command Center, Guardian, and reseller account dashboard | **Phase 4 isolated upgrade, tenant boundaries, scale query, and owner MFA passed; production not authorized** | [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md), [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md), [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md), [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md), [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md), [Prior Fable Architecture Review](COMMAND_CENTER_FABLE_ARCHITECTURE_REVIEW.md) | Read-only merchant/payment views, audited incident acknowledgement/suppression, dedicated-host Supabase Auth and TOTP MFA are implemented. Exact 106-to-110 isolated upgrade, role/poison-data checks, 10,002-merchant query (89.141 ms), real owner MFA, and 1,679 tests passed. Production project/schema/backup checks, release approval, real-domain TLS/login, and scheduled-job continuity remain. Guardian activation and reseller onboarding have separate acceptance gates. New flags remain default-off; the owner-only legacy HQ approval surface remains for beta actions. |
 | NMI billing portal and Stripe-shaped merchant API | **Deferred post-beta** | [Project Decisions](PROJECT_DECISIONS.md) |
 | FanBasis checkout and lifecycle certification | **Deferred pending provider approval** | [FanBasis Plan](FANBASIS_INTEGRATION_BUILD_PLAN.md) |
 | Gated limited free Marketplace plan | **Planned after approval** | This index |
@@ -233,6 +233,16 @@ No open recovery stop-ship item remains. Snapshot `20260721T175646Z` passed the 
 | [Scope Explanations](GHL_MARKETPLACE_SCOPE_EXPLANATIONS.md) | Final 20 scopes and video script | Current Marketplace scope truth |
 | [Marketplace Listing](GHL_MARKETPLACE_LISTING.md) | Listing fields and reviewer notes | Current draft; verify against submitted form |
 | [Billing And Entitlements](MARKETPLACE_BILLING_AND_ENTITLEMENTS.md) | Plan behavior and HQ approval | Current contract |
+
+### Command Center And Guardian
+
+| Document | Role | Authority |
+| --- | --- | --- |
+| [Command Center Architecture](COMMAND_CENTER_GUARDIAN_ARCHITECTURE_PLAN.md) | Phased security, monitoring, operator, and reseller design | Primary architecture source |
+| [Phase 3 Implementation And Certification](COMMAND_CENTER_PHASE_3_IMPLEMENTATION_AND_CERTIFICATION.md) | Guardian and health implementation record | Current implementation history |
+| [Phase 3.4 Fable Review](COMMAND_CENTER_PHASE_3_4_FABLE_REVIEW.md) | Independent Guardian review and disposition | Closed code-review record |
+| [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md) | Migration, owner login, production enablement, acceptance, and rollback | Current release gate |
+| [Phase 4 Certification](COMMAND_CENTER_PHASE_4_CERTIFICATION.md) | Isolated migration, permission, scale, MFA, regression proof and dependency exceptions | September 4 preparation evidence; not a production sign-off |
 
 ### GHL Workflows And Fields
 
