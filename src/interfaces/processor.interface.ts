@@ -3,7 +3,7 @@ import {
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
   CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
-  VerifyResult, SubscriptionTransaction,
+  VerifyResult, VerifyTransactionOptions, SubscriptionTransaction,
 } from '../types/processor.types';
 
 export interface InvoicePaymentResult {
@@ -56,7 +56,7 @@ export interface ProcessorInterface {
     paymentMethodId?: string;
   }): Promise<InvoicePaymentResult>;
 
-  verifyTransaction(transactionId: string): Promise<VerifyResult>;
+  verifyTransaction(transactionId: string, options?: VerifyTransactionOptions): Promise<VerifyResult>;
 
   listSubscriptionTransactions?(
     subscriptionId: string,

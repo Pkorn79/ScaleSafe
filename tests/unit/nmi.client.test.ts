@@ -592,27 +592,90 @@ describe('NmiClient', () => {
   });
 
   describe('verifyTransaction', () => {
-    it('returns settled status for complete transaction', async () => {
+    it('queries and returns the exact tenant-bound recurring sale facts', async () => {
       mockedAxios.post.mockImplementation(async (url: string) => ({
         data: `<?xml version="1.0" encoding="UTF-8"?>
           <nm_response>
             <transaction>
               <transaction_id>TXN001</transaction_id>
               <condition>complete</condition>
+              <subscription_id>SUB001</subscription_id>
               <action>
                 <amount>10.50</amount>
                 <action_type>sale</action_type>
                 <date>20261001</date>
+                <success>1</success>
+                <source>recurring</source>
                 <response_text>SUCCESS</response_text>
               </action>
             </transaction>
           </nm_response>`,
       }));
 
-      const result = await client.verifyTransaction('TXN001');
+      const boundClient = new NmiClient({
+        ...TEST_CONFIG,
+        processorId: 'MID_HIGH_TICKET',
+      });
+      const result = await boundClient.verifyTransaction('TXN001', {
+        subscriptionId: 'SUB001',
+        source: 'recurring',
+        action: 'sale',
+      });
       expect(result.success).toBe(true);
       expect(result.status).toBe('settled');
       expect(result.amount).toBe(1050);
+      expect(result.source).toBe('recurring');
+      expect(result.action).toBe('sale');
+      expect(result.actionSucceeded).toBe(true);
+      expect(result.subscriptionId).toBe('SUB001');
+
+      const postBody = mockedAxios.post.mock.calls[0][1] as string;
+      const params = new URLSearchParams(postBody);
+      expect(params.get('transaction_id')).toBe('TXN001');
+      expect(params.get('subscription_id')).toBe('SUB001');
+      expect(params.get('source')).toBe('recurring');
+      expect(params.get('action_type')).toBe('sale');
+      expect(params.get('processor_id')).toBe('MID_HIGH_TICKET');
+      expect(params.get('result_limit')).toBe('2');
+    });
+
+    it('does not accept a different transaction returned by the provider', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: `<?xml version="1.0" encoding="UTF-8"?>
+          <nm_response>
+            <transaction>
+              <transaction_id>OTHER</transaction_id>
+              <condition>complete</condition>
+              <action><amount>10.50</amount><action_type>sale</action_type><success>1</success><source>recurring</source></action>
+            </transaction>
+          </nm_response>`,
+      });
+
+      await expect(client.verifyTransaction('TXN001')).resolves.toMatchObject({
+        success: false,
+        transactionId: 'TXN001',
+        status: 'unknown',
+        amount: 0,
+      });
+    });
+
+    it('keeps an unknown provider condition unknown', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: `<?xml version="1.0" encoding="UTF-8"?>
+          <nm_response>
+            <transaction>
+              <transaction_id>TXN001</transaction_id>
+              <condition>unknown</condition>
+              <action><amount>10.50</amount><action_type>sale</action_type><success>0</success><source>recurring</source></action>
+            </transaction>
+          </nm_response>`,
+      });
+
+      await expect(client.verifyTransaction('TXN001')).resolves.toMatchObject({
+        success: true,
+        status: 'unknown',
+        actionSucceeded: false,
+      });
     });
   });
 

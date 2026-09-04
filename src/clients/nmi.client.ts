@@ -5,7 +5,7 @@ import {
   RefundRequest, RefundResult,
   SaveCardRequest, SaveCardResult, StoredCard,
   CreateSubscriptionRequest, ResumeSubscriptionRequest, SubscriptionResult,
-  VerifyResult, SubscriptionTransaction,
+  VerifyResult, VerifyTransactionOptions, SubscriptionTransaction,
 } from '../types/processor.types';
 import { ProcessorError } from '../errors/processor.error';
 import {
@@ -429,24 +429,32 @@ export class NmiClient implements ProcessorInterface {
 
   // ─── verifyTransaction ─────────────────────────────────────
 
-  async verifyTransaction(transactionId: string): Promise<VerifyResult> {
+  async verifyTransaction(
+    transactionId: string,
+    options: VerifyTransactionOptions = {},
+  ): Promise<VerifyResult> {
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('transaction_id', transactionId);
+    if (options.subscriptionId) params.set('subscription_id', options.subscriptionId);
+    if (options.source) params.set('source', options.source);
+    if (options.action) params.set('action_type', options.action);
+    this.addProcessorId(params);
+    params.set('result_limit', '2');
 
     const xml = await this.postQuery(params);
     const transactions = parseNmiQueryTransactions(xml);
+    const tx = transactions.find(candidate => candidate.transactionId === transactionId);
 
-    if (transactions.length === 0) {
+    if (!tx) {
       return {
         success: false,
         transactionId,
-        status: 'failed',
+        status: 'unknown',
         amount: 0,
       };
     }
 
-    const tx = transactions[0];
     const statusMap: Record<string, VerifyResult['status']> = {
       complete: 'settled',
       pendingsettlement: 'pending',
@@ -458,10 +466,14 @@ export class NmiClient implements ProcessorInterface {
     return {
       success: true,
       transactionId: tx.transactionId,
-      status: statusMap[tx.condition] || 'pending',
-      amount: Math.round(parseFloat(tx.amount) * 100), // dollars → cents
+      status: statusMap[String(tx.condition || '').toLowerCase()] || 'unknown',
+      amount: Number.isFinite(Number.parseFloat(tx.amount))
+        ? Math.round(Number.parseFloat(tx.amount) * 100)
+        : 0,
       settledAt: tx.condition === 'complete' ? tx.date : undefined,
       ...(tx.source ? { source: tx.source } : {}),
+      ...(tx.action ? { action: tx.action } : {}),
+      actionSucceeded: tx.success,
       ...(tx.subscriptionId ? { subscriptionId: tx.subscriptionId } : {}),
       ...(tx.orderId ? { orderId: tx.orderId } : {}),
       ...(tx.customerVaultId ? { customerVaultId: tx.customerVaultId } : {}),
@@ -490,6 +502,7 @@ export class NmiClient implements ProcessorInterface {
     params.set('security_key', this.securityKey);
     params.set('subscription_id', subscriptionId);
     params.set('source', 'recurring');
+    this.addProcessorId(params);
     params.set('result_limit', String(Math.min(100, Math.max(1, opts.limit || 50))));
     if (opts.startDate) params.set('start_date', formatNmiQueryDate(opts.startDate));
     if (opts.endDate) params.set('end_date', formatNmiQueryDate(opts.endDate));
@@ -560,8 +573,8 @@ export class NmiClient implements ProcessorInterface {
     }
   }
 
-  private mapNmiCondition(condition: string): VerifyResult['status'] {
-    const statusMap: Record<string, VerifyResult['status']> = {
+  private mapNmiCondition(condition: string): SubscriptionTransaction['status'] {
+    const statusMap: Record<string, SubscriptionTransaction['status']> = {
       complete: 'settled',
       pendingsettlement: 'pending',
       pending: 'pending',

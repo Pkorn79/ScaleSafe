@@ -1,9 +1,7 @@
 const mockFrom = jest.fn();
 const mockInitiateDunning = jest.fn();
-const mockInsert = jest.fn();
 
 let insertResult: any = { data: { id: 'pe_fail' }, error: null };
-let existingFailureResult: any = { data: null, error: null };
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -37,15 +35,24 @@ function callFailure() {
   });
 }
 
+let existingFailureResult: any = { data: null, error: null };
+let duplicateAfterInsertResult: any = { data: null, error: null };
+let failureLookupCount = 0;
+const mockInsert = jest.fn();
+
 describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     insertResult = { data: { id: 'pe_fail' }, error: null };
     existingFailureResult = { data: null, error: null };
+    duplicateAfterInsertResult = { data: null, error: null };
+    failureLookupCount = 0;
     mockFrom.mockImplementation(() => {
       const selectChain: any = {
         eq: jest.fn(() => selectChain),
-        maybeSingle: jest.fn(() => Promise.resolve(existingFailureResult)),
+        maybeSingle: jest.fn(() => Promise.resolve(
+          failureLookupCount++ === 0 ? existingFailureResult : duplicateAfterInsertResult,
+        )),
       };
       return {
         insert: (...args: any[]) => {
@@ -58,30 +65,51 @@ describe('handleRecurringPaymentFailure dunning initiation (#6)', () => {
     mockInitiateDunning.mockResolvedValue(undefined);
   });
 
-  test('does not duplicate dunning for the same processor object', async () => {
-    existingFailureResult = { data: { id: 'pe_previous' }, error: null };
+  test('does not duplicate the dunning sequence when the same processor object already failed', async () => {
+    // Stripe Smart Retries fire invoice.payment_failed per attempt for ONE
+    // invoice — each must not spawn its own independently retryable dunning row.
+    existingFailureResult = { data: { id: 'pe_prev' }, error: null };
 
-    await expect(callFailure()).resolves.toEqual({
-      paymentEventId: 'pe_previous',
-      duplicate: true,
-    });
+    const result = await callFailure();
+
+    expect(result).toEqual({ paymentEventId: 'pe_prev', duplicate: true });
     expect(mockInsert).not.toHaveBeenCalled();
     expect(mockInitiateDunning).not.toHaveBeenCalled();
   });
 
   test('initiates dunning with the ledger event id on a normal insert', async () => {
-    await callFailure();
+    const result = await callFailure();
+    expect(result).toEqual({ paymentEventId: 'pe_fail', duplicate: false });
     expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
       raw_webhook_payload: { stripe_invoice_id: 'in_1', stripe_account_id: 'acct_1' },
     }));
     expect(mockInitiateDunning).toHaveBeenCalledWith(expect.objectContaining({ paymentEventId: 'pe_fail' }));
   });
 
-  test('fails closed without dunning when the failed-payment ledger insert fails', async () => {
+  test('fails without dunning when the failed-payment ledger insert fails', async () => {
     insertResult = { data: null, error: { message: 'DB down', code: '08006' } };
 
-    await expect(callFailure()).rejects.toMatchObject({ message: 'DB down' });
+    await expect(callFailure()).rejects.toMatchObject({ code: '08006' });
 
+    expect(mockInitiateDunning).not.toHaveBeenCalled();
+  });
+
+  test('fails without dunning when duplicate detection cannot read the ledger', async () => {
+    existingFailureResult = { data: null, error: { message: 'DB timeout', code: '08006' } };
+
+    await expect(callFailure()).rejects.toMatchObject({ code: '08006' });
+
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInitiateDunning).not.toHaveBeenCalled();
+  });
+
+  test('resolves a unique-insert race to the existing row without starting dunning twice', async () => {
+    insertResult = { data: null, error: { message: 'duplicate key', code: '23505' } };
+    duplicateAfterInsertResult = { data: { id: 'pe_race_winner' }, error: null };
+
+    const result = await callFailure();
+
+    expect(result).toEqual({ paymentEventId: 'pe_race_winner', duplicate: true });
     expect(mockInitiateDunning).not.toHaveBeenCalled();
   });
 });

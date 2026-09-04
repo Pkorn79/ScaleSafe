@@ -109,7 +109,9 @@ export function parseNmiQueryTransactions(xml: string): NmiQueryTransaction[] {
       success: primaryAction.success === undefined || primaryAction.success === null
         ? null
         : Number(primaryAction.success) === 1,
-      source: tx.source ? String(tx.source) : undefined,
+      source: primaryAction.source
+        ? String(primaryAction.source)
+        : (tx.source ? String(tx.source) : undefined),
       subscriptionId: field('subscription_id', 'subscriptionid', 'recurring_subscription_id'),
       orderId: field('order_id', 'orderid'),
       customerVaultId: field('customer_vault_id', 'customer_vaultid'),

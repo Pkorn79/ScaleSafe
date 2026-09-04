@@ -144,10 +144,12 @@ export interface SubscriptionResult {
 export interface VerifyResult {
   success: boolean;
   transactionId: string;
-  status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded';
+  status: 'settled' | 'pending' | 'failed' | 'voided' | 'refunded' | 'unknown';
   amount: number;
   settledAt?: string;
   source?: string;
+  action?: string;
+  actionSucceeded?: boolean | null;
   subscriptionId?: string;
   orderId?: string;
   customerVaultId?: string;
@@ -162,6 +164,12 @@ export interface VerifyResult {
   ipAddress?: string;
   originalTransactionId?: string;
   merchantDefinedFields?: Record<string, string>;
+}
+
+export interface VerifyTransactionOptions {
+  subscriptionId?: string;
+  source?: string;
+  action?: string;
 }
 
 export interface SubscriptionTransaction {

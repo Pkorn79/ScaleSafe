@@ -32,7 +32,7 @@ router.post('/connectors/:connectionId/:secret', requireRawEvidenceConnection, e
 router.post('/stripe/:locationId', handleStripeWebhook);
 router.post('/stripe', handleStripeWebhook);
 
-// NMI Silent Post: verified by calling verifyTransaction() per notification.
+// Legacy NMI Silent Post: exact stored binding plus a tenant-scoped Query API check.
 router.post('/nmi/silent-post', handleNmiSilentPost);
 
 // NMI official webhooks: signed JSON events. Configure this URL in NMI.
