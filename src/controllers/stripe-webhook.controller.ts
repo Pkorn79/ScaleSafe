@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { decrypt } from '../services/processor-config.service';
 import { stripeAchService } from '../services/stripe-ach.service';
 import {
+  stripeInvoiceIsFullyPaid,
   stripeInvoicePaymentReference,
   stripeInvoiceSubscriptionId,
 } from '../utils/stripe-invoice-payment';
@@ -280,14 +281,15 @@ async function enrichStripePaymentLedger(params: {
   const { data: paymentRows, error: paymentError } = await getSupabase()
     .from('payment_events')
     .update(updates)
+    .eq('merchant_id', merchant.id)
     .eq('location_id', merchant.location_id)
     .eq('processor', 'stripe')
     .eq('processor_transaction_id', paymentIntentId)
-    .select('id, enrollment_id');
+    .select('id, enrollment_id, is_recurring');
   if (paymentError) throw paymentError;
 
   const payment = Array.isArray(paymentRows) ? paymentRows[0] : null;
-  if (!payment?.enrollment_id) return;
+  if (!payment?.enrollment_id || payment.is_recurring === true) return;
 
   const enrollmentUpdates: Record<string, unknown> = {
     initial_payment_status: 'succeeded',
@@ -642,6 +644,33 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     return;
   }
 
+  const connectedAccountId = event.account || merchant.stripe_user_id || null;
+  if (!invoice?.id || !connectedAccountId || connectedAccountId !== merchant.stripe_user_id) {
+    throw new Error('Stripe cycle invoice is not bound to the merchant connected account');
+  }
+
+  const freshInvoice = await getStripe().invoices.retrieve(
+    invoice.id,
+    { expand: ['payments.data.payment.payment_intent'] },
+    { stripeAccount: connectedAccountId },
+  );
+  if (!freshInvoice || freshInvoice.id !== invoice.id) {
+    throw new Error(`Stripe invoice ${invoice.id} could not be verified on the connected account`);
+  }
+  invoice = freshInvoice;
+
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    throw new Error(`Stripe invoice ${invoice.id} changed billing reason during verification`);
+  }
+  if (!stripeInvoiceIsFullyPaid(invoice)) {
+    logger.info({
+      invoiceId: invoice.id,
+      status: invoice.status || null,
+      amountRemaining: invoice.amount_remaining ?? null,
+    }, 'Stripe cycle invoice is not fully paid; installment not advanced');
+    return;
+  }
+
   const subscriptionId = stripeInvoiceSubscriptionId(invoice);
   if (!subscriptionId) return;
 
@@ -660,15 +689,7 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     return;
   }
 
-  let invoicePayment = stripeInvoicePaymentReference(invoice);
-  if (!invoicePayment && merchant.stripe_user_id) {
-    invoice = await getStripe().invoices.retrieve(
-      invoice.id,
-      { expand: ['payments.data.payment.payment_intent'] },
-      { stripeAccount: merchant.stripe_user_id },
-    );
-    invoicePayment = stripeInvoicePaymentReference(invoice);
-  }
+  const invoicePayment = stripeInvoicePaymentReference(invoice);
   if (!invoicePayment) {
     throw new Error(`Stripe invoice ${invoice.id} is paid without a distinct paid InvoicePayment reference`);
   }
@@ -705,7 +726,10 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
     }
   }
 
-  const amountCents = invoicePayment.amountPaidCents ?? invoice.amount_paid ?? 0;
+  const amountCents = invoice.amount_paid;
+  if (!Number.isSafeInteger(amountCents) || amountCents < 0) {
+    throw new Error(`Stripe invoice ${invoice.id} has an invalid paid amount`);
+  }
 
   const result = await handleRecurringPaymentSuccess({
     enrollment,
@@ -722,7 +746,10 @@ async function handleInvoicePaymentSucceeded(event: any, merchant: any): Promise
       subscriptionId,
       invoicePaymentId: invoicePayment.invoicePaymentId,
       transactionId,
-      stripeAccountId: event.account || merchant.stripe_user_id || null,
+      stripeAccountId: connectedAccountId,
+      invoiceStatus: invoice.status,
+      invoiceAmountPaidCents: amountCents,
+      invoiceAmountRemainingCents: invoice.amount_remaining,
     },
   });
 

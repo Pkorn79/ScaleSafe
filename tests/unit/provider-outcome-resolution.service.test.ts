@@ -44,6 +44,70 @@ function targetTable(row: Record<string, any>, options: { auditError?: any } = {
   return { updates, audits };
 }
 
+function dunningOperationTable(
+  row: Record<string, any>,
+  options: { paymentError?: Error; paymentRow?: Record<string, any> | null } = {},
+) {
+  const moneyUpdates: Record<string, any>[] = [];
+  const paymentUpdates: Record<string, any>[] = [];
+  const paymentFilters: Array<{ column: string; value: unknown }> = [];
+  const audits: Record<string, any>[] = [];
+
+  mockFrom.mockImplementation((table: string) => {
+    if (table === 'hq_admin_audit_logs') {
+      return {
+        insert: jest.fn((payload: Record<string, any>) => {
+          audits.push(payload);
+          return Promise.resolve({ error: null });
+        }),
+      };
+    }
+    if (table === 'money_operations') {
+      const readChain: any = {
+        eq: jest.fn(() => readChain),
+        maybeSingle: jest.fn().mockResolvedValue({ data: row, error: null }),
+      };
+      return {
+        select: jest.fn(() => readChain),
+        update: jest.fn((payload: Record<string, any>) => {
+          moneyUpdates.push(payload);
+          const updateChain: any = {
+            eq: jest.fn(() => updateChain),
+            select: jest.fn(() => updateChain),
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: { id: row.id, location_id: row.location_id, ...payload },
+              error: null,
+            }),
+          };
+          return updateChain;
+        }),
+      };
+    }
+    if (table === 'payment_events') {
+      const chain: any = {
+        eq: jest.fn((column: string, value: unknown) => {
+          paymentFilters.push({ column, value });
+          return chain;
+        }),
+        select: jest.fn(() => chain),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: options.paymentRow === undefined ? { id: 'pe_1' } : options.paymentRow,
+          error: options.paymentError || null,
+        }),
+      };
+      return {
+        update: jest.fn((payload: Record<string, any>) => {
+          paymentUpdates.push(payload);
+          return chain;
+        }),
+      };
+    }
+    return {};
+  });
+
+  return { moneyUpdates, paymentUpdates, paymentFilters, audits };
+}
+
 const baseInput = {
   id: 'claim_123',
   adminLabel: 'operator@example.com',
@@ -74,6 +138,97 @@ describe('providerOutcomeResolutionService', () => {
     expect(updates[0]).toMatchObject({ status: 'failed', provider_called: false, provider_started_at: null });
     expect(audits).toHaveLength(2);
     expect(audits[0]).toMatchObject({ target_location_id: 'loc_a', target_id: 'claim_123' });
+  });
+
+  it('reactivates only the exact tenant-scoped dunning payment event after not-processed resolution', async () => {
+    const { moneyUpdates, paymentUpdates, paymentFilters, audits } = dunningOperationTable({
+      id: 'op_123',
+      merchant_id: 'merchant_a',
+      location_id: 'loc_a',
+      operation_type: 'dunning_retry',
+      request_payload: { paymentEventId: 'pe_1', contactId: 'contact_a' },
+      processor_type: 'stripe',
+      status: 'unknown',
+      provider_called: true,
+      provider_started_at: '2026-09-04T12:00:00.000Z',
+    });
+
+    const result = await providerOutcomeResolutionService.resolve({
+      ...baseInput,
+      id: 'op_123',
+      kind: 'money_operation',
+      resolution: 'not_processed',
+      confirmation: 'CONFIRM NOT PROCESSED',
+    });
+
+    expect(result).toMatchObject({ locationId: 'loc_a', status: 'failed', resolution: 'not_processed' });
+    expect(moneyUpdates[0]).toMatchObject({ status: 'failed', provider_called: false });
+    expect(paymentUpdates).toEqual([{ dunning_status: 'active' }]);
+    expect(paymentFilters).toEqual(expect.arrayContaining([
+      { column: 'id', value: 'pe_1' },
+      { column: 'merchant_id', value: 'merchant_a' },
+      { column: 'location_id', value: 'loc_a' },
+      { column: 'contact_id', value: 'contact_a' },
+      { column: 'dunning_status', value: 'retrying' },
+    ]));
+    expect(audits).toHaveLength(2);
+  });
+
+  it('fails and restores the unresolved money operation when dunning reactivation cannot be written', async () => {
+    const paymentError = new Error('payment event update unavailable');
+    const { moneyUpdates, audits } = dunningOperationTable({
+      id: 'op_123',
+      merchant_id: 'merchant_a',
+      location_id: 'loc_a',
+      operation_type: 'dunning_retry',
+      request_payload: { paymentEventId: 'pe_1', contactId: 'contact_a' },
+      processor_type: 'stripe',
+      status: 'unknown',
+      provider_called: true,
+      provider_started_at: '2026-09-04T12:00:00.000Z',
+      error_message: 'Processor request started; awaiting confirmed result.',
+    }, { paymentError });
+
+    await expect(providerOutcomeResolutionService.resolve({
+      ...baseInput,
+      id: 'op_123',
+      kind: 'money_operation',
+      resolution: 'not_processed',
+      confirmation: 'CONFIRM NOT PROCESSED',
+    })).rejects.toThrow('payment event update unavailable');
+
+    expect(moneyUpdates).toHaveLength(2);
+    expect(moneyUpdates[1]).toMatchObject({
+      status: 'unknown',
+      provider_called: true,
+      provider_started_at: '2026-09-04T12:00:00.000Z',
+      error_message: 'Processor request started; awaiting confirmed result.',
+    });
+    expect(audits).toHaveLength(1);
+  });
+
+  it('does not reactivate dunning for provider-accepted resolution', async () => {
+    const { paymentUpdates } = dunningOperationTable({
+      id: 'op_123',
+      merchant_id: 'merchant_a',
+      location_id: 'loc_a',
+      operation_type: 'dunning_retry',
+      request_payload: { paymentEventId: 'pe_1', contactId: 'contact_a' },
+      processor_type: 'stripe',
+      status: 'unknown',
+      provider_called: true,
+    });
+
+    await providerOutcomeResolutionService.resolve({
+      ...baseInput,
+      id: 'op_123',
+      kind: 'money_operation',
+      resolution: 'provider_accepted',
+      confirmation: 'CONFIRM PROVIDER ACCEPTED',
+      providerReference: 'in_accepted',
+    });
+
+    expect(paymentUpdates).toHaveLength(0);
   });
 
   it('moves a verified refund outcome to provider_accepted for local reconciliation', async () => {

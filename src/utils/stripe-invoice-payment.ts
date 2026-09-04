@@ -13,6 +13,13 @@ function objectId(value: unknown): string | null {
   return null;
 }
 
+export function stripeInvoiceIsFullyPaid(invoice: any): boolean {
+  return invoice?.status === 'paid'
+    && typeof invoice?.amount_remaining === 'number'
+    && Number.isFinite(invoice.amount_remaining)
+    && invoice.amount_remaining === 0;
+}
+
 /**
  * Basil removed Invoice.charge and Invoice.payment_intent. A paid
  * InvoicePayment is now the authoritative link to the underlying payment.

@@ -236,6 +236,61 @@ describe('handleStripeWebhook', () => {
     }));
   });
 
+  it('does not overwrite initial-payment fields for a recurring PaymentIntent', async () => {
+    const paymentFilters: Array<{ column: string; value: unknown }> = [];
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'payment_events') {
+        const chain: any = {
+          update: jest.fn((payload: any) => {
+            mockPaymentEventUpdate(payload);
+            return chain;
+          }),
+          eq: jest.fn((column: string, value: unknown) => {
+            paymentFilters.push({ column, value });
+            return chain;
+          }),
+          select: jest.fn(() => chain),
+          then: (resolve: any) => resolve({
+            data: [{ id: 'pe_recurring', enrollment_id: 'enr_1', is_recurring: true }],
+            error: null,
+          }),
+        };
+        return chain;
+      }
+      return tableMock(table);
+    });
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_recurring_pi',
+      type: 'payment_intent.succeeded',
+      account: 'acct_1',
+      livemode: false,
+      data: {
+        object: {
+          id: 'pi_recurring',
+          latest_charge: { id: 'ch_recurring', created: 1780000000 },
+          created: 1780000000,
+          metadata: {},
+        },
+      },
+    });
+
+    const req: any = {
+      params: { locationId: 'loc_1' },
+      headers: { 'stripe-signature': 'sig_1' },
+      rawBody: Buffer.from('{}'),
+    };
+    const res = mockResponse();
+    await handleStripeWebhook(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(paymentFilters).toEqual(expect.arrayContaining([
+      { column: 'merchant_id', value: 'merch_1' },
+      { column: 'location_id', value: 'loc_1' },
+      { column: 'processor_transaction_id', value: 'pi_recurring' },
+    ]));
+    expect(mockFrom).not.toHaveBeenCalledWith('enrollments');
+  });
+
   it('returns 500 so Stripe retries when payment evidence persistence fails', async () => {
     const { stripeEvidenceVaultService } = require('../../src/services/stripe-evidence-vault.service');
     (stripeEvidenceVaultService.createVaultEntryFromWebhook as jest.Mock)
@@ -582,6 +637,14 @@ describe('pre-routing failure containment', () => {
 });
 
 describe('invoice.payment_failed dunning identity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPacketRow = null;
+    mockDisputesRetrieve.mockRejectedValue(new Error('not mocked'));
+    mockInvoicesRetrieve.mockRejectedValue(new Error('not mocked'));
+    mockFrom.mockImplementation(tableMock);
+  });
+
   it('passes the invoice id as the failure transaction id so repeat attempts dedupe', async () => {
     const recurring = require('../../src/services/recurring-payment.service');
     (recurring.handleRecurringPaymentFailure as jest.Mock).mockResolvedValue({ paymentEventId: 'pe_f' });
@@ -662,25 +725,29 @@ describe('invoice.payment_failed dunning identity', () => {
       }
       return tableMock(table);
     });
+    const paidInvoice = {
+      id: 'in_123',
+      parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_1' } },
+      billing_reason: 'subscription_cycle',
+      status: 'paid',
+      amount_remaining: 0,
+      amount_paid: 5000,
+      payments: {
+        data: [{
+          id: 'inpay_123', status: 'paid', amount_paid: 5000,
+          payment: { type: 'payment_intent', payment_intent: 'pi_123' },
+        }],
+      },
+      lines: { data: [{ period: { end: 1787000000 } }] },
+    };
+    mockInvoicesRetrieve.mockResolvedValue(paidInvoice);
     mockConstructEvent.mockReturnValue({
       id: 'evt_inv_paid',
       type: 'invoice.payment_succeeded',
       account: 'acct_1',
       livemode: false,
       data: {
-        object: {
-          id: 'in_123',
-          parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_1' } },
-          billing_reason: 'subscription_cycle',
-          amount_paid: 5000,
-          payments: {
-            data: [{
-              id: 'inpay_123', status: 'paid', amount_paid: 5000,
-              payment: { type: 'payment_intent', payment_intent: 'pi_123' },
-            }],
-          },
-          lines: { data: [{ period: { end: 1787000000 } }] },
-        },
+        object: { id: 'in_123', billing_reason: 'subscription_cycle' },
       },
     });
 
@@ -700,6 +767,105 @@ describe('invoice.payment_failed dunning identity', () => {
       }),
     }));
     expect(res.statusCode).toBe(200);
-    expect(mockInvoicesRetrieve).not.toHaveBeenCalled();
+    expect(mockInvoicesRetrieve).toHaveBeenCalledWith(
+      'in_123',
+      { expand: ['payments.data.payment.payment_intent'] },
+      { stripeAccount: 'acct_1' },
+    );
+  });
+
+  it('counts one installment only after multiple partial allocations fully pay the invoice', async () => {
+    const recurring = require('../../src/services/recurring-payment.service');
+    (recurring.handleRecurringPaymentSuccess as jest.Mock).mockResolvedValue({
+      paymentEventId: 'pe_paid', isFinal: false, newPaymentsMade: 2, duplicate: false,
+    });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'enrollments') {
+        const chain: any = {
+          select: jest.fn(() => chain),
+          eq: jest.fn(() => chain),
+          single: jest.fn().mockResolvedValue({
+            data: {
+              id: 'enr_1', merchant_id: 'merch_1', location_id: 'loc_1', contact_id: 'c_1',
+              offer_id: null, program_name_snapshot: 'Program', payments_made: 1, payments_total: 4,
+              payment_type: 'installment', processor_subscription_id: 'sub_1', processor_type: 'stripe',
+              billing_completed_at: null,
+            },
+            error: null,
+          }),
+        };
+        return chain;
+      }
+      return tableMock(table);
+    });
+
+    const invoiceBase = {
+      id: 'in_multi',
+      parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_1' } },
+      billing_reason: 'subscription_cycle',
+      lines: { data: [{ period: { end: 1787000000 } }] },
+    };
+    const payment = (id: string, intent: string, amount: number, paidAt: number) => ({
+      id,
+      status: 'paid',
+      amount_paid: amount,
+      status_transitions: { paid_at: paidAt },
+      payment: { type: 'payment_intent', payment_intent: intent },
+    });
+    mockInvoicesRetrieve
+      .mockResolvedValueOnce({
+        ...invoiceBase,
+        status: 'open',
+        amount_paid: 2000,
+        amount_remaining: 3000,
+        payments: { data: [payment('inpay_1', 'pi_1', 2000, 100)] },
+      })
+      .mockResolvedValueOnce({
+        ...invoiceBase,
+        status: 'open',
+        amount_paid: 4000,
+        amount_remaining: 1000,
+        payments: { data: [
+          payment('inpay_1', 'pi_1', 2000, 100),
+          payment('inpay_2', 'pi_2', 2000, 200),
+        ] },
+      })
+      .mockResolvedValueOnce({
+        ...invoiceBase,
+        status: 'paid',
+        amount_paid: 5000,
+        amount_remaining: 0,
+        payments: { data: [
+          payment('inpay_1', 'pi_1', 2000, 100),
+          payment('inpay_2', 'pi_2', 2000, 200),
+          payment('inpay_3', 'pi_3', 1000, 300),
+        ] },
+      });
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_inv_partial',
+      type: 'invoice.payment_succeeded',
+      account: 'acct_1',
+      livemode: false,
+      data: { object: { id: 'in_multi', billing_reason: 'subscription_cycle' } },
+    });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const req: any = {
+        params: {}, headers: { 'stripe-signature': 'sig' }, body: Buffer.from('{}'), rawBody: Buffer.from('{}'),
+      };
+      await handleStripeWebhook(req, mockResponse());
+    }
+
+    expect(recurring.handleRecurringPaymentSuccess).toHaveBeenCalledTimes(1);
+    expect(recurring.handleRecurringPaymentSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: 'pi_3',
+      amountCents: 5000,
+      rawPayload: expect.objectContaining({
+        invoiceId: 'in_multi',
+        invoiceStatus: 'paid',
+        invoiceAmountRemainingCents: 0,
+        stripeAccountId: 'acct_1',
+      }),
+    }));
   });
 });

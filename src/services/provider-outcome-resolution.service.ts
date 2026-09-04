@@ -178,6 +178,38 @@ function notProcessedUpdates(kind: ProviderOutcomeKind): Record<string, unknown>
   };
 }
 
+function dunningPaymentEventTarget(existing: Record<string, any>): {
+  paymentEventId: string;
+  merchantId: string;
+  contactId: string | null;
+} | null {
+  if (existing.operation_type !== 'dunning_retry') return null;
+  const request = plainObject(existing.request_payload) ? existing.request_payload : {};
+  const paymentEventId = String(request.paymentEventId || '').trim();
+  const merchantId = String(existing.merchant_id || '').trim();
+  const contactId = String(request.contactId || '').trim() || null;
+  if (!paymentEventId || !merchantId) {
+    throw new Error('Dunning retry outcome is missing its tenant-scoped payment-event binding.');
+  }
+  return { paymentEventId, merchantId, contactId };
+}
+
+function unresolvedMoneyOperationUpdates(existing: Record<string, any>): Record<string, unknown> {
+  return {
+    status: existing.status,
+    provider_called: existing.provider_called,
+    processor_reference: existing.processor_reference,
+    provider_started_at: existing.provider_started_at,
+    provider_accepted_at: existing.provider_accepted_at,
+    error_message: existing.error_message,
+    reconciliation_lease_owner: existing.reconciliation_lease_owner,
+    reconciliation_lease_expires_at: existing.reconciliation_lease_expires_at,
+    reconciliation_next_attempt_at: existing.reconciliation_next_attempt_at,
+    response_payload: existing.response_payload,
+    reconciliation_payload: existing.reconciliation_payload,
+  };
+}
+
 export const providerOutcomeResolutionService = {
   async resolve(input: ProviderOutcomeResolutionInput): Promise<Record<string, unknown>> {
     validateProviderOutcomeResolution(input);
@@ -213,6 +245,9 @@ export const providerOutcomeResolutionService = {
     const locationId = String(existing.location_id || '');
     if (!locationId) throw new Error('Provider outcome has no tenant binding.');
     const providerReference = String(input.providerReference || '').trim();
+    const dunningTarget = input.kind === 'money_operation' && input.resolution === 'not_processed'
+      ? dunningPaymentEventTarget(existing as Record<string, any>)
+      : null;
 
     await strictAudit({
       action: 'hq.provider_outcome_resolution_requested',
@@ -254,6 +289,38 @@ export const providerOutcomeResolutionService = {
       .maybeSingle();
     if (updateError) throw updateError;
     if (!updated) throw new ConflictError('Provider outcome changed before this resolution could be saved. Reload and review it again.');
+
+    if (dunningTarget) {
+      let paymentUpdate = supabase
+        .from('payment_events')
+        .update({ dunning_status: 'active' })
+        .eq('id', dunningTarget.paymentEventId)
+        .eq('merchant_id', dunningTarget.merchantId)
+        .eq('location_id', locationId);
+      if (dunningTarget.contactId) {
+        paymentUpdate = paymentUpdate.eq('contact_id', dunningTarget.contactId);
+      }
+      const { data: resetPayment, error: resetError } = await paymentUpdate
+        .eq('dunning_status', 'retrying')
+        .select('id')
+        .maybeSingle();
+      if (resetError || !resetPayment) {
+        const { data: restored, error: restoreError } = await supabase
+          .from(target.table)
+          .update(unresolvedMoneyOperationUpdates(existing as Record<string, any>))
+          .eq('id', input.id)
+          .eq('location_id', locationId)
+          .eq(target.statusColumn, 'failed')
+          .eq('provider_called', false)
+          .select('id')
+          .maybeSingle();
+        if (restoreError || !restored) {
+          throw new Error(`Dunning retry could not be reactivated and its outcome rollback failed: ${resetError?.message || 'payment event did not match'}; ${restoreError?.message || 'outcome did not match'}`);
+        }
+        if (resetError) throw resetError;
+        throw new ConflictError('The tenant-scoped dunning payment event is no longer retrying. Reload and review it again.');
+      }
+    }
 
     const updatedRow = updated as Record<string, any>;
     try {
