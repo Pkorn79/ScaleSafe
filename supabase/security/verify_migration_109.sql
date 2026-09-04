@@ -1,5 +1,7 @@
--- Run only against an isolated database at schema 109 or the certified successor 110.
--- The caller owns the surrounding transaction and should roll it back.
+\set ON_ERROR_STOP on
+
+-- Rollback-only proof for schema 109 and its certified successors through 111.
+BEGIN;
 
 DO $verify$
 DECLARE
@@ -534,8 +536,8 @@ BEGIN
       END IF;
   END;
 
-  IF scalesafe_schema_version() NOT IN (109, 110) THEN
-    RAISE EXCEPTION 'Guardian verifier requires certified schema 109 or 110';
+  IF scalesafe_schema_version() NOT IN (109, 110, 111) THEN
+    RAISE EXCEPTION 'Guardian verifier requires certified schema 109, 110, or 111';
   END IF;
 END;
 $verify$;
@@ -543,3 +545,5 @@ $verify$;
 SELECT
   'MIGRATION_109_BEHAVIOR_VERIFIED' AS result,
   scalesafe_schema_version() AS schema_version;
+
+ROLLBACK;

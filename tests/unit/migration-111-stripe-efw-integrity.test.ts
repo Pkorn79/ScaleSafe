@@ -11,6 +11,11 @@ const serviceSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
+const verificationSql = fs.readFileSync(
+  path.join(process.cwd(), 'supabase', 'security', 'verify_migration_111.sql'),
+  'utf8',
+).replace(/\r\n/g, '\n');
+
 describe('migration 111 Stripe EFW integrity contract', () => {
   it('requires schema 110 and advances the schema version to 111', () => {
     expect(migrationSql).toMatch(/scalesafe_schema_version\(\) <> 110/);
@@ -26,6 +31,15 @@ describe('migration 111 Stripe EFW integrity contract', () => {
 
   it('guards the constraint and exposes persistence failures', () => {
     expect(migrationSql).toContain("conname = 'efw_events_merchant_stripe_efw_id_key'");
+    expect(migrationSql).toContain('unexpected existing EFW constraint definition');
+    expect(migrationSql).toContain("contype <> 'u'");
     expect(serviceSource).toMatch(/if \(upsertError\) \{[\s\S]*throw upsertError;/);
+  });
+
+  it('has a rollback-only behavioral proof for upsert and raw duplicate paths', () => {
+    expect(verificationSql).toContain('BEGIN;');
+    expect(verificationSql).toContain('ON CONFLICT (merchant_id, stripe_efw_id)');
+    expect(verificationSql).toContain('WHEN unique_violation THEN');
+    expect(verificationSql).toContain('ROLLBACK;');
   });
 });

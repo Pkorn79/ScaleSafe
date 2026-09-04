@@ -1,4 +1,4 @@
--- Read-only catalog gate for the approved 106 -> 110 rollout.
+-- Read-only catalog gate for the proposed 106 -> 111 rollout.
 -- Run on the confirmed ScaleSafe database, before and after migration.
 -- This does not apply SQL changes, inspect customer rows, or replace the live-schema comparison.
 BEGIN READ ONLY;
@@ -51,7 +51,7 @@ DECLARE
     'list_operator_resellers_page'
   ];
 BEGIN
-  IF v_version NOT IN (106, 110) OR v_version IS NULL THEN
+  IF v_version NOT IN (106, 111) OR v_version IS NULL THEN
     RAISE EXCEPTION 'Unexpected schema version %. Stop and reconcile the release bundle.', v_version;
   END IF;
 
@@ -100,12 +100,29 @@ BEGIN
       RAISE EXCEPTION 'Unexpected function access or forced-RLS owner on %.', v_name;
     END IF;
   END LOOP;
+
+  IF v_version = 106 THEN
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'public.efw_events'::regclass
+        AND conname = 'efw_events_merchant_stripe_efw_id_key'
+    ) THEN
+      RAISE EXCEPTION 'Pre-existing migration 111 EFW constraint requires reconciliation.';
+    END IF;
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.efw_events'::regclass
+      AND conname = 'efw_events_merchant_stripe_efw_id_key'
+      AND pg_get_constraintdef(oid) = 'UNIQUE (merchant_id, stripe_efw_id)'
+  ) THEN
+    RAISE EXCEPTION 'Required migration 111 EFW integrity constraint is missing.';
+  END IF;
 END;
 $check$;
 
 SELECT public.scalesafe_schema_version() AS schema_version,
   CASE public.scalesafe_schema_version()
     WHEN 106 THEN 'COMMAND_CENTER_PRE_MIGRATION_CATALOG_PASSED'
-    WHEN 110 THEN 'COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED'
+    WHEN 111 THEN 'COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED'
   END AS result;
 ROLLBACK;

@@ -11,6 +11,28 @@ $$;
 
 DO $$
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.efw_events
+    GROUP BY merchant_id, stripe_efw_id
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Migration 111 found duplicate tenant-scoped Stripe EFW rows; reconcile them before retrying';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.efw_events'::regclass
+      AND conname = 'efw_events_merchant_stripe_efw_id_key'
+      AND (
+        contype <> 'u'
+        OR pg_get_constraintdef(oid) <> 'UNIQUE (merchant_id, stripe_efw_id)'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Migration 111 found an unexpected existing EFW constraint definition';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint

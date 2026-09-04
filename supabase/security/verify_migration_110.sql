@@ -1,5 +1,7 @@
--- Run only against an isolated schema-110 database.
--- The caller owns the surrounding transaction and must roll it back.
+\set ON_ERROR_STOP on
+
+-- Rollback-only proof for schema 110 and its certified successor 111.
+BEGIN;
 
 DO $verify$
 DECLARE
@@ -18,8 +20,8 @@ DECLARE
   v_elapsed_ms NUMERIC;
   v_poison_rejected BOOLEAN := false;
 BEGIN
-  IF scalesafe_schema_version() <> 110 THEN
-    RAISE EXCEPTION 'Migration 110 schema version assertion failed';
+  IF scalesafe_schema_version() NOT IN (110, 111) THEN
+    RAISE EXCEPTION 'Migration 110 verifier requires certified schema 110 or 111';
   END IF;
 
   IF EXISTS (
@@ -443,3 +445,5 @@ $verify$;
 SELECT
   'MIGRATION_110_BEHAVIOR_VERIFIED' AS result,
   scalesafe_schema_version() AS schema_version;
+
+ROLLBACK;
