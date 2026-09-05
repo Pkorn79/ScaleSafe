@@ -8,6 +8,10 @@ function readMigration(fileName: string): string {
   );
 }
 
+function readScript(fileName: string): string {
+  return fs.readFileSync(path.join(process.cwd(), 'scripts', fileName), 'utf8');
+}
+
 describe('clean migration replay safeguards', () => {
   it('uses each Supabase migration version exactly once', () => {
     const migrationFiles = fs
@@ -54,5 +58,17 @@ describe('clean migration replay safeguards', () => {
 
     expect(sql).toContain('AS provider_auth');
     expect(sql).not.toMatch(/\bAS\s+authorization\b/i);
+  });
+
+  it('keeps isolated replay loopback-bound and each pending migration atomic', () => {
+    const script = readScript('replay-isolated-pending-migrations.sh');
+
+    expect(script).toContain('NETWORK_ID="${3:-}"');
+    expect(script).toContain('com.docker.network.bridge.host_binding_ipv4');
+    expect(script).toContain('NETWORK_BINDING" != "127.0.0.1"');
+    expect(script).toContain('supabase db reset --local --no-seed --network-id "$NETWORK_ID"');
+    expect(script).toContain("grep -E '0\\.0\\.0\\.0:|\\[::\\]:'");
+    expect(script).toContain('psql "$DB_URL" --single-transaction');
+    expect(script).toContain('Refusing migration with incomplete transaction boundary');
   });
 });
