@@ -43,7 +43,11 @@ export interface ProcessorInterface {
 
   resumeSubscription(request: ResumeSubscriptionRequest): Promise<SubscriptionResult>;
 
-  cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }>;
+  cancelSubscription(subscriptionId: string): Promise<{
+    success: boolean;
+    errorMessage?: string;
+    notFound?: boolean;
+  }>;
 
   /**
    * Stripe only: settle an open subscription invoice with a saved payment

@@ -2,6 +2,8 @@
 -- Bind enrollments and their payment ledger rows to the processor configuration
 -- that originated them. Existing ambiguous NMI and Stripe records remain unbound.
 
+BEGIN;
+
 DO $$
 BEGIN
   IF scalesafe_schema_version() <> 111 THEN
@@ -732,14 +734,13 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM public.enrollments AS e
-    WHERE e.processor_type IN ('nmi', 'stripe')
-      AND e.processor_config_id IS NULL
+    WHERE (e.processor_type IN ('nmi', 'stripe') OR e.processor_type IS NULL)
       AND e.processor_subscription_id IS NOT NULL
-      AND e.payment_type IN ('installment', 'installments', 'subscription')
       AND e.billing_completed_at IS NULL
-      AND e.status IN ('enrolled', 'active', 'paused', 'past_due')
+      AND e.status NOT IN ('cancelled', 'completed')
+      AND e.processor_config_id IS NULL
   ) THEN
-    RAISE EXCEPTION 'Migration 112 found active recurring enrollments with ambiguous processor configuration ownership';
+    RAISE EXCEPTION 'Migration 112 found active recurring enrollments with missing or ambiguous processor configuration ownership';
   END IF;
 END;
 $$;
@@ -760,3 +761,5 @@ REVOKE ALL ON FUNCTION public.scalesafe_schema_version() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.scalesafe_schema_version() TO service_role;
 
 NOTIFY pgrst, 'reload schema';
+
+COMMIT;

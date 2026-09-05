@@ -394,6 +394,62 @@ describe('paymentLifecycleService Whop lifecycle support', () => {
     }));
   });
 
+  it('cancels locally when the exactly bound processor subscription is already absent', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = 'sub-already-gone';
+    enrollmentProcessorConfigId = 'pc-stripe-exact';
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'pc-stripe-exact', processor_type: 'stripe' },
+    });
+    mockProcessorCancel.mockResolvedValue({
+      success: false,
+      errorMessage: 'No such subscription',
+      notFound: true,
+    });
+    mockCreateProcessorClient.mockReturnValue({ cancelSubscription: mockProcessorCancel });
+
+    await expect(paymentLifecycleService.cancelSubscription({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub-already-gone',
+      processorConfigId: 'pc-stripe-exact',
+    })).resolves.toBeUndefined();
+
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'cancelled',
+      next_billing_date: null,
+      pulse_cadence_enabled: false,
+      next_pulse_due_at: null,
+    }));
+  });
+
+  it('completes locally when the exactly bound processor subscription is already absent', async () => {
+    enrollmentProcessorType = 'stripe';
+    enrollmentProcessorSubscriptionId = 'sub-already-gone';
+    enrollmentProcessorConfigId = 'pc-stripe-exact';
+    mockResolveProcessor.mockResolvedValue({
+      config: { id: 'pc-stripe-exact', processor_type: 'stripe' },
+    });
+    mockProcessorCancel.mockResolvedValue({
+      success: false,
+      errorMessage: 'No such subscription',
+      notFound: true,
+    });
+    mockCreateProcessorClient.mockReturnValue({ cancelSubscription: mockProcessorCancel });
+
+    await expect(paymentLifecycleService.completeEnrollment({
+      ...whopParams,
+      processorType: 'stripe',
+      processorSubscriptionId: 'sub-already-gone',
+      processorConfigId: 'pc-stripe-exact',
+    })).resolves.toBeUndefined();
+
+    expect(mockEnrollmentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'completed',
+      next_billing_date: null,
+    }));
+  });
+
   it('does not complete an enrollment when future processor billing cannot be stopped', async () => {
     enrollmentProcessorType = 'stripe';
     enrollmentProcessorSubscriptionId = 'sub-still-live';

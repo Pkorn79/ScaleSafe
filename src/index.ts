@@ -15,6 +15,15 @@ import { schemaReadinessService } from './services/schema-readiness.service';
 import { commandCenterRuntime } from './services/command-center-runtime.service';
 import { guardianReadinessService } from './services/guardian-readiness.service';
 
+// Record fatal asynchronous failures without overriding Node's fail-fast
+// behavior. Railway remains responsible for restarting a clean process.
+process.on('uncaughtExceptionMonitor', (err: Error, origin: string) => {
+  logger.fatal(
+    { err: err?.message || String(err), stack: err?.stack, origin },
+    'ScaleSafe process encountered an uncaught fatal error',
+  );
+});
+
 const app = createApp();
 
 async function start(): Promise<void> {

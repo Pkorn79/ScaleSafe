@@ -29,15 +29,15 @@ WITH config_counts AS (
     e.status,
     COALESCE(c.candidate_count, 0) AS candidate_count,
     e.processor_subscription_id IS NOT NULL
-      AND e.payment_type IN ('installment', 'installments', 'subscription')
       AND e.billing_completed_at IS NULL
-      AND e.status IN ('enrolled', 'active', 'paused', 'past_due') AS active_recurring
+      AND e.status NOT IN ('cancelled', 'completed') AS active_recurring
   FROM public.enrollments AS e
   LEFT JOIN config_counts AS c
     ON c.merchant_id = e.merchant_id
    AND c.location_id = e.location_id
    AND c.processor_type = e.processor_type
   WHERE e.processor_type IN ('nmi', 'stripe')
+     OR (e.processor_type IS NULL AND e.processor_subscription_id IS NOT NULL)
 ), payment_method_readiness AS (
   SELECT
     pm.id,
@@ -87,6 +87,7 @@ SELECT jsonb_pretty(jsonb_build_object(
   'active_recurring_enrollments', jsonb_build_object(
     'total', (SELECT count(*) FROM enrollment_readiness WHERE active_recurring),
     'deterministic', (SELECT count(*) FROM enrollment_readiness WHERE active_recurring AND candidate_count = 1),
+    'missing_processor_type', (SELECT count(*) FROM enrollment_readiness WHERE active_recurring AND processor_type IS NULL),
     'unmatched', (SELECT count(*) FROM enrollment_readiness WHERE active_recurring AND candidate_count = 0),
     'ambiguous', (SELECT count(*) FROM enrollment_readiness WHERE active_recurring AND candidate_count > 1)
   ),

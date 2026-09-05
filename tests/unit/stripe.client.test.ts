@@ -239,6 +239,45 @@ describe('StripeClient', () => {
         { stripeAccount: 'acct_test123' },
       );
     });
+
+    it('identifies a subscription already absent from the bound Stripe account', async () => {
+      const missing = new Error('No such subscription: sub_missing');
+      (missing as any).type = 'StripeInvalidRequestError';
+      (missing as any).code = 'resource_missing';
+      (missing as any).statusCode = 404;
+      mockStripe.subscriptions.cancel.mockRejectedValue(missing);
+
+      await expect(client.cancelSubscription('sub_missing')).resolves.toEqual({
+        success: false,
+        errorMessage: 'No such subscription: sub_missing',
+        notFound: true,
+      });
+    });
+
+    it('does not classify another Stripe cancellation failure as absent', async () => {
+      const denied = new Error('Connected account access denied');
+      (denied as any).type = 'StripePermissionError';
+      (denied as any).code = 'account_invalid';
+      (denied as any).statusCode = 403;
+      mockStripe.subscriptions.cancel.mockRejectedValue(denied);
+
+      await expect(client.cancelSubscription('sub_123')).resolves.toEqual({
+        success: false,
+        errorMessage: 'Connected account access denied',
+      });
+    });
+
+    it('does not treat a generic 404 as proof that the subscription is absent', async () => {
+      const unavailable = new Error('Requested account endpoint was not found');
+      (unavailable as any).type = 'StripeInvalidRequestError';
+      (unavailable as any).statusCode = 404;
+      mockStripe.subscriptions.cancel.mockRejectedValue(unavailable);
+
+      await expect(client.cancelSubscription('sub_123')).resolves.toEqual({
+        success: false,
+        errorMessage: 'Requested account endpoint was not found',
+      });
+    });
   });
 
   describe('payInvoice', () => {

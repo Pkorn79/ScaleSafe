@@ -13,6 +13,12 @@ const verificationPath = path.join(
   'security',
   'verify_migration_112.sql',
 );
+const blockedRollbackVerificationPath = path.join(
+  process.cwd(),
+  'supabase',
+  'security',
+  'verify_migration_112_blocked_rollback.sql',
+);
 
 const readSql = (filePath: string): string =>
   fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
@@ -20,8 +26,11 @@ const readSql = (filePath: string): string =>
 describe('migration 112 immutable processor configuration binding contract', () => {
   const migrationSql = readSql(migrationPath);
   const verificationSql = readSql(verificationPath);
+  const blockedRollbackVerificationSql = readSql(blockedRollbackVerificationPath);
 
   it('requires schema 111 and advances the schema version to 112', () => {
+    expect(migrationSql.trimStart()).toMatch(/^--[\s\S]*?\nBEGIN;/);
+    expect(migrationSql.trimEnd()).toMatch(/COMMIT;$/);
     expect(migrationSql).toMatch(/scalesafe_schema_version\(\) <> 111/);
     expect(migrationSql).toMatch(/SELECT 112;/);
   });
@@ -47,6 +56,15 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(migrationSql).toMatch(/c\.processor_type = e\.processor_type/);
     expect(migrationSql).toMatch(/candidate_count = 1/);
     expect(migrationSql).not.toMatch(/offers_mirror[\s\S]*resolved_enrollment_bindings/);
+  });
+
+  it('blocks every nonterminal recurring enrollment that cannot be bound safely', () => {
+    expect(migrationSql).toMatch(/e\.processor_type IN \('nmi', 'stripe'\) OR e\.processor_type IS NULL/);
+    expect(migrationSql).toMatch(/e\.processor_subscription_id IS NOT NULL/);
+    expect(migrationSql).toMatch(/e\.status NOT IN \('cancelled', 'completed'\)/);
+    expect(migrationSql).toContain(
+      'Migration 112 found active recurring enrollments with missing or ambiguous processor configuration ownership',
+    );
   });
 
   it('copies a resolved enrollment binding to matching processor payment events', () => {
@@ -127,5 +145,12 @@ describe('migration 112 immutable processor configuration binding contract', () 
     expect(verificationSql).toContain('Immutable enrollment binding accepted a different configuration');
     expect(verificationSql).toContain('A deterministically resolvable payment method was not backfilled');
     expect(verificationSql).toContain('Processor configuration supporting indexes are missing or malformed');
+  });
+
+  it('ships an isolated verifier proving a blocked migration leaves no partial schema', () => {
+    expect(blockedRollbackVerificationSql).toContain('Blocked migration 112 did not preserve schema version 111');
+    expect(blockedRollbackVerificationSql).toContain('Blocked migration 112 left partial processor binding columns');
+    expect(blockedRollbackVerificationSql).toContain('Blocked migration 112 left the schema-112 recurring payment RPC');
+    expect(blockedRollbackVerificationSql).toContain('MIGRATION_112_BLOCKED_ROLLBACK_PASSED');
   });
 });

@@ -1488,7 +1488,14 @@ export const paymentLifecycleService = {
         const { config: procConfig } = await resolveBoundProcessorForAction(params, 'cancel');
         const processor = createProcessorClient(procConfig);
         const result = await processor.cancelSubscription(processorSubscriptionId);
-        assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
+        if (result?.notFound) {
+          logger.info(
+            { enrollmentId: params.enrollmentId, processorSubscriptionId, processor: procConfig.processor_type },
+            'Processor subscription is already absent; continuing cancellation',
+          );
+        } else {
+          assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'cancel');
+        }
       } catch (err: any) {
         logger.warn({ err: err.message, enrollmentId: params.enrollmentId }, 'Processor subscription cancel failed');
         throw err;
@@ -1734,7 +1741,18 @@ export const paymentLifecycleService = {
       const { config: procConfig } = await resolveBoundProcessorForAction(params, 'complete');
       const processor = createProcessorClient(procConfig);
       const result = await processor.cancelSubscription(params.processorSubscriptionId);
-      assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'complete');
+      if (result?.notFound) {
+        logger.info(
+          {
+            enrollmentId: params.enrollmentId,
+            processorSubscriptionId: params.processorSubscriptionId,
+            processor: procConfig.processor_type,
+          },
+          'Processor subscription is already absent; continuing enrollment completion',
+        );
+      } else {
+        assertProcessorSuccess(result, procConfig.processor_type || 'processor', 'complete');
+      }
     }
 
     // Update enrollment status only after future processor billing is stopped.

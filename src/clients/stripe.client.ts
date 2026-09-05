@@ -432,7 +432,11 @@ export class StripeClient implements ProcessorInterface {
 
   // ─── cancelSubscription ────────────────────────────────────
 
-  async cancelSubscription(subscriptionId: string): Promise<{ success: boolean; errorMessage?: string }> {
+  async cancelSubscription(subscriptionId: string): Promise<{
+    success: boolean;
+    errorMessage?: string;
+    notFound?: boolean;
+  }> {
     try {
       // Stripe SDK v22 uses (id, params?, options?). Passing stripeAccount as the
       // second argument makes Stripe treat it as a request param and reject it.
@@ -440,7 +444,11 @@ export class StripeClient implements ProcessorInterface {
       return { success: true };
     } catch (err) {
       const procErr = this.toProcessorError(err);
-      return { success: false, errorMessage: procErr.message };
+      const stripeError = err as any;
+      // Stripe uses resource_missing when this exact subscription no longer
+      // exists. Other 4xx failures must continue to block local cancellation.
+      const notFound = stripeError?.code === 'resource_missing';
+      return { success: false, errorMessage: procErr.message, ...(notFound ? { notFound: true } : {}) };
     }
   }
 

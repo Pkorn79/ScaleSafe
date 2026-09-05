@@ -589,6 +589,18 @@ describe('NmiClient', () => {
       expect(params.get('recurring')).toBe('delete_subscription');
       expect(params.get('subscription_id')).toBe('SUB001');
     });
+
+    it('identifies a recurring subscription already absent from NMI', async () => {
+      mockedAxios.post.mockResolvedValueOnce({
+        data: 'response=3&responsetext=No recurring subscriptions found',
+      });
+
+      await expect(client.cancelSubscription('SUB-GONE')).resolves.toEqual({
+        success: false,
+        errorMessage: 'No recurring subscriptions found',
+        notFound: true,
+      });
+    });
   });
 
   describe('verifyTransaction', () => {

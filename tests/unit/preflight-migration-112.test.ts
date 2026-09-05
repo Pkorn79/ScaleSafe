@@ -22,6 +22,9 @@ describe('migration 112 production preflight', () => {
 
   it('reports every rollout ownership and retry-context risk', () => {
     expect(sql).toContain("'active_recurring_enrollments'");
+    expect(sql).toContain("'missing_processor_type'");
+    expect(sql).toMatch(/e\.processor_type IS NULL AND e\.processor_subscription_id IS NOT NULL/);
+    expect(sql).toMatch(/e\.status NOT IN \('cancelled', 'completed'\)/);
     expect(sql).toContain("'stored_payment_methods'");
     expect(sql).toContain("'configuration_unmatched'");
     expect(sql).toContain("'configuration_ambiguous'");
