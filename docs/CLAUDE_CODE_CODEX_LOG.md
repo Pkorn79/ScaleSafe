@@ -56,12 +56,13 @@ Verification:
 - Full backend suite: 210 suites, 1,768 tests passed.
 - TypeScript, Vite production build, UI asset copy, and `git diff --check` passed.
 - Fresh isolated schema 111 preflight returned `ready`; migration 112, the rollback-only verifier, and the schema 112 Command Center catalog gate passed on the loopback-only VPS database.
+- The exact production project `zddyagfotdtfbcdursqu` was confirmed at schema 106. The checksum-verified direct PostgreSQL catalog checker enforced read-only transaction settings, returned `COMMAND_CENTER_PRE_MIGRATION_CATALOG_PASSED`, and rolled back.
 
 Release boundary:
 
 - Implementation commit: `adff345`.
 - No production SQL, deployment, external configuration, `main` merge, or `main` push occurred.
-- Next step is a separately approved read-only production preflight against the exact Supabase project referenced by Railway, followed by a bounded migration and default-off deployment approval only if every gate passes.
+- The read-only production preflight is complete. Next step is reconciliation of the final independent read-only Fable review, followed by explicit owner approval for the bounded migration and default-off deployment.
 
 ### 2026-08-18: Stripe Live Cutover Guardrails + Gated Test Access (Codex)
 

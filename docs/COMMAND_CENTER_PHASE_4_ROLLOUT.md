@@ -2,7 +2,7 @@
 
 **Status:** Integrated schema 112 release candidate and owner MFA login passed in isolation; production rollout pending
 **Production authorization:** Not granted
-**Last documented production schema:** 106; verify the real project and version before any migration
+**Verified production schema:** 106; direct forced-read-only catalog gate passed September 4, 2026
 **Release migrations:** 107 through 112
 **Operator hostname:** `ops.scalesafe.app`
 
@@ -75,12 +75,13 @@ Recorded September 4, 2026 without changing production:
 - Current successful deployment is `c3b9a20c-c221-456c-ab96-424eba36de1a` from `main` commit `821c1c57a920216c8b79617f7a9722d0f457e199`.
 - Railway's production `SUPABASE_URL` identifies project `zddyagfotdtfbcdursqu`, matching the repository's linked project reference.
 - The service-only `scalesafe_schema_version()` RPC returned `106` using a server-identifying request. No secret value was printed or written.
-- Read-only PostgREST OpenAPI metadata shows the migration 106 merchant-access and Stripe-mode columns, no Command Center tables or routines, and no migration 112 processor-binding columns. This rules out an API-visible partial rollout, but does not replace the direct PostgreSQL catalog gate.
+- Read-only PostgREST OpenAPI metadata shows the migration 106 merchant-access and Stripe-mode columns, no Command Center tables or routines, and no migration 112 processor-binding columns.
 - `/health` returned healthy with app, Supabase, and schema checks all `ok`.
 - Railway reported no error-level application logs during the sampled 24-hour window. It reported two HTTP 500 responses on `/api/payments/lifecycle/enrollment/status`; both correlate to the known test-Stripe connection/live-platform mismatch during the three historical cancellation attempts. The candidate contains the tested fully paid historical cancellation correction.
 - `scalesafe-backup.timer` and `scalesafe-backup-status.timer` are active and waiting; their latest services report `Result=success` and `ExecMainStatus=0`. The status publisher's successful run proves its internal latest-snapshot verification returned healthy.
+- The checksum-verified direct PostgreSQL checker ran as `scalesafe-backup` with `default_transaction_read_only=on`, confirmed schema `106`, returned `COMMAND_CENTER_PRE_MIGRATION_CATALOG_PASSED`, and rolled back. It found no conflicting Command Center or processor-binding objects.
 
-Remaining preflight item: run the checksum-verified, forced-read-only catalog checker through the existing VPS backup database connection. The prepared wrapper is `/home/clawuser/run-command-center-production-preflight.sh`; it refuses any project other than `zddyagfotdtfbcdursqu` and cannot write because `default_transaction_read_only=on` is enforced. It requires one interactive VPS sudo-password entry. Do not apply migrations after this check without separate approval.
+The read-only production preflight is complete. Do not apply migrations after this check without separate owner approval.
 
 ## Dependency Audit Disposition
 

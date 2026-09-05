@@ -25,6 +25,7 @@
 | TypeScript | Passed | `npm run typecheck` |
 | Backend and UI build | Passed | TypeScript build, Vite production build, and UI asset copy passed; optional WASM peer-dependency warning remains recorded in the original build log |
 | Credential pattern check | Passed within stated scope | 49 changed/new candidate files scanned, no high-confidence matches or test-fixture matches; not a full-history secret audit |
+| Production pre-migration catalog | Passed read-only | Exact project `zddyagfotdtfbcdursqu`, schema 106; checksum-verified checker enforced read-only transaction settings, returned `COMMAND_CENTER_PRE_MIGRATION_CATALOG_PASSED`, and rolled back |
 
 The final September 4 disposable reset removed the scratch owner and earlier synthetic rows. No production user was created. The real Auth test used a localhost HTTP reverse proxy because the browser rejected the self-signed HTTPS certificate. Production HTTPS, secure cookies, exact-origin requests, and client-IP handling still require live-domain acceptance. The UI fixture check and the real Auth check are separate evidence, not proof that live customer totals are correct.
 
@@ -69,7 +70,7 @@ The isolated stack was stopped after final SQL proof, using Supabase's default v
 ## Remaining Production Gates
 
 1. Review the candidate and dependency exceptions and record the final release SHA. Fable's confirmed payment/security findings are reconciled through `adff345`; rerun certification after any additional integration change.
-2. Complete the prepared forced-read-only PostgreSQL catalog gate. Railway project/service/deployment identity, Supabase project `zddyagfotdtfbcdursqu`, schema 106, API-visible drift, public health, sampled Railway logs, and backup/status timer success were verified read-only on September 4. Direct catalog access still requires one interactive VPS sudo-password entry.
+2. Completed September 4: the forced-read-only PostgreSQL catalog gate confirmed exact Supabase project `zddyagfotdtfbcdursqu` at schema 106 with no conflicting rollout objects and rolled back successfully.
 3. Obtain explicit approval before production SQL, deployment, main push/merge, domain/config changes, or operator user creation.
 4. Apply only the missing migrations from 107 through 112 in order, deploy default-off code, establish the real operator domain and private credentials, then complete owner MFA login acceptance.
 5. In the approved activation window, verify scheduled-job continuity, no duplicate execution, correct live tenant totals, audit attribution, and rollback readiness.
