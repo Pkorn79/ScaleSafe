@@ -48,18 +48,21 @@ Summary:
 - Added fatal asynchronous-error observability with `uncaughtExceptionMonitor`. This deliberately preserves Node's fail-fast behavior instead of keeping a potentially corrupted process alive.
 - Expanded migration 112 readiness to cover null processor types and every nonterminal processor subscription, including `delinquent`, and wrapped the migration in an explicit transaction.
 - Added isolated-only seed, cleanup, and rollback-verification SQL for the blocked migration path.
+- Hardened the isolated replay helper to require the loopback Docker network, verify actual project port bindings, and apply every pending migration atomically.
 
 Verification:
 
-- Full backend suite: 210 suites, 1,776 tests passed.
+- Full backend suite: 210 suites, 1,777 tests passed.
 - TypeScript, production build, UI asset copy, and `git diff --check` passed.
 - The authoritative loopback-only VPS replay proved both the blocked migration with complete rollback at schema 111 and the clean transactional migration through schema 112 and the post-migration catalog gate.
+- A second clean replay through the hardened helper passed from schema 106 through 112 on loopback, and both final Fable reviews reported no blocking findings.
 
 Release boundary:
 
 - Follow-up implementation commit: `01bf2c8`.
+- Atomic replay helper commit: `28cbf69`.
 - No production SQL, deployment, external configuration, `main` merge, or `main` push occurred.
-- Remaining gate: one final independent read-only review of this follow-up commit, then explicit owner approval for the bounded production migration and default-off deployment.
+- Remaining gate: explicit owner approval for the bounded production migration and default-off deployment, followed by the documented live-domain and owner-login acceptance checks.
 
 ### 2026-09-04: Fable Payment/Security Reconciliation + Schema 112 Certification (Codex)
 

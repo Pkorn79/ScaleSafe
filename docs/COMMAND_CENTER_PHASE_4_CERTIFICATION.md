@@ -4,6 +4,7 @@
 **Scope:** Isolated release preparation, not production authorization
 **Branch:** `codex/command-center-release-candidate`
 **Integrated payment-security SHA:** `01bf2c8`
+**Final reviewed candidate SHA:** `28cbf69`
 **Release instructions:** [Phase 4 Rollout](COMMAND_CENTER_PHASE_4_ROLLOUT.md)
 
 ## Completed Gates
@@ -21,7 +22,8 @@
 | Owner Auth and TOTP | Passed in isolation | Bootstrap, first login/enrollment, page reload, logout, returning MFA login, logout; two sessions, none unrevoked after final logout |
 | Browser layout | Passed in isolation | Populated fixture desktop views and 390x844 mobile; filters, incident detail, runbooks, menu/table scrolling; no console errors observed |
 | Operator-host routing | Passed | Root redirects only with center/auth enabled; other merchant paths blocked on the operator host; forwarded-host spoof rejected; merchant health remains reachable |
-| Backend regression suite | Passed | 210 suites, 1,776 tests |
+| Final independent Fable review | Passed | Application follow-up through `8d22583` and atomic replay helper through `28cbf69`; no blocking findings |
+| Backend regression suite | Passed | 210 suites, 1,777 tests |
 | TypeScript | Passed | `npm run typecheck` |
 | Backend and UI build | Passed | TypeScript build, Vite production build, and UI asset copy passed; optional WASM peer-dependency warning remains recorded in the original build log |
 | Credential pattern check | Passed within stated scope | 49 changed/new candidate files scanned, no high-confidence matches or test-fixture matches; not a full-history secret audit |
@@ -63,11 +65,13 @@ Isolated VPS workspace: `/tmp/scalesafe-phase4-110-20260903b`, dedicated Docker 
 
 Processor-binding replay workspace: `/tmp/scalesafe-phase4-111-replay-20260904b`, PostgreSQL on loopback `127.0.0.1:55522`. The authoritative sequence started at schema `111`, seeded one fixed synthetic null-processor `delinquent` subscription, observed a blocked aggregate preflight and expected migration failure, then returned `MIGRATION_112_BLOCKED_ROLLBACK_PASSED`. After removing only that fixture, preflight returned `ready`, migration 112 completed with `BEGIN` and `COMMIT`, `MIGRATION 112 IMMUTABLE PROCESSOR CONFIG BINDING PASSED`, and `COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED` returned at schema `112`. Final schema was 112 with zero enrollments.
 
+Atomic-runner replay workspace: `/tmp/scalesafe-phase4-atomic-20260904c`, PostgreSQL on loopback `127.0.0.1:55622`. The hardened helper reset to schema 106 with the explicit Docker network, applied 107-111 with one transaction per file, applied transaction-owned migration 112, and returned `ISOLATED REPLAY COMPLETE`. Schema version returned 112 and the checksum-matched current checker returned `COMMAND_CENTER_POST_MIGRATION_CATALOG_PASSED` and rolled back. An older pre-112 checker copy correctly rejected schema 112 before the current checker was selected. All published ports remained on `127.0.0.1`; the stack was stopped and no project container remained running.
+
 During non-authoritative harness setup, two Supabase CLI operations omitted the global `--network-id` option and briefly recreated disposable, default-key test containers with ports on all interfaces. Each was detected and stopped immediately. The workspace contained no production credentials, customer data, or production connection. The authoritative reset and replay explicitly passed the loopback network to `start`, `db reset --local`, and `stop`; Docker bindings were verified before and after, and no Phase 4 container remained running. Production, recovery, backup, and Guardian services were not stopped or reconfigured.
 
 ## Remaining Production Gates
 
-1. Obtain one final independent read-only review of the follow-up patch through `01bf2c8`, review the dependency exceptions, and record the final release SHA. Rerun certification after any additional integration change.
+1. Review the dependency exceptions and record the final release SHA. The final independent Fable reviews are complete with no blocking findings. Rerun certification after any additional integration change.
 2. Completed September 4: the forced-read-only PostgreSQL catalog gate confirmed exact Supabase project `zddyagfotdtfbcdursqu` at schema 106 with no conflicting rollout objects and rolled back successfully.
 3. Obtain explicit approval before production SQL, deployment, main push/merge, domain/config changes, or operator user creation.
 4. Apply only the missing migrations from 107 through 112 in order, deploy default-off code, establish the real operator domain and private credentials, then complete owner MFA login acceptance.
