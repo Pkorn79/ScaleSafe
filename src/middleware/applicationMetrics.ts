@@ -8,4 +8,3 @@ export function applicationMetrics(req: Request, res: Response, next: NextFuncti
   });
   next();
 }
-

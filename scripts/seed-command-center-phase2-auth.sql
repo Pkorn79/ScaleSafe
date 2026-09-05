@@ -158,4 +158,3 @@ FROM (
 JOIN operator_memberships membership
   ON membership.operator_user_id = session.operator_user_id
  AND membership.status = 'active';
-

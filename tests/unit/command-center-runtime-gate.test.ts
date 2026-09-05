@@ -21,4 +21,3 @@ test('health evaluation reports the schema required by the enabled feature set',
   expect(runtime).toContain('requiredSchemaVersion: schemaReadinessService.requiredVersion()');
   expect(runtime).toContain('maxSupportedSchemaVersion: schemaReadinessService.maximumSupportedVersion()');
 });
-

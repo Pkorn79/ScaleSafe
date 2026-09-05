@@ -1,8 +1,8 @@
 # Command Center Phase 2 Thresholds And Resource Budget
 
-**Status:** Approved for isolated implementation by Philip on 2026-07-23  
-**Applies to:** Isolated Phase 2 implementation and staging certification only  
-**Production activation:** Not authorized  
+**Status:** Approved for isolated implementation by Philip on 2026-07-23
+**Applies to:** Isolated Phase 2 implementation and staging certification only
+**Production activation:** Not authorized
 **Threshold contract version:** `command-center-health-v1.1`
 
 ## 1. Purpose

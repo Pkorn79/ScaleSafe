@@ -1,8 +1,8 @@
 # Command Center Phase 2 Acceptance Report
 
-**Date:** 2026-07-25  
-**Branch:** `codex/beta-remediation`  
-**Baseline before Phase 2 work:** `c7ae87ee76f7b88ff025f85bfe7efdd9ddf45eb3`  
+**Date:** 2026-07-25
+**Branch:** `codex/beta-remediation`
+**Baseline before Phase 2 work:** `c7ae87ee76f7b88ff025f85bfe7efdd9ddf45eb3`
 **Production status:** Not deployed; migration 104 not applied; feature flags remain disabled
 
 ## Verdict
