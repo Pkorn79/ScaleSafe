@@ -40,6 +40,27 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-09-04: Final Fable Follow-up + Migration 112 Atomicity (Codex)
+
+Summary:
+
+- Confirmed Fable's remaining lifecycle defect and added narrowly classified Stripe and NMI missing-subscription results. Cancellation and completion may proceed locally only when the exact remote subscription is already absent; generic 4xx, authorization, provider, and transport failures remain fail-closed.
+- Added fatal asynchronous-error observability with `uncaughtExceptionMonitor`. This deliberately preserves Node's fail-fast behavior instead of keeping a potentially corrupted process alive.
+- Expanded migration 112 readiness to cover null processor types and every nonterminal processor subscription, including `delinquent`, and wrapped the migration in an explicit transaction.
+- Added isolated-only seed, cleanup, and rollback-verification SQL for the blocked migration path.
+
+Verification:
+
+- Full backend suite: 210 suites, 1,776 tests passed.
+- TypeScript, production build, UI asset copy, and `git diff --check` passed.
+- The authoritative loopback-only VPS replay proved both the blocked migration with complete rollback at schema 111 and the clean transactional migration through schema 112 and the post-migration catalog gate.
+
+Release boundary:
+
+- Follow-up implementation commit: `01bf2c8`.
+- No production SQL, deployment, external configuration, `main` merge, or `main` push occurred.
+- Remaining gate: one final independent read-only review of this follow-up commit, then explicit owner approval for the bounded production migration and default-off deployment.
+
 ### 2026-09-04: Fable Payment/Security Reconciliation + Schema 112 Certification (Codex)
 
 Summary:
@@ -62,7 +83,7 @@ Release boundary:
 
 - Implementation commit: `adff345`.
 - No production SQL, deployment, external configuration, `main` merge, or `main` push occurred.
-- The read-only production preflight is complete. Next step is reconciliation of the final independent read-only Fable review, followed by explicit owner approval for the bounded migration and default-off deployment.
+- The read-only production preflight is complete. The subsequent independent review and its remediation are recorded in the entry above.
 
 ### 2026-08-18: Stripe Live Cutover Guardrails + Gated Test Access (Codex)
 
