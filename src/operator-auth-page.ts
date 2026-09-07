@@ -541,7 +541,7 @@ export const operatorAuthJs = `'use strict';
         login.hidden = true;
         if (result.next === 'mfa_enroll') {
           const setup = await call('/internal/operator/auth/mfa/enroll', {});
-          document.getElementById('qr').src = 'data:image/svg+xml;utf-8,' + encodeURIComponent(setup.qrCode);
+          document.getElementById('qr').src = setup.qrCode;
           document.getElementById('secret').value = setup.secret;
           enroll.hidden = false;
         }
