@@ -3,8 +3,13 @@ import {
   operatorCommandCenterHtml,
   operatorCommandCenterJs,
 } from '../../src/operator-command-center-page';
+import { Script } from 'vm';
 
 describe('operator Command Center page', () => {
+  it('ships syntactically valid browser JavaScript', () => {
+    expect(() => new Script(operatorCommandCenterJs)).not.toThrow();
+  });
+
   it('renders every Phase 4 read-only operations view', () => {
     const html = operatorCommandCenterHtml();
 
@@ -42,6 +47,14 @@ describe('operator Command Center page', () => {
     expect(operatorCommandCenterJs).toContain('No trustworthy current result is available');
     expect(operatorCommandCenterJs).toContain('Automatic retry budget is exhausted');
     expect(operatorCommandCenterJs).toContain('provider outcome is not yet proven');
+  });
+
+  it('keeps owner access usable while health monitoring remains disabled', () => {
+    expect(operatorCommandCenterJs).toContain("session = await get('/internal/operator/api/session')");
+    expect(operatorCommandCenterJs).toContain('await refreshHealthAvailability()');
+    expect(operatorCommandCenterJs).toContain('Owner access is active. Health monitoring and incident automation remain disabled pending acceptance.');
+    expect(operatorCommandCenterJs).toContain("if (error.status !== 404) throw error");
+    expect(operatorCommandCenterJs).not.toContain("Promise.all([get('/internal/operator/api/session')");
   });
 
   it('contains wide data tables without overflowing the mobile page', () => {

@@ -12,12 +12,12 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
       <div class="brand"><strong>ScaleSafe</strong><span>Command Center</span><button id="mobile-menu" class="mobile-menu" type="button" aria-expanded="false" aria-controls="navigation">Menu</button></div>
       <nav id="navigation">
         <button class="nav-item active" data-view="overview" type="button"><span>Overview</span><i id="overview-dot"></i></button>
-        <button class="nav-item" data-view="merchants" type="button"><span>Merchants</span><b id="merchant-nav-count"></b></button>
-        <button class="nav-item" data-view="incidents" type="button"><span>Incidents</span><b id="incident-nav-count"></b></button>
+        <button class="nav-item" data-view="merchants" type="button" disabled title="Health monitoring is not enabled yet"><span>Merchants</span><b id="merchant-nav-count"></b></button>
+        <button class="nav-item" data-view="incidents" type="button" disabled title="Health monitoring is not enabled yet"><span>Incidents</span><b id="incident-nav-count"></b></button>
         <p class="nav-label">Operations</p>
-        <button class="nav-item" data-view="money" type="button"><span>Payments</span><i id="money-dot"></i></button>
-        <button class="nav-item" data-view="fulfillment" type="button"><span>Workflows &amp; evidence</span><i id="fulfillment-dot"></i></button>
-        <button class="nav-item" data-view="recovery" type="button"><span>Recovery &amp; deploys</span><i id="recovery-dot"></i></button>
+        <button class="nav-item" data-view="money" type="button" disabled title="Health monitoring is not enabled yet"><span>Payments</span><i id="money-dot"></i></button>
+        <button class="nav-item" data-view="fulfillment" type="button" disabled title="Health monitoring is not enabled yet"><span>Workflows &amp; evidence</span><i id="fulfillment-dot"></i></button>
+        <button class="nav-item" data-view="recovery" type="button" disabled title="Health monitoring is not enabled yet"><span>Recovery &amp; deploys</span><i id="recovery-dot"></i></button>
         <p class="nav-label">Administration</p>
         <button class="nav-item" data-view="resellers" type="button"><span>Resellers</span></button>
         <button class="nav-item" data-view="audit" type="button"><span>Audit</span></button>
@@ -47,7 +47,7 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
         <div id="summary" class="summary-grid" aria-label="Platform summary"></div>
         <div class="split-grid">
           <section class="surface">
-            <div class="section-heading"><div><h2>Needs attention</h2><p>Active incidents ordered by severity and recency.</p></div><button class="text-button" data-jump="incidents" type="button">View all</button></div>
+            <div class="section-heading"><div><h2>Needs attention</h2><p>Active incidents ordered by severity and recency.</p></div><button class="text-button" data-jump="incidents" type="button" disabled title="Health monitoring is not enabled yet">View all</button></div>
             <div id="overview-incidents" class="stack-list"></div>
           </section>
           <section class="surface">
@@ -56,7 +56,7 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
           </section>
         </div>
         <section class="surface">
-          <div class="section-heading"><div><h2>Merchant attention</h2><p>Accounts with the highest current operational risk.</p></div><button class="text-button" data-jump="merchants" type="button">Open merchants</button></div>
+          <div class="section-heading"><div><h2>Merchant attention</h2><p>Accounts with the highest current operational risk.</p></div><button class="text-button" data-jump="merchants" type="button" disabled title="Health monitoring is not enabled yet">Open merchants</button></div>
           <div class="table-wrap"><table><thead><tr><th>Merchant</th><th>Overall</th><th>Attention</th><th>Critical path</th><th>Evaluated</th></tr></thead><tbody id="overview-merchants"></tbody></table></div>
         </section>
       </section>
@@ -147,6 +147,8 @@ nav { display: grid; gap: 4px; padding-top: 18px; }
 .nav-item { display: flex; align-items: center; justify-content: space-between; min-height: 42px; border: 0; border-radius: 6px; padding: 9px 11px; background: transparent; color: #c5d3e1; text-align: left; }
 .nav-item:hover, .nav-item:focus-visible { background: rgba(255,255,255,.07); color: #fff; outline: 0; }
 .nav-item.active { background: #fff; color: #102033; font-weight: 750; }
+.nav-item:disabled { cursor: not-allowed; opacity: .48; }
+.nav-item:disabled:hover { background: transparent; color: #c5d3e1; }
 .nav-item b { min-width: 24px; border-radius: 12px; padding: 2px 7px; background: rgba(255,255,255,.11); font-size: 11px; text-align: center; }
 .nav-item.active b { background: #e6f6f1; color: #08745d; }
 .nav-item i { width: 8px; height: 8px; border-radius: 50%; background: #d64b3c; }
@@ -173,6 +175,7 @@ h3 { margin: 0; font-size: 14px; }
 .secondary-button, .text-button, form button { min-height: 38px; border: 1px solid #9fb2ba; border-radius: 5px; padding: 8px 13px; background: #fff; color: #17384b; font-weight: 750; }
 form button { border-color: #007c68; background: #007c68; color: #fff; }
 .text-button { min-height: 32px; border: 0; padding: 4px; color: #08745d; }
+.text-button:disabled { cursor: not-allowed; opacity: .5; }
 .status { min-height: 20px; max-width: 1500px; margin: 0 auto 10px; color: #b42318; font-size: 13px; }
 .view { display: none; width: 100%; min-width: 0; max-width: 1500px; margin: 0 auto; }
 .view.active { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -273,6 +276,7 @@ export const operatorCommandCenterJs = `'use strict';
   const stateWeight = { critical: 6, unhealthy: 5, urgent: 5, unknown: 4, degraded: 3, warning: 3, healthy: 1, resolved: 0, not_applicable: 0 };
   let session = null;
   let health = { checks: [], incidents: [], merchants: [], summary: {}, generatedAt: null };
+  let healthAvailable = false;
   let incidentCursor = null;
   let incidents = [];
   let merchantOffset = 0;
@@ -280,6 +284,7 @@ export const operatorCommandCenterJs = `'use strict';
   const merchantLimit = 50;
   let suppressIncidentId = '';
   const loaded = new Set();
+  const healthViews = new Set(['merchants', 'incidents', 'money', 'fulfillment', 'recovery']);
 
   function show(message, ok) {
     status.textContent = message || '';
@@ -404,6 +409,56 @@ export const operatorCommandCenterJs = `'use strict';
     );
   }
 
+  function setHealthNavigationEnabled(enabled) {
+    healthAvailable = enabled;
+    document.querySelectorAll('[data-view], [data-jump]').forEach(function (button) {
+      const view = button.dataset.view || button.dataset.jump;
+      if (!healthViews.has(view)) return;
+      button.disabled = !enabled;
+      button.title = enabled ? '' : 'Health monitoring is not enabled yet';
+    });
+  }
+
+  function renderHealthUnavailable() {
+    setHealthNavigationEnabled(false);
+    health = { checks: [], incidents: [], merchants: [], summary: {}, generatedAt: null };
+    const role = session ? String(session.role || 'operator').replaceAll('_', ' ') : 'operator';
+    document.getElementById('summary').replaceChildren(
+      summaryCard('Owner access', 'active', role, ''),
+      summaryCard('Authentication', 'MFA', 'Verified session', ''),
+      summaryCard('Health monitoring', 'disabled', 'Acceptance gate pending', ''),
+      summaryCard('Incident automation', 'disabled', 'No automated evaluation is running', '')
+    );
+    empty(document.getElementById('overview-incidents'), 'Incident monitoring remains disabled until its separate acceptance gate.');
+    empty(document.getElementById('system-groups'), 'Health checks will appear after monitoring passes its acceptance gate.');
+    const merchantSummary = document.getElementById('overview-merchants');
+    merchantSummary.replaceChildren();
+    emptyRow(merchantSummary, 5, 'Merchant health data is not being evaluated while monitoring is disabled.');
+    ['money', 'fulfillment', 'recovery'].forEach(function (group) {
+      empty(document.getElementById(group + '-checks'), 'Monitoring is not enabled for this system.');
+      document.getElementById(group + '-freshness').textContent = 'Monitoring disabled';
+    });
+    document.getElementById('merchant-result-count').textContent = 'Health monitoring is not enabled.';
+    const merchantRows = document.getElementById('merchant-rows');
+    merchantRows.replaceChildren();
+    emptyRow(merchantRows, 7, 'Merchant health data is unavailable until monitoring is enabled.');
+    document.getElementById('merchant-page').textContent = 'Monitoring disabled';
+    document.getElementById('merchant-prev').disabled = true;
+    document.getElementById('merchant-next').disabled = true;
+    const incidentRows = document.getElementById('incident-rows');
+    incidentRows.replaceChildren();
+    emptyRow(incidentRows, 7, 'Incident monitoring is disabled; no incident data is being evaluated.');
+    document.getElementById('incident-count').textContent = 'Monitoring disabled';
+    document.getElementById('more-incidents').hidden = true;
+    document.getElementById('merchant-nav-count').textContent = '';
+    document.getElementById('incident-nav-count').textContent = '';
+    document.querySelectorAll('.nav-item i').forEach(function (dot) { dot.classList.remove('visible'); });
+    const fresh = document.getElementById('freshness');
+    fresh.className = 'freshness unknown';
+    fresh.textContent = 'Health monitoring disabled';
+    show('Owner access is active. Health monitoring and incident automation remain disabled pending acceptance.', true);
+  }
+
   function summaryCard(label, value, note, tone) {
     const card = element('div', 'summary-item ' + (tone || ''));
     card.append(element('span', '', label), element('strong', '', value), element('small', '', note));
@@ -518,6 +573,7 @@ export const operatorCommandCenterJs = `'use strict';
 
   async function loadHealth() {
     const data = await get('/internal/operator/api/health?limit=200');
+    setHealthNavigationEnabled(true);
     health = {
       checks: data.checks || [],
       incidents: data.incidents || [],
@@ -537,6 +593,17 @@ export const operatorCommandCenterJs = `'use strict';
     target.className = 'freshness ' + current.className;
     target.textContent = current.text;
     show('');
+  }
+
+  async function refreshHealthAvailability() {
+    try {
+      await loadHealth();
+      return true;
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      renderHealthUnavailable();
+      return false;
+    }
   }
 
   function queryString(values) {
@@ -795,6 +862,7 @@ export const operatorCommandCenterJs = `'use strict';
   }
 
   async function loadView(view) {
+    if (healthViews.has(view) && !healthAvailable) return;
     if (view === 'merchants') await loadMerchants(!loaded.has(view));
     if (view === 'incidents') await loadIncidents(!loaded.has(view));
     if (view === 'resellers' && !loaded.has(view)) await loadResellers();
@@ -823,7 +891,7 @@ export const operatorCommandCenterJs = `'use strict';
   document.getElementById('mobile-menu').addEventListener('click', function (event) { const open = document.querySelector('.sidebar').classList.toggle('menu-open'); event.currentTarget.setAttribute('aria-expanded', String(open)); });
   document.querySelectorAll('[data-view]').forEach(function (button) { button.addEventListener('click', function () { navigate(button.dataset.view); }); });
   document.querySelectorAll('[data-jump]').forEach(function (button) { button.addEventListener('click', function () { navigate(button.dataset.jump); }); });
-  document.getElementById('refresh').addEventListener('click', async function (event) { const button = event.currentTarget; button.disabled = true; show('Refreshing current health...', true); try { await loadHealth(); const view = location.hash.slice(1).split('/')[0]; if (view === 'merchants') await loadMerchants(true); if (view === 'incidents') await loadIncidents(true); if (view === 'audit') await loadAudit(); } catch (error) { show(error.message); } finally { button.disabled = false; } });
+  document.getElementById('refresh').addEventListener('click', async function (event) { const button = event.currentTarget; button.disabled = true; show('Checking current availability...', true); try { const available = await refreshHealthAvailability(); const view = location.hash.slice(1).split('/')[0]; if (available && view === 'merchants') await loadMerchants(true); if (available && view === 'incidents') await loadIncidents(true); if (view === 'audit') await loadAudit(); } catch (error) { show(error.message); } finally { button.disabled = false; } });
   document.getElementById('merchant-filters').addEventListener('submit', function (event) { event.preventDefault(); loadMerchants(true).catch(function (error) { show(error.message); }); });
   document.getElementById('merchant-prev').addEventListener('click', function () { merchantOffset = Math.max(0, merchantOffset - merchantLimit); loadMerchants(false).catch(function (error) { show(error.message); }); });
   document.getElementById('merchant-next').addEventListener('click', function () { merchantOffset += merchantLimit; loadMerchants(false).catch(function (error) { show(error.message); }); });
@@ -835,14 +903,16 @@ export const operatorCommandCenterJs = `'use strict';
   document.getElementById('suppress-form').addEventListener('submit', async function (event) { event.preventDefault(); const form = event.currentTarget; const values = new FormData(form); const hours = Math.max(1, Math.min(24, Number(values.get('hours')) || 1)); const button = form.querySelector('button[type="submit"]'); button.disabled = true; try { await post('/internal/operator/api/incidents/' + encodeURIComponent(suppressIncidentId) + '/suppress', { reason: values.get('reason'), until: new Date(Date.now() + hours * 3600000).toISOString() }); form.reset(); document.getElementById('suppress-dialog').close(); await loadIncidents(true); await loadHealth(); } catch (error) { show(error.message); } finally { button.disabled = false; } });
   document.getElementById('logout').addEventListener('click', async function () { try { await post('/internal/operator/auth/logout', {}); location.replace('/internal/operator/login'); } catch (error) { show(error.message); } });
 
-  Promise.all([get('/internal/operator/api/session'), get('/internal/operator/api/health?limit=200')]).then(function (results) {
-    session = results[0]; renderIdentity(session);
-    const data = results[1]; health = { checks: data.checks || [], incidents: data.incidents || [], merchants: data.merchants || [], summary: data.summary || {}, generatedAt: data.generatedAt };
-    renderSummary(); renderOverviewIncidents(); renderOverviewMerchants(); renderSystemGroups();
-    renderChecks('money', 'money-checks', 'money-freshness'); renderChecks('fulfillment', 'fulfillment-checks', 'fulfillment-freshness'); renderChecks('recovery', 'recovery-checks', 'recovery-freshness');
-    const current = freshness(data.generatedAt); const fresh = document.getElementById('freshness'); fresh.className = 'freshness ' + current.className; fresh.textContent = current.text;
-    loadResellerFilter();
+  async function initialize() {
+    session = await get('/internal/operator/api/session');
+    renderIdentity(session);
+    await refreshHealthAvailability();
+    await loadResellerFilter();
     const route = (location.hash.slice(1) || 'overview').split('/');
-    loaded.add('overview'); navigate(route[0], route[1] ? decodeURIComponent(route.slice(1).join('/')) : '');
-  }).catch(function (error) { if (error.status === 401) { location.replace('/internal/operator/login'); return; } show(error.message); });
+    if (!healthAvailable && healthViews.has(route[0])) route[0] = 'overview';
+    loaded.add('overview');
+    navigate(route[0], route[1] ? decodeURIComponent(route.slice(1).join('/')) : '');
+  }
+
+  initialize().catch(function (error) { if (error.status === 401) { location.replace('/internal/operator/login'); return; } show(error.message); });
 })();`;
