@@ -43,3 +43,12 @@ test('Phase 2 permissions are limited to platform roles', () => {
     expect(operatorAuthorizationService.permissionsForRole(role).has('platform.incidents.manage')).toBe(false);
   }
 });
+
+test('Evidence portfolio access is restricted to platform owners and operations', () => {
+  for (const role of ['platform_owner', 'platform_ops'] as const) {
+    expect(operatorAuthorizationService.permissionsForRole(role).has('platform.evidence.read')).toBe(true);
+  }
+  for (const role of ['platform_support', 'security_auditor', 'reseller_owner', 'reseller_operator', 'reseller_viewer'] as const) {
+    expect(operatorAuthorizationService.permissionsForRole(role).has('platform.evidence.read')).toBe(false);
+  }
+});

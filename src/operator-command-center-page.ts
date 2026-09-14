@@ -11,13 +11,16 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
     <aside class="sidebar" aria-label="Command Center navigation">
       <div class="brand"><strong>ScaleSafe</strong><span>Command Center</span><button id="mobile-menu" class="mobile-menu" type="button" aria-expanded="false" aria-controls="navigation">Menu</button></div>
       <nav id="navigation">
+        <p class="nav-label">ScaleSafe Enrollments</p>
         <button class="nav-item active" data-view="overview" type="button"><span>Overview</span><i id="overview-dot"></i></button>
         <button class="nav-item" data-view="merchants" type="button" disabled title="Health monitoring is not enabled yet"><span>Merchants</span><b id="merchant-nav-count"></b></button>
         <button class="nav-item" data-view="incidents" type="button" disabled title="Health monitoring is not enabled yet"><span>Incidents</span><b id="incident-nav-count"></b></button>
         <p class="nav-label">Operations</p>
         <button class="nav-item" data-view="money" type="button" disabled title="Health monitoring is not enabled yet"><span>Payments</span><i id="money-dot"></i></button>
-        <button class="nav-item" data-view="fulfillment" type="button" disabled title="Health monitoring is not enabled yet"><span>Workflows &amp; evidence</span><i id="fulfillment-dot"></i></button>
+        <button class="nav-item" data-view="fulfillment" type="button" disabled title="Health monitoring is not enabled yet"><span>Enrollment fulfillment</span><i id="fulfillment-dot"></i></button>
         <button class="nav-item" data-view="recovery" type="button" disabled title="Health monitoring is not enabled yet"><span>Recovery &amp; deploys</span><i id="recovery-dot"></i></button>
+        <p class="nav-label" data-evidence-navigation hidden>ScaleSafe Evidence</p>
+        <button class="nav-item" data-view="evidence" data-evidence-navigation type="button" hidden><span>Evidence overview</span></button>
         <p class="nav-label">Administration</p>
         <button class="nav-item" data-view="resellers" type="button"><span>Resellers</span></button>
         <button class="nav-item" data-view="audit" type="button"><span>Audit</span></button>
@@ -32,9 +35,9 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
     <main class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Platform operations</p>
-          <h1 id="view-title">Platform overview</h1>
-          <p id="view-subtitle">Current service health and merchant attention across ScaleSafe.</p>
+          <p id="product-context" class="eyebrow">ScaleSafe Enrollments</p>
+          <h1 id="view-title">Enrollments overview</h1>
+          <p id="view-subtitle">Service health and merchant attention for ScaleSafe Enrollments.</p>
         </div>
         <div class="topbar-actions">
           <span id="freshness" class="freshness unknown">Waiting for current data</span>
@@ -59,6 +62,18 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
           <div class="section-heading"><div><h2>Merchant attention</h2><p>Accounts with the highest current operational risk.</p></div><button class="text-button" data-jump="merchants" type="button" disabled title="Health monitoring is not enabled yet">Open merchants</button></div>
           <div class="table-wrap"><table><thead><tr><th>Merchant</th><th>Overall</th><th>Attention</th><th>Critical path</th><th>Evaluated</th></tr></thead><tbody id="overview-merchants"></tbody></table></div>
         </section>
+      </section>
+
+      <section class="view" data-panel="evidence">
+        <section class="context-band"><strong>ScaleSafe Evidence</strong><span>Independent client records and dispute preparation. Counts on this page belong only to Evidence.</span></section>
+        <p id="evidence-status" class="status" role="status">Loading Evidence reporting.</p>
+        <div id="evidence-summary" class="summary-grid" aria-label="ScaleSafe Evidence summary"></div>
+        <section class="surface">
+          <div class="section-heading"><div><h2>Evidence merchants</h2><p id="evidence-result-count">Waiting for the Evidence service.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Merchant (GHL location)</th><th>Installation</th><th>Active customers</th><th>Purchases</th><th>Open disputes</th><th>Capture issues</th><th>Last completed capture</th></tr></thead><tbody id="evidence-rows"></tbody></table></div>
+          <div class="pager"><button id="evidence-prev" class="secondary-button" type="button" disabled>Previous</button><span id="evidence-page"></span><button id="evidence-next" class="secondary-button" type="button" disabled>Next</button></div>
+        </section>
+        <section class="context-band"><strong>Capture visibility</strong><span>Capture issues count the latest retrying or blocked job for each active customer's source. A recent report or zero issues does not certify complete evidence coverage. Last completed capture may cover only one source.</span></section>
       </section>
 
       <section class="view" data-panel="merchants">
@@ -133,11 +148,12 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
 export const operatorCommandCenterCss = `
 :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #102033; background: #f3f6f7; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; min-height: 100vh; background: #f3f6f7; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .app-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
-.sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 22px 15px 16px; background: #0d1b32; color: #fff; }
+.sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; padding: 22px 15px 16px; background: #0d1b32; color: #fff; }
 .brand { display: grid; gap: 2px; padding: 4px 11px 24px; border-bottom: 1px solid rgba(255,255,255,.1); }
 .brand strong { font-size: 21px; }
 .brand span { color: #9fb4ca; font-size: 12px; }
@@ -176,6 +192,7 @@ h3 { margin: 0; font-size: 14px; }
 form button { border-color: #007c68; background: #007c68; color: #fff; }
 .text-button { min-height: 32px; border: 0; padding: 4px; color: #08745d; }
 .text-button:disabled { cursor: not-allowed; opacity: .5; }
+.secondary-button:disabled { cursor: not-allowed; opacity: .5; }
 .status { min-height: 20px; max-width: 1500px; margin: 0 auto 10px; color: #b42318; font-size: 13px; }
 .view { display: none; width: 100%; min-width: 0; max-width: 1500px; margin: 0 auto; }
 .view.active { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -263,11 +280,12 @@ export const operatorCommandCenterJs = `'use strict';
 (function () {
   const status = document.getElementById('status');
   const titles = {
-    overview: ['Platform overview', 'Current service health and merchant attention across ScaleSafe.'],
-    merchants: ['Merchants', 'Search and inspect every ScaleSafe installation from one tenant-safe view.'],
+    overview: ['Enrollments overview', 'Service health and merchant attention for ScaleSafe Enrollments.'],
+    evidence: ['Evidence overview', 'Merchants, client records, disputes and capture activity for ScaleSafe Evidence.'],
+    merchants: ['Enrollment merchants', 'Search and inspect ScaleSafe Enrollments installations.'],
     incidents: ['Incidents', 'Operational issues, state changes, and accountable follow-up.'],
     money: ['Payments', 'Payment, refund, billing, and processor reconciliation health.'],
-    fulfillment: ['Workflows & evidence', 'Delivery automation, external evidence, and defense processing health.'],
+    fulfillment: ['Enrollment fulfillment', 'Delivery automation, enrollment evidence, and defense processing health.'],
     recovery: ['Recovery & deploys', 'Independent backup, restore, release, network, and dead-man proof.'],
     resellers: ['Resellers', 'Organizations and the accounts assigned to them.'],
     audit: ['Audit', 'Attributed access and administrative activity.'],
@@ -277,6 +295,10 @@ export const operatorCommandCenterJs = `'use strict';
   let session = null;
   let health = { checks: [], incidents: [], merchants: [], summary: {}, generatedAt: null };
   let healthAvailable = false;
+  let activeView = 'overview';
+  let evidence = null;
+  let evidenceOffset = 0;
+  let evidenceRequest = 0;
   let incidentCursor = null;
   let incidents = [];
   let merchantOffset = 0;
@@ -407,6 +429,81 @@ export const operatorCommandCenterJs = `'use strict';
       element('strong', '', String(data.role || 'operator').replaceAll('_', ' ')),
       element('span', '', 'MFA verified session')
     );
+    document.querySelectorAll('[data-evidence-navigation]').forEach(function (node) { node.hidden = !data.capabilities || !data.capabilities.evidenceRead; });
+  }
+
+  function renderActiveFreshness() {
+    const current = freshness(activeView === 'evidence' ? evidence && evidence.generatedAt : health.generatedAt);
+    const target = document.getElementById('freshness');
+    target.className = 'freshness ' + current.className;
+    target.textContent = current.text;
+  }
+
+  function evidenceUnavailable(message) {
+    evidence = null;
+    document.getElementById('evidence-summary').replaceChildren();
+    document.getElementById('evidence-rows').replaceChildren();
+    emptyRow(document.getElementById('evidence-rows'), 7, message);
+    document.getElementById('evidence-status').textContent = message;
+    document.getElementById('evidence-status').style.color = '#b42318';
+    document.getElementById('evidence-result-count').textContent = 'Evidence counts are unavailable.';
+    document.getElementById('evidence-page').textContent = '';
+    document.getElementById('evidence-prev').disabled = true;
+    document.getElementById('evidence-next').disabled = true;
+    if (activeView === 'evidence') renderActiveFreshness();
+  }
+
+  async function loadEvidence() {
+    const requestId = ++evidenceRequest;
+    evidenceUnavailable('Loading Evidence reporting...');
+    try {
+      const data = await get('/internal/operator/api/evidence/overview?limit=50&offset=' + evidenceOffset);
+      if (requestId !== evidenceRequest) return;
+      if (data.connection !== 'connected') {
+        evidenceUnavailable(data.connection === 'not_configured'
+          ? 'Evidence reporting is not connected yet. Its merchants and counts will appear here after the secure reporting connection is configured.'
+          : 'The Evidence reporting service is unavailable. Refresh to retry; no current counts can be confirmed.');
+        return;
+      }
+      evidence = data;
+      const summary = document.getElementById('evidence-summary');
+      [
+        ['Active merchants', data.summary.active_merchants, data.summary.merchants + ' installations recorded'],
+        ['Active customers', data.summary.customers, 'Customer records marked active'],
+        ['Purchases', data.summary.purchases, 'Distinct purchases in Evidence'],
+        ['Open disputes', data.summary.open_disputes, 'Cases needing a response'],
+        ['Evidence records', data.summary.evidence_records, 'Preserved records; not a coverage certification'],
+        ['Capture issues', data.summary.capture_issues, 'Latest retrying or blocked capture jobs'],
+        ['Queued or running', data.summary.queued_jobs, 'Includes capture jobs awaiting retry']
+      ].forEach(function (metric) {
+        const card = element('section', 'summary-item');
+        card.appendChild(element('span', '', metric[0]));
+        card.appendChild(element('strong', '', metric[1]));
+        card.appendChild(element('small', '', metric[2]));
+        summary.appendChild(card);
+      });
+      const rows = document.getElementById('evidence-rows'); rows.replaceChildren();
+      data.merchants.forEach(function (merchant) {
+        const row = element('tr');
+        const identity = element('td'); identity.appendChild(element('span', 'primary-text', merchant.location_id)); row.appendChild(identity);
+        row.appendChild(element('td', '', !merchant.active ? 'Disconnected' : merchant.beta_enabled ? 'Active' : 'Access pending'));
+        ['customers', 'purchases', 'open_disputes', 'capture_issues'].forEach(function (key) { row.appendChild(element('td', '', merchant[key])); });
+        row.appendChild(element('td', '', formatTime(merchant.last_capture_at)));
+        rows.appendChild(row);
+      });
+      if (!data.merchants.length) emptyRow(rows, 7, data.pagination.total ? 'No merchants on this page. Use Previous.' : 'No Evidence installations are recorded.');
+      document.getElementById('evidence-result-count').textContent = data.pagination.total + ' Evidence installations. Enrollment merchants are listed separately.';
+      document.getElementById('evidence-page').textContent = 'Page ' + (Math.floor(evidenceOffset / 50) + 1);
+      document.getElementById('evidence-prev').disabled = evidenceOffset === 0;
+      document.getElementById('evidence-next').disabled = evidenceOffset + 50 >= data.pagination.total;
+      document.getElementById('evidence-status').textContent = 'Evidence report: ' + freshness(data.generatedAt).text + '.';
+      document.getElementById('evidence-status').style.color = '#43596a';
+      if (activeView === 'evidence') renderActiveFreshness();
+    } catch (error) {
+      if (requestId !== evidenceRequest) return;
+      if (error.status === 401) { location.replace('/internal/operator/login'); return; }
+      evidenceUnavailable(error.status === 404 ? 'Evidence reporting is not available for this operator or release.' : 'Evidence reporting could not be loaded. Refresh to retry.');
+    }
   }
 
   function setHealthNavigationEnabled(enabled) {
@@ -453,10 +550,12 @@ export const operatorCommandCenterJs = `'use strict';
     document.getElementById('merchant-nav-count').textContent = '';
     document.getElementById('incident-nav-count').textContent = '';
     document.querySelectorAll('.nav-item i').forEach(function (dot) { dot.classList.remove('visible'); });
-    const fresh = document.getElementById('freshness');
-    fresh.className = 'freshness unknown';
-    fresh.textContent = 'Health monitoring disabled';
-    show('Owner access is active. Health monitoring and incident automation remain disabled pending acceptance.', true);
+    if (activeView !== 'evidence') {
+      const fresh = document.getElementById('freshness');
+      fresh.className = 'freshness unknown';
+      fresh.textContent = 'Health monitoring disabled';
+      show('Owner access is active. Health monitoring and incident automation remain disabled pending acceptance.', true);
+    }
   }
 
   function summaryCard(label, value, note, tone) {
@@ -477,7 +576,7 @@ export const operatorCommandCenterJs = `'use strict';
     const checks = Number(summary.health_checks_total || 0);
     const target = document.getElementById('summary');
     target.replaceChildren(
-      summaryCard('Platform state', summary.platform_state || 'unknown', unhealthy + ' unhealthy, ' + unknown + ' unknown', unhealthy || unknown ? 'attention' : ''),
+      summaryCard('Enrollments state', summary.platform_state || 'unknown', unhealthy + ' unhealthy, ' + unknown + ' unknown', unhealthy || unknown ? 'attention' : ''),
       summaryCard('Active incidents', active, critical + ' critical', critical ? 'attention' : ''),
       summaryCard('Merchants needing attention', merchantAttention, rollupCount + ' of ' + merchantCount + ' observed', merchantAttention ? 'warning' : ''),
       summaryCard('Health checks', checks, 'Updated ' + relativeTime(health.generatedAt), '')
@@ -588,11 +687,7 @@ export const operatorCommandCenterJs = `'use strict';
     renderChecks('money', 'money-checks', 'money-freshness');
     renderChecks('fulfillment', 'fulfillment-checks', 'fulfillment-freshness');
     renderChecks('recovery', 'recovery-checks', 'recovery-freshness');
-    const current = freshness(data.generatedAt);
-    const target = document.getElementById('freshness');
-    target.className = 'freshness ' + current.className;
-    target.textContent = current.text;
-    show('');
+    if (activeView !== 'evidence') { renderActiveFreshness(); show(''); }
   }
 
   async function refreshHealthAvailability() {
@@ -862,6 +957,12 @@ export const operatorCommandCenterJs = `'use strict';
   }
 
   async function loadView(view) {
+    if (view === 'evidence') { await loadEvidence(); return; }
+    if ((view === 'overview' || healthViews.has(view)) && !loaded.has('overview')) {
+      await refreshHealthAvailability();
+      loaded.add('overview');
+      await loadResellerFilter();
+    }
     if (healthViews.has(view) && !healthAvailable) return;
     if (view === 'merchants') await loadMerchants(!loaded.has(view));
     if (view === 'incidents') await loadIncidents(!loaded.has(view));
@@ -873,6 +974,11 @@ export const operatorCommandCenterJs = `'use strict';
 
   function navigate(view, detailId) {
     if (!titles[view]) view = 'overview';
+    if (view === 'evidence' && !(session && session.capabilities && session.capabilities.evidenceRead)) view = 'overview';
+    activeView = view;
+    show('');
+    document.getElementById('product-context').textContent = view === 'evidence' ? 'ScaleSafe Evidence' : ['resellers', 'audit', 'runbooks'].includes(view) ? 'Command Center administration' : 'ScaleSafe Enrollments';
+    renderActiveFreshness();
     document.querySelectorAll('.view').forEach(function (node) { node.classList.toggle('active', node.dataset.panel === view); });
     document.querySelectorAll('.nav-item').forEach(function (node) { node.classList.toggle('active', node.dataset.view === view); });
     document.getElementById('view-title').textContent = titles[view][0];
@@ -885,13 +991,29 @@ export const operatorCommandCenterJs = `'use strict';
     loadView(view).then(function () {
       if (view === 'runbooks') focusRunbook(detailId);
       if (view === 'incidents' && detailId) openIncident(detailId, false);
-    }).catch(function (error) { show(error.message); });
+    }).catch(function (error) { if (activeView === view) show(error.message); });
   }
 
   document.getElementById('mobile-menu').addEventListener('click', function (event) { const open = document.querySelector('.sidebar').classList.toggle('menu-open'); event.currentTarget.setAttribute('aria-expanded', String(open)); });
   document.querySelectorAll('[data-view]').forEach(function (button) { button.addEventListener('click', function () { navigate(button.dataset.view); }); });
   document.querySelectorAll('[data-jump]').forEach(function (button) { button.addEventListener('click', function () { navigate(button.dataset.jump); }); });
-  document.getElementById('refresh').addEventListener('click', async function (event) { const button = event.currentTarget; button.disabled = true; show('Checking current availability...', true); try { const available = await refreshHealthAvailability(); const view = location.hash.slice(1).split('/')[0]; if (available && view === 'merchants') await loadMerchants(true); if (available && view === 'incidents') await loadIncidents(true); if (view === 'audit') await loadAudit(); } catch (error) { show(error.message); } finally { button.disabled = false; } });
+  document.getElementById('refresh').addEventListener('click', async function (event) {
+    const button = event.currentTarget;
+    const view = activeView;
+    button.disabled = true;
+    try {
+      if (view === 'evidence') { await loadEvidence(); return; }
+      show('Checking current availability...', true);
+      const available = await refreshHealthAvailability();
+      if (activeView !== view) return;
+      if (available && view === 'merchants') await loadMerchants(true);
+      if (available && view === 'incidents') await loadIncidents(true);
+      if (view === 'audit') await loadAudit();
+    } catch (error) { if (activeView === view) show(error.message); }
+    finally { button.disabled = false; }
+  });
+  document.getElementById('evidence-prev').addEventListener('click', function () { evidenceOffset = Math.max(0, evidenceOffset - 50); loadEvidence(); });
+  document.getElementById('evidence-next').addEventListener('click', function () { evidenceOffset += 50; loadEvidence(); });
   document.getElementById('merchant-filters').addEventListener('submit', function (event) { event.preventDefault(); loadMerchants(true).catch(function (error) { show(error.message); }); });
   document.getElementById('merchant-prev').addEventListener('click', function () { merchantOffset = Math.max(0, merchantOffset - merchantLimit); loadMerchants(false).catch(function (error) { show(error.message); }); });
   document.getElementById('merchant-next').addEventListener('click', function () { merchantOffset += merchantLimit; loadMerchants(false).catch(function (error) { show(error.message); }); });
@@ -906,11 +1028,7 @@ export const operatorCommandCenterJs = `'use strict';
   async function initialize() {
     session = await get('/internal/operator/api/session');
     renderIdentity(session);
-    await refreshHealthAvailability();
-    await loadResellerFilter();
     const route = (location.hash.slice(1) || 'overview').split('/');
-    if (!healthAvailable && healthViews.has(route[0])) route[0] = 'overview';
-    loaded.add('overview');
     navigate(route[0], route[1] ? decodeURIComponent(route.slice(1).join('/')) : '');
   }
 

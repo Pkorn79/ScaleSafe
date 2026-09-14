@@ -13,6 +13,11 @@ const mockIncidentById = jest.fn();
 const mockMerchantSummary = jest.fn();
 const mockHasPermission = jest.fn();
 const mockCanAccessLocation = jest.fn();
+const mockEvidenceOverview = jest.fn();
+
+jest.mock('../../src/services/operator-evidence.service', () => ({
+  operatorEvidenceService: { overview: (...args: any[]) => mockEvidenceOverview(...args) },
+}));
 
 jest.mock('../../src/services/operator-authorization.service', () => ({
   operatorAuthorizationService: {
@@ -124,6 +129,42 @@ beforeEach(() => {
 });
 
 describe('operator health routes', () => {
+  it('loads Evidence independently of enrollment monitoring and audits the read', async () => {
+    config.operator.healthEnabled = false;
+    mockEvidenceOverview.mockResolvedValue({ connection: 'not_configured' });
+    const response = await request(app()).get('/internal/operator/api/evidence/overview')
+      .set('Host', 'ops.scalesafe.app').set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ connection: 'not_configured' });
+    expect(mockEvidenceOverview).toHaveBeenCalledWith(50, 0);
+    expect(mockAuditRequest).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'platform.evidence.read' }));
+    expect(mockOverview).not.toHaveBeenCalled();
+    expect(mockMerchantPage).not.toHaveBeenCalled();
+  });
+
+  it('does not read Evidence for missing sessions, unauthorized roles, or merchant hosts', async () => {
+    const unauthenticated = await request(app()).get('/internal/operator/api/evidence/overview').set('Host', 'ops.scalesafe.app');
+    expect(unauthenticated.status).toBe(401);
+    mockHasPermission.mockReturnValue(false);
+    const denied = await request(app()).get('/internal/operator/api/evidence/overview')
+      .set('Host', 'ops.scalesafe.app').set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+    expect(denied.status).toBe(404);
+    const merchant = await request(app()).get('/internal/operator/api/evidence/overview')
+      .set('Host', 'merchant.scalesafe.app').set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+    expect(merchant.status).toBe(404);
+    expect(mockEvidenceOverview).not.toHaveBeenCalled();
+  });
+
+  it('does not read Evidence if its audit fails or pagination is excessive', async () => {
+    mockAuditRequest.mockRejectedValueOnce(new Error('audit unavailable'));
+    const denied = await request(app()).get('/internal/operator/api/evidence/overview')
+      .set('Host', 'ops.scalesafe.app').set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+    expect(denied.status).toBe(503);
+    const invalid = await request(app()).get('/internal/operator/api/evidence/overview?limit=51')
+      .set('Host', 'ops.scalesafe.app').set('Cookie', `__Host-scalesafe_ops=${SESSION_TOKEN}`);
+    expect(invalid.status).toBe(400);
+    expect(mockEvidenceOverview).not.toHaveBeenCalled();
+  });
   it('uses one live authorization read, one audit write, and exact platform summary data', async () => {
     const response = await request(app())
       .get('/internal/operator/api/health?limit=50')

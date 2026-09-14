@@ -300,6 +300,7 @@ export const config = {
   // Isolated ScaleSafe operator command center. Both flags default off so the
   // Marketplace application can deploy without exposing unfinished routes.
   operator: {
+    evidenceReadToken: process.env.OPERATOR_EVIDENCE_READ_TOKEN || '',
     enabled: operatorCommandCenterEnabled,
     authEnabled: operatorAuthEnabled,
     healthEnabled: operatorHealthIncidentsEnabled,

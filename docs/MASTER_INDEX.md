@@ -49,6 +49,8 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 
 ## Current Release Truth
 
+September 14 addition: the separate [Evidence Command Center module](COMMAND_CENTER_EVIDENCE_MODULE.md) is implemented and locally verified. Its paired Evidence reporting release and private service connection still require production activation; the historical rollout rows below are not a current deployment check.
+
 | Area | Current state | Next proof or limitation |
 | --- | --- | --- |
 | Application core | **Certified for controlled testing** | Continue focused regression and logs review before each real beta onboarding. |

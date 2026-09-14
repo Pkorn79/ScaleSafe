@@ -3,6 +3,19 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Separate Evidence Command Center module (2026-09-14)
+
+### Added
+- Dedicated ScaleSafe Evidence navigation and an independently loaded, paginated portfolio of Evidence merchants, customer/purchase counts, open disputes and capture jobs.
+- Audited owner/operations reporting through a dedicated server-side read credential and an explicit Evidence-only response contract; reseller and merchant sessions cannot access the portfolio.
+- Fictional loopback preview for unavailable, unconfigured, stale, empty and paginated reporting states.
+
+### Changed
+- Existing operational navigation and headings explicitly identify ScaleSafe Enrollments. Evidence loading and freshness are isolated from Enrollment health availability.
+
+### Release status
+- Local implementation only. Requires the paired reporting endpoint in the independent Evidence repository and the dedicated reporting credential on both services. No database migration or production change is included.
+
 ## Unreleased - Exact processor binding and payment-security reconciliation (2026-09-04)
 
 ### Added

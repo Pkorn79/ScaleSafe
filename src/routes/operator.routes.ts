@@ -18,6 +18,7 @@ import { commandCenterIncidentService } from '../services/command-center-inciden
 import { ValidationError } from '../utils/errors';
 import { projectOperatorHealthCheck, projectOperatorIncident } from '../utils/operator-projections';
 import { OPERATOR_RUNBOOKS } from '../operator-runbooks';
+import { operatorEvidenceService } from '../services/operator-evidence.service';
 import {
   operatorAuthCss,
   operatorAuthJs,
@@ -258,8 +259,25 @@ router.get(
       organizationType: actor.organizationType,
       role: actor.role,
       authAssurance: actor.authAssurance,
+      capabilities: { evidenceRead: actor.organizationType === 'platform' && actor.permissions.has('platform.evidence.read') },
     });
   },
+);
+
+router.get(
+  `${base}/api/evidence/overview`,
+  requireOperatorSession,
+  requireOperatorPermission('platform.evidence.read', { sensitiveRead: true, hideUnauthorized: true }),
+  asyncRoute(async (req, res) => {
+    if (req.operatorContext!.organizationType !== 'platform') {
+      res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+      return;
+    }
+    const limit = pageLimit(req.query.limit, 50);
+    if (limit > 50) throw new ValidationError('Invalid page limit');
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await operatorEvidenceService.overview(limit, pageOffset(req.query.offset)));
+  }),
 );
 
 router.get(
