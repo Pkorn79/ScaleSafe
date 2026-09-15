@@ -52,3 +52,10 @@ test('Evidence portfolio access is restricted to platform owners and operations'
     expect(operatorAuthorizationService.permissionsForRole(role).has('platform.evidence.read')).toBe(false);
   }
 });
+
+test('only the platform owner can approve merchant access', () => {
+  expect(operatorAuthorizationService.permissionsForRole('platform_owner').has('platform.merchant_access.approve')).toBe(true);
+  for (const role of ['platform_ops', 'platform_support', 'security_auditor', 'reseller_owner', 'reseller_operator', 'reseller_viewer'] as const) {
+    expect(operatorAuthorizationService.permissionsForRole(role).has('platform.merchant_access.approve')).toBe(false);
+  }
+});

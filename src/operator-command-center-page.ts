@@ -1,3 +1,5 @@
+import { operatorAccessHtml, operatorAccessDialog, operatorAccessCss, operatorAccessJs } from './operator-access-page';
+
 export const operatorCommandCenterHtml = (): string => `<!doctype html>
 <html lang="en">
 <head>
@@ -13,7 +15,7 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
       <nav id="navigation">
         <p class="nav-label">ScaleSafe Enrollments</p>
         <button class="nav-item active" data-view="overview" type="button"><span>Overview</span><i id="overview-dot"></i></button>
-        <button class="nav-item" data-view="merchants" type="button" disabled title="Health monitoring is not enabled yet"><span>Merchants</span><b id="merchant-nav-count"></b></button>
+        <button class="nav-item" data-view="merchants" type="button"><span>Merchants &amp; approvals</span><b id="merchant-nav-count"></b></button>
         <button class="nav-item" data-view="incidents" type="button" disabled title="Health monitoring is not enabled yet"><span>Incidents</span><b id="incident-nav-count"></b></button>
         <p class="nav-label">Operations</p>
         <button class="nav-item" data-view="money" type="button" disabled title="Health monitoring is not enabled yet"><span>Payments</span><i id="money-dot"></i></button>
@@ -59,17 +61,18 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
           </section>
         </div>
         <section class="surface">
-          <div class="section-heading"><div><h2>Merchant attention</h2><p>Accounts with the highest current operational risk.</p></div><button class="text-button" data-jump="merchants" type="button" disabled title="Health monitoring is not enabled yet">Open merchants</button></div>
+          <div class="section-heading"><div><h2>Merchant attention</h2><p>Accounts with the highest current operational risk.</p></div><button class="text-button" data-jump="merchants" type="button">Open merchants &amp; approvals</button></div>
           <div class="table-wrap"><table><thead><tr><th>Merchant</th><th>Overall</th><th>Attention</th><th>Critical path</th><th>Evaluated</th></tr></thead><tbody id="overview-merchants"></tbody></table></div>
         </section>
       </section>
 
       <section class="view" data-panel="evidence">
         <section class="context-band"><strong>ScaleSafe Evidence</strong><span>Independent client records and dispute preparation. Counts on this page belong only to Evidence.</span></section>
+        ${operatorAccessHtml('evidence')}
         <p id="evidence-status" class="status" role="status">Loading Evidence reporting.</p>
         <div id="evidence-summary" class="summary-grid" aria-label="ScaleSafe Evidence summary"></div>
         <section class="surface">
-          <div class="section-heading"><div><h2>Evidence merchants</h2><p id="evidence-result-count">Waiting for the Evidence service.</p></div></div>
+          <div class="section-heading"><div><h2>Evidence capture activity by merchant</h2><p id="evidence-result-count">Waiting for the Evidence service.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Merchant (GHL location)</th><th>Installation</th><th>Active customers</th><th>Purchases</th><th>Open disputes</th><th>Capture issues</th><th>Last completed capture</th></tr></thead><tbody id="evidence-rows"></tbody></table></div>
           <div class="pager"><button id="evidence-prev" class="secondary-button" type="button" disabled>Previous</button><span id="evidence-page"></span><button id="evidence-next" class="secondary-button" type="button" disabled>Next</button></div>
         </section>
@@ -77,6 +80,8 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
       </section>
 
       <section class="view" data-panel="merchants">
+        ${operatorAccessHtml('enrollments')}
+        <details class="health-details" id="merchant-health-details"><summary>Merchant health &amp; advanced filters</summary>
         <section class="surface toolbar-surface">
           <form id="merchant-filters" class="filter-grid">
             <label class="search-field">Search<input name="query" type="search" maxlength="100" placeholder="Business name or exact location ID"></label>
@@ -92,10 +97,11 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
           </form>
         </section>
         <section class="surface">
-          <div class="section-heading"><div><h2>Merchant accounts</h2><p id="merchant-result-count">Loading accounts.</p></div></div>
+          <div class="section-heading"><div><h2>Merchant health</h2><p id="merchant-result-count">Loading accounts.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Merchant</th><th>Installation</th><th>Plan</th><th>Processors</th><th>Health</th><th>Attention</th><th></th></tr></thead><tbody id="merchant-rows"></tbody></table></div>
           <div class="pager"><button id="merchant-prev" class="secondary-button" type="button">Previous</button><span id="merchant-page"></span><button id="merchant-next" class="secondary-button" type="button">Next</button></div>
         </section>
+        </details>
       </section>
 
       <section class="view" data-panel="incidents">
@@ -141,11 +147,12 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
   <dialog id="merchant-dialog" class="detail-dialog"><div class="dialog-heading"><div><p class="eyebrow">Merchant account</p><h2 id="merchant-dialog-title">Merchant detail</h2></div><button id="close-merchant" class="quiet-button" type="button">Close</button></div><div id="merchant-detail"></div></dialog>
   <dialog id="incident-dialog" class="detail-dialog"><div class="dialog-heading"><div><p class="eyebrow">Authoritative incident</p><h2 id="incident-dialog-title">Incident detail</h2></div><button id="close-incident" class="quiet-button" type="button">Close</button></div><div id="incident-detail"></div></dialog>
   <dialog id="suppress-dialog"><form id="suppress-form" method="dialog"><h2>Suppress incident</h2><p>Health evaluation continues. Only operator notification state is suppressed.</p><label>Reason<textarea name="reason" maxlength="500" required></textarea></label><label>Duration<select name="hours"><option value="1">1 hour</option><option value="4">4 hours</option><option value="12">12 hours</option><option value="24">24 hours</option></select></label><div class="dialog-actions"><button id="cancel-suppress" class="secondary-button" type="button">Cancel</button><button type="submit">Suppress</button></div></form></dialog>
+  ${operatorAccessDialog}
   <script src="/internal/operator/assets/command-center.js" defer></script>
 </body>
 </html>`;
 
-export const operatorCommandCenterCss = `
+export const operatorCommandCenterCss = `${operatorAccessCss}
 :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #102033; background: #f3f6f7; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -282,7 +289,7 @@ export const operatorCommandCenterJs = `'use strict';
   const titles = {
     overview: ['Enrollments overview', 'Service health and merchant attention for ScaleSafe Enrollments.'],
     evidence: ['Evidence overview', 'Merchants, client records, disputes and capture activity for ScaleSafe Evidence.'],
-    merchants: ['Enrollment merchants', 'Search and inspect ScaleSafe Enrollments installations.'],
+    merchants: ['Enrollment merchants', 'Review plans, approve merchant access, and inspect installation health.'],
     incidents: ['Incidents', 'Operational issues, state changes, and accountable follow-up.'],
     money: ['Payments', 'Payment, refund, billing, and processor reconciliation health.'],
     fulfillment: ['Enrollment fulfillment', 'Delivery automation, enrollment evidence, and defense processing health.'],
@@ -306,7 +313,7 @@ export const operatorCommandCenterJs = `'use strict';
   const merchantLimit = 50;
   let suppressIncidentId = '';
   const loaded = new Set();
-  const healthViews = new Set(['merchants', 'incidents', 'money', 'fulfillment', 'recovery']);
+  const healthViews = new Set(['incidents', 'money', 'fulfillment', 'recovery']);
 
   function show(message, ok) {
     status.textContent = message || '';
@@ -433,7 +440,7 @@ export const operatorCommandCenterJs = `'use strict';
   }
 
   function renderActiveFreshness() {
-    const current = freshness(activeView === 'evidence' ? evidence && evidence.generatedAt : health.generatedAt);
+    const current = freshness(activeView === 'evidence' ? evidence && evidence.generatedAt : activeView === 'merchants' ? accessStates.enrollments.generatedAt : health.generatedAt);
     const target = document.getElementById('freshness');
     target.className = 'freshness ' + current.className;
     target.textContent = current.text;
@@ -550,7 +557,7 @@ export const operatorCommandCenterJs = `'use strict';
     document.getElementById('merchant-nav-count').textContent = '';
     document.getElementById('incident-nav-count').textContent = '';
     document.querySelectorAll('.nav-item i').forEach(function (dot) { dot.classList.remove('visible'); });
-    if (activeView !== 'evidence') {
+    if (activeView !== 'evidence' && activeView !== 'merchants') {
       const fresh = document.getElementById('freshness');
       fresh.className = 'freshness unknown';
       fresh.textContent = 'Health monitoring disabled';
@@ -789,6 +796,10 @@ export const operatorCommandCenterJs = `'use strict';
         ['Plan', merchant.marketplace_plan_key || merchant.marketplacePlan],
         ['Billing', merchant.marketplace_billing_status || merchant.marketplaceBillingStatus]
       ]));
+      if (session.capabilities && session.capabilities.merchantAccessRead) {
+        const access = element('button', 'secondary-button', 'View plan & approval controls');
+        access.type = 'button'; access.addEventListener('click', function () { dialog.close(); openAccess('enrollments', locationId); }); target.appendChild(access);
+      }
       if (data.health) target.appendChild(detailSection('Health', [
         ['Overall', data.health.overall_state],
         ['Needs attention', data.health.needs_attention_count],
@@ -957,14 +968,23 @@ export const operatorCommandCenterJs = `'use strict';
   }
 
   async function loadView(view) {
-    if (view === 'evidence') { await loadEvidence(); return; }
+    if (view === 'evidence') { await Promise.all([loadEvidence(), loadAccess('evidence', false)]); return; }
+    if (view === 'merchants') {
+      await loadAccess('enrollments', !loaded.has(view));
+      if (!loaded.has('overview')) {
+        try { await refreshHealthAvailability(); loaded.add('overview'); await loadResellerFilter(); }
+        catch (error) { show('Health reporting is unavailable. Merchant access controls are independent and remain available.'); }
+      }
+      document.getElementById('merchant-health-details').hidden = !healthAvailable;
+      if (healthAvailable) await loadMerchants(!loaded.has(view));
+      loaded.add(view); return;
+    }
     if ((view === 'overview' || healthViews.has(view)) && !loaded.has('overview')) {
       await refreshHealthAvailability();
       loaded.add('overview');
       await loadResellerFilter();
     }
     if (healthViews.has(view) && !healthAvailable) return;
-    if (view === 'merchants') await loadMerchants(!loaded.has(view));
     if (view === 'incidents') await loadIncidents(!loaded.has(view));
     if (view === 'resellers' && !loaded.has(view)) await loadResellers();
     if (view === 'audit' && !loaded.has(view)) await loadAudit();
@@ -1002,7 +1022,8 @@ export const operatorCommandCenterJs = `'use strict';
     const view = activeView;
     button.disabled = true;
     try {
-      if (view === 'evidence') { await loadEvidence(); return; }
+      if (view === 'evidence') { await Promise.all([loadEvidence(), loadAccess('evidence', false)]); return; }
+      if (view === 'merchants') await loadAccess('enrollments', true);
       show('Checking current availability...', true);
       const available = await refreshHealthAvailability();
       if (activeView !== view) return;
@@ -1032,5 +1053,6 @@ export const operatorCommandCenterJs = `'use strict';
     navigate(route[0], route[1] ? decodeURIComponent(route.slice(1).join('/')) : '');
   }
 
+  ${operatorAccessJs}
   initialize().catch(function (error) { if (error.status === 401) { location.replace('/internal/operator/login'); return; } show(error.message); });
 })();`;

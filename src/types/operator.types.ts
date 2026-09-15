@@ -19,6 +19,7 @@ export type OperatorPermission =
   | 'platform.health.read'
   | 'platform.evidence.read'
   | 'platform.merchants.read'
+  | 'platform.merchant_access.approve'
   | 'platform.resellers.read'
   | 'platform.incidents.manage'
   | 'merchant.summary.read';

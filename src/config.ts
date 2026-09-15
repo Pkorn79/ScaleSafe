@@ -301,6 +301,7 @@ export const config = {
   // Marketplace application can deploy without exposing unfinished routes.
   operator: {
     evidenceReadToken: process.env.OPERATOR_EVIDENCE_READ_TOKEN || '',
+    evidenceApprovalToken: process.env.OPERATOR_EVIDENCE_APPROVAL_TOKEN || '',
     enabled: operatorCommandCenterEnabled,
     authEnabled: operatorAuthEnabled,
     healthEnabled: operatorHealthIncidentsEnabled,

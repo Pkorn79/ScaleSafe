@@ -19,6 +19,7 @@ import { ValidationError } from '../utils/errors';
 import { projectOperatorHealthCheck, projectOperatorIncident } from '../utils/operator-projections';
 import { OPERATOR_RUNBOOKS } from '../operator-runbooks';
 import { operatorEvidenceService } from '../services/operator-evidence.service';
+import operatorAccessRoutes from './operator-access.routes';
 import {
   operatorAuthCss,
   operatorAuthJs,
@@ -259,10 +260,16 @@ router.get(
       organizationType: actor.organizationType,
       role: actor.role,
       authAssurance: actor.authAssurance,
-      capabilities: { evidenceRead: actor.organizationType === 'platform' && actor.permissions.has('platform.evidence.read') },
+      capabilities: {
+        evidenceRead: actor.organizationType === 'platform' && actor.permissions.has('platform.evidence.read'),
+        merchantAccessRead: actor.organizationType === 'platform' && actor.permissions.has('platform.merchants.read'),
+        merchantAccessApprove: actor.organizationType === 'platform' && actor.role === 'platform_owner' && actor.permissions.has('platform.merchant_access.approve'),
+      },
     });
   },
 );
+
+router.use(`${base}/api/access`, operatorAccessRoutes);
 
 router.get(
   `${base}/api/evidence/overview`,

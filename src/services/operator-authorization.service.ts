@@ -12,6 +12,7 @@ import { hashOperatorValue, operatorIpHash, operatorUserAgent } from '../utils/o
 
 const ROLE_PERMISSIONS: Record<OperatorRole, readonly OperatorPermission[]> = {
   platform_owner: [
+    'platform.merchant_access.approve',
     'platform.evidence.read',
     'operator.session.read',
     'operator.audit.read',
