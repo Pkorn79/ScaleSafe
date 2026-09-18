@@ -82,6 +82,7 @@
                 {{ c.paymentsMade || 0 }}/{{ c.paymentsTotal || '?' }}
               </span>
               <span v-else-if="c.paymentType === 'subscription'">Sub</span>
+              <span v-else-if="c.paymentType === 'manual_sale'">Standalone payment</span>
               <span v-else>-</span>
             </td>
             <td class="text-sm">{{ c.lastActivityDate ? formatDate(c.lastActivityDate) : '-' }}</td>
@@ -239,6 +240,8 @@ function openAddClientModal() {
 }
 
 async function loadClients() {
+  loading.value = true;
+  error.value = null;
   try {
     const params = new URLSearchParams();
     params.set('page', String(page.value));
@@ -250,10 +253,12 @@ async function loadClients() {
     const result = await api.get<any>(`/api/dashboard/clients?${params.toString()}`);
     clients.value = result.clients || [];
     totalClients.value = result.total || 0;
-  } catch {
+  } catch (err: any) {
     clients.value = [];
     totalClients.value = 0;
-    error.value = null;
+    error.value = err.message || 'Unable to load clients';
+  } finally {
+    loading.value = false;
   }
 }
 

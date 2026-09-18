@@ -787,16 +787,19 @@ export const dashboardController = {
           : Promise.resolve({ data: null }),
         supabase.from('payment_methods').select('*')
           .eq('location_id', locationId).eq('contact_id', contactId).eq('is_default', true).limit(1).maybeSingle(),
-        supabase.from('payment_events').select('amount, event_type, created_at')
-          .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null),
+        supabase.from('payment_events').select('amount, event_type, created_at, customer_email, raw_webhook_payload')
+          .eq('location_id', locationId).eq('contact_id', contactId).order('created_at', { ascending: false }),
         supabase.from('payment_events').select('id, dunning_status')
-          .eq('location_id', locationId).eq('contact_id', contactId).not('enrollment_id', 'is', null).in('dunning_status', ['active', 'escalated']).limit(1).maybeSingle(),
+          .eq('location_id', locationId).eq('contact_id', contactId).in('dunning_status', ['active', 'escalated']).limit(1).maybeSingle(),
       ]);
 
       const offer = offerResult.status === 'fulfilled' ? (offerResult.value as any)?.data : null;
       const card = cardResult.status === 'fulfilled' ? (cardResult.value as any)?.data : null;
       const paymentEvents = paymentSummaryResult.status === 'fulfilled' ? ((paymentSummaryResult.value as any)?.data || []) : [];
       const dunningRow = dunningResult.status === 'fulfilled' ? (dunningResult.value as any)?.data : null;
+      const paymentProfile = paymentEvents.find((event: any) => event.customer_email || event.raw_webhook_payload?.first_name);
+      if (!email) email = paymentProfile?.customer_email || paymentProfile?.raw_webhook_payload?.customer_email || '';
+      if (!name) name = [paymentProfile?.raw_webhook_payload?.first_name, paymentProfile?.raw_webhook_payload?.last_name].filter(Boolean).join(' ');
 
       // Compute payment summary
       let totalCharged = 0;
@@ -814,7 +817,7 @@ export const dashboardController = {
         enrollmentId: enrollment?.id || null,
         name: name || enrollment?.digital_signature || (email ? email.split('@')[0] : ''),
         email,
-        status: enrollment?.status || 'unknown',
+        status: enrollment?.status || (paymentEvents.length ? 'active' : 'unknown'),
         paymentAmount: enrollment?.payment_amount || 0,
         paymentType: enrollment?.payment_type || '',
         processorType: enrollment?.processor_type || '',

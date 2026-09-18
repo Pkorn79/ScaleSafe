@@ -126,4 +126,16 @@ describe('paymentReconciliationService', () => {
       processor: 'nmi',
     }));
   });
+
+  it('accepts intentional standalone payments but still flags missing clients and broken offer links', async () => {
+    const base = { ...mockTables.payment_events[0], source: 'quick_manual_sale', is_recurring: false, created_at: new Date().toISOString() };
+    mockTables.payment_events = [
+      { ...base, id: 'standalone', processor_transaction_id: 'tx_standalone' },
+      { ...base, id: 'broken_offer', offer_id: 'offer_1', processor_transaction_id: 'tx_offer' },
+      { ...base, id: 'no_client', contact_id: '', processor_transaction_id: 'tx_no_client' },
+    ];
+    const report = await paymentReconciliationService.report('loc_1');
+    expect(report.issues.filter(i => i.type === 'unassigned_payment_event').map(i => i.eventId).sort())
+      .toEqual(['broken_offer', 'no_client']);
+  });
 });

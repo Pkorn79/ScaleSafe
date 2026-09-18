@@ -366,6 +366,22 @@ describe('paymentLedgerService', () => {
     }));
   });
 
+  it('names a standalone client from the payment snapshot without inventing a program', async () => {
+    mockTables.enrollments = [];
+    mockTables.payment_events = [{
+      id: 'standalone', location_id: 'loc_1', contact_id: 'client_only', amount: 0.05,
+      event_type: 'sale', source: 'quick_manual_sale', processor: 'nmi',
+      customer_email: 'payer@example.com', processor_transaction_id: 'standalone_tx',
+      raw_webhook_payload: { first_name: 'Test', last_name: 'Payer' },
+    }];
+    const result = await paymentLedgerService.list('loc_1');
+    expect(result.payments[0]).toEqual(expect.objectContaining({
+      customerName: 'Test Payer', customerEmail: 'payer@example.com', contactId: 'client_only',
+      enrollmentId: null, offerId: null, programName: 'Standalone payment',
+    }));
+    expect((await paymentLedgerService.list('other_location')).payments).toHaveLength(0);
+  });
+
   it('includes enrollment-linked payments in a client history even when contact_id is missing', async () => {
     mockTables.payment_events = [
       {

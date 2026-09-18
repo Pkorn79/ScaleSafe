@@ -260,18 +260,28 @@ async function upsertContact(
   locationId: string,
   input: Pick<RecordPayFirstInput, 'contactId' | 'firstName' | 'lastName' | 'email' | 'phone'>,
 ): Promise<string> {
-  if (input.contactId) return input.contactId;
   const api = await ghlApi(locationId);
+  if (input.contactId) {
+    const response = await api.get(`/contacts/${encodeURIComponent(input.contactId)}`);
+    const contact = response.data?.contact;
+    if (contact?.id !== input.contactId || contact?.locationId !== locationId) {
+      throw new ValidationError('Contact does not belong to this location');
+    }
+    return contact.id;
+  }
   const name = splitName(input.firstName, input.lastName, input.email);
   const upsertRes = await api.post('/contacts/upsert', {
     firstName: name.firstName,
     lastName: name.lastName,
-    email: input.email,
+    email: input.email.trim().toLowerCase(),
     phone: input.phone || undefined,
     locationId,
   });
   const contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
   if (!contactId) throw new Error('GHL upsert returned no contact ID');
+  if (upsertRes.data.contact?.locationId && upsertRes.data.contact.locationId !== locationId) {
+    throw new ValidationError('Contact does not belong to this location');
+  }
   return contactId;
 }
 
@@ -1022,6 +1032,7 @@ export const payFirstEnrollmentService = {
         contact_id: contactId,
         enrollment_id: enrollmentId || undefined,
         offer_id: input.offerId || null,
+        customer_email: input.email.trim().toLowerCase(),
         event_type: 'sale',
         processor: procConfig.processor_type,
         processor_transaction_id: transactionId,
@@ -1052,7 +1063,8 @@ export const payFirstEnrollmentService = {
           recordedAt,
           offerId: input.offerId || null,
           enrollmentId,
-          sendEnrollment: input.sendEnrollment !== false,
+          sendEnrollment: Boolean(offer && input.sendEnrollment !== false),
+          customer_email: input.email.trim().toLowerCase(),
           first_name: name.firstName || '',
           last_name: name.lastName || '',
         },

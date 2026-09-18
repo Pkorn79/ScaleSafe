@@ -1,6 +1,7 @@
 import { getSupabase } from '../clients/supabase.client';
 import { cleanPostgrestLikeTerm, isSafeOrFilterSearchInput } from '../utils/search-input';
 import { resolveInternalOfferName, resolveProgramName } from '../utils/program-name';
+import { isStandalonePayment } from '../utils/standalone-payment';
 
 export interface PaymentLedgerFilters {
   contactId?: string;
@@ -82,6 +83,7 @@ const PAYMENT_EVENT_COLUMNS = [
   'source',
   'is_recurring',
   'customer_email',
+  'raw_webhook_payload',
   'dunning_status',
   'dunning_retry_count',
   'dunning_next_retry',
@@ -695,9 +697,10 @@ function buildRow(
     || offer?.payment_type
     || (String(event.source || '').toLowerCase() === 'quick_manual_sale' ? 'manual_sale' : ''),
   );
-  const customerEmail = String(linkedEnrollment?.email || contactEnrollment?.email || event.customer_email || '').trim();
+  const snapshot = event.raw_webhook_payload || {};
+  const customerEmail = String(linkedEnrollment?.email || contactEnrollment?.email || event.customer_email || snapshot.customer_email || '').trim();
   const processor = String(event.processor || linkedEnrollment?.processor_type || 'unknown').toLowerCase();
-  const programName = resolveProgramName(linkedEnrollment, offer, 'Unassigned payment');
+  const programName = resolveProgramName(linkedEnrollment, offer, isStandalonePayment(event) ? 'Standalone payment' : 'Unassigned payment');
   const offerInternalName = offer ? resolveInternalOfferName(offer, programName) : null;
   const paymentNumber = event.payment_number == null ? null : Number(event.payment_number);
   const eventPaymentsTotal = event.payments_total == null ? null : Number(event.payments_total);
@@ -717,7 +720,7 @@ function buildRow(
     id: event.id,
     date: event.created_at,
     contactId: event.contact_id || linkedEnrollment?.contact_id || contactEnrollment?.contact_id || '',
-    customerName: displayName(contactEnrollment || linkedEnrollment, customerEmail, event.contact_id || ''),
+    customerName: displayName(contactEnrollment || linkedEnrollment || snapshot, customerEmail, event.contact_id || ''),
     customerEmail,
     enrollmentId: event.enrollment_id || linkedEnrollment?.id || null,
     offerId: offer?.id || linkedEnrollment?.offer_id || event.offer_id || null,

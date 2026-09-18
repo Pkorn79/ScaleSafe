@@ -1,4 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
+import { isStandalonePayment } from '../utils/standalone-payment';
 
 type IssuePriority = 'high' | 'medium' | 'low';
 
@@ -450,7 +451,7 @@ export const paymentReconciliationService = {
         ));
       }
 
-      if ((isPaidEvent(event) || isFailureEvent(event)) && !event.enrollment_id) {
+      if ((isPaidEvent(event) || isFailureEvent(event)) && !event.enrollment_id && !isStandalonePayment(event)) {
         issues.push(issueBase(
           'unassigned_payment_event',
           'medium',

@@ -29,6 +29,7 @@ export interface PaymentEventInsert {
   location_id: string;
   contact_id: string;
   enrollment_id?: string | null;
+  customer_email?: string | null;
   offer_id?: string | null;
   event_type: string;
   processor?: string;
@@ -133,6 +134,7 @@ export const paymentEventRepository = {
       const fields = [
         'merchant_id',
         'contact_id',
+        'customer_email',
         'enrollment_id',
         'offer_id',
         'processor_subscription_id',
@@ -156,6 +158,7 @@ export const paymentEventRepository = {
           .from('payment_events')
           .update(update)
           .eq('id', existing.id)
+          .eq('location_id', data.location_id)
           .select()
           .single();
 
@@ -164,6 +167,7 @@ export const paymentEventRepository = {
             .from('payment_events')
             .update(withoutCompatibilityColumns(update))
             .eq('id', existing.id)
+            .eq('location_id', data.location_id)
             .select()
             .single();
         }
@@ -185,7 +189,9 @@ export const paymentEventRepository = {
         data.location_id,
         data.processor_config_id,
       );
-      if (duplicate) return duplicate;
+      // A webhook may win the insert race with a sparse row. Reuse the same
+      // enrichment path so the checkout's verified client link is not lost.
+      if (duplicate) return this.createOrReuseByTransaction(data);
       throw err;
     }
   },

@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "jest",
+    "test:client-view": "node --test tests/integration/standalone-client-view.test.cjs",
     "test:guardian-db-vectors": "node scripts/verify-guardian-db-vectors.js",
     "typecheck": "tsc --noEmit"
   },
@@ -47,6 +48,7 @@
     "qs": "6.16.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.18",
     "@types/jest": "^30.0.0",

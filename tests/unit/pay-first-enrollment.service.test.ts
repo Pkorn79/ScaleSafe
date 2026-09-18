@@ -550,6 +550,71 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     mockMoneyMarkUnknown.mockResolvedValue(undefined);
   });
 
+  const standaloneInput = {
+    locationId: 'loc_1', firstName: 'Test', lastName: 'Payer', email: 'Payer@example.com',
+    amount: 0.05, paymentToken: 'tok_test', paymentAttemptId: 'standalone_attempt_123',
+    sendEnrollment: true,
+  };
+
+  it.each(['nmi', 'stripe'])('records a new standalone %s client without an enrollment or welcome', async (processorType) => {
+    mockResolveProcessor.mockResolvedValue({ config: { processor_type: processorType } });
+    const charge = jest.fn().mockResolvedValue({ success: true, status: 'succeeded', transactionId: 'standalone_tx' });
+    mockCreateProcessorClient.mockReturnValue({ charge, saveCard: jest.fn().mockResolvedValue({ customerId: 'saved_test', cardLastFour: '4242' }) });
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment(standaloneInput);
+    expect(result.success).toBe(true);
+    expect(result.contactId).toBe('contact_1');
+    expect(result.enrollmentId).toBeNull();
+    expect(mockGetSupabase().from).not.toHaveBeenCalledWith('enrollments');
+    expect(mockFindOffer).not.toHaveBeenCalled();
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect(mockPaymentEventCreateOrReuse).toHaveBeenCalledWith(expect.objectContaining({
+      location_id: 'loc_1', contact_id: 'contact_1', enrollment_id: undefined, offer_id: null,
+      customer_email: 'payer@example.com', source: 'quick_manual_sale', is_recurring: false,
+      raw_webhook_payload: expect.objectContaining({ first_name: 'Test', last_name: 'Payer', sendEnrollment: false }),
+    }));
+    expect(mockFireTrigger.mock.calls.map(call => call[1])).not.toEqual(expect.arrayContaining(['enrollment_complete', 'ss_send_enrollment_link']));
+  });
+
+  it('validates an existing contact in this tenant before taking a standalone payment', async () => {
+    const get = jest.fn().mockResolvedValue({ data: { contact: { id: 'contact_1', locationId: 'loc_1' } } });
+    const post = jest.fn();
+    mockGhlApi.mockResolvedValue({ get, post, put: jest.fn().mockResolvedValue({ data: {} }) });
+    mockCreateProcessorClient.mockReturnValue({ charge: jest.fn().mockResolvedValue({ success: true, transactionId: 'existing_tx', vaultedCustomerId: 'saved_test' }) });
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({ ...standaloneInput, contactId: 'contact_1' });
+    expect(result.contactId).toBe('contact_1');
+    expect(get).toHaveBeenCalledWith('/contacts/contact_1');
+    expect(post).not.toHaveBeenCalled();
+    expect(result.enrollmentId).toBeNull();
+  });
+
+  it.each(['loc_other', undefined])('refuses unverified or foreign contact ownership (%s) before charging', async (locationId) => {
+    mockGhlApi.mockResolvedValue({ get: jest.fn().mockResolvedValue({ data: { contact: { id: 'contact_1', locationId } } }) });
+    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment({ ...standaloneInput, contactId: 'contact_1' }))
+      .rejects.toThrow('Contact does not belong to this location');
+    expect(mockMoneyBegin).not.toHaveBeenCalled();
+    expect(mockCreateProcessorClient).not.toHaveBeenCalled();
+  });
+
+  it.each(['processing', 'provider_accepted', 'unknown'])('does not recharge an in-flight standalone attempt (%s)', async (status) => {
+    const charge = jest.fn();
+    mockCreateProcessorClient.mockReturnValue({ charge });
+    mockMoneyBegin.mockResolvedValue({ action: 'blocked', operation: { id: 'locked', status } });
+    await expect(payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment(standaloneInput)).rejects.toThrow(/already processing|awaiting reconciliation/);
+    expect(charge).not.toHaveBeenCalled();
+    expect(mockPaymentEventCreateOrReuse).not.toHaveBeenCalled();
+  });
+
+  it('replays a standalone success without a charge, enrollment, or repeated notifications', async () => {
+    const charge = jest.fn();
+    mockCreateProcessorClient.mockReturnValue({ charge });
+    mockMoneyBegin.mockResolvedValue({ action: 'replay', response: { success: true, contactId: 'contact_1', enrollmentId: null, transactionId: 'already_paid' } });
+    const result = await payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment(standaloneInput);
+    expect(result.transactionId).toBe('already_paid');
+    expect(charge).not.toHaveBeenCalled();
+    expect(mockPaymentEventCreateOrReuse).not.toHaveBeenCalled();
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+  });
+
   it('fires the paid enrollment link trigger after a successful card manual sale', async () => {
     mockCreateProcessorClient.mockReturnValue({
       charge: jest.fn().mockResolvedValue({
