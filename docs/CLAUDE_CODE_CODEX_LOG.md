@@ -40,6 +40,20 @@ Do not include secrets, `.env` values, tokens, database credentials, or customer
 
 ## Codex Changes
 
+### 2026-09-18: Standalone Payment Client Visibility
+
+- Reproduced the Add Client > Take payment now > no offer defect: Quick Manual Sale upserts a GHL contact and links its successful payment, but `client_list_view` previously selected only enrollments.
+- Migration 113 extends the view with successful payment-only contacts, scoped by location/contact, without inserting enrollments. Existing enrollment priority is preserved; repeated payments/webhooks produce one client row. The view remains service-role-only with security-invoker semantics.
+- Quick Manual Sale now persists normalized customer email with its contact snapshot and validates an explicitly supplied contact belongs to the authenticated location before charging. No-offer payments do not send program enrollment links or welcomes.
+- Payment-event uniqueness-race recovery enriches the existing webhook-created row with the verified client association instead of returning a sparse duplicate. Existing durable charge idempotency and immutable processor-config bindings are preserved.
+- Client profile totals include standalone payments; ledger labels intentional standalone sales distinctly from unresolved payment associations. Reconciliation no longer flags the intentional absence of an enrollment as a broken link.
+- Read-only production investigation found the reported standalone payment already linked to the same contact as a later successful funnel enrollment. No re-charge, reassignment, data repair, or new test payment was necessary or performed.
+- Local proof includes actual PostgreSQL view replacement (legacy defect, repeat migration, new/existing clients, duplicate events, tenant isolation, permissions, failed-payment exclusion, and no enrollment/payment mutations), plus mocked charge replay/concurrency, webhook-first association, foreign-contact rejection, and normal enrollment regressions.
+- UI checked using an isolated mock API: visible client, empty program, standalone-payment label, name/email search, narrow-screen table scrolling, and a visible load error without a false empty-state message.
+- Release verification: all 217 Jest suites / 1,832 tests passed; TypeScript, production build, actual PostgreSQL migration test, and `git diff --check` passed. An initial assertion was updated to include the newer immutable processor-config lookup argument before the clean full rerun.
+- Release prepared from current production `main` baseline `7299231`, not the older working branch. SQL 113 is supplied in chat for Philip; database activation and a post-migration live UI check remain required. Email delivery and shared-gateway routing are outside this fix.
+- Separate design-only exploration: `docs/MULTI_SIGNER_ENROLLMENT_EXPLORATION.md`. One shared enrollment, one payer, two independently evidenced signers. No multi-signer code was built or approved.
+
 ### 2026-09-04: Final Fable Follow-up + Migration 112 Atomicity (Codex)
 
 Summary:

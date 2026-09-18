@@ -7,6 +7,7 @@ describe('payment event duplicate enrichment', () => {
   const sale = {
     location_id: 'matt', contact_id: 'verified_contact', customer_email: 'payer@example.com',
     event_type: 'sale', processor: 'nmi', processor_transaction_id: 'same_tx', amount: 0.05,
+    processor_config_id: 'config_matt',
     source: 'quick_manual_sale', enrollment_id: null, offer_id: null,
   };
   afterEach(() => jest.restoreAllMocks());
@@ -25,7 +26,7 @@ describe('payment event duplicate enrichment', () => {
     expect(result.contact_id).toBe('verified_contact');
     expect(result.enrollment_id).toBeNull();
     expect(insert).toHaveBeenCalledTimes(1);
-    expect(lookup).toHaveBeenCalledWith('nmi', 'same_tx', 'matt');
+    expect(lookup).toHaveBeenCalledWith('nmi', 'same_tx', 'matt', 'config_matt');
     expect(chain.eq).toHaveBeenCalledWith('location_id', 'matt');
     expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ contact_id: 'verified_contact', customer_email: 'payer@example.com' }));
     expect(chain.update.mock.calls[0][0]).not.toHaveProperty('enrollment_id');

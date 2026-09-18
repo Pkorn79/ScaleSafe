@@ -44,7 +44,7 @@
     </div>
 
     <!-- Client Table -->
-    <div class="card" v-if="clients.length > 0">
+    <div class="card" v-if="clients.length > 0" style="overflow-x:auto">
       <table class="table">
         <thead>
           <tr>
@@ -99,7 +99,7 @@
       </table>
     </div>
 
-    <div v-if="clients.length === 0 && !loading">
+    <div v-if="clients.length === 0 && !loading && !error">
       <EmptyState
         v-if="searchInput || statusFilter"
         :icon="SearchX"

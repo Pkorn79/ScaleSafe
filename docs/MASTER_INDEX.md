@@ -49,6 +49,8 @@ The former OneDrive `FEATURE_LEDGER.md` is retired as a source of truth. Its las
 
 ## Current Release Truth
 
+September 18 addition: standalone Quick Manual Sale clients no longer require a program enrollment in the client-list design. Code and regression tests are implemented; migration `113_standalone_payment_clients.sql` must be applied before payment-only contacts appear. Existing reported payment association was verified read-only; no recharge or reassignment is needed. Post-migration live verification is still pending. Shared enrollment with two signers is [design exploration only](MULTI_SIGNER_ENROLLMENT_EXPLORATION.md), not part of this release.
+
 September 14 addition: the separate [Evidence Command Center module](COMMAND_CENTER_EVIDENCE_MODULE.md) is implemented and locally verified. Its paired Evidence reporting release and private service connection still require production activation; the historical rollout rows below are not a current deployment check.
 
 | Area | Current state | Next proof or limitation |
