@@ -109,6 +109,10 @@
         Sending <strong>{{ sendForm.internalName }}</strong>; client sees <strong>{{ sendForm.offerName }}</strong>.
       </p>
 
+      <Tabs v-model="recipientMode" :tabs="recipientTabs" variant="segmented" />
+      <GhlContactPicker v-if="recipientMode === 'existing'" v-model="selectedContact" :disabled="sendLoading" />
+
+      <fieldset v-else :disabled="sendLoading" class="recipient-fields">
       <div class="form-group">
         <label class="form-label">First Name *</label>
         <input class="form-input" v-model="sendForm.firstName" placeholder="John" />
@@ -118,13 +122,14 @@
         <input class="form-input" v-model="sendForm.lastName" placeholder="Smith" />
       </div>
       <div class="form-group">
-        <label class="form-label">Email *</label>
+        <label class="form-label">Email</label>
         <input class="form-input" type="email" v-model="sendForm.email" placeholder="john@example.com" />
       </div>
       <div class="form-group">
         <label class="form-label">Phone</label>
         <input class="form-input" type="tel" v-model="sendForm.phone" placeholder="+15551234567" />
       </div>
+      </fieldset>
 
       <div class="form-group">
         <label class="form-label">Send via:</label>
@@ -138,13 +143,11 @@
         </div>
       </div>
 
-      <p class="text-sm text-muted">If this person is already a contact in your CRM, we'll use their existing record.</p>
-
       <div v-if="sendError" class="error-msg" style="margin-top:8px">{{ sendError }}</div>
 
       <template #footer>
         <button class="btn btn-secondary" @click="showSendModal = false">Cancel</button>
-        <button class="btn btn-primary" @click="submitSendLink" :disabled="sendLoading">
+        <button class="btn btn-primary" @click="submitSendLink" :disabled="sendLoading || (recipientMode === 'existing' && !selectedContact)">
           <Send :size="14" /> {{ sendLoading ? 'Sending...' : 'Send Link' }}
         </button>
       </template>
@@ -158,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useApi } from '../composables/useApi';
 import { Plus, Package, Link2, Send, Edit, Copy } from 'lucide-vue-next';
@@ -166,6 +169,8 @@ import Modal from '../components/Modal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import SectionHeader from '../components/SectionHeader.vue';
 import Tabs from '../components/Tabs.vue';
+import GhlContactPicker from '../components/GhlContactPicker.vue';
+import type { GhlContactOption } from '../lib/ghlContacts';
 import { offerProcessorKey, offerProcessorLabel } from '../lib/paymentDisplay';
 import { customerProgramName, internalOfferName } from '../lib/offerNames';
 
@@ -194,6 +199,17 @@ function offerProcessorBadge(offer: Record<string, unknown>) {
 const showSendModal = ref(false);
 const sendLoading = ref(false);
 const sendError = ref('');
+const recipientMode = ref<'existing' | 'manual'>('existing');
+const recipientTabs = [{ key: 'existing', label: 'HighLevel Contact' }, { key: 'manual', label: 'Enter Details' }];
+const selectedContact = ref<GhlContactOption | null>(null);
+watch(recipientMode, () => { sendError.value = ''; });
+watch(selectedContact, (contact) => {
+  sendError.value = '';
+  if (contact) {
+    sendForm.value.sendEmail = Boolean(contact.email);
+    sendForm.value.sendSms = !contact.email && Boolean(contact.phone);
+  }
+});
 const sendForm = ref({
   offerId: '',
   internalName: '',
@@ -251,6 +267,8 @@ async function cloneOffer(offer: any) {
 // --- Send Link --------------------------------------
 
 function openSendLink(offer: any) {
+  recipientMode.value = 'existing';
+  selectedContact.value = null;
   sendForm.value = {
     offerId: offer.id,
     internalName: internalOfferName(offer),
@@ -267,12 +285,17 @@ function openSendLink(offer: any) {
 }
 
 async function submitSendLink() {
+  if (sendLoading.value) return;
   sendError.value = '';
 
-  if (!sendForm.value.firstName) { sendError.value = 'First name is required'; return; }
+  const contact = recipientMode.value === 'existing' ? selectedContact.value : null;
+  if (recipientMode.value === 'existing' && !contact) { sendError.value = 'Select a HighLevel contact'; return; }
+  if (!contact && !sendForm.value.firstName.trim()) { sendError.value = 'First name is required'; return; }
+  const email = contact ? contact.email : sendForm.value.email.trim();
+  const phone = contact ? contact.phone : sendForm.value.phone.trim();
   if (!sendForm.value.sendEmail && !sendForm.value.sendSms) { sendError.value = 'Select at least one send method'; return; }
-  if (sendForm.value.sendEmail && !sendForm.value.email) { sendError.value = 'Email is required when sending via email'; return; }
-  if (sendForm.value.sendSms && !sendForm.value.phone) { sendError.value = 'Phone is required when sending via SMS'; return; }
+  if (sendForm.value.sendEmail && !email) { sendError.value = 'Email is required when sending via email'; return; }
+  if (sendForm.value.sendSms && !phone) { sendError.value = 'Phone is required when sending via SMS'; return; }
 
   sendLoading.value = true;
   try {
@@ -282,15 +305,17 @@ async function submitSendLink() {
 
     await api.post('/api/enrollment/send-link', {
       offerId: sendForm.value.offerId,
-      firstName: sendForm.value.firstName,
-      lastName: sendForm.value.lastName,
-      email: sendForm.value.email,
-      phone: sendForm.value.phone,
+      ...(contact ? { contactId: contact.id } : {
+        firstName: sendForm.value.firstName,
+        lastName: sendForm.value.lastName,
+        email,
+        phone,
+      }),
       sendVia,
     });
 
     showSendModal.value = false;
-    showToast(`Enrollment link sent to ${sendForm.value.email || sendForm.value.phone}`);
+    showToast(`Enrollment link sent to ${sendVia.includes('email') ? email : phone}`);
   } catch (err: any) {
     sendError.value = err?.message || 'Failed to send link. Please try again.';
   }
@@ -323,6 +348,7 @@ async function unarchiveOffer(offer: any) {
 </script>
 
 <style scoped>
+.recipient-fields { border: 0; padding: 16px 0 0; margin: 0; min-width: 0; }
 .section-title {
   font-size: 16px;
   font-weight: 650;

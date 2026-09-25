@@ -52,7 +52,12 @@ jest.mock('../../src/middleware/ssoAuth', () => ({
   ssoAuth: jest.fn().mockImplementation((_r: any, _s: any, n: any) => n()),
 }));
 
-import { sendEnrollmentLink } from '../../src/controllers/send-link.controller';
+jest.mock('../../src/services/evidence.service', () => ({
+  evidenceService: { logEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }) },
+}));
+
+import { searchEnrollmentContacts, sendEnrollmentLink } from '../../src/controllers/send-link.controller';
+import { ghlApi } from '../../src/clients/ghl.client';
 
 function mockReq(body: any = {}): any {
   return { body, headers: {}, ip: '127.0.0.1' };
@@ -62,6 +67,7 @@ function mockRes(): any {
   const res: any = {};
   res.json = jest.fn().mockReturnValue(res);
   res.status = jest.fn().mockReturnValue(res);
+  res.setHeader = jest.fn().mockReturnValue(res);
   return res;
 }
 
@@ -280,5 +286,172 @@ describe('Send Enrollment Link', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ error: expect.stringContaining('Unable to create contact') }),
     );
+  });
+});
+
+describe('Search HighLevel contacts', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  function request(query: any = { q: 'alex' }): any {
+    return { query, tenantContext: { locationId: 'loc-1' } };
+  }
+
+  async function run(req = request()) {
+    (ghlApi as jest.Mock).mockResolvedValue({ post: mockGhlPost });
+    const res = mockRes();
+    const next = jest.fn();
+    await searchEnrollmentContacts(req, res, next);
+    return { res, next };
+  }
+
+  it('searches only the authenticated location and returns minimal contact fields', async () => {
+    mockGhlPost.mockResolvedValue({ data: { contacts: [
+      { id: 'contact-1', locationId: 'loc-1', firstNameLowerCase: 'alex', lastNameLowerCase: 'smith', email: 'alex@example.com', phone: '+15555550123', customFields: [{ value: 'private' }] },
+      { id: 'foreign', locationId: 'loc-2', email: 'foreign@example.com' },
+      { id: 'unscoped', email: 'unscoped@example.com' },
+    ], total: 3 } });
+    const req = request({ q: ' alex ', locationId: 'loc-2', page: '1' });
+    const { res } = await run(req);
+    expect(ghlApi).toHaveBeenCalledWith('loc-1');
+    expect(mockGhlPost).toHaveBeenCalledWith('/contacts/search', { query: 'alex', locationId: 'loc-1', page: 1, pageLimit: 20 });
+    expect(res.json).toHaveBeenCalledWith({
+      contacts: [{ id: 'contact-1', firstName: 'alex', lastName: 'smith', name: 'alex smith', email: 'alex@example.com', phone: '+15555550123' }],
+      page: 1, hasMore: false,
+    });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it.each(['alex@example.com', '+15555550123'])('passes a name/email/phone search as query: %s', async (q) => {
+    mockGhlPost.mockResolvedValue({ data: { contacts: [], total: 0 } });
+    await run(request({ q }));
+    expect(mockGhlPost).toHaveBeenCalledWith('/contacts/search', expect.objectContaining({ query: q }));
+  });
+
+  it('paginates large result sets', async () => {
+    mockGhlPost.mockResolvedValue({ data: { contacts: [], total: 60 } });
+    const { res } = await run(request({ q: 'alex', page: '2' }));
+    expect(res.json).toHaveBeenCalledWith({ contacts: [], page: 2, hasMore: true });
+    expect(mockGhlPost).toHaveBeenCalledWith('/contacts/search', expect.objectContaining({ page: 2 }));
+  });
+
+  it.each([{ q: '' }, { q: 'a' }, { q: ['alex', 'bob'] }, { q: 'a'.repeat(76) }, { q: 'alex', page: 'bad' }, { q: 'alex', page: '0' }, { q: 'alex', page: '501' }])('rejects invalid search %j', async (query) => {
+    const { res } = await run(request(query));
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockGhlPost).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a caller-supplied location instead of tenant context', async () => {
+    const { res } = await run({ query: { q: 'alex', locationId: 'loc-1' }, params: { locationId: 'loc-1' } } as any);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(ghlApi).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a malformed response or upstream error into no matches', async () => {
+    mockGhlPost.mockResolvedValueOnce({ data: {} });
+    expect((await run()).res.status).toHaveBeenCalledWith(502);
+    const failure = new Error('HighLevel unavailable');
+    mockGhlPost.mockRejectedValueOnce(failure);
+    expect((await run()).next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('Send to a selected HighLevel contact', () => {
+  const contact = { id: 'ghl-only', locationId: 'loc-1', firstName: 'Alex', lastName: 'Smith', email: 'alex@example.com', phone: '+15555550123' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (ghlApi as jest.Mock).mockResolvedValue({ post: mockGhlPost, put: mockGhlPut, get: mockGhlGet });
+    const { resolveLocationId } = require('../../src/middleware/tenantContext');
+    resolveLocationId.mockReturnValue('loc-1');
+    mockFindById.mockResolvedValue({ id: 'offer-1', location_id: 'loc-1', active: true, offer_name: 'Test program', checkout_mode: 'quick_checkout' });
+    mockGetFullConfig.mockResolvedValue({ enrollmentFunnelUrl: '' });
+    mockGhlGet.mockResolvedValue({ data: { contact } });
+    mockGhlPost.mockResolvedValue({ data: { id: 'message-1' } });
+    mockGhlPut.mockResolvedValue({ data: {} });
+    mockFireTrigger.mockResolvedValue({ sent: 1, failed: 0 });
+  });
+
+  async function run(body: any = {}) {
+    const res = mockRes();
+    const next = jest.fn();
+    await sendEnrollmentLink(mockReq({ offerId: 'offer-1', contactId: 'ghl-only', sendVia: ['email'], ...body }), res, next);
+    return { res, next };
+  }
+
+  function expectNoSend() {
+    expect(mockGhlPut).not.toHaveBeenCalled();
+    expect(mockGhlPost).not.toHaveBeenCalled();
+    expect(mockFireTrigger).not.toHaveBeenCalled();
+  }
+
+  it('uses the exact GHL-only contact without upserting or overwriting identity', async () => {
+    const { res } = await run({ email: 'tampered@example.com', firstName: 'Wrong', locationId: 'loc-2' });
+    expect(mockGhlGet).toHaveBeenCalledWith('/contacts/ghl-only');
+    expect(mockGhlPost).not.toHaveBeenCalledWith('/contacts/upsert', expect.anything());
+    expect(mockGhlPut).toHaveBeenCalledWith('/contacts/ghl-only', { customField: expect.any(Object) });
+    expect(mockFireTrigger).toHaveBeenCalledWith('loc-1', 'ss_send_enrollment_link', expect.objectContaining({
+      contact_id: 'ghl-only', first_name: 'Alex', email: 'alex@example.com', send_welcome: false, enrollment_status: 'link_sent',
+    }));
+    expect(mockGhlPost).toHaveBeenCalledWith('/conversations/messages', expect.objectContaining({ contactId: 'ghl-only', type: 'Email' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, contactId: 'ghl-only' }));
+  });
+
+  it('supports a phone-only contact and SMS', async () => {
+    mockGhlGet.mockResolvedValue({ data: { contact: { ...contact, email: null } } });
+    const { res } = await run({ sendVia: ['sms'] });
+    expect(mockGhlPost).toHaveBeenCalledWith('/conversations/messages', expect.objectContaining({ type: 'SMS', contactId: contact.id }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  it('escapes selected contact names in the email body', async () => {
+    mockGhlGet.mockResolvedValue({ data: { contact: { ...contact, firstName: '<a href="https://example.com">Alex</a>' } } });
+    await run();
+    expect(mockGhlPost).toHaveBeenCalledWith('/conversations/messages', expect.objectContaining({
+      html: expect.stringContaining('&lt;a href=&quot;https://example.com&quot;&gt;Alex&lt;/a&gt;'),
+    }));
+  });
+
+  it.each([{ locationId: 'loc-2' }, { locationId: undefined }, { id: 'different-contact' }])('blocks an unverified or wrong-location contact: %j', async (overrides) => {
+    mockGhlGet.mockResolvedValue({ data: { contact: { ...contact, ...overrides } } });
+    expect((await run()).res.status).toHaveBeenCalledWith(404);
+    expectNoSend();
+  });
+
+  it.each([403, 404])('handles a removed/inaccessible contact (%s) without creating a replacement', async (ghlStatus) => {
+    mockGhlGet.mockRejectedValue({ ghlStatus });
+    expect((await run()).res.status).toHaveBeenCalledWith(404);
+    expectNoSend();
+  });
+
+  it('fails closed on a lookup timeout', async () => {
+    const error = new Error('Timeout');
+    mockGhlGet.mockRejectedValue(error);
+    expect((await run()).next).toHaveBeenCalledWith(error);
+    expectNoSend();
+  });
+
+  it('uses freshly retrieved channel details, never stale submitted addresses', async () => {
+    mockGhlGet.mockResolvedValue({ data: { contact: { ...contact, email: null } } });
+    expect((await run({ email: 'old@example.com' })).res.status).toHaveBeenCalledWith(400);
+    expectNoSend();
+  });
+
+  it.each(['', '../other', null, ['ghl-only']])('rejects malformed selected contact %j', async (contactId) => {
+    expect((await run({ contactId })).res.status).toHaveBeenCalledWith(400);
+    expect(mockGhlGet).not.toHaveBeenCalled();
+    expectNoSend();
+  });
+
+  it('rejects unknown delivery channels', async () => {
+    expect((await run({ sendVia: ['fax'] })).res.status).toHaveBeenCalledWith(400);
+    expectNoSend();
+  });
+
+  it('checks offer ownership before accessing the selected contact', async () => {
+    mockFindById.mockResolvedValue(null);
+    expect((await run()).res.status).toHaveBeenCalledWith(404);
+    expect(mockFindById).toHaveBeenCalledWith('offer-1', 'loc-1');
+    expect(mockGhlGet).not.toHaveBeenCalled();
+    expectNoSend();
   });
 });

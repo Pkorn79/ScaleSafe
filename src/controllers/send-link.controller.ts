@@ -9,12 +9,53 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 
+const contactText = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const emailHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+/** Read-only, tenant-scoped search; never imports contacts or creates enrollments. */
+export async function searchEnrollmentContacts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const locationId = req.tenantContext?.locationId;
+    if (!locationId) {
+      res.status(400).json({ error: 'Merchant account required' });
+      return;
+    }
+    const query = contactText(req.query.q);
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if (query.length < 2 || query.length > 75 || !Number.isInteger(page) || page < 1 || page > 500) {
+      res.status(400).json({ error: 'Enter 2-75 characters and a valid page number' });
+      return;
+    }
+    const api = await ghlApi(locationId);
+    const pageLimit = 20;
+    const result = await api.post('/contacts/search', { locationId, query, page, pageLimit });
+    if (!Array.isArray(result.data?.contacts)) {
+      res.status(502).json({ error: 'HighLevel contact search returned an invalid response. Please retry.' });
+      return;
+    }
+    const contacts = result.data.contacts
+      .filter((contact: any) => contact?.locationId === locationId && contactText(contact.id))
+      .map((contact: any) => ({
+        id: contact.id,
+        firstName: contactText(contact.firstName) || contactText(contact.firstNameLowerCase),
+        lastName: contactText(contact.lastName) || contactText(contact.lastNameLowerCase),
+        name: contactText(contact.name) || contactText(contact.contactName) || [contactText(contact.firstName || contact.firstNameLowerCase), contactText(contact.lastName || contact.lastNameLowerCase)].filter(Boolean).join(' '),
+        email: contactText(contact.email),
+        phone: contactText(contact.phone),
+      }));
+    res.setHeader('Cache-Control', 'no-store');
+    const total = result.data.total;
+    const hasMore = page < 500 && (typeof total === 'number' ? page * pageLimit < total : result.data.contacts.length >= pageLimit);
+    res.json({ contacts, page, hasMore });
+  } catch (err) { next(err); }
+}
+
 /**
  * POST /api/enrollment/send-link
  *
  * Sends an enrollment link to a client via GHL email/SMS.
  * 1. Validates offer exists and is active
- * 2. Upserts GHL contact
+ * 2. Verifies a selected GHL contact or upserts manually entered details
  * 3. Writes enrollment URL + offer name to contact custom fields
  * 4. Fires ss_send_enrollment_link trigger for GHL workflow
  */
@@ -26,7 +67,12 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
       return;
     }
 
-    const { offerId, firstName, lastName, email, phone, sendVia } = req.body;
+    const { offerId, sendVia, contactId: selectedContactId } = req.body;
+    let firstName = contactText(req.body.firstName);
+    let lastName = contactText(req.body.lastName);
+    let email = contactText(req.body.email);
+    let phone = contactText(req.body.phone);
+    const hasSelectedContact = selectedContactId !== undefined;
 
     // ─── Validation ──────────────────────────────────
 
@@ -34,19 +80,23 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
       res.status(400).json({ error: 'offerId is required' });
       return;
     }
-    if (!firstName) {
+    if (hasSelectedContact && (typeof selectedContactId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(selectedContactId))) {
+      res.status(400).json({ error: 'Invalid contact selection' });
+      return;
+    }
+    if (!hasSelectedContact && !firstName) {
       res.status(400).json({ error: 'firstName is required' });
       return;
     }
-    if (!Array.isArray(sendVia) || sendVia.length === 0) {
+    if (!Array.isArray(sendVia) || sendVia.length === 0 || sendVia.some((channel: unknown) => channel !== 'email' && channel !== 'sms')) {
       res.status(400).json({ error: 'sendVia must include at least "email" or "sms"' });
       return;
     }
-    if (sendVia.includes('email') && !email) {
+    if (!hasSelectedContact && sendVia.includes('email') && !email) {
       res.status(400).json({ error: 'email is required when sending via email' });
       return;
     }
-    if (sendVia.includes('sms') && !phone) {
+    if (!hasSelectedContact && sendVia.includes('sms') && !phone) {
       res.status(400).json({ error: 'phone is required when sending via SMS' });
       return;
     }
@@ -90,25 +140,54 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
     const api = await ghlApi(locationId);
     let contactId: string;
 
-    try {
-      const upsertData: Record<string, unknown> = {
-        firstName,
-        lastName: lastName || '',
-        locationId,
-      };
-      if (email) upsertData.email = email;
-      if (phone) upsertData.phone = phone;
-
-      const upsertRes = await api.post('/contacts/upsert', upsertData);
-      contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
-
-      if (!contactId) {
-        throw new Error('GHL upsert returned no contact ID');
+    if (hasSelectedContact) {
+      // Re-read the exact recipient with this merchant's credentials. Never upsert
+      // a selected contact or trust client-supplied names, addresses, or tenant IDs.
+      let contact;
+      try {
+        const result = await api.get(`/contacts/${encodeURIComponent(selectedContactId)}`);
+        contact = result.data?.contact;
+      } catch (err: any) {
+        if ([403, 404].includes(err.response?.status || err.ghlStatus || err.statusCode)) {
+          res.status(404).json({ error: 'Contact not found in this HighLevel account. Search again.' });
+          return;
+        }
+        throw err;
       }
-    } catch (err: any) {
-      logger.error({ err: err.message, locationId }, 'Failed to upsert GHL contact for send-link');
-      res.status(500).json({ error: 'Unable to create contact in GHL' });
-      return;
+      if (!contact || contact.id !== selectedContactId || contact.locationId !== locationId) {
+        res.status(404).json({ error: 'Contact not found in this HighLevel account. Search again.' });
+        return;
+      }
+      contactId = contact.id;
+      firstName = contactText(contact.firstName) || contactText(contact.name) || 'there';
+      lastName = contactText(contact.lastName);
+      email = contactText(contact.email);
+      phone = contactText(contact.phone);
+      if ((sendVia.includes('email') && !email) || (sendVia.includes('sms') && !phone)) {
+        res.status(400).json({ error: 'The selected contact is missing an email or phone for the chosen delivery method. Update it in HighLevel or choose another method.' });
+        return;
+      }
+    } else {
+      try {
+        const upsertData: Record<string, unknown> = {
+          firstName,
+          lastName: lastName || '',
+          locationId,
+        };
+        if (email) upsertData.email = email;
+        if (phone) upsertData.phone = phone;
+
+        const upsertRes = await api.post('/contacts/upsert', upsertData);
+        contactId = upsertRes.data.contact?.id || upsertRes.data.id || '';
+
+        if (!contactId) {
+          throw new Error('GHL upsert returned no contact ID');
+        }
+      } catch (err: any) {
+        logger.error({ err: err.message, locationId }, 'Failed to upsert GHL contact for send-link');
+        res.status(500).json({ error: 'Unable to create contact in GHL' });
+        return;
+      }
     }
 
     // ─── Write enrollment URL + offer name to contact ─
@@ -167,7 +246,7 @@ export async function sendEnrollmentLink(req: Request, res: Response, next: Next
     // GHL Conversations API: Email requires 'html' field (not 'message'); SMS uses 'message'
     if (sendVia.includes('email') && email) {
       try {
-        const emailBody = `<p>Hi ${firstName},</p><p>Here's your enrollment link for <strong>${offer.offer_name}</strong>:</p><p><a href="${enrollmentUrl}">${enrollmentUrl}</a></p><p>Click the link above to get started.</p>`;
+        const emailBody = `<p>Hi ${emailHtml(firstName)},</p><p>Here's your enrollment link for <strong>${emailHtml(offer.offer_name)}</strong>:</p><p><a href="${emailHtml(enrollmentUrl)}">${emailHtml(enrollmentUrl)}</a></p><p>Click the link above to get started.</p>`;
         await api.post('/conversations/messages', {
           type: 'Email',
           contactId,

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { enrollmentController } from '../controllers/enrollment.controller';
-import { sendEnrollmentLink } from '../controllers/send-link.controller';
+import { searchEnrollmentContacts, sendEnrollmentLink } from '../controllers/send-link.controller';
 import { enrollmentPublicLimiter } from '../middleware/rateLimiter';
 import { ssoAuth } from '../middleware/ssoAuth';
 import { requireTenant } from '../middleware/tenantContext';
@@ -28,6 +28,7 @@ router.get('/consent-lookup/:consentToken', enrollmentPublicLimiter, enrollmentC
 
 // ─── Send Enrollment Link (SSO-gated — merchant action) ─────────────
 router.post('/send-link', ssoAuth, requireTenant, sendEnrollmentLink);
+router.get('/contacts/search', ssoAuth, requireTenant, searchEnrollmentContacts);
 
 // ─── Original API Endpoints ─────────────────────────────────────────
 

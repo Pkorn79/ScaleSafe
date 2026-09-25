@@ -10,6 +10,18 @@ Current product, plan, launch, roadmap, and document status lives in `docs/MASTE
 
 ## Operating Rule For Codex
 
+### 2026-09-24: Send Offer HighLevel Contact Search (Release Approved)
+
+- Added SSO/tenant-protected `GET /api/enrollment/contacts/search` using GHL `POST /contacts/search`. Validates 2-75 character queries, paginates 20 results, excludes wrong/unscoped locations, returns only recipient fields, and disables caching. Supports GHL's lowercase search name fields. No client/enrollment import.
+- Offers > Send has HighLevel Contact / Enter Details modes, debounced search, stale-response protection, pagination, empty/error states, selected-recipient review, and email/SMS validation. Manual entry is preserved.
+- Sending with `contactId` re-reads the exact GHL contact and verifies its ID/location before writes or messages. Ignores browser-supplied identity/address values, rejects wrong-location/deleted contacts, and never upserts a selected contact. Email HTML escapes names and offer/link values.
+- Changed `send-link.controller.ts`, `enrollment.routes.ts`, `OffersView.vue`; added `GhlContactPicker.vue`, `ghlContacts.ts`, and loopback-only `scripts/preview-send-offer.cjs`. Expanded `send-enrollment-link.test.ts`.
+- Verified: 64 tests across send-link, SSO middleware/context, and GHL client suites; full worktree suite 218 suites / 1,871 tests passed (includes 10 unrelated local NMI hash tests not included in this release); `npm.cmd run typecheck`; UI `npx.cmd vue-tsc --noEmit`; `npm.cmd run build`; desktop/mobile fictional preview with paging, exact-ID email send, phone-only SMS, missing email, empty/error/recovery, and manual entry. Preview sends were simulated, not real GHL messages.
+- Source: https://marketplace.gohighlevel.com/docs/2021-07-28/ghl/contacts/search-contacts-advanced/index.html and its official linked Contacts Search API guide https://doc.clickup.com/8631005/d/h/87cpx-158396/6e629989abe7fad. Query searches the location's configured searchable fields. Search/read scopes already exist.
+- Limits: no production deploy, SQL, real contact search, or inbox certification. Existing send-link trigger-plus-direct-message delivery behavior is unchanged; provider acceptance/duplicate delivery is a separate existing audit concern. Build reports 3 UI dependency audit warnings (1 moderate, 2 high); no dependency changes were made.
+- Attendance question: calendar activity and Zoom attendance capture exist, but group expected-roster/no-show inference and consistent no-show workflow firing across all ingestion sources are not complete. No attendance changes in this unit.
+- Philip approved deployment after release checks on September 24. Release is based on current remote main `29910b8`, not the older original-workspace branch. No migration, dependency, processor, or checkout changes. Next: push this focused release and verify Railway commit/health/UI assets; a real location-scoped lookup and explicitly approved send remain separate live proof.
+
 At the end of each meaningful Codex coding session, update this file with:
 
 - Code changes made
