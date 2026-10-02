@@ -46,8 +46,25 @@ function uniqueSubjects(rows: any[]): any[] {
   return Array.from(new Map(rows.filter(Boolean).map((row) => [row.id, row])).values());
 }
 
-async function resolveUnmappedZoomSubject(connection: EvidenceConnectionRecord, event: CanonicalEvidenceEvent): Promise<Resolution> {
+async function resolveZoomSubject(connection: EvidenceConnectionRecord, event: CanonicalEvidenceEvent, offerId: string | null): Promise<Resolution> {
   const normalizedEmail = String(event.subject.email || event.actor?.email || '').trim().toLowerCase();
+  // A shared meeting and old automatic identity bindings do not identify a person.
+  // In particular, legacy zoom_exact_scheduled_appointment bindings may be wrong.
+  if (!normalizedEmail) throw resolutionError('ZOOM_PARTICIPANT_EMAIL_MISSING', false);
+  const emailMatches = offerId
+    ? await evidenceConnectorRepository.findSubjectsByEmailAndOffer(connection.location_id, normalizedEmail, offerId)
+    : await evidenceConnectorRepository.findSubjectsByEmail(connection.location_id, normalizedEmail);
+  const eligible = uniqueSubjects(emailMatches).filter((subject) =>
+    subject.location_id === connection.location_id &&
+    subject.enrollment?.location_id === connection.location_id &&
+    (!offerId || subject.offer_id === offerId) &&
+    String(subject.normalized_email || '').trim().toLowerCase() === normalizedEmail &&
+    enrollmentEligibleAt(subject, event.occurred_at));
+  if (!eligible.length) throw resolutionError('ZOOM_ENROLLMENT_NOT_READY', true);
+  if (offerId) {
+    if (eligible.length === 1) return { subject: eligible[0], method: 'exact_email_and_offer' };
+    throw resolutionError('AMBIGUOUS_EMAIL_AND_OFFER', false);
+  }
   const scheduledAt = String(event.metadata?.meeting_start_time || event.occurred_at);
   const schedulingMatches = event.resource?.id
     ? await schedulingEventRepository.findMeetingCandidates(
@@ -59,41 +76,14 @@ async function resolveUnmappedZoomSubject(connection: EvidenceConnectionRecord, 
     : [];
 
   if (schedulingMatches.length) {
-    const scheduledSubjects = (await Promise.all(schedulingMatches
-      .filter((row: any) => row.enrollment_id)
-      .map((row: any) => evidenceConnectorRepository.getSubjectByEnrollment(connection.location_id, row.enrollment_id))))
-      .filter(Boolean);
-    const uniqueScheduledSubjects = uniqueSubjects(scheduledSubjects)
-      .filter((subject) => enrollmentEligibleAt(subject, event.occurred_at));
-
-    if (uniqueScheduledSubjects.length === 1 && schedulingMatches.length === 1) {
-      return { subject: uniqueScheduledSubjects[0], method: 'zoom_exact_scheduled_appointment' };
-    }
-    if (normalizedEmail) {
-      const emailScheduled = uniqueScheduledSubjects.filter((subject: any) =>
-        String(subject.normalized_email || '').toLowerCase() === normalizedEmail);
-      if (emailScheduled.length === 1) {
-        return { subject: emailScheduled[0], method: 'zoom_scheduled_appointment_and_email' };
-      }
+    const scheduledEnrollmentIds = new Set(schedulingMatches.map((row: any) => row.enrollment_id));
+    const emailScheduled = eligible.filter((subject) => scheduledEnrollmentIds.has(subject.enrollment.id));
+    if (emailScheduled.length === 1) {
+      return { subject: emailScheduled[0], method: 'zoom_scheduled_appointment_and_email' };
     }
   }
-
-  if (!normalizedEmail) throw resolutionError('ZOOM_PARTICIPANT_EMAIL_MISSING', false);
-
-  let identityMatches: any[] = [];
-  if (event.subject.external_contact_id) {
-    identityMatches = await evidenceConnectorRepository.findSubjectsByIdentity(
-      connection.id,
-      event.subject.external_contact_id,
-      undefined,
-    );
-  }
-  const emailMatches = await evidenceConnectorRepository.findSubjectsByEmail(connection.location_id, normalizedEmail);
-  const eligible = uniqueSubjects([...identityMatches, ...emailMatches])
-    .filter((subject) => enrollmentEligibleAt(subject, event.occurred_at));
 
   if (eligible.length === 1) return { subject: eligible[0], method: 'zoom_exact_email_unique_enrollment' };
-  if (!eligible.length) throw resolutionError('ZOOM_ENROLLMENT_NOT_READY', true);
 
   const meetingName = normalizedLabel(event.resource?.name);
   if (meetingName) {
@@ -112,6 +102,9 @@ export async function resolveConnectorSubject(connection: EvidenceConnectionReco
     if (!subject) throw resolutionError('ENROLLMENT_REF_NOT_FOUND', false);
     return { subject, method: 'enrollment_ref' };
   }
+  if (connection.provider_key === 'zoom') {
+    return resolveZoomSubject(connection, event, await resourceOfferId(connection, event));
+  }
 
   if (event.subject.external_enrollment_id) {
     const matches = await evidenceConnectorRepository.findSubjectsByIdentity(
@@ -124,9 +117,6 @@ export async function resolveConnectorSubject(connection: EvidenceConnectionReco
   }
 
   const offerId = await resourceOfferId(connection, event);
-  if (!offerId && connection.provider_key === 'zoom') {
-    return resolveUnmappedZoomSubject(connection, event);
-  }
   if (!offerId) throw resolutionError('RESOURCE_NOT_MAPPED', false);
 
   if (event.subject.external_contact_id) {

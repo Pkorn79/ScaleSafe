@@ -3,6 +3,7 @@ import crypto from 'crypto';
 const getAuthorizationByAccount = jest.fn();
 const createAttendance = jest.fn();
 const findOpenAttendance = jest.fn();
+const findAttendanceAt = jest.fn();
 const completeAttendance = jest.fn();
 const linkEvidenceEvent = jest.fn();
 const ingestCanonical = jest.fn();
@@ -12,6 +13,7 @@ jest.mock('../../src/repositories/zoom-integration.repository', () => ({
     getAuthorizationByAccount: (...args: any[]) => getAuthorizationByAccount(...args),
     createAttendance: (...args: any[]) => createAttendance(...args),
     findOpenAttendance: (...args: any[]) => findOpenAttendance(...args),
+    findAttendanceAt: (...args: any[]) => findAttendanceAt(...args),
     completeAttendance: (...args: any[]) => completeAttendance(...args),
     linkEvidenceEvent: (...args: any[]) => linkEvidenceEvent(...args),
   },
@@ -48,8 +50,9 @@ function signedBody(payload: Record<string, unknown>, timestamp = String(Math.fl
 
 describe('Zoom evidence integration', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     getAuthorizationByAccount.mockResolvedValue({ id: 'auth-1', connection });
+    findAttendanceAt.mockResolvedValue(null);
     linkEvidenceEvent.mockResolvedValue(undefined);
   });
 
@@ -107,9 +110,9 @@ describe('Zoom evidence integration', () => {
 
   it('turns a matching leave into one enrollment-resolvable attendance event', async () => {
     findOpenAttendance.mockResolvedValue({
-      id: 'attendance-1', joined_at: '2026-07-11T14:00:00Z', participant_email: 'client@example.com', meeting_topic: 'Implementation Call',
+      id: 'attendance-1', status: 'joined', joined_at: '2026-07-11T14:00:00Z', participant_email: 'client@example.com', meeting_topic: 'Implementation Call',
     });
-    completeAttendance.mockImplementation(async (_id, updates) => ({
+    completeAttendance.mockImplementation(async (_connectionId, _id, updates) => ({
       id: 'attendance-1', joined_at: '2026-07-11T14:00:00Z', participant_email: 'client@example.com', meeting_topic: 'Implementation Call', ...updates,
     }));
     ingestCanonical.mockResolvedValue({ event: { id: 'intake-1' }, duplicate: false });
@@ -128,7 +131,7 @@ describe('Zoom evidence integration', () => {
       resource: { type: 'zoom_meeting', id: '12345', name: 'Implementation Call' },
       activity: expect.objectContaining({ duration_seconds: 3600 }),
     }), raw, false);
-    expect(linkEvidenceEvent).toHaveBeenCalledWith('attendance-1', 'intake-1');
+    expect(linkEvidenceEvent).toHaveBeenCalledWith('connection-1', 'attendance-1', 'intake-1');
   });
 
   it('quarantines a leave without a matching join instead of claiming attendance', async () => {
@@ -150,7 +153,7 @@ describe('Zoom evidence integration', () => {
     });
     expect(createAttendance).toHaveBeenCalledWith(expect.objectContaining({
       status: 'quarantined',
-      left_at: '2026-07-11T15:00:00Z',
+      left_at: '2026-07-11T15:00:00.000Z',
       duration_seconds: null,
     }));
     expect(completeAttendance).not.toHaveBeenCalled();
@@ -163,5 +166,173 @@ describe('Zoom evidence integration', () => {
     await expect(zoomIntegrationService.handleWebhook(payload, Buffer.from(JSON.stringify(payload))))
       .resolves.toEqual({ accepted: true, ignored: true });
     expect(ingestCanonical).not.toHaveBeenCalled();
+  });
+
+  describe('durable interval recovery', () => {
+    let rows: any[];
+    let events: Map<string, any>;
+    const packet = (kind: 'joined' | 'left', time: string, accountId = 'zoom-account') => ({
+      event: `meeting.participant_${kind}`, event_ts: Date.now(),
+      payload: { account_id: accountId, object: {
+        id: 12345, uuid: 'meeting-instance', topic: 'Group Call',
+        participant: {
+          participant_uuid: 'participant-instance', registrant_id: 'registrant-1', email: 'client@example.com',
+          [kind === 'joined' ? 'join_time' : 'leave_time']: time,
+        },
+      } },
+    });
+    const deliver = (body: any) => zoomIntegrationService.handleWebhook(body, Buffer.from(JSON.stringify(body)));
+    const join = () => deliver(packet('joined', '2026-10-01T14:00:00Z'));
+    const leave = () => packet('left', '2026-10-01T14:30:00Z');
+
+    beforeEach(() => {
+      rows = [];
+      events = new Map();
+      createAttendance.mockImplementation(async (input) => {
+        if (rows.some((row) => row.connection_id === input.connection_id && row.join_source_event_id === input.join_source_event_id)) return null;
+        const row = { id: `attendance-${rows.length + 1}`, ...input };
+        rows.push(row);
+        return { ...row };
+      });
+      findAttendanceAt.mockImplementation(async (conn, meeting, participant, field, time) =>
+        rows.find((row) => row.connection_id === conn && row.meeting_uuid === meeting &&
+          row.participant_instance_id === participant && row[field] && Date.parse(row[field]) === Date.parse(time)) || null);
+      findOpenAttendance.mockImplementation(async (conn, meeting, participant, leftAt) => {
+        const row = rows.filter((r) => r.connection_id === conn && r.meeting_uuid === meeting &&
+          r.participant_instance_id === participant && r.status === 'joined' &&
+          (!leftAt || Date.parse(r.joined_at) <= Date.parse(leftAt)))
+          .sort((a, b) => Date.parse(b.joined_at) - Date.parse(a.joined_at))[0];
+        return row ? { ...row } : null;
+      });
+      completeAttendance.mockImplementation(async (conn, id, updates) => {
+        const row = rows.find((r) => r.connection_id === conn && r.id === id && r.status === 'joined');
+        if (!row) return null;
+        Object.assign(row, updates);
+        return { ...row };
+      });
+      ingestCanonical.mockImplementation(async (auth, canonical) => {
+        const key = `${auth.connection.id}:${canonical.event_id}`;
+        const existing = events.get(key);
+        if (existing) return { event: existing, duplicate: true };
+        const event = { id: `event-${events.size + 1}`, canonical };
+        events.set(key, event);
+        return { event, duplicate: false };
+      });
+      linkEvidenceEvent.mockImplementation(async (conn, id, eventId) => {
+        const row = rows.find((r) => r.connection_id === conn && r.id === id && r.status === 'completed');
+        if (row) Object.assign(row, { status: 'published', evidence_event_id: eventId });
+      });
+    });
+
+    it('resumes a completed interval after canonical intake fails', async () => {
+      await join();
+      ingestCanonical.mockRejectedValueOnce(new Error('intake unavailable'));
+      await expect(deliver(leave())).rejects.toThrow('intake unavailable');
+      expect(rows[0].status).toBe('completed');
+      await expect(deliver(leave())).resolves.toMatchObject({ eventId: 'event-1' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe('published');
+      expect(events.size).toBe(1);
+    });
+
+    it('retries a failure before closing the interval without losing the join', async () => {
+      await join();
+      completeAttendance.mockRejectedValueOnce(new Error('database unavailable'));
+      await expect(deliver(leave())).rejects.toThrow('database unavailable');
+      expect(rows[0].status).toBe('joined');
+      await expect(deliver(leave())).resolves.toMatchObject({ eventId: 'event-1' });
+      expect(rows).toHaveLength(1);
+    });
+
+    it('recovers when completion committed but its response was lost', async () => {
+      await join();
+      completeAttendance.mockImplementationOnce(async (_conn, _id, updates) => {
+        Object.assign(rows[0], updates);
+        throw new Error('response lost');
+      });
+      await expect(deliver(leave())).rejects.toThrow('response lost');
+      await expect(deliver(leave())).resolves.toMatchObject({ eventId: 'event-1' });
+      expect(rows).toHaveLength(1);
+      expect(events.size).toBe(1);
+    });
+
+    it('does not call rejected evidence published', async () => {
+      await join();
+      ingestCanonical.mockResolvedValueOnce({ event: { id: 'rejected-event', status: 'rejected' }, duplicate: true });
+      await expect(deliver(leave())).rejects.toThrow('intake was rejected');
+      expect(rows[0].status).toBe('completed');
+      expect(linkEvidenceEvent).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates simultaneous joins using the existing unique database key', async () => {
+      await Promise.all([join(), join()]);
+      expect(rows).toHaveLength(1);
+      expect(ingestCanonical).not.toHaveBeenCalled();
+    });
+
+    it('recovers after intake succeeds but linking fails without creating a second event', async () => {
+      await join();
+      linkEvidenceEvent.mockRejectedValueOnce(new Error('link unavailable'));
+      await expect(deliver(leave())).rejects.toThrow('link unavailable');
+      await expect(deliver(leave())).resolves.toMatchObject({ eventId: 'event-1', duplicate: true });
+      expect(events.size).toBe(1);
+      expect(rows[0].status).toBe('published');
+    });
+
+    it('handles concurrent leave deliveries through one completion and one canonical event', async () => {
+      await join();
+      const results = await Promise.all([deliver(leave()), deliver(leave())]);
+      expect(results.map((r) => r.eventId)).toEqual(['event-1', 'event-1']);
+      expect(events.size).toBe(1);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].duration_seconds).toBe(1800);
+    });
+
+    it('deduplicates retries with different delivery metadata and preserves a later rejoin', async () => {
+      await join();
+      await deliver(leave());
+      const rejoin = packet('joined', '2026-10-01T14:40:00Z');
+      await deliver(rejoin);
+      await deliver({ ...rejoin, event_ts: 9999999999999 });
+      await expect(deliver({ ...leave(), event_ts: 9999999999999 })).resolves.toMatchObject({ duplicate: true });
+      expect(rows).toHaveLength(2);
+      expect(rows[1].status).toBe('joined');
+      await deliver(packet('left', '2026-10-01T15:00:00Z'));
+      expect(events.size).toBe(2);
+      expect(rows.map((r) => r.duration_seconds)).toEqual([1800, 1200]);
+    });
+
+    it('recovers a pre-upgrade completed row using its existing canonical event identity', async () => {
+      await join();
+      rows[0] = {
+        ...rows[0], status: 'completed', left_at: '2026-10-01T14:30:00Z',
+        duration_seconds: 1800, leave_source_event_id: 'zoom:legacy-raw-body-hash',
+      };
+      await deliver(leave());
+      expect(ingestCanonical.mock.calls[0][1].event_id).toBe('zoom:legacy-raw-body-hash');
+      expect(rows[0].status).toBe('published');
+    });
+
+    it('does not use another tenant connection with identical meeting and participant IDs', async () => {
+      await join();
+      getAuthorizationByAccount.mockResolvedValue({ id: 'auth-2', connection: {
+        ...connection, id: 'connection-2', location_id: 'location-2',
+      } });
+      await expect(deliver(leave())).resolves.toMatchObject({ recorded: 'leave_without_join' });
+      expect(ingestCanonical).not.toHaveBeenCalled();
+      expect(rows[0].status).toBe('joined');
+    });
+
+    it('does not complete a newer join with an older leave notification', async () => {
+      await deliver(packet('joined', '2026-10-01T15:00:00Z'));
+      await expect(deliver(leave())).resolves.toMatchObject({ recorded: 'leave_without_join' });
+      expect(rows[0].status).toBe('joined');
+      expect(ingestCanonical).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid provider timestamps without inventing an occurrence time', async () => {
+      await expect(deliver(packet('left', 'invalid-time'))).rejects.toThrow('valid occurrence time');
+      expect(createAttendance).not.toHaveBeenCalled();
+    });
   });
 });

@@ -64,16 +64,34 @@ export const zoomIntegrationRepository = {
     return data || [];
   },
 
-  async findOpenAttendance(connectionId: string, meetingUuid: string, participantInstanceId: string): Promise<any | null> {
+  async findOpenAttendance(connectionId: string, meetingUuid: string, participantInstanceId: string, leftAt?: string): Promise<any | null> {
+    let query = getSupabase()
+      .from('evidence_zoom_attendance_sessions')
+      .select('*')
+      .eq('connection_id', connectionId)
+      .eq('meeting_uuid', meetingUuid)
+      .eq('participant_instance_id', participantInstanceId)
+      .eq('status', 'joined');
+    if (leftAt) query = query.lte('joined_at', leftAt);
+    const { data, error } = await query
+      .order('joined_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  },
+
+  async findAttendanceAt(
+    connectionId: string, meetingUuid: string, participantInstanceId: string,
+    timeField: 'joined_at' | 'left_at', occurredAt: string,
+  ): Promise<any | null> {
     const { data, error } = await getSupabase()
       .from('evidence_zoom_attendance_sessions')
       .select('*')
       .eq('connection_id', connectionId)
       .eq('meeting_uuid', meetingUuid)
       .eq('participant_instance_id', participantInstanceId)
-      .eq('status', 'joined')
-      .order('joined_at', { ascending: false })
-      .limit(1)
+      .eq(timeField, occurredAt)
       .maybeSingle();
     if (error) throw error;
     return data || null;
@@ -89,22 +107,26 @@ export const zoomIntegrationRepository = {
     return data || null;
   },
 
-  async completeAttendance(id: string, updates: Record<string, unknown>): Promise<any> {
+  async completeAttendance(connectionId: string, id: string, updates: Record<string, unknown>): Promise<any | null> {
     const { data, error } = await getSupabase()
       .from('evidence_zoom_attendance_sessions')
       .update(updates)
       .eq('id', id)
+      .eq('connection_id', connectionId)
+      .eq('status', 'joined')
       .select('*')
-      .single();
+      .maybeSingle();
     if (error) throw error;
     return data;
   },
 
-  async linkEvidenceEvent(id: string, evidenceEventId: string): Promise<void> {
+  async linkEvidenceEvent(connectionId: string, id: string, evidenceEventId: string): Promise<void> {
     const { error } = await getSupabase()
       .from('evidence_zoom_attendance_sessions')
       .update({ evidence_event_id: evidenceEventId, status: 'published' })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('connection_id', connectionId)
+      .eq('status', 'completed');
     if (error) throw error;
   },
 };

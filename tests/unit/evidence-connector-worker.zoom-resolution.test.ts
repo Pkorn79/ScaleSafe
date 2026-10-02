@@ -1,6 +1,8 @@
 const findResourceMapping = jest.fn();
 const findSubjectsByIdentity = jest.fn();
 const findSubjectsByEmail = jest.fn();
+const findSubjectsByEmailAndOffer = jest.fn();
+const findSubjectByRef = jest.fn();
 const getSubjectByEnrollment = jest.fn();
 const findMeetingCandidates = jest.fn();
 
@@ -9,6 +11,8 @@ jest.mock('../../src/repositories/evidence-connector.repository', () => ({
     findResourceMapping: (...args: any[]) => findResourceMapping(...args),
     findSubjectsByIdentity: (...args: any[]) => findSubjectsByIdentity(...args),
     findSubjectsByEmail: (...args: any[]) => findSubjectsByEmail(...args),
+    findSubjectsByEmailAndOffer: (...args: any[]) => findSubjectsByEmailAndOffer(...args),
+    findSubjectByRef: (...args: any[]) => findSubjectByRef(...args),
     getSubjectByEnrollment: (...args: any[]) => getSubjectByEnrollment(...args),
   },
 }));
@@ -46,9 +50,12 @@ function event(name = 'Weekly Client Call'): CanonicalEvidenceEvent {
 function subject(id: string, offerName: string, deliveryMethod = 'Live Virtual (Zoom/Meet)') {
   return {
     id,
+    location_id: 'location-1',
+    normalized_email: 'client@example.com',
     offer_id: `offer-${id}`,
     enrollment: {
       id: `enrollment-${id}`,
+      location_id: 'location-1',
       status: 'enrolled',
       enrolled_at: '2026-07-01T00:00:00Z',
       cancelled_at: null,
@@ -63,11 +70,14 @@ describe('automatic Zoom enrollment resolution', () => {
     jest.clearAllMocks();
     findResourceMapping.mockResolvedValue(null);
     findSubjectsByIdentity.mockResolvedValue([]);
+    findSubjectsByEmail.mockResolvedValue([]);
+    findSubjectsByEmailAndOffer.mockResolvedValue([]);
+    findSubjectByRef.mockResolvedValue(null);
     findMeetingCandidates.mockResolvedValue([]);
     getSubjectByEnrollment.mockResolvedValue(null);
   });
 
-  it('uses an exact scheduled appointment even when Zoom omits participant email', async () => {
+  it('does not identify a person from a sole scheduled appointment when email is missing', async () => {
     const scheduledSubject = subject('scheduled', 'Private Coaching');
     findMeetingCandidates.mockResolvedValue([{ id: 'schedule-1', enrollment_id: 'enrollment-scheduled' }]);
     getSubjectByEnrollment.mockResolvedValue(scheduledSubject);
@@ -75,10 +85,63 @@ describe('automatic Zoom enrollment resolution', () => {
     const scheduledEvent = event('Private Session');
     scheduledEvent.subject = { external_contact_id: 'zoom_participant_1' };
 
-    await expect(resolveConnectorSubject(connection, scheduledEvent)).resolves.toMatchObject({
-      subject: { id: 'scheduled' },
-      method: 'zoom_exact_scheduled_appointment',
+    await expect(resolveConnectorSubject(connection, scheduledEvent)).rejects.toMatchObject({
+      code: 'ZOOM_PARTICIPANT_EMAIL_MISSING',
     });
+  });
+
+  it('preserves explicit tenant-scoped enrollment references used by connector tests', async () => {
+    findSubjectByRef.mockResolvedValue(subject('one', 'One'));
+    const explicit = event();
+    explicit.subject = { enrollment_ref: 'explicit-reference' };
+    await expect(resolveConnectorSubject(connection, explicit)).resolves.toMatchObject({ subject: { id: 'one' }, method: 'enrollment_ref' });
+    expect(findSubjectByRef).toHaveBeenCalledWith('location-1', 'explicit-reference');
+  });
+
+  it('does not assign Bob to Alice just because Alice booked the shared meeting', async () => {
+    findMeetingCandidates.mockResolvedValue([{ enrollment_id: 'enrollment-alice' }]);
+    getSubjectByEnrollment.mockResolvedValue({ ...subject('alice', 'Private Session'), normalized_email: 'alice@example.com' });
+    const bob = event();
+    bob.subject.email = 'bob@example.com';
+    await expect(resolveConnectorSubject(connection, bob)).rejects.toMatchObject({ code: 'ZOOM_ENROLLMENT_NOT_READY' });
+  });
+
+  it('uses the scheduled program only among enrollments matching this participant', async () => {
+    findMeetingCandidates.mockResolvedValue([{ enrollment_id: 'enrollment-two' }]);
+    findSubjectsByEmail.mockResolvedValue([subject('one', 'One'), subject('two', 'Two')]);
+    await expect(resolveConnectorSubject(connection, event())).resolves.toMatchObject({
+      subject: { id: 'two' }, method: 'zoom_scheduled_appointment_and_email',
+    });
+  });
+
+  it('ignores legacy identity bindings that disagree with the current participant email', async () => {
+    findSubjectsByIdentity.mockResolvedValue([subject('wrong-client', 'Private Session')]);
+    findSubjectsByEmail.mockResolvedValue([subject('right-client', 'Private Session')]);
+    await expect(resolveConnectorSubject(connection, event())).resolves.toMatchObject({ subject: { id: 'right-client' } });
+    expect(findSubjectsByIdentity).not.toHaveBeenCalled();
+  });
+
+  it('requires participant email even when the meeting has an offer mapping and an old binding', async () => {
+    findResourceMapping.mockResolvedValue({ offer_id: 'offer-one' });
+    findSubjectsByIdentity.mockResolvedValue([subject('one', 'One')]);
+    const missingEmail = event();
+    delete missingEmail.subject.email;
+    await expect(resolveConnectorSubject(connection, missingEmail)).rejects.toMatchObject({ code: 'ZOOM_PARTICIPANT_EMAIL_MISSING' });
+  });
+
+  it('resolves a mapped meeting using the participant and offer in the current tenant', async () => {
+    findResourceMapping.mockResolvedValue({ offer_id: 'offer-one' });
+    findSubjectsByEmailAndOffer.mockResolvedValue([subject('one', 'One')]);
+    await expect(resolveConnectorSubject(connection, event())).resolves.toMatchObject({ subject: { id: 'one' }, method: 'exact_email_and_offer' });
+    expect(findSubjectsByEmailAndOffer).toHaveBeenCalledWith('location-1', 'client@example.com', 'offer-one');
+  });
+
+  it.each(['subject', 'enrollment'])('rejects a foreign %s returned by a lookup', async (part) => {
+    const other: any = subject('other', 'Other');
+    if (part === 'subject') other.location_id = 'other-location';
+    else other.enrollment.location_id = 'other-location';
+    findSubjectsByEmail.mockResolvedValue([other]);
+    await expect(resolveConnectorSubject(connection, event())).rejects.toMatchObject({ code: 'ZOOM_ENROLLMENT_NOT_READY' });
   });
 
   it('uses the only eligible enrollment for the participant email', async () => {

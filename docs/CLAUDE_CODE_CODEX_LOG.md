@@ -10,6 +10,32 @@ Current product, plan, launch, roadmap, and document status lives in `docs/MASTE
 
 ## Operating Rule For Codex
 
+### 2026-10-02: Bug-Fix-Only Scope And Release Validation
+
+- Philip clarified: prioritize useful existing features and minimum operator effort; no heavy attendance project. Withdraw the form-purpose question. No new runtime changes beyond the already-approved six fixes.
+- Release the bounded patch under prior deployment approval; do not reconfigure PMG forms/workflows or revive old loggers. Explicit existing attendance/no-show inputs retain their payload shape; unknown input suppresses unsupported notifications. No schema or setup action required.
+- Fresh verification from current main 5aa3b47: 219 suites / 1,928 tests, typecheck, production build and asset copy pass. Preflight Railway remains SUCCESS/RUNNING on 5aa3b47; no error-level entries returned in the sampled preceding hour. UI build reports three existing dependency advisories; no lockfile changes or upgrades.
+- Deployment proof is recorded after rollout. These tests do not certify live Zoom matching, GHL filter execution or email/SMS inbox delivery. PMG recipient/form gaps remain separate, not fixed by deployment; automatic group no-show detection remains excluded.
+
+### 2026-10-01: PMG Preflight And Approved Repair Held
+
+- Confirmed PMG location `274dtgl30b7x2HG8hn69`. Read-only Railway/Git checks show production `5aa3b475d187db68707f2f744b729082ba3fd02a`, deployment `b4851196-565c-4c7a-ac35-6738e4bada6a`, SUCCESS/RUNNING. No commit/push/deployment this turn.
+- Philip approved repairing current PMG attendance form/follow-ups, leaving obsolete workflows untouched and requiring separate approval for test messages. The inspected legacy session loggers point to the old Railway URL with no headers/data mappings; current form intake requires merchant-bound authentication.
+- Live approved SYS2-07 Session Feedback (`A91jAYjBV5DPZBQEYzrv`) has Email/Submit only. Source docs and mapper call SYS2-07 a merchant delivery log, while the live name and follow-up describe client feedback. Asked Philip who completes it before connecting feedback to an attendance trigger. Avoid a feedback-request loop or manufactured merchant attestation.
+- SS - No-Show Follow-Up has an empty Custom email merchant recipient and unproven count/delivery claims. Supported editor inputs did not retain the verified destination. A local Save action was attempted, never top-level Save Workflow; all changes discarded. Reload confirmed original empty recipient/body, Custom email mode and Save Workflow disabled. No user selected, test mail or broad recipient change.
+- Repair and live certification are incomplete. Code remains locally tested at 219 suites / 1,928 tests; no new application edits, SQL, historical repair or live submissions. Full IDs/findings/resume boundary: `docs/ATTENDANCE_NO_SHOW_AUDIT_2026-10-01.md`.
+
+### 2026-10-01: Attendance Correctness Fixes (Local, Not Deployed)
+
+- Worktree: `C:/Users/p_kor_e1dk2i3/.codex/worktrees/attendance-correctness/ScaleSafe`, branch `codex/attendance-correctness`, based on fetched main `5aa3b47`. Original checkout and prior release worktree contain unrelated changes and remain untouched except documentation pointers.
+- Native Zoom participant resolution now uses the provider-reported email within the exact location, checks enrollment eligibility, and never infers identity from the sole scheduled client or a legacy automatic binding. Explicit enrollment-reference connector tests retain their original path.
+- Zoom retries recover completed/unlinked intervals, use stable occurrence identities and existing DB uniqueness, preserve legacy event IDs, and do not consume a subsequent rejoin. Repository writes are connection-scoped and completion is compare-and-set. No new schema.
+- Session forms validate location/contact/enrollment ownership, preserve canonical enrollment/defense context, parse booleans explicitly, retain unknown outcomes honestly, and send either attended-session OR no-show triggers. Payload no longer claims rescheduling was sent. No-show/scheduled/cancelled/unknown evidence cannot restore engagement; merchant setting failures do not enable it.
+- Changed `evidence.service.ts`, `evidence-connector-worker.ts`, `zoom-integration.service.ts`, `zoom-integration.repository.ts`, `trigger-contracts.ts`; added `utils/attendance-outcome.ts`. Four regression files cover service behavior, DB query guards, failures before/after commit/intake/linking, replay/concurrency/rejoins, identity and tenant boundaries.
+- Final verification: 219 suites / 1,928 tests; focused 11 suites / 141 tests; typecheck, final production build and diff whitespace check pass. Existing dependency audit warnings remain (root 15; UI 3); no dependency edits.
+- No live account access, messages, SQL, deployment, charges, or historical data repair. Before rollout inspect actual session-form checkbox/status payloads and existing workflow consumers; unconfirmed attendance now intentionally sends neither workflow.
+- Remaining work and live test checklist: `docs/ATTENDANCE_NO_SHOW_AUDIT_2026-10-01.md`. No group roster/reporting/absentee engine or cross-source notification bridge added. MASTER_INDEX is authority; retired FEATURE_LEDGER remains historical.
+
 ### 2026-09-24: Send Offer HighLevel Contact Search (Release Approved)
 
 - Added SSO/tenant-protected `GET /api/enrollment/contacts/search` using GHL `POST /contacts/search`. Validates 2-75 character queries, paginates 20 results, excludes wrong/unscoped locations, returns only recipient fields, and disables caching. Supports GHL's lowercase search name fields. No client/enrollment import.

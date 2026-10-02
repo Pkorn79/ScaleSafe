@@ -3,6 +3,17 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Attendance correctness (2026-10-02)
+
+### Fixed
+- Native Zoom attendance requires participant identity within the correct merchant instead of assuming a shared meeting identifies the sole scheduled client.
+- Zoom leave-event retries resume interrupted evidence intake without consuming later rejoin intervals or duplicating already-published events.
+- No-shows, scheduled, cancelled and unconfirmed sessions no longer count as positive participation for re-engagement.
+- Existing session-form intake preserves validated enrollment ownership, parses explicit outcomes, and sends attended or no-show follow-up triggers exclusively. Incomplete input no longer claims service delivery.
+
+### Release boundary
+- No schema, merchant configuration, new forms, roster/reporting, or automatic group-absence feature. Existing PMG feedback-form and merchant-alert configuration gaps remain separate and are not certified by this patch.
+
 ## Unreleased - Separate Evidence Command Center module (2026-09-14)
 
 ### Added

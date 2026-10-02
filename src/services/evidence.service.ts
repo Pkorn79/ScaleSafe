@@ -7,6 +7,9 @@ import { EvidenceType, EVIDENCE_TYPES } from '../constants/evidence-types';
 import { SS_CONTACT_FIELDS } from '../constants/ghl-fields';
 import { buildDefenseEvidenceFields } from '../utils/defense-evidence';
 import { commandCenterHealthService } from './command-center-health.service';
+import { enrollmentRepository } from '../repositories/enrollment.repository';
+import { ValidationError } from '../utils/errors';
+import { attendanceOutcome, isParticipationEvidence } from '../utils/attendance-outcome';
 
 export const evidenceService = {
   /**
@@ -47,59 +50,45 @@ export const evidenceService = {
       logger.warn({ err, contactId, locationId }, 'Failed to update GHL evidence fields');
     }
 
-    // Check for re-engagement: if contact was at-risk and just logged evidence, they're back
-    try {
-      const { getSupabase } = await import('../clients/supabase.client');
-      const { data: atRiskEvent } = await getSupabase()
-        .from('payment_events')
-        .select('id, dunning_status')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .in('dunning_status', ['active', 'escalated'])
-        .limit(1)
-        .maybeSingle();
+    // Only affirmative participation can restore engagement, never scheduling or absence.
+    if (isParticipationEvidence(evidenceType, data)) {
+      try {
+        const { data: atRiskEvent } = await getSupabase()
+          .from('payment_events')
+          .select('id, dunning_status')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .in('dunning_status', ['active', 'escalated'])
+          .limit(1)
+          .maybeSingle();
 
-      // Also check if disengagement recently flagged this contact (via evidence of at-risk trigger)
-      const { data: atRiskEvidence } = await getSupabase()
-        .from('evidence')
-        .select('id, data')
-        .eq('location_id', locationId)
-        .eq('contact_id', contactId)
-        .eq('evidence_type', 'custom_event')
-        .order('created_at', { ascending: false })
-        .limit(5);
+        const { data: atRiskEvidence } = await getSupabase()
+          .from('evidence')
+          .select('id, data')
+          .eq('location_id', locationId)
+          .eq('contact_id', contactId)
+          .eq('evidence_type', 'custom_event')
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      const wasAtRisk = !!atRiskEvent || (atRiskEvidence || []).some(
-        (e: any) => e.data?.event_type === 'disengagement_flagged' || e.data?.action === 'dunning_escalated'
-      );
+        const wasAtRisk = !!atRiskEvent || (atRiskEvidence || []).some(
+          (e: any) => e.data?.event_type === 'disengagement_flagged' || e.data?.action === 'dunning_escalated'
+        );
 
-      const participationEvidenceTypes: EvidenceType[] = [
-        EVIDENCE_TYPES.SESSION_DELIVERY,
-        EVIDENCE_TYPES.APPOINTMENT,
-        EVIDENCE_TYPES.MODULE_COMPLETION,
-        EVIDENCE_TYPES.PULSE_CHECKIN,
-        EVIDENCE_TYPES.MILESTONE_COMPLETION,
-        EVIDENCE_TYPES.SERVICE_ACCESS,
-        EVIDENCE_TYPES.EXTERNAL_SESSION,
-        EVIDENCE_TYPES.COURSE_COMPLETION,
-        EVIDENCE_TYPES.ASSIGNMENT_SUBMISSION,
-      ];
-
-      if (wasAtRisk && participationEvidenceTypes.includes(evidenceType)) {
-        // Gate the engagement-status write on the merchant's master toggle so re-engagement
-        // workflows stay silent for merchants who have engagement tracking disabled.
-        const { merchantRepository } = await import('../repositories/merchant.repository');
-        const merchant = await merchantRepository.getByLocationId(locationId).catch(() => null);
-        if ((merchant as any)?.engagement_enabled ?? true) {
-          // Set engagement status back to "Active" — GHL Contact Field Changed trigger drives workflow
-          const api = await ghlApi(locationId);
-          await api.put(`/contacts/${contactId}`, {
-            customField: { [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active' },
-          });
-          logger.info({ contactId, evidenceType }, 'Client re-engaged — engagement status set to Active');
+        if (wasAtRisk) {
+          const { merchantRepository } = await import('../repositories/merchant.repository');
+          const merchant = await merchantRepository.getByLocationId(locationId);
+          if (merchant && ((merchant as typeof merchant & { engagement_enabled?: boolean }).engagement_enabled ?? true)) {
+            // GHL's Contact Field Changed workflow drives the re-engagement message.
+            const api = await ghlApi(locationId);
+            await api.put(`/contacts/${contactId}`, {
+              customField: { [SS_CONTACT_FIELDS.ENGAGEMENT_STATUS]: 'Active' },
+            });
+            logger.info({ contactId, evidenceType }, 'Client participation recorded; engagement status set to Active');
+          }
         }
-      }
-    } catch { /* re-engagement detection is non-blocking */ }
+      } catch { /* re-engagement detection is non-blocking */ }
+    }
 
     // Check evidence milestone thresholds
     try {
@@ -118,6 +107,18 @@ export const evidenceService = {
     contactId: string,
     formData: Record<string, unknown>,
   ): Promise<EvidenceType | null> {
+    let sessionEnrollment: Awaited<ReturnType<typeof enrollmentRepository.findById>> = null;
+    if (formId === 'SYS2-07') {
+      const enrollmentId = formData.enrollment_id ?? formData.enrollmentId;
+      if (enrollmentId != null && enrollmentId !== '') {
+        if (typeof enrollmentId !== 'string') throw new ValidationError('Invalid session enrollment');
+        sessionEnrollment = await enrollmentRepository.findById(enrollmentId, locationId);
+        if (!sessionEnrollment || sessionEnrollment.location_id !== locationId || sessionEnrollment.contact_id !== contactId) {
+          throw new ValidationError('Session enrollment does not belong to this contact and location');
+        }
+      }
+    }
+    const sessionOutcome = attendanceOutcome(formData);
     const formMap: Record<string, { type: EvidenceType; mapper: (d: Record<string, unknown>) => Record<string, unknown> }> = {
       'SYS2-07': {
         type: EVIDENCE_TYPES.SESSION_DELIVERY,
@@ -128,19 +129,20 @@ export const evidenceService = {
           duration_minutes: d.duration,
           delivery_method: d.delivery_method,
           topics_covered: d.topics || d.topics_covered,
-          attendance_status: d.no_show ? 'no_show' : 'attended',
+          attendance_status: sessionOutcome,
           facilitator: d.facilitator,
-          no_show: d.no_show || false,
+          no_show: sessionOutcome === 'no_show' ? true : sessionOutcome === 'attended' ? false : null,
           notes: d.notes,
           raw_payload: d,
           ...buildDefenseEvidenceFields({
-            summary: `Session "${d.session_title || d.topics || 'Untitled'}" ${d.no_show ? 'was marked no-show' : 'was delivered'}${d.duration ? ` for ${d.duration} minutes` : ''}. Topics: ${d.topics || d.topics_covered || 'not specified'}.`,
-            title: d.no_show ? 'Session No-Show' : 'Session Delivered',
-            proofRole: d.no_show ? 'client_engagement' : 'service_delivery',
-            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: d.no_show ? 'medium' : 'high', confidence: 'moderate' },
+            summary: `Session "${d.session_title || d.topics || 'Untitled'}" recorded as ${sessionOutcome || 'attendance unconfirmed'}${sessionOutcome === 'attended' && d.duration ? ` for ${d.duration} minutes` : ''}. Topics: ${d.topics || d.topics_covered || 'not specified'}.`,
+            title: sessionOutcome === 'attended' ? 'Session Delivered' : sessionOutcome === 'no_show' ? 'Session No-Show' : 'Session Attendance Unconfirmed',
+            proofRole: sessionOutcome === 'attended' ? 'service_delivery' : 'client_engagement',
+            relevance: { tags: ['services_not_provided', 'not_as_described'], priority: sessionOutcome === 'attended' ? 'high' : 'medium', confidence: 'moderate' },
+            enrollmentId: sessionEnrollment?.id || null,
             metadata: {
-              actor: d.no_show ? 'client' : 'merchant',
-              service: { serviceDate: String(d.session_date || '') || null, deliverableName: String(d.session_title || d.topics || '') || null },
+              actor: 'merchant',
+              service: { enrollmentId: sessionEnrollment?.id || null, offerId: sessionEnrollment?.offer_id || null, serviceDate: String(d.session_date || '') || null, deliverableName: String(d.session_title || d.topics || '') || null },
               source: { system: 'ghl_form', rawEventType: 'SYS2-07' },
             },
           }),
@@ -259,18 +261,26 @@ export const evidenceService = {
     // Fire workflow triggers (non-blocking)
     try {
       if (formId === 'SYS2-07') {
-        await triggerService.fireTrigger(locationId, 'ss_session_logged', {
-          contact_id: contactId,
-          session_date: mappedData.session_date,
-          duration: mappedData.duration_minutes,
-          topics: mappedData.topics_covered,
-          no_show_flag: mappedData.no_show,
-        });
-        if (mappedData.no_show) {
+        const sessionContext = {
+          enrollment_id: sessionEnrollment?.id || null,
+          offer_id: sessionEnrollment?.offer_id || null,
+          program_name: sessionEnrollment?.program_name_snapshot || null,
+        };
+        if (sessionOutcome === 'attended') {
+          await triggerService.fireTrigger(locationId, 'ss_session_logged', {
+            ...sessionContext,
+            contact_id: contactId,
+            session_date: mappedData.session_date,
+            duration: mappedData.duration_minutes,
+            topics: mappedData.topics_covered,
+            no_show_flag: mappedData.no_show,
+          });
+        } else if (sessionOutcome === 'no_show') {
           await triggerService.fireTrigger(locationId, 'ss_session_noshow', {
+            ...sessionContext,
             contact_id: contactId,
             scheduled_date: mappedData.session_date,
-            follow_up_action: 'auto_reschedule_sent',
+            follow_up_action: 'reschedule_needed',
           });
         }
       } else if (formId === 'SYS2-08') {

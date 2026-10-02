@@ -303,7 +303,14 @@ export const zoomIntegrationService = {
     const meetingUuid = String(meeting.uuid || meetingId).trim();
     const participantId = participantInstance(participant);
     if (!meetingId || !meetingUuid || !participantId) return { accepted: true, ignored: true };
-    const sourceId = `zoom:${eventName}:${sha256(rawBody).slice(0, 40)}`;
+    const participantTime = eventName === 'meeting.participant_joined' ? participant.join_time : participant.leave_time;
+    const occurredAtMs = participantTime ? new Date(participantTime).getTime() : Number(payload.event_ts);
+    if (!Number.isFinite(occurredAtMs) || occurredAtMs <= 0) {
+      throw new ValidationError('Zoom attendance event is missing a valid occurrence time');
+    }
+    const occurredAt = new Date(occurredAtMs).toISOString();
+    // Retries can change delivery metadata. Identity belongs to the meeting interval.
+    const sourceId = `zoom:${eventName}:${sha256(JSON.stringify([accountId, meetingUuid, participantId, occurredAt])).slice(0, 40)}`;
 
     if (isHostParticipant(meeting, participant, connection)) {
       // A host proves that the merchant opened the meeting, not that the client
@@ -311,11 +318,11 @@ export const zoomIntegrationService = {
       // publish it through the client-evidence pipeline.
       if (eventName === 'meeting.participant_left') {
         const openHostSession = await zoomIntegrationRepository.findOpenAttendance(
-          connection.id, meetingUuid, participantId,
+          connection.id, meetingUuid, participantId, occurredAt,
         );
         if (openHostSession) {
-          await zoomIntegrationRepository.completeAttendance(openHostSession.id, {
-            left_at: String(participant.leave_time || new Date(Number(payload.event_ts || Date.now())).toISOString()),
+          await zoomIntegrationRepository.completeAttendance(connection.id, openHostSession.id, {
+            left_at: occurredAt,
             leave_source_event_id: sourceId,
             status: 'quarantined',
           });
@@ -326,7 +333,9 @@ export const zoomIntegrationService = {
     }
 
     if (eventName === 'meeting.participant_joined') {
-      const joinedAt = String(participant.join_time || new Date(Number(payload.event_ts || Date.now())).toISOString());
+      const joinedAt = occurredAt;
+      const existing = await zoomIntegrationRepository.findAttendanceAt(connection.id, meetingUuid, participantId, 'joined_at', joinedAt);
+      if (existing) return { accepted: true, recorded: 'join', duplicate: true };
       await zoomIntegrationRepository.createAttendance({
         connection_id: connection.id,
         location_id: connection.location_id,
@@ -345,8 +354,10 @@ export const zoomIntegrationService = {
       return { accepted: true, recorded: 'join' };
     }
 
-    const leftAt = String(participant.leave_time || new Date(Number(payload.event_ts || Date.now())).toISOString());
-    let attendance = await zoomIntegrationRepository.findOpenAttendance(connection.id, meetingUuid, participantId);
+    const leftAt = occurredAt;
+    // Resume a previously closed interval before looking at any subsequent rejoin.
+    let attendance = await zoomIntegrationRepository.findAttendanceAt(connection.id, meetingUuid, participantId, 'left_at', leftAt);
+    if (!attendance) attendance = await zoomIntegrationRepository.findOpenAttendance(connection.id, meetingUuid, participantId, leftAt);
     if (!attendance) {
       await zoomIntegrationRepository.createAttendance({
         connection_id: connection.id,
@@ -373,41 +384,53 @@ export const zoomIntegrationService = {
       }, 'Zoom leave event had no matching join; attendance evidence not published');
       return { accepted: true, recorded: 'leave_without_join', evidencePublished: false };
     }
-    const joinedAtMs = new Date(attendance.joined_at).getTime();
-    const leftAtMs = new Date(leftAt).getTime();
-    const durationSeconds = Number.isFinite(joinedAtMs) && Number.isFinite(leftAtMs)
-      ? Math.max(0, Math.round((leftAtMs - joinedAtMs) / 1000))
-      : 0;
-    attendance = await zoomIntegrationRepository.completeAttendance(attendance.id, {
-      left_at: leftAt,
-      duration_seconds: durationSeconds,
-      leave_source_event_id: sourceId,
-      participant_email: String(participant.email || attendance.participant_email || '').trim().toLowerCase() || null,
-      registrant_id: String(participant.registrant_id || attendance.registrant_id || '') || null,
-      status: 'completed',
+    if (attendance.status === 'joined') {
+      const durationSeconds = Math.round((occurredAtMs - new Date(attendance.joined_at).getTime()) / 1000);
+      if (!Number.isFinite(durationSeconds) || durationSeconds < 0) throw new ValidationError('Zoom attendance interval is invalid');
+      const completed = await zoomIntegrationRepository.completeAttendance(connection.id, attendance.id, {
+        left_at: leftAt,
+        duration_seconds: durationSeconds,
+        leave_source_event_id: sourceId,
+        participant_email: String(participant.email || attendance.participant_email || '').trim().toLowerCase() || null,
+        registrant_id: String(participant.registrant_id || attendance.registrant_id || '') || null,
+        status: 'completed',
+      });
+      attendance = completed || await zoomIntegrationRepository.findAttendanceAt(connection.id, meetingUuid, participantId, 'left_at', leftAt);
+      if (!attendance) throw new Error('Zoom attendance changed during processing; retry this event');
+    }
+    if (attendance.status === 'quarantined') {
+      return { accepted: true, recorded: 'leave_without_join', evidencePublished: false };
+    }
+    if (attendance.status === 'published' && attendance.evidence_event_id) {
+      return { accepted: true, eventId: attendance.evidence_event_id, duplicate: true };
+    }
+    if (attendance.status !== 'completed') throw new Error('Zoom attendance is not ready for evidence intake');
+    const participantIdentity = externalParticipantId({
+      registrant_id: attendance.registrant_id,
+      participant_user_id: attendance.participant_user_id,
     });
     const canonical = {
       schema_version: '1.0' as const,
-      event_id: sourceId,
+      event_id: attendance.leave_source_event_id,
       event_type: 'session.attended',
       occurred_at: attendance.joined_at,
       subject: {
-        external_contact_id: externalParticipantId(participant),
+        external_contact_id: participantIdentity,
         email: attendance.participant_email || undefined,
       },
       resource: { type: 'zoom_meeting', id: meetingId, name: attendance.meeting_topic || 'Zoom Meeting' },
       actor: {
         type: 'client' as const,
-        external_id: externalParticipantId(participant),
+        external_id: participantIdentity,
         name: attendance.participant_name || undefined,
         email: attendance.participant_email || undefined,
       },
       activity: {
         status: 'attended',
         description: 'Zoom recorded the client joining and leaving this meeting.',
-        duration_seconds: durationSeconds || undefined,
+        duration_seconds: attendance.duration_seconds ?? undefined,
         started_at: attendance.joined_at,
-        ended_at: leftAt,
+        ended_at: attendance.left_at,
       },
       metadata: {
         meeting_uuid: meetingUuid,
@@ -433,7 +456,10 @@ export const zoomIntegrationService = {
       signatureVerified: true,
     };
     const result = await evidenceConnectorService.ingestCanonical(authContext, canonical, rawBody, false);
-    await zoomIntegrationRepository.linkEvidenceEvent(attendance.id, result.event.id);
+    if (result.processingStatus === 'rejected' || result.event.status === 'rejected') {
+      throw new ValidationError('Zoom attendance evidence intake was rejected');
+    }
+    await zoomIntegrationRepository.linkEvidenceEvent(connection.id, attendance.id, result.event.id);
     return { accepted: true, eventId: result.event.id, duplicate: result.duplicate };
   },
 };
