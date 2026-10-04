@@ -63,7 +63,7 @@ export function extractGhlSsoContext(userData: SsoPayload): {
   };
 }
 
-export function assertActiveGhlMerchantBinding(
+export function assertActiveGhlMerchantIdentity(
   merchant: Record<string, any> | null | undefined,
   context: { locationId: string; companyId?: string },
 ): void {
@@ -91,11 +91,18 @@ export function assertActiveGhlMerchantBinding(
     throw new AuthenticationError('Stored GHL authorization belongs to a different agency.');
   }
 
-  const hasAccessToken = Boolean(merchant.ghl_access_token_encrypted || merchant.ghl_access_token);
-  const hasRefreshToken = Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token);
+}
+
+export function assertActiveGhlMerchantBinding(
+  merchant: Record<string, any> | null | undefined,
+  context: { locationId: string; companyId?: string },
+): void {
+  assertActiveGhlMerchantIdentity(merchant, context);
+  const hasAccessToken = Boolean(merchant!.ghl_access_token_encrypted || merchant!.ghl_access_token);
+  const hasRefreshToken = Boolean(merchant!.ghl_refresh_token_encrypted || merchant!.ghl_refresh_token);
   if (!hasAccessToken || !hasRefreshToken) {
     throw new AuthenticationError(
-      'ScaleSafe installation is waiting for GoHighLevel authorization. Reinstall the app in this sub-account.',
+      'ScaleSafe installation is waiting for GoHighLevel authorization. Contact ScaleSafe support; do not uninstall the app.',
     );
   }
 }

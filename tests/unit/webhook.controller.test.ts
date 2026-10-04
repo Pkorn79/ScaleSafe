@@ -75,6 +75,7 @@ jest.mock('../../src/repositories/merchant.repository', () => ({
     findByLocationId: (...args: any[]) => mockMerchantFindByLocationId(...args),
     create: (...args: any[]) => mockMerchantCreate(...args),
     update: (...args: any[]) => mockMerchantUpdate(...args),
+    updateIfUnchanged: (current: any, patch: any) => mockMerchantUpdate(current.location_id, patch),
     adoptCompanyAuthorization: (...args: any[]) => mockAdoptCompanyAuthorization(...args),
   },
 }));
@@ -439,6 +440,43 @@ describe('Webhook Controller - GHL app lifecycle (INSTALL/UNINSTALL)', () => {
       }),
     );
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('INSTALL reloads after OAuth wins the write, preserving fresh credentials and metadata', async () => {
+    const stale = { location_id: 'loc_new', company_id: 'comp_1', status: 'uninstalled', config: {} };
+    const fresh = {
+      ...stale, status: 'active', ghl_access_token_encrypted: 'fresh-access',
+      ghl_refresh_token_encrypted: 'fresh-refresh', snapshot_status: 'installed',
+      config: { ghl_token_scope: 'location', ghl_oauth_connected_at: 'fresh-marker' },
+    };
+    mockMerchantFindByLocationId.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh);
+    mockMerchantUpdate.mockResolvedValueOnce(null).mockResolvedValueOnce(fresh);
+    const { req, res, next } = mockReqRes({
+      type: 'INSTALL', appId: SCALESAFE_APP_ID, locationId: 'loc_new', companyId: 'comp_1',
+    });
+    await webhookController.ghlUnified(req, res, next);
+    expect(mockMerchantUpdate).toHaveBeenCalledTimes(2);
+    const finalPatch = mockMerchantUpdate.mock.calls[1][1];
+    expect(finalPatch).not.toHaveProperty('ghl_access_token_encrypted');
+    expect(finalPatch.config.ghl_oauth_connected_at).toBe('fresh-marker');
+    expect(finalPatch.config.ghl_token_scope).toBe('location');
+    expect(mockAdoptCompanyAuthorization).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('UNINSTALL loses its write when a newer INSTALL arrives, then rechecks event order', async () => {
+    const stale = { location_id: 'loc_new', company_id: 'comp_1', status: 'active', config: {} };
+    mockMerchantFindByLocationId.mockResolvedValueOnce(stale).mockResolvedValueOnce({
+      ...stale, config: { ghl_lifecycle_event_at: '2026-10-03T12:02:00Z', ghl_lifecycle_event_type: 'INSTALL' },
+    });
+    mockMerchantUpdate.mockResolvedValueOnce(null);
+    const { req, res, next } = mockReqRes({
+      type: 'UNINSTALL', appId: SCALESAFE_APP_ID, locationId: 'loc_new', companyId: 'comp_1',
+      timestamp: '2026-10-03T12:01:00Z',
+    });
+    await webhookController.ghlUnified(req, res, next);
+    expect(mockMerchantUpdate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ received: true, ignored: 'older_event' });
   });
 
   test('future-location INSTALL adopts a same-company agency authorization and provisions', async () => {

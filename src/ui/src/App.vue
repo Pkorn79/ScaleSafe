@@ -13,6 +13,7 @@ const reinstallRequired = computed(() =>
 );
 
 const connectionTitle = computed(() => {
+  if (ssoSession.errorCode === 'authorization_required') return 'GoHighLevel Connection Not Complete';
   if (ssoSession.errorCode === 'installation_pending') return 'Installation Is Still Finishing';
   if (ssoSession.errorCode === 'service_unavailable' || ssoSession.errorCode === 'backend_timeout') return 'ScaleSafe Is Temporarily Unavailable';
   if (ssoSession.errorCode === 'parent_context_timeout') return 'GoHighLevel Context Was Not Received';
@@ -21,6 +22,9 @@ const connectionTitle = computed(() => {
 });
 
 const connectionMessage = computed(() => {
+  if (ssoSession.errorCode === 'authorization_required') {
+    return 'ScaleSafe is installed, but its secure GoHighLevel connection has not completed. Retry checks whether it has arrived; it does not restart authorization. If this persists, contact ScaleSafe support. Do not uninstall the app.';
+  }
   if (ssoSession.errorCode === 'installation_pending') {
     return 'GoHighLevel has not finished confirming this sub-account installation. Leave the app open and retry in a moment.';
   }

@@ -8,7 +8,7 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError, ServiceUnavailableError } from '../utils/errors';
 import { createGhlOAuthState, verifyGhlOAuthState } from '../utils/ghl-oauth-state';
-import { assertActiveGhlMerchantBinding, extractGhlSsoContext } from '../utils/ghl-sso-context';
+import { assertActiveGhlMerchantBinding, assertActiveGhlMerchantIdentity, extractGhlSsoContext } from '../utils/ghl-sso-context';
 import {
   marketplaceEntitlementForMerchant,
   marketplacePlanKey,
@@ -17,6 +17,7 @@ import {
 const router = Router();
 const GHL_CODE_PATTERN = /^[A-Za-z0-9._~-]{8,512}$/;
 const INSTALL_SETTLING_WINDOW_MS = 10 * 60 * 1000;
+const OAUTH_INSTALL_CONFIRMATION_WAIT_MS = 10_000;
 
 function isRecentLifecycleTimestamp(value: unknown): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
@@ -149,6 +150,8 @@ function renderInstallCompletePage(params: {
 async function persistOAuthTarget(
   target: InstalledLocation,
   token: TokenResponse,
+  authorizationStartedAt: string,
+  installWaitDeadlineMs: number,
   options: { includePlan: boolean } = { includePlan: true },
 ) {
   const existing = await merchantRepository.findByLocationId(target.locationId);
@@ -170,7 +173,6 @@ async function persistOAuthTarget(
       marketplace_plan_updated_at: new Date().toISOString(),
     } : {}),
     config: {
-      ...(existing?.config || {}),
       ghl_token_scope: token.tokenScope,
       ghl_token_company_id: companyId || null,
       ghl_token_location_id: token.tokenScope === 'location' ? target.locationId : null,
@@ -181,7 +183,7 @@ async function persistOAuthTarget(
       location_refresh_token_encrypted: null,
       location_token_expires_at: null,
     },
-  });
+  }, authorizationStartedAt, installWaitDeadlineMs);
 }
 
 router.get('/install', (_req: Request, res: Response) => {
@@ -214,7 +216,9 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
     logger.info('OAuth callback received, exchanging code for tokens');
 
+    const authorizationStartedAt = new Date().toISOString();
     const tokenResponse = await exchangeCodeForTokens(code);
+    const installWaitDeadlineMs = Date.now() + OAUTH_INSTALL_CONFIRMATION_WAIT_MS;
     const { locationId, companyId, approvedLocations, installedLocations, _debug } = tokenResponse;
     const targets = installTargets(locationId, installedLocations);
     const planTargetIds = new Set<string>([
@@ -239,6 +243,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
       const provisionTargets: string[] = [];
       const installedTargets: string[] = [];
       const failedTargets: Array<{ locationId: string; error: string }> = [];
+      let firstTargetError: unknown;
 
       // Each target is isolated: one location's DB failure must never abort the
       // install for the others (a single bad row previously turned the entire
@@ -250,7 +255,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
           // not necessarily the sub-account that just selected a plan. Only an
           // exact token location or GHL-approved location may receive callback
           // plan metadata; the per-location INSTALL webhook remains authoritative.
-          const merchant = await persistOAuthTarget(target, tokenResponse, {
+          const merchant = await persistOAuthTarget(target, tokenResponse, authorizationStartedAt, installWaitDeadlineMs, {
             includePlan: planTargetIds.has(targetLocationId),
           });
           merchantLocationIdentityService.schedule(targetLocationId, true);
@@ -261,6 +266,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
           );
           installedTargets.push(targetLocationId);
         } catch (targetErr: any) {
+          firstTargetError ??= targetErr;
           failedTargets.push({ locationId: targetLocationId, error: targetErr?.message || String(targetErr) });
           logger.error(
             { err: targetErr?.message || String(targetErr), code: targetErr?.code, locationId: targetLocationId, step: 'merchant_upsert' },
@@ -271,7 +277,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
 
       if (installedTargets.length === 0) {
         // Every target failed — surface the first real error to the handler.
-        throw new Error(`ScaleSafe install failed for all sub-accounts: ${failedTargets[0]?.error || 'unknown error'}`);
+        throw firstTargetError || new Error('ScaleSafe installation could not be completed.');
       }
 
       for (const targetLocationId of provisionTargets) {
@@ -366,6 +372,25 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
       res.status(401).json({
         error: 'INSTALLATION_NOT_FOUND',
         message: 'ScaleSafe is not installed for this GoHighLevel sub-account.',
+      });
+      return;
+    }
+    const hasDurableCredentials = merchantHasOAuthCredentials(merchant as any)
+      && Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token);
+    // An active, tokenless installation is not a revoked/missing installation.
+    // First validate its tenant binding, then report the recoverable connection
+    // state without converting elapsed time into uninstall/reinstall advice.
+    if (merchant.status === 'active' && !hasDurableCredentials) {
+      try {
+        assertActiveGhlMerchantIdentity(merchant as any, ssoContext);
+      } catch (bindingError: any) {
+        if (!(bindingError instanceof AuthenticationError)) throw bindingError;
+        res.status(401).json({ error: 'INSTALLATION_INVALID', message: bindingError.message });
+        return;
+      }
+      res.status(409).json({
+        error: 'AUTHORIZATION_REQUIRED',
+        message: 'ScaleSafe is installed, but the GoHighLevel connection is not complete. Retry the connection or contact ScaleSafe support. Do not uninstall the app.',
       });
       return;
     }

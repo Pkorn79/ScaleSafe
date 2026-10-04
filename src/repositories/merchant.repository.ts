@@ -1,5 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
-import { NotFoundError } from '../utils/errors';
+import { AuthenticationError, ConflictError, NotFoundError, ServiceUnavailableError } from '../utils/errors';
 import crypto from 'crypto';
 import { decrypt, encrypt } from '../utils/field-encryption';
 import { LocationIdentityRecord } from '../utils/merchant-location-identity';
@@ -196,43 +196,81 @@ export const merchantRepository = {
 
   /**
    * Atomically reconcile an OAuth installation with an INSTALL-webhook stub.
-   * The lifecycle webhook and OAuth callback can arrive in either order; an
-   * upsert avoids a unique-location race that previously surfaced as a false
-   * installation failure after the stub had already been created.
+   * Unique inserts retry against the winning stub; updates merge fresh config
+   * under the database row version. A callback cannot override an uninstall.
    */
-  async upsertOAuthInstall(data: OAuthInstallRecord): Promise<MerchantRecord> {
-    const row = { ...data, status: 'active' };
-    const encryptedRow = this.encryptTokenUpdates(row);
-    let merchant: any = null;
-    let error: any = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const result = await getSupabase()
-        .from('merchants')
-        .upsert(encryptedRow, { onConflict: 'location_id' })
-        .select()
-        .single();
-      merchant = result.data;
-      error = result.error;
-      if (!error || this.isMissingEncryptedTokenColumn(error)) break;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
-    }
-
-    if (this.isMissingEncryptedTokenColumn(error)) {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const legacyResult = await getSupabase()
-          .from('merchants')
-          .upsert(row, { onConflict: 'location_id' })
-          .select()
-          .single();
-        merchant = legacyResult.data;
-        error = legacyResult.error;
-        if (!error) break;
-        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+  async upsertOAuthInstall(
+    data: OAuthInstallRecord,
+    authorizationStartedAt = new Date().toISOString(),
+    installWaitDeadlineMs = Date.now(),
+  ): Promise<MerchantRecord> {
+    let conflicts = 0;
+    while (conflicts < 5) {
+      const current = await this.findByLocationId(data.location_id);
+      if (current?.company_id && data.company_id && current.company_id !== data.company_id) {
+        throw new AuthenticationError('OAuth authorization does not match the installed agency.');
       }
+      if (current && !['active', 'uninstalled'].includes(current.status)) {
+        throw new AuthenticationError('This ScaleSafe account is not enabled. Contact ScaleSafe support.');
+      }
+      // A revocation observed while this exchange was in flight must win.
+      const uninstalledAt = Date.parse(String(
+        current?.config?.ghl_last_uninstalled_at || current?.config?.ghl_uninstalled_at || '',
+      ));
+      if (Number.isFinite(uninstalledAt) && uninstalledAt >= Date.parse(authorizationStartedAt)) {
+        throw new AuthenticationError('Installation changed during authorization. Contact ScaleSafe support to complete the connection.');
+      }
+      // Native callbacks have no trustworthy issuance time. Keep the exchange
+      // in memory briefly while an earlier revocation awaits a signed INSTALL;
+      // do not exchange the one-use code again or make the revoked row active.
+      // The deadline is shared by all targets in one callback, not per target.
+      if (current?.status === 'uninstalled') {
+        const remainingMs = installWaitDeadlineMs - Date.now();
+        if (remainingMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(250, remainingMs)));
+          continue;
+        }
+        throw new ConflictError('ScaleSafe has not received confirmation of a new installation. Contact ScaleSafe support; do not uninstall again or reload this authorization link.');
+      }
+      const row = {
+        ...data,
+        status: 'active',
+        config: { ...(current?.config || {}), ...(data.config || {}) },
+      };
+      if (current) {
+        const saved = await this.updateIfUnchanged(current, { ...row, business_name: current.business_name });
+        if (saved) return saved;
+      } else {
+        try {
+          return await this.create(row);
+        } catch (error: any) {
+          // An INSTALL stub won the insert race. Reload and merge its metadata.
+          if (error?.code !== '23505') throw error;
+        }
+      }
+      conflicts++;
     }
+    throw new ServiceUnavailableError('Installation changed during authorization. Please retry the connection.');
+  },
 
-    if (error) throw error;
-    return merchant;
+  /** Database-guarded write; never apply a patch derived from an obsolete read. */
+  async updateIfUnchanged(
+    current: MerchantRecord,
+    updates: Partial<MerchantRecord>,
+  ): Promise<MerchantRecord | null> {
+    if (!current.updated_at) throw new ServiceUnavailableError('Installation version is unavailable.');
+    const write = (patch: Partial<MerchantRecord>) => getSupabase()
+      .from('merchants')
+      .update(patch)
+      .eq('location_id', current.location_id)
+      .eq('status', current.status)
+      .eq('updated_at', current.updated_at)
+      .select('*')
+      .maybeSingle();
+    let result = await write(this.encryptTokenUpdates(updates));
+    if (this.isMissingEncryptedTokenColumn(result.error)) result = await write(updates);
+    if (result.error) throw result.error;
+    return result.data || null;
   },
 
   /**
@@ -241,46 +279,53 @@ export const merchantRepository = {
    * location-scoped token is never copied to a sibling sub-account.
    */
   async adoptCompanyAuthorization(locationId: string, companyId: string): Promise<MerchantRecord | null> {
-    const existing = await this.findByLocationId(locationId);
-    if (existing && merchantHasOAuthCredentials(existing)
-      && existing.config?.ghl_token_scope === 'company') {
-      return existing;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const existing = await this.findByLocationId(locationId);
+      // Adoption only completes a verified active installation. It cannot create
+      // one, revive an uninstall, or replace a location-scoped direct callback.
+      if (!existing || existing.status !== 'active' || existing.company_id !== companyId) return null;
+      if (merchantHasOAuthCredentials(existing)) {
+        return existing;
+      }
+
+      const companyMerchants = await this.findAllByCompanyId(companyId);
+      const source = companyMerchants.find((merchant) =>
+        merchant.location_id !== locationId
+        && merchant.company_id === companyId
+        && merchant.status === 'active'
+        && merchant.config?.ghl_token_scope === 'company'
+        && merchant.config?.ghl_token_company_id === companyId
+        && merchantHasOAuthCredentials(merchant)
+        && Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token));
+
+      if (!source) return null;
+
+      const accessToken = source.ghl_access_token_encrypted
+        ? decrypt(source.ghl_access_token_encrypted)
+        : source.ghl_access_token || '';
+      const refreshToken = source.ghl_refresh_token_encrypted
+        ? decrypt(source.ghl_refresh_token_encrypted)
+        : source.ghl_refresh_token || '';
+      if (!accessToken || !refreshToken) return null;
+
+      const saved = await this.updateIfUnchanged(existing, {
+        company_id: companyId,
+        ghl_access_token: accessToken,
+        ghl_refresh_token: refreshToken,
+        ghl_token_expires_at: source.ghl_token_expires_at || undefined,
+        ghl_scopes: source.ghl_scopes || undefined,
+        business_name: existing?.business_name || undefined,
+        config: {
+          ...(existing?.config || {}),
+          ghl_token_scope: 'company',
+          ghl_token_company_id: companyId,
+          ghl_token_location_id: null,
+          ghl_oauth_adopted_at: new Date().toISOString(),
+        },
+      });
+      if (saved) return saved;
     }
-
-    const companyMerchants = await this.findAllByCompanyId(companyId);
-    const source = companyMerchants.find((merchant) =>
-      merchant.location_id !== locationId
-      && merchant.status === 'active'
-      && merchant.config?.ghl_token_scope === 'company'
-      && merchantHasOAuthCredentials(merchant)
-      && Boolean(merchant.ghl_refresh_token_encrypted || merchant.ghl_refresh_token));
-
-    if (!source) return null;
-
-    const accessToken = source.ghl_access_token_encrypted
-      ? decrypt(source.ghl_access_token_encrypted)
-      : source.ghl_access_token || '';
-    const refreshToken = source.ghl_refresh_token_encrypted
-      ? decrypt(source.ghl_refresh_token_encrypted)
-      : source.ghl_refresh_token || '';
-    if (!accessToken || !refreshToken) return null;
-
-    return this.upsertOAuthInstall({
-      location_id: locationId,
-      company_id: companyId,
-      ghl_access_token: accessToken,
-      ghl_refresh_token: refreshToken,
-      ghl_token_expires_at: source.ghl_token_expires_at || undefined,
-      ghl_scopes: source.ghl_scopes || undefined,
-      business_name: existing?.business_name || undefined,
-      config: {
-        ...(existing?.config || {}),
-        ghl_token_scope: 'company',
-        ghl_token_company_id: companyId,
-        ghl_token_location_id: null,
-        ghl_oauth_adopted_at: new Date().toISOString(),
-      },
-    });
+    throw new ServiceUnavailableError('Installation changed while connecting the agency authorization.');
   },
 
   async update(locationId: string, updates: Partial<MerchantRecord>): Promise<MerchantRecord> {

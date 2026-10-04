@@ -1,0 +1,144 @@
+ScaleSafe Enrollments OAuth recovery — release record
+Updated 2026-10-04 UTC (October 3 America/Chicago)
+
+STATUS: LOCAL CANDIDATE ONLY. FREEDOM FREQUENCY IS NOT FIXED YET.
+
+October 4 follow-through (supersedes earlier immediate-rejection limitation):
+- Production recheck at 17:20:40 UTC: same deployment/commit; Freedom remains
+  active, approved, pending, zero provisioning attempts, no OAuth credentials.
+- Candidate now allows one shared 10-second confirmation window after a
+  successful OAuth exchange. An uninstalled row stays revoked while waiting.
+- A delayed signed INSTALL can let that SAME one-use exchange complete. There
+  is no second token exchange, browser reload or unconditional reactivation.
+- Revocations received during that exchange still reject it. Missing INSTALL
+  confirmation expires to an explicit 409, with no credential write.
+- Waiting does not consume the five compare-and-set conflict retries.
+- One deadline is shared across targets to avoid ten seconds per location.
+- New deterministic tests cover success after delay, timeout, and subsequent
+  revocation; the real-handler integration test now proves delayed success.
+- Limits: this is a bounded in-memory bridge, not durable pending authorization.
+  A process crash or confirmation beyond the window can still require a new
+  provider authorization. It cannot recover Freedom's absent callback.
+- Support-mail search via the connected Gmail account returned no matches, but
+  that account is NOT the ticket reply mailbox. No "no reply" claim is justified.
+- Final validation: 221 suites / 1,970 tests passed; typecheck, server and UI
+  builds passed. Claude's focused review found no new substantive defect in
+  the bounded wait. Its stale-name concern was fixed; suspended accounts now
+  also reject OAuth reactivation. Tests cover both.
+- Support status remains UNVERIFIED. The old browser connection was unavailable;
+  reconnected to Brave and verified PMG session. Help portal requires separate
+  sign-in. Start Chat offered 10-day support access; selected Not now.
+  The status-message fill then failed: "CDP operation exceeded its deadline
+  before command dispatch"; subsequent DOM still showed an empty chat input.
+  No follow-up message, duplicate ticket, or access grant was completed.
+- No production release, SQL, migration, code push or customer reinstall.
+
+Production identity, rechecked 2026-10-04T02:11:27Z:
+- Deployment 34b4422d-d6a7-4cb4-9475-2c9fe9624ea5.
+- Commit 4a17eabbf56e0b4953243cc50fd51bae5b39d50a.
+- Supabase zddyagfotdtfbcdursqu.
+- Freedom Frequency location NqZwh9akrNWUXrTJcxK6.
+- Company soWS49R3eVxBPFsqDOl5.
+- Active installation, test-plan access approved; no access/refresh/child credentials.
+- Pending provisioning, zero attempts, no snapshot error.
+- The ten-minute SSO timer does not mark the database installation failed.
+- No production changes, SQL, migrations, deployment, push, or client reinstall in this work.
+
+Private HighLevel support submission:
+- Ticket 6469842, confirmed by signed-in HighLevel support chat.
+- Routed through Technical Support > Agency Level > Marketplace.
+- Replies go to the account's existing email, phil@getwholepay.com.
+- Sent app/version, plan, exact location/company, callback and webhook URLs,
+  October 3 UTC timestamps, and the Company/Location INSTALL webhook IDs.
+- Asked for code-generation/redirect-stage trace and supported non-destructive
+  reauthorization for a paid-Marketplace Zero-plan install.
+- Explicitly requested no codes/tokens and no account changes or support access.
+- No Loom supplied; this support path explicitly allowed None.
+- This is a trace request, not a proven allegation of provider failure.
+
+Local changes in codex/oauth-lifecycle-recovery:
+- Database-version-guarded lifecycle, OAuth and adoption writes with bounded retries.
+- Reload/re-evaluate event ordering after a competing write.
+- Merge current configuration rather than overwriting newer callback metadata.
+- Adoption cannot create/revive installations or overwrite a direct location callback.
+- Active tokenless SSO is AUTHORIZATION_REQUIRED, independent of installation age.
+- UI explains Retry checks the connection; it does not restart authorization.
+- A callback cannot reactivate an uninstalled row without a new signed INSTALL.
+- Revocations observed during token exchange are conservatively rejected.
+- No entitlement approval bypass or tenant selector.
+
+Independent Claude CLI review:
+- Confirmed real concerns about late callbacks and lifecycle ordering; added the
+  explicit uninstalled-row guard and regression coverage.
+- The suggested absence of a timestamp trigger is not supported by source:
+  supabase/migrations/001_core_tables.sql defines merchants_updated_at, and
+  findByLocationId returns the original PostgREST timestamp string unchanged.
+  Live trigger/catalog verification remains a pre-release check.
+- Multi-target callbacks already isolate failures per location (207 partial response).
+- Adoption already has background retry through merchantService.provisionMerchant.
+- Do not interpret passing local tests as proof of first-agency handoff delivery.
+
+Validation completed:
+- Full Jest suite: 220 suites, 1,943 tests passed.
+- Typecheck, server compilation, UI production build and asset copy passed.
+- Regression tests cover competing lifecycle/callback writes, adoption isolation,
+  expired pending-state messaging, revocation guards and UI retry with fresh SSO.
+- These are local checks; they do not establish live handoff recovery.
+
+October 4 alternate test execution:
+- Built an isolated integration harness; 22 new scenarios passed.
+- Full regression run: 221 suites / 1,965 tests passed; typecheck passed.
+- The final test-only refinement enforces single-use fictional OAuth codes;
+  the 22-scenario suite passed again after that refinement.
+- Exercises the actual callback, OAuth response normalization, encrypted
+  merchant repository, lifecycle controller, entitlement approval and SSO code.
+- Uses fictional agencies with no prior credentials. Zero, Standard and WholePay
+  plans all connect in first-install callback-first and webhook-first orders,
+  for both location-scoped and company-scoped token responses.
+- All three plans remain unable to connect if no callback supplies credentials.
+  Free approval and paid billing completion do not substitute for OAuth.
+- Tested exact-location free approval, cross-agency rejection, same-company
+  adoption, refusal to adopt location tokens, competing lifecycle writes,
+  genuine revocation, and conservative reinstall ordering.
+- Important characterization: the candidate still rejects a reinstall callback
+  arriving before the new signed INSTALL. Passing this expected-rejection test
+  documents a release limitation; it does NOT certify that flow as successful.
+- External GHL HTTP/SSO, PostgREST and downstream provisioning are simulated.
+  No real agency login, production database, customer interaction or charge used.
+
+Release risks / gates:
+1. Reinstall callbacks now wait up to the shared ten-second deadline for a signed
+   INSTALL. Delayed success is proven locally with one exchange. Longer delays
+   and process crashes still fail closed; no durable pending-authorization
+   storage is implemented. Native provider handoff remains a separate live gate.
+2. Delayed UNINSTALL versus callback without a newer signed INSTALL is inherently
+   ambiguous; callback receipt time is not authorization issuance time.
+3. Agency transfer with a changed company ID is deliberately rejected, not
+   silently rebound. An explicit verified transfer process is still needed.
+4. No evidence yet explains the missing code-bearing Freedom callback in the
+   inspected October 3 00:00–18:00 UTC Railway window.
+5. Schema 112 stays unchanged. Never reapply migrations 107–112.
+
+Separate-agency test:
+- USER CORRECTION, October 4: Do not ask Philip for a review-test login again.
+  He has no such login, did not create it, and has repeatedly explained that
+  the displayed link returns to his agency with no matching sub-account.
+  Treat this entry as unavailable, not a human action waiting to happen.
+- Existing sandbox: ScaleSafe App Review Test, agency tPMe7SyRTS4P8cu1jXcW.
+- Its generic app.gohighlevel.com button opens the current PMG session; it is not
+  sandbox SSO. Do not repeat this link as an access solution.
+- No usable sandbox session or login exists for the user to provide.
+- No sandbox deletion, recreation, password reset, or client impersonation performed.
+- The successful Final test location TwFLyWtJSjzY9KdULPIu was in the existing PMG
+  agency and does not prove a first-agency install.
+- ScaleSafe Evidence / its Certification account remain out of scope.
+
+Next:
+- Use tests/integration/install-lifecycle.integration.test.ts as the independent
+  local first-agency test matrix. It exercises real application handlers and
+  repositories with simulated GHL and PostgREST boundaries, no production data.
+- Continue the provider handoff investigation under ticket 6469842. Do not
+  substitute local simulation for proof of HighLevel's redirect delivery.
+- Prove first-agency, add-location, reinstall ordering, tenant isolation, and
+  unchanged existing merchant access.
+- Present a specific production release checkpoint only after these gates.

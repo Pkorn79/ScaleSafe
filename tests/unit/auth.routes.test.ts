@@ -166,7 +166,7 @@ describe('GET /auth/callback', () => {
         ghl_token_scope: 'location',
         ghl_token_location_id: 'loc-abc',
       }),
-    }));
+    }), expect.any(String), expect.any(Number));
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
@@ -184,7 +184,7 @@ describe('GET /auth/callback', () => {
       location_id: 'loc-abc',
       marketplace_plan_id: '6a79e1a07f2a3778d481f0ad',
       marketplace_plan_key: 'test',
-    }));
+    }), expect.any(String), expect.any(Number));
   });
 
   it('accepts valid signed state when GHL returns it', async () => {
@@ -198,6 +198,8 @@ describe('GET /auth/callback', () => {
     expect(res.text).toContain('ScaleSafe is installed');
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(
       expect.objectContaining({ location_id: 'loc-abc' }),
+      expect.any(String),
+      expect.any(Number),
     );
   });
 
@@ -210,10 +212,10 @@ describe('GET /auth/callback', () => {
     expect(mockExchangeCodeForTokens).not.toHaveBeenCalled();
   });
 
-  it('updates tokens on reinstall (existing merchant)', async () => {
+  it('updates tokens after a reinstall lifecycle event has reactivated the merchant', async () => {
     mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
     mockFindByLocationId.mockResolvedValue({
-      location_id: 'loc-abc', status: 'uninstalled', config: {}, snapshot_status: 'installed',
+      location_id: 'loc-abc', status: 'active', config: {}, snapshot_status: 'installed',
     });
     mockUpsertOAuthInstall.mockResolvedValue({ snapshot_status: 'installed' });
 
@@ -225,7 +227,7 @@ describe('GET /auth/callback', () => {
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-abc',
       ghl_access_token: 'at-123',
-    }));
+    }), expect.any(String), expect.any(Number));
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockIdentitySchedule).toHaveBeenCalledWith('loc-abc', true);
     expect(merchantService.provisionMerchant).not.toHaveBeenCalled();
@@ -277,10 +279,12 @@ describe('GET /auth/callback', () => {
         business_name: 'New Test Account',
         config: expect.objectContaining({ ghl_token_scope: 'company' }),
       }),
+      expect.any(String),
+      expect.any(Number),
     );
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-existing',
-    }));
+    }), expect.any(String), expect.any(Number));
     expect(mockUpsertOAuthInstall.mock.calls[1][0]).not.toHaveProperty('business_name');
     expect(mockIdentitySchedule.mock.calls).toEqual([['loc-new', true], ['loc-existing', true]]);
     for (const [install] of mockUpsertOAuthInstall.mock.calls) {
@@ -463,7 +467,7 @@ describe('POST /auth/sso', () => {
     expect(res.body.message).toMatch(/retry automatically/i);
   });
 
-  it('reports a recent tokenless INSTALL stub as pending instead of demanding reinstall', async () => {
+  it.each([0, 11, 1440])('reports a tokenless INSTALL after %i minutes without demanding reinstall', async (minutes) => {
     mockDecryptSsoPayload.mockReturnValue({
       locationId: 'loc-abc', companyId: 'comp-xyz', userId: 'user-1',
     });
@@ -471,13 +475,15 @@ describe('POST /auth/sso', () => {
       ...MERCHANT_RECORD,
       ghl_access_token_encrypted: null,
       ghl_refresh_token_encrypted: null,
-      config: { ...MERCHANT_RECORD.config, ghl_install_event_at: new Date().toISOString() },
+      config: { ...MERCHANT_RECORD.config, ghl_install_event_at: new Date(Date.now() - minutes * 60000).toISOString() },
     });
 
     const res = await request(app).post('/auth/sso').send({ payload: 'encrypted-data' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('INSTALLATION_PENDING');
+    expect(res.body.error).toBe('AUTHORIZATION_REQUIRED');
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.body.message).toMatch(/do not uninstall/i);
   });
 
   it('rejects initial SSO when GHL company and installed merchant disagree', async () => {

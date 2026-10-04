@@ -2,6 +2,8 @@
 -- Additive identity correction. Apply only this file; NEVER replay 107-112.
 -- No business-name backfill, approval changes, billing changes, or credential writes.
 BEGIN;
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '30s';
 
 ALTER TABLE public.merchants
   ADD COLUMN ghl_location_name TEXT,

@@ -39,7 +39,8 @@ test('114: identity proof, credential bindings, literal search, pagination and g
       FROM unnest(ARRAY['ali', 'matt', 'no-auth']) AS name;
       UPDATE merchants SET ghl_access_token = NULL WHERE location_id = 'no-auth';
     `);
-    await db.exec(fs.readFileSync(path.join(__dirname, '../../supabase/migrations/114_enrollments_location_identity.sql'), 'utf8'));
+    const migration = fs.readFileSync(path.join(__dirname, '../../supabase/migrations/114_enrollments_location_identity.sql'), 'utf8');
+    await db.exec(migration);
     const q = async (sql, args = []) => (await db.query(sql, args)).rows;
     const page = async (query, limit = 50, offset = 0) => (await q(
       'SELECT list_operator_merchants_page($1, $2, $3) AS page', [limit, offset, query]))[0].page;
@@ -83,5 +84,10 @@ test('114: identity proof, credential bindings, literal search, pagination and g
     const serialized = JSON.stringify(await page(null));
     assert.ok(!serialized.includes('fixture-access') && !serialized.includes('fixture-refresh'));
     await assert.rejects(page(null, 201), /Invalid operator merchant page request/);
+    // A second application must stop without partially changing existing proof.
+    const beforeRepeat = await page(null);
+    await assert.rejects(db.exec(migration), /already exists/);
+    await db.exec('ROLLBACK');
+    assert.deepEqual(await page(null), beforeRepeat);
   } finally { await db.close(); }
 });

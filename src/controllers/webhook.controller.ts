@@ -13,7 +13,7 @@ import { ValidationError } from '../utils/errors';
 import { EVIDENCE_TYPES } from '../constants/evidence-types';
 import { ghlActivityService } from '../services/ghl-activity.service';
 import { triggerController } from './trigger.controller';
-import { merchantHasOAuthCredentials, merchantRepository } from '../repositories/merchant.repository';
+import { MerchantRecord, merchantHasOAuthCredentials, merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
 import { evidenceConnectionService } from '../services/evidence-connection.service';
 import { evidenceConnectorService } from '../services/evidence-connector.service';
@@ -216,78 +216,93 @@ export const webhookController = {
           return;
         }
         const lifecycleTimestamp = new Date().toISOString();
-        let existing = await merchantRepository.findByLocationId(locationId);
-        if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
-          res.json({ received: true, duplicate: true });
-          return;
-        }
-        if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
-          logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
-          res.json({ received: true, ignored: 'older_event' });
-          return;
-        }
-        const lifecycleEventMetadata = {
-          ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
-          ghl_lifecycle_event_type: type,
-          ghl_lifecycle_webhook_id: webhookId || null,
-        };
-        if (existing) {
-          const reinstalling = existing.status === 'uninstalled';
-          existing = await merchantRepository.update(locationId, {
-            company_id: companyId || existing.company_id,
-            status: 'active',
-            ...(installPlanId ? {
-              marketplace_plan_id: installPlanId,
-              marketplace_plan_key: marketplacePlanKey(installPlanId),
-              marketplace_plan_updated_at: new Date().toISOString(),
-            } : {}),
-            config: {
-              ...(existing.config || {}),
-              ghl_install_event_at: lifecycleTimestamp,
-              ghl_uninstalled_at: null,
-              ...lifecycleEventMetadata,
-              ...(reinstalling ? {
-                // Never reactivate credentials retained from a prior install.
-                // OAuth (or a current same-company bulk authorization) must bind
-                // this new installation before merchant SSO is accepted.
-                ghl_token_scope: null,
-                ghl_token_company_id: null,
-                ghl_token_location_id: null,
-                location_access_token: null,
-                location_refresh_token: null,
-                location_access_token_encrypted: null,
-                location_refresh_token_encrypted: null,
-                location_token_expires_at: null,
+        let existing: MerchantRecord | null;
+        for (let attempt = 0; ; attempt++) {
+          if (attempt >= 5) throw new Error('Concurrent installation changes; retry lifecycle event');
+          existing = await merchantRepository.findByLocationId(locationId);
+          if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
+            res.json({ received: true, duplicate: true });
+            return;
+          }
+          if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
+            logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
+            res.json({ received: true, ignored: 'older_event' });
+            return;
+          }
+          const lifecycleEventMetadata = {
+            ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
+            ghl_lifecycle_event_type: type,
+            ghl_lifecycle_webhook_id: webhookId || null,
+          };
+          if (existing) {
+            if (existing.company_id && companyId && existing.company_id !== companyId) {
+              throw new ValidationError('Lifecycle event does not match the installed agency');
+            }
+            const reinstalling = existing.status === 'uninstalled';
+            const saved = await merchantRepository.updateIfUnchanged(existing, {
+              company_id: companyId || existing.company_id,
+              status: 'active',
+              ...(installPlanId ? {
+                marketplace_plan_id: installPlanId,
+                marketplace_plan_key: marketplacePlanKey(installPlanId),
+                marketplace_plan_updated_at: new Date().toISOString(),
               } : {}),
-            },
-            ...(reinstalling ? {
-              ghl_access_token: '',
-              ghl_refresh_token: '',
-              ghl_access_token_encrypted: null,
-              ghl_refresh_token_encrypted: null,
-              ghl_token_expires_at: null,
-            } : {}),
-          } as any);
-          logger.info({ locationId, companyId }, 'GHL app INSTALL: existing merchant reactivated');
-        } else {
-          // Token-less stub — the OAuth callback (or a location-token mint)
-          // fills tokens; provisioning waits until tokens exist.
-          await merchantRepository.create({
-            location_id: locationId,
-            company_id: companyId || undefined,
-            ghl_access_token: '',
-            ghl_refresh_token: '',
-            config: {
-              ghl_install_event_at: lifecycleTimestamp,
-              ghl_uninstalled_at: null,
-              ...lifecycleEventMetadata,
-            },
-            ...(installPlanId ? {
-              marketplace_plan_id: installPlanId,
-              marketplace_plan_key: marketplacePlanKey(installPlanId),
-            } : {}),
-          });
-          logger.info({ locationId, companyId }, 'GHL app INSTALL: merchant stub created (tokens pending OAuth)');
+              config: {
+                ...(existing.config || {}),
+                ghl_install_event_at: lifecycleTimestamp,
+                ghl_uninstalled_at: null,
+                ...lifecycleEventMetadata,
+                ...(reinstalling ? {
+                  // Never reactivate credentials retained from a prior install.
+                  // OAuth (or a current same-company bulk authorization) must bind
+                  // this new installation before merchant SSO is accepted.
+                  ghl_token_scope: null,
+                  ghl_token_company_id: null,
+                  ghl_token_location_id: null,
+                  location_access_token: null,
+                  location_refresh_token: null,
+                  location_access_token_encrypted: null,
+                  location_refresh_token_encrypted: null,
+                  location_token_expires_at: null,
+                } : {}),
+              },
+              ...(reinstalling ? {
+                ghl_access_token: '',
+                ghl_refresh_token: '',
+                ghl_access_token_encrypted: null,
+                ghl_refresh_token_encrypted: null,
+                ghl_token_expires_at: null,
+              } : {}),
+            } as any);
+            if (!saved) continue;
+            existing = saved;
+            logger.info({ locationId, companyId }, 'GHL app INSTALL: existing merchant reactivated');
+          } else {
+            // Token-less stub — the OAuth callback (or a location-token mint)
+            // fills tokens; provisioning waits until tokens exist.
+            try {
+              existing = await merchantRepository.create({
+                location_id: locationId,
+                company_id: companyId || undefined,
+                ghl_access_token: '',
+                ghl_refresh_token: '',
+                config: {
+                  ghl_install_event_at: lifecycleTimestamp,
+                  ghl_uninstalled_at: null,
+                  ...lifecycleEventMetadata,
+                },
+                ...(installPlanId ? {
+                  marketplace_plan_id: installPlanId,
+                  marketplace_plan_key: marketplacePlanKey(installPlanId),
+                } : {}),
+              });
+            } catch (error: any) {
+              if (error?.code === '23505') continue;
+              throw error;
+            }
+            logger.info({ locationId, companyId }, 'GHL app INSTALL: merchant stub created (tokens pending OAuth)');
+          }
+          break;
         }
 
         const authorizedMerchant = companyId && (!existing || !merchantHasOAuthCredentials(existing))
@@ -308,45 +323,54 @@ export const webhookController = {
           });
         }
       } else if (type === 'UNINSTALL' && locationId) {
-        const existing = await merchantRepository.findByLocationId(locationId);
-        if (existing) {
-          if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
-            res.json({ received: true, duplicate: true });
-            return;
+        for (let attempt = 0; ; attempt++) {
+          if (attempt >= 5) throw new Error('Concurrent installation changes; retry lifecycle event');
+          const existing = await merchantRepository.findByLocationId(locationId);
+          if (existing) {
+            if (existing.company_id && companyId && existing.company_id !== companyId) {
+              throw new ValidationError('Lifecycle event does not match the installed agency');
+            }
+            if (isDuplicateGhlLifecycleEvent(existing, webhookId)) {
+              res.json({ received: true, duplicate: true });
+              return;
+            }
+            if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
+              logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
+              res.json({ received: true, ignored: 'older_event' });
+              return;
+            }
+            const lifecycleTimestamp = new Date().toISOString();
+            const saved = await merchantRepository.updateIfUnchanged(existing, {
+              status: 'uninstalled',
+              ghl_access_token: '',
+              ghl_refresh_token: '',
+              ghl_access_token_encrypted: null,
+              ghl_refresh_token_encrypted: null,
+              ghl_token_expires_at: null,
+              config: {
+                ...(existing.config || {}),
+                ghl_install_event_at: null,
+                ghl_uninstalled_at: lifecycleTimestamp,
+                ghl_last_uninstalled_at: lifecycleTimestamp,
+                ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
+                ghl_lifecycle_event_type: type,
+                ghl_lifecycle_webhook_id: webhookId || null,
+                ghl_token_scope: null,
+                ghl_token_company_id: null,
+                ghl_token_location_id: null,
+                location_access_token: null,
+                location_refresh_token: null,
+                location_access_token_encrypted: null,
+                location_refresh_token_encrypted: null,
+                location_token_expires_at: null,
+              },
+            } as any);
+            if (!saved) continue;
+            logger.info({ locationId }, 'GHL app UNINSTALL: merchant marked uninstalled');
+          } else {
+            logger.info({ locationId }, 'GHL app UNINSTALL for unknown location — ignored');
           }
-          if (isOlderGhlLifecycleEvent(existing, eventTime?.ms ?? null)) {
-            logger.info({ type, locationId, eventTimestamp: body.timestamp }, 'Older GHL lifecycle event ignored');
-            res.json({ received: true, ignored: 'older_event' });
-            return;
-          }
-          const lifecycleTimestamp = new Date().toISOString();
-          await merchantRepository.update(locationId, {
-            status: 'uninstalled',
-            ghl_access_token: '',
-            ghl_refresh_token: '',
-            ghl_access_token_encrypted: null,
-            ghl_refresh_token_encrypted: null,
-            ghl_token_expires_at: null,
-            config: {
-              ...(existing.config || {}),
-              ghl_install_event_at: null,
-              ghl_uninstalled_at: lifecycleTimestamp,
-              ghl_lifecycle_event_at: eventTime?.iso || lifecycleTimestamp,
-              ghl_lifecycle_event_type: type,
-              ghl_lifecycle_webhook_id: webhookId || null,
-              ghl_token_scope: null,
-              ghl_token_company_id: null,
-              ghl_token_location_id: null,
-              location_access_token: null,
-              location_refresh_token: null,
-              location_access_token_encrypted: null,
-              location_refresh_token_encrypted: null,
-              location_token_expires_at: null,
-            },
-          } as any);
-          logger.info({ locationId }, 'GHL app UNINSTALL: merchant marked uninstalled');
-        } else {
-          logger.info({ locationId }, 'GHL app UNINSTALL for unknown location — ignored');
+          break;
         }
       } else if (type === 'PLAN_CHANGE') {
         if (!locationId) throw new ValidationError('PLAN_CHANGE did not include locationId');

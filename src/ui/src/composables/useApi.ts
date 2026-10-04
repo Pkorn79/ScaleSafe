@@ -38,6 +38,7 @@ export type SsoErrorCode =
   | 'empty_parent_payload'
   | 'agency_context'
   | 'installation_pending'
+  | 'authorization_required'
   | 'installation_missing'
   | 'installation_invalid'
   | 'authentication_invalid'
@@ -142,6 +143,7 @@ function setSsoError(code: SsoErrorCode, message: string): void {
 
 function backendErrorCode(status: number, code: string): SsoErrorCode {
   if (code === 'INSTALLATION_PENDING') return 'installation_pending';
+  if (code === 'AUTHORIZATION_REQUIRED') return 'authorization_required';
   if (code === 'INSTALLATION_NOT_FOUND') return 'installation_missing';
   if (code === 'INSTALLATION_INVALID') return 'installation_invalid';
   if (code === 'INVALID_SSO_PAYLOAD') return 'authentication_invalid';
