@@ -2,13 +2,16 @@ import express from 'express';
 import request from 'supertest';
 import { createHash } from 'crypto';
 const mockSession = jest.fn(); const mockAudit = jest.fn(); const mockApprove = jest.fn(); const mockEvidenceApprove = jest.fn(); const mockList = jest.fn(); const mockEvidenceList = jest.fn();
+const mockRead = jest.fn(); const mockRefresh = jest.fn();
+jest.mock('../../src/services/merchant-location-identity.service', () => ({ merchantLocationIdentityService: { refresh: (...a:any[]) => mockRefresh(...a) } }));
 jest.mock('../../src/services/operator-authorization.service', () => ({ operatorAuthorizationService: {
   resolveSessionToken: (...a:any[]) => mockSession(...a), auditRequest: (...a:any[]) => mockAudit(...a),
   hasPermission: (actor:any, permission:string) => actor.permissions.has(permission), canAccessLocation: () => true,
 } }));
 jest.mock('../../src/services/operator-merchant-access.service', () => ({ operatorMerchantAccessService: {
   approve: (...a:any[]) => mockApprove(...a), list: (...a:any[]) => mockList(...a),
-} }));
+  read: (...a:any[]) => mockRead(...a),
+}, projectEnrollmentAccess: (row:any) => row }));
 jest.mock('../../src/services/operator-evidence-access.service', () => ({ operatorEvidenceAccessService: {
   approve: (...a:any[]) => mockEvidenceApprove(...a), list: (...a:any[]) => mockEvidenceList(...a),
 } }));
@@ -29,6 +32,36 @@ beforeEach(() => {
   mockApprove.mockResolvedValue({ product:'enrollments', locationId:'tenant-a', accessAllowed:true });
   mockEvidenceApprove.mockResolvedValue({ product:'evidence', locationId:'tenant-a', accessAllowed:true });
   mockList.mockResolvedValue({items:[],pending:0}); mockEvidenceList.mockResolvedValue({items:[],pending:1});
+  mockRead.mockResolvedValue({ locationId: 'tenant-a', identity: { status: 'verified' } });
+  mockRefresh.mockResolvedValue(undefined);
+});
+
+const refresh = (product='enrollments') => request(app()).post('/internal/operator/api/access/'+product+'/tenant-a/refresh-identity')
+  .set('Host','ops.scalesafe.app').set('Origin','https://ops.scalesafe.app')
+  .set('Cookie','__Host-scalesafe_ops=fixture; __Host-scalesafe_ops_csrf='+csrf).set('x-csrf-token',csrf);
+test('identity refresh is exact-location, audited and does not approve access or touch Evidence', async () => {
+  expect((await refresh().send({})).status).toBe(200);
+  expect(mockRefresh).toHaveBeenCalledWith('tenant-a', true);
+  expect(mockAudit.mock.invocationCallOrder[0]).toBeLessThan(mockRefresh.mock.invocationCallOrder[0]);
+  expect(mockAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    actorOperatorUserId: owner().operatorUserId, actorOrganizationId: owner().organizationId,
+    actorSessionId: owner().sessionId, actorRole: 'platform_owner', targetLocationId: 'tenant-a', result: 'intent',
+  }));
+  expect(mockApprove).not.toHaveBeenCalled(); expect(mockEvidenceApprove).not.toHaveBeenCalled();
+  expect((await refresh('evidence').send({})).status).toBe(404);
+  expect(mockRefresh).toHaveBeenCalledTimes(1);
+});
+test.each(['platform_ops','platform_support','security_auditor','reseller_owner'])('identity refresh denies %s and leaves names alone', async role => {
+  mockSession.mockResolvedValue({context:{...owner(),role}});
+  expect((await refresh().send({})).status).toBe(404); expect(mockRefresh).not.toHaveBeenCalled();
+});
+test('identity refresh requires CSRF, trusted origin and durable intent', async () => {
+  expect((await refresh().set('Origin','https://evil.example').send({})).status).toBe(403);
+  expect((await refresh().set('x-csrf-token','wrong').send({})).status).toBe(403);
+  expect((await refresh().set('Cookie','').send({})).status).toBe(401);
+  mockAudit.mockRejectedValueOnce(new Error('audit unavailable'));
+  expect((await refresh().send({})).status).toBe(500);
+  expect(mockRefresh).not.toHaveBeenCalled();
 });
 test('owner can approve while monitoring is disabled; intent precedes the correct product write', async () => {
   const result = await post().send(body); expect(result.status).toBe(200); expect(result.body.auditComplete).toBe(true);

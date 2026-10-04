@@ -4,7 +4,7 @@ export function operatorAccessHtml(product: 'enrollments' | 'evidence'): string 
     <div class="section-heading"><div><h2>Merchant accounts · Plans &amp; access</h2><p>ScaleSafe ${name} only. Approval is tied to the exact installed GHL sub-account.</p></div></div>
     <p id="${product}-access-summary" class="access-summary" role="status">Loading installation access.</p>
     <form id="${product}-access-filters" class="access-filters">
-      <label>Search ${name} merchants<input name="query" type="search" maxlength="100" placeholder="${product === 'enrollments' ? 'Business name or location ID' : 'GHL location ID'}"></label>
+      <label>Search ${name} merchants<input name="query" type="search" maxlength="100" placeholder="${product === 'enrollments' ? 'HighLevel name, business name or location ID' : 'GHL location ID'}"></label>
       <label>Access status<select name="status"><option value="all">All accounts</option><option value="pending">Approval needed</option><option value="active">Access active</option><option value="disconnected">Not installed / inactive</option></select></label>
       <button type="submit">Apply</button>
     </form>
@@ -24,6 +24,9 @@ export const operatorAccessCss = `
 .access-detail .access-confirm { display: flex; align-items: flex-start; gap: 9px; }
 .access-confirm input { width: auto; min-height: 20px; }
 .access-notice { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; }
+.location-identity { display: grid; gap: 4px; min-width: 190px; max-width: 400px; overflow-wrap: anywhere; white-space: normal; }
+#access-title, #merchant-dialog-title { font-size: 20px; overflow-wrap: anywhere; }
+.detail-grid strong { overflow-wrap: anywhere; }
 .health-details > summary { cursor: pointer; padding: 16px; font-weight: 700; }
 .health-details[open] { display: grid; gap: 16px; }
 @media(max-width:500px) { .access-filters { display: grid; } }
@@ -36,6 +39,28 @@ export const operatorAccessJs = `
   let accessDialogRequest = 0;
   function productName(product) { return product === 'evidence' ? 'ScaleSafe Evidence' : 'ScaleSafe Enrollments'; }
   function billingLabel(value) { return ({ not_applicable: 'No subscription charge', complete: 'Payment confirmed', pending: 'Payment pending', failed: 'Payment failed', unknown: 'Not verified' })[value] || 'Not verified'; }
+  function locationTitle(item) { return item.identity && item.identity.displayName || 'HighLevel name unavailable'; }
+  function appendLocationIdentity(target, item) {
+    const identity = item.identity || {};
+    const wrapper = element('div', 'location-identity');
+    wrapper.append(element('span', 'primary-text', locationTitle(item)), element('span', 'secondary-text', 'Location ID: ' + (item.locationId || item.location_id)));
+    wrapper.appendChild(element('span', 'secondary-text', identity.status === 'verified' ? 'Verified ' + formatTime(identity.verifiedAt) : identity.status === 'stale' ? 'Stale name; last verified ' + formatTime(identity.verifiedAt) : 'Name not currently verified'));
+    const business = item.businessName || item.business_name;
+    if (business) wrapper.appendChild(element('span', 'secondary-text', 'Business: ' + business));
+    target.appendChild(wrapper);
+  }
+  function identityDetail(item) {
+    const identity = item.identity || {};
+    return detailSection('HighLevel sub-account identity', [
+      ['Location ID', item.locationId || item.location_id], ['HighLevel name', locationTitle(item)],
+      ['Name status', identity.status || 'unavailable'], ['Source', identity.source === 'ghl_location_api' ? 'HighLevel location API' : 'Not verified'],
+      ['Last verified', identity.verifiedAt ? formatTime(identity.verifiedAt) : 'Never'],
+      ['Last checked', identity.checkedAt ? formatTime(identity.checkedAt) : 'Never'],
+      ['Authorization', identity.authorization === 'authorized' ? 'Credentials bound to this location; setup health is separate' : 'Incomplete'],
+      ['Lookup result', identity.reason ? identity.reason.replaceAll('_', ' ') : 'Verified'],
+      ['Merchant business name', item.businessName || item.business_name]
+    ]);
+  }
   async function loadAccess(product, reset) {
     const state = accessStates[product];
     if (reset) state.offset = 0;
@@ -60,7 +85,8 @@ export const operatorAccessJs = `
       data.items.forEach(function (item) {
         const row = element('tr');
         const identity = element('td');
-        identity.append(element('span', 'primary-text', item.businessName || item.locationId), element('span', 'secondary-text', item.businessName ? item.locationId : 'Business name not recorded in ' + productName(product)));
+        if (product === 'enrollments') appendLocationIdentity(identity, item);
+        else identity.append(element('span', 'primary-text', item.businessName || item.locationId), element('span', 'secondary-text', item.businessName ? item.locationId : 'Business name not recorded in ' + productName(product)));
         const access = element('td'); access.appendChild(element('span', 'badge ' + (item.needsApproval ? 'warning' : item.accessAllowed ? 'healthy' : 'unknown'), item.accessLabel));
         const action = element('td');
         const open = element('button', 'secondary-button', item.needsApproval && session.capabilities.merchantAccessApprove && data.approvalAvailable ? 'Review & approve' : 'View access');
@@ -82,7 +108,8 @@ export const operatorAccessJs = `
   function renderAccessDetail(product, item, available, message) {
     const target = document.getElementById('access-detail'); target.replaceChildren();
     document.getElementById('access-product').textContent = productName(product);
-    document.getElementById('access-title').textContent = item.businessName || item.locationId;
+    document.getElementById('access-title').textContent = product === 'enrollments' ? locationTitle(item) : item.businessName || item.locationId;
+    if (product === 'enrollments') target.appendChild(identityDetail(item));
     target.appendChild(detailSection('Plan & access', [
       ['Product', productName(product)], ['Exact GHL sub-account', item.locationId], ['Plan', item.planLabel], ['Access', item.accessLabel],
       ['Billing', item.billingStatus === 'unknown' ? 'Not verified; not proof of payment' : billingLabel(item.billingStatus)],
@@ -90,6 +117,22 @@ export const operatorAccessJs = `
     ]));
     const notice = element('p', 'access-notice', message || (item.accessAllowed ? 'Access is already active. No approval is needed.' : !item.installed ? 'This account is inactive. Approval cannot install or reconnect the app.' : !item.needsApproval ? 'This plan or billing issue cannot be resolved by granting free access.' : 'Review the exact product and sub-account before granting access.'));
     notice.setAttribute('role', 'status'); target.appendChild(notice);
+    if (product === 'enrollments' && item.identity && item.identity.authorization === 'incomplete') notice.textContent += ' HighLevel authorization is incomplete. Approval does not reconnect or finish setup.';
+    if (product === 'enrollments' && session.capabilities.merchantAccessApprove) {
+      const refresh = element('button', 'secondary-button', 'Refresh HighLevel name'); refresh.type = 'button';
+      refresh.addEventListener('click', async function () {
+        if (accessBusy) return;
+        accessBusy = true; refresh.disabled = true; document.getElementById('access-close').disabled = true;
+        notice.textContent = 'Checking this exact HighLevel sub-account...';
+        try {
+          const result = await post('/internal/operator/api/access/enrollments/' + encodeURIComponent(item.locationId) + '/refresh-identity', {});
+          renderAccessDetail(product, result.merchant, result.approvalAvailable, result.auditComplete ? 'Identity check finished.' : 'Identity check finished; completion audit needs review. Reference: ' + result.correlationId);
+          await loadAccess(product, false);
+        } catch (error) { notice.textContent = error.message; refresh.disabled = false; }
+        finally { accessBusy = false; document.getElementById('access-close').disabled = false; }
+      });
+      target.appendChild(refresh);
+    }
     if (!item.needsApproval) return;
     if (!session.capabilities.merchantAccessApprove) { target.appendChild(element('p', 'access-notice', 'Only the platform owner can approve merchant access.')); return; }
     if (!available) { target.appendChild(element('p', 'access-notice', 'The secure approval connection must be configured before this account can be approved here.')); return; }
@@ -104,7 +147,7 @@ export const operatorAccessJs = `
       reference = element('input'); reference.name = 'merchantReference'; reference.required = true; reference.maxLength = 100; label.appendChild(reference); form.appendChild(label);
     }
     const confirm = element('label', 'access-confirm'); const checkbox = element('input'); checkbox.type = 'checkbox'; checkbox.required = true;
-    confirm.append(checkbox, element('span', '', (item.approvalKind === 'wholepay' ? 'I verified the active WholePay-provisioned NMI account and approve ' : 'I approve ') + productName(product) + ' access for ' + (item.businessName || item.locationId) + ' (' + item.locationId + ').')); form.appendChild(confirm);
+    confirm.append(checkbox, element('span', '', (item.approvalKind === 'wholepay' ? 'I verified the active WholePay-provisioned NMI account and approve ' : 'I approve ') + productName(product) + ' access for ' + (product === 'enrollments' ? locationTitle(item) : item.businessName || item.locationId) + ' (' + item.locationId + ').')); form.appendChild(confirm);
     const submit = element('button', '', 'Approve this sub-account'); submit.type = 'submit'; form.appendChild(submit);
     form.addEventListener('submit', async function (event) {
       event.preventDefault(); if (accessBusy || !form.reportValidity()) return;

@@ -84,7 +84,7 @@ export const operatorCommandCenterHtml = (): string => `<!doctype html>
         <details class="health-details" id="merchant-health-details"><summary>Merchant health &amp; advanced filters</summary>
         <section class="surface toolbar-surface">
           <form id="merchant-filters" class="filter-grid">
-            <label class="search-field">Search<input name="query" type="search" maxlength="100" placeholder="Business name or exact location ID"></label>
+            <label class="search-field">Search<input name="query" type="search" maxlength="100" placeholder="HighLevel name, business name or exact location ID"></label>
             <label>Health<select name="state"><option value="">All</option><option>healthy</option><option>degraded</option><option>unhealthy</option><option>unknown</option></select></label>
             <label>Installation<select name="installation"><option value="">All</option><option>healthy</option><option>degraded</option><option>unhealthy</option><option>unknown</option><option value="not_applicable">not applicable</option></select></label>
             <label>Processor<select name="processor"><option value="">All</option><option>stripe</option><option>nmi</option><option>whop</option></select></label>
@@ -649,7 +649,7 @@ export const operatorCommandCenterJs = `'use strict';
     items.forEach(function (item) {
       const row = element('tr');
       const merchant = element('td');
-      merchant.append(element('span', 'primary-text', item.merchant_name || item.location_id), element('span', 'secondary-text', item.location_id));
+      appendLocationIdentity(merchant, item);
       const state = element('td'); state.appendChild(badge(item.overall_state));
       row.append(merchant, state, element('td', '', item.needs_attention_count || 0), componentBadges(item), element('td', '', relativeTime(item.last_reconciled_at)));
       target.appendChild(row);
@@ -747,8 +747,8 @@ export const operatorCommandCenterJs = `'use strict';
     data.items.forEach(function (item) {
       const row = element('tr');
       const merchant = element('td');
-      merchant.append(element('span', 'primary-text', item.merchant_name), element('span', 'secondary-text', item.location_id));
-      const install = element('td'); install.appendChild(badge(item.installation_state));
+      appendLocationIdentity(merchant, item);
+      const install = element('td'); install.appendChild(item.identity && item.identity.authorization === 'authorized' ? badge(item.installation_state) : element('span', 'badge warning', 'Authorization incomplete'));
       const plan = element('td'); plan.append(element('span', 'primary-text', item.marketplace_plan_key), element('span', 'secondary-text', item.marketplace_billing_status));
       const processors = element('td', '', (item.processor_types || []).join(', ') || 'None');
       const overall = element('td'); overall.appendChild(badge(item.overall_state));
@@ -786,12 +786,13 @@ export const operatorCommandCenterJs = `'use strict';
     try {
       const data = await get('/internal/operator/api/merchants/' + encodeURIComponent(locationId));
       const merchant = data.merchant || data;
-      document.getElementById('merchant-dialog-title').textContent = merchant.business_name || merchant.businessName || locationId;
+      document.getElementById('merchant-dialog-title').textContent = locationTitle(merchant);
       target.replaceChildren();
+      target.appendChild(identityDetail(merchant));
       target.appendChild(detailSection('Account', [
         ['Location', merchant.location_id || merchant.locationId],
         ['Status', merchant.status],
-        ['Installation', merchant.snapshot_status || 'Not available'],
+        ['Provisioning', merchant.snapshot_status || 'Not available'],
         ['Installed', formatTime(merchant.installed_at || merchant.installedAt)],
         ['Plan', merchant.marketplace_plan_key || merchant.marketplacePlan],
         ['Billing', merchant.marketplace_billing_status || merchant.marketplaceBillingStatus]

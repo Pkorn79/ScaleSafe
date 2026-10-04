@@ -26,6 +26,24 @@ test('pending totals cover the portfolio, not just the displayed page or search'
   expect(accessPage('enrollments', rows, { ...filters, query: 'bravo', limit: 1 }, true)).toMatchObject({ total: 1, pending: 2, items: [{ locationId: 'tenant-b' }] });
   expect(accessPage('enrollments', rows, { ...filters, status: 'active' }, true)).toMatchObject({ total: 0, pending: 2 });
 });
+
+test('search distinguishes duplicate businesses by verified subaccount name or exact ID without altering approvals', () => {
+  const rows = ['Ali', 'Matt'].map(name => projectEnrollmentAccess({ ...pending(),
+    location_id: 'location-' + name, business_name: 'Kingdom Alignment', ghl_location_name: 'Kingdom Alignment - ' + name,
+    ghl_location_name_source: 'ghl_location_api', ghl_location_name_verified_at: new Date().toISOString(), ghl_identity_authorized: true }));
+  expect(accessPage('enrollments', rows, { ...filters, query: 'kingdom alignment' }, true).total).toBe(2);
+  expect(accessPage('enrollments', rows, { ...filters, query: '- Matt' }, true).items.map(item => item.locationId)).toEqual(['location-Matt']);
+  expect(accessPage('enrollments', rows, { ...filters, query: 'location-Ali' }, true).items.map(item => item.locationId)).toEqual(['location-Ali']);
+  expect(rows.every(item => item.needsApproval && !item.accessAllowed)).toBe(true);
+});
+
+test('approval remains valid with missing auth, but identity and access labels never claim a connected install', () => {
+  const item = projectEnrollmentAccess({ ...pending(), test_access_approved_at: '2026-09-02T00:00:00Z' });
+  expect(item).toMatchObject({ accessAllowed: true, needsApproval: false, approvedAt: '2026-09-02T00:00:00Z',
+    identity: { name: null, status: 'unavailable', authorization: 'incomplete' } });
+  expect(item.accessLabel).toContain('authorization incomplete');
+  expect(item.identity!.displayName).not.toContain('Fictional Alpha');
+});
 test('projects only access fields', () => {
   expect(JSON.stringify(projectEnrollmentAccess({ ...pending(), access_token: 'NEVER-OUTPUT', processor_key: 'NEVER-OUTPUT' } as any))).not.toContain('NEVER-OUTPUT');
   expect(ACCESS_COLUMNS).not.toMatch(/token|cipher|secret|password/);

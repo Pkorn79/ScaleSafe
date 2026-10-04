@@ -1,7 +1,9 @@
 const rpc = jest.fn();
+const mockIn = jest.fn();
+const mockSelect = jest.fn((_columns: string) => ({ in: mockIn }));
 
 jest.mock('../../src/clients/supabase.client', () => ({
-  getSupabase: () => ({ rpc }),
+  getSupabase: () => ({ rpc, from: () => ({ select: mockSelect }) }),
 }));
 
 import {
@@ -12,11 +14,33 @@ import {
 describe('commandCenterHealthRepository', () => {
   beforeEach(() => {
     rpc.mockReset();
+    mockIn.mockReset().mockResolvedValue({ data: [], error: null });
+    mockSelect.mockClear();
     setCommandCenterRequestObserver(null);
   });
 
   afterAll(() => {
     setCommandCenterRequestObserver(null);
+  });
+
+  it('replaces legacy health names with exact-location identity in portfolio attention and details', async () => {
+    mockIn.mockResolvedValue({ data: [
+      { location_id: 'loc-1', business_name: 'Shared business', ghl_location_name: 'Verified subaccount',
+        ghl_location_name_source: 'ghl_location_api', ghl_location_name_verified_at: new Date().toISOString(), ghl_identity_authorized: true },
+      { location_id: 'loc-2', business_name: 'Shared business', ghl_identity_authorized: false },
+    ], error: null });
+    rpc.mockResolvedValue({ data: { merchant_attention: [{ location_id: 'loc-2', merchant_name: 'AGENCY-NOT-IDENTITY' },
+      { location_id: 'loc-1', merchant_name: 'LEGACY-NOT-IDENTITY' }] }, error: null });
+    const summary = await commandCenterHealthRepository.getOperatorPlatformSummary(true);
+    expect(summary.merchant_attention[0].identity.authorization).toBe('incomplete');
+    expect(summary.merchant_attention[1].identity.name).toBe('Verified subaccount');
+    expect(JSON.stringify(summary)).not.toContain('NOT-IDENTITY');
+    expect(mockIn).toHaveBeenCalledWith('location_id', ['loc-2', 'loc-1']);
+    expect(mockSelect.mock.calls[0][0]).not.toMatch(/token|secret|config/);
+    rpc.mockResolvedValue({ data: { merchant: { location_id: 'loc-1', business_name: 'legacy' } }, error: null });
+    const detail = await commandCenterHealthRepository.getOperatorMerchantDetail('loc-1');
+    expect(detail.merchant).toMatchObject({ location_id: 'loc-1', business_name: 'Shared business', identity: { name: 'Verified subaccount' } });
+    expect(mockIn).toHaveBeenLastCalledWith('location_id', ['loc-1']);
   });
 
   it('passes code, runtime, and unsafe flag posture through one evaluator call', async () => {
@@ -108,7 +132,7 @@ describe('commandCenterHealthRepository', () => {
     })).resolves.toEqual(expect.objectContaining({
       checks: [{ id: 'check-1' }],
       incidents: [{ id: 'incident-1' }],
-      merchants: [{ location_id: 'loc-1' }],
+      merchants: [expect.objectContaining({ location_id: 'loc-1', identity: expect.objectContaining({ status: 'unavailable' }) })],
     }));
 
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -168,7 +192,7 @@ describe('commandCenterHealthRepository', () => {
       plan: 'test',
       installation: null,
     })).resolves.toEqual({
-      items: [{ location_id: 'loc-1' }],
+      items: [expect.objectContaining({ location_id: 'loc-1', identity: expect.objectContaining({ status: 'unavailable' }) })],
       total: 1,
       limit: 50,
       offset: 0,
@@ -195,7 +219,7 @@ describe('commandCenterHealthRepository', () => {
       .mockResolvedValueOnce({ data: { items: [], total: 0, limit: 100, offset: 0 }, error: null });
 
     await expect(commandCenterHealthRepository.getOperatorMerchantDetail('loc-1'))
-      .resolves.toEqual({ merchant: { location_id: 'loc-1' } });
+      .resolves.toEqual({ merchant: expect.objectContaining({ location_id: 'loc-1', identity: expect.objectContaining({ status: 'unavailable' }) }) });
     await expect(commandCenterHealthRepository.listOperatorResellersPage({ limit: 100, offset: 0 }))
       .resolves.toEqual({ items: [], total: 0, limit: 100, offset: 0 });
 

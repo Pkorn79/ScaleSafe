@@ -1,4 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
+import { LOCATION_IDENTITY_COLUMNS } from '../utils/merchant-location-identity';
 import { OperatorAuditInput, OperatorRole } from '../types/operator.types';
 import { sanitizeOperatorMetadata } from '../utils/operator-security';
 
@@ -389,7 +390,7 @@ export const operatorRepository = {
   async getMerchantSummary(locationId: string): Promise<any | null> {
     const { data, error } = await getSupabase()
       .from('merchants')
-      .select('location_id, business_name, status, installed_at, marketplace_plan_key, marketplace_billing_status')
+      .select('location_id, business_name, status, installed_at, marketplace_plan_key, marketplace_billing_status,' + LOCATION_IDENTITY_COLUMNS)
       .eq('location_id', locationId)
       .maybeSingle();
     throwIfError(error, 'Operator merchant summary lookup failed');

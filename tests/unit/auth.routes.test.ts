@@ -5,6 +5,10 @@
  */
 
 const mockExchangeCodeForTokens = jest.fn();
+const mockIdentitySchedule = jest.fn();
+jest.mock('../../src/services/merchant-location-identity.service', () => ({
+  merchantLocationIdentityService: { schedule: (...args: any[]) => mockIdentitySchedule(...args) },
+}));
 
 jest.mock('../../src/clients/ghl.client', () => ({
   exchangeCodeForTokens: mockExchangeCodeForTokens,
@@ -67,6 +71,7 @@ import request from 'supertest';
 import authRoutes from '../../src/routes/auth.routes';
 import { config as testConfig } from '../../src/config';
 import { createGhlOAuthState } from '../../src/utils/ghl-oauth-state';
+import { merchantService } from '../../src/services/merchant.service';
 
 const app = express();
 app.use(express.json());
@@ -222,6 +227,8 @@ describe('GET /auth/callback', () => {
       ghl_access_token: 'at-123',
     }));
     expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockIdentitySchedule).toHaveBeenCalledWith('loc-abc', true);
+    expect(merchantService.provisionMerchant).not.toHaveBeenCalled();
   });
 
   it('returns 400 with debug info when GHL returns no installed sub-account', async () => {
@@ -273,12 +280,25 @@ describe('GET /auth/callback', () => {
     );
     expect(mockUpsertOAuthInstall).toHaveBeenCalledWith(expect.objectContaining({
       location_id: 'loc-existing',
-      business_name: 'Existing Account',
     }));
+    expect(mockUpsertOAuthInstall.mock.calls[1][0]).not.toHaveProperty('business_name');
+    expect(mockIdentitySchedule.mock.calls).toEqual([['loc-new', true], ['loc-existing', true]]);
     for (const [install] of mockUpsertOAuthInstall.mock.calls) {
       expect(install).not.toHaveProperty('marketplace_plan_id');
       expect(install).not.toHaveProperty('marketplace_plan_key');
     }
+  });
+
+  it('starts identity retrieval even if provisioning fails, without replacing existing merchant settings', async () => {
+    mockExchangeCodeForTokens.mockResolvedValue(BASE_TOKEN_RESPONSE);
+    mockFindByLocationId.mockResolvedValue({ ...MERCHANT_RECORD, snapshot_status: 'failed', business_name: '' });
+    mockUpsertOAuthInstall.mockResolvedValue({ snapshot_status: 'failed' });
+    (merchantService.provisionMerchant as jest.Mock).mockRejectedValueOnce(new Error('Setup failure'));
+    const result = await request(app).get('/auth/callback?code=fixture-code');
+    expect(result.status).toBe(200);
+    expect(mockUpsertOAuthInstall.mock.calls[0][0]).not.toHaveProperty('business_name');
+    expect(mockIdentitySchedule).toHaveBeenCalledWith('loc-abc', true);
+    expect(mockIdentitySchedule.mock.invocationCallOrder[0]).toBeLessThan((merchantService.provisionMerchant as jest.Mock).mock.invocationCallOrder[0]);
   });
 
   it('one failing sub-account does not abort the install for the others', async () => {

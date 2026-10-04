@@ -312,6 +312,7 @@ describe('operator health routes', () => {
     expect(response.body).toEqual({
       locationId: 'loc-1',
       businessName: 'Assigned Merchant',
+      identity: expect.objectContaining({ name: null, status: 'unavailable', authorization: 'incomplete' }),
       status: 'active',
       installedAt: '2026-07-01T00:00:00.000Z',
       marketplacePlan: 'standard',

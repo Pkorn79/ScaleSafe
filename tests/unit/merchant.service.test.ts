@@ -12,6 +12,11 @@
 const mockPost = jest.fn();
 const mockGet = jest.fn();
 const mockPut = jest.fn();
+const mockIdentityRefresh = jest.fn().mockResolvedValue(undefined);
+const mockIdentitySchedule = jest.fn();
+jest.mock('../../src/services/merchant-location-identity.service', () => ({
+  merchantLocationIdentityService: { refresh: (...args: any[]) => mockIdentityRefresh(...args), schedule: (...args: any[]) => mockIdentitySchedule(...args) },
+}));
 
 jest.mock('../../src/clients/ghl.client', () => ({
   ghlApi: jest.fn().mockResolvedValue({
@@ -222,6 +227,15 @@ describe('Full Provisioning', () => {
 
     expect(mockUpdateSnapshotStatus).toHaveBeenCalledWith('loc_1', 'failed', expect.any(String));
     expect(result.status).toBe('failed');
+    expect(mockIdentityRefresh).toHaveBeenCalledWith('loc_1');
+    expect(mockIdentityRefresh.mock.invocationCallOrder[0]).toBeLessThan(mockClaimProvisioning.mock.invocationCallOrder[0]);
+  });
+
+  test('already provisioned merchants still schedule a fresh identity lookup', async () => {
+    merchantState.snapshot_status = 'installed';
+    expect((await merchantService.provisionMerchant('loc_1')).status).toBe('installed');
+    expect(mockIdentitySchedule).toHaveBeenCalledWith('loc_1');
+    expect(mockClaimProvisioning).not.toHaveBeenCalled();
   });
 
   test('tokenless INSTALL stub waits for OAuth without consuming a provisioning attempt', async () => {

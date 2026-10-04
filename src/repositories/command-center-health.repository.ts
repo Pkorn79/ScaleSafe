@@ -1,4 +1,5 @@
 import { getSupabase } from '../clients/supabase.client';
+import { LocationIdentityRecord, LOCATION_IDENTITY_COLUMNS, projectLocationIdentity } from '../utils/merchant-location-identity';
 import {
   HealthObservationInput,
   WorkerHeartbeatInput,
@@ -31,6 +32,22 @@ async function executeCommandCenterRequest<T>(
 function firstRow<T>(data: unknown): T | null {
   if (Array.isArray(data)) return (data[0] as T | undefined) || null;
   return (data as T | null) || null;
+}
+
+async function withLocationIdentities(rows: any[]): Promise<any[]> {
+  if (!rows.length) return [];
+  const ids = [...new Set(rows.map(row => row.location_id).filter(Boolean))];
+  const { data, error } = await executeCommandCenterRequest(() => getSupabase().from('merchants')
+    .select('location_id,business_name,' + LOCATION_IDENTITY_COLUMNS).in('location_id', ids));
+  if (error) throw error;
+  const safeRows = (data || []) as unknown as Array<LocationIdentityRecord & { location_id: string; business_name: string | null }>;
+  const identities = new Map(safeRows.map(row => [row.location_id, row]));
+  return rows.map(row => {
+    const current = identities.get(row.location_id);
+    const identity = projectLocationIdentity(current || {});
+    // Old health rollups are not authoritative identity, even when healthy.
+    return { ...row, business_name: current?.business_name || null, identity, merchant_name: identity.displayName };
+  });
 }
 
 export interface TimePageCursor {
@@ -136,7 +153,7 @@ export const commandCenterHealthRepository = {
     return {
       checks: Array.isArray(page.checks) ? page.checks : [],
       incidents: Array.isArray(page.incidents) ? page.incidents : [],
-      merchants: Array.isArray(page.merchants) ? page.merchants : [],
+      merchants: await withLocationIdentities(Array.isArray(page.merchants) ? page.merchants : []),
       next: {
         checks: page.next?.checks || null,
         incidents: page.next?.incidents || null,
@@ -212,7 +229,10 @@ export const commandCenterHealthRepository = {
     if (error) throw error;
     const page = firstRow<any>(data) || {};
     return {
-      items: Array.isArray(page.items) ? page.items : [],
+      items: Array.isArray(page.items) ? page.items.map((row: any) => {
+        const identity = projectLocationIdentity(row);
+        return { ...row, identity, merchant_name: identity.displayName };
+      }) : [],
       total: Number(page.total || 0),
       limit: Number(page.limit || input.limit),
       offset: Number(page.offset || input.offset),
@@ -225,7 +245,9 @@ export const commandCenterHealthRepository = {
       { p_include_merchant_attention: includeMerchantAttention },
     ));
     if (error) throw error;
-    return firstRow<any>(data) || data || {};
+    const summary = firstRow<any>(data) || data || {};
+    if (Array.isArray(summary.merchant_attention)) summary.merchant_attention = await withLocationIdentities(summary.merchant_attention);
+    return summary;
   },
 
   async getOperatorMerchantDetail(locationId: string): Promise<any | null> {
@@ -234,7 +256,11 @@ export const commandCenterHealthRepository = {
       { p_location_id: locationId },
     ));
     if (error) throw error;
-    return firstRow<any>(data);
+    const detail = firstRow<any>(data);
+    if (detail?.merchant) {
+      [detail.merchant] = await withLocationIdentities([{ ...detail.merchant, location_id: locationId }]);
+    }
+    return detail;
   },
 
   async listOperatorResellersPage(input: {

@@ -17,6 +17,7 @@ import {
   PulseCadenceDiagnosticReport,
 } from '../jobs/pulse-cadence-check';
 import { expectedStripeLiveMode, stripeConnectionModeMatches } from './stripe-connection-mode.service';
+import { merchantLocationIdentityService } from './merchant-location-identity.service';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -224,6 +225,7 @@ export const merchantService = {
     logger.info({ locationId }, 'Starting merchant provisioning');
     let beforeClaim = await merchantRepository.getByLocationId(locationId);
     if (beforeClaim.snapshot_status === 'installed') {
+      merchantLocationIdentityService.schedule(locationId);
       return { locationId, status: 'installed' };
     }
     if (!merchantHasOAuthCredentials(beforeClaim)) {
@@ -232,11 +234,17 @@ export const merchantService = {
         if (adopted) beforeClaim = adopted;
       }
       if (!merchantHasOAuthCredentials(beforeClaim)) {
+        merchantLocationIdentityService.schedule(locationId);
         logger.info({ locationId }, 'Provisioning is waiting for the OAuth callback to store credentials');
         return { locationId, status: 'waiting_for_oauth' };
       }
     }
 
+    // Resolve identity before claiming provisioning: an identity write must not
+    // race the provisioning CAS, and setup failure must not suppress the name.
+    await merchantLocationIdentityService.refresh(locationId).catch(() => {
+      logger.warn({ locationId }, 'HighLevel identity lookup could not be recorded');
+    });
     const claimed = await merchantRepository.claimProvisioning(
       locationId,
       new Date(Date.now() - PROVISIONING_STALE_MS),
@@ -278,9 +286,6 @@ export const merchantService = {
       logger.info({ locationId }, 'Merchant provisioning complete');
 
       // Register as custom payment provider + generate API keys (non-blocking)
-      this.fetchLocationInfo(locationId).catch((err: any) => {
-        logger.warn({ err: err.message, locationId }, 'Location profile hydration failed');
-      });
       this.registerPaymentProvider(locationId).catch((err: any) => {
         logger.warn({ err: err.message, locationId }, 'Payment provider registration failed — can retry later');
       });
@@ -939,22 +944,7 @@ export const merchantService = {
   },
 
   async fetchLocationInfo(locationId: string): Promise<void> {
-    try {
-      const api = await ghlApi(locationId);
-      const res = await api.get(`/locations/${locationId}`);
-      const loc = res.data.location || res.data;
-
-      const updates: Record<string, unknown> = {};
-      if (loc.name) updates.business_name = loc.name;
-      if (loc.email) updates.support_email = loc.email;
-
-      if (Object.keys(updates).length > 0) {
-        await merchantRepository.update(locationId, updates as any);
-        logger.info({ locationId, updates }, 'Merchant info populated from GHL location');
-      }
-    } catch (err) {
-      logger.warn({ err, locationId }, 'Could not fetch location info (non-fatal)');
-    }
+    await merchantLocationIdentityService.refresh(locationId, true);
   },
 
   // ═══════════════════════════════════════════════════════════════════

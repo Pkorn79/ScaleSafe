@@ -32,6 +32,20 @@ describe('operator Command Center page', () => {
     expect(operatorCommandCenterJs).not.toContain('document.write');
   });
 
+  it('keeps HighLevel identity and location visible in lists, details, search and approval confirmation', () => {
+    expect(operatorCommandCenterHtml()).toContain('HighLevel name, business name or location ID');
+    expect(operatorCommandCenterJs).toContain('appendLocationIdentity(merchant, item)');
+    expect(operatorCommandCenterJs).toContain("'Location ID: '");
+    expect(operatorCommandCenterJs).toContain("'Merchant business name'");
+    expect(operatorCommandCenterJs).toContain("'Stale name; last verified '");
+    expect(operatorCommandCenterJs).toContain("'Refresh HighLevel name'");
+    expect(operatorCommandCenterJs).toContain("product === 'enrollments' ? locationTitle(item) : item.businessName || item.locationId");
+    expect(operatorCommandCenterJs).not.toContain('merchant.business_name || merchant.businessName || locationId');
+    expect(operatorCommandCenterJs).not.toContain('item.merchant_name || item.location_id');
+    expect(operatorCommandCenterJs).toContain("'/internal/operator/api/access/enrollments/'");
+    expect(operatorCommandCenterJs).not.toContain("'/internal/operator/api/access/evidence/' + encodeURIComponent(item.locationId) + '/refresh-identity'");
+  });
+
   it('keeps business operations read-only while protecting incident state changes with CSRF', () => {
     expect(operatorCommandCenterJs).toContain("cookie('__Host-scalesafe_ops_csrf')");
     expect(operatorCommandCenterJs).toContain('/acknowledge');

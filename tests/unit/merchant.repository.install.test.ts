@@ -40,6 +40,20 @@ beforeEach(() => {
 });
 
 describe('merchant install persistence', () => {
+  it('writes identity only with an exact-location, unchanged-row compare-and-set', async () => {
+    const chain: any = {};
+    for (const method of ['update', 'eq', 'select']) chain[method] = jest.fn(() => chain);
+    chain.maybeSingle = jest.fn(async () => ({ data: { location_id: 'loc-1' }, error: null }));
+    mockFrom.mockReturnValue(chain);
+    const patch = { ghl_location_name: 'Verified subaccount', ghl_location_name_source: 'ghl_location_api',
+      ghl_location_name_verified_at: new Date().toISOString() };
+    expect(await merchantRepository.writeLocationIdentity(merchant(), patch)).toBe(true);
+    expect(chain.update).toHaveBeenCalledWith(patch);
+    expect(chain.eq.mock.calls).toEqual([['location_id', 'loc-1'], ['updated_at', '2026-07-12T10:00:00.000Z']]);
+    expect(chain.select).toHaveBeenCalledWith('location_id');
+    chain.maybeSingle.mockResolvedValue({ data: null, error: null });
+    expect(await merchantRepository.writeLocationIdentity(merchant(), patch)).toBe(false);
+  });
   it('atomically upserts OAuth credentials over a lifecycle webhook stub', async () => {
     const chain: any = {};
     chain.upsert = jest.fn(() => chain);

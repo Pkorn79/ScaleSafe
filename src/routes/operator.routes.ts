@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { NextFunction, Request, Response, Router } from 'express';
+import { projectLocationIdentity } from '../utils/merchant-location-identity';
 import {
   operatorFeatureAndHost,
   requireOperatorAuthEnabled,
@@ -588,6 +589,7 @@ router.get(
       res.json({
         locationId: merchant.location_id,
         businessName: merchant.business_name,
+        identity: projectLocationIdentity(merchant),
         status: merchant.status,
         installedAt: merchant.installed_at,
         marketplacePlan: merchant.marketplace_plan_key,

@@ -5,12 +5,14 @@ import { config } from '../config';
 import { MerchantRecord } from '../repositories/merchant.repository';
 import { marketplaceEntitlementForMerchant } from './marketplace-entitlement.service';
 import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '../utils/errors';
+import { LocationIdentity, LOCATION_IDENTITY_COLUMNS, projectLocationIdentity } from '../utils/merchant-location-identity';
 
 export type AccessProduct = 'enrollments' | 'evidence';
 export interface MerchantAccess {
   product: AccessProduct;
   locationId: string;
   businessName: string | null;
+  identity?: LocationIdentity;
   installed: boolean;
   planKey: string;
   planLabel: string;
@@ -39,7 +41,7 @@ export interface AccessFilters { query: string; status: 'all' | 'pending' | 'act
 export interface AccessApproval { version: string; note: string; wholepayVerified: boolean; merchantReference: string }
 
 // Never select OAuth, processor, customer or document data for access management.
-export const ACCESS_COLUMNS = 'location_id,business_name,status,installed_at,updated_at,marketplace_plan_key,marketplace_plan_id,marketplace_billing_status,test_access_approved_at,test_access_approved_by,test_access_revoked_at,test_access_note,wholepay_approved_at,wholepay_approved_by,wholepay_approval_revoked_at,wholepay_merchant_reference';
+export const ACCESS_COLUMNS = `location_id,business_name,status,installed_at,updated_at,marketplace_plan_key,marketplace_plan_id,marketplace_billing_status,test_access_approved_at,test_access_approved_by,test_access_revoked_at,test_access_note,wholepay_approved_at,wholepay_approved_by,wholepay_approval_revoked_at,wholepay_merchant_reference,${LOCATION_IDENTITY_COLUMNS}` as const;
 const CAS_COLUMNS = ['status', 'installed_at', 'updated_at', 'marketplace_plan_key', 'marketplace_plan_id', 'marketplace_billing_status', 'test_access_approved_at', 'test_access_revoked_at', 'wholepay_approved_at', 'wholepay_approval_revoked_at'] as const;
 
 function assertProject(): void {
@@ -53,13 +55,17 @@ export function projectEnrollmentAccess(row: Partial<MerchantRecord>): MerchantA
   const installed = row.status === 'active' && Boolean(row.installed_at);
   const approvalKind = entitlement.planKey === 'test' ? 'test' : entitlement.planKey === 'wholepay' ? 'wholepay' : null;
   const needsApproval = installed && ['needs_test_access_approval', 'needs_wholepay_approval'].includes(entitlement.accessState);
+  const identity = projectLocationIdentity(row);
   return {
     product: 'enrollments', locationId: row.location_id!, businessName: row.business_name || null, installed,
+    identity,
     planKey: entitlement.planKey,
     planLabel: ({ test: 'Free / Test Access', standard: 'Standard (paid plan)', wholepay: 'WholePay merchant plan', legacy: 'Legacy installation', unknown: 'Unrecognized plan' })[entitlement.planKey],
     billingStatus: entitlement.billingStatus,
     accessAllowed: installed && entitlement.accessAllowed,
-    accessLabel: !installed ? 'Not installed / inactive' : needsApproval ? 'Approval needed' : entitlement.accessAllowed ? 'Access active' : entitlement.accessState === 'payment_failed' ? 'Billing needs attention' : 'Plan needs review',
+    accessLabel: !installed ? 'Not installed / inactive' : needsApproval ? 'Approval needed' : entitlement.accessAllowed
+      ? identity.authorization === 'incomplete' ? 'Plan access approved; authorization incomplete' : 'Plan access active'
+      : entitlement.accessState === 'payment_failed' ? 'Billing needs attention' : 'Plan needs review',
     approvalKind, needsApproval,
     approvedAt: approvalKind === 'test' ? row.test_access_approved_at || null : approvalKind === 'wholepay' ? row.wholepay_approved_at || null : null,
     approvedBy: approvalKind === 'test' ? row.test_access_approved_by || null : approvalKind === 'wholepay' ? row.wholepay_approved_by || null : null,
@@ -70,7 +76,7 @@ export function projectEnrollmentAccess(row: Partial<MerchantRecord>): MerchantA
 
 export function accessPage(product: AccessProduct, items: MerchantAccess[], filters: AccessFilters, approvalAvailable: boolean): AccessPage {
   const search = filters.query.toLowerCase();
-  const matching = items.filter(item => (!search || (item.businessName || '').toLowerCase().includes(search) || item.locationId.toLowerCase().includes(search))
+  const matching = items.filter(item => (!search || (item.identity?.name || '').toLowerCase().includes(search) || (item.businessName || '').toLowerCase().includes(search) || item.locationId.toLowerCase().includes(search))
     && (filters.status === 'all' || filters.status === 'pending' && item.needsApproval || filters.status === 'active' && item.accessAllowed || filters.status === 'disconnected' && !item.installed));
   return { product, items: matching.slice(filters.offset, filters.offset + filters.limit), total: matching.length,
     pending: items.filter(item => item.needsApproval).length, installed: items.filter(item => item.installed).length,
@@ -81,7 +87,7 @@ export const operatorMerchantAccessService = {
   async list(filters: AccessFilters): Promise<AccessPage> {
     assertProject();
     const rows: MerchantAccess[] = [];
-    // No migration is required. Bounded keyset scan evaluates the actual entitlement
+    // Bounded keyset scan evaluates the actual entitlement
     // logic before filtering/paging, so pending totals never mean "this page only".
     let after: string | null = null;
     for (;;) {

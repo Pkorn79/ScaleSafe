@@ -5,6 +5,7 @@ import { AccessFilters, AccessProduct, operatorMerchantAccessService, projectEnr
 import { operatorEvidenceAccessService } from '../services/operator-evidence-access.service';
 import { operatorAuthorizationService } from '../services/operator-authorization.service';
 import { NotFoundError, ValidationError } from '../utils/errors';
+import { merchantLocationIdentityService } from '../services/merchant-location-identity.service';
 
 const router = Router();
 function route(fn: (req: Request, res: Response) => Promise<void>) {
@@ -40,6 +41,30 @@ router.get('/:product/:locationId', requireOperatorPermission('platform.merchant
   const id = location(req);
   res.json(selected === 'enrollments' ? { merchant: projectEnrollmentAccess(await operatorMerchantAccessService.read(id)), approvalAvailable: true } : await operatorEvidenceAccessService.get(id));
 }));
+router.post('/:product/:locationId/refresh-identity', requireOperatorOrigin, requireOperatorCsrf,
+  requireOperatorPermission('platform.merchant_access.approve', { locationParam: 'locationId', hideUnauthorized: true }), route(async (req, res) => {
+    if (product(req) !== 'enrollments' || req.operatorContext!.role !== 'platform_owner') throw new NotFoundError('Identity refresh');
+    const id = location(req);
+    await operatorMerchantAccessService.read(id);
+    const correlationId = crypto.randomUUID();
+    const actor = req.operatorContext!;
+    const audit = { correlationId, actorOperatorUserId: actor.operatorUserId, actorOrganizationId: actor.organizationId,
+      actorSessionId: actor.sessionId, actorRole: actor.role,
+      action: 'operator.access.enrollments.refresh_identity', targetLocationId: id,
+      targetType: 'enrollments_installation', targetId: id };
+    await operatorAuthorizationService.auditRequest(req, { ...audit, result: 'intent' });
+    try {
+      await merchantLocationIdentityService.refresh(id, true);
+    } catch {
+      await operatorAuthorizationService.auditRequest(req, { ...audit, result: 'failed' }).catch(() => undefined);
+      throw new ValidationError('Identity refresh could not be recorded. Reload this account before retrying.');
+    }
+    const merchant = projectEnrollmentAccess(await operatorMerchantAccessService.read(id));
+    let auditComplete = true;
+    await operatorAuthorizationService.auditRequest(req, { ...audit, result: merchant.identity?.status === 'verified' ? 'succeeded' : 'failed',
+      metadata: { identityStatus: merchant.identity?.status, reason: merchant.identity?.reason } }).catch(() => { auditComplete = false; });
+    res.json({ merchant, approvalAvailable: true, auditComplete, correlationId });
+  }));
 router.post('/:product/:locationId/approve', requireOperatorOrigin, requireOperatorCsrf,
   requireOperatorPermission('platform.merchant_access.approve', { locationParam: 'locationId', hideUnauthorized: true }), route(async (req, res) => {
     const selected = product(req);

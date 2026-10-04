@@ -2,8 +2,9 @@ import { getSupabase } from '../clients/supabase.client';
 import { NotFoundError } from '../utils/errors';
 import crypto from 'crypto';
 import { decrypt, encrypt } from '../utils/field-encryption';
+import { LocationIdentityRecord } from '../utils/merchant-location-identity';
 
-export interface MerchantRecord {
+export interface MerchantRecord extends LocationIdentityRecord {
   id: string;
   location_id: string;
   company_id: string | null;
@@ -304,6 +305,18 @@ export const merchantRepository = {
 
     if (error) throw error;
     return data;
+  },
+
+  async writeLocationIdentity(
+    current: MerchantRecord,
+    patch: Pick<LocationIdentityRecord, 'ghl_location_name' | 'ghl_location_name_source' | 'ghl_location_name_verified_at' | 'ghl_location_name_checked_at' | 'ghl_location_name_error' | 'ghl_location_name_refresh_id'>,
+  ): Promise<boolean> {
+    // A concurrent authorization, uninstall, approval, or newer lookup wins.
+    const { data, error } = await getSupabase().from('merchants').update(patch)
+      .eq('location_id', current.location_id).eq('updated_at', current.updated_at)
+      .select('location_id').maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
   },
 
   async updateTokens(locationId: string, accessToken: string, refreshToken: string, expiresAt: Date): Promise<void> {

@@ -3,6 +3,13 @@
 All notable changes to ScaleSafe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased - Enrollments merchant identity (2026-10-04)
+
+- Separate verified HighLevel location names from merchant-editable business settings; validate exact location and credential binding before recording proof.
+- Retrieve identity independently of provisioning success, refresh through SSO or an audited owner action, and display verified/stale/unavailable state with visible location IDs across Command Center search, lists, detail and approval screens.
+- Preserve approval/billing semantics and Evidence separation. Add migration 114 only, without legacy-name backfill or replay of 107-112.
+- Local implementation and release instructions: [Enrollments identity release plan](docs/ENROLLMENTS_IDENTITY_RELEASE_2026-10-04.md). Not deployed; production migration and canary authorization are pending.
+
 ## Attendance correctness (2026-10-02)
 
 ### Fixed

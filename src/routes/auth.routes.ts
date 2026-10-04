@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { exchangeCodeForTokens, InstalledLocation, TokenResponse } from '../clients/ghl.client';
 import { merchantHasOAuthCredentials, merchantRepository } from '../repositories/merchant.repository';
 import { merchantService } from '../services/merchant.service';
+import { merchantLocationIdentityService } from '../services/merchant-location-identity.service';
 import { decryptSsoPayload } from '../utils/crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -160,7 +161,9 @@ async function persistOAuthTarget(
     ghl_refresh_token: token.refreshToken,
     ghl_token_expires_at: token.expiresAt.toISOString(),
     ghl_scopes: token.scopes.join(' '),
-    business_name: existing?.business_name || target.name || undefined,
+    // An install-list label is not verified identity. Never overwrite settings
+    // on reinstall, including an intentionally blank merchant business name.
+    ...(!existing && target.name ? { business_name: target.name } : {}),
     ...(options.includePlan && token.planId ? {
       marketplace_plan_id: token.planId,
       marketplace_plan_key: marketplacePlanKey(token.planId),
@@ -250,6 +253,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
           const merchant = await persistOAuthTarget(target, tokenResponse, {
             includePlan: planTargetIds.has(targetLocationId),
           });
+          merchantLocationIdentityService.schedule(targetLocationId, true);
           if (merchant.snapshot_status !== 'installed') provisionTargets.push(targetLocationId);
           logger.info(
             { locationId: targetLocationId, tokenScope: tokenResponse.tokenScope },
@@ -389,6 +393,7 @@ router.post('/sso', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const resolvedLocationId = merchant.location_id;
+    merchantLocationIdentityService.schedule(resolvedLocationId);
     let responseSnapshotStatus = merchant.snapshot_status;
 
     // Auto-provision if snapshot never completed
