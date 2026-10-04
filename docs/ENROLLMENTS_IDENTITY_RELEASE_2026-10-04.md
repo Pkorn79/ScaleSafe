@@ -3,7 +3,7 @@
 ## Status And Boundary
 
 Implemented locally in `codex/enrollments-merchant-identity` (commit `567e6a6`), then integrated with the pending OAuth lifecycle corrections in the separate release branch `codex/enrollments-identity-release`.
-**Not deployed. No production SQL, settings changes, GHL lookups, credential refresh/rotation, push, or live approval was performed.**
+**Not deployed. Production SQL was read-only inspection; no migration, settings change, GHL lookup, credential refresh/rotation, push, or live approval was performed.**
 
 Release worktree: `C:\Users\p_kor_e1dk2i3\.codex\worktrees\enrollments-identity-release\ScaleSafe`.
 The original dirty checkout and other worktrees were not modified.
