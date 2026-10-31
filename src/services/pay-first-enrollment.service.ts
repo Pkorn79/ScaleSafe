@@ -29,6 +29,8 @@ import {
   WORKFLOW_PAYMENT_CONTACT_FIELDS,
 } from '../constants/ghl-fields';
 import { resolveWorkflowRefundPolicy, resolveWorkflowTermsUrl } from '../utils/workflow-offer-fields';
+import { nextBillingDate as computeNextBillingDate } from '../utils/billing-calendar';
+import { billingSetupHealthService } from './billing-setup-health.service';
 
 interface RecordPayFirstInput {
   locationId: string;
@@ -117,20 +119,6 @@ function splitName(firstName: string | undefined, lastName: string | undefined, 
   if (firstName) return { firstName, lastName: lastName || '' };
   const local = email.split('@')[0] || 'Client';
   return { firstName: local, lastName: lastName || '' };
-}
-
-function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
-  const next = new Date(from);
-  switch (installmentFrequency) {
-    case 'daily': next.setDate(next.getDate() + 1); break;
-    case 'weekly': next.setDate(next.getDate() + 7); break;
-    case 'bi_weekly':
-    case 'biweekly': next.setDate(next.getDate() + 14); break;
-    case 'quarterly': next.setMonth(next.getMonth() + 3); break;
-    case 'annual': next.setFullYear(next.getFullYear() + 1); break;
-    default: next.setMonth(next.getMonth() + 1);
-  }
-  return next.toISOString().split('T')[0];
 }
 
 function processorInterval(frequency: string | null | undefined): 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual' {
@@ -649,7 +637,8 @@ export const payFirstEnrollmentService = {
       && paymentsTotal != null
       && Number(paymentsTotal) <= 1;
     const recurringManualSale = Boolean(offer && isRecurringPaymentType(paymentType) && !finiteBillingComplete);
-    const nextBillingDate = recurringManualSale ? computeNextBillingDate(offer?.installment_frequency) : null;
+    const billingAnchor = new Date();
+    const nextBillingDate = recurringManualSale ? computeNextBillingDate(offer?.installment_frequency, billingAnchor) : null;
     const recordedAt = new Date().toISOString();
     const paymentMethod = input.paymentMethod === 'ach' ? 'ach' : 'card';
     if (paymentMethod === 'ach' && procConfig.processor_type !== 'nmi') {
@@ -923,6 +912,22 @@ export const payFirstEnrollmentService = {
       }
 
       if (enrollmentId && !paymentProcessing && recurringManualSale) {
+        const persistSetupIssue = async (status: 'failed' | 'needs_reconciliation') => {
+          try {
+            const { error, count } = await getSupabase().from('enrollments').update({
+              billing_setup_status: status,
+              billing_setup_error: billingSetupIssue?.message,
+              next_billing_date: null,
+            }, { count: 'exact' }).eq('id', enrollmentId).eq('location_id', input.locationId);
+            if (error || count === 0) throw new Error('Recurring setup state could not be saved');
+          } catch {
+            postChargeIssues.push({
+              code: 'billing_setup_state_save_failed', step: 'save_recurring_setup',
+              message: 'Payment was received, but the billing setup warning could not be saved. Verify the processor before retrying.',
+            });
+            logger.error({ ...logContext, enrollmentId }, 'Recurring setup state persistence failed; payment requires reconciliation');
+          }
+        };
         try {
           const recurringQuote = await dualPricingService.quoteOffer(offer, paymentType, paymentMethod);
           const subAmountCents = recurringQuote.selectedAmountCents;
@@ -935,11 +940,7 @@ export const payFirstEnrollmentService = {
               code: 'processor_payment_method_missing',
               message: 'Payment was received, but recurring billing setup could not start because the saved payment method was not available.',
             };
-            await getSupabase().from('enrollments').update({
-              billing_setup_status: 'failed',
-              billing_setup_error: billingSetupIssue.message,
-              next_billing_date: null,
-            }).eq('id', enrollmentId).eq('location_id', input.locationId);
+            await persistSetupIssue('failed');
           } else if (subAmountCents > 0 && (paymentType === 'subscription' || remainingPayments > 0) && nextBillingDate) {
             const subResult = await processor.createSubscription({
               paymentMethodId: saveResult.paymentMethodId || saveResult.customerId,
@@ -948,6 +949,7 @@ export const payFirstEnrollmentService = {
               interval: processorInterval(offer.installment_frequency),
               totalPayments: remainingPayments,
               startDate: nextBillingDate,
+              billingDayOfMonth: billingAnchor.getUTCDate(),
               description: offer.offer_name || 'ScaleSafe Recurring Plan',
               metadata: {
                 enrollment_id: enrollmentId,
@@ -979,48 +981,36 @@ export const payFirstEnrollmentService = {
                   code: 'processor_subscription_save_failed',
                   message: subSaveError.message || 'The processor subscription was created, but ScaleSafe could not save the subscription ID.',
                 };
-                await getSupabase().from('enrollments').update({
-                  billing_setup_status: 'needs_reconciliation',
-                  billing_setup_error: billingSetupIssue.message,
-                  next_billing_date: null,
-                }).eq('id', enrollmentId).eq('location_id', input.locationId);
+                await persistSetupIssue('needs_reconciliation');
               }
             } else {
               billingSetupIssue = {
-                code: 'processor_subscription_creation_failed',
+                code: subResult.outcomeUnknown ? 'processor_subscription_result_unknown' : 'processor_subscription_creation_failed',
                 message: subResult.errorMessage || 'Payment was received, but recurring billing setup failed at the processor.',
               };
-              await getSupabase().from('enrollments').update({
-                billing_setup_status: 'failed',
-                billing_setup_error: billingSetupIssue.message,
-                next_billing_date: null,
-              }).eq('id', enrollmentId).eq('location_id', input.locationId);
+              await persistSetupIssue(subResult.outcomeUnknown ? 'needs_reconciliation' : 'failed');
             }
           } else {
             billingSetupIssue = {
               code: 'processor_subscription_not_attempted',
               message: 'Payment was received, but recurring billing setup could not start because the recurring amount or next billing date was missing.',
             };
-            await getSupabase().from('enrollments').update({
-              billing_setup_status: 'failed',
-              billing_setup_error: billingSetupIssue.message,
-              next_billing_date: null,
-            }).eq('id', enrollmentId).eq('location_id', input.locationId);
+            await persistSetupIssue('failed');
           }
         } catch (err: any) {
-          const resultUnknown = isUnknownStripeSubscriptionResult(err);
+          const resultUnknown = Boolean(processorSubscriptionId) || isUnknownStripeSubscriptionResult(err);
           billingSetupIssue = {
             code: resultUnknown
               ? 'processor_subscription_result_unknown'
               : 'processor_subscription_creation_error',
             message: err?.message || 'Payment was received, but recurring billing setup failed.',
           };
-          await getSupabase().from('enrollments').update({
-            billing_setup_status: resultUnknown ? 'needs_reconciliation' : 'failed',
-            billing_setup_error: billingSetupIssue.message,
-            next_billing_date: null,
-          }).eq('id', enrollmentId).eq('location_id', input.locationId);
+          await persistSetupIssue(resultUnknown ? 'needs_reconciliation' : 'failed');
           logger.error({ ...logContext, err: err?.message || String(err), enrollmentId }, 'Quick Manual Sale recurring setup failed');
+        }
+        if (billingSetupIssue) {
+          try { await billingSetupHealthService.checkLocation(input.locationId, merchant.id); }
+          catch { logger.error({ locationId: input.locationId, enrollmentId }, 'Recurring setup alert persistence failed; hourly check will retry'); }
         }
       }
     }

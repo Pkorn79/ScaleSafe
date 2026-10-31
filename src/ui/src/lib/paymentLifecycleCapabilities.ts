@@ -13,5 +13,7 @@ export function hasProcessorLifecycleId(enrollment: any): boolean {
 }
 
 export function canControlProcessorLifecycle(enrollment: any): boolean {
+  const setupStatus = enrollment?.billingSetupStatus || enrollment?.billing_setup_status;
+  if (['failed', 'pending', 'needs_reconciliation'].includes(setupStatus)) return false;
   return !isWhopEnrollment(enrollment) || hasProcessorLifecycleId(enrollment);
 }

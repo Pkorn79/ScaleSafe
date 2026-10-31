@@ -19,20 +19,8 @@ import crypto from 'crypto';
 import { evidenceEnrollmentContextService } from '../services/evidence-enrollment-context.service';
 import { moneyOperationService } from '../services/money-operation.service';
 import { assertNewProcessorActivityAllowed } from '../services/marketplace-entitlement.service';
-
-/** Compute next_billing_date from an offer's installment_frequency (matches phase2Enrollment.completeEnrollment). */
-function computeNextBillingDate(installmentFrequency: string | null | undefined, from: Date = new Date()): string {
-  const next = new Date(from);
-  switch (installmentFrequency) {
-    case 'daily': next.setDate(next.getDate() + 1); break;
-    case 'weekly': next.setDate(next.getDate() + 7); break;
-    case 'bi_weekly': next.setDate(next.getDate() + 14); break;
-    case 'quarterly': next.setMonth(next.getMonth() + 3); break;
-    case 'annual': next.setFullYear(next.getFullYear() + 1); break;
-    default: next.setMonth(next.getMonth() + 1); // monthly default
-  }
-  return next.toISOString().split('T')[0];
-}
+import { nextBillingDate as computeNextBillingDate } from '../utils/billing-calendar';
+import { billingSetupHealthService } from '../services/billing-setup-health.service';
 
 /** Normalize payment choice from checkout page ('installments' → 'installment', default 'pif') */
 function normalizePaymentType(choice?: string): string {
@@ -1688,8 +1676,9 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             try {
               const { data: enrForSub } = await supabase
                 .from('enrollments')
-                .select('id, offer_id, payment_type, payments_total, next_billing_date')
+                .select('id, offer_id, payment_type, payments_total, next_billing_date, enrolled_at')
                 .eq('id', finalEnrollmentId)
+                .eq('location_id', merchant.locationId)
                 .single();
 
               if (!enrForSub?.offer_id || !enrForSub.next_billing_date) {
@@ -1702,6 +1691,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                   .from('offers_mirror')
                   .select('id, location_id, offer_name, price, payment_type, installment_amount, installment_frequency, dual_pricing_enabled, ach_enabled, ach_access_policy')
                   .eq('id', enrForSub.offer_id)
+                  .eq('location_id', merchant.locationId)
                   .single();
 
                 if (!subOffer) {
@@ -1733,6 +1723,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                       interval: subInterval,
                       totalPayments: remainingPayments,
                       startDate: enrForSub.next_billing_date,
+                      billingDayOfMonth: enrForSub.enrolled_at ? new Date(enrForSub.enrolled_at).getUTCDate() : undefined,
                       description: subOffer.offer_name || 'ScaleSafe Installment',
                       metadata: {
                         enrollment_id: finalEnrollmentId,
@@ -1754,7 +1745,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                           processor_type: procConfig.processor_type,
                           processor_config_id: procConfig.id,
                         })
-                        .eq('id', finalEnrollmentId);
+                        .eq('id', finalEnrollmentId).eq('location_id', merchant.locationId);
                       if (subSaveErr) {
                         billingSetupIssue = {
                           code: 'processor_subscription_save_failed',
@@ -1777,7 +1768,7 @@ export async function processPayment(req: Request, res: Response): Promise<void>
                       }
                     } else {
                       billingSetupIssue = {
-                        code: 'processor_subscription_creation_failed',
+                        code: subResult.outcomeUnknown ? 'processor_subscription_result_unknown' : 'processor_subscription_creation_failed',
                         message: subResult.errorMessage || 'Payment was received, but recurring billing setup failed at the processor.',
                       };
                       logger.error({
@@ -1838,19 +1829,27 @@ export async function processPayment(req: Request, res: Response): Promise<void>
             'processor_subscription_save_failed',
             'processor_subscription_result_unknown',
           ].includes(billingSetupIssue.code);
-          await supabase.from('enrollments').update({
+          const { error: setupSaveError } = await supabase.from('enrollments').update({
             billing_setup_status: needsReconciliation ? 'needs_reconciliation' : 'failed',
             billing_setup_error: billingSetupIssue.message || billingSetupIssue.code,
             next_billing_date: null, // stop reminders / active views treating it as scheduled
           }).eq('id', finalEnrollmentId).eq('location_id', merchant.locationId);
+          if (setupSaveError) throw setupSaveError;
+          await billingSetupHealthService.checkLocation(merchant.locationId, merchant.merchantId);
         } else if (recurringSubscriptionId) {
-          await supabase.from('enrollments').update({
+          const { error: setupSaveError } = await supabase.from('enrollments').update({
             billing_setup_status: 'ok',
+            billing_setup_error: null,
             next_billing_date_source: 'processor',
           }).eq('id', finalEnrollmentId).eq('location_id', merchant.locationId);
+          if (setupSaveError) throw setupSaveError;
         }
       } catch (markErr: any) {
-        logger.warn({ err: markErr.message, enrollmentId: finalEnrollmentId }, 'Failed to persist billing_setup_status (non-fatal)');
+        billingSetupIssue ||= {
+          code: 'processor_subscription_save_failed',
+          message: 'Payment was received, but the automatic billing status could not be saved. Verify the processor before retrying.',
+        };
+        logger.error({ enrollmentId: finalEnrollmentId, locationId: merchant.locationId }, 'Billing setup status or HQ alert persistence failed; hourly recovery must reconcile');
       }
     }
 

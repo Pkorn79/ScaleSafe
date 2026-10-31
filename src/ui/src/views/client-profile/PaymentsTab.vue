@@ -190,15 +190,13 @@ const activeRecurringEnrollments = computed(() => {
   return props.enrollments.filter(e => {
     const status = String(e.status || '').toLowerCase();
     const type = String(e.paymentType || '').toLowerCase();
-    const billingStatus = String(e.billingSetupStatus || 'ok').toLowerCase();
     const isActive = ['enrolled', 'active', 'paused'].includes(status);
-    const billingReady = !['failed', 'pending', 'needs_reconciliation'].includes(billingStatus);
     const isRecurring = ['installments', 'installment', 'subscription'].includes(type);
     const isComplete = Boolean(e.billingCompletedAt)
       || (type !== 'subscription'
         && Number(e.paymentsTotal || 0) > 0
         && Number(e.paymentsMade || 0) >= Number(e.paymentsTotal || 0));
-    return isActive && billingReady && isRecurring && !isComplete;
+    return isActive && isRecurring && !isComplete;
   });
 });
 

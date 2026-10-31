@@ -13,12 +13,12 @@ import {
   parseNmiQueryTransactions,
   parseNmiVaultRecords,
   centsToDollars,
-  formatNmiDate,
   extractLastFour,
   parseNmiExpiry,
 } from '../utils/nmi.utils';
 import { logger } from '../utils/logger';
 import { config as appConfig } from '../config';
+import { billingDate } from '../utils/billing-calendar';
 
 function formatNmiQueryDate(value: string): string {
   const d = new Date(value);
@@ -289,12 +289,20 @@ export class NmiClient implements ProcessorInterface {
   // ─── createSubscription ────────────────────────────────────
 
   async createSubscription(request: CreateSubscriptionRequest): Promise<SubscriptionResult> {
+    const startDate = billingDate(request.startDate || new Date());
+    const monthly = ['monthly', 'quarterly', 'annual'].includes(request.interval);
+    const billingDay = request.billingDayOfMonth ?? startDate.getUTCDate();
+    if (monthly && (!Number.isInteger(billingDay) || billingDay < 1 || billingDay > 31)) {
+      throw new Error('Billing day must be between 1 and 31');
+    }
     const params = new URLSearchParams();
     params.set('security_key', this.securityKey);
     params.set('recurring', 'add_subscription');
-    if (request.totalPayments > 0) {
-      params.set('plan_payments', String(request.totalPayments));
+    if (!Number.isInteger(request.totalPayments) || request.totalPayments < 0) {
+      throw new Error('Recurring payment count must be a nonnegative integer');
     }
+    // NMI requires this field; zero explicitly means an ongoing subscription.
+    params.set('plan_payments', String(request.totalPayments));
     params.set('plan_amount', centsToDollars(request.planAmount));
     params.set('customer_vault_id', request.paymentMethodId);
     if (request.idempotencyKey) params.set('orderid', request.idempotencyKey.substring(0, 128));
@@ -322,10 +330,10 @@ export class NmiClient implements ProcessorInterface {
     }
 
     // Start date
-    const startDate = request.startDate
-      ? new Date(request.startDate)
-      : new Date();
-    params.set('start_date', formatNmiDate(startDate));
+    params.set('start_date', startDate.toISOString().slice(0, 10).replace(/-/g, ''));
+    // NMI clamps 29/30/31 to the month's last day. Keep the original anchor
+    // rather than permanently changing a January 31 plan to February 28.
+    if (monthly) params.set('day_of_month', String(billingDay));
 
     if (request.description) {
       params.set('order_description', request.description);
@@ -354,7 +362,18 @@ export class NmiClient implements ProcessorInterface {
 
     this.addProcessorId(params);
 
-    const nmi = await this.postTransact(params);
+    let nmi: Record<string, string>;
+    try {
+      nmi = await this.postTransact(params);
+    } catch {
+      return { success: false, subscriptionId: '', status: 'pending', outcomeUnknown: true,
+        errorMessage: 'NMI recurring setup response was not received. Verify the gateway before retrying.' };
+    }
+
+    if (nmi.response !== '1' && !['2', '3'].includes(nmi.response)) {
+      return { success: false, subscriptionId: '', status: 'pending', outcomeUnknown: true,
+        errorMessage: 'NMI recurring setup returned an unrecognized response. Verify the gateway before retrying.' };
+    }
 
     if (nmi.response !== '1') {
       return {
@@ -376,7 +395,8 @@ export class NmiClient implements ProcessorInterface {
       return {
         success: false,
         subscriptionId: '',
-        status: 'failed',
+        status: 'pending',
+        outcomeUnknown: true,
         errorMessage: `NMI approved recurring setup but did not return a subscription ID. Response: ${nmi.responsetext || 'Unknown response'}`,
       };
     }

@@ -367,7 +367,7 @@ describe('queryUrl Controller', () => {
   });
 
   describe('create_subscription', () => {
-    it('parses productDetails for interval and totalCycles', async () => {
+    it.each([false, true])('handles subscription terms without finalizing an uncertain result (unknown=%s)', async (unknown) => {
       mockFrom.mockImplementation((table: string) => {
         if (table === 'payment_methods') {
           return {
@@ -387,7 +387,9 @@ describe('queryUrl Controller', () => {
         return { insert: jest.fn().mockResolvedValue({ error: null }) };
       });
 
-      mockProcessor.createSubscription.mockResolvedValue({
+      mockProcessor.createSubscription.mockResolvedValue(unknown ? {
+        success: false, subscriptionId: '', status: 'pending', outcomeUnknown: true,
+      } : {
         success: true,
         subscriptionId: 'sub_1',
         status: 'active',
@@ -424,6 +426,14 @@ describe('queryUrl Controller', () => {
       expect(subCall.totalPayments).toBe(12);
 
       const result = (res.json as jest.Mock).mock.calls[0][0];
+      if (unknown) {
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(result).toMatchObject({ success: false, pending: true, requiresReconciliation: true });
+        expect(mockMarkUnknown).toHaveBeenCalledTimes(1);
+        expect(mockMarkRecorded).not.toHaveBeenCalled();
+        expect(mockMarkProviderAccepted).not.toHaveBeenCalled();
+        return;
+      }
       expect(result.success).toBe(true);
       expect(result.subscription.subscriptionId).toBe('sub_1');
     });

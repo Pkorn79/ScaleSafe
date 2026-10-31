@@ -835,7 +835,8 @@ export async function setupNmiAchRecurringAfterSettlement(
   }
 
   if (!subResult.success || !subResult.subscriptionId) {
-    const resultUnknown = /approved recurring setup.*did not return a subscription id/i.test(subResult.errorMessage || '');
+    const resultUnknown = subResult.outcomeUnknown === true
+      || /approved recurring setup.*did not return a subscription id/i.test(subResult.errorMessage || '');
     await supabase.from('enrollments').update({
       billing_setup_status: resultUnknown ? 'needs_reconciliation' : 'failed',
       billing_setup_error: subResult.errorMessage || 'NMI ACH recurring subscription creation failed.',

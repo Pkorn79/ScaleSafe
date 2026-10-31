@@ -113,6 +113,7 @@ export interface CreateSubscriptionRequest {
   interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annual';
   totalPayments: number;
   startDate?: string; // ISO date
+  billingDayOfMonth?: number; // Original monthly anchor, retained when the first date is clamped.
   description?: string;
   metadata?: Record<string, string>;
   idempotencyKey?: string;
@@ -136,6 +137,7 @@ export interface SubscriptionResult {
   status: 'active' | 'pending' | 'failed';
   nextPaymentDate?: string;
   errorMessage?: string;
+  outcomeUnknown?: boolean; // Reconcile before retrying; the provider may have created billing.
 }
 
 // ============================================================

@@ -1,5 +1,6 @@
 import { getSupabase } from '../clients/supabase.client';
 import { isStandalonePayment } from '../utils/standalone-payment';
+import { billingSetupAlert } from '../utils/billing-setup-alert';
 
 type IssuePriority = 'high' | 'medium' | 'low';
 
@@ -61,6 +62,8 @@ const ENROLLMENT_COLUMNS = [
   'payments_total',
   'next_billing_date',
   'billing_completed_at',
+  'billing_setup_status',
+  'billing_setup_error',
   'completed_at',
   'cancelled_at',
   'enrolled_at',
@@ -302,6 +305,9 @@ export const paymentReconciliationService = {
       processors[processor] = (processors[processor] || 0) + 1;
 
       if (!isRecurringType(paymentType)) continue;
+      const setupAlert = billingSetupAlert(enrollment, today);
+      if (setupAlert) issues.push(issueBase('billing_setup_unresolved', 'high',
+        setupAlert.title, setupAlert.detail, enrollment, offer));
       if (isActiveStatus(enrollment.status)) activeRecurringEnrollments += 1;
 
       const paymentsMade = Number(enrollment.payments_made || 0);

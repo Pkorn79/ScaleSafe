@@ -1,6 +1,10 @@
 const mockGetMerchantByPublishableKey = jest.fn();
 const mockGetMerchantByApiKey = jest.fn();
 const mockAssertNewProcessorActivityAllowed = jest.fn();
+const mockSetupHealth = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../src/services/billing-setup-health.service', () => ({
+  billingSetupHealthService: { checkLocation: (...args: any[]) => mockSetupHealth(...args) },
+}));
 
 jest.mock('../../src/services/marketplace-entitlement.service', () => ({
   assertNewProcessorActivityAllowed: (...args: any[]) => mockAssertNewProcessorActivityAllowed(...args),
@@ -688,7 +692,11 @@ describe('Checkout Controller', () => {
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
-    it('keeps checkout provider-accepted when a created subscription id cannot be saved', async () => {
+    it.each([
+      ['stripe', 'save_failure', 'processor_subscription_save_failed'],
+      ['nmi', 'rejected', 'processor_subscription_creation_failed'],
+      ['nmi', 'uncertain', 'processor_subscription_result_unknown'],
+    ])('preserves the collected payment and warns for %s %s', async (processor, scenario, issueCode) => {
       const offer = {
         id: 'offer-recurring',
         location_id: 'loc-1',
@@ -699,10 +707,10 @@ describe('Checkout Controller', () => {
         installment_frequency: 'monthly',
         payment_type: 'installments',
         num_payments: 3,
-        processor_override: 'stripe',
+        processor_override: processor,
         nmi_processor_id: null,
       };
-      mockResolveProcessor.mockResolvedValue({ config: { processor_type: 'stripe' } });
+      mockResolveProcessor.mockResolvedValue({ config: { processor_type: processor } });
       mockCheckoutCartQuote.mockResolvedValue({
         selectedAmountCents: 10000,
         selectedAmount: 100,
@@ -718,18 +726,21 @@ describe('Checkout Controller', () => {
         vaultedCardLastFour: '4242',
         vaultedCardBrand: 'visa',
       });
-      mockProcessor.createSubscription.mockResolvedValue({
+      mockProcessor.createSubscription.mockResolvedValue(scenario === 'save_failure' ? {
         success: true,
         subscriptionId: 'sub_checkout_not_saved',
         status: 'active',
-      });
+      } : { success: false, subscriptionId: '', outcomeUnknown: scenario === 'uncertain',
+        errorMessage: scenario === 'rejected' ? 'day of month is required' : 'Gateway response not received' });
 
       let enrollmentInserted = false;
+      const setupWrites: any[] = [];
       mockFrom.mockImplementation((table: string) => {
         let operation: 'select' | 'insert' | 'update' = 'select';
         let payload: any = null;
         const execute = async () => {
           if (operation === 'update') {
+            if (payload?.billing_setup_status) setupWrites.push(payload);
             if (table === 'enrollments' && payload?.processor_subscription_id) {
               return { data: null, error: { message: 'subscription mapping unavailable' } };
             }
@@ -750,6 +761,7 @@ describe('Checkout Controller', () => {
                 offer_id: offer.id,
                 payment_type: 'installment',
                 payments_total: 3,
+                enrolled_at: '2026-07-12T12:00:00Z',
                 next_billing_date: '2026-08-12',
               } : null,
               error: null,
@@ -797,16 +809,22 @@ describe('Checkout Controller', () => {
 
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         success: true,
-        subscriptionId: 'sub_checkout_not_saved',
-        billingIssue: expect.objectContaining({ code: 'processor_subscription_save_failed' }),
+        billingIssue: expect.objectContaining({ code: issueCode }),
       }));
-      expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
-      expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
-        processorReference: 'pi_checkout_subscription_save_failure',
-        reconciliationPayload: expect.objectContaining({
-          processorSubscriptionId: 'sub_checkout_not_saved',
-        }),
+      expect(mockProcessor.charge).toHaveBeenCalledTimes(1);
+      expect(mockProcessor.createSubscription).toHaveBeenCalledTimes(1);
+      expect(mockProcessor.createSubscription).toHaveBeenCalledWith(expect.objectContaining({ billingDayOfMonth: 12 }));
+      expect(setupWrites).toContainEqual(expect.objectContaining({
+        billing_setup_status: scenario === 'rejected' ? 'failed' : 'needs_reconciliation', next_billing_date: null,
       }));
+      expect(mockSetupHealth).toHaveBeenCalledWith('loc-1', expect.anything());
+      if (scenario === 'save_failure') {
+        expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+        expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
+          processorReference: 'pi_checkout_subscription_save_failure',
+          reconciliationPayload: expect.objectContaining({ processorSubscriptionId: 'sub_checkout_not_saved' }),
+        }));
+      }
     });
 
     it('replays a completed checkout without calling the processor again', async () => {

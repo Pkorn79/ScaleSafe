@@ -656,6 +656,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       state.processing = false;
       setLoading(false);
       if (data.success) {
+        if (data.billingIssue) {
+          state.processing = true;
+          el('pay-btn').disabled = true;
+          showError('Payment received. Automatic billing is not confirmed and needs merchant review. Do not pay again.');
+          return;
+        }
         ssPostToParent({
           type: 'custom_element_success_response',
           chargeId: data.chargeId,
@@ -1896,7 +1902,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       }
 
       // Success
-      clearCheckoutPaymentAttempt(paymentAttemptScope);
       el('pay-btn').classList.add('hidden');
       el('success-msg').textContent = data.billingIssue
         ? 'Payment received. Recurring billing setup needs merchant attention.'
@@ -1906,6 +1911,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           ? 'Bank transfer submitted. Receipt and enrollment completion will happen after settlement.'
           : 'Payment Successful!';
       el('success-msg').style.display = 'block';
+
+      // A successful charge is not a completed recurring setup. Keep the warning
+      // visible; do not tell the parent to advance or redirect to a success page.
+      if (data.billingIssue) {
+        el('success-msg').textContent = 'Payment received. Automatic billing is not confirmed and needs merchant review. Do not pay again.';
+        el('spinner').style.display = 'none';
+        return;
+      }
+      clearCheckoutPaymentAttempt(paymentAttemptScope);
 
       // In GHL iframe: notify parent
       if (window !== window.parent) {

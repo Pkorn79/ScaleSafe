@@ -135,6 +135,17 @@ describe('Phase 2 Enrollment Service - handleRecurringPayment idempotency (#8)',
       'loc_1',
     );
   });
+  test('keeps the original monthly anchor after a short month', async () => {
+    mockEnrollmentGetById.mockResolvedValue({
+      id: 'enr_1', location_id: 'loc_1', contact_id: 'contact_1', offer_id: 'offer_1',
+      status: 'enrolled', payments_made: 2, payments_total: 6, payment_type: 'installment',
+      enrolled_at: '2026-01-31T14:00:00Z', next_billing_date: '2026-02-28',
+    });
+    mockOfferGetById.mockResolvedValue({ id: 'offer_1', offer_name: 'P', installment_frequency: 'monthly' });
+    await phase2EnrollmentService.handleRecurringPayment(recurringParams);
+    expect(mockEnrollmentUpdateStatus).toHaveBeenCalledWith('enr_1', 'enrolled',
+      expect.objectContaining({ next_billing_date: '2026-03-31', next_billing_date_source: 'estimated' }), 'loc_1');
+  });
 });
 
 describe('Phase 2 Enrollment Service - completeEnrollment', () => {

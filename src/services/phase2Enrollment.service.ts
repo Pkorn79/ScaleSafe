@@ -4,6 +4,7 @@ import { paymentEventRepository, PaymentEventRecord } from '../repositories/paym
 import { offerRepository } from '../repositories/offer.repository';
 import { merchantRepository } from '../repositories/merchant.repository';
 import { getSupabase } from '../clients/supabase.client';
+import { nextBillingDate } from '../utils/billing-calendar';
 import { ghlApi } from '../clients/ghl.client';
 import { triggerService } from './trigger.service';
 import { logger } from '../utils/logger';
@@ -205,14 +206,7 @@ export const phase2EnrollmentService = {
           const ofr = await offerRepository.findById(enrollment.offer_id, params.locationId);
           if (ofr) {
             const freq = ofr.installment_frequency || 'monthly';
-            const next = new Date(enrolledAt);
-            if (freq === 'daily') next.setDate(next.getDate() + 1);
-            else if (freq === 'weekly') next.setDate(next.getDate() + 7);
-            else if (freq === 'bi_weekly') next.setDate(next.getDate() + 14);
-            else if (freq === 'quarterly') next.setMonth(next.getMonth() + 3);
-            else if (freq === 'annual') next.setFullYear(next.getFullYear() + 1);
-            else next.setMonth(next.getMonth() + 1); // monthly default
-            nextBilling = next.toISOString().split('T')[0];
+            nextBilling = nextBillingDate(freq, enrolledAt);
           }
         }
       } catch { /* non-blocking */ }
@@ -730,15 +724,11 @@ export const phase2EnrollmentService = {
             // drift the schedule forward. GHL gives us no processor next-charge date, so the
             // result is an estimate (marked needs-verification).
             const base = (enr as any).next_billing_date
-              ? new Date(`${(enr as any).next_billing_date}T00:00:00.000Z`)
+              ? new Date((enr as any).next_billing_date)
               : new Date();
-            if (freq === 'daily') base.setUTCDate(base.getUTCDate() + 1);
-            else if (freq === 'weekly') base.setUTCDate(base.getUTCDate() + 7);
-            else if (freq === 'bi_weekly') base.setUTCDate(base.getUTCDate() + 14);
-            else if (freq === 'quarterly') base.setUTCMonth(base.getUTCMonth() + 3);
-            else if (freq === 'annual') base.setUTCFullYear(base.getUTCFullYear() + 1);
-            else base.setUTCMonth(base.getUTCMonth() + 1);
-            updates.next_billing_date = base.toISOString().split('T')[0];
+            const enrolledAt = enr.enrolled_at ? new Date(enr.enrolled_at) : null;
+            const anchorDay = enrolledAt && Number.isFinite(enrolledAt.getTime()) ? enrolledAt.getUTCDate() : undefined;
+            updates.next_billing_date = nextBillingDate(freq, base, anchorDay);
             updates.next_billing_date_source = 'estimated';
           }
           await enrollmentRepository.updateStatus(params.enrollmentId, enr.status, updates as any, params.locationId);

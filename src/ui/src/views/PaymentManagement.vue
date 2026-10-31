@@ -411,8 +411,6 @@ function isManageableRecurringEnrollment(enrollment: any): boolean {
   if (status === 'paid_pending_enrollment' || status === 'payment_processing') return false;
   if (['cancelled', 'completed'].includes(status)) return false;
   if (!hasRemainingRecurringBilling(enrollment)) return false;
-  const billingStatus = String(enrollment?.billingSetupStatus || 'ok').toLowerCase();
-  if (['failed', 'pending', 'needs_reconciliation'].includes(billingStatus)) return false;
   return ['enrolled', 'active', 'paused'].includes(status) || Boolean(enrollment?.processorSubscriptionId);
 }
 

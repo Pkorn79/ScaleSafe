@@ -9,6 +9,7 @@ import { idempotencyRepository } from '../repositories/idempotency.repository';
 import { triggerService } from '../services/trigger.service';
 import { logger } from '../utils/logger';
 import { resolveProgramName } from '../utils/program-name';
+import { billingSetupHealthService } from '../services/billing-setup-health.service';
 
 /**
  * Frequent job: scan enrollments for upcoming installment/subscription payments
@@ -20,17 +21,26 @@ export async function runPaymentReminderCheck(): Promise<{
   total: number;
   sent: number;
   skipped: number;
+  setupHealthFailed: boolean;
   reminders: Array<Awaited<ReturnType<typeof sendRemindersForWindow>>>;
 }> {
   const supabase = getSupabase();
 
   try {
+    // Separate from customer reminders: no schedule means an operator alert, not a due-date message.
+    let setupHealthFailed = false;
+    try { await billingSetupHealthService.sweep(); }
+    catch {
+      setupHealthFailed = true;
+      logger.error('Recurring setup health scan failed; customer reminders will continue');
+    }
     const results = await Promise.all([
       sendRemindersForWindow(supabase, { type: 'three_day', daysUntilPayment: 3 }),
       sendRemindersForWindow(supabase, { type: 'next_24_hours', daysUntilPayment: 1 }),
     ]);
 
     const summary = {
+      setupHealthFailed,
       total: results.reduce((sum, result) => sum + result.total, 0),
       sent: results.reduce((sum, result) => sum + result.sent, 0),
       skipped: results.reduce((sum, result) => sum + result.skipped, 0),

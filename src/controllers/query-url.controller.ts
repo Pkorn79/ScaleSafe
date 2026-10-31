@@ -544,6 +544,18 @@ async function handleCreateSubscription(req: Request, res: Response, merchant: M
     throw err;
   }
 
+  if (subResult.outcomeUnknown) {
+    const message = 'Subscription setup is awaiting processor verification. Do not submit another subscription.';
+    await moneyOperationService.markUnknown({
+      id: operation.operation.id,
+      locationId: merchant.locationId,
+      processorType: config.processor_type,
+      error: message,
+    });
+    res.status(409).json({ success: false, pending: true, requiresReconciliation: true, message });
+    return;
+  }
+
   if (!subResult.success) {
     const failureResponse = { success: false, failed: true, message: subResult.errorMessage || 'Subscription creation failed' };
     await moneyOperationService.markRecorded({

@@ -770,7 +770,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
     }));
   });
 
-  it('does not record the parent charge when a created subscription id cannot be saved', async () => {
+  it.each([false, true])('does not record the parent charge when a created subscription id cannot be saved (warning save fails: %s)', async warningSaveFails => {
     mockFindOffer.mockResolvedValue({
       id: 'offer_1',
       active: true,
@@ -811,7 +811,7 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
           }),
           update: jest.fn((payload: any) => {
             enrollmentUpdates.push(payload);
-            result = payload.processor_subscription_id
+            result = payload.processor_subscription_id || (warningSaveFails && payload.billing_setup_status === 'needs_reconciliation')
               ? { data: null, error: { message: 'subscription mapping unavailable' } }
               : { data: null, error: null };
             return builder;
@@ -839,6 +839,11 @@ describe('payFirstEnrollmentService.chargeCardAndCreatePaidEnrollment', () => {
       expect.objectContaining({ billing_setup_status: 'needs_reconciliation' }),
     ]));
     expect(mockMoneyMarkRecorded).not.toHaveBeenCalled();
+    if (warningSaveFails) {
+      expect(result.recordingIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'billing_setup_state_save_failed' }),
+      ]));
+    }
     expect(mockMoneyMarkProviderAccepted).toHaveBeenLastCalledWith(expect.objectContaining({
       processorReference: 'pi_subscription_save_failure',
       reconciliationPayload: expect.objectContaining({

@@ -4,6 +4,10 @@ const mockIdempotencyExists = jest.fn();
 const mockIdempotencyRecord = jest.fn();
 const mockGhlPut = jest.fn();
 const mockGhlApi = jest.fn();
+const mockSetupSweep = jest.fn();
+jest.mock('../../src/services/billing-setup-health.service', () => ({
+  billingSetupHealthService: { sweep: (...args: any[]) => mockSetupSweep(...args) },
+}));
 
 jest.mock('../../src/clients/supabase.client', () => ({
   getSupabase: () => ({ from: mockFrom }),
@@ -38,6 +42,7 @@ let enrollmentWhopMembershipId: string | null = null;
 describe('payment reminder check', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSetupSweep.mockResolvedValue(undefined);
     jest.useFakeTimers().setSystemTime(new Date('2026-05-11T15:00:00.000Z'));
     enrollmentBillingStatus = 'ok';
     enrollmentProcessorType = '';
@@ -172,6 +177,13 @@ describe('payment reminder check', () => {
     expect(result.sent).toBe(0);
     expect(result.skipped).toBe(1);
     expect(mockFireTrigger).not.toHaveBeenCalled();
+  });
+
+  test('still sends scheduled reminders when the independent setup-health scan fails', async () => {
+    mockSetupSweep.mockRejectedValue(new Error('health storage unavailable'));
+    const result = await runPaymentReminderCheck();
+    expect(result.setupHealthFailed).toBe(true);
+    expect(result.sent).toBe(1);
   });
 
   test('does not remind an enrollment whose processor billing setup did not complete (Batch H)', async () => {

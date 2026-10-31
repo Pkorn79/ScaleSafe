@@ -406,7 +406,7 @@ describe('NMI official webhook events', () => {
     }));
   });
 
-  it('claims ACH recurring setup once across concurrent settlement handlers', async () => {
+  it.each([false, true])('claims ACH recurring setup once and preserves uncertainty (unknown=%s)', async (unknown) => {
     const recurringEnrollment: any = {
       ...enrollment,
       processor_subscription_id: null,
@@ -420,7 +420,10 @@ describe('NMI official webhook events', () => {
       installment_frequency: 'monthly',
       nmi_processor_id: null,
     };
-    const createSubscription = jest.fn().mockResolvedValue({
+    const createSubscription = jest.fn().mockResolvedValue(unknown ? {
+      success: false, subscriptionId: '', status: 'pending', outcomeUnknown: true,
+      errorMessage: 'NMI recurring setup response was not received.',
+    } : {
       success: true,
       subscriptionId: 'sub_claimed_once',
       status: 'active',
@@ -487,6 +490,12 @@ describe('NMI official webhook events', () => {
     expect(createSubscription).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: `nmi-ach-recurring-${recurringEnrollment.id}-txn_settle_1`,
     }));
+    if (unknown) {
+      expect(recurringEnrollment.processor_subscription_id).toBeNull();
+      expect(recurringEnrollment.billing_setup_status).toBe('needs_reconciliation');
+      expect(states).not.toContain('failed');
+      return;
+    }
     expect(recurringEnrollment.processor_subscription_id).toBe('sub_claimed_once');
     expect(recurringEnrollment.billing_setup_status).toBe('ok');
     expect(states).toEqual(expect.arrayContaining(['ready']));

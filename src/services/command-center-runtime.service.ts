@@ -43,8 +43,9 @@ const jobs = [
       const result = await runPaymentReminderCheck();
       return {
         processedCount: result.sent,
+        failedCount: result.setupHealthFailed ? 1 : 0,
         skippedCount: result.skipped,
-        summary: { sent: result.sent },
+        summary: { sent: result.sent, setupHealthFailed: result.setupHealthFailed },
       };
     },
   }),
